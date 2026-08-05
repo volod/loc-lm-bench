@@ -1424,8 +1424,97 @@ What the trigger cap WAS doing is visible in the compact column: a trimmed summa
 smaller prompt, so the elision quietly discounted compact's own measured cost -- by 106.6 tokens at
 fold step 10 and 180.1 at fold step 11, always in compact's favor, and always at the cells the
 routing rule is read from. The `window` numbers are the undiscounted ones. Both arms still land on
-the predeclared sides at every guard, so the depth-10 crossover is unchanged; the depth-6 ladder and
-the surface's own cells have not been re-run under the shipped bound.
+the predeclared sides at every guard, so the depth-10 fold-step crossover is unchanged; what that
+discount does to every OTHER published crossover is settled in
+[the restatement](#published-crossovers-under-the-shipped-cap) below.
+
+##### Published crossovers under the shipped cap
+
+`make bench-agentic-context-compact-crossover-restatement` answers the question the step-aligned
+bound leaves behind: every compact routing number an operator applies was measured under the retired
+trigger bound, which discounted compact's own cost wherever it actually trimmed the folded
+transcript. Re-running four studies to find out where that mattered would be the expensive answer.
+The cheap one is exact.
+
+The bound reaches a run through exactly ONE prompt -- the summarize call -- so a cell whose
+summarize input is identical under both bounds sends bit-identical prompts under both, and its
+published cost cannot have moved. `compact_fold_input_probe` decides that per cell with no model, so
+the study opens with a model-free AUDIT of every published cell in the boundary surface, the trigger
+collapse, and the fold-step crossover, and re-measures only the cells the audit calls
+bound-sensitive. The committed design is
+`samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
+by its in-repo design path and every crossover that study published, and validation refuses a design
+whose path is missing, declares a different study kind, publishes a crossover at a depth the study
+does not test, or omits the fold step a crossover lands in.
+
+The invariance criterion is the fold step, not a char tolerance. The fold-step study established
+that the cost changes only at a step boundary, so a restated guard that moves INSIDE one step's
+guard interval names a point at which nothing changes; only a guard that crosses a step boundary
+withdraws a published number. `--audit-only` reports the audit and stops, which is the GPU-free way
+to ask "does this bound change invalidate my evidence" before spending anything.
+
+Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
+both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute, re-interpolate, and place
+the restated guard on the step ladder), `src/llb/bench/agentic_memory_crossover_restatement.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_report.py`,
+`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, and
+`tests/llb/bench/test_agentic_memory_crossover_restatement.py`.
+
+```bash
+make bench-agentic-context-compact-crossover-restatement
+make bench-agentic-context-compact-crossover-restatement AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY=1
+```
+
+The audit is the result. Of the 22 published cells across the three studies, **18 are
+bit-identical under both bounds** and needed no run at all: every depth-6 cell folds a transcript
+neither bound trims, and so do most depth-10 cells. Four are bound-sensitive, and three of those are
+the depth-10 fold-step cells the summarize-input-cap study had already re-measured. **One cell**
+(`surface-d10-g23000`, 302 chars elided) was left, so the whole GPU cost of restating four studies'
+worth of routing numbers was 14 episodes.
+
+CUDA host evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, seven depth-10 memory tasks, `compact_share=0.5`, one re-measured cell at 10.55
+tok/s over about 12 minutes including the control. The pinned family re-passed the unchanged
+depth-10 control at 4/4; the re-measured cell completed 7/7 under both policies with zero overflows
+and one compaction per compact episode. The aggregate is
+`$DATA_DIR/agentic-compact-crossover-restatement/20260805T192757.795491Z-2bc079197412/manifest.json`.
+
+| study | depth | form | published | restated | fold step | basis |
+| --- | ---: | --- | ---: | ---: | ---: | --- |
+| boundary surface | 6 | interpolated guard | 14160 | unchanged | 7 | every cell bound-invariant |
+| boundary surface | 10 | interpolated guard | 21900 | **21862** | 10 | re-measured cell |
+| trigger collapse | 6 | portable ratio | 0.85x | unchanged | 6 | every cell bound-invariant |
+| trigger collapse | 10 | portable ratio | 0.92x | 0.92x | 10 | every cell bound-invariant |
+| fold step | 6 | fold-step boundary | 14912 | unchanged | 6 | every cell bound-invariant |
+| fold step | 10 | fold-step boundary | 22016 | unchanged | 10 | already re-measured |
+
+Verdict: **every published crossover holds under the shipped cap**. Exactly one number moves at all
+-- the depth-10 interpolated guard, by **-38 chars** (21900 -> 21862, ratio 1.84 -> 1.83) once the
+re-measured cell's undiscounted cost (+1610.3 instead of +1524.9 tokens) enters the interpolation --
+and it lands at the same place on the ladder, inside fold step 10's guard interval
+`[20240, 22016)` where every guard costs the same. The direction is the one the mechanism predicts:
+removing a discount that flattered compact pulls the crossing DOWN, toward compact being preferred
+over a slightly narrower band of guards.
+
+The re-measured cell also cross-checks the step function across two independent runs on different
+days: guard 23000 here costs 28953.3 compact tokens, the identical value guards 22016 and 23040
+produced in the summarize-input-cap study. Three guards spanning 1024 chars, one fold step, the same
+cost to the token.
+
+The collapse's portable ratio needs one extra step to read, because it is DERIVED from the surface's
+interpolated guard rather than measured directly: at depth 10 the restated 21862-char guard is a
+10931-char trigger against an 11926-char cap peak, so the ratio moves 0.918x -> 0.917x and the
+published 0.85-0.92x band is unchanged at the precision it is stated in. The collapse's own eight
+cells are all bound-invariant, so the equal-trigger spreads and the contrast family stand as
+measured.
+
+The trigger collapse gains something from the change rather than merely surviving it. Its claim is
+that `compact_share` and the prompt guard act ONLY through their product, and the retired bound was
+the one place where share entered independently (the summarize input was capped at
+`compact_share * guard`). Under the shipped bound that term is gone, so the collapse holds by
+construction and not only by measurement.
 
 ### Agent context-policy constants
 

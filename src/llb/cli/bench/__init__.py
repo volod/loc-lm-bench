@@ -12,6 +12,7 @@ from llb.cli.bench import (  # noqa: F401
     category_agentic_loop_feedback_transfer,
     category_agentic_loop_policy,
     category_agentic_memory_boundary_surface,
+    category_agentic_memory_crossover_restatement,
     category_agentic_memory_fold_step,
     category_agentic_memory_replication,
     category_agentic_memory_summary_cap,

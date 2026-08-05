@@ -18,6 +18,7 @@
 	bench-agentic-context-compact-trigger-collapse \
 	bench-agentic-context-compact-fold-step \
 	bench-agentic-context-compact-summary-input-cap \
+	bench-agentic-context-compact-crossover-restatement \
 	bench-chain-context composite-headline platform-matrix
 
 agentic-harness-compare: ## Run loop/langgraph/crewai agentic cells, then compare harnesses
@@ -229,6 +230,14 @@ bench-agentic-context-compact-summary-input-cap: ## Price the compact summarize 
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-summary-input-cap \
 		--design "$(AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN)"
+
+bench-agentic-context-compact-crossover-restatement: ## Restate every published compact crossover under the shipped summarize-input cap, re-measuring only the cells the model-free audit calls bound-sensitive
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-crossover-restatement \
+		--design "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_DESIGN)" \
+		$(if $(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE),--surface-aggregate "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE)",) \
+		$(if $(filter 1 true yes,$(AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY)),--audit-only,)
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -43,35 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-published-crossovers-under-the-shipped-cap (optional)
+### agent-policy-change-evidence-audit (optional)
 
-The compact routing rule an operator applies -- the crossover guards published by the boundary
-surface and the trigger collapse -- was measured under the summarize-input bound those studies now
-pin explicitly (`summary_input_cap: "trigger"` in their committed designs) rather than under the
-`window` bound the runtime ships
-([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned)).
-The bound is not neutral on the number the crossover is interpolated from: a trimmed summarize input
-is a smaller prompt, so the retired bound DISCOUNTED compact's own measured cost -- one-sidedly, in
-compact's favor, at the cells the crossover is read from. Only the depth-10 ladder has been re-run,
-where the discount (107-180 tokens) does not move the side of any cell. The depth-6 crossover and the
-surface's interpolated guards are still stated on discounted numbers, and the surface interpolates
-BETWEEN cells rather than reading a step, so a one-sided per-cell shift moves its zero crossing even
-when no cell changes side. Re-run the depth-6 fold-step ladder under `summary_input_cap: "window"`,
-recompute the surface's interpolation from the undiscounted cell costs, then restate every published
-crossover against the shipped bound or record that it is unchanged.
+Changing one agent context-policy constant silently invalidates an unknown share of the repo's
+published evidence, and today only ONE such change can be re-qualified cheaply: the summarize-input
+bound, because `src/llb/bench/agentic_memory_cap_audit.py` knows that bound reaches a run through
+exactly one prompt and can prove per cell that the prompt is unchanged
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+Every other policy constant (`DEFAULT_OBSERVATION_CAP_CHARS`, `OBSERVATION_HEAD_SHARE`,
+`DEFAULT_KEEP_LAST_N`, `DEFAULT_COMPACT_KEEP_RECENT`, the summary template itself) has the same
+property -- it is a pure function of the deterministic tool world -- and none has an audit, so the
+honest answer after touching one is "re-run everything" or "hope". Generalize the audit: given a
+policy field and two values, walk every committed design's cells with the oracle probe under both
+values and report which published cells send bit-identical prompts. Then a policy edit comes with a
+named list of the evidence it actually invalidates instead of a guess.
 
-- Agent status: RUN NEEDED
-- Dependencies: the two-arm summarize-input-cap study and its committed ladder
-  ([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned));
-  reuse its arm contract with the depth-6 ladder swapped in.
-- User-visible outcome: every published compact routing number is stated for the bound the shipped
-  runtime actually runs, so no operator applies a crossover measured under a retired summarizer.
-- Scope boundary: in scope -- the depth-6 ladder re-run under both bounds, the surface's
-  interpolation recomputed from undiscounted cell costs, the restated crossovers, and the
-  "unchanged" record where nothing moves. Out of scope -- re-running the whole boundary surface
-  unconditionally, changing the placement rules, and the shipped `compact_share`.
+- Agent status: CLEAR
+- Dependencies: the bound audit and its per-study geometry extraction
+  (`src/llb/bench/agentic_memory_cap_audit.py`); the probe already replays a whole episode under an
+  arbitrary `ContextPolicy`, so the generalization is a parameter, not a new mechanism.
+- User-visible outcome: any agent policy-constant change ships with the list of published numbers it
+  invalidates, and the re-run is scoped to that list rather than to every study.
+- Scope boundary: in scope -- the policy-field parameterization, a prompt-level invariance verdict
+  per published cell, and the CLI that reports it with no GPU. Out of scope -- re-running the
+  invalidated cells (the existing restatement flow does that), and changing any shipped constant.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned).
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
 ### agent-context-policy-summary-elision-under-the-window-bound (optional)
 
@@ -134,17 +131,23 @@ token grows the transcript past that peak, and a guard chosen just above it can 
 the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
 budget allows (max steps rather than depth), record the measured extra steps per episode from the
 existing bundles, and turn the difference into a stated safety margin the design validation applies
-when it certifies a cell as cap-fitting.
+when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
+bound-invariant ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
+which inherits the identical perfect-play limitation: a longer real transcript can reach a
+summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
+verdict too and state the invariance for the worst case the step budget allows.
 
 - Agent status: CLEAR
-- Dependencies: the probe and the band check in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py`; the per-episode step counts are already
-  persisted in the compact-vs-cap bundles.
+- Dependencies: the probe, the band check in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
+  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
+  the compact-vs-cap bundles.
 - User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
-  actually runs it, not only for a perfect controller.
-- Scope boundary: in scope -- the worst-case probe, the margin constant, and the validation change.
-  Out of scope -- re-running the surface, changing the interpolation rule, or relaxing the
-  activation floor.
+  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
+  the transcripts a real controller produces.
+- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
+  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
+  interpolation rule, or relaxing the activation floor.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 

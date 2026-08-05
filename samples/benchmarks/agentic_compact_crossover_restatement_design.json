@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-published-crossovers-under-the-shipped-cap",
+  "study_kind": "compact_published_crossover_restatement",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "shipped_summary_input_cap": "window",
+  "reference": {
+    "study_id": "agent-context-policy-summary-input-cap",
+    "evidence": "docs/impl/current/extended-workflows.md#the-summarize-input-cap-is-step-aligned",
+    "why": "the retired trigger bound trimmed the summarize input wherever the folded transcript outgrew it, and a trimmed input is a smaller prompt, so every cell it trimmed carries a one-sided discount on compact's own measured cost"
+  },
+  "held_fixed": {
+    "model_family": "mistral",
+    "model": "mistral-small3.1:24b",
+    "backend": "ollama",
+    "max_model_len": 8192
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "restatement_rule": {
+    "rule": "restate_only_bound_sensitive_cells",
+    "invariance": "restated_crossover_names_the_same_fold_step",
+    "audit": "a cell whose summarize input is identical under both bounds sends bit-identical prompts under both, so its published cost stands with no run",
+    "why_fold_step": "the fold-step study established that cost changes only at a step boundary, so an interpolated guard moving INSIDE one step's guard interval names a point at which nothing changes"
+  },
+  "audited_studies": [
+    {
+      "study_kind": "compact_memory_boundary_surface",
+      "design_path": "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
+      "evidence": "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
+      "published_crossovers": [
+        {"depth": 6, "compact_share": 0.5, "form": "interpolated_guard", "value": 14159.929807575942, "fold_step": 7},
+        {"depth": 10, "compact_share": 0.5, "form": "interpolated_guard", "value": 21899.890064587056, "fold_step": 10}
+      ]
+    },
+    {
+      "study_kind": "compact_trigger_guard_collapse",
+      "design_path": "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
+      "evidence": "docs/impl/current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis",
+      "published_crossovers": [
+        {"depth": 6, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 6},
+        {"depth": 10, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 10}
+      ]
+    },
+    {
+      "study_kind": "compact_fold_step_crossover",
+      "design_path": "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
+      "evidence": "docs/impl/current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard",
+      "published_crossovers": [
+        {"depth": 6, "compact_share": 0.5, "form": "fold_step_boundary", "value": 14912, "fold_step": 6},
+        {"depth": 10, "compact_share": 0.5, "form": "fold_step_boundary", "value": 22016, "fold_step": 10}
+      ]
+    }
+  ],
+  "interpretation": {
+    "every_published_cell_is_bound_invariant": "no published cell's summarize input changes under the shipped cap, so every published crossover stands with no run",
+    "published_crossovers_hold_under_the_shipped_cap": "the bound-sensitive cells were re-measured and every crossover still names the fold step it named before",
+    "a_published_crossover_moves_under_the_shipped_cap": "a restated crossover crosses a fold-step boundary, so the published routing rule must be re-derived",
+    "a_bound_sensitive_cell_could_not_be_re_measured": "a re-measured cell failed the surface's own preconditions, so its crossover is not restated"
+  }
+}
