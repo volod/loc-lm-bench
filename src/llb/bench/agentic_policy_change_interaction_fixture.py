@@ -129,7 +129,7 @@ def probe_cell_geometry(
         float(cast(float, change.baseline[FIELD_SHARE])),
         float(cast(float, change.candidate[FIELD_SHARE])),
     )
-    geometry = _geometry_kwargs(cell, held)
+    geometry = geometry_kwargs(int(cast(int, cell["depth"])), held)
     sequence = cap_prompt_sequence(**geometry)
     folds = [first_fold_step(sequence, compaction_trigger_chars(guard, share)) for share in shares]
     # Always under the TRIGGER bound: the window bound elides nothing at either share here by
@@ -154,10 +154,10 @@ def probe_cell_geometry(
     }
 
 
-def _geometry_kwargs(cell: dict[str, object], held: dict[str, object]) -> dict[str, Any]:
-    """The task world one cell states, in the keywords both probes take."""
+def geometry_kwargs(depth: int, held: dict[str, object]) -> dict[str, Any]:
+    """The task world one depth states, in the keywords every probe here takes."""
     return {
-        "depth": int(cast(int, cell["depth"])),
+        "depth": depth,
         "n_tasks": int(cast(int, held["n_tasks"])),
         "pad_chars": int(cast(int, held["pad_chars"])),
         "max_steps_margin": int(cast(int, held["max_steps_margin"])),

@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic.context import POLICY_COMPACT, ContextPolicy
+from llb.bench.agentic.context import (
+    POLICY_COMPACT,
+    ContextPolicy,
+)
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
 from llb.bench.agentic_policy_change_audit import (

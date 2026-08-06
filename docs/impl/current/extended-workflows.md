@@ -1658,25 +1658,52 @@ differ -- so a per-field audit would have cleared a commit that really did move 
 two `control` cells sit just outside the band on either side and are where the two readings agree,
 one invariant and one invalidated, so the fixture tests the interaction rather than the change.
 
-The band is narrow by construction (at fold step 10 it is guards 21100 to 21800): the two triggers
-must land in one fold step's interval while straddling the offered transcript. A change to the task
-world or the prompt templates moves it, and the failure is loud -- the separating cells stop
-separating and the fixture goes red with the predeclared geometry that no longer holds.
+The band is narrow by construction -- the two triggers must land inside ONE fold step's interval
+while straddling the offered transcript -- so an unrelated edit to a prompt template or the memory
+task world shifts every prompt size and walks the committed guards out of it. That band is not
+searched for, it is SOLVED: all three conditions are intervals the boundary probe already computes,
+intersected per fold step.
 
-Core locations are `src/llb/bench/agentic_policy_change_interaction_fixture.py` (the fixture
-contract, and the no-model probe of the predeclared geometry),
-`src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
-and `tests/llb/bench/test_agentic_policy_change_interaction.py`, which is the CI assertion itself --
-it runs inside `make ci`, in under a second, with no target of its own.
+| condition | why | interval |
+| --- | --- | --- |
+| both shares fold at the same step | else the share alone reads as changed | `fold_step_guard_interval` per share, intersected |
+| the baseline share elides nothing | else the bound alone reads as changed | `guard >= smallest_guard_reaching(offered, 0.5)` |
+| the candidate share elides | else the compound reading has nothing to report | `guard < smallest_guard_reaching(offered, 0.48)` |
 
-```bash
-make ci                       # the separation assertion; a collapsed audit fails here
-.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py
+At depth 10 that solves to guards `[21084, 21863)` at fold step 10 and `[23604, 23852)` at fold
+step 11 -- the two committed cells sit inside them, the two controls outside. The bands are exact
+rather than indicative: CI replays the audit at `low - 1`, `low`, `high - 1`, and `high` and asserts
+the separation starts and stops there. An empty answer is an answer too: at depth 8 the fold offers
+the summarizer too little to overtake any trigger, and the solver reports no band rather than an
+unusable interval. So a drifted task world fails with the guards to commit instead of with a
+geometry mismatch:
+
+```text
+[band] depth 10, compact_share 0.5 -> 0.48, summary_input_cap 'window' -> 'trigger'
+  fold step 10: guards [21084, 21863) separate (offered 10494, folds at triggers [10120, 11008))
+  fold step 11: guards [23604, 23852) separate (offered 11802, folds at triggers [11008, 11926))
 ```
 
 Only the VERDICT direction separates for this pair. A scan of depths 6 / 10 / 14 across guards 6000
 to 34000 found no geometry where both readings report an invalidated cell but name different
-first-divergent steps, so the committed cells are the whole separating set the pair offers.
+first-divergent steps, so the committed cells are the whole separating set the pair offers. The
+solver was checked against that scan at depths 8 / 12 / 14 -- every guard it excludes fails to
+separate and every guard it includes separates.
+
+Core locations are `src/llb/bench/agentic_policy_change_interaction_fixture.py` (the fixture
+contract, and the no-model probe of the predeclared geometry),
+`src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
+`src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report), and the
+two test modules that ARE the CI assertion --
+`tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation and
+`tests/llb/bench/test_agentic_policy_change_interaction_band.py` for the band. Both run inside
+`make ci`, together in under a second, with no target of their own.
+
+```bash
+make ci                       # the separation assertion; a collapsed audit fails here
+.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py \
+  tests/llb/bench/test_agentic_policy_change_interaction_band.py
+```
 
 ##### The audit runs in CI, on the act that creates the problem
 

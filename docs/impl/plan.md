@@ -43,32 +43,55 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-band-is-self-locating (optional)
+### agent-policy-change-interaction-second-pair (optional)
 
-The interaction fixture's separating band is narrow and hand-found: two triggers must land inside
-one fold step's interval while straddling the transcript that fold offers the summarizer, which at
-depth 10 is guards 21100-21800
+The compound guarantee is held up by ONE interacting pair through ONE coupling: `summary_input_cap`
+under the `trigger` bound reads its cap off `compact_share`
 ([extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
-An unrelated edit to the prompt templates or the memory task world shifts every prompt size by a few
-chars and walks the committed guards out of the band; CI then goes red with a predeclared geometry
-nobody can repair without re-deriving the search by hand. Give the fixture a solver: a function that
-takes the change and a depth and RETURNS the separating guard interval (fold-step intervals come
-from `fold_step_trigger_interval`, the offered transcript from `compact_fold_input_probe`, so the
-band is computable rather than scannable), have the failure message print the band it found, and
-add the test that the committed guards lie inside it. The same solver turns "is there a separating
-geometry for THIS pair of constants" into a question with an answer, which is what a second
-interacting pair would need.
+Retire that bound (the shipped default is already `window`) or special-case the pair in a refactor
+and the only counterexample goes with it. Enumerate the OTHER couplings between auditable policy
+fields -- a field whose runtime meaning is a function of another, e.g. `compact_keep_recent` x
+`compact_share` through what stays live behind a fold, or `observation_cap_chars` x `compact_share`
+through the prompt size that decides which step folds -- and for each either commit a second
+separating cell or record the proof that no geometry separates it. The band arithmetic is the tool:
+generalize `separating_guard_bands` past the share/bound inequality it hard-codes today so each
+coupling states its own three conditions, then let the solver answer.
 
 - Agent status: CLEAR
-- Dependencies: the fixture and its predeclared geometry are
-  `src/llb/bench/agentic_policy_change_interaction_fixture.py`; the interval arithmetic already
-  exists as `fold_step_trigger_interval` / `fold_step_guard_interval` in
-  `src/llb/bench/agentic_memory_boundary_probe.py`.
-- User-visible outcome: a template edit that moves the fixture out of its band fails with the new
-  guards to commit instead of with a geometry mismatch nobody can act on.
-- Scope boundary: in scope -- the band solver, the failure message, and the containment test. Out of
-  scope -- changing the audited studies, any shipped constant, and adding a second interacting pair
-  (state that separately once the solver can answer whether one exists).
+- Dependencies: the solver and the direction it currently hard-codes are
+  `src/llb/bench/agentic_policy_change_interaction_band.py`; the fixture shape it would extend is
+  `samples/benchmarks/agentic_policy_change_interaction_design.json`.
+- User-visible outcome: the compound guarantee survives retiring any one policy constant, because
+  more than one pair of constants tests it.
+- Scope boundary: in scope -- the coupling enumeration, the generalized solver, and either a second
+  fixture pair or the recorded no-separation result. Out of scope -- changing any shipped constant,
+  re-running a published cell, and widening the audited study set.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it).
+
+### agent-policy-change-interaction-band-past-the-first-fold (optional)
+
+The band solver reports a fold step only when the episode compacts exactly ONCE there, because
+`summary_input_chars` is a sum over folds and the elision inequality is a statement about one
+offered transcript
+([extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
+Every multi-fold geometry -- a deep episode under a small guard, which is the ordinary case away
+from the cap-fitting band -- is therefore reported as "no band" whether or not one exists, so the
+solver's negative answer is weaker than it reads. Give the probe a per-fold breakdown (the telemetry
+already counts `n_compactions`; the offered spans want recording per fold rather than summed), state
+the inequality against the FIRST fold whose elision the candidate share flips, and either widen the
+solved bands or record that the extra folds never separate.
+
+- Agent status: CLEAR
+- Dependencies: the summed telemetry is `summary_input_chars` in `ContextTelemetry`
+  (`src/llb/bench/agentic/context.py`), surfaced by `compact_fold_input_probe` in
+  `src/llb/bench/agentic_memory_boundary_probe.py`; the refusal is `_offered_at_fold_step` in
+  `src/llb/bench/agentic_policy_change_interaction_band.py`.
+- User-visible outcome: "no separating band at this depth" means no band exists rather than none
+  the solver can see.
+- Scope boundary: in scope -- per-fold offered spans, the multi-fold band arithmetic, and the test
+  that a known single-fold band is unchanged by the generalization. Out of scope -- changing any
+  shipped constant and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it).
 
