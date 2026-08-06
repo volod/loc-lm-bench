@@ -1541,9 +1541,27 @@ change: replaying it at another value measures a different cell, not the publish
 the same thing; that is the study's inherited setting, and whether its number holds at another value
 is exactly the counterfactual the audit answers.
 
+A CHANGE IS A SET OF FIELDS, not one field. A commit that re-pins `observation_cap_chars` and
+`compact_keep_recent` together moved both, so both sides of the comparison are whole policies:
+`PolicyChange` carries every moved field, the baseline arm replays the full baseline policy and the
+candidate arm the full candidate policy, and the audit answers with ONE verdict and one re-run scope.
+Auditing each field on its own would instead compare "baseline cap + candidate keep" against
+"candidate cap + candidate keep" -- neither of which is what the published cells were measured
+under, and neither of which is what the new build ships -- so its first-divergent step can name a
+model call that neither build ever sends. CI proves the difference at the byte level: the compound
+candidate arm's prompt digest is the digest of an episode replayed under the whole candidate policy,
+and it differs from the digest the single-field audit compares against.
+
+A compound change meets the study-axis rule per field. A cell that declares SOME of the moved fields
+keeps its own value for those and is audited on the rest (reported as `not_applicable_fields` on the
+row and counted as `n_partially_applicable`); only a cell that declares ALL of them reports
+`cell_pins_the_field`. So a `compact_share` + `summary_input_cap` change reads the eight trigger-
+collapse cells through the bound half of the change rather than dropping them, which the per-field
+audit could not do.
+
 Core locations are `src/llb/bench/agentic_policy_change_replay.py` (replay, digest, and the
-per-arm comparison), `src/llb/bench/agentic_policy_change_audit.py` (the auditable fields, the
-per-study cell geometry, and the verdict),
+per-arm comparison, which takes two whole settings maps), `src/llb/bench/agentic_policy_change_audit.py`
+(`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
 `src/llb/bench/agentic_policy_change_audit_report.py`,
 `src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
 `tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
@@ -1554,12 +1572,16 @@ for cell.
 ```bash
 make bench-agentic-policy-change-audit \
   POLICY_FIELD=observation_cap_chars POLICY_BASELINE=800 POLICY_CANDIDATE=1600
+# a compound change: space-separated lists, read field by field, audited as ONE change
+make bench-agentic-policy-change-audit \
+  POLICY_FIELD="observation_cap_chars compact_keep_recent" \
+  POLICY_BASELINE="800 1" POLICY_CANDIDATE="1600 2"
 ```
 
 Every auditable field against the 22 published cells of the three cap-fitting studies (2026-08-05,
 no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
 
-| field | change | invariant | invalidated | not applicable |
+| field(s) | change | invariant | invalidated | not applicable |
 | --- | --- | ---: | ---: | ---: |
 | `observation_cap_chars` | 800 -> 400 | 0 | **22** | 0 |
 | `observation_cap_chars` | 800 -> 1600 | 0 | **22** | 0 |
@@ -1568,6 +1590,8 @@ no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-chang
 | `compact_share` | 0.5 -> 0.45 | 2 | 12 | 8 |
 | `compact_keep_recent` | 1 -> 2 | 0 | **22** | 0 |
 | `summary_input_cap` | trigger -> window | **18** | 4 | 0 |
+| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 0 | **22** | 0 |
+| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 10 | 12 | 0 (8 partial) |
 
 Two readings an operator can act on. **`keep_last_n` is free**: the constant sweep EXPOSES keep=1 as
 cheaper on prompt tokens, and this says taking that up costs no published compact evidence at all,
@@ -1583,6 +1607,16 @@ inside the same step's interval and folds the identical transcript. At the low g
 drops into the previous step and everything downstream changes. A byte-level prompt comparison that
 knows nothing about fold steps rediscovers exactly where they are.
 
+The two compound rows are the mechanism's own check on itself. `compact_share` + `summary_input_cap`
+is the interesting one: read field by field it reports 12 invalidated plus 8 cells the share half
+cannot describe, and read as one change it reports the same 12 -- but now those 8 collapse cells are
+ANSWERED (they keep their own share and are audited on the bound), and the whole verdict is computed
+between the two policies that actually existed. On the evidence committed today the compound scope
+and the per-field union name the same cells at the same first-divergent steps, so what the change
+buys here is a guarantee rather than a correction; the case where the two answers separate needs a
+geometry in which two constants interact, which is
+`agent-policy-change-audit-compound-interaction-fixture` in the plan.
+
 ##### The audit runs in CI, on the act that creates the problem
 
 The audit above answers the question only when someone asks it, and the person editing a constant in
@@ -1592,6 +1626,14 @@ The audit above answers the question only when someone asks it, and the person e
 the live dataclass defaults on every run. A drifted field is audited on the spot and the failure
 message is the re-run scope -- every invalidated cell by id, depth, guard, changed arms, and the model
 call where the change first bites -- plus the doc sections that publish those numbers.
+
+Constants that drift TOGETHER are audited together, as the one change the commit made: the baseline
+arm replays the full pinned policy, the candidate arm the full shipped policy, and the failure
+message carries one scope under a `2 constants moved together and are audited as ONE change` heading
+that lists every move (`- observation_cap_chars: pinned 800 -> shipped 1600`) plus each constant's
+own `pinned because` note. Auditing each drifted constant separately would have compared "pinned cap
++ shipped keep" against "shipped cap + shipped keep": two configurations no published cell was
+measured under, reported as two re-run scopes for one act.
 
 The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
 evidence was measured under, so a change that invalidates nothing costs one fixture line to restate

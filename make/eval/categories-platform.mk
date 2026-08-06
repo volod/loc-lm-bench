@@ -240,14 +240,16 @@ bench-agentic-context-compact-crossover-restatement: ## Restate every published 
 		$(if $(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE),--surface-aggregate "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE)",) \
 		$(if $(filter 1 true yes,$(AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY)),--audit-only,)
 
-bench-agentic-policy-change-audit: ## Report which published agentic numbers an agent context-policy constant change invalidates, with no GPU (POLICY_FIELD= POLICY_BASELINE= POLICY_CANDIDATE=)
+bench-agentic-policy-change-audit: ## Report which published agentic numbers an agent context-policy constant change invalidates, with no GPU (POLICY_FIELD= POLICY_BASELINE= POLICY_CANDIDATE=; space-separated lists audit a compound change as ONE change)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	@test -n "$(POLICY_FIELD)" || { echo "ERROR: set POLICY_FIELD=<context-policy constant>"; exit 1; }
-	@test -n "$(POLICY_BASELINE)" || { echo "ERROR: set POLICY_BASELINE=<value the evidence was measured under>"; exit 1; }
-	@test -n "$(POLICY_CANDIDATE)" || { echo "ERROR: set POLICY_CANDIDATE=<value being considered>"; exit 1; }
+	@test -n "$(POLICY_FIELD)" || { echo "ERROR: set POLICY_FIELD=<context-policy constant(s)>"; exit 1; }
+	@test -n "$(POLICY_BASELINE)" || { echo "ERROR: set POLICY_BASELINE=<value(s) the evidence was measured under>"; exit 1; }
+	@test -n "$(POLICY_CANDIDATE)" || { echo "ERROR: set POLICY_CANDIDATE=<value(s) being considered>"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-policy-change-audit \
-		--field "$(POLICY_FIELD)" --baseline "$(POLICY_BASELINE)" --candidate "$(POLICY_CANDIDATE)"
+		$(foreach f,$(POLICY_FIELD),--field "$(f)") \
+		$(foreach v,$(POLICY_BASELINE),--baseline "$(v)") \
+		$(foreach v,$(POLICY_CANDIDATE),--candidate "$(v)")
 
 bench-chain-context: ## Context-policy benchmark: rank fresh/history/summary/roles for one model over a verified chain set (CHAIN_CONTEXT_MODEL= CHAIN_CONTEXT_BACKEND= CHAIN_CONTEXT_CHAINS= CHAIN_CONTEXT_CORPUS= CHAIN_CONTEXT_POLICIES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

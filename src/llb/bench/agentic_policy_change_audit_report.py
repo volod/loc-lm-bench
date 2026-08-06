@@ -8,6 +8,7 @@ from llb.bench.agentic_policy_change_audit import (
     VERDICT_CHANGED,
     VERDICT_INVARIANT,
     VERDICT_NOT_APPLICABLE,
+    PolicyChange,
 )
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -16,7 +17,7 @@ METHOD = "agentic-policy-change-audit"
 
 
 def policy_change_summary(
-    audits: dict[str, list[dict[str, object]]], *, field: str, baseline: object, candidate: object
+    audits: dict[str, list[dict[str, object]]], change: PolicyChange
 ) -> dict[str, object]:
     """Counts plus the named cells the change invalidates -- the list a re-run is scoped to."""
     rows = [row for study_rows in audits.values() for row in study_rows]
@@ -35,27 +36,58 @@ def policy_change_summary(
         if row["verdict"] == VERDICT_CHANGED
     ]
     return {
-        "policy_field": field,
-        "baseline": baseline,
-        "candidate": candidate,
+        "policy_fields": list(change.fields),
+        "baseline": dict(change.baseline),
+        "candidate": dict(change.candidate),
+        "change_label": change.label,
+        "compound": change.is_compound,
         "n_cells": len(rows),
         "n_prompt_invariant": sum(row["verdict"] == VERDICT_INVARIANT for row in rows),
-        # Cells the change cannot describe, because they pin the field as their own study axis.
+        # Cells the change cannot describe, because they pin every moved field as their own axis.
         "n_not_applicable": sum(row["verdict"] == VERDICT_NOT_APPLICABLE for row in rows),
+        # Cells that pin PART of a compound change: audited on the fields they do not declare.
+        "n_partially_applicable": sum(
+            bool(row["not_applicable_fields"]) and row["verdict"] != VERDICT_NOT_APPLICABLE
+            for row in rows
+        ),
         "n_invalidated": len(invalidated),
         "invalidated": invalidated,
         "studies_invalidated": sorted({cast(str, row["study_kind"]) for row in invalidated}),
     }
 
 
+def audited_axis(summary: dict[str, object]) -> str:
+    """How a message names the field(s) a skipped cell pins as its own study axis."""
+    fields = cast(list[str], summary["policy_fields"])
+    return fields[0] if len(fields) == 1 else "an audited constant"
+
+
+def partial_note(summary: dict[str, object], *, indent: str = "") -> list[str]:
+    """The one line a compound change owes cells that declare part of it themselves."""
+    partial = cast(int, summary["n_partially_applicable"])
+    if not partial:
+        return []
+    return [
+        f"{indent}{partial} cell(s) declare part of this change as their own study axis, so they",
+        f"{indent}keep their own value for that field and are audited on the rest of the change.",
+    ]
+
+
 def format_policy_change_table(
     audits: dict[str, list[dict[str, object]]], summary: dict[str, object]
 ) -> str:
     """Render every audited cell, then the scoped re-run list the change actually implies."""
-    lines = [
-        f"policy change: {summary['policy_field']} "
-        f"{summary['baseline']!r} -> {summary['candidate']!r}",
-    ]
+    lines = [f"policy change: {summary['change_label']}"]
+    if summary["compound"]:
+        lines.extend(
+            [
+                f"  {len(cast(list[str], summary['policy_fields']))} constants move together and "
+                "are audited as ONE change: the baseline arm replays the whole",
+                "  baseline policy and the candidate arm the whole candidate policy, so neither "
+                "arm is a configuration",
+                "  that never shipped",
+            ]
+        )
     header = (
         f"{'study':<34} {'cell':<26} {'depth':>5} {'share':>5} {'guard':>6} {'arms changed':<26} "
         f"{'step':>4} verdict"
@@ -71,7 +103,7 @@ def format_policy_change_table(
                 f"{cast(int, row['max_prompt_chars']):>6d} {changed:<26} "
                 f"{'-' if step is None else f'{cast(int, step):4d}'} {row['verdict']}"
             )
-    lines.extend(["", _verdict_line(summary)])
+    lines.extend(["", _verdict_line(summary), *partial_note(summary)])
     if summary["invalidated"]:
         lines.append("")
         lines.append("re-run scope (these published numbers, and no others)")
@@ -97,7 +129,7 @@ def _verdict_line(summary: dict[str, object]) -> str:
     invalidated = cast(int, summary["n_invalidated"])
     skipped = cast(int, summary["n_not_applicable"])
     tail = (
-        f" ({skipped} cell(s) pin {summary['policy_field']} as their own study axis, so the change "
+        f" ({skipped} cell(s) pin {audited_axis(summary)} as their own study axis, so the change "
         "does not describe them)"
         if skipped
         else ""
@@ -130,7 +162,7 @@ def persist_policy_change_audit(
     return persist_category_run(
         method=METHOD,
         data_dir=data_dir,
-        run_name=f"policy-change-{summary['policy_field']}",
+        run_name=f"policy-change-{'-'.join(cast(list[str], summary['policy_fields']))}",
         config={"category": METHOD, "summary": summary},
         metrics={
             "objective_score": 1.0 if not summary["n_invalidated"] else 0.0,

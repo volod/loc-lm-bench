@@ -14,9 +14,15 @@ Two properties make a replay a statement about a REAL run:
     served model" -- the direction the invariance claim needs.
   - both arms of a published cell are replayed (`observation_cap` and `compact`), because a cell's
     published number is a compact-minus-cap delta and a change that moves either arm moves it.
+
+A replay side is a WHOLE policy, never one overridden field. A commit that re-pins two constants
+moves them together, so auditing each on its own would compare "pinned cap + shipped keep" against
+"shipped cap + shipped keep" -- neither of which is the configuration the published cells were
+measured under, and neither of which is the configuration the new build ships.
 """
 
 import hashlib
+from collections.abc import Mapping
 from typing import Any, cast
 
 from llb.bench.agentic.context import POLICY_COMPACT, POLICY_OBSERVATION_CAP, ContextPolicy
@@ -71,11 +77,15 @@ def arm_comparison(
     policy_name: str,
     cell: dict[str, object],
     held: dict[str, object],
-    field: str,
-    baseline: Any,
-    candidate: Any,
+    baseline: Mapping[str, Any],
+    candidate: Mapping[str, Any],
 ) -> dict[str, object]:
-    """Replay one arm of one cell under both values and locate the first prompt that differs."""
+    """Replay one arm of one cell under both POLICIES and locate the first prompt that differs.
+
+    `baseline` and `candidate` are whole settings maps, so a change that moves several constants is
+    audited as the single change it is: one arm plays the configuration the published number was
+    measured under, the other plays the configuration the new build ships.
+    """
     tasks = [
         AgenticTask.from_record(record)
         for record in build_memory_dependent_tasks(
@@ -86,40 +96,35 @@ def arm_comparison(
     ]
     max_steps = int(cast(int, cell["depth"])) + int(cast(int, held["max_steps_margin"]))
     guard = int(cast(int, cell["max_prompt_chars"]))
-    replays = {
-        value: [
+
+    def episodes(settings: Mapping[str, Any]) -> list[list[str]]:
+        return [
             replay_prompts(
-                _policy(policy_name, cell, held, field, value),
+                _policy(policy_name, cell, held, settings),
                 task=task,
                 max_prompt_chars=guard,
                 max_steps=max_steps,
             )
             for task in tasks
         ]
-        for value in (baseline, candidate)
-    }
-    digests = {
-        value: [prompt_sequence_digest(prompts) for prompts in episodes]
-        for value, episodes in replays.items()
-    }
+
+    before, after = episodes(baseline), episodes(candidate)
     differing = [
         index
-        for index, (left, right) in enumerate(zip(digests[baseline], digests[candidate]))
-        if left != right
+        for index, (left, right) in enumerate(zip(before, after))
+        if prompt_sequence_digest(left) != prompt_sequence_digest(right)
     ]
     return {
         "policy": policy_name,
         "identical": not differing,
         "n_tasks": len(tasks),
         "n_differing_tasks": len(differing),
-        "first_divergent_step": _first_divergent_step(
-            replays[baseline], replays[candidate], differing
-        ),
+        "first_divergent_step": _first_divergent_step(before, after, differing),
         "baseline_digest": prompt_sequence_digest(
-            [prompt for episode in replays[baseline] for prompt in episode]
+            [prompt for episode in before for prompt in episode]
         ),
         "candidate_digest": prompt_sequence_digest(
-            [prompt for episode in replays[candidate] for prompt in episode]
+            [prompt for episode in after for prompt in episode]
         ),
     }
 
@@ -141,13 +146,23 @@ def _first_divergent_step(
 
 
 def _policy(
-    policy_name: str, cell: dict[str, object], held: dict[str, object], field: str, value: Any
+    policy_name: str,
+    cell: dict[str, object],
+    held: dict[str, object],
+    settings: Mapping[str, Any],
 ) -> ContextPolicy:
-    """The cell's own policy with the audited field overridden -- the override always wins."""
-    settings: dict[str, Any] = {
-        "observation_cap_chars": int(cast(int, held["observation_cap_chars"])),
-        "observation_head_share": float(cast(float, held["observation_head_share"])),
-        "compact_share": float(cast(float, cell["compact_share"])),
-    }
-    settings[field] = value
-    return ContextPolicy(name=policy_name, **settings)
+    """The cell's own policy with every audited field overridden -- the overrides always win.
+
+    Fields the change does not touch keep the cell's declared geometry where a design states it, and
+    the shipped dataclass default otherwise -- which is the same value on both sides of the audit,
+    so it can never be the thing that moves a prompt.
+    """
+    return ContextPolicy(
+        name=policy_name,
+        **{
+            "observation_cap_chars": int(cast(int, held["observation_cap_chars"])),
+            "observation_head_share": float(cast(float, held["observation_head_share"])),
+            "compact_share": float(cast(float, cell["compact_share"])),
+            **settings,
+        },
+    )

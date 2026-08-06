@@ -17,6 +17,12 @@ the evidence was measured under, and a change that invalidates nothing costs one
 restate. What the gate refuses is the silent case -- a constant moving while the docs keep quoting
 numbers measured under its old value.
 
+Constants that drift TOGETHER are audited together, as the one change the commit actually made: the
+baseline arm replays the full pinned policy and the candidate arm the full shipped policy. Auditing
+each drifted field on its own would replay "pinned cap + shipped keep" against "shipped cap + shipped
+keep" -- two configurations the published cells were never measured under, which can name a first
+divergent step neither build ever reaches.
+
 The fixture also declares, per field, how it relates to the committed study designs (`agree`,
 `restated`, `unstated`), and the gate verifies that claim against each design's `held_fixed`. A pin
 that quietly disagrees with the studies it claims to match would defeat the whole mechanism.
@@ -33,6 +39,7 @@ from llb.bench.agentic.context import ContextPolicy
 from llb.bench.agentic_policy_change_audit import (
     AUDITABLE_FIELDS,
     POLICY_FIELD_TYPES,
+    PolicyChange,
     audit_policy_change,
 )
 from llb.bench.agentic_policy_change_audit_report import policy_change_summary
@@ -72,17 +79,33 @@ class PolicyPins:
 
 
 @dataclass(frozen=True, slots=True)
-class PinDrift:
-    """A shipped constant that no longer matches its pin, plus what the audit says it costs."""
+class PinMove:
+    """One shipped constant that no longer matches its pin."""
 
     field: str
     pinned: Any
     shipped: Any
+
+
+@dataclass(frozen=True, slots=True)
+class PinDrift:
+    """Everything that moved in this build, audited as ONE change, plus what it costs.
+
+    Several constants moving in one commit is one change, not several: the published cells were
+    measured under ALL the pinned values and the new build ships ALL the shipped ones, so those two
+    whole policies are the only pair a re-run scope can honestly be computed between.
+    """
+
+    moves: tuple[PinMove, ...]
     summary: dict[str, object]
 
     @property
     def n_invalidated(self) -> int:
         return cast(int, self.summary["n_invalidated"])
+
+    @property
+    def is_compound(self) -> bool:
+        return len(self.moves) > 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,16 +120,20 @@ class PinClaim:
 
 @dataclass(frozen=True, slots=True)
 class PinCheck:
-    """The gate's whole verdict: which constants drifted, and which pin claims are stale."""
+    """The gate's whole verdict: what drifted (as one change), and which pin claims are stale."""
 
     pins: PolicyPins
     shipped: dict[str, Any]
-    drifted: tuple[PinDrift, ...]
+    drift: PinDrift | None
     stale_claims: tuple[PinClaim, ...]
 
     @property
     def ok(self) -> bool:
-        return not self.drifted and not self.stale_claims
+        return self.drift is None and not self.stale_claims
+
+    @property
+    def moves(self) -> tuple[PinMove, ...]:
+        return self.drift.moves if self.drift else ()
 
 
 def load_policy_pins(path: Path | str) -> PolicyPins:
@@ -152,31 +179,28 @@ def check_policy_pins(
     *,
     shipped: dict[str, Any] | None = None,
 ) -> PinCheck:
-    """Compare the pins with the shipped constants and audit whatever moved."""
+    """Compare the pins with the shipped constants and audit whatever moved, as one change."""
     values = shipped_policy_values() if shipped is None else shipped
-    drifted = tuple(
-        _drift(pin, values[field], designs)
+    moves = tuple(
+        PinMove(field=field, pinned=pin.value, shipped=values[field])
         for field, pin in pins.pins.items()
         if values[field] != pin.value
     )
     return PinCheck(
         pins=pins,
         shipped=values,
-        drifted=drifted,
+        drift=_drift(moves, designs) if moves else None,
         stale_claims=tuple(filter(None, (_claim(pin, designs) for pin in pins.pins.values()))),
     )
 
 
-def _drift(pin: PolicyPin, shipped: Any, designs: dict[str, dict[str, object]]) -> PinDrift:
-    audits = audit_policy_change(designs, field=pin.field, baseline=pin.value, candidate=shipped)
-    return PinDrift(
-        field=pin.field,
-        pinned=pin.value,
-        shipped=shipped,
-        summary=policy_change_summary(
-            audits, field=pin.field, baseline=pin.value, candidate=shipped
-        ),
+def _drift(moves: tuple[PinMove, ...], designs: dict[str, dict[str, object]]) -> PinDrift:
+    change = PolicyChange(
+        baseline={move.field: move.pinned for move in moves},
+        candidate={move.field: move.shipped for move in moves},
     )
+    audits = audit_policy_change(designs, change)
+    return PinDrift(moves=moves, summary=policy_change_summary(audits, change))
 
 
 def _claim(pin: PolicyPin, designs: dict[str, dict[str, object]]) -> PinClaim | None:

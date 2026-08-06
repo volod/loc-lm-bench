@@ -35,10 +35,10 @@ def _pins() -> PolicyPins:
     return load_policy_pins(PINS)
 
 
-def _only(field: str) -> PolicyPins:
-    """The fixture narrowed to one pin, so a synthetic-drift test audits one field."""
+def _only(*fields: str) -> PolicyPins:
+    """The fixture narrowed to the named pins, so a synthetic-drift test audits only those."""
     pins = _pins()
-    return replace(pins, pins={field: pins.pins[field]})
+    return replace(pins, pins={field: pins.pins[field] for field in fields})
 
 
 def _surface() -> dict[str, dict[str, object]]:
@@ -108,9 +108,10 @@ def test_a_drift_that_retires_published_cells_names_every_one_of_them():
         shipped=_drifted("observation_cap_chars", 1600),
     )
 
-    assert not check.ok and len(check.drifted) == 1
-    drift = check.drifted[0]
-    assert (drift.pinned, drift.shipped) == (800, 1600)
+    assert not check.ok and check.drift is not None and len(check.drift.moves) == 1
+    drift = check.drift
+    move = drift.moves[0]
+    assert (move.field, move.pinned, move.shipped) == ("observation_cap_chars", 800, 1600)
     assert drift.n_invalidated == drift.summary["n_cells"] > 0
     report = format_pin_gate_report(check)
     assert "observation_cap_chars: pinned 800 -> shipped 1600" in report
@@ -124,7 +125,7 @@ def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free
     """`keep_last_n` steers a policy no cap-fitting cell runs -- the cheap half of the verdict."""
     check = check_policy_pins(_only("keep_last_n"), _surface(), shipped=_drifted("keep_last_n", 1))
 
-    assert not check.ok and check.drifted[0].n_invalidated == 0
+    assert not check.ok and check.drift is not None and check.drift.n_invalidated == 0
     report = format_pin_gate_report(check)
     assert "no published cell is invalidated" in report and "restating the pin is free" in report
     assert "re-measure those cells" not in report
@@ -136,11 +137,52 @@ def test_a_cell_that_pins_the_drifted_field_itself_is_counted_out_of_the_scope()
         _only("compact_share"), load_audited_designs(), shipped=_drifted("compact_share", 0.45)
     )
 
-    drift = check.drifted[0]
+    drift = check.drift
+    assert drift is not None
     assert drift.summary["n_not_applicable"] == 8 and drift.n_invalidated == 12
     report = format_pin_gate_report(check)
     assert "12 of 14 applicable published cells are invalidated" in report
     assert "8 further cell(s) pin compact_share as their own study axis" in report
+
+
+def test_two_constants_that_drift_together_are_audited_as_one_change():
+    """A commit that re-pins two constants moved BOTH, so one scope is computed between the two
+    policies that really existed -- not two scopes against configurations that never shipped."""
+    shipped = {**_drifted("observation_cap_chars", 1600), "compact_keep_recent": 2}
+    check = check_policy_pins(
+        _only("observation_cap_chars", "compact_keep_recent"), _surface(), shipped=shipped
+    )
+
+    drift = check.drift
+    assert drift is not None and drift.is_compound and len(drift.moves) == 2
+    assert drift.summary["baseline"] == {"observation_cap_chars": 800, "compact_keep_recent": 1}
+    assert drift.summary["candidate"] == {"observation_cap_chars": 1600, "compact_keep_recent": 2}
+    assert drift.n_invalidated == drift.summary["n_cells"] > 0
+
+    report = format_pin_gate_report(check)
+    assert "2 of 2 shipped context-policy constants no longer match" in report
+    assert "2 constants moved together and are audited as ONE change" in report
+    assert "observation_cap_chars: pinned 800 -> shipped 1600" in report
+    assert "compact_keep_recent: pinned 1 -> shipped 2" in report
+    # One re-run scope, and one "pinned because" per constant that moved.
+    assert report.count("re-measure those cells") == 1
+    assert "pinned because (observation_cap_chars):" in report
+    assert "pinned because (compact_keep_recent):" in report
+
+
+def test_a_compound_drift_a_cell_partly_owns_is_audited_on_the_rest_of_the_change():
+    """The collapse study owns `compact_share`; the cap half of the change still describes it."""
+    shipped = {**_drifted("compact_share", 0.45), "observation_cap_chars": 1600}
+    check = check_policy_pins(
+        _only("compact_share", "observation_cap_chars"), load_audited_designs(), shipped=shipped
+    )
+
+    drift = check.drift
+    assert drift is not None
+    assert drift.summary["n_not_applicable"] == 0
+    assert drift.summary["n_partially_applicable"] == 8 and drift.n_invalidated == 22
+    report = format_pin_gate_report(check)
+    assert "8 cell(s) declare part of this change as their own study axis" in report
 
 
 def test_a_pin_matching_its_shipped_value_costs_no_replay(monkeypatch: pytest.MonkeyPatch):
@@ -150,7 +192,7 @@ def test_a_pin_matching_its_shipped_value_costs_no_replay(monkeypatch: pytest.Mo
         lambda *args, **kwargs: pytest.fail("an undrifted pin must not replay any cell"),
     )
     check = check_policy_pins(_pins(), load_audited_designs())
-    assert check.ok and check.drifted == ()
+    assert check.ok and check.drift is None
 
 
 # --- the pin's own claim about the committed designs -------------------------------------------

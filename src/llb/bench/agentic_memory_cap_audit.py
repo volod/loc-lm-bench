@@ -17,6 +17,7 @@ from llb.bench.agentic_memory_boundary_probe import compact_fold_input_probe
 from llb.bench.agentic_policy_change_audit import (
     VERDICT_CHANGED,
     VERDICT_INVARIANT as PROMPT_INVARIANT,
+    PolicyChange,
     audit_cell_prompts,
     declared_geometry,
 )
@@ -36,9 +37,9 @@ def audit_design(design: dict[str, object], *, study_kind: str) -> list[dict[str
             audit_cell_prompts(
                 cell,
                 held,
-                SUMMARY_INPUT_CAP_FIELD,
-                SUMMARY_INPUT_CAP_TRIGGER,
-                SUMMARY_INPUT_CAP_WINDOW,
+                PolicyChange.of(
+                    SUMMARY_INPUT_CAP_FIELD, SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
+                ),
             ),
             held,
         )

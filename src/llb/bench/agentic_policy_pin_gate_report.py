@@ -9,12 +9,16 @@ reporter, so the operator reads the same lines whether they asked the question o
 
 from typing import cast
 
-from llb.bench.agentic_policy_change_audit_report import format_invalidated_cells
-from llb.bench.agentic_policy_pin_gate import PINS_PATH, PinCheck, PinClaim, PinDrift, PolicyPin
+from llb.bench.agentic_policy_change_audit_report import (
+    audited_axis,
+    format_invalidated_cells,
+    partial_note,
+)
+from llb.bench.agentic_policy_pin_gate import PINS_PATH, PinCheck, PinClaim, PinDrift, PolicyPins
 
 
 def format_pin_gate_report(check: PinCheck) -> str:
-    """The failure message: which constant moved, which published cells it retires, what to do."""
+    """The failure message: which constants moved, which published cells they retire, what to do."""
     n_pins = len(check.pins.pins)
     if check.ok:
         return (
@@ -22,49 +26,72 @@ def format_pin_gate_report(check: PinCheck) -> str:
             f"published agentic evidence was measured under ({PINS_PATH})"
         )
     lines = [
-        f"verdict: {len(check.drifted)} of {n_pins} shipped context-policy constants no "
+        f"verdict: {len(check.moves)} of {n_pins} shipped context-policy constants no "
         "longer match the value the published agentic evidence was measured under",
         f"pins: {PINS_PATH}",
         f"published numbers: {', '.join(check.pins.published_in)}",
     ]
-    for drift in check.drifted:
-        lines.extend(["", *_drift_lines(drift, check.pins.pins[drift.field])])
+    if check.drift is not None:
+        lines.extend(["", *_drift_lines(check.drift, check.pins)])
     for claim in check.stale_claims:
         lines.extend(["", *_claim_lines(claim)])
     return "\n".join(lines)
 
 
-def _drift_lines(drift: PinDrift, pin: PolicyPin) -> list[str]:
+def _drift_lines(drift: PinDrift, pins: PolicyPins) -> list[str]:
     summary = drift.summary
     skipped = cast(int, summary["n_not_applicable"])
     applicable = cast(int, summary["n_cells"]) - skipped
-    head = f"- {drift.field}: pinned {drift.pinned!r} -> shipped {drift.shipped!r}"
     tail = (
         [
-            f"  {skipped} further cell(s) pin {drift.field} as their own study axis, so the change "
-            "does not describe them."
+            f"  {skipped} further cell(s) pin {audited_axis(summary)} as their own study axis, so "
+            "the change does not describe them."
         ]
         if skipped
         else []
     )
+    tail.extend(partial_note(summary, indent="  "))
+    label = "the shipped values send" if drift.is_compound else "the shipped value sends"
+    notes = [
+        f"  pinned because{f' ({move.field})' if drift.is_compound else ''}: "
+        f"{pins.pins[move.field].note}"
+        for move in drift.moves
+    ]
     if not drift.n_invalidated:
         return [
-            head,
-            f"  no published cell is invalidated ({applicable} applicable): the shipped value sends "
+            *_head_lines(drift),
+            f"  no published cell is invalidated ({applicable} applicable): {label} "
             "bit-identical prompts, so restating the pin is free.",
             *tail,
-            f"  pinned because: {pin.note}",
+            *notes,
         ]
     studies = cast(list[str], summary["studies_invalidated"])
     return [
-        head,
+        *_head_lines(drift),
         f"  {drift.n_invalidated} of {applicable} applicable published cells are invalidated across "
         f"{len(studies)} study/studies ({', '.join(studies)}):",
         *format_invalidated_cells(summary, indent="  "),
         "  re-measure those cells and restate their published numbers, then move the pin -- or "
         "revert the constant.",
         *tail,
-        f"  pinned because: {pin.note}",
+        *notes,
+    ]
+
+
+def _head_lines(drift: PinDrift) -> list[str]:
+    """Name what moved. Several constants moving in one commit is ONE change, and says so."""
+    moved = [
+        f"- {move.field}: pinned {move.pinned!r} -> shipped {move.shipped!r}"
+        for move in drift.moves
+    ]
+    if not drift.is_compound:
+        return moved
+    return [
+        f"- {len(drift.moves)} constants moved together and are audited as ONE change:",
+        *(f"  {line}" for line in moved),
+        "  the baseline arm replays the full pinned policy and the candidate arm the full shipped "
+        "policy, so the scope below is what THIS commit retires -- not one scope per constant "
+        "against a configuration that never shipped.",
     ]
 
 

@@ -20,10 +20,16 @@ Two properties make the replay legitimate as a statement about a REAL run:
   - both arms of a published cell are replayed (`observation_cap` and `compact`), because a cell's
     published number is a compact-minus-cap delta and a change that moves either arm moves it.
 
+A change is a set of FIELDS, not one field. A commit that re-pins two constants moves them together,
+so auditing each on its own would replay two configurations that never shipped and report two re-run
+scopes for one act; `PolicyChange` carries every moved field and the audit answers with one verdict.
+
 This module owns the geometry extraction shared with the summarize-bound audit
 (`agentic_memory_cap_audit`), which is one USE of this mechanism rather than a second one.
 """
 
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -73,19 +79,78 @@ def coerce_policy_value(field: str, value: str) -> Any:
     return POLICY_FIELD_TYPES[field](value)
 
 
-def audit_policy_change(
-    designs: dict[str, dict[str, object]], *, field: str, baseline: Any, candidate: Any
-) -> dict[str, list[dict[str, object]]]:
-    """Replay every published cell of every design under both values and compare its prompts."""
-    if field not in POLICY_FIELD_TYPES:
-        raise ValueError(
-            f"{field!r} is not an auditable policy field; choose from {AUDITABLE_FIELDS}"
+@dataclass(frozen=True, slots=True)
+class PolicyChange:
+    """The whole change being audited: every moved field, and the two policies it moves between.
+
+    One change, not one per field. A commit that re-pins `observation_cap_chars` and
+    `compact_keep_recent` together has ONE baseline (what the published cells were measured under)
+    and ONE candidate (what the new build ships); replaying either field on its own would put a
+    configuration that never existed on both sides of the comparison.
+    """
+
+    baseline: Mapping[str, Any]
+    candidate: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not self.baseline:
+            raise ValueError("a policy change must move at least one auditable field")
+        if set(self.baseline) != set(self.candidate):
+            raise ValueError(
+                "a policy change must state a baseline and a candidate for the same fields, got "
+                f"{sorted(self.baseline)} and {sorted(self.candidate)}"
+            )
+        # Over the stated keys, not over `fields`, which only knows the auditable ones.
+        for field in sorted(self.baseline):
+            if field not in POLICY_FIELD_TYPES:
+                raise ValueError(
+                    f"{field!r} is not an auditable policy field; choose from {AUDITABLE_FIELDS}"
+                )
+            if self.baseline[field] == self.candidate[field]:
+                raise ValueError(
+                    f"auditing {field!r} needs two different values, "
+                    f"got {self.baseline[field]!r} twice"
+                )
+
+    @classmethod
+    def of(cls, field: str, baseline: Any, candidate: Any) -> "PolicyChange":
+        """The one-field change -- the common case, and what the CLI builds per `--field`."""
+        return cls(baseline={field: baseline}, candidate={field: candidate})
+
+    @property
+    def fields(self) -> tuple[str, ...]:
+        """Every moved field, in the order the shipped dataclass declares them."""
+        return tuple(field for field in POLICY_FIELD_TYPES if field in self.baseline)
+
+    @property
+    def is_compound(self) -> bool:
+        return len(self.baseline) > 1
+
+    @property
+    def label(self) -> str:
+        return ", ".join(
+            f"{field} {self.baseline[field]!r} -> {self.candidate[field]!r}"
+            for field in self.fields
         )
-    if baseline == candidate:
-        raise ValueError(f"auditing {field!r} needs two different values, got {baseline!r} twice")
+
+    def without(self, fields: Collection[str]) -> "PolicyChange | None":
+        """The same change minus the named fields, or None when nothing is left to audit."""
+        kept = [field for field in self.fields if field not in set(fields)]
+        if not kept:
+            return None
+        return PolicyChange(
+            baseline={field: self.baseline[field] for field in kept},
+            candidate={field: self.candidate[field] for field in kept},
+        )
+
+
+def audit_policy_change(
+    designs: dict[str, dict[str, object]], change: PolicyChange
+) -> dict[str, list[dict[str, object]]]:
+    """Replay every published cell of every design under both policies and compare its prompts."""
     return {
         kind: [
-            audit_cell_prompts(cell, _held_fixed(design, kind), field, baseline, candidate)
+            audit_cell_prompts(cell, _held_fixed(design, kind), change)
             for cell in declared_geometry(design, kind)
         ]
         for kind, design in designs.items()
@@ -95,32 +160,38 @@ def audit_policy_change(
 def audit_cell_prompts(
     cell: dict[str, object],
     held: dict[str, object],
-    field: str,
-    baseline: Any,
-    candidate: Any,
+    change: PolicyChange,
 ) -> dict[str, object]:
-    """One cell's verdict: do both arms send the identical prompts under both values?"""
-    if field in cast(list[str], cell.get("pinned_fields", [])):
+    """One cell's verdict: do both arms send the identical prompts under both policies?
+
+    A cell that declares one of the moved fields itself keeps its own value for that field and is
+    audited on the rest of the change; a cell that declares ALL of them is not described by the
+    change at all.
+    """
+    pinned = [field for field in change.fields if field in cast(list[str], cell["pinned_fields"])]
+    described = change.without(pinned)
+    row = {
+        **cell,
+        "policy_fields": list(change.fields),
+        "baseline": dict(change.baseline),
+        "candidate": dict(change.candidate),
+        "not_applicable_fields": pinned,
+    }
+    if described is None:
         return {
-            **cell,
-            "policy_field": field,
-            "baseline": baseline,
-            "candidate": candidate,
+            **row,
             "arms": {},
             "changed_arms": [],
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
         }
     arms = {
-        name: arm_comparison(name, cell, held, field, baseline, candidate)
+        name: arm_comparison(name, cell, held, described.baseline, described.candidate)
         for name in AUDITED_POLICIES
     }
     changed = sorted(name for name, arm in arms.items() if not arm["identical"])
     return {
-        **cell,
-        "policy_field": field,
-        "baseline": baseline,
-        "candidate": candidate,
+        **row,
         "arms": arms,
         "changed_arms": changed,
         "first_divergent_step": min(

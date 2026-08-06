@@ -7,22 +7,27 @@ from llb.cli.app import app
 
 @app.command("bench-agentic-policy-change-audit")
 def bench_agentic_policy_change_audit_cmd(
-    field: str = typer.Option(
+    field: list[str] = typer.Option(
         ...,
         "--field",
-        help="the ContextPolicy constant being changed (e.g. observation_cap_chars)",
+        help=(
+            "the ContextPolicy constant being changed (e.g. observation_cap_chars); repeat it, "
+            "with --baseline/--candidate, to audit a compound change as ONE change"
+        ),
     ),
-    baseline: str = typer.Option(
-        ..., "--baseline", help="the value the published evidence was measured under"
+    baseline: list[str] = typer.Option(
+        ..., "--baseline", help="the value the published evidence was measured under, per --field"
     ),
-    candidate: str = typer.Option(..., "--candidate", help="the value being considered"),
+    candidate: list[str] = typer.Option(
+        ..., "--candidate", help="the value being considered, per --field"
+    ),
     persist: bool = typer.Option(
         True, "--persist/--no-persist", help="write the audit under DATA_DIR"
     ),
 ) -> None:
     """Report which published agentic numbers a policy-constant change invalidates. No GPU."""
     from llb.bench.agentic_policy_change_audit import (
-        AUDITABLE_FIELDS,
+        PolicyChange,
         audit_policy_change,
         coerce_policy_value,
         load_audited_designs,
@@ -34,16 +39,26 @@ def bench_agentic_policy_change_audit_cmd(
     )
     from llb.cli.helpers import cli_error, load_config
 
-    if field not in AUDITABLE_FIELDS:
-        cli_error(f"{field!r} is not an auditable policy field; choose from {AUDITABLE_FIELDS}")
-    try:
-        values = (coerce_policy_value(field, baseline), coerce_policy_value(field, candidate))
-        audits = audit_policy_change(
-            load_audited_designs(), field=field, baseline=values[0], candidate=values[1]
+    if not len(field) == len(baseline) == len(candidate):
+        cli_error(
+            "--field, --baseline and --candidate must be repeated the same number of times, got "
+            f"{len(field)}/{len(baseline)}/{len(candidate)}"
         )
+    if len(set(field)) != len(field):
+        cli_error(f"each field can move only once in one change, got {field}")
+    try:
+        change = PolicyChange(
+            baseline={
+                name: coerce_policy_value(name, value) for name, value in zip(field, baseline)
+            },
+            candidate={
+                name: coerce_policy_value(name, value) for name, value in zip(field, candidate)
+            },
+        )
+        audits = audit_policy_change(load_audited_designs(), change)
     except ValueError as exc:
         cli_error(str(exc))
-    summary = policy_change_summary(audits, field=field, baseline=values[0], candidate=values[1])
+    summary = policy_change_summary(audits, change)
     table = format_policy_change_table(audits, summary)
     typer.echo(table)
     if persist:
