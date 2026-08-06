@@ -122,7 +122,7 @@ def test_the_audit_reads_cell_geometry_out_of_every_committed_study_shape():
 
 
 def test_an_unknown_study_kind_has_no_known_cell_geometry():
-    with pytest.raises(ValueError, match="not an audited study kind"):
+    with pytest.raises(ValueError, match="not a readable geometry kind"):
         declared_geometry(load_audited_design(SURFACE_DESIGN), "compact_something_else")
 
 

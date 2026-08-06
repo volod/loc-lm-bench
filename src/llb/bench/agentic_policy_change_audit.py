@@ -40,6 +40,12 @@ KIND_SURFACE = "compact_memory_boundary_surface"
 KIND_COLLAPSE = "compact_trigger_guard_collapse"
 KIND_FOLD_STEP = "compact_fold_step_crossover"
 AUDITED_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+# A FIXTURE kind, not a published study: the interaction geometry that separates the compound
+# verdict from the per-field one (`agentic_policy_change_interaction`). It states its cells flat at
+# the design root and publishes no number, so it is readable as geometry but is deliberately absent
+# from `AUDITED_DESIGN_PATHS` -- nothing it declares is evidence a constant change can invalidate.
+KIND_INTERACTION = "policy_change_interaction"
+GEOMETRY_KINDS = (*AUDITED_KINDS, KIND_INTERACTION)
 
 # The committed studies whose published numbers an agent policy change can invalidate. One registry,
 # because the CLI audit and the CI pin gate must never walk different evidence.
@@ -219,6 +225,8 @@ def declared_geometry(design: dict[str, object], study_kind: str) -> list[dict[s
     groups: list[tuple[int | None, dict[str, object]]]
     if study_kind == KIND_SURFACE:
         groups = [(None, cast(dict[str, object], design["surface"]))]
+    elif study_kind == KIND_INTERACTION:
+        groups = [(None, design)]
     elif study_kind == KIND_COLLAPSE:
         groups = [
             (int(cast(int, family["depth"])), family)
@@ -268,8 +276,8 @@ def _share(cell: dict[str, object], default: object) -> float:
 
 
 def _held_fixed(design: dict[str, object], study_kind: str) -> dict[str, object]:
-    if study_kind not in AUDITED_KINDS:
+    if study_kind not in GEOMETRY_KINDS:
         raise ValueError(
-            f"{study_kind!r} is not an audited study kind; choose from {AUDITED_KINDS}"
+            f"{study_kind!r} is not a readable geometry kind; choose from {GEOMETRY_KINDS}"
         )
     return cast(dict[str, object], design["held_fixed"])

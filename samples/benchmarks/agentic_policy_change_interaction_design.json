@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-policy-change-compound-interaction",
+  "study_kind": "policy_change_interaction",
+  "publishes_numbers": false,
+  "purpose": "Hold the compound policy-change verdict apart from the per-field union on a geometry where the two moved constants interact, so collapsing the audit back to a field-at-a-time loop cannot stay green.",
+  "interaction": {
+    "pair": "compact_share x summary_input_cap",
+    "why_they_interact": "under the trigger bound the summarize call's input cap IS compact_share * max_prompt_chars, so moving the share moves what the bound means; under the window bound the cap does not depend on the share at all",
+    "seam": "summary_input_cap_chars in src/llb/bench/agentic/episode.py",
+    "separating_band": "a guard whose fold step is the same at both shares AND whose offered transcript sits between the two shares' triggers: the baseline share elides nothing and the candidate share elides"
+  },
+  "change": {
+    "baseline": {
+      "compact_share": 0.5,
+      "summary_input_cap": "window"
+    },
+    "candidate": {
+      "compact_share": 0.48,
+      "summary_input_cap": "trigger"
+    }
+  },
+  "held_fixed": {
+    "n_tasks": 2,
+    "pad_chars": 1200,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "compact_share": 0.5
+  },
+  "cells": [
+    {
+      "cell_id": "interaction-d10-g21500",
+      "depth": 10,
+      "max_prompt_chars": 21500,
+      "why": "Both shares fold at step 10, so the share alone changes nothing under the window bound; at the baseline share the trigger still clears the offered transcript, so the bound alone changes nothing either. Only together does the trigger fall below it, elide the summarize input, and move every prompt from the fold on.",
+      "predeclared": {
+        "fold_step": 10,
+        "summary_input_chars": 10494,
+        "trigger_chars_at_baseline_share": 10750,
+        "trigger_chars_at_candidate_share": 10320,
+        "elided_chars_at_baseline_share": 0,
+        "elided_chars_at_candidate_share": 174
+      },
+      "expected": {
+        "separates": true,
+        "separates_on": ["verdict", "first_divergent_step"],
+        "compound_verdict": "prompts_change",
+        "compound_first_divergent_step": 10,
+        "per_field_union_verdict": "prompt_invariant",
+        "per_field_union_first_divergent_step": null,
+        "per_field_verdicts": {
+          "compact_share": "prompt_invariant",
+          "summary_input_cap": "prompt_invariant"
+        }
+      }
+    },
+    {
+      "cell_id": "interaction-d10-g23700",
+      "depth": 10,
+      "max_prompt_chars": 23700,
+      "why": "The same separation one fold step later, so the geometry is a band and not one lucky guard: step 11 offers a larger transcript and the band that brackets it sits at a larger guard.",
+      "predeclared": {
+        "fold_step": 11,
+        "summary_input_chars": 11802,
+        "trigger_chars_at_baseline_share": 11850,
+        "trigger_chars_at_candidate_share": 11376,
+        "elided_chars_at_baseline_share": 0,
+        "elided_chars_at_candidate_share": 426
+      },
+      "expected": {
+        "separates": true,
+        "separates_on": ["verdict", "first_divergent_step"],
+        "compound_verdict": "prompts_change",
+        "compound_first_divergent_step": 11,
+        "per_field_union_verdict": "prompt_invariant",
+        "per_field_union_first_divergent_step": null,
+        "per_field_verdicts": {
+          "compact_share": "prompt_invariant",
+          "summary_input_cap": "prompt_invariant"
+        }
+      }
+    },
+    {
+      "cell_id": "control-d10-g21900",
+      "depth": 10,
+      "max_prompt_chars": 21900,
+      "why": "Just above the band at fold step 10: the candidate trigger now clears the offered transcript too, so nothing is elided under either policy and both readings agree on invariant. What separates is the geometry, not the reading.",
+      "predeclared": {
+        "fold_step": 10,
+        "summary_input_chars": 10494,
+        "trigger_chars_at_baseline_share": 10950,
+        "trigger_chars_at_candidate_share": 10512,
+        "elided_chars_at_baseline_share": 0,
+        "elided_chars_at_candidate_share": 0
+      },
+      "expected": {
+        "separates": false,
+        "separates_on": [],
+        "compound_verdict": "prompt_invariant",
+        "compound_first_divergent_step": null,
+        "per_field_union_verdict": "prompt_invariant",
+        "per_field_union_first_divergent_step": null,
+        "per_field_verdicts": {
+          "compact_share": "prompt_invariant",
+          "summary_input_cap": "prompt_invariant"
+        }
+      }
+    },
+    {
+      "cell_id": "control-d10-g23000",
+      "depth": 10,
+      "max_prompt_chars": 23000,
+      "why": "Below the band at fold step 11: the baseline trigger already sits under the offered transcript, so the bound audited alone reports the change and the union agrees with the compound reading. A fixture that disagreed everywhere would be testing the change, not the interaction.",
+      "predeclared": {
+        "fold_step": 11,
+        "summary_input_chars": 11802,
+        "trigger_chars_at_baseline_share": 11500,
+        "trigger_chars_at_candidate_share": 11040,
+        "elided_chars_at_baseline_share": 302,
+        "elided_chars_at_candidate_share": 762
+      },
+      "expected": {
+        "separates": false,
+        "separates_on": [],
+        "compound_verdict": "prompts_change",
+        "compound_first_divergent_step": 11,
+        "per_field_union_verdict": "prompts_change",
+        "per_field_union_first_divergent_step": 11,
+        "per_field_verdicts": {
+          "compact_share": "prompt_invariant",
+          "summary_input_cap": "prompts_change"
+        }
+      }
+    }
+  ],
+  "interpretation": {
+    "separates": "the compound replay states something the per-field union cannot state, and CI holds it there",
+    "agrees_everywhere": "the audit has collapsed to a per-field reading (or this geometry stopped interacting) -- the fixture is red and the compound guarantee is untested",
+    "changes_shipped_default": false
+  }
+}

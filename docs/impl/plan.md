@@ -43,33 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-audit-compound-interaction-fixture (optional)
+### agent-policy-change-interaction-band-is-self-locating (optional)
 
-The compound audit replays two whole policies, so its answer is right by construction -- but on the
-22 committed cells no constructible compound change SEPARATES it from the per-field reading: the
-`compact_share` + `summary_input_cap` pair names the same 12 cells at the same first-divergent steps
-either way, and the same-share-under-both-bounds probe finds zero cells whose verdict depends on
-where the other constant sits
-([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
-So the guarantee is untested against the case it exists for. Build the geometry that exercises the
-interaction -- a cell whose trigger crossing lands differently depending on the summarize-input
-bound, or a guard/depth pair where a per-field replay overshoots the transcript the compound one
-sends -- commit it as a fixture design, and assert in CI that the compound verdict and the
-per-field union DISAGREE there. Without it a future refactor can quietly collapse the compound
-replay back to a per-field one and every test stays green.
+The interaction fixture's separating band is narrow and hand-found: two triggers must land inside
+one fold step's interval while straddling the transcript that fold offers the summarizer, which at
+depth 10 is guards 21100-21800
+([extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
+An unrelated edit to the prompt templates or the memory task world shifts every prompt size by a few
+chars and walks the committed guards out of the band; CI then goes red with a predeclared geometry
+nobody can repair without re-deriving the search by hand. Give the fixture a solver: a function that
+takes the change and a depth and RETURNS the separating guard interval (fold-step intervals come
+from `fold_step_trigger_interval`, the offered transcript from `compact_fold_input_probe`, so the
+band is computable rather than scannable), have the failure message print the band it found, and
+add the test that the committed guards lie inside it. The same solver turns "is there a separating
+geometry for THIS pair of constants" into a question with an answer, which is what a second
+interacting pair would need.
 
 - Agent status: CLEAR
-- Dependencies: the compound seam is `PolicyChange` in
-  `src/llb/bench/agentic_policy_change_audit.py`; the geometry can be predeclared with no model
-  through `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`.
-- User-visible outcome: the audit's compound guarantee is a tested property rather than a design
-  claim, so an operator can trust the one-verdict scope on a commit that moves two constants.
-- Scope boundary: in scope -- the interaction geometry, its committed design fixture, and the CI
-  assertion that the two readings disagree on it. Out of scope -- changing any shipped constant,
-  re-running a published cell, and widening the audited study set (that is
-  `agent-policy-change-audit-coverage-beyond-cap-fitting`).
+- Dependencies: the fixture and its predeclared geometry are
+  `src/llb/bench/agentic_policy_change_interaction_fixture.py`; the interval arithmetic already
+  exists as `fold_step_trigger_interval` / `fold_step_guard_interval` in
+  `src/llb/bench/agentic_memory_boundary_probe.py`.
+- User-visible outcome: a template edit that moves the fixture out of its band fails with the new
+  guards to commit instead of with a geometry mismatch nobody can act on.
+- Scope boundary: in scope -- the band solver, the failure message, and the containment test. Out of
+  scope -- changing the audited studies, any shipped constant, and adding a second interacting pair
+  (state that separately once the solver can answer whether one exists).
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+  [extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it).
 
 ### agent-policy-change-replay-untouched-fields-from-the-pins (optional)
 

@@ -1613,9 +1613,70 @@ cannot describe, and read as one change it reports the same 12 -- but now those 
 ANSWERED (they keep their own share and are audited on the bound), and the whole verdict is computed
 between the two policies that actually existed. On the evidence committed today the compound scope
 and the per-field union name the same cells at the same first-divergent steps, so what the change
-buys here is a guarantee rather than a correction; the case where the two answers separate needs a
-geometry in which two constants interact, which is
-`agent-policy-change-audit-compound-interaction-fixture` in the plan.
+buys HERE is a guarantee rather than a correction. The case where the two answers separate needs a
+geometry in which two constants interact, which is the next section.
+
+##### The compound guarantee has a geometry that tests it
+
+On the 22 published cells the compound reading and the per-field union agree, so nothing there
+proves the compound replay is doing anything the collapsed implementation could not: delete
+`PolicyChange`, audit one field at a time, and every test above stays green. The separation needs
+an INTERACTION -- two constants where one decides what the other MEANS -- and `compact_share` x
+`summary_input_cap` is exactly that pair. Under the `trigger` bound the summarize call's input cap
+IS `compact_share * max_prompt_chars` (`summary_input_cap_chars` in
+`src/llb/bench/agentic/episode.py`); under the `window` bound it does not depend on the share at
+all. So the share moves the bound's own value, and a guard whose folded transcript sits BETWEEN the
+two shares' triggers reads three different ways:
+
+- move the share alone (bound stays `window`): both shares fold at the same step and the window
+  bound elides nothing, so every prompt is identical -- invariant;
+- move the bound alone (share stays at the baseline): the baseline trigger still clears the offered
+  transcript, so nothing is elided -- invariant;
+- move BOTH, which is what the commit did: the candidate trigger falls below the offered transcript,
+  the summarizer is shown a head-and-tail elision of it, and every prompt from the fold on differs.
+
+`samples/benchmarks/agentic_policy_change_interaction_design.json` commits that geometry for the
+change `compact_share 0.5 -> 0.48` with `summary_input_cap window -> trigger`, at depth 10 over the
+memory-dependent tasks. It publishes NO number and is deliberately absent from the audited study
+registry, so no future constant change is ever asked to re-run it. Each cell PREDECLARES the three
+numbers the separation rests on -- the fold step (which must be the same at both shares), the
+transcript the fold offers the summarizer, and each share's trigger -- and CI checks them with an
+oracle controller and no model, so a drift names the claim that moved rather than only the digest:
+
+| cell | guard | fold step | offered | trigger at 0.5 / 0.48 | compound | per-field union |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `interaction-d10-g21500` | 21500 | 10 | 10494 | 10750 / 10320 | **invalidated** @10 | invariant |
+| `interaction-d10-g23700` | 23700 | 11 | 11802 | 11850 / 11376 | **invalidated** @11 | invariant |
+| `control-d10-g21900` | 21900 | 10 | 10494 | 10950 / 10512 | invariant | invariant |
+| `control-d10-g23000` | 23000 | 11 | 11802 | 11500 / 11040 | invalidated @11 | invalidated @11 |
+
+The two `interaction` cells are the counterexample: `trigger at 0.48 < offered <= trigger at 0.5`,
+so the compound reading reports the cell invalidated at the fold step and the per-field union
+reports that NEITHER field changes anything. The compound one is the true statement -- CI also
+replays the whole baseline policy against the whole candidate policy there and the prompt digests
+differ -- so a per-field audit would have cleared a commit that really did move the transcript. The
+two `control` cells sit just outside the band on either side and are where the two readings agree,
+one invariant and one invalidated, so the fixture tests the interaction rather than the change.
+
+The band is narrow by construction (at fold step 10 it is guards 21100 to 21800): the two triggers
+must land in one fold step's interval while straddling the offered transcript. A change to the task
+world or the prompt templates moves it, and the failure is loud -- the separating cells stop
+separating and the fixture goes red with the predeclared geometry that no longer holds.
+
+Core locations are `src/llb/bench/agentic_policy_change_interaction_fixture.py` (the fixture
+contract, and the no-model probe of the predeclared geometry),
+`src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
+and `tests/llb/bench/test_agentic_policy_change_interaction.py`, which is the CI assertion itself --
+it runs inside `make ci`, in under a second, with no target of its own.
+
+```bash
+make ci                       # the separation assertion; a collapsed audit fails here
+.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py
+```
+
+Only the VERDICT direction separates for this pair. A scan of depths 6 / 10 / 14 across guards 6000
+to 34000 found no geometry where both readings report an invalidated cell but name different
+first-divergent steps, so the committed cells are the whole separating set the pair offers.
 
 ##### The audit runs in CI, on the act that creates the problem
 
