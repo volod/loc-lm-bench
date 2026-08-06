@@ -35,6 +35,14 @@ KIND_COLLAPSE = "compact_trigger_guard_collapse"
 KIND_FOLD_STEP = "compact_fold_step_crossover"
 AUDITED_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
 
+# The committed studies whose published numbers an agent policy change can invalidate. One registry,
+# because the CLI audit and the CI pin gate must never walk different evidence.
+AUDITED_DESIGN_PATHS: dict[str, str] = {
+    KIND_SURFACE: "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
+    KIND_COLLAPSE: "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
+    KIND_FOLD_STEP: "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
+}
+
 VERDICT_INVARIANT = "prompt_invariant"
 VERDICT_CHANGED = "prompts_change"
 # A cell that declares the audited field ITSELF is not describable by the change: the field is that
@@ -169,6 +177,16 @@ def load_audited_design(path: Path | str) -> dict[str, object]:
     from llb.bench.agentic_memory_transfer import load_transfer_design
 
     return load_transfer_design(path)
+
+
+def load_audited_designs() -> dict[str, dict[str, object]]:
+    """Every committed study the audit walks, keyed by its study kind."""
+    from llb.core.paths import PROJECT_ROOT
+
+    return {
+        kind: load_audited_design(PROJECT_ROOT / path)
+        for kind, path in AUDITED_DESIGN_PATHS.items()
+    }
 
 
 def _share(cell: dict[str, object], default: object) -> float:

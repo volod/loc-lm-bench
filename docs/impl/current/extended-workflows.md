@@ -1583,6 +1583,43 @@ inside the same step's interval and folds the identical transcript. At the low g
 drops into the previous step and everything downstream changes. A byte-level prompt comparison that
 knows nothing about fold steps rediscovers exactly where they are.
 
+##### The audit runs in CI, on the act that creates the problem
+
+The audit above answers the question only when someone asks it, and the person editing a constant in
+`src/llb/bench/agentic/context.py` is precisely the person who does not know the question exists.
+`samples/benchmarks/agentic_context_policy_pins.json` closes that loop: it PINS each shipped
+`ContextPolicy` constant to the value the published evidence stands on, and CI compares the pins with
+the live dataclass defaults on every run. A drifted field is audited on the spot and the failure
+message is the re-run scope -- every invalidated cell by id, depth, guard, changed arms, and the model
+call where the change first bites -- plus the doc sections that publish those numbers.
+
+The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
+evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
+and the message says so (`no published cell is invalidated ... restating the pin is free`). What is
+refused is the silent case: a constant moving while the docs keep quoting numbers measured under its
+old value. A clean build replays nothing, and a drifted one costs under a second per field.
+
+Each pin also declares how it relates to the committed designs -- `agree` (every design's
+`held_fixed` states the pinned value), `restated` (a design states another value and the pin
+supersedes it, which is where `summary_input_cap` sits: the designs record the retired `trigger`
+bound and the crossover restatement moved the published numbers to `window`), or `unstated` (no
+design states the field, as for `keep_last_n` and `compact_keep_recent`) -- and CI verifies that claim
+against the designs themselves, so a pin cannot quietly disagree with the studies it names. CI also
+asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped constant is
+pinned here or the build is red, and that every doc anchor the fixture names still resolves.
+
+Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
+check), `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
+re-run scope through the audit's own reporter), the shared study registry `AUDITED_DESIGN_PATHS` in
+`src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
+walk different evidence), and `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate
+itself -- it runs inside `make ci`, with no target of its own.
+
+```bash
+make ci                       # the gate; a drifted constant fails here with the re-run scope
+.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_pin_gate.py   # just the gate
+```
+
 ### Agent context-policy constants
 
 Three constants decide what `observation_cap` and `keep_last_n` do:

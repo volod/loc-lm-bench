@@ -43,29 +43,57 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-audit-gate-in-ci (optional)
+### agent-policy-change-audit-compound-drift (optional)
 
-The policy-change audit answers "what does this change invalidate" only when someone remembers to
-ask ([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
-Nothing connects it to the act that creates the problem: editing a shipped constant in
-`src/llb/bench/agentic/context.py` passes CI green while silently retiring up to 22 published cells,
-and the docs that state those numbers keep stating them. Close the loop by pinning the shipped
-constants in a committed fixture and adding a CI check that fails when a shipped value no longer
-matches the one the published evidence was measured under, naming the invalidated cells from the
-audit in the failure message. The audit already runs in well under a second for every field, so this
-costs nothing per CI run and turns a silent invalidation into a build failure that says exactly which
-numbers to re-measure.
+The CI pin gate audits each drifted constant on its own
+([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
+and the replay fills every field it is not auditing from the SHIPPED dataclass defaults
+(`_policy` in `src/llb/bench/agentic_policy_change_replay.py` sets only the cell's own three
+settings). Both are right for one moving constant and wrong for two: a commit that re-pins
+`observation_cap_chars` and `compact_keep_recent` together is audited as "pinned cap + shipped
+keep" against "shipped cap + shipped keep", so neither arm is the configuration the published cells
+were measured under, and the reported first-divergent step can name a call that neither the old nor
+the new build ever sends. The gate still fails (each drift is reported), so the risk is a wrong
+re-run scope rather than a missed one. Audit a compound change as ONE change: replay the baseline
+arm under the full PINNED policy and the candidate arm under the full SHIPPED policy, and report a
+single verdict when more than one field drifts.
 
 - Agent status: CLEAR
-- Dependencies: `src/llb/bench/agentic_policy_change_audit.py` and the committed designs it walks;
-  the constants themselves live in `src/llb/bench/agentic/context.py`.
-- User-visible outcome: a shipped-constant edit cannot land while the docs still publish numbers it
-  invalidated -- CI names them and the change either re-measures them or restates the pin.
-- Scope boundary: in scope -- the pinned-constants fixture, the CI check, and the failure message
-  that lists the invalidated cells. Out of scope -- re-running any invalidated cell, changing a
-  shipped constant, and auditing non-agentic evidence.
+- Dependencies: the pin fixture already carries the full pinned policy
+  (`samples/benchmarks/agentic_context_policy_pins.json`); the seam is `_policy` in
+  `src/llb/bench/agentic_policy_change_replay.py`, which currently takes one field plus one value.
+- User-visible outcome: a commit that moves two constants gets one honest re-run scope instead of
+  two scopes computed against configurations that never shipped.
+- Scope boundary: in scope -- the full-policy replay seam, the compound verdict, and the gate's
+  message for it. Out of scope -- changing any shipped constant, re-running an invalidated cell,
+  and widening the audited study set (that is
+  `agent-policy-change-audit-coverage-beyond-cap-fitting`).
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+
+### agent-published-number-provenance-pins (optional)
+
+The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the
+numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
+fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
+find every affected figure by reading. Extend the pinning idea from constants to published values --
+a committed provenance fixture mapping each published agentic number to `(study kind, cell id,
+artifact path, metric)` -- and have the gate print the exact figures a drifted constant retires,
+not only the cells. The same fixture makes a second check cheap: assert every mapped artifact path
+still resolves, which catches a number whose evidence was garbage-collected.
+
+- Agent status: CLEAR
+- Dependencies: the cell ids and re-run scope come from
+  `src/llb/bench/agentic_policy_pin_gate.py`; the artifact paths are the run roots already recorded
+  in the evidence sections of
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+- User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody
+  greps the docs to find what a change retired.
+- Scope boundary: in scope -- the provenance fixture, the figure list in the gate message, and the
+  artifact-path resolution check. Out of scope -- rewriting any published figure automatically,
+  re-running cells, and provenance for non-agentic evidence.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
 
 ### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
 
@@ -77,7 +105,11 @@ same constants and are not walked, and the `keep_last_n` result advertises the g
 keep=1 free precisely because no cap-fitting cell runs that policy, while the sweep that EXPOSED
 keep=1 is built on cells that do. Extend the audit's study registry to those lanes -- each needs its
 own cell-geometry reader and a task builder other than the memory-chain one -- so the invariance
-answer covers the evidence a `keep_last_n` or observation-cap change actually threatens.
+answer covers the evidence a `keep_last_n` or observation-cap change actually threatens. The CI pin
+gate now fails a build on that same registry
+([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
+so widening it widens the gate's re-run scope at no extra wiring: both read
+`AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
 
 - Agent status: CLEAR
 - Dependencies: the audit's per-kind geometry extraction

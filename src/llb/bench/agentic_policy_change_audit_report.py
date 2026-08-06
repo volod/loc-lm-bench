@@ -75,13 +75,22 @@ def format_policy_change_table(
     if summary["invalidated"]:
         lines.append("")
         lines.append("re-run scope (these published numbers, and no others)")
-        for cell in cast(list[dict[str, object]], summary["invalidated"]):
-            lines.append(
-                f"- {cell['study_kind']} {cell['cell_id']}: depth {cell['depth']}, guard "
-                f"{cell['max_prompt_chars']}, arms {','.join(cast(list[str], cell['changed_arms']))}"
-                f", first divergent model call {cell['first_divergent_step']}"
-            )
+        lines.extend(format_invalidated_cells(summary))
     return "\n".join(lines)
+
+
+def format_invalidated_cells(summary: dict[str, object], *, indent: str = "") -> list[str]:
+    """One line per invalidated cell: which number to re-measure, and where the change bites.
+
+    Shared by the audit table and the CI pin gate, so an operator reads the same re-run scope
+    whether they asked the question or the build asked it for them.
+    """
+    return [
+        f"{indent}- {cell['study_kind']} {cell['cell_id']}: depth {cell['depth']}, guard "
+        f"{cell['max_prompt_chars']}, arms {','.join(cast(list[str], cell['changed_arms']))}"
+        f", first divergent model call {cell['first_divergent_step']}"
+        for cell in cast(list[dict[str, object]], summary["invalidated"])
+    ]
 
 
 def _verdict_line(summary: dict[str, object]) -> str:
