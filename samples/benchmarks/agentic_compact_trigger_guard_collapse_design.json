@@ -22,6 +22,7 @@
     "max_steps_margin": 4,
     "observation_cap_chars": 800,
     "observation_head_share": 0.6,
+    "summary_input_cap": "trigger",
     "minimum_compaction_rate": 0.75,
     "minimum_cell_completion": 0.75
   },

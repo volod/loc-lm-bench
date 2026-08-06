@@ -37,6 +37,10 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Where compact stops repaying its summary call: cap-fitting cost crossover over depth and prompt guard | [Extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface) |
 | Compact routing on one axis: trigger (`compact_share * guard`) and the fold step it selects | [Extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis) |
 | The compact crossover as a fold-step boundary ("fold no later than step k") rather than a char guard | [Extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard) |
+| The compact summarize call's input bound (`summary_input_cap`), the residual it removes, and what its elision costs | [Extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned) |
+| Model-free audit of which published compact evidence a summarize-bound change can move, and the crossovers restated under the shipped bound | [Extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap) |
+| Which published agentic numbers any context-policy constant change invalidates (prompt-sequence replay, no GPU) | [Extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates) |
+| The CI gate that pins the shipped context-policy constants and fails a drift with its re-run scope | [Extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem) |
 | Agent context-policy constant sweep (cap / head-share / keep_last_n pin-or-expose) | [Extended workflows](current/extended-workflows.md#agent-context-policy-constants) |
 | keep_last_n on longer transcripts (medium-search keep grid) | [Extended workflows](current/extended-workflows.md#keep_last_n-on-longer-transcripts) |
 | Host acceptance checklist and repeatable smoke runs | [Host validation](current/host-validation.md) |

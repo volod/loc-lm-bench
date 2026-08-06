@@ -1,0 +1,261 @@
+"""The CI gate: a shipped context-policy constant cannot drift away from its published evidence."""
+
+import json
+import re
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic_policy_change_audit import (
+    AUDITABLE_FIELDS,
+    KIND_SURFACE,
+    load_audited_design,
+    load_audited_designs,
+)
+from llb.bench.agentic_policy_pin_gate import (
+    DESIGNS_AGREE,
+    DESIGNS_RESTATED,
+    PINS_PATH,
+    PolicyPins,
+    check_policy_pins,
+    load_policy_pins,
+    shipped_policy_values,
+)
+from llb.bench.agentic_policy_pin_gate_report import format_pin_gate_report
+
+ROOT = Path(__file__).resolve().parents[3]
+PINS = ROOT / PINS_PATH
+SURFACE = ROOT / "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json"
+
+
+def _pins() -> PolicyPins:
+    return load_policy_pins(PINS)
+
+
+def _only(*fields: str) -> PolicyPins:
+    """The fixture narrowed to the named pins, so a synthetic-drift test audits only those."""
+    pins = _pins()
+    return replace(pins, pins={field: pins.pins[field] for field in fields})
+
+
+def _surface() -> dict[str, dict[str, object]]:
+    """One study, so a synthetic-drift test pays for six cells instead of twenty-two."""
+    return {KIND_SURFACE: load_audited_design(SURFACE)}
+
+
+def _drifted(field: str, value: Any) -> dict[str, Any]:
+    return {**shipped_policy_values(), field: value}
+
+
+def _write_pins(path: Path, **overrides: object) -> Path:
+    raw = json.loads(PINS.read_text(encoding="utf-8"))
+    for field, entry in overrides.items():
+        if entry is None:
+            del raw["pins"][field]
+        else:
+            raw["pins"][field] = entry
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    return path
+
+
+# --- the gate itself --------------------------------------------------------------------------
+
+
+def test_every_shipped_constant_still_matches_the_value_its_evidence_was_measured_under():
+    """THE gate. A red build here means a constant moved; the message says what it retired."""
+    check = check_policy_pins(_pins(), load_audited_designs())
+    if not check.ok:  # `fail` prints the re-run scope; `assert` would bury it under a PinCheck repr
+        pytest.fail(format_pin_gate_report(check))
+    assert "all 6 shipped context-policy constants match" in format_pin_gate_report(check)
+
+
+def test_a_new_shipped_constant_cannot_be_added_without_a_pin():
+    """The hole the gate closes is an unguarded constant, so the field sets must stay in lockstep."""
+    constants = set(ContextPolicy.__dataclass_fields__) - {"name"}
+    assert set(AUDITABLE_FIELDS) == constants == set(_pins().pins)
+
+
+def test_the_pinned_values_are_the_shipped_ones_read_off_the_dataclass():
+    shipped = shipped_policy_values()
+    assert shipped == {field: pin.value for field, pin in _pins().pins.items()}
+    assert shipped["observation_cap_chars"] == ContextPolicy().observation_cap_chars
+
+
+def test_the_docs_the_pins_name_still_carry_those_sections():
+    """A drift message points at where the numbers are published, so the anchors must resolve."""
+    for anchor in _pins().published_in:
+        path, _, slug = anchor.partition("#")
+        headings = re.findall(r"^#+\s+(.+)$", (ROOT / path).read_text(encoding="utf-8"), re.M)
+        assert slug in {_slug(heading) for heading in headings}, anchor
+
+
+def _slug(heading: str) -> str:
+    """GitHub's heading slug: lowercased, punctuation dropped, spaces hyphenated."""
+    return re.sub(r"[^a-z0-9\s-]", "", heading.strip().lower()).replace(" ", "-")
+
+
+# --- what a drift reports ---------------------------------------------------------------------
+
+
+def test_a_drift_that_retires_published_cells_names_every_one_of_them():
+    """The failure message is the re-run scope: which cells, which arms, where the change bites."""
+    check = check_policy_pins(
+        _only("observation_cap_chars"),
+        _surface(),
+        shipped=_drifted("observation_cap_chars", 1600),
+    )
+
+    assert not check.ok and check.drift is not None and len(check.drift.moves) == 1
+    drift = check.drift
+    move = drift.moves[0]
+    assert (move.field, move.pinned, move.shipped) == ("observation_cap_chars", 800, 1600)
+    assert drift.n_invalidated == drift.summary["n_cells"] > 0
+    report = format_pin_gate_report(check)
+    assert "observation_cap_chars: pinned 800 -> shipped 1600" in report
+    assert "surface-d6-g12000: depth 6, guard 12000" in report
+    assert "first divergent model call 2" in report
+    assert "re-measure those cells" in report
+    assert "extended-workflows.md#cap-fitting-boundary-surface" in report
+
+
+def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free():
+    """`keep_last_n` steers a policy no cap-fitting cell runs -- the cheap half of the verdict."""
+    check = check_policy_pins(_only("keep_last_n"), _surface(), shipped=_drifted("keep_last_n", 1))
+
+    assert not check.ok and check.drift is not None and check.drift.n_invalidated == 0
+    report = format_pin_gate_report(check)
+    assert "no published cell is invalidated" in report and "restating the pin is free" in report
+    assert "re-measure those cells" not in report
+
+
+def test_a_cell_that_pins_the_drifted_field_itself_is_counted_out_of_the_scope():
+    """The collapse study sweeps `compact_share`, so a share drift does not describe its cells."""
+    check = check_policy_pins(
+        _only("compact_share"), load_audited_designs(), shipped=_drifted("compact_share", 0.45)
+    )
+
+    drift = check.drift
+    assert drift is not None
+    assert drift.summary["n_not_applicable"] == 8 and drift.n_invalidated == 12
+    report = format_pin_gate_report(check)
+    assert "12 of 14 applicable published cells are invalidated" in report
+    assert "8 further cell(s) pin compact_share as their own study axis" in report
+
+
+def test_two_constants_that_drift_together_are_audited_as_one_change():
+    """A commit that re-pins two constants moved BOTH, so one scope is computed between the two
+    policies that really existed -- not two scopes against configurations that never shipped."""
+    shipped = {**_drifted("observation_cap_chars", 1600), "compact_keep_recent": 2}
+    check = check_policy_pins(
+        _only("observation_cap_chars", "compact_keep_recent"), _surface(), shipped=shipped
+    )
+
+    drift = check.drift
+    assert drift is not None and drift.is_compound and len(drift.moves) == 2
+    assert drift.summary["baseline"] == {"observation_cap_chars": 800, "compact_keep_recent": 1}
+    assert drift.summary["candidate"] == {"observation_cap_chars": 1600, "compact_keep_recent": 2}
+    assert drift.n_invalidated == drift.summary["n_cells"] > 0
+
+    report = format_pin_gate_report(check)
+    assert "2 of 2 shipped context-policy constants no longer match" in report
+    assert "2 constants moved together and are audited as ONE change" in report
+    assert "observation_cap_chars: pinned 800 -> shipped 1600" in report
+    assert "compact_keep_recent: pinned 1 -> shipped 2" in report
+    # One re-run scope, and one "pinned because" per constant that moved.
+    assert report.count("re-measure those cells") == 1
+    assert "pinned because (observation_cap_chars):" in report
+    assert "pinned because (compact_keep_recent):" in report
+
+
+def test_a_compound_drift_a_cell_partly_owns_is_audited_on_the_rest_of_the_change():
+    """The collapse study owns `compact_share`; the cap half of the change still describes it."""
+    shipped = {**_drifted("compact_share", 0.45), "observation_cap_chars": 1600}
+    check = check_policy_pins(
+        _only("compact_share", "observation_cap_chars"), load_audited_designs(), shipped=shipped
+    )
+
+    drift = check.drift
+    assert drift is not None
+    assert drift.summary["n_not_applicable"] == 0
+    assert drift.summary["n_partially_applicable"] == 8 and drift.n_invalidated == 22
+    report = format_pin_gate_report(check)
+    assert "8 cell(s) declare part of this change as their own study axis" in report
+
+
+def test_a_pin_matching_its_shipped_value_costs_no_replay(monkeypatch: pytest.MonkeyPatch):
+    """A clean build replays nothing, which is what makes the gate free per CI run."""
+    monkeypatch.setattr(
+        "llb.bench.agentic_policy_pin_gate.audit_policy_change",
+        lambda *args, **kwargs: pytest.fail("an undrifted pin must not replay any cell"),
+    )
+    check = check_policy_pins(_pins(), load_audited_designs())
+    assert check.ok and check.drift is None
+
+
+# --- the pin's own claim about the committed designs -------------------------------------------
+
+
+def test_the_pin_that_supersedes_a_design_must_say_so():
+    """`summary_input_cap` ships `window`; the designs record the retired `trigger` bound."""
+    pins = _pins()
+    assert pins.pins["summary_input_cap"].designs == DESIGNS_RESTATED
+    assert pins.pins["observation_cap_chars"].designs == DESIGNS_AGREE
+    assert check_policy_pins(pins, load_audited_designs()).stale_claims == ()
+
+
+def test_a_pin_that_claims_agreement_it_does_not_have_is_caught(tmp_path: Path):
+    entry = {"value": "window", "designs": DESIGNS_AGREE, "note": "claims the designs agree"}
+    pins = load_policy_pins(_write_pins(tmp_path / "pins.json", summary_input_cap=entry))
+    check = check_policy_pins(pins, load_audited_designs())
+
+    assert not check.ok and len(check.stale_claims) == 1
+    claim = check.stale_claims[0]
+    assert (claim.field, claim.declared, claim.supported) == (
+        "summary_input_cap",
+        DESIGNS_AGREE,
+        DESIGNS_RESTATED,
+    )
+    report = format_pin_gate_report(check)
+    assert "the committed studies support 'restated'" in report
+    assert f"{KIND_SURFACE}='trigger'" in report
+
+
+# --- the fixture the gate reads ----------------------------------------------------------------
+
+
+def test_a_fixture_the_gate_could_not_act_on_is_refused(tmp_path: Path):
+    with pytest.raises(ValueError, match="exactly one pin per auditable field"):
+        load_policy_pins(_write_pins(tmp_path / "missing.json", keep_last_n=None))
+    with pytest.raises(ValueError, match="must state a int value"):
+        load_policy_pins(
+            _write_pins(
+                tmp_path / "typed.json",
+                keep_last_n={"value": "3", "designs": "unstated", "note": "a string"},
+            )
+        )
+    with pytest.raises(ValueError, match="must declare designs from"):
+        load_policy_pins(
+            _write_pins(
+                tmp_path / "state.json",
+                keep_last_n={"value": 3, "designs": "maybe", "note": "an unknown state"},
+            )
+        )
+    with pytest.raises(ValueError, match="must carry a note"):
+        load_policy_pins(
+            _write_pins(
+                tmp_path / "note.json",
+                keep_last_n={"value": 3, "designs": "unstated", "note": "  "},
+            )
+        )
+    with pytest.raises(ValueError, match="schema_version must be"):
+        (tmp_path / "schema.json").write_text('{"pins": {}}', encoding="utf-8")
+        load_policy_pins(tmp_path / "schema.json")
+    with pytest.raises(ValueError, match="must name the doc sections"):
+        raw = json.loads(PINS.read_text(encoding="utf-8")) | {"published_in": ["no-anchor.md"]}
+        (tmp_path / "anchors.json").write_text(json.dumps(raw), encoding="utf-8")
+        load_policy_pins(tmp_path / "anchors.json")
+    with pytest.raises(ValueError, match="cannot read context-policy pins"):
+        load_policy_pins(tmp_path / "absent.json")

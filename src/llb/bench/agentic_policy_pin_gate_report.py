@@ -1,0 +1,104 @@
+"""The failure message the context-policy pin gate fails a build with.
+
+A gate is only as useful as what it says when it fires. This one has to answer, in the terminal
+output of a build somebody did not expect to break: which constant moved, which published numbers
+that retires, where those numbers are quoted, and what the two ways out are (re-measure the cells, or
+restate the pin because nothing moved). The re-run scope itself is rendered by the audit's own
+reporter, so the operator reads the same lines whether they asked the question or CI asked it.
+"""
+
+from typing import cast
+
+from llb.bench.agentic_policy_change_audit_report import (
+    audited_axis,
+    format_invalidated_cells,
+    partial_note,
+)
+from llb.bench.agentic_policy_pin_gate import PINS_PATH, PinCheck, PinClaim, PinDrift, PolicyPins
+
+
+def format_pin_gate_report(check: PinCheck) -> str:
+    """The failure message: which constants moved, which published cells they retire, what to do."""
+    n_pins = len(check.pins.pins)
+    if check.ok:
+        return (
+            f"verdict: all {n_pins} shipped context-policy constants match the value the "
+            f"published agentic evidence was measured under ({PINS_PATH})"
+        )
+    lines = [
+        f"verdict: {len(check.moves)} of {n_pins} shipped context-policy constants no "
+        "longer match the value the published agentic evidence was measured under",
+        f"pins: {PINS_PATH}",
+        f"published numbers: {', '.join(check.pins.published_in)}",
+    ]
+    if check.drift is not None:
+        lines.extend(["", *_drift_lines(check.drift, check.pins)])
+    for claim in check.stale_claims:
+        lines.extend(["", *_claim_lines(claim)])
+    return "\n".join(lines)
+
+
+def _drift_lines(drift: PinDrift, pins: PolicyPins) -> list[str]:
+    summary = drift.summary
+    skipped = cast(int, summary["n_not_applicable"])
+    applicable = cast(int, summary["n_cells"]) - skipped
+    tail = (
+        [
+            f"  {skipped} further cell(s) pin {audited_axis(summary)} as their own study axis, so "
+            "the change does not describe them."
+        ]
+        if skipped
+        else []
+    )
+    tail.extend(partial_note(summary, indent="  "))
+    label = "the shipped values send" if drift.is_compound else "the shipped value sends"
+    notes = [
+        f"  pinned because{f' ({move.field})' if drift.is_compound else ''}: "
+        f"{pins.pins[move.field].note}"
+        for move in drift.moves
+    ]
+    if not drift.n_invalidated:
+        return [
+            *_head_lines(drift),
+            f"  no published cell is invalidated ({applicable} applicable): {label} "
+            "bit-identical prompts, so restating the pin is free.",
+            *tail,
+            *notes,
+        ]
+    studies = cast(list[str], summary["studies_invalidated"])
+    return [
+        *_head_lines(drift),
+        f"  {drift.n_invalidated} of {applicable} applicable published cells are invalidated across "
+        f"{len(studies)} study/studies ({', '.join(studies)}):",
+        *format_invalidated_cells(summary, indent="  "),
+        "  re-measure those cells and restate their published numbers, then move the pin -- or "
+        "revert the constant.",
+        *tail,
+        *notes,
+    ]
+
+
+def _head_lines(drift: PinDrift) -> list[str]:
+    """Name what moved. Several constants moving in one commit is ONE change, and says so."""
+    moved = [
+        f"- {move.field}: pinned {move.pinned!r} -> shipped {move.shipped!r}"
+        for move in drift.moves
+    ]
+    if not drift.is_compound:
+        return moved
+    return [
+        f"- {len(drift.moves)} constants moved together and are audited as ONE change:",
+        *(f"  {line}" for line in moved),
+        "  the baseline arm replays the full pinned policy and the candidate arm the full shipped "
+        "policy, so the scope below is what THIS commit retires -- not one scope per constant "
+        "against a configuration that never shipped.",
+    ]
+
+
+def _claim_lines(claim: PinClaim) -> list[str]:
+    stated = ", ".join(f"{kind}={value!r}" for kind, value in claim.stated) or "no design"
+    return [
+        f"- {claim.field}: the pin declares designs={claim.declared!r}, but the committed studies "
+        f"support {claim.supported!r} ({stated})",
+        "  restate the pin's `designs` field (and its note) to what the designs actually say.",
+    ]

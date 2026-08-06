@@ -43,33 +43,168 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-summary-input-cap (optional)
+### agent-policy-change-audit-compound-interaction-fixture (optional)
 
-The compact policy caps the summarize call's INPUT at the compaction trigger
-(`summary_input_cap = budget.compaction_trigger_chars(compact_share)` in
-`src/llb/bench/agentic/episode.py`), which makes the summarizer the ONE part of the compact cost that
-is not a step function of the fold step: inside a single fold step the controller prompts are
-bit-identical while the summarize input moves continuously with the trigger
-([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
-Two consequences are unmeasured. The cap also TRIMS the folded transcript head-and-tail once that
-transcript outgrows it, so a deeper transcript is summarized with a middle-elided one whose elided
-span widens as the trigger shrinks, and nothing checks what the elision costs in completion. Pin the
-cap to a step-aligned quantity instead -- the folded transcript's own size, or the step's cap prompt
--- then re-run one ladder: the within-step residual should fall to zero, and the elision-versus-
-completion reading says whether the shipped cap is trimming evidence the summary needed.
+The compound audit replays two whole policies, so its answer is right by construction -- but on the
+22 committed cells no constructible compound change SEPARATES it from the per-field reading: the
+`compact_share` + `summary_input_cap` pair names the same 12 cells at the same first-divergent steps
+either way, and the same-share-under-both-bounds probe finds zero cells whose verdict depends on
+where the other constant sits
+([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+So the guarantee is untested against the case it exists for. Build the geometry that exercises the
+interaction -- a cell whose trigger crossing lands differently depending on the summarize-input
+bound, or a guard/depth pair where a per-field replay overshoots the transcript the compound one
+sends -- commit it as a fixture design, and assert in CI that the compound verdict and the
+per-field union DISAGREE there. Without it a future refactor can quietly collapse the compound
+replay back to a per-field one and every test stays green.
+
+- Agent status: CLEAR
+- Dependencies: the compound seam is `PolicyChange` in
+  `src/llb/bench/agentic_policy_change_audit.py`; the geometry can be predeclared with no model
+  through `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`.
+- User-visible outcome: the audit's compound guarantee is a tested property rather than a design
+  claim, so an operator can trust the one-verdict scope on a commit that moves two constants.
+- Scope boundary: in scope -- the interaction geometry, its committed design fixture, and the CI
+  assertion that the two readings disagree on it. Out of scope -- changing any shipped constant,
+  re-running a published cell, and widening the audited study set (that is
+  `agent-policy-change-audit-coverage-beyond-cap-fitting`).
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+
+### agent-policy-change-replay-untouched-fields-from-the-pins (optional)
+
+The replay builds each arm from three sources: two fields out of the design's `held_fixed`, one out
+of the cell, and the remaining three out of the shipped dataclass defaults (`_policy` in
+`src/llb/bench/agentic_policy_change_replay.py`). For a field the change moves that is irrelevant --
+the override wins -- but for a field it does NOT move the baseline arm is only the pinned policy
+because every design happens to `agree` with its pin today. A pin marked `restated` for
+`observation_cap_chars` or `observation_head_share` would silently make the baseline arm replay the
+design's stale value instead of the pinned one, which is the same class of bug the compound audit
+just closed, one level down
+([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
+Feed the untouched fields from the PINS when the caller has them (the gate always does), keep the
+design values as the fallback for a hand-run CLI audit, and add the fixture case that proves a
+`restated` pin on a held field moves the baseline arm.
+
+- Agent status: CLEAR
+- Dependencies: the pins already carry the full pinned policy and their `designs` claim
+  (`samples/benchmarks/agentic_context_policy_pins.json`, checked by
+  `src/llb/bench/agentic_policy_pin_gate.py`); the seam is `_policy` in
+  `src/llb/bench/agentic_policy_change_replay.py`.
+- User-visible outcome: the baseline arm is the policy the published numbers were measured under for
+  every field, not only for the fields the designs happen to agree on.
+- Scope boundary: in scope -- the pinned-policy source for untouched fields, the CLI fallback, and
+  the `restated`-pin fixture case. Out of scope -- changing any shipped constant or any pin value,
+  and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+
+### agent-published-number-provenance-pins (optional)
+
+The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the
+numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
+fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
+find every affected figure by reading. Extend the pinning idea from constants to published values --
+a committed provenance fixture mapping each published agentic number to `(study kind, cell id,
+artifact path, metric)` -- and have the gate print the exact figures a drifted constant retires,
+not only the cells. The same fixture makes a second check cheap: assert every mapped artifact path
+still resolves, which catches a number whose evidence was garbage-collected.
+
+- Agent status: CLEAR
+- Dependencies: the cell ids and re-run scope come from
+  `src/llb/bench/agentic_policy_pin_gate.py`; the artifact paths are the run roots already recorded
+  in the evidence sections of
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+- User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody
+  greps the docs to find what a change retired.
+- Scope boundary: in scope -- the provenance fixture, the figure list in the gate message, and the
+  artifact-path resolution check. Out of scope -- rewriting any published figure automatically,
+  re-running cells, and provenance for non-agentic evidence.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+
+### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
+
+The audit walks the three cap-fitting memory studies (22 cells) and nothing else, so "this change
+invalidates NO published number" is only true of that slice
+([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+The context-policy constant sweep, the keep-long lane, and the harness-comparison rows rest on the
+same constants and are not walked, and the `keep_last_n` result advertises the gap: the audit calls
+keep=1 free precisely because no cap-fitting cell runs that policy, while the sweep that EXPOSED
+keep=1 is built on cells that do. Extend the audit's study registry to those lanes -- each needs its
+own cell-geometry reader and a task builder other than the memory-chain one -- so the invariance
+answer covers the evidence a `keep_last_n` or observation-cap change actually threatens. The CI pin
+gate now fails a build on that same registry
+([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
+so widening it widens the gate's re-run scope at no extra wiring: both read
+`AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
+
+- Agent status: CLEAR
+- Dependencies: the audit's per-kind geometry extraction
+  (`declared_geometry` in `src/llb/bench/agentic_policy_change_audit.py`), which currently hardcodes
+  the memory-chain task builder in its replay.
+- User-visible outcome: the "invalidates nothing" verdict means the whole agentic evidence base
+  rather than one family of studies, so an operator can trust it without knowing which studies were
+  walked.
+- Scope boundary: in scope -- a task-builder seam per registered study, geometry readers for the
+  sweep and keep-long lanes, and their cells in the audit. Out of scope -- re-running anything the
+  wider audit invalidates, and changing any shipped constant.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+
+### agent-context-policy-imperfect-play-guard-margin (optional)
+
+The deterministic cap-peak probe
+(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
+the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
+token grows the transcript past that peak, and a guard chosen just above it can still overflow on
+the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
+budget allows (max steps rather than depth), record the measured extra steps per episode from the
+existing bundles, and turn the difference into a stated safety margin the design validation applies
+when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
+bound-invariant ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
+which inherits the identical perfect-play limitation: a longer real transcript can reach a
+summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
+verdict too and state the invariance for the worst case the step budget allows.
+
+- Agent status: CLEAR
+- Dependencies: the probe, the band check in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
+  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
+  the compact-vs-cap bundles.
+- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
+  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
+  the transcripts a real controller produces.
+- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
+  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
+  interpolation rule, or relaxing the activation floor.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+
+### agent-context-policy-summary-elision-under-the-window-bound (optional)
+
+The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
+fit the resolved window, which no cap-fitting ladder reaches: every cell measured so far folds a
+transcript comfortably under the guard, so the shipped bound's elision path is unexercised
+([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned)). That
+is the regime where an elision is unavoidable rather than incidental, and it is the one where the
+completion cost of losing the middle of a folded transcript actually matters. Build a geometry whose
+folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a larger
+`pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound elides
+there, and read completion against a control whose transcript fits -- the answer says whether an
+unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
+head-and-tail trim.
 
 - Agent status: RUN NEEDED
-- Dependencies: the fold-step ladder and its controller-versus-summarizer cost split are current
-  behavior ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard));
-  reuse the committed fold-step design, the cell gate, and the within-step band unchanged.
-- User-visible outcome: the compact cost becomes a pure step function an operator can predict from
-  the fold step alone, and the summarizer's trimming is a measured choice rather than a side effect
-  of the trigger.
-- Scope boundary: in scope -- the step-aligned cap, one ladder re-run, the residual reading, and the
-  completion check on the elided span. Out of scope -- changing the summary prompt, the compaction
-  hysteresis, and the shipped `compact_share`.
+- Dependencies: `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`
+  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed.
+- User-visible outcome: an operator running a transcript too big to summarize whole learns what that
+  costs, instead of finding out through a wrong answer read from a middle-elided summary.
+- Scope boundary: in scope -- the over-window geometry, the probe-backed predeclaration, and the
+  completion reading. Out of scope -- implementing a new folding strategy (that is what the reading
+  would justify), and changing the shipped bound.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
+  [extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 
@@ -81,11 +216,15 @@ The trigger-only rule is therefore established only in the one-fold regime, and 
 compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
 (or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
 equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
-portable rule needs a stated validity limit.
+portable rule needs a stated validity limit. The second fold also carries the running summary into
+the summarize input, and the shipped `window` bound sizes that input from the budget rather than the
+trigger, so record the per-fold summarize input beside the deltas -- a growing prior summary is the
+other way the guard could re-enter.
 
 - Agent status: RUN NEEDED
 - Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
-  crossing requires; reuse the collapse design, the cell gate, and the equivalence band unchanged.
+  crossing requires (`compact_fold_input_probe` reports the summarize input per fold); reuse the
+  collapse design, the cell gate, and the equivalence band unchanged.
 - User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
   explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
 - Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger
@@ -93,29 +232,6 @@ portable rule needs a stated validity limit.
   changing shipped compaction hysteresis.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
-
-### agent-context-policy-imperfect-play-guard-margin (optional)
-
-The deterministic cap-peak probe
-(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
-the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
-token grows the transcript past that peak, and a guard chosen just above it can still overflow on
-the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
-budget allows (max steps rather than depth), record the measured extra steps per episode from the
-existing bundles, and turn the difference into a stated safety margin the design validation applies
-when it certifies a cell as cap-fitting.
-
-- Agent status: CLEAR
-- Dependencies: the probe and the band check in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py`; the per-episode step counts are already
-  persisted in the compact-vs-cap bundles.
-- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
-  actually runs it, not only for a perfect controller.
-- Scope boundary: in scope -- the worst-case probe, the margin constant, and the validation change.
-  Out of scope -- re-running the surface, changing the interpolation rule, or relaxing the
-  activation floor.
-- Documentation target:
-  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 
 ### agent-operating-profile-recommendation
 

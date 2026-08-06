@@ -705,11 +705,17 @@ The four policies (each a fresh episode over the identical task set):
   inject their aggregate headers into the summary text itself (not only into the summarizer prompt),
   so hit counts do not depend on the free-text summary remembering a number. Two rules keep the
   policy honest: at most ONE compaction per step (if the compacted prompt still does not fit, the
-  guard is what ends the episode, not another round of summarizing), and the summarize call is
-  ITSELF capped at the trigger size -- its input is the transcript that just blew the step prompt,
-  so an uncapped summarizer is the one call in the loop guaranteed to overflow, and it would return
-  a silently truncated summary the policy then trusts for the rest of the episode. An empty summary
-  is treated as a no-op rather than folding those steps away with nothing standing in for them.
+  guard is what ends the episode, not another round of summarizing), and the summarize call's INPUT
+  is ITSELF capped -- its input is the transcript that just blew the step prompt, so an uncapped
+  summarizer is the one call in the loop guaranteed to overflow, and it would return a silently
+  truncated summary the policy then trusts for the rest of the episode. Which bound is a policy
+  field, `summary_input_cap`: the shipped `window` is the resolved prompt budget minus the summary
+  template (including the elision marker the trim writes on top of its cap), so the folded
+  transcript is summarized at its OWN size whenever it fits; the legacy `trigger`
+  (`compact_share * guard`) is kept selectable because the published fold-step, trigger-collapse,
+  and boundary-surface evidence was measured under it -- see
+  [the summarize-input cap](#the-summarize-input-cap-is-step-aligned). An empty summary is treated
+  as a no-op rather than folding those steps away with nothing standing in for them.
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
@@ -1311,15 +1317,350 @@ actually moves, and only it converts to another `compact_share` without re-deriv
 
 One term survives inside a step, and the run isolates it. At depth 6 the whole cost is bit-identical
 across the guard interval; at depth 10 it moves 180.1 tokens, of which 171.0 is the summarize call
-and 9.1 is later controller prompts. The cause is that the summarize call's input cap IS the trigger
-(`summary_input_cap = budget.compaction_trigger_chars(compact_share)`), so a larger trigger inside
-one step feeds the summarizer more of the folded transcript -- and the summary it returns is then
-carried by every later prompt. Depth 6 folds a transcript smaller than either cap, so nothing is
-trimmed and the residual is exactly zero. The residual is 8% of the depth-10 step change and stays
-far inside the equivalence band, so it does not move the boundary; each cell row now records
-`compact_mean_controller_prompt_tokens` and `compact_mean_compaction_prompt_tokens` so the split is
-readable rather than inferred. This does not change the shipped `compact_share` or the guard-axis
-interpolation the surface publishes.
+and 9.1 is later controller prompts. The cause is that the summarize call's input cap was the trigger
+at the time of this run, so a larger trigger inside one step fed the summarizer more of the folded
+transcript -- and the summary it returned was then carried by every later prompt. Depth 6 folds a
+transcript smaller than either cap, so nothing was trimmed and the residual is exactly zero. The
+residual is 8% of the depth-10 step change and stays far inside the equivalence band, so it does not
+move the boundary; each cell row records `compact_mean_controller_prompt_tokens` and
+`compact_mean_compaction_prompt_tokens` so the split is readable rather than inferred. This does not
+change the shipped `compact_share` or the guard-axis interpolation the surface publishes. The bound
+that produced the residual is what
+[the summarize-input cap](#the-summarize-input-cap-is-step-aligned) then replaced; this study's
+design pins `summary_input_cap: "trigger"` so the numbers above reproduce unchanged.
+
+##### The summarize-input cap is step-aligned
+
+`make bench-agentic-context-compact-summary-input-cap` closes the one term the fold-step study left
+moving. The compact policy has to bound the summarize call's input -- that input is the transcript
+that just blew the step prompt, so an uncapped summarizer is the one call in the loop guaranteed to
+overflow -- but the bound it used, the compaction trigger, is the ONLY part of the compact cost that
+is not a step function of the fold step. Two guards inside one step fold the identical transcript and
+send bit-identical controller prompts, yet feed the summarizer different amounts of it, and the
+summary that comes back is then carried by every later prompt. The bound also ELIDES the folded
+transcript head-and-tail once it outgrows the trigger, so a transcript that would have fit the window
+was summarized with its middle missing.
+
+The shipped bound is now `summary_input_cap="window"`: the resolved prompt budget minus the summary
+template's own overhead, which includes the elision marker `trim_observation` writes ON TOP of the
+cap it is given (a bound that ignores the marker sends a summarize prompt a few chars over the
+window -- exactly the silent truncation the cap exists to prevent). It is a property of the resolved
+budget alone, so it does not move with `compact_share` and the folded transcript is summarized at its
+own size whenever it fits. The legacy `trigger` bound stays selectable, and the boundary-surface,
+trigger-collapse, replication, transfer, and fold-step designs all pin it explicitly so their
+published numbers reproduce against the current runtime instead of silently re-measuring a different
+summarizer. The committed design is
+`samples/benchmarks/agentic_compact_summary_input_cap_design.json`.
+
+The study is two ARMS over ONE fold-step ladder -- the same depth-10 ladder the fold-step crossover
+published, with the two bounds as the only difference -- and it reads two independent things: whether
+the step-aligned bound drives the within-step residual to zero WITHOUT moving the fold step the
+routing rule is stated on, and whether the span the trigger bound elided was carrying completion.
+The second question needs an elision to exist, and that is decided with no model at all:
+`compact_fold_input_probe` walks the deterministic tool world with an oracle controller and a fixed
+summary reply, and reports what each arm offers the summarizer and how much its bound elides. Design
+validation refuses a ladder whose reference arm elides nothing (no trimmed span to price), a
+step-aligned arm that elides anything (it is not step-aligned), and a step-aligned arm whose
+summarize input is not identical across the guards inside one step. The fold-step placement rules --
+declared step, adjacency on the reachable ladder, within-step guard span, straddle gap -- are shared
+verbatim with the crossover study (`src/llb/bench/agentic_memory_fold_step_placement.py`), so a
+residual measured here is on exactly the scale that study publishes.
+
+Core locations are `src/llb/bench/agentic/context.py` (`SUMMARY_INPUT_CAPS`, the elision telemetry),
+`src/llb/bench/agentic/context_budget.py` (`summary_input_cap_chars`),
+`src/llb/bench/agentic/episode.py` (the bound resolver),
+`src/llb/bench/agentic_memory_boundary_probe.py` (`compact_fold_input_probe`),
+`src/llb/bench/agentic_memory_fold_step_placement.py` (shared placement rules),
+`src/llb/bench/agentic_memory_summary_cap_design.py`,
+`src/llb/bench/agentic_memory_summary_cap_reading.py`,
+`src/llb/bench/agentic_memory_summary_cap_rows.py`,
+`src/llb/bench/agentic_memory_summary_cap.py`,
+`src/llb/bench/agentic_memory_summary_cap_report.py`,
+`src/llb/cli/bench/category_agentic_memory_summary_cap.py`, and
+`tests/llb/bench/test_agentic_memory_summary_cap.py`.
+
+```bash
+make bench-agentic-context-compact-summary-input-cap
+```
+
+CUDA host evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, the fold-step study's seven depth-10 memory tasks per cell, `compact_share=0.5`,
+eight cells (four guards under each bound) at 10.63 tok/s over about 79 minutes. The pinned family
+re-passed the unchanged depth-10 control at 4/4. Every cell completed 7/7 under both policies with
+zero overflows, exactly one compaction per compact episode, and all eight landed on the side the
+design predeclared. The aggregate is
+`$DATA_DIR/agentic-compact-summary-input-cap/20260805T185837.832318Z-0f86b57558a1/manifest.json`.
+
+| arm | cell | guard | fold step | summarizer offered | elided | compact tok | d(input tok) | side |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `trigger` | `cap-d10-step10-lo` | 20240 | 10 | 10494 | **374** | 26434.4 | -908.6 | compact |
+| `trigger` | `cap-d10-step10-hi` | 22014 | 10 | 10494 | 0 | 26541.0 | -802.0 | compact |
+| `trigger` | `cap-d10-step11-lo` | 22016 | 11 | 11802 | **794** | 28698.4 | +1355.4 | cap |
+| `trigger` | `cap-d10-step11-hi` | 23040 | 11 | 11802 | **282** | 28878.6 | +1535.6 | cap |
+| `window` | `cap-d10-step10-lo` | 20240 | 10 | 10494 | 0 | **26541.0** | -802.0 | compact |
+| `window` | `cap-d10-step10-hi` | 22014 | 10 | 10494 | 0 | **26541.0** | -802.0 | compact |
+| `window` | `cap-d10-step11-lo` | 22016 | 11 | 11802 | 0 | **28953.3** | +1610.3 | cap |
+| `window` | `cap-d10-step11-hi` | 23040 | 11 | 11802 | 0 | **28953.3** | +1610.3 | cap |
+
+Verdict: **the step-aligned cap is an exact step function**. The within-step residual goes from
+180.1 tokens to **exactly 0.0** -- both guards inside fold step 10 and both inside fold step 11 now
+cost the same to the token, controller and summarizer alike -- while the boundary the routing rule is
+stated on stays at fold step 10 and the step change grows slightly, from 2300.8 to 2412.3 tokens
+against the same 546.9-token band. Every measured summarizer input and elided span reproduces the
+model-free probe's prediction to the character, so the mechanism was settled before the GPU ran and
+the run only confirmed it costs what the geometry says.
+
+| arm | step-10 spread | step-11 spread | residual (summarizer / controller) | last compact-cheaper step |
+| --- | ---: | ---: | --- | ---: |
+| `trigger` | 106.6 | 180.1 | 180.1 (171.0 / 9.1) | 10 |
+| `window` | **0.0** | **0.0** | **0.0 (0.0 / 0.0)** | 10 |
+
+The elision was free: the reference arm cut up to 794 chars out of the summarizer's input and the
+paired compact completion between the arms is +0.000 [+0.000, +0.000] over 28 pairs (0 wins, 0
+losses, 28 ties, sign-test p = 1.0000) -- a `flat` reading, so the trimmed span carried nothing the
+summary needed on this shape. Pin the cap for predictability, not for completion.
+
+What the trigger cap WAS doing is visible in the compact column: a trimmed summarize input is a
+smaller prompt, so the elision quietly discounted compact's own measured cost -- by 106.6 tokens at
+fold step 10 and 180.1 at fold step 11, always in compact's favor, and always at the cells the
+routing rule is read from. The `window` numbers are the undiscounted ones. Both arms still land on
+the predeclared sides at every guard, so the depth-10 fold-step crossover is unchanged; what that
+discount does to every OTHER published crossover is settled in
+[the restatement](#published-crossovers-under-the-shipped-cap) below.
+
+##### Published crossovers under the shipped cap
+
+`make bench-agentic-context-compact-crossover-restatement` answers the question the step-aligned
+bound leaves behind: every compact routing number an operator applies was measured under the retired
+trigger bound, which discounted compact's own cost wherever it actually trimmed the folded
+transcript. Re-running four studies to find out where that mattered would be the expensive answer.
+The cheap one is exact.
+
+The bound reaches a run through exactly ONE prompt -- the summarize call -- so a cell whose
+summarize input is identical under both bounds sends bit-identical prompts under both, and its
+published cost cannot have moved. `compact_fold_input_probe` decides that per cell with no model, so
+the study opens with a model-free AUDIT of every published cell in the boundary surface, the trigger
+collapse, and the fold-step crossover, and re-measures only the cells the audit calls
+bound-sensitive. The committed design is
+`samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
+by its in-repo design path and every crossover that study published, and validation refuses a design
+whose path is missing, declares a different study kind, publishes a crossover at a depth the study
+does not test, or omits the fold step a crossover lands in.
+
+The invariance criterion is the fold step, not a char tolerance. The fold-step study established
+that the cost changes only at a step boundary, so a restated guard that moves INSIDE one step's
+guard interval names a point at which nothing changes; only a guard that crosses a step boundary
+withdraws a published number. `--audit-only` reports the audit and stops, which is the GPU-free way
+to ask "does this bound change invalidate my evidence" before spending anything.
+
+Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
+both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute, re-interpolate, and place
+the restated guard on the step ladder), `src/llb/bench/agentic_memory_crossover_restatement.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_report.py`,
+`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, and
+`tests/llb/bench/test_agentic_memory_crossover_restatement.py`.
+
+```bash
+make bench-agentic-context-compact-crossover-restatement
+make bench-agentic-context-compact-crossover-restatement AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY=1
+```
+
+The audit is the result. Of the 22 published cells across the three studies, **18 are
+bit-identical under both bounds** and needed no run at all: every depth-6 cell folds a transcript
+neither bound trims, and so do most depth-10 cells. Four are bound-sensitive, and three of those are
+the depth-10 fold-step cells the summarize-input-cap study had already re-measured. **One cell**
+(`surface-d10-g23000`, 302 chars elided) was left, so the whole GPU cost of restating four studies'
+worth of routing numbers was 14 episodes.
+
+CUDA host evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
+`num_ctx=8192`, seven depth-10 memory tasks, `compact_share=0.5`, one re-measured cell at 10.55
+tok/s over about 12 minutes including the control. The pinned family re-passed the unchanged
+depth-10 control at 4/4; the re-measured cell completed 7/7 under both policies with zero overflows
+and one compaction per compact episode. The aggregate is
+`$DATA_DIR/agentic-compact-crossover-restatement/20260805T192757.795491Z-2bc079197412/manifest.json`.
+
+| study | depth | form | published | restated | fold step | basis |
+| --- | ---: | --- | ---: | ---: | ---: | --- |
+| boundary surface | 6 | interpolated guard | 14160 | unchanged | 7 | every cell bound-invariant |
+| boundary surface | 10 | interpolated guard | 21900 | **21862** | 10 | re-measured cell |
+| trigger collapse | 6 | portable ratio | 0.85x | unchanged | 6 | every cell bound-invariant |
+| trigger collapse | 10 | portable ratio | 0.92x | 0.92x | 10 | every cell bound-invariant |
+| fold step | 6 | fold-step boundary | 14912 | unchanged | 6 | every cell bound-invariant |
+| fold step | 10 | fold-step boundary | 22016 | unchanged | 10 | already re-measured |
+
+Verdict: **every published crossover holds under the shipped cap**. Exactly one number moves at all
+-- the depth-10 interpolated guard, by **-38 chars** (21900 -> 21862, ratio 1.84 -> 1.83) once the
+re-measured cell's undiscounted cost (+1610.3 instead of +1524.9 tokens) enters the interpolation --
+and it lands at the same place on the ladder, inside fold step 10's guard interval
+`[20240, 22016)` where every guard costs the same. The direction is the one the mechanism predicts:
+removing a discount that flattered compact pulls the crossing DOWN, toward compact being preferred
+over a slightly narrower band of guards.
+
+The re-measured cell also cross-checks the step function across two independent runs on different
+days: guard 23000 here costs 28953.3 compact tokens, the identical value guards 22016 and 23040
+produced in the summarize-input-cap study. Three guards spanning 1024 chars, one fold step, the same
+cost to the token.
+
+The collapse's portable ratio needs one extra step to read, because it is DERIVED from the surface's
+interpolated guard rather than measured directly: at depth 10 the restated 21862-char guard is a
+10931-char trigger against an 11926-char cap peak, so the ratio moves 0.918x -> 0.917x and the
+published 0.85-0.92x band is unchanged at the precision it is stated in. The collapse's own eight
+cells are all bound-invariant, so the equal-trigger spreads and the contrast family stand as
+measured.
+
+The trigger collapse gains something from the change rather than merely surviving it. Its claim is
+that `compact_share` and the prompt guard act ONLY through their product, and the retired bound was
+the one place where share entered independently (the summarize input was capped at
+`compact_share * guard`). Under the shipped bound that term is gone, so the collapse holds by
+construction and not only by measurement.
+
+##### What a policy-constant change invalidates
+
+`make bench-agentic-policy-change-audit` generalizes the mechanism above from ONE bound to any agent
+context-policy constant. A context policy is a pure function of the deterministic tool world, so
+fixing the geometry and the controller fixes the exact sequence of prompts an episode sends before
+any model runs. The audit therefore replays every published cell under both values of the changed
+field with an oracle controller, records every prompt each replay sends -- controller prompts and
+summarize calls alike, by recording through the injected `complete`, which is the seam they all pass
+through -- and compares the sequences byte for byte.
+
+Two properties make a replay a statement about a real run. The summarize call is answered with a
+FIXED summary so the replay is deterministic, which can only hide downstream divergence, never
+invent it: identical summarize prompts mean a temperature-0 model returns the same summary, so the
+later controller prompts are identical too, and "all prompts identical under the replay" implies
+"all prompts identical under the served model". And BOTH arms of a cell are replayed
+(`observation_cap` and `compact`), because a published number is a compact-minus-cap delta and a
+change that moves either arm moves it.
+
+One case needs its own verdict rather than a comparison. A cell that declares the audited field
+ITSELF -- the trigger collapse sweeps `compact_share` cell by cell -- is not describable by the
+change: replaying it at another value measures a different cell, not the published one. Those report
+`cell_pins_the_field` and are excluded from the counts. A value inherited from `held_fixed` is not
+the same thing; that is the study's inherited setting, and whether its number holds at another value
+is exactly the counterfactual the audit answers.
+
+A CHANGE IS A SET OF FIELDS, not one field. A commit that re-pins `observation_cap_chars` and
+`compact_keep_recent` together moved both, so both sides of the comparison are whole policies:
+`PolicyChange` carries every moved field, the baseline arm replays the full baseline policy and the
+candidate arm the full candidate policy, and the audit answers with ONE verdict and one re-run scope.
+Auditing each field on its own would instead compare "baseline cap + candidate keep" against
+"candidate cap + candidate keep" -- neither of which is what the published cells were measured
+under, and neither of which is what the new build ships -- so its first-divergent step can name a
+model call that neither build ever sends. CI proves the difference at the byte level: the compound
+candidate arm's prompt digest is the digest of an episode replayed under the whole candidate policy,
+and it differs from the digest the single-field audit compares against.
+
+A compound change meets the study-axis rule per field. A cell that declares SOME of the moved fields
+keeps its own value for those and is audited on the rest (reported as `not_applicable_fields` on the
+row and counted as `n_partially_applicable`); only a cell that declares ALL of them reports
+`cell_pins_the_field`. So a `compact_share` + `summary_input_cap` change reads the eight trigger-
+collapse cells through the bound half of the change rather than dropping them, which the per-field
+audit could not do.
+
+Core locations are `src/llb/bench/agentic_policy_change_replay.py` (replay, digest, and the
+per-arm comparison, which takes two whole settings maps), `src/llb/bench/agentic_policy_change_audit.py`
+(`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
+`src/llb/bench/agentic_policy_change_audit_report.py`,
+`src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
+`tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
+(`src/llb/bench/agentic_memory_cap_audit.py`) is now ONE use of this mechanism rather than a second
+one: it supplies the elision diagnostic that explains the verdict, and CI asserts the two agree cell
+for cell.
+
+```bash
+make bench-agentic-policy-change-audit \
+  POLICY_FIELD=observation_cap_chars POLICY_BASELINE=800 POLICY_CANDIDATE=1600
+# a compound change: space-separated lists, read field by field, audited as ONE change
+make bench-agentic-policy-change-audit \
+  POLICY_FIELD="observation_cap_chars compact_keep_recent" \
+  POLICY_BASELINE="800 1" POLICY_CANDIDATE="1600 2"
+```
+
+Every auditable field against the 22 published cells of the three cap-fitting studies (2026-08-05,
+no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
+
+| field(s) | change | invariant | invalidated | not applicable |
+| --- | --- | ---: | ---: | ---: |
+| `observation_cap_chars` | 800 -> 400 | 0 | **22** | 0 |
+| `observation_cap_chars` | 800 -> 1600 | 0 | **22** | 0 |
+| `observation_head_share` | 0.6 -> 0.5 | 0 | **22** | 0 |
+| `keep_last_n` | 3 -> 1 | **22** | **0** | 0 |
+| `compact_share` | 0.5 -> 0.45 | 2 | 12 | 8 |
+| `compact_keep_recent` | 1 -> 2 | 0 | **22** | 0 |
+| `summary_input_cap` | trigger -> window | **18** | 4 | 0 |
+| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 0 | **22** | 0 |
+| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 10 | 12 | 0 (8 partial) |
+
+Two readings an operator can act on. **`keep_last_n` is free**: the constant sweep EXPOSES keep=1 as
+cheaper on prompt tokens, and this says taking that up costs no published compact evidence at all,
+because no cap-fitting cell runs the `keep_last_n` policy. **The observation-trim constants are
+not**: `observation_cap_chars` and `observation_head_share` change both arms of every cell from
+model call 2 -- the first prompt that carries a trimmed observation -- so re-pinning either one
+retires all three studies at once.
+
+The `compact_share` row also reproduces the fold-step mechanism from a direction that owes it
+nothing. Of the 14 applicable cells, the two that survive 0.5 -> 0.45 are `fold-d6-step6-hi` and
+`fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share still lands the trigger
+inside the same step's interval and folds the identical transcript. At the low guards the trigger
+drops into the previous step and everything downstream changes. A byte-level prompt comparison that
+knows nothing about fold steps rediscovers exactly where they are.
+
+The two compound rows are the mechanism's own check on itself. `compact_share` + `summary_input_cap`
+is the interesting one: read field by field it reports 12 invalidated plus 8 cells the share half
+cannot describe, and read as one change it reports the same 12 -- but now those 8 collapse cells are
+ANSWERED (they keep their own share and are audited on the bound), and the whole verdict is computed
+between the two policies that actually existed. On the evidence committed today the compound scope
+and the per-field union name the same cells at the same first-divergent steps, so what the change
+buys here is a guarantee rather than a correction; the case where the two answers separate needs a
+geometry in which two constants interact, which is
+`agent-policy-change-audit-compound-interaction-fixture` in the plan.
+
+##### The audit runs in CI, on the act that creates the problem
+
+The audit above answers the question only when someone asks it, and the person editing a constant in
+`src/llb/bench/agentic/context.py` is precisely the person who does not know the question exists.
+`samples/benchmarks/agentic_context_policy_pins.json` closes that loop: it PINS each shipped
+`ContextPolicy` constant to the value the published evidence stands on, and CI compares the pins with
+the live dataclass defaults on every run. A drifted field is audited on the spot and the failure
+message is the re-run scope -- every invalidated cell by id, depth, guard, changed arms, and the model
+call where the change first bites -- plus the doc sections that publish those numbers.
+
+Constants that drift TOGETHER are audited together, as the one change the commit made: the baseline
+arm replays the full pinned policy, the candidate arm the full shipped policy, and the failure
+message carries one scope under a `2 constants moved together and are audited as ONE change` heading
+that lists every move (`- observation_cap_chars: pinned 800 -> shipped 1600`) plus each constant's
+own `pinned because` note. Auditing each drifted constant separately would have compared "pinned cap
++ shipped keep" against "shipped cap + shipped keep": two configurations no published cell was
+measured under, reported as two re-run scopes for one act.
+
+The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
+evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
+and the message says so (`no published cell is invalidated ... restating the pin is free`). What is
+refused is the silent case: a constant moving while the docs keep quoting numbers measured under its
+old value. A clean build replays nothing, and a drifted one costs under a second per field.
+
+Each pin also declares how it relates to the committed designs -- `agree` (every design's
+`held_fixed` states the pinned value), `restated` (a design states another value and the pin
+supersedes it, which is where `summary_input_cap` sits: the designs record the retired `trigger`
+bound and the crossover restatement moved the published numbers to `window`), or `unstated` (no
+design states the field, as for `keep_last_n` and `compact_keep_recent`) -- and CI verifies that claim
+against the designs themselves, so a pin cannot quietly disagree with the studies it names. CI also
+asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped constant is
+pinned here or the build is red, and that every doc anchor the fixture names still resolves.
+
+Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
+check), `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
+re-run scope through the audit's own reporter), the shared study registry `AUDITED_DESIGN_PATHS` in
+`src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
+walk different evidence), and `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate
+itself -- it runs inside `make ci`, with no target of its own.
+
+```bash
+make ci                       # the gate; a drifted constant fails here with the re-run scope
+.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_pin_gate.py   # just the gate
+```
 
 ### Agent context-policy constants
 

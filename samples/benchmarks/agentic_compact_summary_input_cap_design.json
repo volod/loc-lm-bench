@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-summary-input-cap",
+  "study_kind": "compact_summary_input_cap",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "reference": {
+    "study_id": "agent-context-policy-fold-step-crossover",
+    "evidence": "docs/impl/current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard",
+    "measured_within_step_residual": [
+      {
+        "depth": 10,
+        "summary_input_cap": "trigger",
+        "residual_tokens": 180.1,
+        "summarizer_tokens": 171.0,
+        "controller_tokens": 9.1,
+        "step_change_tokens": 2300.8
+      }
+    ]
+  },
+  "held_fixed": {
+    "model_family": "mistral",
+    "model": "mistral-small3.1:24b",
+    "backend": "ollama",
+    "compact_share": 0.5,
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "minimum_compaction_rate": 0.75,
+    "minimum_cell_completion": 0.75
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "cap_rule": {
+    "rule": "step_aligned_cap_zeroes_the_within_step_residual",
+    "metric": "compact_minus_cap_total_model_input_tokens",
+    "requires_elided_reference_arm": true,
+    "residual_tolerance_tokens": 1.0,
+    "within_step_cap_cost_fraction": 0.02,
+    "minimum_within_step_guard_span_fraction": 0.5,
+    "maximum_step_change_guard_gap_chars": 8
+  },
+  "arms": [
+    {
+      "arm_id": "trigger-cap",
+      "summary_input_cap": "trigger",
+      "role": "shipped_reference",
+      "note": "the bound the published fold-step residual was measured under: compact_share * guard"
+    },
+    {
+      "arm_id": "window-cap",
+      "summary_input_cap": "window",
+      "role": "step_aligned",
+      "note": "the resolved prompt budget minus the summary template, so the folded transcript is summarized at its own size"
+    }
+  ],
+  "ladder": {
+    "depth": 10,
+    "steps": [
+      {
+        "fold_step": 10,
+        "expected_side": "compact_cheaper",
+        "cells": [
+          {"cell_id": "cap-d10-step10-lo", "max_prompt_chars": 20240, "expected_side": "compact_cheaper"},
+          {"cell_id": "cap-d10-step10-hi", "max_prompt_chars": 22014, "expected_side": "compact_cheaper"}
+        ]
+      },
+      {
+        "fold_step": 11,
+        "expected_side": "cap_cheaper",
+        "cells": [
+          {"cell_id": "cap-d10-step11-lo", "max_prompt_chars": 22016, "expected_side": "cap_cheaper"},
+          {"cell_id": "cap-d10-step11-hi", "max_prompt_chars": 23040, "expected_side": "cap_cheaper"}
+        ]
+      }
+    ]
+  },
+  "interpretation": {
+    "step_aligned_cap_is_an_exact_step_function": "the whole compact cost is fixed by the fold step, so an operator predicts it from the step alone",
+    "within_step_residual_survives_step_alignment": "cost still moves inside a step, so something other than the summarize input reads the trigger continuously",
+    "step_aligned_cap_moves_the_fold_step_boundary": "the published routing rule does not carry over to the step-aligned cap unchanged",
+    "elided_span_costs_no_completion": "the trigger cap's elision was free on this shape; pin the cap for predictability, not completion",
+    "elided_span_costs_completion": "the trigger cap was cutting evidence the summary needed",
+    "reference_arm_elided_nothing": "this ladder folds a transcript the trigger cap never trimmed, so it prices no elision"
+  }
+}

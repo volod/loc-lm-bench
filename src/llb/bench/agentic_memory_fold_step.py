@@ -26,7 +26,7 @@ from llb.bench.agentic_memory_fold_step_reading import (
     routing_rule,
 )
 from llb.bench.agentic_memory_fold_step_rows import depth_fold_row, step_rows
-from llb.bench.agentic_memory_transfer_cells import run_transfer_cell
+from llb.bench.agentic_memory_transfer_cells import held_summary_input_cap, run_transfer_cell
 from llb.bench.agentic_memory_trigger_collapse_reading import annotate_fold_steps
 from llb.bench.common import LLMComplete
 
@@ -49,6 +49,7 @@ def run_fold_step_ladders(
                 observation_cap_chars=int(cast(int, held["observation_cap_chars"])),
                 observation_head_share=float(cast(float, held["observation_head_share"])),
                 minimum_compaction_rate=float(cast(float, held["minimum_compaction_rate"])),
+                summary_input_cap=held_summary_input_cap(held),
                 compact_share=float(cast(float, held["compact_share"])),
                 cell_id=cast(str, cell["cell_id"]),
                 depth=int(cast(int, cell["depth"])),

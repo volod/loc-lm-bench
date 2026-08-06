@@ -1,25 +1,23 @@
 """Design contract for the fold-step crossover: a grid one fold step apart, checked with no model.
 
 A grid can only tell a step change apart from a smooth slide when its cells are placed against the
-deterministic step ladder rather than against round guard numbers. Every placement rule here is
-therefore checkable before a GPU is warmed: each declared cell must fold at the step it claims, the
-tested steps must be ADJACENT on the ladder, the guards inside one step must span that step's whole
-interval (otherwise "same step, same cost" is measured over two nearly identical guards), and the
-guards on either side of a step change must sit within a few chars of it (otherwise a flip is not
-localized to the step change at all).
+deterministic step ladder rather than against round guard numbers. The placement rules themselves
+live in `agentic_memory_fold_step_placement.py` (they are shared with the summarize-input-cap
+study); this module is the fold-step design's own contract -- the pinned family, the control
+recheck, the step rule, and one ladder per tested depth placed against those rules.
 """
 
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_gate import SIDE_CAP_CHEAPER, SIDE_COMPACT_CHEAPER
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
-    compaction_trigger_chars,
-    first_fold_step,
-    fold_step_guard_interval,
-    guard_is_cap_fitting,
-    reachable_fold_steps,
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_placement import (
+    EXPECTED_SIDES,
+    step_guards,
+    validate_ladder_shape,
+    validate_step_cells,
+    validate_step_changes,
+    validate_window,
 )
 from llb.bench.agentic_memory_fold_step_reading import (
     REPORTING_CONFIDENCE,
@@ -30,7 +28,14 @@ from llb.bench.agentic_memory_fold_step_reading import (
 from llb.bench.agentic_memory_transfer import load_transfer_design
 from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
 
-EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
+__all__ = [
+    "EXPECTED_SIDES",
+    "declared_cells",
+    "fold_step_cap_peaks",
+    "fold_step_prompt_sequences",
+    "load_fold_step_design",
+    "validate_fold_step_design",
+]
 
 
 def load_fold_step_design(path: Path | str) -> dict[str, object]:
@@ -130,106 +135,26 @@ def _validate_ladder(
     ladder: dict[str, object], held: dict[str, object], rule: dict[str, object], seen: set[str]
 ) -> None:
     depth = int(cast(int, ladder["depth"]))
+    label = f"depth {depth}"
     share = float(cast(float, held["compact_share"]))
     sequence = _prompt_sequence(depth, held)
-    peak = max(sequence)
     steps = cast(list[dict[str, object]], ladder.get("steps", []))
-    declared = [int(cast(int, step.get("fold_step", 0))) for step in steps]
-    if len(steps) < 2 or declared != sorted(declared) or len(set(declared)) != len(declared):
-        raise ValueError(f"depth {depth} needs two or more fold steps in increasing order")
-    reachable = reachable_fold_steps(sequence)
-    positions = [reachable.index(step) for step in declared if step in reachable]
-    if len(positions) != len(declared) or positions != list(
-        range(positions[0], positions[0] + len(positions))
-    ):
-        raise ValueError(
-            f"depth {depth} must test fold steps that are ADJACENT on the reachable ladder "
-            f"{reachable}, got {declared}"
-        )
-    sides = [str(step.get("expected_side", "")) for step in steps]
-    if set(sides) != set(EXPECTED_SIDES) or sides != sorted(sides, key=EXPECTED_SIDES.index):
-        raise ValueError(
-            f"depth {depth} must predeclare compact-cheaper fold steps below cap-cheaper ones"
-        )
+    validate_ladder_shape(label, steps, sequence)
     for step in steps:
-        _validate_step(depth, step, sequence, share, peak, rule, seen)
-    _validate_step_changes(depth, steps, rule)
-    _validate_window(held, max(_guards(step)[-1] for step in steps))
-
-
-def _validate_step(
-    depth: int,
-    step: dict[str, object],
-    sequence: list[int],
-    share: float,
-    peak: int,
-    rule: dict[str, object],
-    seen: set[str],
-) -> None:
-    fold_step = int(cast(int, step["fold_step"]))
-    cells = cast(list[dict[str, object]], step.get("cells", []))
-    ids = [str(cell.get("cell_id", "")) for cell in cells]
-    guards = _guards(step)
-    if len(cells) < 2 or not all(ids) or seen & set(ids) or len(set(ids)) != len(ids):
-        raise ValueError(f"depth {depth} fold step {fold_step} needs two or more unique cells")
-    seen |= set(ids)
-    if any(cell.get("expected_side") != step["expected_side"] for cell in cells):
-        raise ValueError(
-            f"depth {depth} fold step {fold_step} cells must predeclare the step's own side"
+        validate_step_cells(
+            label,
+            step,
+            sequence=sequence,
+            compact_share=share,
+            peak_prompt_chars=max(sequence),
+            minimum_guard_span_fraction=float(
+                cast(float, rule["minimum_within_step_guard_span_fraction"])
+            ),
+            seen=seen,
         )
-    if len(set(guards)) != len(guards):
-        raise ValueError(f"depth {depth} fold step {fold_step} must test distinct guards")
-    for guard in guards:
-        predicted = first_fold_step(sequence, compaction_trigger_chars(guard, share))
-        if predicted != fold_step:
-            raise ValueError(
-                f"depth {depth} guard {guard} folds at step {predicted}, not the declared "
-                f"{fold_step}"
-            )
-        if not guard_is_cap_fitting(guard, peak, share):
-            raise ValueError(
-                f"depth {depth} guard {guard} falls outside the usable band around a {peak}-char "
-                "cap peak, where cap fits and compact still activates"
-            )
-    low, high = fold_step_guard_interval(sequence, fold_step, share)
-    required = float(cast(float, rule["minimum_within_step_guard_span_fraction"])) * (high - low)
-    if guards[-1] - guards[0] < required:
-        raise ValueError(
-            f"depth {depth} fold step {fold_step} guards span {guards[-1] - guards[0]} chars of "
-            f"its [{low}, {high}) interval, under the declared {required:.0f}-char minimum"
-        )
-
-
-def _validate_step_changes(
-    depth: int, steps: list[dict[str, object]], rule: dict[str, object]
-) -> None:
-    """Each step change must be straddled closely, or a flip is not localized to the step change."""
-    allowed = int(cast(int, rule["maximum_step_change_guard_gap_chars"]))
-    for low, high in zip(steps, steps[1:]):
-        gap = _guards(high)[0] - _guards(low)[-1]
-        if not 0 < gap <= allowed:
-            raise ValueError(
-                f"depth {depth} straddles the step "
-                f"{low['fold_step']}->{high['fold_step']} change by {gap} chars, over the declared "
-                f"{allowed}-char maximum"
-            )
-
-
-def _validate_window(held: dict[str, object], max_guard: int) -> None:
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
-
-    required = int(max_guard / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS
-    if int(cast(int, held["max_model_len"])) < required:
-        raise ValueError(
-            f"declared max_model_len cannot carry the widest guard ({max_guard} chars needs about "
-            f"{required} tokens)"
-        )
-
-
-def _guards(step: dict[str, object]) -> list[int]:
-    return sorted(
-        int(cast(int, cell.get("max_prompt_chars", 0)))
-        for cell in cast(list[dict[str, object]], step.get("cells", []))
+    validate_step_changes(label, steps, int(cast(int, rule["maximum_step_change_guard_gap_chars"])))
+    validate_window(
+        int(cast(int, held["max_model_len"])), max(step_guards(step)[-1] for step in steps)
     )
 
 

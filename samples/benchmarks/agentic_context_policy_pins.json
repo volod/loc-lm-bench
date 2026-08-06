@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "study_id": "agentic_context_policy_pins",
+  "description": "The shipped ContextPolicy constants the published agentic evidence stands on. Editing a constant in src/llb/bench/agentic/context.py without editing its pin here fails the CI pin gate, which names the published cells the change invalidates.",
+  "published_in": [
+    "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
+    "docs/impl/current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis",
+    "docs/impl/current/extended-workflows.md#the-summarize-input-cap-is-step-aligned",
+    "docs/impl/current/extended-workflows.md#published-crossovers-under-the-shipped-cap",
+    "docs/impl/current/extended-workflows.md#what-a-policy-constant-change-invalidates"
+  ],
+  "pins": {
+    "observation_cap_chars": {
+      "value": 800,
+      "designs": "agree",
+      "note": "Pinned by the 2026-07-30 context-policy constant sweep (cap=400 separates worse on completion, cap=1600 is flat). Every published cap-fitting cell trims its padded observations under it, so both arms of all 22 cells move from model call 2 if it is re-pinned."
+    },
+    "observation_head_share": {
+      "value": 0.6,
+      "designs": "agree",
+      "note": "Pinned by the same sweep (0.5 / 0.7 flat on completion). Changes the trimmed observation text itself, so it moves every published cell exactly as the cap does."
+    },
+    "keep_last_n": {
+      "value": 3,
+      "designs": "unstated",
+      "note": "Shipped at 3 and EXPOSED rather than pinned by the constant sweep (keep=1 is flat on completion and cheaper on prompt tokens). No cap-fitting cell runs the keep_last_n policy, so no published cap-fitting number rests on it."
+    },
+    "compact_share": {
+      "value": 0.5,
+      "designs": "agree",
+      "note": "The share the boundary surface and the fold-step crossover hold fixed. The trigger collapse SWEEPS it cell by cell, so those cells pin the field as their own study axis and a change does not describe them."
+    },
+    "compact_keep_recent": {
+      "value": 1,
+      "designs": "unstated",
+      "note": "One recent step is the minimum that keeps a compacting loop from repeating its last tool call, and the largest keep that still lets compaction fire on a two-step transcript. Not stated in any design's held_fixed, but every compact arm runs under it, so a change moves every published cell."
+    },
+    "summary_input_cap": {
+      "value": "window",
+      "designs": "restated",
+      "note": "The three designs record `trigger`, the retired bound they were measured under. The crossover restatement audited all 22 cells under both bounds, found 18 bit-identical, re-measured the one bound-sensitive cell that was still outstanding, and restated the published crossovers under `window` -- so `window` is the value the published numbers now stand under."
+    }
+  }
+}

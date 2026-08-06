@@ -106,6 +106,11 @@ class AgenticCaseRow(TypedDict):
     observation_bytes: NotRequired[int]
     n_compactions: NotRequired[int]
     n_trimmed_observations: NotRequired[int]
+    # What the summarizer was offered versus what its input cap let through: an elided span is
+    # transcript the running summary was never shown.
+    summary_input_chars: NotRequired[int]
+    summary_input_elided_chars: NotRequired[int]
+    n_trimmed_summary_inputs: NotRequired[int]
     answer_preview: str
 
 

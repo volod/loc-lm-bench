@@ -48,6 +48,9 @@ def _row(task: AgenticTask, episode: Episode) -> AgenticCaseRow:
         row["observation_bytes"] = telemetry.observation_bytes
         row["n_compactions"] = telemetry.n_compactions
         row["n_trimmed_observations"] = telemetry.n_trimmed_observations
+        row["summary_input_chars"] = telemetry.summary_input_chars
+        row["summary_input_elided_chars"] = telemetry.summary_input_elided_chars
+        row["n_trimmed_summary_inputs"] = telemetry.n_trimmed_summary_inputs
     return row
 
 

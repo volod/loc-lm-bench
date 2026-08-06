@@ -364,7 +364,9 @@ def test_compact_preserves_typed_memory_and_cues_finish_after_workflow_completio
     assert any('finish з answer="MEM-001"' in line for line in lines)
 
 
-def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
+@pytest.mark.parametrize("summary_input_cap", ("window", "trigger"))
+def test_a_compacting_episode_never_sends_an_oversized_summarize_call(summary_input_cap: str):
+    """Both summarize-input bounds must fit: the wider one still reserves the elision marker."""
     budget, prompts = fixed_budget(6000), []
 
     def complete(prompt: str) -> str:
@@ -380,7 +382,12 @@ def test_a_compacting_episode_never_sends_an_oversized_summarize_call():
         complete,
         budget=budget,
         # Cap above BIG so live trimming does not prevent the compact trigger this test measures.
-        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5, observation_cap_chars=100_000),
+        policy=ContextPolicy(
+            name=POLICY_COMPACT,
+            compact_share=0.5,
+            observation_cap_chars=100_000,
+            summary_input_cap=summary_input_cap,
+        ),
     )
     summarize_calls = [p for p in prompts if "Стисло підсумуй" in p]
     assert summarize_calls and all(budget.fits(len(p)) for p in summarize_calls)
