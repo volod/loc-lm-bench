@@ -1661,8 +1661,11 @@ one invariant and one invalidated, so the fixture tests the interaction rather t
 The band is narrow by construction -- the two triggers must land inside ONE fold step's interval
 while straddling the offered transcript -- so an unrelated edit to a prompt template or the memory
 task world shifts every prompt size and walks the committed guards out of it. That band is not
-searched for, it is SOLVED: all three conditions are intervals the boundary probe already computes,
-intersected per fold step.
+searched for, it is SOLVED: three conditions, each a half-open guard interval, intersected per fold
+step. The three are the same three for ANY pair of moved fields -- each field audited alone must
+change no prompt, and the two together must change one -- and what differs per pair is the
+arithmetic they turn into. For this pair all three are intervals the boundary probe already
+computes:
 
 | condition | why | interval |
 | --- | --- | --- |
@@ -1693,16 +1696,95 @@ separate and every guard it includes separates.
 Core locations are `src/llb/bench/agentic_policy_change_interaction_fixture.py` (the fixture
 contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
-`src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report), and the
-two test modules that ARE the CI assertion --
-`tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation and
-`tests/llb/bench/test_agentic_policy_change_interaction_band.py` for the band. Both run inside
-`make ci`, together in under a second, with no target of their own.
+`src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
+`src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
+stated in) and `..._conditions.py` (what each pair demands of a guard), and the three test modules
+that ARE the CI assertion -- `tests/llb/bench/test_agentic_policy_change_interaction.py` for the
+separation, `..._band.py` for the band, and `..._couplings.py` for the enumeration below. All run
+inside `make ci`, together in about two seconds, with no target of their own.
 
 ```bash
 make ci                       # the separation assertion; a collapsed audit fails here
 .venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py \
-  tests/llb/bench/test_agentic_policy_change_interaction_band.py
+  tests/llb/bench/test_agentic_policy_change_interaction_band.py \
+  tests/llb/bench/test_agentic_policy_change_interaction_couplings.py
+```
+
+##### One pair separates, and the other fourteen are answered
+
+A guarantee resting on ONE pair through ONE coupling retires with the next refactor: the `trigger`
+bound is already not the shipped default, and retiring it takes the only counterexample with it. So
+every pair of the six `AUDITABLE_FIELDS` -- `C(6, 2) = 15` of them -- states its mechanism and its
+own three conditions, and the solver answers each. Two of the three contradict each other outright
+for every pair except one, which is why the band arithmetic can answer them at all depths rather
+than only where it was asked:
+
+| pair | how one decides what the other means | answer |
+| --- | --- | --- |
+| `compact_share` x `summary_input_cap` | the bound's own value IS `compact_share * guard` under `trigger` | **band**, solved per fold step |
+| `observation_cap_chars` x `compact_share` | the cap decides every prompt size, and the size is what crosses the trigger | no geometry |
+| `observation_cap_chars` x `summary_input_cap` | the cap decides which step folds, and the fold decides what the bound must fit | no geometry |
+| `observation_cap_chars` x `compact_keep_recent` | the cap decides which step folds, the keep what it leaves live | no geometry |
+| `observation_cap_chars` x `observation_head_share` | the cap decides whether the head share means anything at all | no geometry |
+| `compact_share` x `compact_keep_recent` | the share picks the fold step, the keep how much survives behind it | no geometry |
+| `compact_keep_recent` x `summary_input_cap` | the keep sizes the offered transcript, the bound decides whether it is elided | no geometry |
+| `observation_head_share` x share / keep_recent / bound | nothing: the head share moves no prompt LENGTH | independent |
+| `keep_last_n` x cap / head / share / keep_recent / bound | nothing: `keep_last_n` parameterizes neither audited arm | independent |
+
+Each `no geometry` answer is one contradiction, stated as a condition rather than as an empty list:
+
+| the field that blocks | the two conditions that cannot both hold |
+| --- | --- |
+| `compact_keep_recent` | silent alone needs at most `min(keeps)` live entries at the fold (`compact_state` folds the WHOLE transcript when the keep would leave nothing to fold); contributing to the compound needs more than that |
+| `observation_cap_chars` | silent alone needs it to trim nothing differently -- a differently trimmed observation is shown in the very next prompt, and the summarize call is built from RAW observations, so the cap never reaches the summarizer except by moving a fold step; contributing needs it to move a prompt size |
+| `observation_head_share` | `trim_observation` keeps `head + tail = cap_chars`, so the head share moves no length, no fold step, no trigger crossing and no overflow; the bytes it does move are shown at the same steps under either partner value |
+| `keep_last_n` | neither `observation_cap` nor `compact` reads it, so no value of it moves a prompt in either replayed arm |
+
+The solver reports a blocked step the way it reports a solved one, which is what makes the negative
+answer readable rather than merely empty:
+
+```text
+[band] depth 10, compact_share 0.5 -> 0.48, compact_keep_recent 1 -> 2
+  no fold step separates the two readings at this depth
+  compact_share x compact_keep_recent [no_geometry]: the share decides which step folds, and the
+    keep decides how much of the transcript that fold leaves live behind it
+  fold step 1: the_moved_keep_folds_a_different_span impossible: the compound must fold something
+    the partner field alone does not, which needs more than 1 live entries; step 1 has 0
+  fold step 3: the_keep_audited_alone_is_silent impossible: the fold must hand the summarizer the
+    same span under both keeps, which needs at most 1 live entries; step 3 has 2
+```
+
+An inequality can be wrong about the loop it describes, so the same question is asked by REPLAY too:
+`agentic_policy_change_interaction_scan` walks a grid of geometries, reads every cell both ways, and
+reports where they actually disagree. Arithmetic and replay agree -- inside a solved band and
+nowhere else. Evidence (2026-08-06, no GPU, ~3 min): 9630 cells at depth 10 over guards 2000 to
+34000 in steps of 100, every pair scanned twice (the shipped value against a plausible neighbour,
+then against a second alternative so an answer cannot be a property of one chosen value). Exactly 10
+cells separate, all of them `compact_share` x `summary_input_cap` at guards 21100-21800 and
+23700-23800 -- the two solved bands. The `slow`-marked test replays the compact form of that grid
+(depths 6 / 10 / 14, guards 2000 to 34000 in steps of 1000 plus the two committed guards, ~30 s) and
+asserts both halves: no other pair separates anywhere, and every hit for the separating pair falls
+inside a solved band.
+
+What the enumeration does NOT cover: a field is called silent when no prompt the episode SENDS
+moves, and a fold discards the prompt it was building. At a fold that folds the whole transcript
+(one live entry) that discarded prompt is the one place a cap could move a size unobserved, and the
+conditions treat it as if it were shown. The wide scan covers that corner empirically -- guards that
+small fold at step 2 and the episode dies immediately -- but the arithmetic does not.
+
+Core locations are `src/llb/bench/agentic_policy_change_interaction_couplings.py` (the enumeration,
+its mechanisms, and the one concrete move per field the scan asks with),
+`src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions),
+`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan and its refusal to scan a
+baseline the per-field arm would not replay), and
+`tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`, which is the assertion: every
+pair enumerated, one pair separating, and the two independence claims (`keep_last_n` inert, the head
+share length-preserving) measured on real prompts rather than asserted.
+
+```bash
+make ci                       # the enumeration; a new policy constant fails here unpaired
+.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction_couplings.py \
+  -m slow                     # the wide replay scan, ~30 s, excluded from `make ci`
 ```
 
 ##### The audit runs in CI, on the act that creates the problem

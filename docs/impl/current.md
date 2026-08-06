@@ -41,6 +41,7 @@ For the product design, read [`docs/design/spec.md`](../design/spec.md). For fut
 | Model-free audit of which published compact evidence a summarize-bound change can move, and the crossovers restated under the shipped bound | [Extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap) |
 | Which published agentic numbers any context-policy constant change invalidates (prompt-sequence replay, no GPU) | [Extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates) |
 | The committed geometry where a compound policy change and a per-field reading disagree (the compound guarantee's own test) | [Extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it) |
+| Every pair of auditable policy constants, which one couples enough to separate the two readings, and what blocks the other fourteen | [Extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered) |
 | The CI gate that pins the shipped context-policy constants and fails a drift with its re-run scope | [Extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem) |
 | Agent context-policy constant sweep (cap / head-share / keep_last_n pin-or-expose) | [Extended workflows](current/extended-workflows.md#agent-context-policy-constants) |
 | keep_last_n on longer transcripts (medium-search keep grid) | [Extended workflows](current/extended-workflows.md#keep_last_n-on-longer-transcripts) |

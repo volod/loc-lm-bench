@@ -38,12 +38,13 @@ from llb.bench.agentic_policy_change_audit import (
     declared_geometry,
     load_audited_design,
 )
+from llb.bench.agentic_policy_change_interaction_terms import FIELD_BOUND, FIELD_SHARE
 
 INTERACTION_DESIGN_PATH = "samples/benchmarks/agentic_policy_change_interaction_design.json"
 
-# The interacting pair: the bound's own value is a function of the share under `trigger`.
-FIELD_SHARE = "compact_share"
-FIELD_BOUND = "summary_input_cap"
+# The interacting pair: the bound's own value is a function of the share under `trigger`. It is the
+# one pair of `AUDITABLE_FIELDS` that separates the two readings at all -- see the enumeration in
+# `agentic_policy_change_interaction_couplings` for the other fourteen and what answers them.
 INTERACTING_FIELDS = (FIELD_SHARE, FIELD_BOUND)
 # What every declared cell owes the reader: the reading it predicts, the geometry that produces it,
 # and the sentence saying why. A cell missing any of them is a claim nobody can check.

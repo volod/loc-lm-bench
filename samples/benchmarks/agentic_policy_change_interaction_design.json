@@ -8,7 +8,8 @@
     "pair": "compact_share x summary_input_cap",
     "why_they_interact": "under the trigger bound the summarize call's input cap IS compact_share * max_prompt_chars, so moving the share moves what the bound means; under the window bound the cap does not depend on the share at all",
     "seam": "summary_input_cap_chars in src/llb/bench/agentic/episode.py",
-    "separating_band": "a guard whose fold step is the same at both shares AND whose offered transcript sits between the two shares' triggers: the baseline share elides nothing and the candidate share elides"
+    "separating_band": "a guard whose fold step is the same at both shares AND whose offered transcript sits between the two shares' triggers: the baseline share elides nothing and the candidate share elides",
+    "other_pairs": "the other 14 pairs of auditable policy fields are enumerated in src/llb/bench/agentic_policy_change_interaction_couplings.py; each states its own three band conditions, two of which contradict each other, so this pair is the only one a geometry can separate"
   },
   "change": {
     "baseline": {

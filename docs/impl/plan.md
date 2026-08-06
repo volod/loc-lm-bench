@@ -43,31 +43,56 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-second-pair (optional)
+### agent-policy-change-interaction-silence-includes-the-discarded-prompt (optional)
 
-The compound guarantee is held up by ONE interacting pair through ONE coupling: `summary_input_cap`
-under the `trigger` bound reads its cap off `compact_share`
-([extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
-Retire that bound (the shipped default is already `window`) or special-case the pair in a refactor
-and the only counterexample goes with it. Enumerate the OTHER couplings between auditable policy
-fields -- a field whose runtime meaning is a function of another, e.g. `compact_keep_recent` x
-`compact_share` through what stays live behind a fold, or `observation_cap_chars` x `compact_share`
-through the prompt size that decides which step folds -- and for each either commit a second
-separating cell or record the proof that no geometry separates it. The band arithmetic is the tool:
-generalize `separating_guard_bands` past the share/bound inequality it hard-codes today so each
-coupling states its own three conditions, then let the solver answer.
+A coupling calls a field SILENT when no prompt the episode SENDS moves, and the fold discards the
+prompt it was building before it rebuilds
+([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)).
+At a fold that folds the WHOLE transcript -- one live entry, so `compact_state` takes its
+fold-everything fallback -- that discarded prompt is the one place a field can move a size nobody
+observes, and the cap conditions treat it as if it were shown. So the `no geometry` answers for
+every `observation_cap_chars` pair are one case short of a proof: a cap could in principle move the
+discarded prompt across the candidate share's trigger and move the fold with no field audible alone.
+Give the cap condition that case -- the fold-everything steps are exactly where
+`live_entries_at_fold_step(step) <= compact_keep_recent`, and both caps' prompt sequences are already
+computed -- and either widen the answer to a proof or report the corner as a band to commit a cell
+for.
 
 - Agent status: CLEAR
-- Dependencies: the solver and the direction it currently hard-codes are
-  `src/llb/bench/agentic_policy_change_interaction_band.py`; the fixture shape it would extend is
-  `samples/benchmarks/agentic_policy_change_interaction_design.json`.
-- User-visible outcome: the compound guarantee survives retiring any one policy constant, because
-  more than one pair of constants tests it.
-- Scope boundary: in scope -- the coupling enumeration, the generalized solver, and either a second
-  fixture pair or the recorded no-separation result. Out of scope -- changing any shipped constant,
-  re-running a published cell, and widening the audited study set.
+- Dependencies: the conditions are `observation_cap_conditions` in
+  `src/llb/bench/agentic_policy_change_interaction_conditions.py`; the fold-everything fallback is
+  `compact_state` in `src/llb/bench/agentic/context.py`; the replay check that covers the corner
+  empirically today is the `slow` scan in
+  `tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`.
+- User-visible outcome: "no geometry separates this pair" is a statement about every prompt the loop
+  builds, not only the ones it sends.
+- Scope boundary: in scope -- the discarded-prompt case in the cap conditions, and the test that a
+  known blocked step stays blocked. Out of scope -- changing any shipped constant, re-running a
+  published cell, and widening the audited study set.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-compound-guarantee-has-a-geometry-that-tests-it).
+  [extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered).
+
+### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
+
+The replay scan asks each pair about ONE concrete move per field (`FIELD_MOVES`, plus a second
+alternative set run by hand), so "no geometry separates this pair" is backed at two points of a
+value space the audit accepts continuously
+([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)).
+The separating pair shows why that matters: the band exists for `compact_share` 0.5 -> 0.48 and
+vanishes for 0.5 -> 0.55, because the direction of the move decides whether the candidate elides. Let
+the scan sweep the moved VALUES as well as the guards -- a small grid per field, sized so the whole
+sweep still fits a `slow` test -- and record which pairs stay silent across it.
+
+- Agent status: CLEAR
+- Dependencies: the per-field moves are `FIELD_MOVES` in
+  `src/llb/bench/agentic_policy_change_interaction_couplings.py`; the scan is
+  `scan_separating_cells` in `src/llb/bench/agentic_policy_change_interaction_scan.py`.
+- User-visible outcome: the enumeration's negative answers hold across the values a commit could
+  plausibly ship, not only the neighbour the fixture happens to name.
+- Scope boundary: in scope -- the value grid, the scan runtime budget, and the recorded result. Out
+  of scope -- changing any shipped constant and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered).
 
 ### agent-policy-change-interaction-band-past-the-first-fold (optional)
 

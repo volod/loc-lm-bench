@@ -6,69 +6,53 @@ property of the task world: edit a prompt template by a few chars and every prom
 band moves, and the committed guards fall out of it. Found by hand, that costs a re-derivation.
 Solved, it costs re-reading one line of a failure message.
 
-Three conditions define the band at one fold step, and all three are intervals the boundary probe
-already computes:
+Three conditions define a band at one fold step, and they are the same three for every pair of
+moved fields: each field audited ALONE must change no prompt, and the two together must change one.
+What differs per pair is the arithmetic those statements turn into, so the conditions live with the
+coupling (`agentic_policy_change_interaction_couplings`) and this module only intersects them.
 
-  - BOTH shares must fold at that step, or the share alone already changes the prompts. The trigger
-    interval that selects a step is `fold_step_trigger_interval`, and `fold_step_guard_interval`
-    inverts it into guards per share, so the fold-step condition is the intersection of the two
-    shares' guard intervals.
-  - the BASELINE share must elide nothing, or the bound audited alone already reports the change:
-    `trigger(guard, baseline_share) >= offered`, which is `guard >= smallest_guard_reaching(offered,
-    baseline_share)`.
-  - the CANDIDATE share must elide, or the compound reading has nothing to report either:
-    `trigger(guard, candidate_share) < offered`, which is `guard < smallest_guard_reaching(offered,
-    candidate_share)`.
-
-`offered` is the transcript the fold hands the summarizer, measured once per fold step with an
-oracle controller and no model. The direction is fixed: the baseline bound must be `window` (so the
-share alone and the bound alone both read as invariant) and the candidate `trigger` (so the moved
-share moves the cap). The reverse direction cannot separate -- a baseline that already elides makes
-the bound audited alone report the change -- and is refused rather than answered.
+For `compact_share` x `summary_input_cap` all three are intervals the boundary probe computes -- the
+two shares' fold-step guard intervals, and the two elision inequalities against the transcript the
+fold offers the summarizer, measured once per fold step with an oracle controller and no model. The
+direction is fixed there: the baseline bound must be `window` and the candidate `trigger`; the
+reverse cannot separate and is refused rather than answered. Every OTHER pair states conditions that
+contradict each other at every fold step, and the solver reports that as no band -- with the
+condition that blocked it, so the answer reads as a derivation rather than as an empty list.
 
 The bands this returns are exact, not approximate: `tests/llb/bench/test_agentic_policy_change_
 interaction.py` replays the audit at both edges of a solved band and at the guards just outside it.
 """
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
-    compact_fold_input_probe,
-    fold_step_guard_interval,
-    fold_step_trigger_interval,
-    reachable_fold_steps,
-    smallest_guard_reaching,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, reachable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
-from llb.bench.agentic_policy_change_interaction_fixture import (
-    FIELD_BOUND,
+from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_SHARE,
-    INTERACTING_FIELDS,
-    geometry_kwargs,
+    BandCondition,
+    StepGeometry,
 )
-
-# The only direction that can separate: a baseline that elides nothing, and a candidate whose cap
-# rides the moved share down onto the folded transcript.
-SEPARATING_BOUNDS = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
+from llb.bench.agentic_policy_change_interaction_couplings import Coupling, coupling_for
+from llb.bench.agentic_policy_change_interaction_fixture import geometry_kwargs
 
 
 @dataclass(frozen=True, slots=True)
 class SeparatingBand:
     """The half-open guard interval `[low, high)` that separates the two readings at one fold step.
 
-    Empty (`low >= high`) is a real answer: at that fold step the offered transcript does not fall
-    between the two shares' triggers, so no guard there tells the compound reading from the
-    per-field one. `separating_guard_bands` drops the empty ones.
+    Empty (`low >= high`) is a real answer: at that fold step the coupling's three conditions have
+    no guard in common -- for the share/bound pair because the offered transcript does not fall
+    between the two shares' triggers, for every other pair because two of the conditions contradict
+    each other outright. `separating_guard_bands` drops the empty ones unless asked for them, and
+    `blocked_by` names the conditions that emptied one.
     """
 
     fold_step: int
     low: int
     high: int
-    summary_input_chars: int
-    trigger_interval: tuple[int, int]
+    detail: str
+    conditions: tuple[BandCondition, ...]
 
     @property
     def is_empty(self) -> bool:
@@ -77,26 +61,46 @@ class SeparatingBand:
     def contains(self, guard_chars: int) -> bool:
         return self.low <= guard_chars < self.high
 
+    def blocked_by(self) -> tuple[BandCondition, ...]:
+        """The conditions no guard satisfies -- why this fold step separates nothing."""
+        return tuple(condition for condition in self.conditions if condition.is_empty)
+
     def describe(self) -> str:
+        if self.is_empty:
+            blocked = self.blocked_by()
+            reason = (
+                blocked[0].describe()
+                if blocked
+                else f"the conditions overlap nowhere ([{self.low}, {self.high}))"
+            )
+            return f"fold step {self.fold_step}: nothing separates ({self.detail}) -- {reason}"
         return (
-            f"fold step {self.fold_step}: guards [{self.low}, {self.high}) separate "
-            f"(offered {self.summary_input_chars}, folds at triggers "
-            f"[{self.trigger_interval[0]}, {self.trigger_interval[1]}))"
+            f"fold step {self.fold_step}: guards [{self.low}, {self.high}) separate ({self.detail})"
         )
 
 
 def separating_guard_bands(
-    change: PolicyChange, *, depth: int, held: dict[str, object]
+    change: PolicyChange, *, depth: int, held: dict[str, object], include_empty: bool = False
 ) -> list[SeparatingBand]:
-    """Every guard band that separates the two readings at this depth, one per fold step."""
-    shares = _shares(change)
+    """Every guard band that separates the two readings at this depth, one per fold step.
+
+    `include_empty` keeps the fold steps that separate nothing, each carrying the condition that
+    blocked it -- which is what a coupling with no separating geometry has to say for itself.
+    """
+    coupling = coupling_for(change.fields)
     geometry = geometry_kwargs(depth, held)
     sequence = cap_prompt_sequence(**geometry)
+    share = _cell_share(change, held)
     bands = [
-        _band_at_fold_step(step, sequence=sequence, shares=shares, geometry=geometry)
+        _band_at_fold_step(
+            coupling,
+            StepGeometry(
+                change=change, step=step, sequence=sequence, geometry=geometry, share=share
+            ),
+        )
         for step in reachable_fold_steps(sequence)
     ]
-    return [band for band in bands if band is not None and not band.is_empty]
+    return [band for band in bands if include_empty or not band.is_empty]
 
 
 def band_at_fold_step(bands: list[SeparatingBand], fold_step: int) -> SeparatingBand | None:
@@ -105,73 +109,78 @@ def band_at_fold_step(bands: list[SeparatingBand], fold_step: int) -> Separating
 
 
 def format_band_report(change: PolicyChange, depth: int, bands: list[SeparatingBand]) -> str:
-    """The failure message: what the geometry offers NOW, so a drifted guard has a replacement."""
-    header = f"[band] depth {depth}, {change.label}"
-    if not bands:
-        return f"{header}\n  no fold step separates the two readings at this depth"
-    return "\n".join([header, *(f"  {band.describe()}" for band in bands)])
+    """The failure message: what the geometry offers NOW, so a drifted guard has a replacement.
 
-
-def _band_at_fold_step(
-    step: int,
-    *,
-    sequence: list[int],
-    shares: tuple[float, float],
-    geometry: dict[str, Any],
-) -> SeparatingBand | None:
-    """Intersect the fold-step condition with the two elision conditions, at one step."""
-    baseline_share, candidate_share = shares
-    folds = [fold_step_guard_interval(sequence, step, share) for share in shares]
-    low, high = max(edge[0] for edge in folds), min(edge[1] for edge in folds)
-    if low >= high:
-        return None  # the two shares cannot both fold at this step, whatever the guard
-    offered = _offered_at_fold_step(low, geometry=geometry, share=baseline_share)
-    if offered is None:
-        return None
-    return SeparatingBand(
-        fold_step=step,
-        # The baseline share must not elide, and the candidate share must.
-        low=max(low, smallest_guard_reaching(offered, baseline_share)),
-        high=min(high, smallest_guard_reaching(offered, candidate_share)),
-        summary_input_chars=offered,
-        trigger_interval=fold_step_trigger_interval(sequence, step),
-    )
-
-
-def _offered_at_fold_step(
-    guard_chars: int, *, geometry: dict[str, Any], share: float
-) -> int | None:
-    """The transcript ONE fold hands the summarizer, or None when the episode folds more than once.
-
-    Probed under the window bound so nothing is elided, and at a guard that folds at the wanted step
-    by construction. A second compaction would make `summary_input_chars` a sum over folds, and the
-    band arithmetic above is a statement about ONE offered transcript -- so that step is reported as
-    no band rather than as a wrong one.
+    Given the empty bands too (`include_empty`), the no-band answer also names the condition that
+    blocked each fold step, which is the whole answer for a coupling no geometry can separate.
     """
-    probe = compact_fold_input_probe(
-        max_prompt_chars=guard_chars,
-        compact_share=share,
-        summary_input_cap=SUMMARY_INPUT_CAP_WINDOW,
-        **geometry,
+    header = f"[band] depth {depth}, {change.label}"
+    separating = [band for band in bands if not band.is_empty]
+    if separating:
+        return "\n".join([header, *(f"  {band.describe()}" for band in separating)])
+    return "\n".join(
+        [
+            header,
+            "  no fold step separates the two readings at this depth",
+            f"  {coupling_for(change.fields).describe()}",
+            *(f"  {reason}" for reason in _blocking_reasons(bands)),
+        ]
     )
-    if probe["n_compactions"] != 1 or probe["summary_input_elided_chars"] != 0:
-        return None
-    return probe["summary_input_chars"]
 
 
-def _shares(change: PolicyChange) -> tuple[float, float]:
-    """The two shares, once the change is confirmed to be one the band arithmetic can answer."""
-    if change.fields != INTERACTING_FIELDS:
-        raise ValueError(
-            f"a separating band is only defined for {INTERACTING_FIELDS}, got {change.fields}"
-        )
-    bounds = (change.baseline[FIELD_BOUND], change.candidate[FIELD_BOUND])
-    if bounds != SEPARATING_BOUNDS:
-        raise ValueError(
-            f"only a {SEPARATING_BOUNDS[0]} -> {SEPARATING_BOUNDS[1]} bound move can separate the "
-            f"two readings, got {bounds[0]} -> {bounds[1]}"
-        )
-    return (
-        float(cast(float, change.baseline[FIELD_SHARE])),
-        float(cast(float, change.candidate[FIELD_SHARE])),
+def _blocking_reasons(bands: list[SeparatingBand]) -> list[str]:
+    """Why each fold step separates nothing: the condition that blocked it, deduplicated.
+
+    A step whose conditions are all individually satisfiable but share no guard is a NEAR miss --
+    the drift case, where the answer wanted is how far off the geometry now sits -- so those are
+    listed per step rather than folded into one line.
+    """
+    seen: dict[str, str] = {}
+    for band in bands:
+        blocked = band.blocked_by()
+        if not blocked:
+            seen.setdefault(f"overlap@{band.fold_step}", band.describe())
+            continue
+        for condition in blocked:
+            seen.setdefault(condition.name, f"fold step {band.fold_step}: {condition.describe()}")
+    return list(seen.values())
+
+
+def _band_at_fold_step(coupling: Coupling, step: StepGeometry) -> SeparatingBand:
+    """Intersect one coupling's conditions at one fold step, into the band they leave open."""
+    stated = coupling.conditions(step)
+    low, high = _intersect(stated.conditions)
+    return SeparatingBand(
+        fold_step=step.step,
+        low=low,
+        high=high,
+        detail=stated.detail,
+        conditions=stated.conditions,
     )
+
+
+def _intersect(conditions: tuple[BandCondition, ...]) -> tuple[int, int]:
+    """The guards every condition admits. An unsatisfiable condition empties the whole intersection."""
+    if any(condition.is_empty for condition in conditions):
+        return 0, 0
+    lows = [condition.low for condition in conditions if condition.low is not None]
+    highs = [condition.high for condition in conditions if condition.high is not None]
+    if not highs:
+        raise ValueError(
+            "a coupling's conditions must bound the guard from above; "
+            f"{[condition.name for condition in conditions]} bound nothing"
+        )
+    return max(lows, default=0), min(highs)
+
+
+def _cell_share(change: PolicyChange, held: dict[str, object]) -> float:
+    """The compact share the geometry runs at: the change's BASELINE where the change moves it.
+
+    Every condition that reads a fold step reads it at this share, because the baseline arm is the
+    policy the published numbers were measured under -- the candidate share is what a condition
+    compares AGAINST, never what it probes at.
+    """
+    share = change.baseline.get(FIELD_SHARE, held.get(FIELD_SHARE))
+    if share is None:
+        raise ValueError("the geometry states no compact_share and the change does not move it")
+    return float(cast(float, share))
