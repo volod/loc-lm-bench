@@ -43,27 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-fold-step-ladder-interval-edges-are-untested (optional)
+### agent-fold-step-ladder-edges-are-untested-in-the-callers (optional)
 
-The ladder's interval algebra is now tested on its own
-(`tests/llb/bench/test_agentic_memory_fold_step_ladder.py`,
-[extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
-but the assertions it inherited were written to serve the crossover study, so they exercise the
-happy path and leave every EDGE of the arithmetic unasserted: `fold_step_trigger_interval` raising
-on a step outside the sequence, the empty interval it returns for an unreachable step read directly
-rather than through `reachable_fold_steps`, `first_fold_step` returning `None` when no prompt exceeds
-the trigger, `smallest_guard_reaching` refusing a share outside `(0, 1]`, `usable_guard_band` refusing
-a non-positive peak, and the whole family on an empty sequence. Each is a real branch in
-`src/llb/bench/agentic_memory_fold_step_ladder.py` that only the placement rules and the band solver
-reach today, so a regression in one surfaces as a confusing failure two layers up. Add the edge cases
-to the ladder test file now that there is a file to put them in.
+The ladder's own edges are asserted where the arithmetic lives
+([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
+but every one of them is reachable only through a CALLER, and no test states what the caller does
+when the ladder refuses. Three callers pass a probe-measured value straight in:
+`_step_row` in `src/llb/bench/agentic_memory_fold_step_rows.py` and `share_bound_conditions` in
+`src/llb/bench/agentic_policy_change_interaction_conditions.py` both call
+`fold_step_trigger_interval` with a step read off a row, and `_validate_band` in
+`src/llb/bench/agentic_memory_boundary_surface_cells.py` calls `usable_guard_band` on a
+`cap_peak_prompt_chars` result. A probe that measured nothing -- a zero-step episode, or a task that
+terminated before its first prompt -- therefore surfaces as a raw `ValueError` about a "0-step
+sequence" or a non-positive peak, two layers below the geometry the operator declared. (The
+placement rule is already the counter-example worth copying: an empty ladder there fails as
+"must test fold steps that are ADJACENT on the foldable ladder []".) Decide per caller whether the
+refusal should be translated into that caller's own vocabulary or left to propagate, and assert the
+choice.
 
 - Agent status: CLEAR
-- Dependencies: none.
-- User-visible outcome: a ladder function that mis-handles an empty or out-of-range input fails in
-  the ladder test rather than as a puzzling design-validation or band-solver error.
-- Scope boundary: in scope -- the edge cases and their names. Out of scope -- changing any interval
-  rule or error message, and touching the source modules.
+- Dependencies: the ladder edges themselves are covered by
+  `tests/llb/bench/test_agentic_memory_fold_step_ladder.py`; the callers are the three functions
+  above.
+- User-visible outcome: an operator whose probe produced no prompts reads a message about the
+  geometry they declared, not about a 0-step sequence inside the interval arithmetic.
+- Scope boundary: in scope -- the caller-side handling and its tests. Out of scope -- changing any
+  ladder rule or its error messages.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 

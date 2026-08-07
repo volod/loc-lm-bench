@@ -1294,7 +1294,17 @@ The tests mirror that split. `tests/llb/bench/test_agentic_memory_fold_step_ladd
 interval algebra on synthetic prompt sequences -- the trigger interval and its inverse, the guard
 interval through the runtime truncation, and the unreachable-versus-unfoldable step -- with no design
 file, no episode, and no model in reach, so a failure there names the ladder rather than the study
-that happened to exercise it. `tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the
+that happened to exercise it. Its second half is the EDGES, which the callers reach only by accident
+and which used to fail two layers up: a step outside the sequence (0 or one past the end, through
+both `fold_step_trigger_interval` and `fold_step_guard_interval`) is refused rather than read as a
+neighbour's interval; an unreachable step read directly is the empty interval itself (`low >= high`,
+with the triggers on either side folding sooner and later); a trigger no prompt exceeds -- including
+one equal to the largest prompt, since the crossing is STRICT -- gives `first_fold_step` of `None`;
+`smallest_guard_reaching` and `usable_guard_band` refuse a share outside `(0, 1]` and answer at the
+closed end (share 1 makes the guard the trigger, and makes the usable band empty rather than
+refused); `usable_guard_band` refuses a non-positive peak, which is a probe that measured no prompt
+at all; and an empty sequence folds at no step, has no reachable or foldable step, and puts every
+step out of range. `tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the
 study: the committed design's placement, the validation refusals, the readings over fixture rows, and
 the end-to-end run under perfect play. The usable band keeps its own home in
 `tests/llb/bench/test_agentic_memory_boundary_surface.py`, where it is asserted against the
