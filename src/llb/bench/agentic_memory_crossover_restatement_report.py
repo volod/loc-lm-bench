@@ -29,6 +29,7 @@ def format_restatement_table(analysis: dict[str, object]) -> str:
     lines.extend(_audit_lines(cast(dict[str, object], analysis["audit"])))
     lines.extend(_restated_lines(cast(list[dict[str, object]], analysis["restated_cells"])))
     lines.extend(_surface_lines(cast(list[dict[str, object]], analysis["restated_depth_surface"])))
+    lines.extend(_cap_peak_lines(cast(list[dict[str, object]], analysis["restated_cap_peaks"])))
     lines.extend(_crossover_lines(cast(list[dict[str, object]], analysis["crossovers"])))
     lines.extend(["", "operator lines"])
     lines.extend(f"- {line}" for line in cast(list[str], analysis["operator_lines"]))
@@ -104,6 +105,31 @@ def _surface_lines(surfaces: list[dict[str, object]]) -> list[str]:
             f"{cast(int, row['depth']):>5d} {str(row['guards']):<24} "
             f"{str(row['bracket']):<16} "
             f"{'-' if crossover is None else f'{crossover:10.0f}'} "
+            f"{'-' if ratio is None else f'{ratio:6.2f}'} {row['reading']}"
+        )
+    return lines
+
+
+def _cap_peak_lines(rows: list[dict[str, object]]) -> list[str]:
+    """The two peaks side by side, because the ratio above is only readable against one of them."""
+    if not rows:
+        return []
+    header = f"{'depth':>5} {'published':>10} {'re-measured':>12} {'delta':>7} {'ratio':>6} reading"
+    lines = [
+        "",
+        "cap peak: the published surface's versus the re-measured geometry's",
+        header,
+        "-" * len(header),
+    ]
+    for row in rows:
+        published = cast(int | None, row["published_cap_peak_prompt_chars"])
+        delta = cast(int | None, row["cap_peak_delta_chars"])
+        ratio = cast(float | None, row["restated_guard_ratio"])
+        lines.append(
+            f"{cast(int, row['depth']):>5d} "
+            f"{'-' if published is None else f'{published:10d}'} "
+            f"{cast(int, row['measured_cap_peak_prompt_chars']):>12d} "
+            f"{'-' if delta is None else f'{delta:+7d}'} "
             f"{'-' if ratio is None else f'{ratio:6.2f}'} {row['reading']}"
         )
     return lines

@@ -1583,11 +1583,29 @@ guard interval names a point at which nothing changes; only a guard that crosses
 withdraws a published number. `--audit-only` reports the audit and stops, which is the GPU-free way
 to ask "does this bound change invalidate my evidence" before spending anything.
 
+One rule decides where each number in a restated row comes from: whatever the re-measured geometry
+can measure is measured FROM that geometry, and whatever only the published artifact holds is stated
+as its own comparison row rather than divided into a measured one. The guard RATIO is where that
+matters, because a ratio is an interpolated guard OVER the depth's cap peak. The restatement reads
+the peak off the same prompt sequence the restated fold step is read from (`measured_cap_peak` over
+`cap_prompt_sequence`), not out of the published aggregate: dividing a fresh guard by a published
+peak silently rescales the ratio whenever the task world moved -- a changed `pad_chars`, observation
+cap, or step margin -- and the fold-step check catches that only when the same drift also reshapes
+the step ladder, which a small move need not do. The published peak is not discarded. It is stated
+per depth as its OWN restatement row (published peak, re-measured peak, delta, and the ratio the
+re-measured geometry supports), reading
+`the_re_measured_geometry_has_the_published_cap_peak`,
+`..._has_a_different_cap_peak`, or `the_published_surface_states_no_cap_peak_at_this_depth`. So a
+moved task world surfaces as a named moved peak with an operator line telling the reader which ratio
+to apply, instead of as a rescaled number nothing in the run mentions. The fold-step invariance
+criterion is unchanged by this: a moved peak is reported, not treated as a withdrawn crossover.
+
 Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
 both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute, re-interpolate, and place
-the restated guard on the step ladder), `src/llb/bench/agentic_memory_crossover_restatement.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute, re-interpolate against a
+re-measured cap peak, compare that peak with the published one, and place the restated guard on the
+step ladder), `src/llb/bench/agentic_memory_crossover_restatement.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_report.py`,
 `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, and
 `tests/llb/bench/test_agentic_memory_crossover_restatement.py`.
@@ -1632,6 +1650,19 @@ The re-measured cell also cross-checks the step function across two independent 
 days: guard 23000 here costs 28953.3 compact tokens, the identical value guards 22016 and 23040
 produced in the summarize-input-cap study. Three guards spanning 1024 chars, one fold step, the same
 cost to the token.
+
+The cap peaks those ratios rest on are re-measured on every run rather than read out of the published
+aggregate, and on the committed geometry they still ARE the published ones. A re-run on 2026-08-07
+(same host, same pinned model, same design; aggregate
+`$DATA_DIR/agentic-compact-crossover-restatement/20260807T140411.864285Z-c2cd80af9fa2/manifest.json`)
+reads `the_re_measured_geometry_has_the_published_cap_peak` at both depths with a 0-char delta --
+8374 at depth 6, 11926 at depth 10 -- so the 1.69x and 1.83x guard ratios are stated against the
+geometry that measured the guards they divide. That re-run also re-measured `surface-d10-g23000`
+from scratch and landed one token away: 28952.3 compact tokens for a delta of +1609.3, interpolating
+to a 21862.1-char crossover against the 21861.6 above. Read the token-exact cross-check in the
+previous paragraph as a within-run property; ACROSS runs on different days the served model
+reproduces it to a token, which rounds to the same 21862 and stays inside the same fold step 10
+interval `[20240, 22016)`.
 
 The collapse's portable ratio needs one extra step to read, because it is DERIVED from the surface's
 interpolated guard rather than measured directly: at depth 10 the restated 21862-char guard is a

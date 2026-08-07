@@ -43,33 +43,56 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-restatement-mixes-a-published-cap-peak-with-a-re-measured-ladder (optional)
+### agent-restatement-derives-the-portable-ratio-in-prose (optional)
 
-The restatement now refuses a published FOLD STEP the re-measured geometry no longer has
-([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
-but the same run still reads two different cap peaks for one depth and never compares them.
-`restated_surfaces` in `src/llb/bench/agentic_memory_crossover_restatement_rows.py` takes
-`cap_peak_prompt_chars` out of the PUBLISHED surface artifact and hands it to `depth_surface_row`,
-which divides the re-interpolated guard by it to publish `crossover_guard_ratio`, while
-`_interpolated_row` two functions down re-measures the depth's own prompt sequence from the
-committed design. A task world that moved -- a changed `pad_chars`, observation cap, or step margin
--- therefore states a fresh guard as a ratio of a retired peak, and the fold-step check catches it
-only when the drift also reshapes the step ladder, which a small move need not. Read the peak from
-the same re-measured sequence the fold step is read from, and state the published-versus-measured
-peak as its own restatement row rather than dividing across the two.
+The trigger collapse's published number is a portable TRIGGER ratio DERIVED from the surface's
+interpolated guard rather than measured on cells of its own, and `crossover_row` in
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` cannot see that: the collapse's eight
+cells are all bound-invariant, so the row answers
+`every_contributing_cell_is_bound_invariant` with no restated value -- while the guard the ratio is
+derived FROM is exactly the one the restatement moves. The restated ratio is therefore recomputed by
+hand in prose
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
+which is the same class of gap the cap-peak comparison row closes one level up: a published figure
+restated outside the artifact that restates every other one. Both inputs now sit in the analysis, so
+derive the ratio from the restated guard's `compaction_trigger_chars` over that depth's re-measured
+cap peak, emit it as the `portable_trigger_ratio` row's own restated value, and state its invariance
+against the band the collapse published rather than against a fold step the form does not name.
 
 - Agent status: CLEAR
-- Dependencies: the re-measured sequence is already built by `_prompt_sequence` in
-  `src/llb/bench/agentic_memory_crossover_restatement_rows.py`, and the checked reduction is
-  `measured_cap_peak` in `src/llb/bench/agentic_memory_fold_step_ladder.py`; the published peak
-  arrives from the surface aggregate loaded in
-  `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`.
-- User-visible outcome: a restated guard ratio is stated against the peak of the geometry that
-  measured it, and a moved task world is named as a moved peak instead of quietly rescaling a
-  published ratio.
-- Scope boundary: in scope -- the peak source, the published-versus-measured comparison row, and its
-  tests. Out of scope -- changing the interpolation rule or the fold-step invariance criterion, and
+- Dependencies: the two inputs are `restated_cap_peaks` and `restated_depth_surface` built by
+  `analyze_restatement` in `src/llb/bench/agentic_memory_crossover_restatement.py`; the trigger
+  arithmetic is `compaction_trigger_chars` in `src/llb/bench/agentic_memory_fold_step_ladder.py`.
+- User-visible outcome: every published crossover FORM is restated by the run that restates the
+  others, so nobody applies a derived ratio only a doc paragraph recomputed.
+- Scope boundary: in scope -- the derived ratio, the invariance criterion its form needs, and its
+  tests. Out of scope -- changing the collapse's published band, the interpolation rule, and
   re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
+
+### agent-restatement-reading-is-blind-to-a-moved-cap-peak (optional)
+
+`restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py` decides on
+fold steps alone, so a run whose re-measured cap peak DISAGREES with the published one still reads
+`published_crossovers_hold_under_the_shipped_cap` and still persists `objective_score=1.0`
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+The disagreement is reported -- a peak row names it and an operator line says which ratio to apply --
+but only a reader who reaches those lines learns that the published guard RATIOS were stated against
+a geometry this run no longer measures, while the headline verdict says everything holds. Decide what
+a moved peak should do to the verdict: either a reading of its own beside the fold-step one, or a
+qualifier on `..._hold_under_the_shipped_cap` that names the depths whose ratios were restated
+against a different peak. The fold-step criterion itself stays as it is -- a moved peak withdraws no
+COST, only the ratio's basis.
+
+- Agent status: CLEAR
+- Dependencies: the rows are `restated_cap_peaks` from `cap_peak_rows` in
+  `src/llb/bench/agentic_memory_crossover_restatement_rows.py`; the verdict and the persisted
+  `objective_score` are `restatement_reading` and `persist_restatement`.
+- User-visible outcome: the headline verdict of a restatement run cannot say "everything holds" while
+  a ratio it published rests on a retired geometry.
+- Scope boundary: in scope -- the reading, the persisted metric, and their tests. Out of scope --
+  the fold-step invariance criterion, the interpolation rule, and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

@@ -41,6 +41,9 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
     BASIS_INVARIANT,
     BASIS_RESTATED,
+    PEAK_INVARIANT,
+    PEAK_MOVED,
+    PEAK_UNPUBLISHED,
     READING_INELIGIBLE,
     READING_MOVED,
     READING_UNCHANGED,
@@ -79,6 +82,21 @@ def _fake_model(prompt: str) -> str:
     if "Стисло підсумуй" in prompt:
         return "[memory: final_code=" + (_MEMORY.findall(prompt) or [""])[0] + "] крок виконано"
     return oracle_controller(prompt)
+
+
+def _sensitive_rows(
+    design: dict[str, object], audit: dict[str, object], tmp_path: Path
+) -> list[dict[str, object]]:
+    """Re-measure exactly the cells the audit calls bound-sensitive, with no GPU."""
+    return run_sensitive_surface_cells(
+        design,
+        audit,
+        root=ROOT,
+        model="fake",
+        backend="fake",
+        complete=_fake_model,
+        data_dir=tmp_path,
+    )
 
 
 def _published_surface() -> dict[str, object]:
@@ -208,15 +226,7 @@ def test_the_design_refuses_a_retired_bound_a_missing_study_and_an_untested_dept
 def test_only_the_bound_sensitive_surface_cells_are_re_run(tmp_path: Path):
     design = load_restatement_design(DESIGN_PATH)
     audit = audit_published_cells(design, root=ROOT)
-    rows = run_sensitive_surface_cells(
-        design,
-        audit,
-        root=ROOT,
-        model="fake",
-        backend="fake",
-        complete=_fake_model,
-        data_dir=tmp_path,
-    )
+    rows = _sensitive_rows(design, audit, tmp_path)
     sensitive = sensitive_cell_ids(audit["per_study"][KIND_SURFACE])
     assert [row["restated_cell_id"] for row in rows] == sensitive
     # The published grid has six cells; re-running all of them is exactly what the audit avoids.
@@ -226,15 +236,7 @@ def test_only_the_bound_sensitive_surface_cells_are_re_run(tmp_path: Path):
 def test_the_restatement_re_interpolates_and_checks_the_fold_step_it_names(tmp_path: Path):
     design = load_restatement_design(DESIGN_PATH)
     audit = audit_published_cells(design, root=ROOT)
-    rows = run_sensitive_surface_cells(
-        design,
-        audit,
-        root=ROOT,
-        model="fake",
-        backend="fake",
-        complete=_fake_model,
-        data_dir=tmp_path,
-    )
+    rows = _sensitive_rows(design, audit, tmp_path)
     analysis = analyze_restatement(
         design, audit, CONTROL_PASS, _published_surface(), rows, root=ROOT
     )
@@ -277,15 +279,7 @@ def test_a_crossover_that_leaves_its_fold_step_is_reported_as_moved(tmp_path: Pa
     """The invariance rule is the fold step, so only a step change withdraws a published number."""
     design = load_restatement_design(DESIGN_PATH)
     audit = audit_published_cells(design, root=ROOT)
-    rows = run_sensitive_surface_cells(
-        design,
-        audit,
-        root=ROOT,
-        model="fake",
-        backend="fake",
-        complete=_fake_model,
-        data_dir=tmp_path,
-    )
+    rows = _sensitive_rows(design, audit, tmp_path)
     # Drive the re-measured cell's cost far enough that the interpolated crossing leaves step 10.
     moved = deepcopy(rows)
     for row in moved:
@@ -304,6 +298,97 @@ def test_a_crossover_that_leaves_its_fold_step_is_reported_as_moved(tmp_path: Pa
     assert surface["names_same_fold_step"] is False
     assert analysis["restatement_reading"] == READING_MOVED
     assert any("re-derive the routing rule" in line for line in analysis["operator_lines"])
+
+
+# --- the peak the restated ratio is stated against --------------------------------------------
+
+
+def test_the_restated_ratio_is_stated_against_the_peak_of_the_geometry_that_measured_it(
+    tmp_path: Path,
+):
+    """The guard and its peak come from ONE prompt sequence, and the published peak is a row."""
+    design = load_restatement_design(DESIGN_PATH)
+    audit = audit_published_cells(design, root=ROOT)
+    rows = _sensitive_rows(design, audit, tmp_path)
+    analysis = analyze_restatement(
+        design, audit, CONTROL_PASS, _published_surface(), rows, root=ROOT
+    )
+    surfaces = {cast(int, row["depth"]): row for row in analysis["restated_depth_surface"]}
+    peaks = {cast(int, row["depth"]): row for row in analysis["restated_cap_peaks"]}
+    assert set(peaks) == set(surfaces) == {6, 10}
+    for depth, peak in peaks.items():
+        # The committed design's geometry still measures the peaks the surface published, so the
+        # published table is unmoved -- but the ratio now rests on the measured one either way.
+        assert peak["reading"] == PEAK_INVARIANT
+        assert peak["cap_peak_delta_chars"] == 0
+        assert (
+            peak["measured_cap_peak_prompt_chars"]
+            == peak["published_cap_peak_prompt_chars"]
+            == surfaces[depth]["cap_peak_prompt_chars"]
+        )
+        assert surfaces[depth]["crossover_guard_ratio"] == pytest.approx(
+            cast(float, surfaces[depth]["crossover_max_prompt_chars"])
+            / cast(int, peak["measured_cap_peak_prompt_chars"])
+        )
+
+
+def test_a_moved_task_world_is_named_as_a_moved_peak_not_a_rescaled_ratio(tmp_path: Path):
+    """A peak the geometry retired must not silently rescale a freshly interpolated guard.
+
+    The fold-step check cannot see this: the drift here leaves the step ladder alone, so every
+    published crossover still names its own fold step and the restatement reads UNCHANGED. That is
+    exactly why the peak needs a row of its own -- dividing the new guard by the old peak would have
+    published a rescaled ratio with nothing in the run saying the two came from different worlds.
+    """
+    design = load_restatement_design(DESIGN_PATH)
+    audit = audit_published_cells(design, root=ROOT)
+    rows = _sensitive_rows(design, audit, tmp_path)
+    control = analyze_restatement(
+        design, audit, CONTROL_PASS, _published_surface(), rows, root=ROOT
+    )
+
+    retired = _published_surface()
+    cast(dict[str, object], retired["cap_peak_prompt_chars"])["10"] = 9000
+    analysis = analyze_restatement(design, audit, CONTROL_PASS, retired, rows, root=ROOT)
+
+    moved = next(row for row in analysis["restated_cap_peaks"] if row["depth"] == 10)
+    assert moved["reading"] == PEAK_MOVED
+    assert moved["published_cap_peak_prompt_chars"] == 9000
+    assert moved["measured_cap_peak_prompt_chars"] == 11926
+    assert moved["cap_peak_delta_chars"] == 2926
+    # The ratio is the control's: it is divided by the measured peak, never by the published one.
+    surfaces = {cast(int, row["depth"]): row for row in analysis["restated_depth_surface"]}
+    controls = {cast(int, row["depth"]): row for row in control["restated_depth_surface"]}
+    assert surfaces[10]["crossover_guard_ratio"] == controls[10]["crossover_guard_ratio"]
+    assert next(row for row in analysis["restated_cap_peaks"] if row["depth"] == 6)["reading"] == (
+        PEAK_INVARIANT
+    )
+
+    assert analysis["restatement_reading"] == READING_UNCHANGED
+    assert any(
+        "the cap peak moved 9000 -> 11926 chars (+2926)" in line
+        for line in analysis["operator_lines"]
+    )
+    assert "cap peak" in format_restatement_table(analysis)
+
+
+def test_a_depth_the_published_surface_states_no_peak_for_is_named_rather_than_missing(
+    tmp_path: Path,
+):
+    """A published aggregate without the depth's peak is a gap to report, not a lookup failure."""
+    design = load_restatement_design(DESIGN_PATH)
+    audit = audit_published_cells(design, root=ROOT)
+    rows = _sensitive_rows(design, audit, tmp_path)
+    unpublished = _published_surface()
+    del cast(dict[str, object], unpublished["cap_peak_prompt_chars"])["10"]
+    analysis = analyze_restatement(design, audit, CONTROL_PASS, unpublished, rows, root=ROOT)
+
+    row = next(row for row in analysis["restated_cap_peaks"] if row["depth"] == 10)
+    assert row["reading"] == PEAK_UNPUBLISHED
+    assert row["published_cap_peak_prompt_chars"] is None
+    assert row["cap_peak_delta_chars"] is None
+    assert row["measured_cap_peak_prompt_chars"] == 11926
+    assert any("states no cap peak here" in line for line in analysis["operator_lines"])
 
 
 def test_a_published_fold_step_the_moved_geometry_no_longer_has_names_the_published_row():
@@ -353,6 +438,7 @@ def test_an_ineligible_family_supports_no_restatement_line():
     )
     assert analysis["restatement_reading"] == READING_INELIGIBLE
     assert analysis["restated_cells"] == [] and analysis["restated_depth_surface"] == []
+    assert analysis["restated_cap_peaks"] == []
     assert analysis["operator_lines"] == [
         f"[{READING_INELIGIBLE}] no restatement line is supported"
     ]

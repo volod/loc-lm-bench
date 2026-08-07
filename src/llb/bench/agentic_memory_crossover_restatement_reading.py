@@ -31,6 +31,13 @@ BASIS_INVARIANT = "every_contributing_cell_is_bound_invariant"
 BASIS_RESTATED = "restated_from_a_re_measured_cell"
 BASIS_ALREADY_MEASURED = "already_re_measured_under_the_shipped_cap"
 
+# Whether the geometry that measured the restated guard is the geometry the published peak came
+# from. A guard ratio is a guard OVER a cap peak, so the two must be read off one prompt sequence;
+# these say which case a restated depth is in rather than letting a mismatch vanish into the divide.
+PEAK_INVARIANT = "the_re_measured_geometry_has_the_published_cap_peak"
+PEAK_MOVED = "the_re_measured_geometry_has_a_different_cap_peak"
+PEAK_UNPUBLISHED = "the_published_surface_states_no_cap_peak_at_this_depth"
+
 READING_ALL_INVARIANT = "every_published_cell_is_bound_invariant"
 READING_UNCHANGED = "published_crossovers_hold_under_the_shipped_cap"
 READING_MOVED = "a_published_crossover_moves_under_the_shipped_cap"
@@ -73,7 +80,10 @@ def restatement_reading(
 
 
 def operator_lines(
-    crossovers: list[dict[str, object]], reading: str, shipped_cap: str
+    crossovers: list[dict[str, object]],
+    cap_peaks: list[dict[str, object]],
+    reading: str,
+    shipped_cap: str,
 ) -> list[str]:
     """What an operator takes away: which published numbers they may still apply, and why."""
     if reading == READING_INELIGIBLE:
@@ -84,6 +94,8 @@ def operator_lines(
     ]
     for row in crossovers:
         lines.append(_crossover_line(row))
+    for row in cap_peaks:
+        lines.append(_cap_peak_line(row))
     if reading == READING_MOVED:
         lines.append(
             "at least one crossover moved across a fold-step boundary -- re-derive the routing rule "
@@ -112,4 +124,32 @@ def _crossover_line(row: dict[str, object]) -> str:
         f"{label}: the interpolated crossover guard moves {published:.0f} -> {restated:.0f} chars "
         f"({restated - published:+.0f}), still inside fold step {row['restated_fold_step']}'s guard "
         f"interval, where every guard costs the same [{row['basis']}]"
+    )
+
+
+def _cap_peak_line(row: dict[str, object]) -> str:
+    """The peak a restated ratio is stated against, and whether the published one still names it."""
+    label = f"{row['study_kind']} depth {row['depth']}"
+    measured = cast(int, row["measured_cap_peak_prompt_chars"])
+    ratio = cast(float | None, row["restated_guard_ratio"])
+    against = (
+        "no guard is bracketed at this depth, so no ratio is restated against it"
+        if ratio is None
+        else f"the restated guard ratio is {ratio:.2f}x it"
+    )
+    if row["reading"] == PEAK_MOVED:
+        return (
+            f"{label}: the cap peak moved "
+            f"{cast(int, row['published_cap_peak_prompt_chars'])} -> {measured} chars "
+            f"({cast(int, row['cap_peak_delta_chars']):+d}), so the published ratio was stated "
+            f"against a peak this task world has retired -- {against} [{row['reading']}]"
+        )
+    if row["reading"] == PEAK_UNPUBLISHED:
+        return (
+            f"{label}: the published surface states no cap peak here; the re-measured peak is "
+            f"{measured} chars and {against} [{row['reading']}]"
+        )
+    return (
+        f"{label}: the re-measured cap peak is the published {measured} chars and {against} "
+        f"[{row['reading']}]"
     )
