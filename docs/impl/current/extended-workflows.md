@@ -1578,6 +1578,20 @@ whose path is missing, declares a different study kind, publishes a crossover at
 does not test, omits the fold step a crossover lands in, or publishes a derived ratio without the
 band and the precision that band is quoted to.
 
+The fold-step ANNOTATION is validated too, against the ladder the study that published the number
+measured, because the annotation is what a restated guard is then checked against: a mis-transcribed
+one reads as `a_published_crossover_moves_under_the_shipped_cap` the first time a cell at that depth
+becomes bound-sensitive, blaming a bound change for a number that was mis-stated before the bound
+moved. The three forms place by three different rules, and the check is exactly those rules -- an
+interpolated guard lies INSIDE its step's guard interval, a fold-step boundary IS that interval's
+exclusive upper edge (`fold no later than step k` is the rule "keep the guard below this", so the
+boundary is the first guard that folds one step later), and a derived ratio, having no guard of its
+own, must name the step of the surface guard it is derived from. That last rule ties two studies'
+annotations together, so a depth where they disagree is refused whichever of the two is wrong. Every
+one of these is a pure function of the study's held geometry, so the whole check runs in CI with no
+GPU, and it is what corrected the depth-6 boundary-surface row below from step 7 to the step 6 its
+own interval `[13136, 14912)` places its 14160-char guard in.
+
 The invariance criterion for a guard is the fold step, not a char tolerance. The fold-step study
 established that the cost changes only at a step boundary, so a restated guard that moves INSIDE one
 step's guard interval names a point at which nothing changes; only a guard that crosses a step
@@ -1619,6 +1633,8 @@ rather than a tolerance chosen after seeing the number.
 
 Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
 both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
+the per-form annotation rules, shared by design validation and the restatement),
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute the re-measured cells,
 re-interpolate against a re-measured cap peak, and compare that peak with the published one),
@@ -1627,9 +1643,11 @@ place a restated guard on the step ladder, confirm a fold-step boundary, derive 
 and read it against its band), `src/llb/bench/agentic_memory_crossover_restatement.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_report.py`,
 `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`,
-`tests/llb/bench/test_agentic_memory_crossover_restatement.py`, and
+`tests/llb/bench/test_agentic_memory_crossover_restatement.py`,
 `tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py` (each form's row rule at its
-edges, including a ratio driven out of its published band).
+edges, including a ratio driven out of its published band), and
+`tests/llb/bench/test_agentic_memory_crossover_restatement_placement.py` (every committed annotation
+placed on its own ladder, plus each way one can be wrong).
 
 ```bash
 make bench-agentic-context-compact-crossover-restatement
@@ -1652,7 +1670,7 @@ and one compaction per compact episode. The aggregate is
 
 | study | depth | form | published | restated | fold step | basis |
 | --- | ---: | --- | ---: | ---: | ---: | --- |
-| boundary surface | 6 | interpolated guard | 14160 | unchanged | 7 | every cell bound-invariant |
+| boundary surface | 6 | interpolated guard | 14160 | unchanged | 6 | every cell bound-invariant |
 | boundary surface | 10 | interpolated guard | 21900 | **21862** | 10 | re-measured cell |
 | trigger collapse | 6 | portable ratio | 0.85-0.92x | 0.845x | 6 | derived from the restated guard |
 | trigger collapse | 10 | portable ratio | 0.85-0.92x | **0.917x** | 10 | derived from the restated guard |
@@ -1673,15 +1691,15 @@ produced in the summarize-input-cap study. Three guards spanning 1024 chars, one
 cost to the token.
 
 The cap peaks those ratios rest on are re-measured on every run rather than read out of the published
-aggregate, and on the committed geometry they still ARE the published ones. Two re-runs on 2026-08-07
-(same host, same pinned model, same design; the later aggregate, which is also the first to carry the
-derived portable ratios, is
-`$DATA_DIR/agentic-compact-crossover-restatement/20260807T151357.246347Z-d2ecec11831d/manifest.json`,
-9.67 tok/s over about 13 minutes including the control)
+aggregate, and on the committed geometry they still ARE the published ones. Three re-runs on
+2026-08-07 (same host, same pinned model, same design) agree on every number; the current aggregate,
+which carries both the derived portable ratios and the corrected depth-6 annotation, is
+`$DATA_DIR/agentic-compact-crossover-restatement/20260807T155708.469465Z-a4551d650346/manifest.json`
+at 9.69 tok/s over about 14 minutes including the control. All three
 read `the_re_measured_geometry_has_the_published_cap_peak` at both depths with a 0-char delta --
 8374 at depth 6, 11926 at depth 10 -- so the 1.69x and 1.83x guard ratios are stated against the
-geometry that measured the guards they divide. Both re-runs also re-measured `surface-d10-g23000`
-from scratch and landed one token away, twice: 28952.3 compact tokens for a delta of +1609.3,
+geometry that measured the guards they divide. All three also re-measured `surface-d10-g23000`
+from scratch and landed one token away each time: 28952.3 compact tokens for a delta of +1609.3,
 interpolating to a 21862.1-char crossover against the 21861.6 above. Read the token-exact
 cross-check in the
 previous paragraph as a within-run property; ACROSS runs on different days the served model

@@ -16,6 +16,10 @@ from llb.bench.agentic_policy_change_audit import (
     declared_geometry,
     load_audited_design,
 )
+from llb.bench.agentic_memory_crossover_restatement_placement import (
+    validate_derived_placements,
+    validate_published_placement,
+)
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     CROSSOVER_FORMS,
     FORM_PORTABLE_RATIO,
@@ -64,6 +68,7 @@ def validate_restatement_design(design: dict[str, object], *, root: Path) -> Non
         raise ValueError("the restatement needs at least one uniquely named audited study")
     for study in studies:
         _validate_study(study, root)
+    validate_derived_placements(published_crossovers(design))
 
 
 def audited_designs(design: dict[str, object], *, root: Path) -> dict[str, dict[str, object]]:
@@ -104,6 +109,10 @@ def _validate_study(study: dict[str, object], root: Path) -> None:
         raise ValueError(f"{kind}: a restated study must name the crossovers it published")
     for crossover in crossovers:
         _validate_crossover(kind, crossover, depths)
+        # The annotation is checked LAST, once the crossover is known to be well formed: it reads the
+        # value and the share, and a placement message about a crossover missing either would name
+        # the wrong defect.
+        validate_published_placement(kind, crossover, audited)
 
 
 def _validate_crossover(kind: str, crossover: dict[str, object], depths: set[int]) -> None:

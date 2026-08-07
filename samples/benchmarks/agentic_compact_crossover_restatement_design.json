@@ -36,7 +36,7 @@
       "design_path": "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
       "evidence": "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
       "published_crossovers": [
-        {"depth": 6, "compact_share": 0.5, "form": "interpolated_guard", "value": 14159.929807575942, "fold_step": 7},
+        {"depth": 6, "compact_share": 0.5, "form": "interpolated_guard", "value": 14159.929807575942, "fold_step": 6},
         {"depth": 10, "compact_share": 0.5, "form": "interpolated_guard", "value": 21899.890064587056, "fold_step": 10}
       ]
     },

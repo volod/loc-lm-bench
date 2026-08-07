@@ -43,33 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-restatement-published-fold-step-annotations-are-unchecked (optional)
+### agent-published-crossover-values-are-transcribed-not-resolved (optional)
 
-Every published crossover in `samples/benchmarks/agentic_compact_crossover_restatement_design.json`
-NAMES the fold step it lands in, and that annotation is the invariance criterion for two of the
-three forms -- but nothing checks it against the geometry of the study it cites, even though the
-check needs no model: `first_fold_step` over the study's own `cap_prompt_sequence` places a
-published guard on the ladder exactly as the restatement places a restated one. The depth-6
-boundary-surface row shows what that permits. It is annotated `fold_step: 7` while the committed
-geometry puts its published 14160-char guard at `compact_share=0.5` inside step 6's guard interval
-`[13136, 14912)`, so the moment any depth-6 surface cell becomes bound-sensitive the run reads
-`a_published_crossover_moves_under_the_shipped_cap` against an annotation that was wrong before the
-bound ever changed
+The fold-step ANNOTATION on every published crossover is now checked against the study's own
+geometry, but the VALUE beside it is still a hand-copied float
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-Validate every annotation at design load, then correct the row the check rejects and the doc line it
-feeds.
+`14159.929807575942` and `21899.890064587056` are the boundary surface's interpolated crossings and
+nothing resolves them back to the aggregate that produced them, so a digit dropped while transcribing
+lands INSIDE the same fold step for any small slip and passes every check the design has -- the
+annotation check catches only a slip large enough to leave the interval. Resolve the values instead:
+point each published crossover at the run artifact and the field it came from, load it at design
+validation, and refuse a mismatch. The same seam covers the fold-step study's boundary values and
+the collapse's band, and it is the crossover-level instance of the provenance idea
+[agent-published-number-provenance-pins](#agent-published-number-provenance-pins) proposes for the
+docs -- build whichever lands first against the other's fixture rather than two mappings.
 
 - Agent status: CLEAR
-- Dependencies: the placement arithmetic is `first_fold_step` and `fold_step_guard_interval` in
-  `src/llb/bench/agentic_memory_fold_step_ladder.py`; the annotations are validated by
-  `_validate_crossover` in `src/llb/bench/agentic_memory_crossover_restatement_design.py`, and the
-  geometry reader is `prompt_sequence` in
-  `src/llb/bench/agentic_memory_crossover_restatement_forms.py`.
-- User-visible outcome: a restatement that reads MOVED is reporting a moved number, not a
-  mis-transcribed annotation nobody checked.
-- Scope boundary: in scope -- the annotation check, the annotation it rejects, and the doc line that
-  quotes it. Out of scope -- changing any published guard, ratio, or band, and re-running a
-  published cell.
+- Dependencies: the values are `published_crossovers` in
+  `samples/benchmarks/agentic_compact_crossover_restatement_design.json`, validated by
+  `_validate_crossover` in `src/llb/bench/agentic_memory_crossover_restatement_design.py`; the
+  aggregates are the boundary-surface and fold-step run roots recorded in the evidence sections.
+- User-visible outcome: a published number in a design file is the number the run measured, not a
+  number someone typed from a table.
+- Scope boundary: in scope -- the artifact reference per crossover, the resolution at validation, a
+  committed fixture aggregate so CI resolves without a run, and the mismatch refusal. Out of scope --
+  re-running a published cell, and changing any published value the resolution confirms.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

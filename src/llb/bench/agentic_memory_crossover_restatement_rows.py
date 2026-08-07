@@ -17,7 +17,7 @@ from typing import cast
 from llb.bench.agentic_memory_boundary_crossover import depth_surface_row
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
 from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
-from llb.bench.agentic_memory_crossover_restatement_forms import prompt_sequence
+from llb.bench.agentic_memory_crossover_restatement_placement import prompt_sequence
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     PEAK_INVARIANT,
     PEAK_MOVED,

@@ -17,13 +17,16 @@ to.
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_memory_cap_audit import VERDICT_SENSITIVE
 from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,
     foldable_fold_steps,
+)
+from llb.bench.agentic_memory_crossover_restatement_placement import (
+    DERIVED_RATIO_SOURCE_KIND,
+    prompt_sequence,
 )
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
@@ -35,7 +38,6 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_policy_change_audit import KIND_SURFACE
 
 
 def crossover_row(
@@ -120,7 +122,7 @@ def _portable_ratio_row(
             "restated_value": ratio,
             "restated_trigger_chars": trigger,
             "restated_cap_peak_prompt_chars": peak,
-            "derived_from_study_kind": KIND_SURFACE,
+            "derived_from_study_kind": DERIVED_RATIO_SOURCE_KIND,
             "derived_from_guard_chars": guard,
             "basis": BASIS_DERIVED,
         }
@@ -185,16 +187,3 @@ def _published_guard_interval(
             "so there is no interval left to restate it inside"
         )
     return list(fold_step_guard_interval(sequence, step, share))
-
-
-def prompt_sequence(design: dict[str, object], depth: int) -> list[int]:
-    """The deterministic per-step prompt sizes an audited study's held geometry produces."""
-    held = cast(dict[str, object], design["held_fixed"])
-    return cap_prompt_sequence(
-        depth=depth,
-        n_tasks=int(cast(int, held["n_tasks"])),
-        pad_chars=int(cast(int, held["pad_chars"])),
-        max_steps_margin=int(cast(int, held["max_steps_margin"])),
-        observation_cap_chars=int(cast(int, held["observation_cap_chars"])),
-        observation_head_share=float(cast(float, held["observation_head_share"])),
-    )
