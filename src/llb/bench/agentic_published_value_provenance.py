@@ -11,26 +11,45 @@ so CI needs no run, and, on a host that still has the run, out of the artifact i
 the two required to agree. The committed slice is generated from the artifact rather than typed,
 which is what keeps it from being a second transcription of the first one.
 
-The field pointer is a dotted path with one extra form, a row selector, because every one of these
-aggregates keys its per-depth rows by a field rather than by position:
+Every slice also PINS the file it was cut from, by content digest. Without that the slice is only
+self-consistent: on a host that never ran the study -- CI, a fresh clone, this host after a `.data`
+cleanup -- nothing could tell a slice cut from the cited run from one cut from a different run or
+edited by hand, so the resolution proved internal agreement rather than provenance. A slice with no
+digest is refused outright, and where the host still has the run, a digest that does not match the
+file is refused as pinning a different artifact.
 
-    depth_surface[depth=6].crossover_max_prompt_chars
-    depth_ladders[depth=10].boundary.guard_boundary_chars
-    cap_peak_prompt_chars.6
+The field pointer that addresses a value inside either source lives in
+`llb.bench.agentic_published_value_pointer`.
 """
 
+from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 import re
 from typing import cast
 
+from llb.bench.agentic_published_value_pointer import read_field
+
 # The committed slice of every referenced aggregate, project-root relative. `refresh_provenance_
 # fixture` regenerates it from the artifacts under DATA_DIR; nothing here ever writes it implicitly.
 PROVENANCE_FIXTURE = Path("samples/benchmarks/agentic_published_crossover_aggregates.json")
-FIXTURE_SCHEMA_VERSION = 1
+FIXTURE_SCHEMA_VERSION = 2
 
-# `name[key=value]`: pick the row of the `name` list whose integer `key` field is `value`.
-_ROW_SELECTOR = re.compile(r"^(?P<name>\w+)\[(?P<key>\w+)=(?P<value>-?\d+)\]$")
+# The artifact pin: sha256 over the aggregate's bytes, algorithm-prefixed so a later change of
+# algorithm is a visible fixture change rather than a silently re-read hex string.
+DIGEST_ALGORITHM = "sha256"
+_DIGEST = re.compile(rf"^{DIGEST_ALGORITHM}:[0-9a-f]{{64}}$")
+
+_REGENERATE = "regenerate it with make bench-agentic-published-provenance"
+
+
+@dataclass(frozen=True)
+class CommittedSlice:
+    """One cited aggregate's committed evidence: the file it was cut from, and the cut itself."""
+
+    digest: str
+    payload: dict[str, object]
 
 
 class PublishedValueResolver:
@@ -38,8 +57,9 @@ class PublishedValueResolver:
 
     Two sources, deliberately not interchangeable. The committed slice is the one CI has and is
     therefore the authority the design is validated against; the artifact under DATA_DIR is present
-    only on a host that ran the study, and is read as a CHECK on the slice. A host that never ran
-    the study validates against the slice alone rather than skipping the check.
+    only on a host that ran the study, and is read as a CHECK on the slice -- first that it is the
+    file the slice pins, then that it states the same value. A host that never ran the study
+    validates against the slice alone rather than skipping the check.
     """
 
     def __init__(self, *, root: Path, data_dir: Path | None = None) -> None:
@@ -51,8 +71,10 @@ class PublishedValueResolver:
         """The number the run recorded at this provenance pair, refusing anything unresolvable."""
         artifact, field = provenance_pair(provenance, where=where)
         committed = self._committed(artifact, where=where)
-        value = _number(read_field(committed, field, where=f"{where}: {artifact}"), where=where)
-        measured = self._measured_payload(artifact)
+        value = _number(
+            read_field(committed.payload, field, where=f"{where}: {artifact}"), where=where
+        )
+        measured = self._measured_payload(artifact, committed, where=where)
         if measured is not None:
             recorded = _number(
                 read_field(measured, field, where=f"{where}: the run artifact {artifact}"),
@@ -62,25 +84,29 @@ class PublishedValueResolver:
                 raise ValueError(
                     f"{where}: the committed provenance slice states {value!r} for "
                     f"{field!r} while the run artifact {artifact} records {recorded!r} -- the "
-                    f"slice is stale, regenerate it with make bench-agentic-published-provenance"
+                    f"slice was edited by hand or cut from another field, {_REGENERATE}"
                 )
         return value
 
-    def _committed(self, artifact: str, *, where: str) -> dict[str, object]:
-        payload = self._fixture.get(artifact)
-        if payload is None:
+    def _committed(self, artifact: str, *, where: str) -> CommittedSlice:
+        committed = self._fixture.get(artifact)
+        if committed is None:
             raise ValueError(
                 f"{where}: no committed slice of {artifact!r} exists, so the published value "
                 f"cannot be resolved without the run -- add it with "
                 f"make bench-agentic-published-provenance"
             )
-        return payload
+        return committed
 
-    def _measured_payload(self, artifact: str) -> dict[str, object] | None:
+    def _measured_payload(
+        self, artifact: str, committed: CommittedSlice, *, where: str
+    ) -> dict[str, object] | None:
         """The run artifact itself when this host still has it, cached per artifact."""
         if artifact not in self._measured:
             self._measured[artifact] = (
-                None if self._data_dir is None else _read_artifact(self._data_dir / artifact)
+                None
+                if self._data_dir is None
+                else _read_pinned_artifact(self._data_dir / artifact, committed, where=where)
             )
         return self._measured[artifact]
 
@@ -107,25 +133,13 @@ def provenance_pair(provenance: object, *, where: str) -> tuple[str, str]:
     return artifact, field
 
 
-def read_field(payload: dict[str, object], field: str, *, where: str) -> object:
-    """Walk a field pointer, naming the segment that failed rather than the whole path."""
-    node: object = payload
-    for segment in field.split("."):
-        node = _step(node, segment, field=field, where=where)
-    return node
+def artifact_digest(path: Path) -> str:
+    """The content digest that pins one run aggregate, computed over its bytes as written."""
+    return f"{DIGEST_ALGORITHM}:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
-def merge_field_slice(target: dict[str, object], payload: dict[str, object], field: str) -> None:
-    """Copy just the addressed path of `payload` into `target`, preserving the artifact's shape.
-
-    Shape-preserving is the point: the committed slice is then read by the SAME pointer walk as the
-    artifact, so a slice that resolves and an artifact that does not (or the reverse) is impossible.
-    """
-    _merge(target, payload, field.split("."), field=field)
-
-
-def load_provenance_fixture(root: Path) -> dict[str, dict[str, object]]:
-    """The committed slices, keyed by DATA_DIR-relative artifact path."""
+def load_provenance_fixture(root: Path) -> dict[str, CommittedSlice]:
+    """The committed slices and their artifact pins, keyed by DATA_DIR-relative artifact path."""
     path = root / PROVENANCE_FIXTURE
     if not path.is_file():
         raise ValueError(f"the committed provenance fixture {PROVENANCE_FIXTURE} does not exist")
@@ -134,92 +148,69 @@ def load_provenance_fixture(root: Path) -> dict[str, dict[str, object]]:
         raise ValueError(
             f"{PROVENANCE_FIXTURE} must declare schema_version {FIXTURE_SCHEMA_VERSION}"
         )
-    return cast(dict[str, dict[str, object]], payload["aggregates"])
+    entries = cast(dict[str, dict[str, object]], payload["aggregates"])
+    return {artifact: _committed_slice(artifact, entry) for artifact, entry in entries.items()}
 
 
-def write_provenance_fixture(root: Path, aggregates: dict[str, dict[str, object]]) -> Path:
+def write_provenance_fixture(root: Path, aggregates: dict[str, CommittedSlice]) -> Path:
     """Write the committed slices back, sorted so a regeneration diffs to what actually moved."""
     path = root / PROVENANCE_FIXTURE
     payload = {
         "schema_version": FIXTURE_SCHEMA_VERSION,
         "note": (
-            "committed slices of the run artifacts the published agentic numbers were measured in; "
-            "regenerate with make bench-agentic-published-provenance rather than by hand"
+            "committed slices of the run artifacts the published agentic numbers were measured in, "
+            "each pinned by the content digest of the artifact it was cut from; regenerate with "
+            "make bench-agentic-published-provenance rather than by hand"
         ),
-        "aggregates": {key: aggregates[key] for key in sorted(aggregates)},
+        "aggregates": {
+            artifact: {
+                "digest": aggregates[artifact].digest,
+                "slice": aggregates[artifact].payload,
+            }
+            for artifact in sorted(aggregates)
+        },
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
-def _read_artifact(path: Path) -> dict[str, object] | None:
+def _committed_slice(artifact: str, entry: object) -> CommittedSlice:
+    """One fixture entry, refusing a slice that pins no artifact rather than reading it anyway."""
+    digest = entry.get("digest") if isinstance(entry, dict) else None
+    payload = entry.get("slice") if isinstance(entry, dict) else None
+    if digest is None:
+        raise ValueError(
+            f"{PROVENANCE_FIXTURE}: the committed slice of {artifact!r} records no content digest "
+            "of the artifact it was cut from, so no host without that run can tell it from a slice "
+            f"cut from a different one -- {_REGENERATE}"
+        )
+    if not isinstance(digest, str) or not _DIGEST.match(digest):
+        raise ValueError(
+            f"{PROVENANCE_FIXTURE}: the committed slice of {artifact!r} must pin its artifact with "
+            f"a {DIGEST_ALGORITHM}:<hex> content digest, got {digest!r}"
+        )
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"{PROVENANCE_FIXTURE}: the committed slice of {artifact!r} carries no `slice` object"
+        )
+    return CommittedSlice(digest=digest, payload=cast(dict[str, object], payload))
+
+
+def _read_pinned_artifact(
+    path: Path, committed: CommittedSlice, *, where: str
+) -> dict[str, object] | None:
+    """The run aggregate on this host, refused unless it is the file the slice was cut from."""
     if not path.is_file():
         return None
+    digest = artifact_digest(path)
+    if digest != committed.digest:
+        raise ValueError(
+            f"{where}: the committed slice pins its aggregate at {committed.digest}, while "
+            f"{path} digests to {digest} -- the slice was cut from a different run or the artifact "
+            f"was edited, so the published value is not the one this design cites; "
+            f"{_REGENERATE} once the cited run is the one under DATA_DIR"
+        )
     return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
-
-
-def _step(node: object, segment: str, *, field: str, where: str) -> object:
-    selector = _ROW_SELECTOR.match(segment)
-    if selector is None:
-        if not isinstance(node, dict) or segment not in node:
-            raise ValueError(
-                f"{where}: the field pointer {field!r} reaches no {segment!r} in the artifact"
-            )
-        return node[segment]
-    name, key, value = selector["name"], selector["key"], int(selector["value"])
-    rows = node.get(name) if isinstance(node, dict) else None
-    row = _select_row(rows, key, value)
-    if row is None:
-        raise ValueError(
-            f"{where}: the field pointer {field!r} selects the {name!r} row with {key}={value}, "
-            "which the artifact does not carry"
-        )
-    return row
-
-
-def _select_row(rows: object, key: str, value: int) -> dict[str, object] | None:
-    if not isinstance(rows, list):
-        return None
-    return next(
-        (
-            row
-            for row in rows
-            if isinstance(row, dict) and isinstance(row.get(key), int) and row[key] == value
-        ),
-        None,
-    )
-
-
-def _merge(
-    target: dict[str, object], payload: dict[str, object], segments: list[str], *, field: str
-) -> None:
-    segment, rest = segments[0], segments[1:]
-    selector = _ROW_SELECTOR.match(segment)
-    if selector is None:
-        if segment not in payload:
-            raise ValueError(f"the field pointer {field!r} reaches no {segment!r} in the artifact")
-        if not rest:
-            target[segment] = payload[segment]
-            return
-        nested = payload[segment]
-        if not isinstance(nested, dict):
-            raise ValueError(f"the field pointer {field!r} walks into a non-object at {segment!r}")
-        _merge(cast(dict[str, object], target.setdefault(segment, {})), nested, rest, field=field)
-        return
-    if not rest:
-        raise ValueError(f"the field pointer {field!r} ends on a row selector, not on a field")
-    name, key, value = selector["name"], selector["key"], int(selector["value"])
-    row = _select_row(payload.get(name), key, value)
-    if row is None:
-        raise ValueError(
-            f"the field pointer {field!r} selects a {name!r} row the artifact does not carry"
-        )
-    bucket = cast(list[dict[str, object]], target.setdefault(name, []))
-    kept = _select_row(bucket, key, value)
-    if kept is None:
-        kept = {key: value}
-        bucket.append(kept)
-    _merge(kept, row, rest, field=field)
 
 
 def _number(value: object, *, where: str) -> float:

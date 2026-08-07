@@ -26,9 +26,11 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
+from llb.bench.agentic_published_value_pointer import merge_field_slice
 from llb.bench.agentic_published_value_provenance import (
+    CommittedSlice,
     PublishedValueResolver,
-    merge_field_slice,
+    artifact_digest,
     provenance_pair,
     write_provenance_fixture,
 )
@@ -56,12 +58,14 @@ def validate_published_provenance(
 def refresh_provenance_fixture(
     crossovers: list[dict[str, object]], *, root: Path, data_dir: Path
 ) -> Path:
-    """Regenerate the committed slices from the run artifacts this host still has.
+    """Regenerate the committed slices, and their artifact pins, from the runs this host still has.
 
     Generated, never typed: that is the whole difference between a resolution and a second
-    transcription of the number the first one got wrong.
+    transcription of the number the first one got wrong. The digest is taken from the same file the
+    slice is cut from, so a slice and the pin that makes it falsifiable can never disagree.
     """
-    aggregates: dict[str, dict[str, object]] = {}
+    cuts: dict[str, dict[str, object]] = {}
+    digests: dict[str, str] = {}
     for crossover in crossovers:
         artifact, field = provenance_pair(crossover.get("provenance"), where=_label(crossover))
         path = data_dir / artifact
@@ -70,12 +74,19 @@ def refresh_provenance_fixture(
                 f"{_label(crossover)}: the run artifact {artifact} is not under DATA_DIR on this "
                 "host, so its committed slice cannot be regenerated here"
             )
+        digests.setdefault(artifact, artifact_digest(path))
         merge_field_slice(
-            aggregates.setdefault(artifact, {}),
+            cuts.setdefault(artifact, {}),
             cast(dict[str, object], json.loads(path.read_text(encoding="utf-8"))),
             field,
         )
-    return write_provenance_fixture(root, aggregates)
+    return write_provenance_fixture(
+        root,
+        {
+            artifact: CommittedSlice(digest=digests[artifact], payload=payload)
+            for artifact, payload in cuts.items()
+        },
+    )
 
 
 def _resolved_guards(

@@ -43,29 +43,30 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-value-slices-are-unfalsifiable-once-the-run-root-is-gone (optional)
+### agent-published-value-pins-are-uncheckable-where-the-run-root-is-gone (optional)
 
-A published crossover now resolves against a committed slice of its run aggregate, and the slice is
-cross-checked against the aggregate itself only on a host that still HAS that run root
+A committed slice now pins the aggregate it was cut from by content digest, and the pin is verified
+against the file only on a host that still HAS that run root
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-Every other host -- CI, a fresh clone, this host after a `.data` cleanup -- resolves against the
-slice alone, and nothing there can tell a slice cut from the cited run from a slice cut from a
-different one or edited by hand: the resolution proves internal agreement, not that the cited
-artifact ever said this. Pin the artifact instead of naming it: record a content digest of each
-cited aggregate beside its slice, refuse a slice whose digest is absent, and on a host that has the
-run refuse a digest that does not match the file. That turns "the slice agrees with itself" into
-"the slice was cut from THIS run", which is the claim the provenance seam is read as making.
+On CI, a fresh clone, or this host after a `.data` cleanup the digest is a CLAIM about a file nobody
+present can read, so a slice and a pin fabricated together are still accepted there -- the pin moved
+the seam from "agrees with itself" to "agrees with itself plus a hash of something absent". Close it
+by making the evidence self-contained: commit each cited aggregate (they are small JSON analyses) or
+a signed manifest of them beside the slices, and have the resolver verify the pin against the
+committed copy rather than only against a `DATA_DIR` that may not exist. Weigh committing the whole
+aggregate against a per-artifact manifest with a repo-side signature, since the aggregates grow with
+every study that adopts the seam.
 
 - Agent status: CLEAR
-- Dependencies: the slice and its two-source read are `PublishedValueResolver` and
-  `write_provenance_fixture` in `src/llb/bench/agentic_published_value_provenance.py`; the
-  regeneration that would record the digest is `refresh_provenance_fixture` in
+- Dependencies: the pin, its refusals, and the committed fixture are `CommittedSlice` /
+  `load_provenance_fixture` in `src/llb/bench/agentic_published_value_provenance.py`; the
+  regeneration that records both is `refresh_provenance_fixture` in
   `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`.
-- User-visible outcome: a committed slice states which run it was cut from, so a hand-edited or
-  mis-cut slice fails on a host that never ran the study rather than only on one that did.
-- Scope boundary: in scope -- the per-artifact digest, its refusals, and the regeneration that
-  records it. Out of scope -- committing the aggregates themselves, re-running a published cell, and
-  changing any published value the resolution confirms.
+- User-visible outcome: a published number is resolvable against evidence the repo itself carries,
+  so no host has to take a digest on faith.
+- Scope boundary: in scope -- the committed aggregate (or signed manifest), the resolver's use of
+  it, and the size/growth policy that keeps the fixture bounded. Out of scope -- re-running a
+  published cell and changing any published value the resolution confirms.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
