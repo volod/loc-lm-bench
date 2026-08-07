@@ -25,9 +25,9 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     operator_lines,
     restatement_reading,
 )
+from llb.bench.agentic_memory_crossover_restatement_forms import crossover_row
 from llb.bench.agentic_memory_crossover_restatement_rows import (
     cap_peak_rows,
-    crossover_row,
     restated_cells,
     restated_surfaces,
 )

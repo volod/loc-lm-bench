@@ -27,7 +27,8 @@
     "rule": "restate_only_bound_sensitive_cells",
     "invariance": "restated_crossover_names_the_same_fold_step",
     "audit": "a cell whose summarize input is identical under both bounds sends bit-identical prompts under both, so its published cost stands with no run",
-    "why_fold_step": "the fold-step study established that cost changes only at a step boundary, so an interpolated guard moving INSIDE one step's guard interval names a point at which nothing changes"
+    "why_fold_step": "the fold-step study established that cost changes only at a step boundary, so an interpolated guard moving INSIDE one step's guard interval names a point at which nothing changes",
+    "why_band": "the portable ratio names no fold step of its own -- it is a trigger over a cap peak, derived from the surface's interpolated guard -- so it is restated from that restated guard and read against the band the collapse published, at the precision that band is quoted to"
   },
   "audited_studies": [
     {
@@ -44,8 +45,8 @@
       "design_path": "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
       "evidence": "docs/impl/current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis",
       "published_crossovers": [
-        {"depth": 6, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 6},
-        {"depth": 10, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 10}
+        {"depth": 6, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 6, "published_band": [0.85, 0.92], "band_decimals": 2},
+        {"depth": 10, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 10, "published_band": [0.85, 0.92], "band_decimals": 2}
       ]
     },
     {

@@ -1,4 +1,10 @@
-"""Published-crossover restatement: the model-free bound audit and the fold-step invariance rule."""
+"""Published-crossover restatement: the model-free bound audit and the restatement end to end.
+
+Each published form's own row rule is exercised at its edges in
+`test_agentic_memory_crossover_restatement_forms.py`; what runs here is the whole study over the
+committed design -- the audit, the design contract, the substituted surface, the cap peaks, and the
+reading the six published crossovers produce together.
+"""
 
 from copy import deepcopy
 import json
@@ -8,7 +14,6 @@ from typing import cast
 
 import pytest
 
-from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED
 from llb.bench.agentic_memory_boundary_probe import oracle_controller
 from llb.bench.agentic_memory_cap_audit import (
     VERDICT_INVARIANT,
@@ -31,16 +36,18 @@ from llb.bench.agentic_memory_crossover_restatement import (
     run_sensitive_surface_cells,
 )
 from llb.bench.agentic_memory_crossover_restatement_design import (
-    audited_designs,
     load_restatement_design,
     published_crossovers,
     validate_restatement_design,
 )
-from llb.bench.agentic_memory_crossover_restatement_rows import crossover_row
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
+    BASIS_DERIVED,
     BASIS_INVARIANT,
     BASIS_RESTATED,
+    CRITERION_BAND,
+    CRITERION_FOLD_STEP,
+    FORM_PORTABLE_RATIO,
     PEAK_INVARIANT,
     PEAK_MOVED,
     PEAK_UNPUBLISHED,
@@ -220,6 +227,33 @@ def test_the_design_refuses_a_retired_bound_a_missing_study_and_an_untested_dept
         validate_restatement_design(unstepped, root=ROOT)
 
 
+def test_a_portable_ratio_crossover_must_publish_a_band_and_the_precision_it_is_quoted_to():
+    design = load_restatement_design(DESIGN_PATH)
+    collapse = next(
+        study
+        for study in cast(list[dict[str, object]], design["audited_studies"])
+        if study["study_kind"] == KIND_COLLAPSE
+    )
+    assert all(
+        crossover.get("value") is None
+        for crossover in cast(list[dict[str, object]], collapse["published_crossovers"])
+    )
+
+    for mutation, match in (
+        ({"published_band": [0.92, 0.85]}, "ascending pair"),
+        ({"published_band": 0.85}, "ascending pair"),
+        ({"published_band": [0.0, 0.92]}, "ascending pair"),
+        ({"band_decimals": 0}, "band_decimals"),
+        ({"band_decimals": None}, "band_decimals"),
+    ):
+        broken = deepcopy(design)
+        for study in cast(list[dict[str, object]], broken["audited_studies"]):
+            if study["study_kind"] == KIND_COLLAPSE:
+                cast(list[dict[str, object]], study["published_crossovers"])[0].update(mutation)
+        with pytest.raises(ValueError, match=match):
+            validate_restatement_design(broken, root=ROOT)
+
+
 # --- the restatement ------------------------------------------------------------------------
 
 
@@ -243,10 +277,12 @@ def test_the_restatement_re_interpolates_and_checks_the_fold_step_it_names(tmp_p
     crossovers = {(row["study_kind"], row["depth"]): row for row in analysis["crossovers"]}
 
     # Depth 6 needed no run anywhere: every contributing cell is bit-identical under both bounds.
-    for kind in AUDITED_KINDS:
+    # (The collapse's derived ratio is the exception, and has its own test below: its value comes
+    # from the surface's guard rather than from its own cells.)
+    for kind in (KIND_SURFACE, KIND_FOLD_STEP):
         assert crossovers[(kind, 6)]["basis"] == BASIS_INVARIANT
         assert crossovers[(kind, 6)]["restated_value"] is None
-        assert crossovers[(kind, 6)]["names_same_fold_step"] is True
+        assert crossovers[(kind, 6)]["invariance_holds"] is True
 
     # The depth-10 surface crossover is the one that is actually re-interpolated.
     surface = crossovers[(KIND_SURFACE, 10)]
@@ -254,7 +290,8 @@ def test_the_restatement_re_interpolates_and_checks_the_fold_step_it_names(tmp_p
     assert surface["restated_value"] is not None
     assert surface["restated_bracket"] == [20000, 23000]
     # It must still land inside the fold step it was published in -- that is the invariance rule.
-    assert surface["names_same_fold_step"] is True
+    assert surface["invariance_criterion"] == CRITERION_FOLD_STEP
+    assert surface["invariance_holds"] is True
     low, high = surface["fold_step_guard_interval"]
     assert low <= surface["restated_value"] < high
 
@@ -295,9 +332,55 @@ def test_a_crossover_that_leaves_its_fold_step_is_reported_as_moved(tmp_path: Pa
         for row in analysis["crossovers"]
         if row["study_kind"] == KIND_SURFACE and row["depth"] == 10
     )
-    assert surface["names_same_fold_step"] is False
+    assert surface["invariance_holds"] is False
     assert analysis["restatement_reading"] == READING_MOVED
     assert any("re-derive the routing rule" in line for line in analysis["operator_lines"])
+
+
+# --- the derived portable ratio ---------------------------------------------------------------
+
+
+def test_the_portable_ratio_is_restated_from_the_guard_it_is_derived_from(tmp_path: Path):
+    """The collapse's own cells cannot restate it -- the surface's guard is what moves under it."""
+    design = load_restatement_design(DESIGN_PATH)
+    audit = audit_published_cells(design, root=ROOT)
+    rows = _sensitive_rows(design, audit, tmp_path)
+    analysis = analyze_restatement(
+        design, audit, CONTROL_PASS, _published_surface(), rows, root=ROOT
+    )
+    surfaces = {cast(int, row["depth"]): row for row in analysis["restated_depth_surface"]}
+    portable = {
+        cast(int, row["depth"]): row
+        for row in analysis["crossovers"]
+        if row["form"] == FORM_PORTABLE_RATIO
+    }
+    assert set(portable) == {6, 10}
+    for depth, row in portable.items():
+        # Every collapse cell is bound-invariant, and the ratio is restated all the same.
+        assert row["n_bound_sensitive_cells"] == 0
+        assert row["basis"] == BASIS_DERIVED
+        assert row["invariance_criterion"] == CRITERION_BAND
+        # Trigger over cap peak, both read off the SAME restated surface row.
+        guard = cast(float, surfaces[depth]["crossover_max_prompt_chars"])
+        peak = cast(int, surfaces[depth]["cap_peak_prompt_chars"])
+        assert row["derived_from_guard_chars"] == guard
+        assert row["restated_cap_peak_prompt_chars"] == peak
+        assert row["restated_trigger_chars"] == int(guard) // 2  # compact_share = 0.5
+        assert row["restated_value"] == pytest.approx(row["restated_trigger_chars"] / peak)
+        assert row["invariance_holds"] is True
+
+    # The re-measured depth-10 cell removes a discount that flattered compact, so the guard and the
+    # ratio it is derived from both come DOWN, and the published band still covers it at 2 decimals.
+    assert portable[10]["restated_value"] < 10950 / 11926
+    assert round(cast(float, portable[10]["restated_value"]), 2) == 0.92
+    assert round(cast(float, portable[6]["restated_value"]), 2) == 0.85
+    assert analysis["restatement_reading"] == READING_UNCHANGED
+    assert any(
+        "the portable trigger ratio is 0.917x" in line
+        and "inside the published 0.85-0.92x band" in line
+        for line in analysis["operator_lines"]
+    )
+    assert "0.85-0.92x" in format_restatement_table(analysis)
 
 
 # --- the peak the restated ratio is stated against --------------------------------------------
@@ -389,45 +472,6 @@ def test_a_depth_the_published_surface_states_no_peak_for_is_named_rather_than_m
     assert row["cap_peak_delta_chars"] is None
     assert row["measured_cap_peak_prompt_chars"] == 11926
     assert any("states no cap peak here" in line for line in analysis["operator_lines"])
-
-
-def test_a_published_fold_step_the_moved_geometry_no_longer_has_names_the_published_row():
-    """The restatement's step comes from a COMMITTED artifact, so the two can describe task worlds.
-
-    Every other ladder caller reads a step it measured itself. This one interpolates a fresh guard
-    against a fresh sequence and then asks where the PUBLISHED step's interval was, so a step the
-    geometry no longer offers is not an argument error -- it is the drift the restatement exists to
-    catch, and it used to surface as the interval arithmetic's bare "outside an N-step sequence".
-    """
-    design = load_restatement_design(DESIGN_PATH)
-    designs = audited_designs(design, root=ROOT)
-    audit = audit_published_cells(design, root=ROOT)
-    published = next(
-        row
-        for row in published_crossovers(design)
-        if row["study_kind"] == KIND_SURFACE and row["depth"] == 10
-    )
-    surfaces = [
-        {
-            "depth": 10,
-            "reading": READING_BRACKETED,
-            "crossover_max_prompt_chars": 21899.890064587056,
-            "crossover_guard_ratio": 1.836,
-            "bracket": [20000, 23000],
-        }
-    ]
-
-    # The control: on the geometry the number was published against, the interval is the one the
-    # restated guard has to stay inside.
-    row = crossover_row(published, designs, audit, surfaces)
-    low, high = row["fold_step_guard_interval"]
-    assert row["basis"] == BASIS_RESTATED and low <= row["restated_value"] < high
-
-    # Move the task world so the depth-10 walk ends four steps before the published fold step 10.
-    moved = deepcopy(designs)
-    cast(dict[str, object], moved[KIND_SURFACE]["held_fixed"])["max_steps_margin"] = -4
-    with pytest.raises(ValueError, match="crossover at depth 10 is stated at fold step 10"):
-        crossover_row(published, moved, audit, surfaces)
 
 
 def test_an_ineligible_family_supports_no_restatement_line():

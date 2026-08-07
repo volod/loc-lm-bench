@@ -30,6 +30,15 @@ CROSSOVER_FORMS = (FORM_INTERPOLATED, FORM_FOLD_STEP, FORM_PORTABLE_RATIO)
 BASIS_INVARIANT = "every_contributing_cell_is_bound_invariant"
 BASIS_RESTATED = "restated_from_a_re_measured_cell"
 BASIS_ALREADY_MEASURED = "already_re_measured_under_the_shipped_cap"
+BASIS_DERIVED = "derived_from_the_restated_surface_guard"
+
+# What a restated crossover is CHECKED against, which the FORM decides. A guard is a point on the
+# deterministic step ladder, so it holds while it names the same fold step. The portable ratio is not
+# a guard and names no step of its own -- it is a trigger over a cap peak, DERIVED from the surface's
+# interpolated guard and published as a BAND across the tested depths -- so it holds while the
+# restated ratio still falls inside that band at the precision the band is quoted to.
+CRITERION_FOLD_STEP = INVARIANCE_RULE
+CRITERION_BAND = "restated_ratio_stays_inside_the_published_band"
 
 # Whether the geometry that measured the restated guard is the geometry the published peak came
 # from. A guard ratio is a guard OVER a cap peak, so the two must be read off one prompt sequence;
@@ -58,14 +67,10 @@ def restatement_reading(
     if unresolved:
         named = ", ".join(f"{row['study_kind']} depth {row['depth']}" for row in unresolved)
         return READING_INCOMPLETE, f"a bound-sensitive cell was not re-measured: {named}"
-    moved = [row for row in crossovers if not row["names_same_fold_step"]]
+    moved = [row for row in crossovers if not row["invariance_holds"]]
     if moved:
-        named = "; ".join(
-            f"{row['study_kind']} depth {row['depth']}: fold step "
-            f"{row['published_fold_step']} -> {row['restated_fold_step']}"
-            for row in moved
-        )
-        return READING_MOVED, f"a restated crossover names a different fold step: {named}"
+        named = "; ".join(_moved_phrase(row) for row in moved)
+        return READING_MOVED, f"a restated crossover left the range it was published in: {named}"
     if n_sensitive == 0:
         return (
             READING_ALL_INVARIANT,
@@ -75,8 +80,18 @@ def restatement_reading(
     return (
         READING_UNCHANGED,
         f"{n_sensitive} bound-sensitive cell(s) were re-measured under the shipped cap and every "
-        f"published crossover still names the fold step it named before",
+        f"published crossover still holds the statement it was published in",
     )
+
+
+def _moved_phrase(row: dict[str, object]) -> str:
+    """Name what a withdrawn crossover left, in the terms its own FORM was published in."""
+    label = f"{row['study_kind']} depth {row['depth']}"
+    if row["invariance_criterion"] == CRITERION_BAND:
+        low, high = cast(list[float], row["published_band"])
+        ratio = cast(float, row["restated_value"])
+        return f"{label}: portable ratio {ratio:.3f}x outside the {low:.2f}-{high:.2f}x band"
+    return f"{label}: fold step {row['published_fold_step']} -> {row['restated_fold_step']}"
 
 
 def operator_lines(
@@ -112,7 +127,7 @@ def _crossover_line(row: dict[str, object]) -> str:
             f"[{row['basis']}]"
         )
     if row["form"] == FORM_PORTABLE_RATIO:
-        return f"{label}: the portable trigger ratio is unchanged [{row['basis']}]"
+        return _portable_ratio_line(label, row)
     published = cast(float, row["published_value"])
     restated = cast(float | None, row["restated_value"])
     if restated is None or restated == published:
@@ -124,6 +139,27 @@ def _crossover_line(row: dict[str, object]) -> str:
         f"{label}: the interpolated crossover guard moves {published:.0f} -> {restated:.0f} chars "
         f"({restated - published:+.0f}), still inside fold step {row['restated_fold_step']}'s guard "
         f"interval, where every guard costs the same [{row['basis']}]"
+    )
+
+
+def _portable_ratio_line(label: str, row: dict[str, object]) -> str:
+    """The derived ratio, the two numbers it is a quotient of, and the band it is read against.
+
+    Both parts are named because the ratio is the one published form with no measurement of its own:
+    an operator who reads only the quotient cannot tell a moved guard from a moved cap peak, and the
+    two call for opposite actions -- re-derive the routing rule, or re-measure the geometry.
+    """
+    restated = cast(float | None, row["restated_value"])
+    if restated is None:
+        return f"{label}: the portable trigger ratio is unchanged [{row['basis']}]"
+    low, high = cast(list[float], row["published_band"])
+    return (
+        f"{label}: the portable trigger ratio is {restated:.3f}x -- a "
+        f"{cast(int, row['restated_trigger_chars'])}-char trigger, derived from the restated "
+        f"{cast(float, row['derived_from_guard_chars']):.0f}-char guard, over the re-measured "
+        f"{cast(int, row['restated_cap_peak_prompt_chars'])}-char cap peak -- "
+        f"{'inside' if row['invariance_holds'] else 'OUTSIDE'} the published "
+        f"{low:.2f}-{high:.2f}x band [{row['basis']}]"
     )
 
 

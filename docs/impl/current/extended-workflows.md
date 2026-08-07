@@ -1575,13 +1575,14 @@ bound-sensitive. The committed design is
 `samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
 by its in-repo design path and every crossover that study published, and validation refuses a design
 whose path is missing, declares a different study kind, publishes a crossover at a depth the study
-does not test, or omits the fold step a crossover lands in.
+does not test, omits the fold step a crossover lands in, or publishes a derived ratio without the
+band and the precision that band is quoted to.
 
-The invariance criterion is the fold step, not a char tolerance. The fold-step study established
-that the cost changes only at a step boundary, so a restated guard that moves INSIDE one step's
-guard interval names a point at which nothing changes; only a guard that crosses a step boundary
-withdraws a published number. `--audit-only` reports the audit and stops, which is the GPU-free way
-to ask "does this bound change invalidate my evidence" before spending anything.
+The invariance criterion for a guard is the fold step, not a char tolerance. The fold-step study
+established that the cost changes only at a step boundary, so a restated guard that moves INSIDE one
+step's guard interval names a point at which nothing changes; only a guard that crosses a step
+boundary withdraws a published number. `--audit-only` reports the audit and stops, which is the
+GPU-free way to ask "does this bound change invalidate my evidence" before spending anything.
 
 One rule decides where each number in a restated row comes from: whatever the re-measured geometry
 can measure is measured FROM that geometry, and whatever only the published artifact holds is stated
@@ -1600,15 +1601,35 @@ moved task world surfaces as a named moved peak with an operator line telling th
 to apply, instead of as a rescaled number nothing in the run mentions. The fold-step invariance
 criterion is unchanged by this: a moved peak is reported, not treated as a withdrawn crossover.
 
+The FORM a number was published in decides both what restates it and what it is checked against.
+An interpolated guard is re-interpolated over the substituted cells and placed back on the step
+ladder. A fold-step boundary is a property of that ladder rather than of a measured cost, so the
+summarize-input-cap study's re-measurement of its cells confirms it directly. The collapse's
+portable ratio is neither, and the difference is what makes it the one form a run could quietly skip:
+it is `compact_share * guard` over the depth's cap peak, DERIVED from the surface's interpolated
+guard rather than measured on cells of its own, so its own eight bound-invariant cells say nothing
+about it -- the guard it divides is exactly the number the restatement moves. It is therefore
+restated from that restated guard (the runtime's own `compaction_trigger_chars` applied to it) over
+the same depth's re-measured cap peak, both read off ONE restated surface row, and checked against
+the BAND the collapse published rather than against a fold step the form does not name. The design
+carries the band and the precision it is quoted to (`published_band`, `band_decimals`) because the
+band's edges are the ROUNDED ratios of the tested depths: a restated ratio a hair under the lower
+edge is inside the band as published, and predeclaring the precision makes that a stated reading
+rather than a tolerance chosen after seeing the number.
+
 Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
 both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute, re-interpolate against a
-re-measured cap peak, compare that peak with the published one, and place the restated guard on the
-step ladder), `src/llb/bench/agentic_memory_crossover_restatement.py`,
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute the re-measured cells,
+re-interpolate against a re-measured cap peak, and compare that peak with the published one),
+`src/llb/bench/agentic_memory_crossover_restatement_forms.py` (one restated row per published form:
+place a restated guard on the step ladder, confirm a fold-step boundary, derive the portable ratio
+and read it against its band), `src/llb/bench/agentic_memory_crossover_restatement.py`,
 `src/llb/bench/agentic_memory_crossover_restatement_report.py`,
-`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, and
-`tests/llb/bench/test_agentic_memory_crossover_restatement.py`.
+`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`,
+`tests/llb/bench/test_agentic_memory_crossover_restatement.py`, and
+`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py` (each form's row rule at its
+edges, including a ratio driven out of its published band).
 
 ```bash
 make bench-agentic-context-compact-crossover-restatement
@@ -1633,8 +1654,8 @@ and one compaction per compact episode. The aggregate is
 | --- | ---: | --- | ---: | ---: | ---: | --- |
 | boundary surface | 6 | interpolated guard | 14160 | unchanged | 7 | every cell bound-invariant |
 | boundary surface | 10 | interpolated guard | 21900 | **21862** | 10 | re-measured cell |
-| trigger collapse | 6 | portable ratio | 0.85x | unchanged | 6 | every cell bound-invariant |
-| trigger collapse | 10 | portable ratio | 0.92x | 0.92x | 10 | every cell bound-invariant |
+| trigger collapse | 6 | portable ratio | 0.85-0.92x | 0.845x | 6 | derived from the restated guard |
+| trigger collapse | 10 | portable ratio | 0.85-0.92x | **0.917x** | 10 | derived from the restated guard |
 | fold step | 6 | fold-step boundary | 14912 | unchanged | 6 | every cell bound-invariant |
 | fold step | 10 | fold-step boundary | 22016 | unchanged | 10 | already re-measured |
 
@@ -1652,24 +1673,29 @@ produced in the summarize-input-cap study. Three guards spanning 1024 chars, one
 cost to the token.
 
 The cap peaks those ratios rest on are re-measured on every run rather than read out of the published
-aggregate, and on the committed geometry they still ARE the published ones. A re-run on 2026-08-07
-(same host, same pinned model, same design; aggregate
-`$DATA_DIR/agentic-compact-crossover-restatement/20260807T140411.864285Z-c2cd80af9fa2/manifest.json`)
-reads `the_re_measured_geometry_has_the_published_cap_peak` at both depths with a 0-char delta --
+aggregate, and on the committed geometry they still ARE the published ones. Two re-runs on 2026-08-07
+(same host, same pinned model, same design; the later aggregate, which is also the first to carry the
+derived portable ratios, is
+`$DATA_DIR/agentic-compact-crossover-restatement/20260807T151357.246347Z-d2ecec11831d/manifest.json`,
+9.67 tok/s over about 13 minutes including the control)
+read `the_re_measured_geometry_has_the_published_cap_peak` at both depths with a 0-char delta --
 8374 at depth 6, 11926 at depth 10 -- so the 1.69x and 1.83x guard ratios are stated against the
-geometry that measured the guards they divide. That re-run also re-measured `surface-d10-g23000`
-from scratch and landed one token away: 28952.3 compact tokens for a delta of +1609.3, interpolating
-to a 21862.1-char crossover against the 21861.6 above. Read the token-exact cross-check in the
+geometry that measured the guards they divide. Both re-runs also re-measured `surface-d10-g23000`
+from scratch and landed one token away, twice: 28952.3 compact tokens for a delta of +1609.3,
+interpolating to a 21862.1-char crossover against the 21861.6 above. Read the token-exact
+cross-check in the
 previous paragraph as a within-run property; ACROSS runs on different days the served model
 reproduces it to a token, which rounds to the same 21862 and stays inside the same fold step 10
 interval `[20240, 22016)`.
 
-The collapse's portable ratio needs one extra step to read, because it is DERIVED from the surface's
-interpolated guard rather than measured directly: at depth 10 the restated 21862-char guard is a
-10931-char trigger against an 11926-char cap peak, so the ratio moves 0.918x -> 0.917x and the
-published 0.85-0.92x band is unchanged at the precision it is stated in. The collapse's own eight
-cells are all bound-invariant, so the equal-trigger spreads and the contrast family stand as
-measured.
+The collapse's portable ratio is restated by the run rather than recomputed beside it, which is what
+its being DERIVED from the surface's guard demands: at depth 10 the restated 21862-char guard is a
+10931-char trigger over the re-measured 11926-char cap peak, so the ratio moves 0.918x -> **0.917x**,
+and at depth 6 the unmoved 14160-char guard gives a 7079-char trigger over 8374 for **0.845x**. Both
+sit inside the published 0.85-0.92x band at the two decimals it is quoted to, so the band an operator
+applies is unchanged. The collapse's own eight cells are all bound-invariant, so the equal-trigger
+spreads and the contrast family stand as measured -- but that fact is about the ratio's PORTABILITY,
+not about its value, and the run now says the two separately.
 
 The trigger collapse gains something from the change rather than merely surviving it. Its claim is
 that `compact_share` and the prompt guard act ONLY through their product, and the retired bound was

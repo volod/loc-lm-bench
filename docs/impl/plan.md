@@ -43,31 +43,57 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-restatement-derives-the-portable-ratio-in-prose (optional)
+### agent-restatement-published-fold-step-annotations-are-unchecked (optional)
 
-The trigger collapse's published number is a portable TRIGGER ratio DERIVED from the surface's
-interpolated guard rather than measured on cells of its own, and `crossover_row` in
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` cannot see that: the collapse's eight
-cells are all bound-invariant, so the row answers
-`every_contributing_cell_is_bound_invariant` with no restated value -- while the guard the ratio is
-derived FROM is exactly the one the restatement moves. The restated ratio is therefore recomputed by
-hand in prose
-([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
-which is the same class of gap the cap-peak comparison row closes one level up: a published figure
-restated outside the artifact that restates every other one. Both inputs now sit in the analysis, so
-derive the ratio from the restated guard's `compaction_trigger_chars` over that depth's re-measured
-cap peak, emit it as the `portable_trigger_ratio` row's own restated value, and state its invariance
-against the band the collapse published rather than against a fold step the form does not name.
+Every published crossover in `samples/benchmarks/agentic_compact_crossover_restatement_design.json`
+NAMES the fold step it lands in, and that annotation is the invariance criterion for two of the
+three forms -- but nothing checks it against the geometry of the study it cites, even though the
+check needs no model: `first_fold_step` over the study's own `cap_prompt_sequence` places a
+published guard on the ladder exactly as the restatement places a restated one. The depth-6
+boundary-surface row shows what that permits. It is annotated `fold_step: 7` while the committed
+geometry puts its published 14160-char guard at `compact_share=0.5` inside step 6's guard interval
+`[13136, 14912)`, so the moment any depth-6 surface cell becomes bound-sensitive the run reads
+`a_published_crossover_moves_under_the_shipped_cap` against an annotation that was wrong before the
+bound ever changed
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+Validate every annotation at design load, then correct the row the check rejects and the doc line it
+feeds.
 
 - Agent status: CLEAR
-- Dependencies: the two inputs are `restated_cap_peaks` and `restated_depth_surface` built by
-  `analyze_restatement` in `src/llb/bench/agentic_memory_crossover_restatement.py`; the trigger
-  arithmetic is `compaction_trigger_chars` in `src/llb/bench/agentic_memory_fold_step_ladder.py`.
-- User-visible outcome: every published crossover FORM is restated by the run that restates the
-  others, so nobody applies a derived ratio only a doc paragraph recomputed.
-- Scope boundary: in scope -- the derived ratio, the invariance criterion its form needs, and its
-  tests. Out of scope -- changing the collapse's published band, the interpolation rule, and
-  re-running a published cell.
+- Dependencies: the placement arithmetic is `first_fold_step` and `fold_step_guard_interval` in
+  `src/llb/bench/agentic_memory_fold_step_ladder.py`; the annotations are validated by
+  `_validate_crossover` in `src/llb/bench/agentic_memory_crossover_restatement_design.py`, and the
+  geometry reader is `prompt_sequence` in
+  `src/llb/bench/agentic_memory_crossover_restatement_forms.py`.
+- User-visible outcome: a restatement that reads MOVED is reporting a moved number, not a
+  mis-transcribed annotation nobody checked.
+- Scope boundary: in scope -- the annotation check, the annotation it rejects, and the doc line that
+  quotes it. Out of scope -- changing any published guard, ratio, or band, and re-running a
+  published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
+
+### agent-restatement-a-derived-form-whose-source-is-unrestated-reads-as-invariant (optional)
+
+The portable ratio is derived from the surface's interpolated guard, so it is restated only when
+that depth's surface row is BRACKETED. When it is not -- a grid that reads
+`compact_cheaper_across_grid`, a depth the surface never tested, or an audit-only run -- the row
+falls back to `every_contributing_cell_is_bound_invariant` on the strength of the collapse's own
+eight cells, which is exactly the weaker statement the derived ratio replaced: those cells are not
+what the ratio rests on
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+Give a derived form its own unresolved state -- a basis naming the source that was not restated, and
+a reading beside `..._hold_under_the_shipped_cap` that says which derived figures went un-restated --
+so a silent fallback cannot present itself as an invariance result.
+
+- Agent status: CLEAR
+- Dependencies: the fallback is the `_restated_surface(...) is None` path in `crossover_row`
+  (`src/llb/bench/agentic_memory_crossover_restatement_forms.py`); the reading is
+  `restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py`.
+- User-visible outcome: an operator can tell a ratio that was re-derived and held from one that was
+  never re-derived at all.
+- Scope boundary: in scope -- the unresolved basis, the reading, the persisted metric, and their
+  tests. Out of scope -- the band criterion itself and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

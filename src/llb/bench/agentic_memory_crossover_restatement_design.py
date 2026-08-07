@@ -121,6 +121,37 @@ def _validate_crossover(kind: str, crossover: dict[str, object], depths: set[int
             f"{kind} depth {depth}: every published crossover must name the fold step it lands in, "
             "because that is what the restatement checks it still names"
         )
-    # The portable ratio is a derived statement rather than a guard, so it carries no single value.
-    if form != FORM_PORTABLE_RATIO and crossover.get("value") is None:
+    # The portable ratio is a derived statement rather than a guard, so it carries no single value --
+    # it carries the BAND it was published as, which is what its restatement is read against.
+    if form == FORM_PORTABLE_RATIO:
+        _validate_published_band(kind, crossover, depth)
+    elif crossover.get("value") is None:
         raise ValueError(f"{kind} depth {depth}: a {form} crossover must carry its published value")
+
+
+def _validate_published_band(kind: str, crossover: dict[str, object], depth: int) -> None:
+    """A derived ratio needs both edges of its band and the precision the band is quoted to.
+
+    The precision is not decoration: the published edges are the ROUNDED ratios of the tested
+    depths, so a restated ratio a hair under the lower edge is inside the band as published and
+    outside it as compared. Stating the decimals makes that a predeclared reading rather than a
+    tolerance the restatement picks after seeing the number.
+    """
+    band = crossover.get("published_band")
+    if (
+        not isinstance(band, list)
+        or len(band) != 2
+        or not all(isinstance(edge, (int, float)) and float(edge) > 0.0 for edge in band)
+        or float(cast(float, band[0])) > float(cast(float, band[1]))
+    ):
+        raise ValueError(
+            f"{kind} depth {depth}: a {FORM_PORTABLE_RATIO} crossover is published as a band, so it "
+            "must carry an ascending pair of positive `published_band` edges"
+        )
+    decimals = crossover.get("band_decimals")
+    if isinstance(decimals, bool) or not isinstance(decimals, int) or decimals < 1:
+        raise ValueError(
+            f"{kind} depth {depth}: a {FORM_PORTABLE_RATIO} crossover must state the "
+            "`band_decimals` its band is quoted to, because that precision is the reading its "
+            "restatement is checked at"
+        )

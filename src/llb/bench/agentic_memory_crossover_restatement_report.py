@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_memory_crossover_restatement_reading import (
+    FORM_PORTABLE_RATIO,
     METHOD,
     READING_ALL_INVARIANT,
     READING_UNCHANGED,
@@ -137,22 +138,35 @@ def _cap_peak_lines(rows: list[dict[str, object]]) -> list[str]:
 
 def _crossover_lines(crossovers: list[dict[str, object]]) -> list[str]:
     header = (
-        f"{'study':<34} {'depth':>5} {'form':<22} {'published':>10} {'restated':>10} "
-        f"{'fold':>4} {'same':>5} basis"
+        f"{'study':<34} {'depth':>5} {'form':<22} {'published':>11} {'restated':>11} "
+        f"{'fold':>4} {'holds':>5} basis"
     )
     lines = ["", "published crossovers", header, "-" * len(header)]
     for row in crossovers:
-        published = cast(float | None, row["published_value"])
-        restated = cast(float | None, row["restated_value"])
         lines.append(
             f"{cast(str, row['study_kind']):<34} {cast(int, row['depth']):>5d} "
             f"{cast(str, row['form']):<22} "
-            f"{'-' if published is None else f'{published:10.0f}'} "
-            f"{'-' if restated is None else f'{restated:10.0f}'} "
+            f"{_published_cell(row):>11} {_restated_cell(row):>11} "
             f"{cast(int, row['restated_fold_step']):>4d} "
-            f"{str(row['names_same_fold_step']).lower():>5} {row['basis']}"
+            f"{str(row['invariance_holds']).lower():>5} {row['basis']}"
         )
     return lines
+
+
+def _published_cell(row: dict[str, object]) -> str:
+    """A guard is one char count; a derived ratio was published as a band, so print the band."""
+    if row["form"] == FORM_PORTABLE_RATIO:
+        low, high = cast(list[float], row["published_band"])
+        return f"{low:.2f}-{high:.2f}x"
+    published = cast(float | None, row["published_value"])
+    return "-" if published is None else f"{published:.0f}"
+
+
+def _restated_cell(row: dict[str, object]) -> str:
+    restated = cast(float | None, row["restated_value"])
+    if restated is None:
+        return "-"
+    return f"{restated:.3f}x" if row["form"] == FORM_PORTABLE_RATIO else f"{restated:.0f}"
 
 
 def persist_restatement(
@@ -183,7 +197,7 @@ def persist_restatement(
                 else 0.0
             ),
             "reliability": (
-                sum(bool(row["names_same_fold_step"]) for row in crossovers) / len(crossovers)
+                sum(bool(row["invariance_holds"]) for row in crossovers) / len(crossovers)
                 if crossovers
                 else 0.0
             ),
