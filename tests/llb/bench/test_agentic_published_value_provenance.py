@@ -1,9 +1,10 @@
-"""The committed slice, the artifact it pins, and the two-source read over both.
+"""The committed aggregate, the pin over its bytes, and the two-source read across both.
 
-The pointer walk that addresses a value inside either source is exercised in
-`test_agentic_published_value_pointer.py`; this file is about what makes a slice EVIDENCE rather
-than a self-consistent copy -- the content digest of the artifact it was cut from, the refusals
-around it, and what the resolver does on a host that still has that artifact.
+The pointer walk that addresses a value inside an aggregate is exercised in
+`test_agentic_published_value_pointer.py`; this file is about what makes the committed evidence
+EVIDENCE rather than a self-consistent claim -- that the repo carries the cited bytes themselves, so
+the pin is checked on a host that never ran the study, and that a host which still has the run root
+falsifies the copy against it.
 """
 
 import hashlib
@@ -12,18 +13,21 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic_published_value_pointer import merge_field_slice
-from llb.bench.agentic_published_value_provenance import (
+from llb.bench.agentic_published_value_fixture import (
+    COMMITTED_AGGREGATE_DIR,
     DIGEST_ALGORITHM,
     FIXTURE_SCHEMA_VERSION,
+    MAX_AGGREGATE_BYTES,
+    MAX_COMMITTED_BYTES,
     PROVENANCE_FIXTURE,
-    CommittedSlice,
-    PublishedValueResolver,
+    CommittedAggregate,
     artifact_digest,
+    committed_aggregate_path,
+    committed_evidence_bytes,
     load_provenance_fixture,
-    provenance_pair,
     write_provenance_fixture,
 )
+from llb.bench.agentic_published_value_provenance import PublishedValueResolver, provenance_pair
 
 ARTIFACT = "study/run/analysis.json"
 AGGREGATE: dict[str, object] = {
@@ -35,78 +39,69 @@ AGGREGATE: dict[str, object] = {
     "cap_peak_prompt_chars": {"6": 8374, "10": 11926},
     "reading": "crossover_bracketed",
 }
+SURFACE_FIELD = "depth_surface[depth=6].crossover_max_prompt_chars"
 
 
-def _slice(*fields: str) -> dict[str, object]:
-    cut: dict[str, object] = {}
-    for field in fields:
-        merge_field_slice(cut, AGGREGATE, field)
-    return cut
-
-
-def _write_artifact(data_dir: Path, payload: dict[str, object]) -> Path:
-    path = data_dir / ARTIFACT
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
+def _raw(payload: dict[str, object]) -> bytes:
+    return json.dumps(payload).encode("utf-8")
 
 
 def _host(
-    tmp_path: Path, *fields: str, payload: dict[str, object] | None = None
+    tmp_path: Path,
+    *,
+    committed: dict[str, object] | None = None,
+    measured: dict[str, object] | None = None,
 ) -> tuple[Path, Path]:
-    """A project root whose committed slice pins an artifact written under a DATA_DIR beside it."""
+    """A project root carrying the committed aggregate, beside a DATA_DIR holding the run itself."""
     data_dir = tmp_path / "data"
-    path = _write_artifact(data_dir, payload if payload is not None else AGGREGATE)
-    (tmp_path / PROVENANCE_FIXTURE.parent).mkdir(parents=True, exist_ok=True)
-    write_provenance_fixture(
-        tmp_path, {ARTIFACT: CommittedSlice(digest=artifact_digest(path), payload=_slice(*fields))}
-    )
+    write_provenance_fixture(tmp_path, {ARTIFACT: _raw(committed or AGGREGATE)})
+    path = data_dir / ARTIFACT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_raw(measured if measured is not None else (committed or AGGREGATE)))
     return tmp_path, data_dir
 
 
-def _rewrite_fixture(root: Path, entry: object) -> None:
-    """Replace the one fixture entry, so a hand-edited fixture can be driven through the load."""
+def _rewrite_manifest(root: Path, entry: object) -> None:
+    """Replace the one manifest entry, so a hand-edited manifest can be driven through the load."""
     (root / PROVENANCE_FIXTURE).write_text(
         json.dumps({"schema_version": FIXTURE_SCHEMA_VERSION, "aggregates": {ARTIFACT: entry}}),
         encoding="utf-8",
     )
 
 
-# --- the committed fixture --------------------------------------------------------------------
+# --- the committed evidence ---------------------------------------------------------------------
 
 
-def test_the_fixture_round_trips_its_slice_its_pin_and_its_schema(tmp_path):
-    root, data_dir = _host(tmp_path, "cap_peak_prompt_chars.6")
-    payload = json.loads((root / PROVENANCE_FIXTURE).read_text(encoding="utf-8"))
-    assert payload["schema_version"] == FIXTURE_SCHEMA_VERSION
+def test_the_repo_carries_the_cited_bytes_and_a_pin_over_exactly_those_bytes(tmp_path):
+    root, data_dir = _host(tmp_path)
+    copy = committed_aggregate_path(root, ARTIFACT)
+    assert copy.read_bytes() == (data_dir / ARTIFACT).read_bytes()
     assert load_provenance_fixture(root) == {
-        ARTIFACT: CommittedSlice(
-            digest=artifact_digest(data_dir / ARTIFACT),
-            payload={"cap_peak_prompt_chars": {"6": 8374}},
-        )
+        ARTIFACT: CommittedAggregate(digest=artifact_digest(copy), payload=AGGREGATE)
     }
 
 
 def test_the_pin_is_the_digest_of_the_artifact_s_bytes_as_written(tmp_path):
     """Over the FILE, not over a re-serialization of it: the pin has to survive a re-read."""
-    path = _write_artifact(tmp_path / "data", AGGREGATE)
-    expected = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert artifact_digest(path) == f"{DIGEST_ALGORITHM}:{expected}"
+    root, _data_dir = _host(tmp_path)
+    copy = committed_aggregate_path(root, ARTIFACT)
+    expected = hashlib.sha256(copy.read_bytes()).hexdigest()
+    assert artifact_digest(copy) == f"{DIGEST_ALGORITHM}:{expected}"
 
 
 def test_a_missing_or_mis_versioned_fixture_is_refused(tmp_path):
     with pytest.raises(ValueError, match="does not exist"):
         load_provenance_fixture(tmp_path)
-    root, _data_dir = _host(tmp_path, "reading")
+    root, _data_dir = _host(tmp_path)
     (root / PROVENANCE_FIXTURE).write_text(json.dumps({"schema_version": 99}), encoding="utf-8")
     with pytest.raises(ValueError, match=f"schema_version {FIXTURE_SCHEMA_VERSION}"):
         load_provenance_fixture(root)
 
 
-def test_a_slice_that_pins_no_artifact_is_refused_as_unfalsifiable(tmp_path):
-    """The whole point of the pin: without it a slice is only self-consistent, on every host."""
-    root, _data_dir = _host(tmp_path, "reading")
-    _rewrite_fixture(root, {"slice": _slice("cap_peak_prompt_chars.6")})
+def test_an_entry_that_pins_nothing_is_refused(tmp_path):
+    """Without the pin nothing ties the committed bytes to the run whose name they carry."""
+    root, _data_dir = _host(tmp_path)
+    _rewrite_manifest(root, {})
     with pytest.raises(ValueError, match="records no content digest"):
         load_provenance_fixture(root)
 
@@ -116,85 +111,137 @@ def test_a_slice_that_pins_no_artifact_is_refused_as_unfalsifiable(tmp_path):
     ["deadbeef", "sha256:not-hex", f"{DIGEST_ALGORITHM}:{'a' * 63}", "md5:" + "a" * 64, 17],
 )
 def test_a_pin_that_is_not_a_content_digest_is_refused(tmp_path, digest):
-    root, _data_dir = _host(tmp_path, "reading")
-    _rewrite_fixture(root, {"digest": digest, "slice": _slice("reading")})
+    root, _data_dir = _host(tmp_path)
+    _rewrite_manifest(root, {"digest": digest})
     with pytest.raises(ValueError, match="content digest"):
         load_provenance_fixture(root)
 
 
-def test_a_fixture_entry_with_a_pin_but_no_slice_is_refused(tmp_path):
-    root, _data_dir = _host(tmp_path, "reading")
-    _rewrite_fixture(root, {"digest": f"{DIGEST_ALGORITHM}:{'a' * 64}"})
-    with pytest.raises(ValueError, match="carries no `slice` object"):
+def test_a_pin_whose_bytes_the_repo_does_not_carry_is_refused_as_a_claim_about_an_absent_file(
+    tmp_path,
+):
+    """The failure this evidence exists to close: a digest of a file no present host can read.
+
+    A pin alone is checkable only where the run root survives. On CI, a fresh clone, or this host
+    after a `.data` cleanup it stands for a file nobody can open, so the resolution proved the
+    evidence agrees with itself plus a hash of something absent.
+    """
+    root, _data_dir = _host(tmp_path)
+    committed_aggregate_path(root, ARTIFACT).unlink()
+    with pytest.raises(ValueError, match="carries no copy of it"):
         load_provenance_fixture(root)
 
 
-# --- the two-source read ----------------------------------------------------------------------
+def test_a_pin_that_disagrees_with_the_committed_copy_is_refused_with_no_run_on_the_host(tmp_path):
+    """The pin is now falsifiable everywhere, which is what a fabricated pair could not survive.
+
+    Before the bytes were committed, an aggregate and a pin invented together were accepted on every
+    host without the run root, because there was nothing present to contradict either one.
+    """
+    root, _data_dir = _host(tmp_path)
+    _rewrite_manifest(root, {"digest": f"{DIGEST_ALGORITHM}:{'0' * 64}"})
+    with pytest.raises(ValueError, match="the committed copy digests to"):
+        load_provenance_fixture(root)
 
 
-def test_a_value_resolves_from_the_committed_slice_with_no_run_on_the_host(tmp_path):
-    """CI is the case with no DATA_DIR at all, so the slice has to be sufficient on its own."""
-    field = "depth_surface[depth=6].crossover_max_prompt_chars"
-    root, _data_dir = _host(tmp_path, field)
+def test_a_hand_edited_committed_copy_is_refused_with_no_run_on_the_host(tmp_path):
+    """The same check read the other way: the bytes moved and the pin did not."""
+    root, _data_dir = _host(tmp_path)
+    copy = committed_aggregate_path(root, ARTIFACT)
+    copy.write_bytes(_raw({**AGGREGATE, "cap_peak_prompt_chars": {"6": 8375, "10": 11926}}))
+    with pytest.raises(ValueError, match="the committed copy digests to"):
+        load_provenance_fixture(root)
+
+
+def test_an_artifact_key_that_escapes_the_committed_tree_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="escapes"):
+        committed_aggregate_path(tmp_path, "../outside/analysis.json")
+
+
+# --- the growth policy --------------------------------------------------------------------------
+
+
+def test_regeneration_drops_the_copies_no_published_value_still_cites(tmp_path):
+    """The evidence tracks the CITED artifacts, so a retired study stops costing repo bytes."""
+    root, _data_dir = _host(tmp_path)
+    retired = "old-study/run/analysis.json"
+    write_provenance_fixture(root, {ARTIFACT: _raw(AGGREGATE), retired: _raw(AGGREGATE)})
+    assert committed_aggregate_path(root, retired).is_file()
+
+    write_provenance_fixture(root, {ARTIFACT: _raw(AGGREGATE)})
+    assert set(load_provenance_fixture(root)) == {ARTIFACT}
+    assert not committed_aggregate_path(root, retired).exists()
+    assert not (root / COMMITTED_AGGREGATE_DIR / "old-study").exists()
+
+
+def test_an_aggregate_over_the_per_artifact_cap_is_refused_rather_than_committed(tmp_path):
+    oversized = b"x" * (MAX_AGGREGATE_BYTES + 1)
+    with pytest.raises(ValueError, match="per-artifact cap on committed evidence"):
+        write_provenance_fixture(tmp_path, {ARTIFACT: oversized})
+    assert not committed_aggregate_path(tmp_path, ARTIFACT).exists()
+
+
+def test_the_total_committed_evidence_stays_inside_its_budget(tmp_path):
+    each = b"y" * MAX_AGGREGATE_BYTES
+    over = {
+        f"study-{index}/run/analysis.json": each
+        for index in range(MAX_COMMITTED_BYTES // len(each) + 1)
+    }
+    with pytest.raises(ValueError, match="budget for committed provenance evidence"):
+        write_provenance_fixture(tmp_path, over)
+
+
+def test_the_evidence_size_is_readable_without_stat_ing_every_copy_by_hand(tmp_path):
+    root, _data_dir = _host(tmp_path)
+    assert committed_evidence_bytes(root) == len(_raw(AGGREGATE))
+
+
+# --- the two-source read ------------------------------------------------------------------------
+
+
+def test_a_value_resolves_from_the_committed_copy_with_no_run_on_the_host(tmp_path):
+    """CI is the case with no DATA_DIR at all, so the committed bytes have to be sufficient."""
+    root, _data_dir = _host(tmp_path)
     resolver = PublishedValueResolver(root=root)
-    assert resolver.resolve({"artifact": ARTIFACT, "field": field}, where="test") == (
+    assert resolver.resolve({"artifact": ARTIFACT, "field": SURFACE_FIELD}, where="test") == (
         14159.929807575942
     )
 
 
 def test_a_host_without_the_run_still_validates_rather_than_skipping(tmp_path):
     """A missing artifact is an ordinary host, not a licence to stop checking the published value."""
-    field = "cap_peak_prompt_chars.6"
-    root, _data_dir = _host(tmp_path, field)
+    root, _data_dir = _host(tmp_path)
     resolver = PublishedValueResolver(root=root, data_dir=tmp_path / "empty")
-    assert resolver.resolve({"artifact": ARTIFACT, "field": field}, where="t") == 8374
+    assert resolver.resolve({"artifact": ARTIFACT, "field": "cap_peak_prompt_chars.6"}, where="t")
 
 
-def test_the_run_artifact_is_read_as_a_check_on_the_slice_where_the_host_has_it(tmp_path):
-    field = "depth_surface[depth=6].crossover_max_prompt_chars"
-    root, data_dir = _host(tmp_path, field)
+def test_the_run_artifact_is_read_as_a_check_on_the_copy_where_the_host_has_it(tmp_path):
+    root, data_dir = _host(tmp_path)
     resolver = PublishedValueResolver(root=root, data_dir=data_dir)
-    assert resolver.resolve({"artifact": ARTIFACT, "field": field}, where="t") == 14159.929807575942
+    assert resolver.resolve({"artifact": ARTIFACT, "field": SURFACE_FIELD}, where="t") == (
+        14159.929807575942
+    )
 
 
 def test_an_artifact_that_is_not_the_pinned_file_is_refused_even_where_the_value_agrees(tmp_path):
-    """A slice cut from ANOTHER run of the same study reads identically without the pin.
+    """A copy taken from ANOTHER run of the same study reads identically without the pin.
 
-    The cited field is left untouched here on purpose: the value check cannot see this, so before
-    the pin the resolution proved the slice agrees with itself and nothing more.
+    The cited field is left untouched here on purpose: a value comparison cannot see this, so
+    without the pin the resolution proved the evidence agrees with itself and nothing more.
     """
-    field = "depth_surface[depth=6].crossover_max_prompt_chars"
-    root, data_dir = _host(tmp_path, field)
-    other_run = json.loads(json.dumps(AGGREGATE))
-    other_run["reading"] = "crossover_bracketed_second_run"
-    _write_artifact(data_dir, other_run)
-    with pytest.raises(ValueError, match="the slice was cut from a different run"):
-        PublishedValueResolver(root=root, data_dir=data_dir).resolve(
-            {"artifact": ARTIFACT, "field": field}, where="t"
-        )
-
-
-def test_a_hand_edited_slice_is_refused_on_a_host_that_still_has_the_run(tmp_path):
-    """The pin says the file is the cited one; the value check says the cut was not tampered with."""
-    field = "cap_peak_prompt_chars.6"
-    root, data_dir = _host(tmp_path, field)
-    _rewrite_fixture(
-        root,
-        {
-            "digest": artifact_digest(data_dir / ARTIFACT),
-            "slice": {"cap_peak_prompt_chars": {"6": 8375}},
-        },
+    root, data_dir = _host(
+        tmp_path, measured={**AGGREGATE, "reading": "crossover_bracketed_second_run"}
     )
-    with pytest.raises(ValueError, match="edited by hand or cut from another field"):
+    with pytest.raises(ValueError, match="came from a different run"):
         PublishedValueResolver(root=root, data_dir=data_dir).resolve(
-            {"artifact": ARTIFACT, "field": field}, where="t"
+            {"artifact": ARTIFACT, "field": SURFACE_FIELD}, where="t"
         )
 
 
-def test_an_artifact_with_no_committed_slice_is_refused_as_unresolvable(tmp_path):
+def test_an_artifact_with_no_committed_copy_is_refused_as_unresolvable(tmp_path):
     """The evidence was garbage-collected or never committed; either way nothing resolves it."""
-    root, _data_dir = _host(tmp_path, "reading")
-    with pytest.raises(ValueError, match="no committed slice of 'other/run.json'"):
+    root, _data_dir = _host(tmp_path)
+    with pytest.raises(ValueError, match="no committed copy of 'other/run.json'"):
         PublishedValueResolver(root=root).resolve(
             {"artifact": "other/run.json", "field": "reading"}, where="t"
         )
@@ -202,7 +249,7 @@ def test_an_artifact_with_no_committed_slice_is_refused_as_unresolvable(tmp_path
 
 def test_a_field_that_resolves_to_something_other_than_a_number_is_refused(tmp_path):
     """A published value is a number; a pointer landing on a verdict string is a mis-aimed pointer."""
-    root, _data_dir = _host(tmp_path, "reading")
+    root, _data_dir = _host(tmp_path)
     with pytest.raises(ValueError, match="which is not a number"):
         PublishedValueResolver(root=root).resolve(
             {"artifact": ARTIFACT, "field": "reading"}, where="t"

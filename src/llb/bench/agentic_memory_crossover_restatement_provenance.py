@@ -16,7 +16,6 @@ The three published forms resolve differently, for the same reason they place di
   edges are checked against the depths that produced them.
 """
 
-import json
 from pathlib import Path
 from typing import cast
 
@@ -26,13 +25,10 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_pointer import merge_field_slice
+from llb.bench.agentic_published_value_fixture import write_provenance_fixture
 from llb.bench.agentic_published_value_provenance import (
-    CommittedSlice,
     PublishedValueResolver,
-    artifact_digest,
     provenance_pair,
-    write_provenance_fixture,
 )
 
 
@@ -58,35 +54,25 @@ def validate_published_provenance(
 def refresh_provenance_fixture(
     crossovers: list[dict[str, object]], *, root: Path, data_dir: Path
 ) -> Path:
-    """Regenerate the committed slices, and their artifact pins, from the runs this host still has.
+    """Re-commit the cited run aggregates, and their pins, from the runs this host still has.
 
-    Generated, never typed: that is the whole difference between a resolution and a second
-    transcription of the number the first one got wrong. The digest is taken from the same file the
-    slice is cut from, so a slice and the pin that makes it falsifiable can never disagree.
+    Copied, never typed: that is the whole difference between a resolution and a second
+    transcription of the number the first one got wrong. The bytes and the digest come out of one
+    read of one file, so a committed copy and the pin that makes it falsifiable cannot disagree.
     """
-    cuts: dict[str, dict[str, object]] = {}
-    digests: dict[str, str] = {}
+    cited: dict[str, bytes] = {}
     for crossover in crossovers:
-        artifact, field = provenance_pair(crossover.get("provenance"), where=_label(crossover))
+        artifact, _field = provenance_pair(crossover.get("provenance"), where=_label(crossover))
+        if artifact in cited:
+            continue
         path = data_dir / artifact
         if not path.is_file():
             raise ValueError(
                 f"{_label(crossover)}: the run artifact {artifact} is not under DATA_DIR on this "
-                "host, so its committed slice cannot be regenerated here"
+                "host, so its committed copy cannot be regenerated here"
             )
-        digests.setdefault(artifact, artifact_digest(path))
-        merge_field_slice(
-            cuts.setdefault(artifact, {}),
-            cast(dict[str, object], json.loads(path.read_text(encoding="utf-8"))),
-            field,
-        )
-    return write_provenance_fixture(
-        root,
-        {
-            artifact: CommittedSlice(digest=digests[artifact], payload=payload)
-            for artifact, payload in cuts.items()
-        },
-    )
+        cited[artifact] = path.read_bytes()
+    return write_provenance_fixture(root, cited)
 
 
 def _resolved_guards(

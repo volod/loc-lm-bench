@@ -43,30 +43,57 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-value-pins-are-uncheckable-where-the-run-root-is-gone (optional)
+### agent-published-evidence-regeneration-is-single-design (optional)
 
-A committed slice now pins the aggregate it was cut from by content digest, and the pin is verified
-against the file only on a host that still HAS that run root
+The regeneration that re-commits the cited run aggregates prunes the committed tree down to the
+citations of the ONE design it was handed, so the evidence set is exactly what that design points at
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-On CI, a fresh clone, or this host after a `.data` cleanup the digest is a CLAIM about a file nobody
-present can read, so a slice and a pin fabricated together are still accepted there -- the pin moved
-the seam from "agrees with itself" to "agrees with itself plus a hash of something absent". Close it
-by making the evidence self-contained: commit each cited aggregate (they are small JSON analyses) or
-a signed manifest of them beside the slices, and have the resolver verify the pin against the
-committed copy rather than only against a `DATA_DIR` that may not exist. Weigh committing the whole
-aggregate against a per-artifact manifest with a repo-side signature, since the aggregates grow with
-every study that adopts the seam.
+That is correct while the crossover restatement is the only study using the resolver and a landmine
+the moment a second one adopts it: refreshing through either design would then delete the other
+study's committed aggregates, and the deletion reads as a clean prune rather than as evidence loss.
+Make the cited set the UNION over every design that publishes resolvable values -- a registry of
+design paths the refresh walks, the way the policy audit already walks `AUDITED_DESIGN_PATHS` -- and
+refuse a refresh that would drop a copy some registered design still cites.
 
 - Agent status: CLEAR
-- Dependencies: the pin, its refusals, and the committed fixture are `CommittedSlice` /
-  `load_provenance_fixture` in `src/llb/bench/agentic_published_value_provenance.py`; the
-  regeneration that records both is `refresh_provenance_fixture` in
-  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`.
-- User-visible outcome: a published number is resolvable against evidence the repo itself carries,
-  so no host has to take a digest on faith.
-- Scope boundary: in scope -- the committed aggregate (or signed manifest), the resolver's use of
-  it, and the size/growth policy that keeps the fixture bounded. Out of scope -- re-running a
-  published cell and changing any published value the resolution confirms.
+- Dependencies: the prune is `_prune_uncited_copies` in
+  `src/llb/bench/agentic_published_value_fixture.py`, driven by the single-design
+  `refresh_provenance_fixture` in
+  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the registry pattern is
+  `AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
+- User-visible outcome: a second study can adopt the published-value resolver without a routine
+  regeneration silently retiring the first study's evidence.
+- Scope boundary: in scope -- the design registry the refresh walks, the union prune, and the
+  refusal. Out of scope -- adopting the resolver in another study (that is its own task) and
+  re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
+
+### agent-published-aggregate-is-unchecked-against-its-own-cells (optional)
+
+The repo now carries each cited run aggregate verbatim, so a published value is resolved against
+bytes every host can read
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+What no check reads is whether those bytes are INTERNALLY consistent: the aggregate states an
+interpolated crossover, a fold-step ladder, and a cap peak beside the per-cell rows they were
+computed from, and nothing re-derives the former from the latter. A hand-written aggregate re-pinned
+to its own digest therefore passes on every host without the run root -- the residual the committed
+copy deliberately does not close. Narrow it without a signature: re-derive each resolved field from
+the aggregate's own recorded cells (the interpolation from the bracketing rows, the ladder from the
+geometry, the peak from the prompt sequence) and refuse a field the aggregate's own data does not
+produce, so fabricating one number means fabricating a self-consistent study.
+
+- Agent status: CLEAR
+- Dependencies: the committed aggregates and the resolution seam are
+  `src/llb/bench/agentic_published_value_fixture.py` and
+  `src/llb/bench/agentic_published_value_provenance.py`; the interpolation and ladder arithmetic
+  already exist in `src/llb/bench/agentic_memory_crossover_restatement_rows.py` and
+  `src/llb/bench/agentic_memory_fold_step_ladder.py`.
+- User-visible outcome: a published number rests on evidence that has to hold together as a study,
+  not only on bytes the repo happens to carry.
+- Scope boundary: in scope -- the per-form re-derivation from the aggregate's own cells, its
+  refusals, and the fixture cases. Out of scope -- a repo-side signature (already weighed and
+  rejected), committing the per-episode bundles, and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
@@ -201,18 +228,19 @@ The pin gate names the invalidated CELLS and the doc sections that publish their
 numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
 fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
 find every affected figure by reading. Extend the resolution the crossover design already carries --
-`(artifact, field)` per published value, resolved against a committed slice
+`(artifact, field)` per published value, resolved against the run aggregate the repo commits
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)) --
 from the six design values to the figures the DOCS publish, keyed additionally by study kind and
 cell id, and have the gate print the exact figures a drifted constant retires, not only the cells.
-Reuse the existing pointer walk and slice fixture rather than adding a second mapping.
+Reuse the existing pointer walk and committed evidence rather than adding a second mapping.
 
 - Agent status: CLEAR
 - Dependencies: the cell ids and re-run scope come from
   `src/llb/bench/agentic_policy_pin_gate.py`; the resolution seam is
-  `src/llb/bench/agentic_published_value_provenance.py` (field pointers, committed slices, and the
-  refusal for an artifact no slice covers); the artifact paths are the run roots already recorded
-  in the evidence sections of
+  `src/llb/bench/agentic_published_value_provenance.py` with the committed aggregates in
+  `src/llb/bench/agentic_published_value_fixture.py` (field pointers, pinned copies, and the
+  refusal for an artifact the evidence does not carry); the artifact paths are the run roots
+  already recorded in the evidence sections of
   [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 - User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody
   greps the docs to find what a change retired.

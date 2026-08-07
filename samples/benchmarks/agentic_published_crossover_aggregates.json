@@ -1,49 +1,15 @@
 {
   "aggregates": {
     "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json": {
-      "digest": "sha256:f9e1d6bf668c0db5b3dd2255505a8ac6edc90fe94d3592252b307170e17582bd",
-      "slice": {
-        "depth_ladders": [
-          {
-            "boundary": {
-              "guard_boundary_chars": 14912
-            },
-            "depth": 6
-          },
-          {
-            "boundary": {
-              "guard_boundary_chars": 22016
-            },
-            "depth": 10
-          }
-        ]
-      }
+      "digest": "sha256:f9e1d6bf668c0db5b3dd2255505a8ac6edc90fe94d3592252b307170e17582bd"
     },
     "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json": {
-      "digest": "sha256:618806f22e1e7c7d979db5acb2cf4303b7a1bcb43545b88241eefcd3c71d78d5",
-      "slice": {
-        "depth_surface": [
-          {
-            "crossover_max_prompt_chars": 14159.929807575942,
-            "depth": 6
-          },
-          {
-            "crossover_max_prompt_chars": 21899.890064587056,
-            "depth": 10
-          }
-        ]
-      }
+      "digest": "sha256:618806f22e1e7c7d979db5acb2cf4303b7a1bcb43545b88241eefcd3c71d78d5"
     },
     "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json": {
-      "digest": "sha256:3eaa9cce04037c01e3706bb2536071c684d175633e59af199d8aff0001d8b567",
-      "slice": {
-        "cap_peak_prompt_chars": {
-          "10": 11926,
-          "6": 8374
-        }
-      }
+      "digest": "sha256:3eaa9cce04037c01e3706bb2536071c684d175633e59af199d8aff0001d8b567"
     }
   },
-  "note": "committed slices of the run artifacts the published agentic numbers were measured in, each pinned by the content digest of the artifact it was cut from; regenerate with make bench-agentic-published-provenance rather than by hand",
-  "schema_version": 2
+  "note": "content pins for the run aggregates the published agentic numbers were measured in; each pinned file is carried verbatim under agentic_published_aggregates/ at the same DATA_DIR-relative path, so the pin is checkable on a host that never ran the study; regenerate with make bench-agentic-published-provenance rather than by hand",
+  "schema_version": 3
 }

@@ -43,8 +43,8 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     refresh_provenance: bool = typer.Option(
         False,
         "--refresh-provenance",
-        help="regenerate the committed slices of the aggregates the published values are resolved "
-        "against, from the run artifacts under DATA_DIR, and stop",
+        help="re-commit the run aggregates the published values are resolved against, and their "
+        "content pins, from the artifacts under DATA_DIR, and stop",
     ),
 ) -> None:
     """Audit which published cells the shipped cap can move, re-measure only those, and restate."""
@@ -84,7 +84,7 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
             )
         except (KeyError, ValueError) as exc:
             cli_error(str(exc))
-        typer.echo(f"[restatement] provenance slices -> {written}")
+        typer.echo(f"[restatement] provenance manifest -> {written}")
         return
     try:
         design = load_restatement_design(design_path)

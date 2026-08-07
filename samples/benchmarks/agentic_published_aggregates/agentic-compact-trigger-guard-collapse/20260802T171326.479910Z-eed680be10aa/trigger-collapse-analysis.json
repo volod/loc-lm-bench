@@ -1,0 +1,1467 @@
+{
+  "cap_peak_prompt_chars": {
+    "10": 11926,
+    "6": 8374
+  },
+  "cells": [
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.4-g17500",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.4,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-trigger-7000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T161717.704084Z-b5003aeeea73/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T161716.758462Z-e0d777792dcc/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 17500,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.5-g14000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-trigger-7000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T162427.344725Z-d3fb740cd15e/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T162427.128448Z-c4126d743381/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 14000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.6-g11667",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.6,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-trigger-7000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T163146.079897Z-eaef46a87107/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T163145.859603Z-928866a1ef99/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 11667,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.4-g12000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 12384.42857142857,
+      "compact_share": 0.4,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 4800,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -843.4285714285714,
+          "lo": -911.0,
+          "mean": -873.5714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-guard-12000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T163807.783482Z-69a53679bf9a/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T163807.601596Z-7f5052034b8e/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 12000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -843.4285714285714,
+            "lo": -911.0,
+            "mean": -873.5714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 4,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-873.571 [-911.000, -843.429])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.5-g12000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 12466.0,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 6000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -762.0,
+          "lo": -815.2857142857143,
+          "mean": -792.0
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-guard-12000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T164435.402095Z-fd20d299853d/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T164435.180224Z-a5e11c006042/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 12000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -762.0,
+            "lo": -815.2857142857143,
+            "mean": -792.0
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 5,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-792.000 [-815.286, -762.000])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "collapse-d6-s0.6-g12000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.6,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7200,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "family_id": "d6-guard-12000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T165124.814783Z-6bc9b9741a4c/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T165124.615483Z-627b0a26b9e2/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 12000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "collapse-d10-s0.45-g22224",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 24709.571428571428,
+      "compact_share": 0.45,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 10000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -2614.8571428571427,
+          "lo": -2652.714285714286,
+          "mean": -2633.4285714285716
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "family_id": "d10-trigger-10000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T170043.383326Z-47733b98d75d/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T170043.127321Z-66820e66c4ca/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 22224,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -2614.8571428571427,
+            "lo": -2652.714285714286,
+            "mean": -2633.4285714285716
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 9,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-2633.429 [-2652.714, -2614.857])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "collapse-d10-s0.6-g16667",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 24709.571428571428,
+      "compact_share": 0.6,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 10000,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -2614.8571428571427,
+          "lo": -2652.714285714286,
+          "mean": -2633.4285714285716
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "family_id": "d10-trigger-10000",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T171013.617885Z-8695c3253ca1/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T171013.423960Z-3b7d39223819/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 16667,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -2614.8571428571427,
+            "lo": -2652.714285714286,
+            "mean": -2633.4285714285716
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 9,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-2633.429 [-2652.714, -2614.857])"
+    }
+  ],
+  "changes_shipped_default": false,
+  "collapse_reading": "trigger_ratio_collapses",
+  "control_recheck": {
+    "backend": "ollama",
+    "completion": 1.0,
+    "depth": 10,
+    "eligible": true,
+    "episode_diagnostics": [
+      {
+        "answer": "CTRL-000-017",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-000-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-001-070",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-001-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-002-123",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-002-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-003-176",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-003-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      }
+    ],
+    "mean_steps": 11.0,
+    "mean_total_model_input_tokens": 12546.0,
+    "minimum_completion_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 4,
+    "statuses": [
+      "completed",
+      "completed",
+      "completed",
+      "completed"
+    ],
+    "task_set_digest": "fa29c3db192cabe520680ee66669ff47352bd36e67dedd976205e662a0ffd2bb",
+    "tokens_per_s": 10.64
+  },
+  "equivalence": {
+    "cap_cost_fraction": 0.02,
+    "contrast_family": "d6-guard-12000",
+    "metric": "compact_minus_cap_total_model_input_tokens",
+    "requires_same_side": true,
+    "rule": "spread_within_cap_cost_fraction"
+  },
+  "families": [
+    {
+      "cap_baseline_spread": 0.0,
+      "cap_baseline_total_model_input_tokens": 13258.0,
+      "compact_shares": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "cost_deltas": [
+        -125.85714285714286,
+        -125.85714285714286,
+        -125.85714285714286
+      ],
+      "depth": 6,
+      "equivalence_band": 265.16,
+      "family_id": "d6-trigger-7000",
+      "fold_steps": [
+        6
+      ],
+      "guards": [
+        17500,
+        14000,
+        11667
+      ],
+      "kind": "equal_trigger",
+      "measured_sides": [
+        "compact_cheaper"
+      ],
+      "same_side": true,
+      "spread": 0.0,
+      "triggers": [
+        7000
+      ],
+      "within_band": true
+    },
+    {
+      "cap_baseline_spread": 0.0,
+      "cap_baseline_total_model_input_tokens": 13258.0,
+      "compact_shares": [
+        0.4,
+        0.5,
+        0.6
+      ],
+      "cost_deltas": [
+        -873.5714285714286,
+        -792.0,
+        -125.85714285714286
+      ],
+      "depth": 6,
+      "equivalence_band": 265.16,
+      "family_id": "d6-guard-12000",
+      "fold_steps": [
+        4,
+        5,
+        6
+      ],
+      "guards": [
+        12000,
+        12000,
+        12000
+      ],
+      "kind": "equal_guard",
+      "measured_sides": [
+        "compact_cheaper"
+      ],
+      "same_side": true,
+      "spread": 747.7142857142857,
+      "triggers": [
+        4800,
+        6000,
+        7200
+      ],
+      "within_band": false
+    },
+    {
+      "cap_baseline_spread": 0.0,
+      "cap_baseline_total_model_input_tokens": 27343.0,
+      "compact_shares": [
+        0.45,
+        0.6
+      ],
+      "cost_deltas": [
+        -2633.4285714285716,
+        -2633.4285714285716
+      ],
+      "depth": 10,
+      "equivalence_band": 546.86,
+      "family_id": "d10-trigger-10000",
+      "fold_steps": [
+        9
+      ],
+      "guards": [
+        22224,
+        16667
+      ],
+      "kind": "equal_trigger",
+      "measured_sides": [
+        "compact_cheaper"
+      ],
+      "same_side": true,
+      "spread": 0.0,
+      "triggers": [
+        10000
+      ],
+      "within_band": true
+    }
+  ],
+  "held_fixed": {
+    "backend": "ollama",
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "minimum_cell_completion": 0.75,
+    "minimum_compaction_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 7,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "pad_chars": 1200
+  },
+  "portable_trigger_rule": [
+    "depth 6: the 14160-char crossover guard measured at compact_share=0.5 is a 7080-char trigger (0.85x the 8374-char cap peak prompt); at any other share s the crossover guard is 7080/s",
+    "depth 10: the 21900-char crossover guard measured at compact_share=0.5 is a 10950-char trigger (0.92x the 11926-char cap peak prompt); at any other share s the crossover guard is 10950/s",
+    "portable form: use compact while compact_share * guard stays below 0.85-0.92x the transcript's cap peak prompt"
+  ],
+  "reason": "every equal-trigger family held within its band (widest spread 0.0 tokens) while the contrast family moved 747.7 tokens",
+  "study_id": "agent-context-policy-trigger-guard-collapse"
+}

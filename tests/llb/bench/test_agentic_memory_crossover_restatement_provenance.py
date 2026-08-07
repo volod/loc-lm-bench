@@ -3,8 +3,8 @@
 The fold-step annotation check catches a transcription slip only when it is large enough to leave
 the published step, which no realistic slip is: a dropped digit in `14159.929807575942` lands well
 inside step 6's `[13136, 14912)`. These tests drive the rule that closes that -- each published
-value is read back out of a committed slice of its own run aggregate, and a design that states
-anything else is refused before a single cell runs.
+value is read back out of the repo's own verbatim copy of its run aggregate, and a design that
+states anything else is refused before a single cell runs.
 """
 
 from copy import deepcopy
@@ -28,14 +28,16 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_provenance import (
+from llb.bench.agentic_published_value_fixture import (
+    MAX_AGGREGATE_BYTES,
+    MAX_COMMITTED_BYTES,
     PROVENANCE_FIXTURE,
-    CommittedSlice,
-    artifact_digest,
+    committed_aggregate_path,
+    committed_evidence_bytes,
     load_provenance_fixture,
-    provenance_pair,
     write_provenance_fixture,
 )
+from llb.bench.agentic_published_value_provenance import provenance_pair
 from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_SURFACE
 from llb.core.paths import resolve_data_dir
 
@@ -88,13 +90,21 @@ def test_every_committed_crossover_resolves_out_of_the_aggregate_it_cites():
         assert artifact in committed
 
 
-def test_the_committed_slices_carry_no_artifact_no_crossover_points_at():
-    """A slice nothing resolves through is an aggregate the design stopped citing."""
-    cited = {
-        provenance_pair(crossover["provenance"], where="test")[0]
-        for crossover in published_crossovers(load_restatement_design(DESIGN_PATH))
-    }
-    assert set(load_provenance_fixture(ROOT)) == cited
+def test_the_committed_evidence_carries_no_artifact_no_crossover_points_at():
+    """A copy nothing resolves through is an aggregate the design stopped citing."""
+    assert set(load_provenance_fixture(ROOT)) == _cited_artifacts()
+
+
+def test_the_committed_evidence_stays_inside_the_growth_budget():
+    """The evidence is bounded on purpose: it grows with every study that adopts the seam.
+
+    The budget is what makes committing the bytes the right trade against a signed manifest. A study
+    whose analysis artifact outgrows it publishes its values out of a narrower one instead.
+    """
+    total = committed_evidence_bytes(ROOT)
+    assert 0 < total <= MAX_COMMITTED_BYTES
+    for artifact in _cited_artifacts():
+        assert committed_aggregate_path(ROOT, artifact).stat().st_size <= MAX_AGGREGATE_BYTES
 
 
 @pytest.mark.parametrize(
@@ -120,9 +130,12 @@ def test_a_fold_step_boundary_is_resolved_against_its_own_study_s_ladder_artifac
     design = load_restatement_design(DESIGN_PATH)
     validate_published_provenance(published_crossovers(design), root=ROOT)
 
-    moved = deepcopy(load_provenance_fixture(ROOT))
-    ladders = cast(list[dict[str, object]], moved[_cited(FORM_FOLD_STEP)].payload["depth_ladders"])
+    moved = _committed_bytes()
+    ladder_artifact = _cited(FORM_FOLD_STEP)
+    payload = json.loads(moved[ladder_artifact])
+    ladders = cast(list[dict[str, object]], payload["depth_ladders"])
     cast(dict[str, object], ladders[0]["boundary"])["guard_boundary_chars"] = 14913
+    moved[ladder_artifact] = json.dumps(payload).encode("utf-8")
     with pytest.raises(ValueError, match="transcribed rather than resolved"):
         _validate_against(design, moved, tmp_path)
 
@@ -156,14 +169,14 @@ def test_a_crossover_with_no_provenance_at_all_is_refused():
         validate_restatement_design(_drop_provenance(KIND_SURFACE, 10), root=ROOT)
 
 
-def test_a_crossover_citing_an_aggregate_with_no_committed_slice_is_refused():
+def test_a_crossover_citing_an_aggregate_the_repo_does_not_carry_is_refused():
     """The evidence was garbage-collected, so nothing on a CI host can resolve the number."""
     design = _mutate(
         KIND_SURFACE,
         6,
         provenance={"artifact": "gone/run/analysis.json", "field": "depth_surface[depth=6].x"},
     )
-    with pytest.raises(ValueError, match="no committed slice of 'gone/run/analysis.json'"):
+    with pytest.raises(ValueError, match="no committed copy of 'gone/run/analysis.json'"):
         validate_restatement_design(design, root=ROOT)
 
 
@@ -178,41 +191,43 @@ def test_a_derived_band_with_no_resolved_source_guard_is_refused():
         validate_published_provenance(rows, root=ROOT)
 
 
-def test_every_committed_slice_pins_the_run_artifact_this_host_still_has(tmp_path):
-    """On a host with the runs, the pin is checked against the file rather than just carried.
+def test_the_committed_evidence_is_this_host_s_own_run_artifacts_byte_for_byte(tmp_path):
+    """On a host with the runs, the committed copy is checked against the file rather than carried.
 
-    This is the half of the pin a CI host cannot run, and the half that makes the other half mean
-    anything: a committed slice cut from some other run states a digest no cited artifact has.
+    This is the half of the check a CI host cannot run, and the half that makes the other half mean
+    anything: bytes copied from some other run digest to something no cited artifact has.
     """
     data_dir = _host_data_dir()
     design = load_restatement_design(DESIGN_PATH)
     validate_published_provenance(published_crossovers(design), root=ROOT, data_dir=data_dir)
 
-    repinned = deepcopy(load_provenance_fixture(ROOT))
     artifact = _cited(FORM_INTERPOLATED)
-    repinned[artifact] = CommittedSlice(
-        digest=f"sha256:{'0' * 64}", payload=repinned[artifact].payload
-    )
-    with pytest.raises(ValueError, match="the slice was cut from a different run"):
-        _validate_against(design, repinned, tmp_path, data_dir=data_dir)
+    from_another_run = _committed_bytes()
+    from_another_run[artifact] = from_another_run[artifact] + b"\n"
+    with pytest.raises(ValueError, match="came from a different run"):
+        _validate_against(design, from_another_run, tmp_path, data_dir=data_dir)
 
 
-# --- regenerating the slices ------------------------------------------------------------------
+# --- regenerating the committed evidence --------------------------------------------------------
 
 
-def test_the_committed_slices_are_what_the_run_artifacts_still_hold(tmp_path):
-    """On a host that ran the studies, regeneration must be a no-op -- otherwise the slice drifted.
+def test_the_committed_evidence_is_what_the_run_artifacts_still_hold(tmp_path):
+    """On a host that ran the studies, regeneration must be a no-op -- otherwise the copy drifted.
 
     Regenerated into a throwaway root rather than over the committed one: a test that rewrites a
     tracked fixture reports a pass by having repaired what it was checking.
     """
     data_dir = _host_data_dir()
     crossovers = published_crossovers(load_restatement_design(DESIGN_PATH))
-    (tmp_path / PROVENANCE_FIXTURE.parent).mkdir(parents=True)
     regenerated = refresh_provenance_fixture(crossovers, root=tmp_path, data_dir=data_dir)
     assert regenerated.read_text(encoding="utf-8") == (ROOT / PROVENANCE_FIXTURE).read_text(
         encoding="utf-8"
     )
+    for artifact in _cited_artifacts():
+        assert (
+            committed_aggregate_path(tmp_path, artifact).read_bytes()
+            == committed_aggregate_path(ROOT, artifact).read_bytes()
+        )
 
 
 def test_regeneration_refuses_a_host_that_does_not_have_the_run(tmp_path):
@@ -222,22 +237,22 @@ def test_regeneration_refuses_a_host_that_does_not_have_the_run(tmp_path):
         refresh_provenance_fixture(crossovers, root=tmp_path, data_dir=tmp_path / "empty")
 
 
-def test_regeneration_cuts_one_slice_per_artifact_across_every_form(tmp_path):
-    """Six crossovers over three aggregates become three slices, each shaped like its artifact."""
+def test_regeneration_commits_each_cited_artifact_once_and_verbatim(tmp_path):
+    """Six crossovers over three aggregates become three copies, each the run's own bytes.
+
+    Verbatim including the parts no crossover cites: an excerpt shaped by hand is what a reader
+    would have to take on faith, and it is the whole reason the file itself is carried.
+    """
     data_dir = _fake_host(tmp_path)
-    regenerated = load_provenance_fixture(tmp_path)
-    assert set(regenerated) == set(_FAKE_ARTIFACTS)
-    assert regenerated == {
-        artifact: CommittedSlice(
-            digest=artifact_digest(data_dir / artifact),
-            payload={key: payload[key] for key in payload if key != "unrelated"},
-        )
-        for artifact, payload in _FAKE_ARTIFACTS.items()
-    }
+    assert set(load_provenance_fixture(tmp_path)) == set(_FAKE_ARTIFACTS)
+    for artifact in _FAKE_ARTIFACTS:
+        committed = committed_aggregate_path(tmp_path, artifact).read_bytes()
+        assert committed == (data_dir / artifact).read_bytes()
+        assert b"kept in the committed copy" in committed
 
 
-def test_a_regenerated_slice_pins_the_file_it_was_cut_from(tmp_path):
-    """The pin and the cut come out of one read, so an edited artifact re-pins rather than drifts."""
+def test_a_regenerated_copy_pins_the_file_it_was_taken_from(tmp_path):
+    """Bytes and pin come out of one read, so an edited artifact re-pins rather than drifts."""
     data_dir = _fake_host(tmp_path)
     pinned = _pins(tmp_path)
 
@@ -252,12 +267,11 @@ def test_a_regenerated_slice_pins_the_file_it_was_cut_from(tmp_path):
 
 
 def _fake_host(tmp_path: Path) -> Path:
-    """A DATA_DIR carrying one fake artifact per cited aggregate, with the slices regenerated."""
+    """A DATA_DIR carrying one fake artifact per cited aggregate, with the evidence regenerated."""
     data_dir = tmp_path / "data"
     for artifact, payload in _FAKE_ARTIFACTS.items():
         (data_dir / artifact).parent.mkdir(parents=True, exist_ok=True)
         (data_dir / artifact).write_text(json.dumps(payload), encoding="utf-8")
-    (tmp_path / PROVENANCE_FIXTURE.parent).mkdir(parents=True, exist_ok=True)
     refresh_provenance_fixture(
         published_crossovers(load_restatement_design(DESIGN_PATH)), root=tmp_path, data_dir=data_dir
     )
@@ -268,15 +282,22 @@ def _pins(root: Path) -> dict[str, str]:
     return {artifact: entry.digest for artifact, entry in load_provenance_fixture(root).items()}
 
 
+def _committed_bytes(root: Path = ROOT) -> dict[str, bytes]:
+    """The committed aggregates as bytes, ready to be mutated into a throwaway root."""
+    return {
+        artifact: committed_aggregate_path(root, artifact).read_bytes()
+        for artifact in load_provenance_fixture(root)
+    }
+
+
 def _validate_against(
     design: dict[str, object],
-    aggregates: dict[str, CommittedSlice],
+    aggregates: dict[str, bytes],
     tmp: Path,
     *,
     data_dir: Path | None = None,
 ) -> None:
-    """Validate the design's provenance against a mutated set of committed slices."""
-    (tmp / PROVENANCE_FIXTURE.parent).mkdir(parents=True, exist_ok=True)
+    """Validate the design's provenance against a mutated set of committed aggregates."""
     write_provenance_fixture(tmp, aggregates)
     validate_published_provenance(published_crossovers(design), root=tmp, data_dir=data_dir)
 
@@ -284,15 +305,18 @@ def _validate_against(
 def _host_data_dir() -> Path:
     """This host's DATA_DIR, or a skip when it never ran the studies the design cites."""
     data_dir = resolve_data_dir()
-    crossovers = published_crossovers(load_restatement_design(DESIGN_PATH))
-    missing = [
-        artifact
-        for artifact in {provenance_pair(row["provenance"], where="t")[0] for row in crossovers}
-        if not (data_dir / artifact).is_file()
-    ]
+    missing = [artifact for artifact in _cited_artifacts() if not (data_dir / artifact).is_file()]
     if missing:
         pytest.skip(f"this host never ran {missing[0]}")
     return data_dir
+
+
+def _cited_artifacts() -> set[str]:
+    """Every run artifact the committed design's published crossovers point at."""
+    return {
+        provenance_pair(crossover["provenance"], where="test")[0]
+        for crossover in published_crossovers(load_restatement_design(DESIGN_PATH))
+    }
 
 
 def _cited(form: str) -> str:
@@ -306,25 +330,25 @@ def _cited(form: str) -> str:
 
 # The three published forms read three differently shaped aggregates -- a list of per-depth surface
 # rows, a mapping keyed by depth, and a list of ladders with a nested boundary. A fake set of all
-# three proves the regeneration walks each shape, and the `unrelated` key proves it cuts a SLICE
-# rather than copying the aggregate.
+# three proves the regeneration handles each shape, and the `unrelated` key proves it commits the
+# artifact rather than an excerpt of it.
 _FAKE_ARTIFACTS: dict[str, dict[str, object]] = {
     _cited(FORM_INTERPOLATED): {
         "depth_surface": [
             {"depth": 6, "crossover_max_prompt_chars": 14159.929807575942},
             {"depth": 10, "crossover_max_prompt_chars": 21899.890064587056},
         ],
-        "unrelated": "dropped from the slice",
+        "unrelated": "kept in the committed copy",
     },
     _cited(FORM_PORTABLE_RATIO): {
         "cap_peak_prompt_chars": {"6": 8374, "10": 11926},
-        "unrelated": "dropped from the slice",
+        "unrelated": "kept in the committed copy",
     },
     _cited(FORM_FOLD_STEP): {
         "depth_ladders": [
             {"depth": 6, "boundary": {"guard_boundary_chars": 14912}},
             {"depth": 10, "boundary": {"guard_boundary_chars": 22016}},
         ],
-        "unrelated": "dropped from the slice",
+        "unrelated": "kept in the committed copy",
     },
 }
