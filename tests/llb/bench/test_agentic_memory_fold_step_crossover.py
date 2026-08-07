@@ -1,4 +1,9 @@
-"""Fold-step crossover: ladder placement, within-step agreement, and the step-change boundary."""
+"""Fold-step crossover: ladder placement, within-step agreement, and the step-change boundary.
+
+The study's subject is the committed design and what a ladder of runs reads off it. The interval
+arithmetic it stands on -- `agentic_memory_fold_step_ladder` -- is tested on its own in
+`test_agentic_memory_fold_step_ladder.py`.
+"""
 
 from copy import deepcopy
 import json
@@ -11,13 +16,9 @@ from llb.bench.agentic_memory_boundary_probe import oracle_controller
 from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
-    fold_step_guard_interval,
-    fold_step_trigger_interval,
     foldable_fold_steps,
     guard_is_cap_fitting,
-    live_entries_at_fold_step,
     reachable_fold_steps,
-    smallest_guard_reaching,
 )
 from llb.bench.agentic_memory_fold_step import analyze_fold_steps, run_fold_step_ladders
 from llb.bench.agentic_memory_fold_step_design import (
@@ -106,30 +107,6 @@ def _rows(
     if overrides:
         rows[0].update(overrides)
     return rows
-
-
-def test_trigger_and_guard_intervals_invert_the_fold_step_prediction():
-    sequence = [3000, 3904, 4792, 5680, 6568, 7456, 8374]
-    assert reachable_fold_steps(sequence) == [1, 2, 3, 4, 5, 6, 7]
-    low, high = fold_step_trigger_interval(sequence, 6)
-    assert (low, high) == (6568, 7456)
-    # Every trigger inside the interval selects the step, and the first one outside does not.
-    assert {first_fold_step(sequence, trigger) for trigger in range(low, high)} == {6}
-    assert first_fold_step(sequence, high) == 7
-    guard_low, guard_high = fold_step_guard_interval(sequence, 6, 0.5)
-    assert (guard_low, guard_high) == (13136, 14912)
-    assert first_fold_step(sequence, compaction_trigger_chars(guard_high - 1, 0.5)) == 6
-    assert first_fold_step(sequence, compaction_trigger_chars(guard_high, 0.5)) == 7
-    # A step whose prompt does not exceed the running maximum can never be selected.
-    assert reachable_fold_steps([3000, 3000, 4000]) == [1, 3]
-    # A trigger can SELECT step 1; no episode folds there, because its prompt is built from zero
-    # entries and `compact_state` has nothing older to summarize.
-    assert live_entries_at_fold_step(1) == 0
-    assert foldable_fold_steps(sequence) == [2, 3, 4, 5, 6, 7]
-    assert foldable_fold_steps([3000, 3000, 4000]) == [3]
-    # The guard is resolved against the runtime's truncating arithmetic, not a float inverse.
-    assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45), 0.45) >= 7456
-    assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45) - 1, 0.45) < 7456
 
 
 def test_committed_ladders_sit_one_fold_step_apart_inside_the_usable_band():

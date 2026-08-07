@@ -43,27 +43,27 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-fold-step-ladder-tests-mirror-the-module-split (optional)
+### agent-fold-step-ladder-interval-edges-are-untested (optional)
 
-The ladder arithmetic is its own module (`src/llb/bench/agentic_memory_fold_step_ladder.py`) but has
-no test file of its own: its unit tests live inside the study test that happens to exercise the most
-of them, `tests/llb/bench/test_agentic_memory_fold_step_crossover.py`, which is ~355 lines and over
-the ~250-line soft limit `scripts/code_quality.sh` reports. That file now mixes two subjects -- the
-interval algebra (empty intervals, the reachable-versus-foldable difference, the truncating guard
-inverse, the usable band) and the crossover study's placement and reading rules -- so a failure in
-either reads as a failure of "the crossover test", and a caller looking for the ladder's contract has
-no file named for it. Move the pure-arithmetic cases into
-`tests/llb/bench/test_agentic_memory_fold_step_ladder.py` and leave the study cases behind; the same
-seam is visible in `tests/llb/bench/test_agentic_policy_change_interaction_{band,cap}.py`, which
-import ladder names to build their own geometry rather than to test it, so those stay put.
+The ladder's interval algebra is now tested on its own
+(`tests/llb/bench/test_agentic_memory_fold_step_ladder.py`,
+[extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
+but the assertions it inherited were written to serve the crossover study, so they exercise the
+happy path and leave every EDGE of the arithmetic unasserted: `fold_step_trigger_interval` raising
+on a step outside the sequence, the empty interval it returns for an unreachable step read directly
+rather than through `reachable_fold_steps`, `first_fold_step` returning `None` when no prompt exceeds
+the trigger, `smallest_guard_reaching` refusing a share outside `(0, 1]`, `usable_guard_band` refusing
+a non-positive peak, and the whole family on an empty sequence. Each is a real branch in
+`src/llb/bench/agentic_memory_fold_step_ladder.py` that only the placement rules and the band solver
+reach today, so a regression in one surfaces as a confusing failure two layers up. Add the edge cases
+to the ladder test file now that there is a file to put them in.
 
 - Agent status: CLEAR
-- Dependencies: none. The module split and the repointed imports are current behavior
-  ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
-- User-visible outcome: a failing ladder assertion names the ladder, and the crossover test file
-  reads as one subject.
-- Scope boundary: in scope -- the test move, the split file, and the unchanged assertion set. Out of
-  scope -- adding coverage, changing any interval rule, and touching the source modules.
+- Dependencies: none.
+- User-visible outcome: a ladder function that mis-handles an empty or out-of-range input fails in
+  the ladder test rather than as a puzzling design-validation or band-solver error.
+- Scope boundary: in scope -- the edge cases and their names. Out of scope -- changing any interval
+  rule or error message, and touching the source modules.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 

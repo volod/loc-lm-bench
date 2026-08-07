@@ -1290,6 +1290,18 @@ episodes (`oracle_controller`, `oracle_compacting_controller`, `compact_fold_inp
 re-export layer bridges them: every caller imports from the module that owns the name, so an import
 line says which cost it is paying.
 
+The tests mirror that split. `tests/llb/bench/test_agentic_memory_fold_step_ladder.py` holds the
+interval algebra on synthetic prompt sequences -- the trigger interval and its inverse, the guard
+interval through the runtime truncation, and the unreachable-versus-unfoldable step -- with no design
+file, no episode, and no model in reach, so a failure there names the ladder rather than the study
+that happened to exercise it. `tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the
+study: the committed design's placement, the validation refusals, the readings over fixture rows, and
+the end-to-end run under perfect play. The usable band keeps its own home in
+`tests/llb/bench/test_agentic_memory_boundary_surface.py`, where it is asserted against the
+probe-measured cap peak it is only meaningful next to. The two policy-change interaction tests
+(`test_agentic_policy_change_interaction_{band,cap}.py`) import ladder names to BUILD their geometry
+rather than to test it, so they stay where they are.
+
 Core locations are `src/llb/bench/agentic_memory_fold_step_ladder.py` (the interval arithmetic
 above, shared with the collapse study, the summarize-cap arms, and the policy-change band solver),
 `src/llb/bench/agentic_memory_boundary_probe.py` (the oracle prompt sequence it is computed over),
@@ -1298,8 +1310,9 @@ above, shared with the collapse study, the summarize-cap arms, and the policy-ch
 `src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
 `src/llb/bench/agentic_memory_fold_step.py` (run and analysis),
 `src/llb/bench/agentic_memory_fold_step_report.py`,
-`src/llb/cli/bench/category_agentic_memory_fold_step.py`, and
-`tests/llb/bench/test_agentic_memory_fold_step_crossover.py`.
+`src/llb/cli/bench/category_agentic_memory_fold_step.py`,
+`tests/llb/bench/test_agentic_memory_fold_step_ladder.py` (the interval arithmetic), and
+`tests/llb/bench/test_agentic_memory_fold_step_crossover.py` (the study).
 
 ```bash
 make bench-agentic-context-compact-fold-step
