@@ -154,6 +154,7 @@ def run_episode(
     feedback_backend: str = "ollama",
     feedback_serialization: dict[str, dict[str, list[dict[str, str]]]] | None = None,
     snapshot: Callable[[list[ChatMessage]], None] | None = None,
+    on_refused_prompt: Callable[[str], None] | None = None,
 ) -> Episode:
     """Drive one task to completion (or the step budget) in the deterministic sandbox.
 
@@ -161,7 +162,13 @@ def run_episode(
     framework. `catalog` is injectable so every harness shares ONE tool catalog; it defaults to
     the canonical `tool_catalog()` (so existing callers are unchanged). `policy` selects the
     context-management policy (default `full`: the whole transcript, today's behavior) and
-    `budget` the per-step prompt guard (default unbounded: nothing is refused)."""
+    `budget` the per-step prompt guard (default unbounded: nothing is refused).
+
+    `on_refused_prompt` observes the prompt the guard REFUSES. It is the only prompt the loop
+    builds that no other seam can see: `complete`/`chat` are handed what is SENT, and a refusal by
+    definition is not, so a caller comparing two runs byte for byte would otherwise have to treat
+    the prompt that ended the episode as if it had never existed. It never fires on a run that
+    sends everything it builds, and it cannot change what the loop does."""
     world = ToolWorld.from_setup(task.setup)
     catalog = catalog if catalog is not None else tool_catalog()
     policy = policy if policy is not None else ContextPolicy()
@@ -202,6 +209,8 @@ def run_episode(
         if not budget.fits(prompt_chars):
             # The prompt cannot fit the resolved window: end as a TYPED overflow rather than
             # sending it and scoring whatever comes back as the model's answer.
+            if on_refused_prompt is not None:
+                on_refused_prompt(prompt)
             steps -= 1
             status = STATUS_CONTEXT_OVERFLOW
             break
@@ -249,6 +258,8 @@ def run_episode(
                 )
                 state.telemetry.prompt_chars.append(repaired_chars)
                 if not budget.fits(repaired_chars):
+                    if on_refused_prompt is not None:
+                        on_refused_prompt(repaired)
                     status = STATUS_CONTEXT_OVERFLOW
                     break
                 state.telemetry.model_input_prompt_chars += repaired_chars

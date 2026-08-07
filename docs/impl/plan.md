@@ -43,35 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-replay-refusal-compares-a-size-not-the-bytes (optional)
-
-The replay now records the prompt the guard refused, but as a SIZE plus the terminal status rather
-than its text: the refusal never reaches the injected `complete`, so the only thing the seam sees
-without a model is what `run_episode` already priced
-([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
-One shipped field moves bytes without moving length, and CI measures exactly that
-(`test_the_head_share_moves_bytes_and_never_a_prompt_length`): `observation_head_share` re-splits a
-trimmed observation head-and-tail at a fixed cap. So a geometry whose arms overflow at the same step
-reads `observation_head_share 0.6 -> 0.5` as invariant on identical refusal sizes -- measured at
-depth 6, guard 3500, where both shares send `[3000]` and both are refused a 3904-char prompt with
-the same digest. Give the replay the refused TEXT (an observer on the prompt `run_episode` builds
-before `budget.fits`, which the chat path's `snapshot` seam already resembles), digest it beside the
-sent prompts, and add the head-share fixture case.
-
-- Agent status: CLEAR
-- Dependencies: the recorded refusal is `_refused_prompt_chars` in
-  `src/llb/bench/agentic_policy_change_replay.py`, fed by `ContextTelemetry.prompt_chars`; the
-  prompt itself exists only inside the `budget.fits` branch of `run_episode` in
-  `src/llb/bench/agentic/episode.py`, so this needs a seam there rather than a reader here.
-- User-visible outcome: the refused prompt is compared the same way every sent prompt is, so no
-  audited field can move it invisibly.
-- Scope boundary: in scope -- the prompt observer, the text-level refusal digest, and the head-share
-  fixture case. Out of scope -- changing the overflow rule itself, changing any shipped constant,
-  and re-running a published cell (no baseline arm of any published cell refuses, so the recorded
-  verdict table cannot move).
-- Documentation target:
-  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
-
 ### agent-policy-change-interaction-band-skips-the-unfoldable-first-step (optional)
 
 `reachable_fold_steps` calls step 1 a reachable fold step because some trigger sits below the first

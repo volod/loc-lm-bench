@@ -17,6 +17,9 @@ METHOD = "agentic-policy-change-audit"
 # A cell whose arms all sent identical bytes and diverged only on the prompt the guard refused.
 # Worth naming: the model saw nothing move, and the episode still ended somewhere else.
 REFUSED_PROMPT_NOTE = " (the prompt the guard refused, never sent)"
+# The same, for a refusal both sides priced identically -- so nobody reads the equal char counts
+# in the run bundle and concludes the audit has flagged an equal prompt.
+REFUSED_BYTES_NOTE = " (the prompt the guard refused, never sent -- same size, different bytes)"
 
 
 def policy_change_summary(
@@ -33,6 +36,7 @@ def policy_change_summary(
             "max_prompt_chars": row["max_prompt_chars"],
             "changed_arms": row["changed_arms"],
             "refused_prompt_only": row["refused_prompt_only"],
+            "refused_prompt_bytes_only": row["refused_prompt_bytes_only"],
             "candidate_overflows": row["candidate_overflows"],
             "first_divergent_step": row["first_divergent_step"],
         }
@@ -129,10 +133,17 @@ def format_invalidated_cells(summary: dict[str, object], *, indent: str = "") ->
         f"{indent}- {cell['study_kind']} {cell['cell_id']}: depth {cell['depth']}, guard "
         f"{cell['max_prompt_chars']}, arms {','.join(cast(list[str], cell['changed_arms']))}"
         f", first divergent model call {cell['first_divergent_step']}"
-        f"{REFUSED_PROMPT_NOTE if cell['refused_prompt_only'] else ''}"
+        f"{_refused_note(cell)}"
         f"{_overflow_note(cast(list[str], cell['candidate_overflows']))}"
         for cell in cast(list[dict[str, object]], summary["invalidated"])
     ]
+
+
+def _refused_note(cell: dict[str, object]) -> str:
+    """Name a divergence the model never saw, and say when its two sides even priced the same."""
+    if not cell["refused_prompt_only"]:
+        return ""
+    return REFUSED_BYTES_NOTE if cell["refused_prompt_bytes_only"] else REFUSED_PROMPT_NOTE
 
 
 def _overflow_note(arms: list[str]) -> str:

@@ -189,6 +189,7 @@ def audit_cell_prompts(
             "arms": {},
             "changed_arms": [],
             "refused_prompt_only": False,
+            "refused_prompt_bytes_only": False,
             "candidate_overflows": [],
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
@@ -207,6 +208,11 @@ def audit_cell_prompts(
         # number still did, because the episode ended on the prompt that moved.
         "refused_prompt_only": bool(changed)
         and all(arms[name]["sent_identical"] for name in changed),
+        # The refusal the two sides priced identically and still wrote differently: invisible to
+        # anything that compares the refused prompt by size.
+        "refused_prompt_bytes_only": any(
+            arms[name]["refused_prompt_moved_bytes_only"] for name in changed
+        ),
         # Stronger than "the prompts move": under the candidate the cell no longer FITS its
         # published guard, so re-running it needs a new guard rather than a new measurement.
         "candidate_overflows": sorted(

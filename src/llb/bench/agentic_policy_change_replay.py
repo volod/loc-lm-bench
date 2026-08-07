@@ -20,19 +20,23 @@ moves them together, so auditing each on its own would compare "pinned cap + shi
 "shipped cap + shipped keep" -- neither of which is the configuration the published cells were
 measured under, and neither of which is the configuration the new build ships.
 
-A replay records the prompt the guard REFUSED as well as the ones it sent. Recording through
-`complete` sees only what reached a model, and the loop's last act before an overflow is to build a
-prompt, price it, and end the episode without sending it (`budget.fits` in `run_episode`). Two arms
-that overflow at the same step therefore send byte-identical prefixes whatever the refused prompts
-measured, so a change that moved the very prompt that ended the run would read as invariant. The
-refusal is recovered from the telemetry the loop already stamps for it -- `prompt_chars` carries
-every prompt the loop PRICED, the refused one last -- and enters the digest beside the sent prompts.
+A replay records the prompt the guard REFUSED as well as the ones it sent, and compares it the same
+way -- byte for byte. Recording through `complete` sees only what reached a model, and the loop's
+last act before an overflow is to build a prompt, price it, and end the episode WITHOUT sending it
+(`budget.fits` in `run_episode`). Two arms that overflow at the same step therefore send
+byte-identical prefixes whatever the refused prompts held, so a change that moved the very prompt
+that ended the run would read as invariant.
 
-That is a SIZE plus a terminal status, not the refused text, because the refusal never reaches the
-`complete` seam. One shipped field moves bytes without moving length -- `observation_head_share`
-re-splits a trimmed observation head-and-tail at a fixed cap -- so a change to it that moves ONLY a
-refused prompt still reads as invariant here. No published cell is exposed: CI asserts that no cell
-ends on a refused prompt under the policy its numbers were measured under.
+The refused text needs its own seam, because no other one can see it: `run_episode` takes an
+`on_refused_prompt` observer and hands it exactly the prompt it refused. A size would not do. The
+audited fields include one that moves bytes without moving length -- `observation_head_share`
+re-splits a trimmed observation head-and-tail at a fixed cap -- so a refusal compared on its char
+count alone is blind to precisely the field whose whole effect is where the bytes went.
+
+The priced SIZE is kept beside the text and comes from the telemetry the loop already stamps
+(`prompt_chars`, the refused prompt last). The two are not redundant: under a controller channel the
+guard prices a serialized chat transcript, so the size includes a serialization the prompt text does
+not show. The audit replays through `complete`, where they agree exactly.
 """
 
 import hashlib
@@ -55,17 +59,19 @@ AUDITED_POLICIES = (POLICY_OBSERVATION_CAP, POLICY_COMPACT)
 class ReplayedEpisode:
     """Everything one replayed episode put in front of the guard: sent prompts, and the refused one.
 
-    `refused_prompt_chars` is the size of the prompt that ended the episode as `context_overflow`,
-    and is None for any other terminal status -- an episode that finished refused nothing.
+    `refused_prompt` is the text that ended the episode as `context_overflow` and
+    `refused_prompt_chars` the size the guard priced it at; both are None for any other terminal
+    status -- an episode that finished refused nothing.
     """
 
     prompts: list[str] = field(default_factory=list)
     status: str = ""
+    refused_prompt: str | None = None
     refused_prompt_chars: int | None = None
 
     @property
     def refused(self) -> bool:
-        return self.refused_prompt_chars is not None
+        return self.refused_prompt is not None
 
 
 def prompt_sequence_digest(prompts: list[str]) -> str:
@@ -82,10 +88,15 @@ def prompt_sequence_digest(prompts: list[str]) -> str:
 
 
 def replay_digest(record: ReplayedEpisode) -> str:
-    """A stable digest of one episode: what it sent, how it ended, and what the guard refused."""
+    """A stable digest of one episode: what it sent, how it ended, and what the guard refused.
+
+    The refused prompt is digested through the same length-prefixed helper the sent ones use, so
+    it is compared byte for byte rather than by size.
+    """
     digest = hashlib.sha256()
     digest.update(prompt_sequence_digest(record.prompts).encode("ascii"))
-    digest.update(f"|{record.status}|{record.refused_prompt_chars}".encode("utf-8"))
+    digest.update(f"|{record.status}|{record.refused_prompt_chars}|".encode("utf-8"))
+    digest.update(prompt_sequence_digest([record.refused_prompt or ""]).encode("ascii"))
     return digest.hexdigest()
 
 
@@ -101,9 +112,11 @@ def replay_episode(
 
     Recording the SENT prompts through the injected `complete` needs no change to the loop: the
     callable IS the seam every model call passes through, controller prompts and summarize calls
-    alike. The refused prompt never reaches that seam, so it is read off the episode instead.
+    alike. The refused prompt never reaches that seam, so the loop's own refusal observer supplies
+    it -- at most once per episode, since a refusal ends the episode.
     """
     prompts: list[str] = []
+    refused: list[str] = []
 
     def recording(prompt: str) -> str:
         prompts.append(prompt)
@@ -115,10 +128,12 @@ def replay_episode(
         max_steps=max_steps,
         policy=policy,
         budget=fixed_budget(max_prompt_chars),
+        on_refused_prompt=refused.append,
     )
     return ReplayedEpisode(
         prompts=prompts,
         status=episode.status,
+        refused_prompt=refused[0] if refused else None,
         refused_prompt_chars=_refused_prompt_chars(episode),
     )
 
@@ -188,7 +203,14 @@ def arm_comparison(
         # episode SENT or one it only built.
         "sent_identical": sent_identical,
         "refused_prompt_moved": any(
-            (left.status, left.refused_prompt_chars) != (right.status, right.refused_prompt_chars)
+            (left.status, left.refused_prompt) != (right.status, right.refused_prompt)
+            for left, right in pairs
+        ),
+        # A refusal the two sides price the SAME and still write differently -- the head share's
+        # whole effect, and the case a size comparison could not see.
+        "refused_prompt_moved_bytes_only": any(
+            left.refused_prompt != right.refused_prompt
+            and left.refused_prompt_chars == right.refused_prompt_chars
             for left, right in pairs
         ),
         "n_tasks": len(tasks),

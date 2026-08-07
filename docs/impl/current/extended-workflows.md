@@ -740,7 +740,11 @@ that does not fit is NEVER SENT: the episode terminates as `context_overflow` --
 in the shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same
 reason -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable
 window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
-`fits_context_chars`: an unknown model never silently declares a prompt unusable.
+`fits_context_chars`: an unknown model never silently declares a prompt unusable. A refused prompt
+is the one thing the loop builds that neither `complete` nor `chat` is handed, so `run_episode`
+offers an optional `on_refused_prompt` observer for callers that must compare it -- inert on a run
+that sends everything it builds, and used by the policy-change replay
+([what a policy-constant change invalidates](#what-a-policy-constant-change-invalidates)).
 
 Per-episode telemetry rides ALONGSIDE the headline and is what makes the overflow observable after
 the fact: `max_prompt_tokens`, `total_prompt_tokens`, `total_model_input_tokens`,
@@ -1534,26 +1538,30 @@ later controller prompts are identical too, and "all prompts identical under the
 (`observation_cap` and `compact`), because a published number is a compact-minus-cap delta and a
 change that moves either arm moves it.
 
-A replay records the prompt the guard REFUSED as well as the ones it sent. Recording through
-`complete` sees only what reached a model, and the loop's last act before an overflow is to build a
-prompt, price it, and end the episode WITHOUT sending it (`budget.fits` in `run_episode`). Two arms
-that overflow at the same step therefore send byte-identical prefixes whatever the refused prompts
-measured, so before this the audit reported `prompt_invariant` for a change that moved the very
-prompt which ended the run. The refusal costs no extra replay: the loop already stamps
-`prompt_chars` for every prompt it PRICES, so the refused one is the last entry of an overflowed
-episode, and the terminal status plus that size enter the digest beside the sent prompts. A cell
-whose arms all sent identical bytes and diverged only on the refusal is named as such in the re-run
-scope (`the prompt the guard refused, never sent`); the refused prompt is reported at the model call
-neither replay made, one past the last recorded one.
+A replay records the prompt the guard REFUSED as well as the ones it sent, and compares it the same
+way -- byte for byte. Recording through `complete` sees only what reached a model, and the loop's
+last act before an overflow is to build a prompt, price it, and end the episode WITHOUT sending it
+(`budget.fits` in `run_episode`). Two arms that overflow at the same step therefore send
+byte-identical prefixes whatever the refused prompts held, so before this the audit reported
+`prompt_invariant` for a change that moved the very prompt which ended the run. A cell whose arms
+all sent identical bytes and diverged only on the refusal is named as such in the re-run scope
+(`the prompt the guard refused, never sent`), at the model call neither replay made -- one past the
+last recorded one.
 
-What enters the digest is a SIZE, not the refused text, since the refusal never reaches the
-`complete` seam -- and one shipped field moves bytes without moving length. `observation_head_share`
-re-splits a trimmed observation head-and-tail at a fixed cap (CI measures exactly that:
-`test_the_head_share_moves_bytes_and_never_a_prompt_length`), so a head-share change that moves ONLY
-a refused prompt still reads as invariant. At depth 6 behind a 3500-char guard both 0.6 and 0.5 send
-`[3000]` and are refused a 3904-char prompt with the same digest. No published cell is exposed to
-that residual, for the reason below; closing it needs the refused TEXT and therefore a seam in
-`run_episode`, which is a forward task.
+The refused text needs its own seam, because no other one can reach it. `run_episode` takes an
+`on_refused_prompt` observer and hands it exactly the prompt it refused, at both of the loop's
+refusal sites (the step prompt and the repair prompt built from it); it never fires on a run that
+sends everything it builds, and it cannot change what the loop does. Comparing the refusal by SIZE
+would not have been enough, and the reason is one of the audited fields: `observation_head_share`
+re-splits a trimmed observation head-and-tail at a fixed cap, which CI measures as moving bytes and
+never a prompt length. At depth 6 behind a 3500-char guard, 0.6 and 0.5 both send `[3000]` and are
+both refused a 3904-char prompt -- every size the audit could compare is equal, and only the refused
+prompt's own bytes separate them. That cell reads `prompts_change` with the scope line
+`same size, different bytes`, so nobody reads the equal char counts in the run bundle as an equal
+prompt. The priced size is kept beside the text because the two are not redundant: under a
+controller channel the guard prices a serialized chat transcript, so the size includes a
+serialization the prompt text does not show. The audit replays through `complete`, where they agree
+exactly, and CI asserts that agreement.
 
 CI now asserts what the cap-fitting studies previously only assumed: under the BASELINE policy --
 the configuration the published numbers were measured under -- no published cell ends on a refused
@@ -1593,8 +1601,9 @@ collapse cells through the bound half of the change rather than dropping them, w
 audit could not do.
 
 Core locations are `src/llb/bench/agentic_policy_change_replay.py` (`ReplayedEpisode`, the digest
-over sent prompts plus the refusal, and the per-arm comparison, which takes two whole settings
-maps), `src/llb/bench/agentic_policy_change_audit.py`
+over sent prompts plus the refused one, and the per-arm comparison, which takes two whole settings
+maps), the `on_refused_prompt` observer in `src/llb/bench/agentic/episode.py`,
+`src/llb/bench/agentic_policy_change_audit.py`
 (`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
 `src/llb/bench/agentic_policy_change_audit_report.py`,
 `src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
@@ -1831,9 +1840,9 @@ The third row is the corner, and it closes: a compact share is at most 1, so a g
 REACHES a prompt is never smaller than that prompt, and the two bounds cross at every fold step. The
 answer is now a proof over every prompt the loop builds rather than over the ones it sends. The
 `or overflows on it` half of that row is no longer only an argument, either: the replay records the
-prompt the guard refused
+prompt the guard refused and compares it byte for byte
 ([what a policy-constant change invalidates](#what-a-policy-constant-change-invalidates)), so an
-`observation_cap` arm that ends on a differently sized overflow is read rather than reasoned about.
+`observation_cap` arm that ends on a differently trimmed overflow is read rather than reasoned about.
 Which
 entries a cap moved is read off the FIRST DIFFERENCE of the two prompt sequences the solver already
 computes -- a step prompt is a fixed scaffold plus one line per live entry -- so the third case
