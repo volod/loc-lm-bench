@@ -1312,11 +1312,54 @@ probe-measured cap peak it is only meaningful next to. The two policy-change int
 (`test_agentic_policy_change_interaction_{band,cap}.py`) import ladder names to BUILD their geometry
 rather than to test it, so they stay where they are.
 
+Every one of those edges is reachable only through a CALLER, and three callers pass a probe-measured
+value straight into the arithmetic. Each now states what it does when the ladder refuses, and the
+choice is asserted rather than implied -- the three do not answer the same way, because what the
+refusal MEANS differs per caller.
+
+`_step_row` (`agentic_memory_fold_step_rows.py`) TRANSLATES. The step is a measured cell property
+(`predicted_fold_step`) and the sequence is the depth's own oracle walk, so a step the sequence
+cannot answer for means the two describe different geometries -- a probe that measured nothing, or
+rows grouped against another depth's ladder. Both now read as `cells [...] cannot be read against
+the measured N-step prompt sequence: they sit at fold step k, off its foldable ladder [...]`, and a
+group whose trigger no prompt exceeds (`predicted_fold_step` of `None`, which used to reach the
+ladder as a comparison against `None` and die as a `TypeError`) reads as `they fold at no step of
+it`.
+
+`_validate_band` (`agentic_memory_boundary_surface_cells.py`) TRANSLATES the peak and PROPAGATES the
+share. `usable_guard_band` refuses a non-positive peak, but the peak is the `max` of a probe walk,
+so a depth whose oracle episodes end before their first prompt failed inside that `max` instead --
+one layer lower still, and as a bare builtin message. Read at the surface both are the same fact,
+and the refusal now names it: `depth 6 measured no prompt under perfect play (0 steps), so it has no
+cap peak and no usable guard band to place cells in`. The share is deliberately left alone: it is a
+`held_fixed` value the design states verbatim, so `compact share must be in (0, 1]` already names
+what the operator wrote as precisely as a translation would.
+
+`share_bound_conditions` (`agentic_policy_change_interaction_conditions.py`) PROPAGATES, and the
+reachable fault was one level up. Every step the solver states conditions at comes from
+`foldable_fold_steps` of the same sequence, so a step `fold_step_trigger_interval` cannot answer for
+is a fabricated `StepGeometry` rather than a geometry anyone declared, and the ladder's own words are
+the accurate ones. What WAS reachable is silent rather than loud: a geometry with no foldable step
+yields no bands at all, and `format_band_report` then prints the same "no fold step separates the two
+readings at this depth" that a genuinely contradictory coupling gets -- a derivation over an episode
+nothing was measured over. `separating_guard_bands` refuses that before any condition is stated,
+naming the reachable steps the geometry does offer, the way the placement rule refuses an empty
+foldable ladder.
+
+Each choice is tested with its own caller, so a failure names the study whose vocabulary moved: the
+step-row translation in `test_agentic_memory_fold_step_crossover.py` (with the positive control that
+the same cells still read as one step row on their own depth's sequence), the peak translation and
+the propagated share in `test_agentic_memory_boundary_surface.py`, and both band-solver halves in
+`test_agentic_policy_change_interaction_band.py`.
+
 Core locations are `src/llb/bench/agentic_memory_fold_step_ladder.py` (the interval arithmetic
 above, shared with the collapse study, the summarize-cap arms, and the policy-change band solver),
 `src/llb/bench/agentic_memory_boundary_probe.py` (the oracle prompt sequence it is computed over),
 `src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
-`src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows),
+`src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows, and the caller-side refusal
+for a step the measured sequence cannot answer for),
+`src/llb/bench/agentic_memory_boundary_surface_cells.py` (the cap-peak refusal behind the usable
+band), `src/llb/bench/agentic_policy_change_interaction_band.py` (the empty-foldable-ladder refusal),
 `src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
 `src/llb/bench/agentic_memory_fold_step.py` (run and analysis),
 `src/llb/bench/agentic_memory_fold_step_report.py`,

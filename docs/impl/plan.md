@@ -43,32 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-fold-step-ladder-edges-are-untested-in-the-callers (optional)
+### agent-cap-peak-and-published-fold-step-are-untranslated-in-the-remaining-callers (optional)
 
-The ladder's own edges are asserted where the arithmetic lives
-([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
-but every one of them is reachable only through a CALLER, and no test states what the caller does
-when the ladder refuses. Three callers pass a probe-measured value straight in:
-`_step_row` in `src/llb/bench/agentic_memory_fold_step_rows.py` and `share_bound_conditions` in
-`src/llb/bench/agentic_policy_change_interaction_conditions.py` both call
-`fold_step_trigger_interval` with a step read off a row, and `_validate_band` in
-`src/llb/bench/agentic_memory_boundary_surface_cells.py` calls `usable_guard_band` on a
-`cap_peak_prompt_chars` result. A probe that measured nothing -- a zero-step episode, or a task that
-terminated before its first prompt -- therefore surfaces as a raw `ValueError` about a "0-step
-sequence" or a non-positive peak, two layers below the geometry the operator declared. (The
-placement rule is already the counter-example worth copying: an empty ladder there fails as
-"must test fold steps that are ADJACENT on the foldable ladder []".) Decide per caller whether the
-refusal should be translated into that caller's own vocabulary or left to propagate, and assert the
-choice.
+Three callers now state a ladder refusal in their own vocabulary, and the same pattern is
+unfinished in two more places
+([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
+First, five callers take a cap peak as a bare `max(sequence)` rather than through a checked read --
+`fold_step_cap_peaks` and `_validate_ladder` in
+`src/llb/bench/agentic_memory_fold_step_design.py`, `_validate_ladder` in
+`src/llb/bench/agentic_memory_summary_cap_design.py`, `_arm_row` in
+`src/llb/bench/agentic_memory_summary_cap_rows.py`, and `analyze_summary_cap` in
+`src/llb/bench/agentic_memory_summary_cap.py` -- so an unmeasured geometry fails there as a builtin
+`max() iterable argument is empty`, the exact failure the boundary surface just stopped producing.
+Second, and sharper because the step comes from a COMMITTED artifact rather than from a probe of the
+same geometry, `_interpolated_row` in
+`src/llb/bench/agentic_memory_crossover_restatement_rows.py` feeds `published["fold_step"]` straight
+into `fold_step_guard_interval` against a freshly measured sequence: a published fold step the
+current task world no longer has is exactly the drift the restatement exists to catch, and it
+surfaces as "outside an N-step sequence" instead of as a published number the geometry retired. Give
+the peak read one shared helper and translate the restatement refusal into the published row it came
+from.
 
 - Agent status: CLEAR
-- Dependencies: the ladder edges themselves are covered by
-  `tests/llb/bench/test_agentic_memory_fold_step_ladder.py`; the callers are the three functions
-  above.
-- User-visible outcome: an operator whose probe produced no prompts reads a message about the
-  geometry they declared, not about a 0-step sequence inside the interval arithmetic.
-- Scope boundary: in scope -- the caller-side handling and its tests. Out of scope -- changing any
-  ladder rule or its error messages.
+- Dependencies: the translated callers are the pattern to copy (`_measured_cap_peak` in
+  `src/llb/bench/agentic_memory_boundary_surface_cells.py` and `_fold_step_on_the_sequence` in
+  `src/llb/bench/agentic_memory_fold_step_rows.py`).
+- User-visible outcome: an operator restating a published crossover against a moved task world reads
+  which published fold step the geometry no longer has, not an interval-arithmetic range error.
+- Scope boundary: in scope -- the shared peak read, the restatement-side translation, and their
+  tests. Out of scope -- changing any ladder rule or its error messages, and re-running a published
+  cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 

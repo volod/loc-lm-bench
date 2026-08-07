@@ -181,6 +181,53 @@ def test_a_blocked_report_opens_with_a_fold_that_can_actually_happen(design: dic
     assert f"step {first_foldable} has {live}" in reasons[0], report
 
 
+def test_a_geometry_with_no_foldable_step_is_refused_rather_than_read_as_no_band(
+    design: dict[str, object],
+):
+    """ "No fold step separates" has to mean the steps were solved, not that there were none.
+
+    The solver states its conditions only at `foldable_fold_steps` of the measured sequence, so an
+    unmeasured geometry does not reach a ladder refusal at all -- the comprehension simply yields
+    nothing and `format_band_report` prints the same no-band line a genuinely contradictory coupling
+    gets. That is the one caller-side edge here that is silent rather than loud, so it is refused
+    with what the geometry does offer, the way the placement rule refuses an empty ladder.
+    """
+    change, held = interaction_change(design), design["held_fixed"]
+    depth = design["cells"][0]["depth"]
+    # Two ways to measure nothing: episodes that end before their first prompt, and a single prompt
+    # a trigger can select but no episode can fold at.
+    for margin, steps in ((-depth, 0), (1 - depth, 1)):
+        starved = {**held, "max_steps_margin": margin}
+        assert len(cap_prompt_sequence(**geometry_kwargs(depth, starved))) == steps
+        with pytest.raises(ValueError, match=f"no foldable fold step on its measured {steps}-step"):
+            separating_guard_bands(change, depth=depth, held=starved)
+
+
+def test_a_fabricated_fold_step_is_left_to_fail_in_the_ladders_own_words(design: dict[str, object]):
+    """The conditions do NOT translate the ladder's step refusal, and that is the decision.
+
+    Nothing the solver builds can name a step off the sequence, so a `StepGeometry` that does is a
+    fabricated one rather than a geometry an operator declared -- and the accurate thing to say
+    about it is exactly what `fold_step_trigger_interval` says. Translating it would give the
+    coupling vocabulary for a state the coupling cannot be asked about.
+    """
+    change, held = interaction_change(design), design["held_fixed"]
+    depth = design["cells"][0]["depth"]
+    geometry = geometry_kwargs(depth, held)
+    sequence = cap_prompt_sequence(**geometry)
+    assert foldable_fold_steps(sequence), "the committed geometry must have a ladder to solve on"
+    for step in (0, len(sequence) + 1):
+        fabricated = StepGeometry(
+            change=change,
+            step=step,
+            sequence=sequence,
+            geometry=geometry,
+            share=float(held[FIELD_SHARE]),
+        )
+        with pytest.raises(ValueError, match=f"outside a {len(sequence)}-step sequence"):
+            share_bound_conditions(fabricated)
+
+
 def test_a_change_the_band_arithmetic_cannot_answer_is_refused(design: dict[str, object]):
     """The reverse bound move cannot separate at all, so the solver refuses instead of answering."""
     held, depth = design["held_fixed"], design["cells"][0]["depth"]

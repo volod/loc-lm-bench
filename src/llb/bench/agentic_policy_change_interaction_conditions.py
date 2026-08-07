@@ -50,7 +50,14 @@ def folds_at_this_step(step: StepGeometry) -> BandCondition:
 
 
 def share_bound_conditions(step: StepGeometry) -> StepConditions:
-    """`compact_share` x `summary_input_cap`: three intervals the ladder and the probe already give."""
+    """`compact_share` x `summary_input_cap`: three intervals the ladder and the probe already give.
+
+    The ladder refusals are deliberately NOT translated here. Every step the solver asks about comes
+    from `foldable_fold_steps` of this same sequence, so a step `fold_step_trigger_interval` cannot
+    answer for is a `StepGeometry` nobody solved -- a fabricated one -- and the ladder's own message
+    is the accurate one. The reachable version of that fault is a geometry with no foldable step at
+    all, and `agentic_policy_change_interaction_band` refuses it before any condition is stated.
+    """
     baseline_share, candidate_share = _separating_shares(step.change)
     trigger = fold_step_trigger_interval(step.sequence, step.step)
     folds = [

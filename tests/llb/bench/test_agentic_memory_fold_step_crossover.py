@@ -28,8 +28,10 @@ from llb.bench.agentic_memory_fold_step_design import (
     load_fold_step_design,
     validate_fold_step_design,
 )
+from llb.bench.agentic_memory_fold_step_rows import step_rows
 from llb.bench.agentic_memory_fold_step_reading import (
     CONTROLLER_TOKEN_QUANTIZATION,
+    STEP_METRIC,
     READING_CONFIRMED,
     READING_INELIGIBLE,
     READING_INVALID,
@@ -275,6 +277,60 @@ def test_cell_preconditions_and_eligibility_gate_the_study():
     drifted[0]["declared_fold_step"] = 5
     with pytest.raises(ValueError, match="no longer fold where they were declared"):
         analyze_fold_steps(design, CONTROL_PASS, drifted)
+
+
+def test_a_step_the_measured_sequence_cannot_answer_for_names_the_cells_not_the_arithmetic():
+    """Every ladder edge is reachable only through a caller, and this caller translates them.
+
+    `step_rows` groups measured cells by their probe-predicted fold step and reads each group's
+    trigger interval off the depth's own oracle walk. When the two describe different geometries --
+    a probe that measured nothing, or rows read against another depth's ladder -- the ladder answers
+    "fold step k is outside an N-step sequence", which is arithmetic the operator never wrote. The
+    caller restates it in the cells and the foldable ladder the grid was placed against.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    sequence = fold_step_prompt_sequences(design)[6]
+    cells = _grouped_cells(design, predicted_fold_step=6)
+
+    # The positive control first: on its own depth's sequence the same cells read as one step row.
+    row = step_rows(cells, prompt_sequence=sequence, compact_share=0.5, cap_cost_fraction=0.02)[0]
+    assert row["fold_step"] == 6 and row["trigger_interval"] == [6568, 7456]
+
+    with pytest.raises(ValueError, match="measured 0-step prompt sequence") as unmeasured:
+        step_rows(cells, prompt_sequence=[], compact_share=0.5, cap_cost_fraction=0.02)
+    assert "off its foldable ladder []" in str(unmeasured.value)
+
+    with pytest.raises(ValueError, match=r"off its foldable ladder \[2, 3\]") as short:
+        step_rows(
+            cells, prompt_sequence=[3000, 3904, 4792], compact_share=0.5, cap_cost_fraction=0.02
+        )
+    assert all(cell["cell_id"] in str(short.value) for cell in cells)
+
+    # A cell whose trigger no prompt exceeds carries `predicted_fold_step` of None, which used to
+    # reach the ladder as a comparison against None rather than as a fold that never happens.
+    never = _grouped_cells(design, predicted_fold_step=None)
+    with pytest.raises(ValueError, match="fold at no step of it"):
+        step_rows(never, prompt_sequence=sequence, compact_share=0.5, cap_cost_fraction=0.02)
+
+
+def _grouped_cells(
+    design: dict[str, object], *, predicted_fold_step: int | None
+) -> list[dict[str, object]]:
+    """The two depth-6 step-6 cells as `step_rows` receives them, gated and annotated."""
+    return [
+        {
+            **_cell_row(cell, -125.9),
+            "measured_side": "compact_cheaper",
+            "compaction_trigger_chars": compaction_trigger_chars(
+                int(cell["max_prompt_chars"]), 0.5
+            ),
+            "compact_mean_controller_prompt_tokens": 1000.0,
+            "compact_mean_compaction_prompt_tokens": 500.0,
+            "cost_evidence": {STEP_METRIC: {"mean": -125.9}},
+            "predicted_fold_step": predicted_fold_step,
+        }
+        for cell in declared_cells(design)[:2]
+    ]
 
 
 def _fake_model(prompt: str) -> str:

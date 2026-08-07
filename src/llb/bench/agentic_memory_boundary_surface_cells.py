@@ -14,7 +14,7 @@ from llb.bench.agentic_memory_boundary_gate import (
     SIDE_COMPACT_CHEAPER,
     boundary_cost_evidence,
 )
-from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_memory_fold_step_ladder import guard_is_cap_fitting, usable_guard_band
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
@@ -124,14 +124,7 @@ def _invalid_reason(
 def _validate_band(
     depth: int, guards: list[int], held_fixed: dict[str, object], share: float
 ) -> None:
-    peak = cap_peak_prompt_chars(
-        depth=depth,
-        n_tasks=int(cast(int, held_fixed["n_tasks"])),
-        pad_chars=int(cast(int, held_fixed["pad_chars"])),
-        max_steps_margin=int(cast(int, held_fixed["max_steps_margin"])),
-        observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
-        observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
-    )
+    peak = _measured_cap_peak(depth, held_fixed)
     low, high = usable_guard_band(peak, share)
     outside = [guard for guard in guards if not guard_is_cap_fitting(guard, peak, share)]
     if outside:
@@ -139,6 +132,34 @@ def _validate_band(
             f"depth {depth} guards {outside} fall outside the usable band ({low}, {high}) "
             "where cap fits and compact still activates"
         )
+
+
+def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
+    """This depth's largest perfect-play cap prompt, or a refusal naming the DEPTH it was declared at.
+
+    `usable_guard_band` refuses a non-positive peak because a band around one would name guards for
+    a geometry that never ran, and the peak is the `max` of a probe walk -- so a depth whose oracle
+    episodes end before their first prompt fails inside that `max` instead, one layer further down
+    still. Both readings are the same surface-level fact, and this is where the surface can say it:
+    the design declared cells at a depth the probe measured nothing over. The share is NOT
+    translated -- it is a `held_fixed` value the design states verbatim, and the ladder's own
+    "compact share must be in (0, 1]" already names it.
+    """
+    sequence = cap_prompt_sequence(
+        depth=depth,
+        n_tasks=int(cast(int, held_fixed["n_tasks"])),
+        pad_chars=int(cast(int, held_fixed["pad_chars"])),
+        max_steps_margin=int(cast(int, held_fixed["max_steps_margin"])),
+        observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
+        observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
+    )
+    peak = max(sequence, default=0)
+    if peak <= 0:
+        raise ValueError(
+            f"depth {depth} measured no prompt under perfect play ({len(sequence)} steps), so it "
+            "has no cap peak and no usable guard band to place cells in"
+        )
+    return peak
 
 
 def _validate_window(held_fixed: dict[str, object], max_guard: int) -> None:

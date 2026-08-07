@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
-from llb.bench.agentic_memory_fold_step_ladder import foldable_fold_steps
+from llb.bench.agentic_memory_fold_step_ladder import foldable_fold_steps, reachable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_SHARE,
@@ -105,9 +105,30 @@ def separating_guard_bands(
                 change=change, step=step, sequence=sequence, geometry=geometry, share=share
             ),
         )
-        for step in foldable_fold_steps(sequence)
+        for step in _ladder(depth, sequence)
     ]
     return [band for band in bands if include_empty or not band.is_empty]
+
+
+def _ladder(depth: int, sequence: list[int]) -> list[int]:
+    """The foldable steps to solve at, or a refusal when the geometry has none.
+
+    Every step the conditions are stated at comes from here, so the ladder rules the conditions
+    call can never refuse a step through this path -- a `StepGeometry` naming a step off the
+    sequence is a fabricated one, and it is left to fail in the ladder's own words. What IS
+    reachable is a geometry with NO foldable step: the comprehension then yields nothing and the
+    solver reports "no fold step separates the two readings", which reads as a derivation over the
+    steps of an episode instead of as a probe that measured no episode. So the empty ladder is
+    refused the way the placement rule refuses one, naming what the geometry does offer.
+    """
+    ladder = foldable_fold_steps(sequence)
+    if not ladder:
+        raise ValueError(
+            f"depth {depth} has no foldable fold step on its measured {len(sequence)}-step prompt "
+            f"sequence (reachable steps {reachable_fold_steps(sequence)}), so a no-band answer "
+            "there would be a statement about an episode nothing was measured over"
+        )
+    return ladder
 
 
 def band_at_fold_step(bands: list[SeparatingBand], fold_step: int) -> SeparatingBand | None:
