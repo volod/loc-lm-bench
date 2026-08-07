@@ -26,12 +26,13 @@ interaction.py` replays the audit at both edges of a solved band and at the guar
 from dataclasses import dataclass
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, reachable_fold_steps
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_SHARE,
     BandCondition,
     StepGeometry,
+    foldable_fold_steps,
 )
 from llb.bench.agentic_policy_change_interaction_couplings import Coupling, coupling_for
 from llb.bench.agentic_policy_change_interaction_fixture import geometry_kwargs
@@ -84,6 +85,10 @@ def separating_guard_bands(
 ) -> list[SeparatingBand]:
     """Every guard band that separates the two readings at this depth, one per fold step.
 
+    The steps are the ones an episode can actually fold at (`foldable_fold_steps`), not merely the
+    ones a trigger can select: a step the loop never folds at states its three conditions about a
+    fold that cannot happen, and answers with them anyway.
+
     `include_empty` keeps the fold steps that separate nothing, each carrying the condition that
     blocked it -- which is what a coupling with no separating geometry has to say for itself.
     """
@@ -98,7 +103,7 @@ def separating_guard_bands(
                 change=change, step=step, sequence=sequence, geometry=geometry, share=share
             ),
         )
-        for step in reachable_fold_steps(sequence)
+        for step in foldable_fold_steps(sequence)
     ]
     return [band for band in bands if include_empty or not band.is_empty]
 

@@ -10,6 +10,7 @@ the arithmetic cannot answer.
 import pytest
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, reachable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction import audit_interaction_cell
 from llb.bench.agentic_policy_change_interaction_band import (
@@ -17,15 +18,31 @@ from llb.bench.agentic_policy_change_interaction_band import (
     format_band_report,
     separating_guard_bands,
 )
+from llb.bench.agentic_policy_change_interaction_conditions import share_bound_conditions
+from llb.bench.agentic_policy_change_interaction_couplings import coupling_for, held_baseline
 from llb.bench.agentic_policy_change_interaction_fixture import (
     declared_expectations,
+    geometry_kwargs,
     interaction_change,
     load_interaction_design,
+)
+from llb.bench.agentic_policy_change_interaction_terms import (
+    FIELD_KEEP_RECENT,
+    FIELD_SHARE,
+    MIN_LIVE_ENTRIES_TO_FOLD,
+    StepGeometry,
+    foldable_fold_steps,
+    live_entries_at_fold_step,
 )
 
 # A depth whose fold never offers the summarizer enough to overtake a trigger, so it separates
 # nothing at any guard -- the other side of the band solver's answer.
 SHALLOW_DEPTH = 8
+# The step whose prompt is built from zero entries: a trigger below the first prompt selects it, and
+# `compact_state` folds nothing there.
+UNFOLDABLE_FIRST_STEP = 1
+# A pair no geometry separates, whose blocked steps are what the no-band report is read on.
+NO_GEOMETRY_PAIR = (FIELD_SHARE, FIELD_KEEP_RECENT)
 
 
 @pytest.fixture(scope="module")
@@ -89,6 +106,79 @@ def test_a_depth_too_shallow_to_interact_reports_no_band_rather_than_a_wrong_one
     bands = separating_guard_bands(change, depth=SHALLOW_DEPTH, held=held)
     assert bands == [], format_band_report(change, SHALLOW_DEPTH, bands)
     assert "no fold step separates" in format_band_report(change, SHALLOW_DEPTH, bands)
+
+
+def test_the_ladder_skips_the_first_step_because_no_episode_folds_there(design: dict[str, object]):
+    """A trigger can SELECT step 1; the loop can never fold at it, so the solver does not ask.
+
+    The step-1 prompt is built from zero entries, and `compact_state` returns False on a state with
+    nothing older to summarize -- measured in
+    `test_agentic_policy_change_interaction_cap.py::test_folded_entries_is_what_compact_state_
+    actually_folds`. The shipped geometry really does offer that step (a small enough guard trips on
+    the first prompt), which is why the filter has work to do here rather than only in principle.
+    """
+    depth, held = design["cells"][0]["depth"], design["held_fixed"]
+    sequence = cap_prompt_sequence(**geometry_kwargs(depth, held))
+    assert UNFOLDABLE_FIRST_STEP in reachable_fold_steps(sequence)
+    foldable = foldable_fold_steps(sequence)
+    assert UNFOLDABLE_FIRST_STEP not in foldable
+    assert all(live_entries_at_fold_step(step) >= MIN_LIVE_ENTRIES_TO_FOLD for step in foldable)
+    # The filter is about the entry count alone, so it drops that step from ANY sequence and keeps
+    # every step behind it -- including one an interval-empty step would hide on the real ladder.
+    assert foldable_fold_steps([3000, 3900, 4800]) == [2, 3]
+
+
+def test_no_solved_band_moves_when_the_unfoldable_step_is_dropped(design: dict[str, object]):
+    """The skipped step separated nothing to begin with, so the committed bands are untouched.
+
+    Two halves: the solver still solves exactly the fold steps the fixture predeclares, and the step
+    the ladder now skips states a condition no guard satisfies -- so nothing solvable was filtered
+    away rather than merely nothing that happened to be solved today.
+    """
+    change, held = interaction_change(design), design["held_fixed"]
+    depth = design["cells"][0]["depth"]
+    geometry = geometry_kwargs(depth, held)
+    sequence = cap_prompt_sequence(**geometry)
+    bands = separating_guard_bands(change, depth=depth, held=held)
+    assert {band.fold_step for band in bands} == {
+        cell["predeclared"]["fold_step"] for cell in design["cells"]
+    }, format_band_report(change, depth, bands)
+    skipped = set(reachable_fold_steps(sequence)) - set(foldable_fold_steps(sequence))
+    assert skipped == {UNFOLDABLE_FIRST_STEP}
+    for step in sorted(skipped):
+        stated = share_bound_conditions(
+            StepGeometry(
+                change=change,
+                step=step,
+                sequence=sequence,
+                geometry=geometry,
+                share=float(held[FIELD_SHARE]),
+            )
+        )
+        assert any(condition.is_empty for condition in stated.conditions), stated
+
+
+def test_a_blocked_report_opens_with_a_fold_that_can_actually_happen(design: dict[str, object]):
+    """The no-band answer's FIRST line is its most informative one, not a vacuous step.
+
+    `_blocking_reasons` reports each condition once, at the first step that blocks it, so a step the
+    loop never folds at would lead the report with a count of zero live entries -- the one reading
+    that says nothing about the geometry a drifted commit has to fix.
+    """
+    coupling = coupling_for(NO_GEOMETRY_PAIR)
+    change, depth = coupling.example_change(), design["cells"][0]["depth"]
+    held = held_baseline(coupling, design["held_fixed"])
+    first_foldable = foldable_fold_steps(cap_prompt_sequence(**geometry_kwargs(depth, held)))[0]
+    bands = separating_guard_bands(change, depth=depth, held=held, include_empty=True)
+    report = format_band_report(change, depth, bands)
+    assert bands and all(band.is_empty for band in bands), report
+    assert min(band.fold_step for band in bands) == first_foldable, report
+    # Line 0 is the header, 1 the no-band statement, 2 the coupling; the reasons follow.
+    reasons = report.splitlines()[3:]
+    assert reasons, report
+    assert reasons[0].startswith(f"  fold step {first_foldable}: "), report
+    live = live_entries_at_fold_step(first_foldable)
+    assert f"step {first_foldable} has {live}" in reasons[0], report
 
 
 def test_a_change_the_band_arithmetic_cannot_answer_is_refused(design: dict[str, object]):

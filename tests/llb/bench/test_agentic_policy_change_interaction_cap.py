@@ -17,11 +17,7 @@ from llb.bench.agentic.context import (
     ContextState,
     compact_state,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
-    reachable_fold_steps,
-    smallest_guard_reaching,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, smallest_guard_reaching
 from llb.bench.agentic_policy_change_interaction_band import (
     format_band_report,
     separating_guard_bands,
@@ -44,6 +40,7 @@ from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_CAP,
     FIELD_SHARE,
     StepGeometry,
+    foldable_fold_steps,
 )
 
 # The depth the committed fixture separates at -- the geometry the `no geometry` answers are read on.
@@ -92,7 +89,7 @@ def test_the_shipped_cap_move_is_shown_rather_than_discarded(held: dict[str, obj
     sequences = [cap_prompt_sequence(**{**geometry, "observation_cap_chars": cap}) for cap in caps]
     moved = moved_prompts(*sequences)
     assert moved is not None
-    for step in reachable_fold_steps(sequences[0]):
+    for step in foldable_fold_steps(sequences[0]):
         discarded = folded_entries(step, DEFAULT_COMPACT_KEEP_RECENT)
         assert max(moved.entries) > discarded, (step, discarded, moved.entries)
 

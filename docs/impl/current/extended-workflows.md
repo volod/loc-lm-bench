@@ -1741,7 +1741,8 @@ contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
 `src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
 `src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in), `..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
+stated in, and the ladder of steps an episode can fold at that the solver walks),
+`..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
 observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
 prompt the loop merely builds), and the four test modules that ARE the CI assertion --
 `tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
@@ -1787,15 +1788,22 @@ Each `no geometry` answer is one contradiction, stated as a condition rather tha
 | `keep_last_n` | neither `observation_cap` nor `compact` reads it, so no value of it moves a prompt in either replayed arm |
 
 The solver reports a blocked step the way it reports a solved one, which is what makes the negative
-answer readable rather than merely empty:
+answer readable rather than merely empty. It asks only about the steps an episode can actually fold
+at (`foldable_fold_steps`) rather than every step a trigger can SELECT: step 1 is reachable on the
+shipped geometry -- a small enough guard trips on the first prompt -- but its prompt is built from
+zero entries, so `compact_state` finds nothing older to summarize and returns unchanged. Conditions
+stated there are about a fold that cannot happen, and since the report carries each condition once,
+at its first blocked step, that vacuous row would LEAD the answer with its least informative line.
+Dropping it moves no solved band: the two committed bands are unchanged, and the step it drops
+states a condition no guard satisfies anyway.
 
 ```text
 [band] depth 10, compact_share 0.5 -> 0.48, compact_keep_recent 1 -> 2
   no fold step separates the two readings at this depth
   compact_share x compact_keep_recent [no_geometry]: the share decides which step folds, and the
     keep decides how much of the transcript that fold leaves live behind it
-  fold step 1: the_moved_keep_folds_a_different_span impossible: the compound must fold something
-    the partner field alone does not, which needs more than 1 live entries; step 1 has 0
+  fold step 2: the_moved_keep_folds_a_different_span impossible: the compound must fold something
+    the partner field alone does not, which needs more than 1 live entries; step 2 has 1
   fold step 3: the_keep_audited_alone_is_silent impossible: the fold must hand the summarizer the
     same span under both keeps, which needs at most 1 live entries; step 3 has 2
 ```

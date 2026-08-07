@@ -43,27 +43,30 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-band-skips-the-unfoldable-first-step (optional)
+### agent-fold-step-ladder-placement-admits-a-step-no-episode-folds-at (optional)
 
-`reachable_fold_steps` calls step 1 a reachable fold step because some trigger sits below the first
-prompt, but no episode can fold there: the step-1 prompt is built from ZERO entries and
-`compact_state` returns false with nothing to fold. Every coupling therefore states three conditions
-about a step the loop never folds at, and because `_blocking_reasons` deduplicates by condition name
-the vacuous step-1 row is the one that LEADS the no-band report -- the reader's first line is the
-least informative one available
-([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)).
-Restrict the solved steps to those with at least one live entry
-(`live_entries_at_fold_step(step) >= 1`), and check that no solved band moves as a result.
+`validate_ladder_shape` checks a declared fold-step ladder against `reachable_fold_steps`, which
+answers a question about TRIGGERS alone: a step is reachable when some guard's trigger selects it,
+including step 1, whose prompt is built from zero entries so `compact_state` folds nothing there. A
+design that predeclares step 1 as a ladder cell therefore passes placement validation and then
+measures a `compact` arm that never compacts, reported as a fold-step cost. No committed design does
+this today, so the gap is latent rather than live. Restrict the placement ladder the same way the
+band solver's is -- steps with at least one live entry -- so an unfoldable cell is refused at
+validation with the ladder it should have declared instead; the filter already exists as
+`foldable_fold_steps` ([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)),
+and the decision to make is whether it belongs beside `reachable_fold_steps` in the boundary probe
+now that two callers want it.
 
 - Agent status: CLEAR
-- Dependencies: the step list is `reachable_fold_steps` in
-  `src/llb/bench/agentic_memory_boundary_probe.py`, consumed by `separating_guard_bands` in
-  `src/llb/bench/agentic_policy_change_interaction_band.py`; the entry count is
-  `live_entries_at_fold_step` in `..._interaction_terms.py`.
-- User-visible outcome: a blocked-step report opens with a fold that can actually happen, so a
-  drifted geometry is read from the first line rather than the third.
-- Scope boundary: in scope -- the step filter, the report, and the test that the two committed bands
-  are unchanged. Out of scope -- changing any shipped constant and re-running a published cell.
+- Dependencies: the placement rules are `validate_ladder_shape` and `validate_step_cells` in
+  `src/llb/bench/agentic_memory_fold_step_placement.py`; the ladder is `reachable_fold_steps` in
+  `src/llb/bench/agentic_memory_boundary_probe.py`; the filter is `foldable_fold_steps` in
+  `src/llb/bench/agentic_policy_change_interaction_terms.py`.
+- User-visible outcome: a fold-step study cannot predeclare a cell whose `compact` arm has no fold
+  in it, so a published step ladder is a ladder of folds rather than of triggers.
+- Scope boundary: in scope -- the placement filter, where the shared helper lives, and a test that
+  every committed ladder still validates unchanged. Out of scope -- moving a committed cell or
+  re-running a published ladder.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered).
 
