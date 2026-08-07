@@ -1281,7 +1281,7 @@ That arithmetic is separated from the episode walk that feeds it, because the tw
 different things to call and a shared module name hid which one an import line was reaching for.
 `src/llb/bench/agentic_memory_fold_step_ladder.py` holds the pure half -- the trigger/guard interval
 inverse, `first_fold_step`, the reachable and foldable ladders, `live_entries_at_fold_step`,
-`compaction_trigger_chars`, `smallest_guard_reaching`, `usable_guard_band`, and
+`compaction_trigger_chars`, `smallest_guard_reaching`, `measured_cap_peak`, `usable_guard_band`, and
 `guard_is_cap_fitting` -- every one a function of a prompt-size SEQUENCE plus a share or a guard,
 cheap enough for the placement rules, the summarize-cap ladder, and the policy-change band solver to
 sweep in a tight loop. `src/llb/bench/agentic_memory_boundary_probe.py` keeps the half that RUNS
@@ -1303,19 +1303,21 @@ one equal to the largest prompt, since the crossing is STRICT -- gives `first_fo
 `smallest_guard_reaching` and `usable_guard_band` refuse a share outside `(0, 1]` and answer at the
 closed end (share 1 makes the guard the trigger, and makes the usable band empty rather than
 refused); `usable_guard_band` refuses a non-positive peak, which is a probe that measured no prompt
-at all; and an empty sequence folds at no step, has no reachable or foldable step, and puts every
-step out of range. `tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the
-study: the committed design's placement, the validation refusals, the readings over fixture rows, and
-the end-to-end run under perfect play. The usable band keeps its own home in
+at all; `measured_cap_peak` names the GEOMETRY behind such a walk, including the empty one a bare
+`max` could only call an empty iterable; and an empty sequence folds at no step, has no reachable or
+foldable step, and puts every step out of range.
+`tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the study: the committed design's
+placement, the validation refusals, the readings over fixture rows, and the end-to-end run under
+perfect play. The usable band keeps its own home in
 `tests/llb/bench/test_agentic_memory_boundary_surface.py`, where it is asserted against the
 probe-measured cap peak it is only meaningful next to. The two policy-change interaction tests
 (`test_agentic_policy_change_interaction_{band,cap}.py`) import ladder names to BUILD their geometry
 rather than to test it, so they stay where they are.
 
-Every one of those edges is reachable only through a CALLER, and three callers pass a probe-measured
-value straight into the arithmetic. Each now states what it does when the ladder refuses, and the
-choice is asserted rather than implied -- the three do not answer the same way, because what the
-refusal MEANS differs per caller.
+Every one of those edges is reachable only through a CALLER, and every caller that passes a
+probe-measured value into the arithmetic now states what it does when the ladder refuses, with the
+choice asserted rather than implied. They do not all answer the same way, because what the refusal
+MEANS differs per caller.
 
 `_step_row` (`agentic_memory_fold_step_rows.py`) TRANSLATES. The step is a measured cell property
 (`predicted_fold_step`) and the sequence is the depth's own oracle walk, so a step the sequence
@@ -1326,14 +1328,41 @@ group whose trigger no prompt exceeds (`predicted_fold_step` of `None`, which us
 ladder as a comparison against `None` and die as a `TypeError`) reads as `they fold at no step of
 it`.
 
-`_validate_band` (`agentic_memory_boundary_surface_cells.py`) TRANSLATES the peak and PROPAGATES the
-share. `usable_guard_band` refuses a non-positive peak, but the peak is the `max` of a probe walk,
-so a depth whose oracle episodes end before their first prompt failed inside that `max` instead --
-one layer lower still, and as a bare builtin message. Read at the surface both are the same fact,
-and the refusal now names it: `depth 6 measured no prompt under perfect play (0 steps), so it has no
-cap peak and no usable guard band to place cells in`. The share is deliberately left alone: it is a
-`held_fixed` value the design states verbatim, so `compact share must be in (0, 1]` already names
-what the operator wrote as precisely as a translation would.
+The cap PEAK is translated once, for everyone. `usable_guard_band` refuses a non-positive peak, but
+the peak is the `max` of a probe walk, so a geometry whose oracle episodes end before their first
+prompt failed inside that `max` instead -- one layer lower still, and as the bare builtin `max()
+iterable argument is empty`, which names neither the geometry nor what the peak was wanted for.
+`measured_cap_peak(sequence, geometry=...)` in `agentic_memory_fold_step_ladder.py` is the reduction
+every cap-fitting caller now takes, and it states the fact above the band rather than inside it:
+`depth 6 measured no prompt under perfect play (0 steps), so it has no cap peak and no usable guard
+band to place cells in`. The `geometry` label is the caller's own vocabulary, so a surface depth and
+a summarize-cap arm ladder read differently while the refusal stays one refusal. Seven readers share
+it: `cap_peak_prompt_chars` (the probe's own reduction), `_validate_band`
+(`agentic_memory_boundary_surface_cells.py`), `fold_step_cap_peaks` and `_validate_ladder`
+(`agentic_memory_fold_step_design.py`), `_validate_ladder` (`agentic_memory_summary_cap_design.py`),
+`_arm_row` (`agentic_memory_summary_cap_rows.py`), and `analyze_summary_cap`
+(`agentic_memory_summary_cap.py`). In the two ladder validators the read moved AHEAD of the shape
+rule as well: an unmeasured depth used to be reported as declared steps that are not adjacent on the
+foldable ladder `[]`, which points the operator at the design instead of at the geometry.
+
+The SHARE is deliberately left alone in all of them: it is a `held_fixed` value the design states
+verbatim, so `compact share must be in (0, 1]` already names what the operator wrote as precisely as
+a translation would.
+
+`_interpolated_row` (`agentic_memory_crossover_restatement_rows.py`) TRANSLATES, and its refusal is
+the sharpest of the set because the step comes from a COMMITTED artifact rather than from a probe of
+the same geometry. Every other caller reads a step it measured itself; this one interpolates a fresh
+guard against a freshly measured sequence and then asks where the PUBLISHED fold step's guard
+interval was. The two can therefore disagree about the task world without either being malformed --
+and that disagreement is exactly the drift the restatement exists to catch, not an argument error.
+It read as the arithmetic's bare `fold step 10 is outside a 6-step sequence`, naming neither the
+number nor the study that published it, and now reads as `the published
+compact_memory_boundary_surface crossover at depth 10 is stated at fold step 10, which the
+re-measured 6-step prompt sequence no longer has (its foldable ladder is [2, 3, 4, 5, 6]): the task
+world moved under the published number, so there is no interval left to restate it inside`. The
+check is the FOLDABLE ladder rather than the sequence bounds, because a published crossover is a
+cost measured at a step an episode folded at: a step still in range but no longer reachable (an
+earlier prompt grew past it) has been retired by the geometry just as completely.
 
 `share_bound_conditions` (`agentic_policy_change_interaction_conditions.py`) PROPAGATES, and the
 reachable fault was one level up. Every step the solver states conditions at comes from
@@ -1347,9 +1376,15 @@ naming the reachable steps the geometry does offer, the way the placement rule r
 foldable ladder.
 
 Each choice is tested with its own caller, so a failure names the study whose vocabulary moved: the
-step-row translation in `test_agentic_memory_fold_step_crossover.py` (with the positive control that
-the same cells still read as one step row on their own depth's sequence), the peak translation and
-the propagated share in `test_agentic_memory_boundary_surface.py`, and both band-solver halves in
+shared peak read itself in `test_agentic_memory_fold_step_ladder.py` (both refusing sequences, the
+two `geometry` vocabularies, and the band built on what it returns); the step-row translation and
+both fold-step peak readers in `test_agentic_memory_fold_step_crossover.py` (with the positive
+control that the same cells still read as one step row on their own depth's sequence); the surface's
+peak translation and its propagated share in `test_agentic_memory_boundary_surface.py`; the arm
+ladder's design-side and analysis-side peaks in `test_agentic_memory_summary_cap.py` (the analysis
+peak describes the geometry rather than the cells, so it is read even for an ineligible family); the
+published-step translation in `test_agentic_memory_crossover_restatement.py`, against the control
+that the committed number still restates inside its own interval; and both band-solver halves in
 `test_agentic_policy_change_interaction_band.py`.
 
 Core locations are `src/llb/bench/agentic_memory_fold_step_ladder.py` (the interval arithmetic
@@ -1358,8 +1393,10 @@ above, shared with the collapse study, the summarize-cap arms, and the policy-ch
 `src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
 `src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows, and the caller-side refusal
 for a step the measured sequence cannot answer for),
-`src/llb/bench/agentic_memory_boundary_surface_cells.py` (the cap-peak refusal behind the usable
-band), `src/llb/bench/agentic_policy_change_interaction_band.py` (the empty-foldable-ladder refusal),
+`src/llb/bench/agentic_memory_boundary_surface_cells.py` (the depth-side walk behind the shared peak
+read), `src/llb/bench/agentic_memory_crossover_restatement_rows.py` (the published-fold-step
+refusal), `src/llb/bench/agentic_policy_change_interaction_band.py` (the empty-foldable-ladder
+refusal),
 `src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
 `src/llb/bench/agentic_memory_fold_step.py` (run and analysis),
 `src/llb/bench/agentic_memory_fold_step_report.py`,

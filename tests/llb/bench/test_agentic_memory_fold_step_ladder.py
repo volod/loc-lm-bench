@@ -20,6 +20,7 @@ from llb.bench.agentic_memory_fold_step_ladder import (
     fold_step_trigger_interval,
     foldable_fold_steps,
     live_entries_at_fold_step,
+    measured_cap_peak,
     reachable_fold_steps,
     smallest_guard_reaching,
     usable_guard_band,
@@ -120,6 +121,28 @@ def test_the_usable_band_refuses_a_non_positive_peak_and_an_out_of_range_share()
     # where the cap stops fitting, so no guard satisfies both ends.
     low, high = usable_guard_band(8374, 1.0)
     assert low == high == 8374
+
+
+def test_the_peak_read_names_the_geometry_a_bare_max_would_only_call_an_empty_iterable():
+    """The one reduction every cap-fitting caller takes, so the refusal is stated once for all.
+
+    `usable_guard_band` refuses a non-positive peak, but a walk that measured NOTHING never gets
+    that far: the builtin `max` fails first with a message naming neither the geometry nor the peak
+    it was reducing to. The checked read closes that gap ABOVE the band rather than inside it.
+    """
+    assert measured_cap_peak(GROWING, geometry="depth 6") == 8374
+    assert measured_cap_peak(REPEATED, geometry="depth 6") == 4000
+    for sequence in (EMPTY, [0, 0, 0]):
+        with pytest.raises(
+            ValueError, match=rf"depth 6 measured no prompt .* \({len(sequence)} steps\)"
+        ):
+            measured_cap_peak(sequence, geometry="depth 6")
+    # The geometry is the caller's own vocabulary, so an arm ladder and a surface depth read
+    # differently even though both reduce the same kind of walk.
+    with pytest.raises(ValueError, match="the depth 10 ladder measured no prompt"):
+        measured_cap_peak(EMPTY, geometry="the depth 10 ladder")
+    # The peak the band is built on is exactly what the checked read returns.
+    assert usable_guard_band(measured_cap_peak(GROWING, geometry="depth 6"), SHARE) == (8374, 16748)
 
 
 def test_the_whole_family_answers_for_an_empty_sequence():

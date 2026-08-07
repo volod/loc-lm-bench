@@ -27,6 +27,7 @@ from llb.bench.agentic.context import (
 from llb.bench.agentic.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_transcript import (
     DEFAULT_MEMORY_PAD_CHARS,
     build_memory_dependent_tasks,
@@ -151,7 +152,7 @@ def cap_peak_prompt_chars(
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
 ) -> int:
     """The largest `observation_cap` step prompt this geometry produces under perfect play."""
-    return max(
+    return measured_cap_peak(
         cap_prompt_sequence(
             depth=depth,
             n_tasks=n_tasks,
@@ -159,5 +160,6 @@ def cap_peak_prompt_chars(
             max_steps_margin=max_steps_margin,
             observation_cap_chars=observation_cap_chars,
             observation_head_share=observation_head_share,
-        )
+        ),
+        geometry=f"depth {depth}",
     )

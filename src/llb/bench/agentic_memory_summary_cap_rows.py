@@ -9,6 +9,7 @@ whether the span carried anything the summary needed.
 
 from typing import cast
 
+from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_fold_step_rows import depth_fold_row, step_rows
 from llb.bench.agentic_memory_fold_step_reading import READING_CONFIRMED
 from llb.bench.agentic_memory_summary_cap_reading import ROLE_REFERENCE, ROLE_STEP_ALIGNED
@@ -105,7 +106,9 @@ def _arm_row(
         ),
         prompt_sequence=prompt_sequence,
         compact_share=compact_share,
-        cap_peak_prompt_chars=max(prompt_sequence),
+        cap_peak_prompt_chars=measured_cap_peak(
+            prompt_sequence, geometry=f"the depth {depth} ladder"
+        ),
         reference_guard=None,
     )
     return {

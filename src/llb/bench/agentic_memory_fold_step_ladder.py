@@ -114,6 +114,25 @@ def fold_step_guard_interval(
     )
 
 
+def measured_cap_peak(prompt_sequence: list[int], *, geometry: str) -> int:
+    """A measured sequence's largest prompt, or a refusal naming the GEOMETRY it was walked over.
+
+    Reducing a probe walk to its peak is the one step every cap-fitting caller takes before the band
+    arithmetic, and taking it as a bare `max` puts the refusal for a geometry that measured NOTHING
+    two layers below the caller: `usable_guard_band` states the non-positive peak it will not build a
+    band around, but an empty walk never reaches it -- the builtin fails first as `max() iterable
+    argument is empty`, naming neither the geometry nor what the peak was wanted for. Every caller
+    reads the peak through here, so the same fact reads the same way wherever it surfaces.
+    """
+    peak = max(prompt_sequence, default=0)
+    if peak <= 0:
+        raise ValueError(
+            f"{geometry} measured no prompt under perfect play ({len(prompt_sequence)} steps), so "
+            "it has no cap peak and no usable guard band to place cells in"
+        )
+    return peak
+
+
 def usable_guard_band(peak_prompt_chars: int, compact_share: float) -> tuple[int, int]:
     """The open prompt-guard interval where cap fits AND compact still crosses its trigger.
 

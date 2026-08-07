@@ -15,6 +15,7 @@ from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,
+    foldable_fold_steps,
 )
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
 from llb.bench.agentic_memory_cap_audit import VERDICT_SENSITIVE
@@ -139,13 +140,41 @@ def _interpolated_row(
                 sequence, compaction_trigger_chars(int(guard), share)
             ),
             "basis": BASIS_RESTATED,
-            "fold_step_guard_interval": list(
-                fold_step_guard_interval(sequence, int(cast(int, published["fold_step"])), share)
+            "fold_step_guard_interval": _published_guard_interval(
+                sequence, published, depth, share
             ),
         }
     )
     row["names_same_fold_step"] = row["restated_fold_step"] == published["fold_step"]
     return row
+
+
+def _published_guard_interval(
+    sequence: list[int], published: dict[str, object], depth: int, share: float
+) -> list[int]:
+    """The published step's guard interval, or a refusal naming the PUBLISHED ROW it came from.
+
+    Every other ladder caller reads a step it measured itself; this one reads a step off a COMMITTED
+    artifact against a freshly measured sequence, so the two can disagree about the geometry without
+    either being malformed. That disagreement is not an argument error -- it is exactly the drift the
+    restatement exists to catch: the task world moved, and the fold step the published number was
+    stated in is not one this geometry has any more. The interval arithmetic says that as a bare
+    "outside an N-step sequence", which names neither the number nor the study that published it.
+
+    The check is the FOLDABLE ladder rather than the sequence bounds, because a published crossover
+    is a cost measured at a step an episode folded at: a step still in range but no longer reachable
+    (an earlier prompt grew past it) has been retired by the geometry just as completely.
+    """
+    step = int(cast(int, published["fold_step"]))
+    ladder = foldable_fold_steps(sequence)
+    if step not in ladder:
+        raise ValueError(
+            f"the published {published['study_kind']} crossover at depth {depth} is stated at fold "
+            f"step {step}, which the re-measured {len(sequence)}-step prompt sequence no longer has "
+            f"(its foldable ladder is {ladder}): the task world moved under the published number, "
+            "so there is no interval left to restate it inside"
+        )
+    return list(fold_step_guard_interval(sequence, step, share))
 
 
 def _prompt_sequence(design: dict[str, object], depth: int) -> list[int]:

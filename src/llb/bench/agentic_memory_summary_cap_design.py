@@ -17,6 +17,7 @@ from typing import cast
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAPS
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
+from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_fold_step_placement import (
     step_guards,
     validate_ladder_shape,
@@ -198,6 +199,7 @@ def _validate_ladder(
     if depth < 3:
         raise ValueError("the summarize-input-cap ladder needs a depth of at least 3")
     sequence = summary_cap_prompt_sequence(design)
+    peak = measured_cap_peak(sequence, geometry=label)
     steps = cast(list[dict[str, object]], ladder.get("steps", []))
     validate_ladder_shape(label, steps, sequence)
     for step in steps:
@@ -206,7 +208,7 @@ def _validate_ladder(
             step,
             sequence=sequence,
             compact_share=float(cast(float, held["compact_share"])),
-            peak_prompt_chars=max(sequence),
+            peak_prompt_chars=peak,
             minimum_guard_span_fraction=float(
                 cast(float, rule["minimum_within_step_guard_span_fraction"])
             ),

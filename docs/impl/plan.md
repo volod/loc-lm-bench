@@ -43,38 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-cap-peak-and-published-fold-step-are-untranslated-in-the-remaining-callers (optional)
+### agent-restatement-mixes-a-published-cap-peak-with-a-re-measured-ladder (optional)
 
-Three callers now state a ladder refusal in their own vocabulary, and the same pattern is
-unfinished in two more places
-([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
-First, five callers take a cap peak as a bare `max(sequence)` rather than through a checked read --
-`fold_step_cap_peaks` and `_validate_ladder` in
-`src/llb/bench/agentic_memory_fold_step_design.py`, `_validate_ladder` in
-`src/llb/bench/agentic_memory_summary_cap_design.py`, `_arm_row` in
-`src/llb/bench/agentic_memory_summary_cap_rows.py`, and `analyze_summary_cap` in
-`src/llb/bench/agentic_memory_summary_cap.py` -- so an unmeasured geometry fails there as a builtin
-`max() iterable argument is empty`, the exact failure the boundary surface just stopped producing.
-Second, and sharper because the step comes from a COMMITTED artifact rather than from a probe of the
-same geometry, `_interpolated_row` in
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` feeds `published["fold_step"]` straight
-into `fold_step_guard_interval` against a freshly measured sequence: a published fold step the
-current task world no longer has is exactly the drift the restatement exists to catch, and it
-surfaces as "outside an N-step sequence" instead of as a published number the geometry retired. Give
-the peak read one shared helper and translate the restatement refusal into the published row it came
-from.
+The restatement now refuses a published FOLD STEP the re-measured geometry no longer has
+([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)),
+but the same run still reads two different cap peaks for one depth and never compares them.
+`restated_surfaces` in `src/llb/bench/agentic_memory_crossover_restatement_rows.py` takes
+`cap_peak_prompt_chars` out of the PUBLISHED surface artifact and hands it to `depth_surface_row`,
+which divides the re-interpolated guard by it to publish `crossover_guard_ratio`, while
+`_interpolated_row` two functions down re-measures the depth's own prompt sequence from the
+committed design. A task world that moved -- a changed `pad_chars`, observation cap, or step margin
+-- therefore states a fresh guard as a ratio of a retired peak, and the fold-step check catches it
+only when the drift also reshapes the step ladder, which a small move need not. Read the peak from
+the same re-measured sequence the fold step is read from, and state the published-versus-measured
+peak as its own restatement row rather than dividing across the two.
 
 - Agent status: CLEAR
-- Dependencies: the translated callers are the pattern to copy (`_measured_cap_peak` in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py` and `_fold_step_on_the_sequence` in
-  `src/llb/bench/agentic_memory_fold_step_rows.py`).
-- User-visible outcome: an operator restating a published crossover against a moved task world reads
-  which published fold step the geometry no longer has, not an interval-arithmetic range error.
-- Scope boundary: in scope -- the shared peak read, the restatement-side translation, and their
-  tests. Out of scope -- changing any ladder rule or its error messages, and re-running a published
-  cell.
+- Dependencies: the re-measured sequence is already built by `_prompt_sequence` in
+  `src/llb/bench/agentic_memory_crossover_restatement_rows.py`, and the checked reduction is
+  `measured_cap_peak` in `src/llb/bench/agentic_memory_fold_step_ladder.py`; the published peak
+  arrives from the surface aggregate loaded in
+  `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`.
+- User-visible outcome: a restated guard ratio is stated against the peak of the geometry that
+  measured it, and a moved task world is named as a moved peak instead of quietly rescaling a
+  published ratio.
+- Scope boundary: in scope -- the peak source, the published-versus-measured comparison row, and its
+  tests. Out of scope -- changing the interpolation rule or the fold-step invariance criterion, and
+  re-running a published cell.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
 ### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
 

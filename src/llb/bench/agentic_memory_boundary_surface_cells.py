@@ -15,7 +15,11 @@ from llb.bench.agentic_memory_boundary_gate import (
     boundary_cost_evidence,
 )
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
-from llb.bench.agentic_memory_fold_step_ladder import guard_is_cap_fitting, usable_guard_band
+from llb.bench.agentic_memory_fold_step_ladder import (
+    guard_is_cap_fitting,
+    measured_cap_peak,
+    usable_guard_band,
+)
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
 
@@ -135,14 +139,11 @@ def _validate_band(
 
 
 def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
-    """This depth's largest perfect-play cap prompt, or a refusal naming the DEPTH it was declared at.
+    """This depth's largest perfect-play cap prompt, read through the ladder's checked peak.
 
-    `usable_guard_band` refuses a non-positive peak because a band around one would name guards for
-    a geometry that never ran, and the peak is the `max` of a probe walk -- so a depth whose oracle
-    episodes end before their first prompt fails inside that `max` instead, one layer further down
-    still. Both readings are the same surface-level fact, and this is where the surface can say it:
-    the design declared cells at a depth the probe measured nothing over. The share is NOT
-    translated -- it is a `held_fixed` value the design states verbatim, and the ladder's own
+    The surface is where a depth the probe measured nothing over can be NAMED, so the walk and the
+    checked read are paired here rather than left to the band arithmetic two layers down. The share
+    is NOT translated -- it is a `held_fixed` value the design states verbatim, and the ladder's own
     "compact share must be in (0, 1]" already names it.
     """
     sequence = cap_prompt_sequence(
@@ -153,13 +154,7 @@ def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
         observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
         observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
     )
-    peak = max(sequence, default=0)
-    if peak <= 0:
-        raise ValueError(
-            f"depth {depth} measured no prompt under perfect play ({len(sequence)} steps), so it "
-            "has no cap peak and no usable guard band to place cells in"
-        )
-    return peak
+    return measured_cap_peak(sequence, geometry=f"depth {depth}")
 
 
 def _validate_window(held_fixed: dict[str, object], max_guard: int) -> None:

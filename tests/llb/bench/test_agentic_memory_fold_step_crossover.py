@@ -194,6 +194,26 @@ def test_a_ladder_that_declares_a_step_no_episode_folds_at_is_refused_by_the_lad
         validate_fold_step_design(unfoldable)
 
 
+def test_a_depth_the_probe_measured_nothing_over_names_the_depth_in_both_peak_readers():
+    """The design states two peaks -- one per ladder, one per published row -- through one read.
+
+    Both used to reduce the walk with a bare `max`, so a depth whose oracle episodes end before
+    their first prompt failed as `max() iterable argument is empty` with nothing naming the depth.
+    The ladder validation additionally used to blame the DECLARED steps for not being adjacent on an
+    empty foldable ladder, which points the operator at the design rather than at the geometry.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    shallowest = min(int(ladder["depth"]) for ladder in design["ladders"])
+
+    unmeasured = deepcopy(design)
+    unmeasured["held_fixed"]["max_steps_margin"] = -shallowest
+    for read in (validate_fold_step_design, fold_step_cap_peaks):
+        with pytest.raises(
+            ValueError, match=f"depth {shallowest} measured no prompt under perfect play"
+        ):
+            read(unmeasured)
+
+
 def test_the_boundary_is_a_fold_step_and_the_interpolated_guard_is_an_artifact():
     design = load_fold_step_design(DESIGN_PATH)
     analysis = analyze_fold_steps(design, CONTROL_PASS, _rows(design, CONFIRMING))

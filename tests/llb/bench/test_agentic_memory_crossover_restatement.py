@@ -4,9 +4,11 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import re
+from typing import cast
 
 import pytest
 
+from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED
 from llb.bench.agentic_memory_boundary_probe import oracle_controller
 from llb.bench.agentic_memory_cap_audit import (
     VERDICT_INVARIANT,
@@ -29,10 +31,12 @@ from llb.bench.agentic_memory_crossover_restatement import (
     run_sensitive_surface_cells,
 )
 from llb.bench.agentic_memory_crossover_restatement_design import (
+    audited_designs,
     load_restatement_design,
     published_crossovers,
     validate_restatement_design,
 )
+from llb.bench.agentic_memory_crossover_restatement_rows import crossover_row
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
     BASIS_INVARIANT,
@@ -300,6 +304,45 @@ def test_a_crossover_that_leaves_its_fold_step_is_reported_as_moved(tmp_path: Pa
     assert surface["names_same_fold_step"] is False
     assert analysis["restatement_reading"] == READING_MOVED
     assert any("re-derive the routing rule" in line for line in analysis["operator_lines"])
+
+
+def test_a_published_fold_step_the_moved_geometry_no_longer_has_names_the_published_row():
+    """The restatement's step comes from a COMMITTED artifact, so the two can describe task worlds.
+
+    Every other ladder caller reads a step it measured itself. This one interpolates a fresh guard
+    against a fresh sequence and then asks where the PUBLISHED step's interval was, so a step the
+    geometry no longer offers is not an argument error -- it is the drift the restatement exists to
+    catch, and it used to surface as the interval arithmetic's bare "outside an N-step sequence".
+    """
+    design = load_restatement_design(DESIGN_PATH)
+    designs = audited_designs(design, root=ROOT)
+    audit = audit_published_cells(design, root=ROOT)
+    published = next(
+        row
+        for row in published_crossovers(design)
+        if row["study_kind"] == KIND_SURFACE and row["depth"] == 10
+    )
+    surfaces = [
+        {
+            "depth": 10,
+            "reading": READING_BRACKETED,
+            "crossover_max_prompt_chars": 21899.890064587056,
+            "crossover_guard_ratio": 1.836,
+            "bracket": [20000, 23000],
+        }
+    ]
+
+    # The control: on the geometry the number was published against, the interval is the one the
+    # restated guard has to stay inside.
+    row = crossover_row(published, designs, audit, surfaces)
+    low, high = row["fold_step_guard_interval"]
+    assert row["basis"] == BASIS_RESTATED and low <= row["restated_value"] < high
+
+    # Move the task world so the depth-10 walk ends four steps before the published fold step 10.
+    moved = deepcopy(designs)
+    cast(dict[str, object], moved[KIND_SURFACE]["held_fixed"])["max_steps_margin"] = -4
+    with pytest.raises(ValueError, match="crossover at depth 10 is stated at fold step 10"):
+        crossover_row(published, moved, audit, surfaces)
 
 
 def test_an_ineligible_family_supports_no_restatement_line():
