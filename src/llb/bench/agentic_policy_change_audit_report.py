@@ -14,6 +14,9 @@ from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
 
 METHOD = "agentic-policy-change-audit"
+# A cell whose arms all sent identical bytes and diverged only on the prompt the guard refused.
+# Worth naming: the model saw nothing move, and the episode still ended somewhere else.
+REFUSED_PROMPT_NOTE = " (the prompt the guard refused, never sent)"
 
 
 def policy_change_summary(
@@ -29,6 +32,8 @@ def policy_change_summary(
             "compact_share": row["compact_share"],
             "max_prompt_chars": row["max_prompt_chars"],
             "changed_arms": row["changed_arms"],
+            "refused_prompt_only": row["refused_prompt_only"],
+            "candidate_overflows": row["candidate_overflows"],
             "first_divergent_step": row["first_divergent_step"],
         }
         for kind, study_rows in audits.items()
@@ -51,6 +56,9 @@ def policy_change_summary(
             for row in rows
         ),
         "n_invalidated": len(invalidated),
+        # Cells that stop FITTING their published guard under the candidate: re-measuring them
+        # needs a new guard, not a re-run at the old one.
+        "n_candidate_overflow": sum(bool(row["candidate_overflows"]) for row in rows),
         "invalidated": invalidated,
         "studies_invalidated": sorted({cast(str, row["study_kind"]) for row in invalidated}),
     }
@@ -121,8 +129,17 @@ def format_invalidated_cells(summary: dict[str, object], *, indent: str = "") ->
         f"{indent}- {cell['study_kind']} {cell['cell_id']}: depth {cell['depth']}, guard "
         f"{cell['max_prompt_chars']}, arms {','.join(cast(list[str], cell['changed_arms']))}"
         f", first divergent model call {cell['first_divergent_step']}"
+        f"{REFUSED_PROMPT_NOTE if cell['refused_prompt_only'] else ''}"
+        f"{_overflow_note(cast(list[str], cell['candidate_overflows']))}"
         for cell in cast(list[dict[str, object]], summary["invalidated"])
     ]
+
+
+def _overflow_note(arms: list[str]) -> str:
+    """Named on the cell that needs it: the candidate does not fit this cell's published guard."""
+    if not arms:
+        return ""
+    return f" -- and {','.join(arms)} no longer fits this guard under the candidate"
 
 
 def _verdict_line(summary: dict[str, object]) -> str:

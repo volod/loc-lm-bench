@@ -43,34 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-replay-records-the-refused-prompt (optional)
+### agent-policy-change-replay-refusal-compares-a-size-not-the-bytes (optional)
 
-The replay records a prompt by intercepting the injected `complete`, so a prompt the guard REFUSES
-is built, never sent, and never compared: `run_episode` checks `budget.fits` before the model call
-and ends the episode as `context_overflow`. Two arms that overflow at the same step therefore read as
-byte-identical whatever the refused prompts measured, and the audit reports `prompt_invariant` for a
-change that moved the very prompt that ended the run
-([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
-Cap-fitting cells are chosen not to overflow, but nothing in the audit asserts that, and the
-observation cap's own band conditions now name the refused prompt as the thing that keeps a
-discarded size unobservable
-([extended workflows](current/extended-workflows.md#the-caps-silence-is-about-the-prompts-the-loop-builds)),
-so the replay should be able to see it. Record the refused prompt (or its char count plus the
-terminal status) alongside the sent ones, compare it in `arm_comparison`, and add the fixture case
-that a change moving only an overflowing prompt no longer reads as invariant.
+The replay now records the prompt the guard refused, but as a SIZE plus the terminal status rather
+than its text: the refusal never reaches the injected `complete`, so the only thing the seam sees
+without a model is what `run_episode` already priced
+([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+One shipped field moves bytes without moving length, and CI measures exactly that
+(`test_the_head_share_moves_bytes_and_never_a_prompt_length`): `observation_head_share` re-splits a
+trimmed observation head-and-tail at a fixed cap. So a geometry whose arms overflow at the same step
+reads `observation_head_share 0.6 -> 0.5` as invariant on identical refusal sizes -- measured at
+depth 6, guard 3500, where both shares send `[3000]` and both are refused a 3904-char prompt with
+the same digest. Give the replay the refused TEXT (an observer on the prompt `run_episode` builds
+before `budget.fits`, which the chat path's `snapshot` seam already resembles), digest it beside the
+sent prompts, and add the head-share fixture case.
 
 - Agent status: CLEAR
-- Dependencies: the recording seam is `replay_prompts` in
-  `src/llb/bench/agentic_policy_change_replay.py`; the refusal is the `budget.fits` branch of
-  `run_episode` in `src/llb/bench/agentic/episode.py`, which already stamps `prompt_chars` for the
-  prompt it refuses.
-- User-visible outcome: "this change invalidates nothing" covers the prompt that ended the episode,
-  not only the ones a model saw.
-- Scope boundary: in scope -- the recorded refusal, its comparison, and the fixture case. Out of
-  scope -- changing the overflow rule itself, changing any shipped constant, and re-running a
-  published cell.
+- Dependencies: the recorded refusal is `_refused_prompt_chars` in
+  `src/llb/bench/agentic_policy_change_replay.py`, fed by `ContextTelemetry.prompt_chars`; the
+  prompt itself exists only inside the `budget.fits` branch of `run_episode` in
+  `src/llb/bench/agentic/episode.py`, so this needs a seam there rather than a reader here.
+- User-visible outcome: the refused prompt is compared the same way every sent prompt is, so no
+  audited field can move it invisibly.
+- Scope boundary: in scope -- the prompt observer, the text-level refusal digest, and the head-share
+  fixture case. Out of scope -- changing the overflow rule itself, changing any shipped constant,
+  and re-running a published cell (no baseline arm of any published cell refuses, so the recorded
+  verdict table cannot move).
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
 
 ### agent-policy-change-interaction-band-skips-the-unfoldable-first-step (optional)
 

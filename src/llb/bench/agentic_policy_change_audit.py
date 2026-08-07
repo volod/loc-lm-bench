@@ -188,6 +188,8 @@ def audit_cell_prompts(
             **row,
             "arms": {},
             "changed_arms": [],
+            "refused_prompt_only": False,
+            "candidate_overflows": [],
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
         }
@@ -200,6 +202,18 @@ def audit_cell_prompts(
         **row,
         "arms": arms,
         "changed_arms": changed,
+        # The change moved only the prompt the guard REFUSED: every arm sent the same bytes and
+        # ended on a differently sized overflow. Nothing a model saw moved, and the published
+        # number still did, because the episode ended on the prompt that moved.
+        "refused_prompt_only": bool(changed)
+        and all(arms[name]["sent_identical"] for name in changed),
+        # Stronger than "the prompts move": under the candidate the cell no longer FITS its
+        # published guard, so re-running it needs a new guard rather than a new measurement.
+        "candidate_overflows": sorted(
+            name
+            for name, arm in arms.items()
+            if arm["candidate_refused_tasks"] and not arm["baseline_refused_tasks"]
+        ),
         "first_divergent_step": min(
             (
                 cast(int, arm["first_divergent_step"])

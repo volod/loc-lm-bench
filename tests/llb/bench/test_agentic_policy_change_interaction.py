@@ -42,7 +42,7 @@ from llb.bench.agentic_policy_change_interaction_fixture import (
     probe_cell_geometry,
     validate_interaction_design,
 )
-from llb.bench.agentic_policy_change_replay import prompt_sequence_digest, replay_prompts
+from llb.bench.agentic_policy_change_replay import prompt_sequence_digest, replay_episode
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -77,12 +77,12 @@ def _whole_policy_digest(
             for record in build_memory_dependent_tasks(
                 n_tasks=held["n_tasks"], depth=cell["depth"], pad_chars=held["pad_chars"]
             )
-            for prompt in replay_prompts(
+            for prompt in replay_episode(
                 policy,
                 task=AgenticTask.from_record(record),
                 max_prompt_chars=cell["max_prompt_chars"],
                 max_steps=cell["depth"] + held["max_steps_margin"],
-            )
+            ).prompts
         ]
     )
 

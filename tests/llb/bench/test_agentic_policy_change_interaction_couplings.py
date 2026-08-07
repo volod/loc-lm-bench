@@ -53,7 +53,7 @@ from llb.bench.agentic_policy_change_interaction_scan import (
     format_scan_report,
     scan_separating_cells,
 )
-from llb.bench.agentic_policy_change_replay import prompt_sequence_digest, replay_prompts
+from llb.bench.agentic_policy_change_replay import prompt_sequence_digest, replay_episode
 
 # The depth the committed fixture separates at, and the two guards it separates on. A second pair
 # would have to be visible here if the arithmetic that rules the others out were wrong.
@@ -172,12 +172,12 @@ def test_live_entries_at_a_fold_step_is_what_the_loop_actually_folds(held: dict[
             compact_share=held[FIELD_SHARE],
             compact_keep_recent=keep,
         )
-        prompts = replay_prompts(
+        prompts = replay_episode(
             policy,
             task=task,
             max_prompt_chars=FIXTURE_GUARDS[0],
             max_steps=FIXTURE_DEPTH + held["max_steps_margin"],
-        )
+        ).prompts
         # The summarize call is made while the prompt for its fold step is being built, so its own
         # 1-based position among the model calls IS that step: the calls before it are the steps
         # before it. What it folded is then announced in the prompt that follows.
@@ -208,7 +208,7 @@ def test_the_head_share_moves_bytes_and_never_a_prompt_length(held: dict[str, ob
         build_memory_dependent_tasks(n_tasks=1, depth=FIXTURE_DEPTH, pad_chars=held["pad_chars"])[0]
     )
     sides = [
-        replay_prompts(
+        replay_episode(
             ContextPolicy(
                 name=POLICY_OBSERVATION_CAP,
                 observation_cap_chars=held["observation_cap_chars"],
@@ -217,7 +217,7 @@ def test_the_head_share_moves_bytes_and_never_a_prompt_length(held: dict[str, ob
             task=task,
             max_prompt_chars=FIXTURE_GUARDS[0],
             max_steps=FIXTURE_DEPTH + held["max_steps_margin"],
-        )
+        ).prompts
         for head in (held[FIELD_HEAD], 0.5)
     ]
     assert [len(prompt) for prompt in sides[0]] == [len(prompt) for prompt in sides[1]]

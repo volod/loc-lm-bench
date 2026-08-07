@@ -1534,6 +1534,39 @@ later controller prompts are identical too, and "all prompts identical under the
 (`observation_cap` and `compact`), because a published number is a compact-minus-cap delta and a
 change that moves either arm moves it.
 
+A replay records the prompt the guard REFUSED as well as the ones it sent. Recording through
+`complete` sees only what reached a model, and the loop's last act before an overflow is to build a
+prompt, price it, and end the episode WITHOUT sending it (`budget.fits` in `run_episode`). Two arms
+that overflow at the same step therefore send byte-identical prefixes whatever the refused prompts
+measured, so before this the audit reported `prompt_invariant` for a change that moved the very
+prompt which ended the run. The refusal costs no extra replay: the loop already stamps
+`prompt_chars` for every prompt it PRICES, so the refused one is the last entry of an overflowed
+episode, and the terminal status plus that size enter the digest beside the sent prompts. A cell
+whose arms all sent identical bytes and diverged only on the refusal is named as such in the re-run
+scope (`the prompt the guard refused, never sent`); the refused prompt is reported at the model call
+neither replay made, one past the last recorded one.
+
+What enters the digest is a SIZE, not the refused text, since the refusal never reaches the
+`complete` seam -- and one shipped field moves bytes without moving length. `observation_head_share`
+re-splits a trimmed observation head-and-tail at a fixed cap (CI measures exactly that:
+`test_the_head_share_moves_bytes_and_never_a_prompt_length`), so a head-share change that moves ONLY
+a refused prompt still reads as invariant. At depth 6 behind a 3500-char guard both 0.6 and 0.5 send
+`[3000]` and are refused a 3904-char prompt with the same digest. No published cell is exposed to
+that residual, for the reason below; closing it needs the refused TEXT and therefore a seam in
+`run_episode`, which is a forward task.
+
+CI now asserts what the cap-fitting studies previously only assumed: under the BASELINE policy --
+the configuration the published numbers were measured under -- no published cell ends on a refused
+prompt in either arm. That is why every recorded verdict in the table below is unchanged by the
+refusal recording: with no baseline refusal anywhere, each answer is still decided by sent prompts
+alone. A CANDIDATE value is a different matter, and one published cell shows it. Widening
+`observation_cap_chars` 800 -> 1600 does not merely move `surface-d10-g14000`'s `observation_cap`
+arm: that arm peaks at 11926 chars under the pinned 800 and is refused a 14621-char prompt at step 9
+under 1600, on all seven tasks. The cell already read `prompts_change` from its sent prompts (the
+trim reaches the prompt at model call 2), so no verdict moves -- what is new is that the re-run
+scope can say `observation_cap no longer fits this guard under the candidate`, which is the
+difference between re-measuring the cell and needing a new guard to measure it at all.
+
 One case needs its own verdict rather than a comparison. A cell that declares the audited field
 ITSELF -- the trigger collapse sweeps `compact_share` cell by cell -- is not describable by the
 change: replaying it at another value measures a different cell, not the published one. Those report
@@ -1559,8 +1592,9 @@ row and counted as `n_partially_applicable`); only a cell that declares ALL of t
 collapse cells through the bound half of the change rather than dropping them, which the per-field
 audit could not do.
 
-Core locations are `src/llb/bench/agentic_policy_change_replay.py` (replay, digest, and the
-per-arm comparison, which takes two whole settings maps), `src/llb/bench/agentic_policy_change_audit.py`
+Core locations are `src/llb/bench/agentic_policy_change_replay.py` (`ReplayedEpisode`, the digest
+over sent prompts plus the refusal, and the per-arm comparison, which takes two whole settings
+maps), `src/llb/bench/agentic_policy_change_audit.py`
 (`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
 `src/llb/bench/agentic_policy_change_audit_report.py`,
 `src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
@@ -1795,7 +1829,12 @@ So the cap states three cases instead of two (`agentic_policy_change_interaction
 
 The third row is the corner, and it closes: a compact share is at most 1, so a guard whose trigger
 REACHES a prompt is never smaller than that prompt, and the two bounds cross at every fold step. The
-answer is now a proof over every prompt the loop builds rather than over the ones it sends. Which
+answer is now a proof over every prompt the loop builds rather than over the ones it sends. The
+`or overflows on it` half of that row is no longer only an argument, either: the replay records the
+prompt the guard refused
+([what a policy-constant change invalidates](#what-a-policy-constant-change-invalidates)), so an
+`observation_cap` arm that ends on a differently sized overflow is read rather than reasoned about.
+Which
 entries a cap moved is read off the FIRST DIFFERENCE of the two prompt sequences the solver already
 computes -- a step prompt is a fixed scaffold plus one line per live entry -- so the third case
 costs no extra replay, and it catches a pair of entries that move in opposite directions where a

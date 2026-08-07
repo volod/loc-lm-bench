@@ -19,21 +19,53 @@ A replay side is a WHOLE policy, never one overridden field. A commit that re-pi
 moves them together, so auditing each on its own would compare "pinned cap + shipped keep" against
 "shipped cap + shipped keep" -- neither of which is the configuration the published cells were
 measured under, and neither of which is the configuration the new build ships.
+
+A replay records the prompt the guard REFUSED as well as the ones it sent. Recording through
+`complete` sees only what reached a model, and the loop's last act before an overflow is to build a
+prompt, price it, and end the episode without sending it (`budget.fits` in `run_episode`). Two arms
+that overflow at the same step therefore send byte-identical prefixes whatever the refused prompts
+measured, so a change that moved the very prompt that ended the run would read as invariant. The
+refusal is recovered from the telemetry the loop already stamps for it -- `prompt_chars` carries
+every prompt the loop PRICED, the refused one last -- and enters the digest beside the sent prompts.
+
+That is a SIZE plus a terminal status, not the refused text, because the refusal never reaches the
+`complete` seam. One shipped field moves bytes without moving length -- `observation_head_share`
+re-splits a trimmed observation head-and-tail at a fixed cap -- so a change to it that moves ONLY a
+refused prompt still reads as invariant here. No published cell is exposed: CI asserts that no cell
+ends on a refused prompt under the policy its numbers were measured under.
 """
 
 import hashlib
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from llb.bench.agentic.context import POLICY_COMPACT, POLICY_OBSERVATION_CAP, ContextPolicy
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
-from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW, AgenticTask, Episode
 from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
 
 # Both arms of every published cap-fitting cell: its number is the delta between them.
 AUDITED_POLICIES = (POLICY_OBSERVATION_CAP, POLICY_COMPACT)
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayedEpisode:
+    """Everything one replayed episode put in front of the guard: sent prompts, and the refused one.
+
+    `refused_prompt_chars` is the size of the prompt that ended the episode as `context_overflow`,
+    and is None for any other terminal status -- an episode that finished refused nothing.
+    """
+
+    prompts: list[str] = field(default_factory=list)
+    status: str = ""
+    refused_prompt_chars: int | None = None
+
+    @property
+    def refused(self) -> bool:
+        return self.refused_prompt_chars is not None
 
 
 def prompt_sequence_digest(prompts: list[str]) -> str:
@@ -49,13 +81,27 @@ def prompt_sequence_digest(prompts: list[str]) -> str:
     return digest.hexdigest()
 
 
-def replay_prompts(
-    policy: ContextPolicy, *, task: AgenticTask, max_prompt_chars: int, max_steps: int
-) -> list[str]:
-    """Every prompt one oracle episode sends under `policy`, in order.
+def replay_digest(record: ReplayedEpisode) -> str:
+    """A stable digest of one episode: what it sent, how it ended, and what the guard refused."""
+    digest = hashlib.sha256()
+    digest.update(prompt_sequence_digest(record.prompts).encode("ascii"))
+    digest.update(f"|{record.status}|{record.refused_prompt_chars}".encode("utf-8"))
+    return digest.hexdigest()
 
-    Recording through the injected `complete` needs no change to the loop: the callable IS the seam
-    every model call passes through, controller prompts and summarize calls alike.
+
+def replay_sequence_digest(records: list[ReplayedEpisode]) -> str:
+    """One digest for a whole arm's tasks -- of the per-episode digests, so no boundary collides."""
+    return prompt_sequence_digest([replay_digest(record) for record in records])
+
+
+def replay_episode(
+    policy: ContextPolicy, *, task: AgenticTask, max_prompt_chars: int, max_steps: int
+) -> ReplayedEpisode:
+    """One oracle episode under `policy`: every prompt it sends, plus the one the guard refuses.
+
+    Recording the SENT prompts through the injected `complete` needs no change to the loop: the
+    callable IS the seam every model call passes through, controller prompts and summarize calls
+    alike. The refused prompt never reaches that seam, so it is read off the episode instead.
     """
     prompts: list[str] = []
 
@@ -63,14 +109,30 @@ def replay_prompts(
         prompts.append(prompt)
         return oracle_compacting_controller(prompt)
 
-    run_episode(
+    episode = run_episode(
         task,
         recording,
         max_steps=max_steps,
         policy=policy,
         budget=fixed_budget(max_prompt_chars),
     )
-    return prompts
+    return ReplayedEpisode(
+        prompts=prompts,
+        status=episode.status,
+        refused_prompt_chars=_refused_prompt_chars(episode),
+    )
+
+
+def _refused_prompt_chars(episode: Episode) -> int | None:
+    """The size of the prompt the guard refused, or None when the episode ended some other way.
+
+    The loop stamps `prompt_chars` for every prompt it PRICES, so the refused one is the last entry
+    of an overflowed episode -- the same value `budget.fits` said no to.
+    """
+    if episode.status != STATUS_CONTEXT_OVERFLOW:
+        return None
+    priced = episode.telemetry.prompt_chars
+    return priced[-1] if priced else None
 
 
 def arm_comparison(
@@ -97,9 +159,9 @@ def arm_comparison(
     max_steps = int(cast(int, cell["depth"])) + int(cast(int, held["max_steps_margin"]))
     guard = int(cast(int, cell["max_prompt_chars"]))
 
-    def episodes(settings: Mapping[str, Any]) -> list[list[str]]:
+    def episodes(settings: Mapping[str, Any]) -> list[ReplayedEpisode]:
         return [
-            replay_prompts(
+            replay_episode(
                 _policy(policy_name, cell, held, settings),
                 task=task,
                 max_prompt_chars=guard,
@@ -109,38 +171,56 @@ def arm_comparison(
         ]
 
     before, after = episodes(baseline), episodes(candidate)
+    pairs = list(zip(before, after))
     differing = [
         index
-        for index, (left, right) in enumerate(zip(before, after))
-        if prompt_sequence_digest(left) != prompt_sequence_digest(right)
+        for index, (left, right) in enumerate(pairs)
+        if replay_digest(left) != replay_digest(right)
     ]
+    sent_identical = all(
+        prompt_sequence_digest(left.prompts) == prompt_sequence_digest(right.prompts)
+        for left, right in pairs
+    )
     return {
         "policy": policy_name,
         "identical": not differing,
+        # What the model saw, ignoring the refusal -- so a divergence can be named as one the
+        # episode SENT or one it only built.
+        "sent_identical": sent_identical,
+        "refused_prompt_moved": any(
+            (left.status, left.refused_prompt_chars) != (right.status, right.refused_prompt_chars)
+            for left, right in pairs
+        ),
         "n_tasks": len(tasks),
+        # How many episodes ended on a prompt the guard refused, per side. Zero on both is what
+        # makes a cell's verdict a statement about sent prompts alone.
+        "baseline_refused_tasks": sum(record.refused for record in before),
+        "candidate_refused_tasks": sum(record.refused for record in after),
         "n_differing_tasks": len(differing),
         "first_divergent_step": _first_divergent_step(before, after, differing),
-        "baseline_digest": prompt_sequence_digest(
-            [prompt for episode in before for prompt in episode]
-        ),
-        "candidate_digest": prompt_sequence_digest(
-            [prompt for episode in after for prompt in episode]
-        ),
+        "baseline_digest": replay_sequence_digest(before),
+        "candidate_digest": replay_sequence_digest(after),
     }
 
 
 def _first_divergent_step(
-    baseline: list[list[str]], candidate: list[list[str]], differing: list[int]
+    baseline: list[ReplayedEpisode], candidate: list[ReplayedEpisode], differing: list[int]
 ) -> int | None:
-    """The earliest 1-based model call at which any task's two replays stop agreeing."""
+    """The earliest 1-based model call at which any task's two replays stop agreeing.
+
+    A pair whose sent prompts agree but whose refusals do not diverges at the call neither replay
+    made: the prompt the guard refused sits one past the last recorded one, which is the same
+    position an equal prefix with different lengths already reports.
+    """
     steps = []
     for index in differing:
-        left, right = baseline[index], candidate[index]
+        left, right = baseline[index].prompts, candidate[index].prompts
         pairs = list(zip(left, right))
         diverged = next(
             (step for step, (one, other) in enumerate(pairs, start=1) if one != other), None
         )
-        # Equal prefixes with different lengths diverge at the first call only one of them made.
+        # Equal prefixes with different lengths diverge at the first call only one of them made,
+        # and equal sequences that differ only in the refusal diverge at the refused prompt.
         steps.append(diverged if diverged is not None else len(pairs) + 1)
     return min(steps, default=None)
 
