@@ -241,7 +241,7 @@ bench-agentic-context-compact-crossover-restatement: ## Restate every published 
 		$(if $(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE),--surface-aggregate "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE)",) \
 		$(if $(filter 1 true yes,$(AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY)),--audit-only,)
 
-bench-agentic-published-provenance: ## Re-commit the run aggregates EVERY registered published-value design resolves against (the union, so no study's evidence is pruned), and their content pins, from the artifacts under DATA_DIR
+bench-agentic-published-provenance: ## Re-commit the run aggregates EVERY registered published-value design resolves against (the union, so no study's evidence is pruned) and their content pins, from the artifacts under DATA_DIR, then name any published value that evidence no longer states (exit 3; the write still stands)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-crossover-restatement \

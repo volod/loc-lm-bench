@@ -27,6 +27,15 @@ hold. A design registered for the first and validated by nothing would ship comm
 unchecked claims, which reads exactly like the checked case. So registration buys both: the walk
 here validates every registered design, and an entry that registers no validation is refused rather
 than skipped, since a registry that silently walks past an entry is how the gap would reopen.
+
+The two walks are ONE walk, in both directions. Regenerating the evidence and asking whether the
+published values still resolve out of it are the same question asked by the same registry, so a
+refresh that answered only the first left the second to a later `make ci` -- an operator who re-ran a
+study, committed the new aggregates, and saw a clean manifest path learned on some other day that
+the design's numbers are now the old run's, at the point where the fix is a design edit they no
+longer have the run context for. `report_published_designs` is therefore the primitive: it collects
+what did not resolve instead of raising, `validate_published_designs` is the refusing form over it,
+and `refresh_committed_evidence_and_report` runs it across what the refresh just wrote.
 """
 
 from collections.abc import Callable
@@ -135,23 +144,77 @@ def registered_design_path(kind: str, design: PublishedValueDesign, design_root:
     return path
 
 
+@dataclass(frozen=True, slots=True)
+class UnresolvedDesign:
+    """A registered design whose published values the committed evidence does not state.
+
+    Carried rather than raised. An operator who re-ran a study and regenerated the evidence is about
+    to edit published numbers, and a walk that stopped at the first refusal would hand them one name
+    per re-run of the refresh -- so the walk collects, and whoever wants a refusal builds one.
+    """
+
+    kind: str
+    design_path: str
+    reason: str
+
+    def named(self) -> str:
+        """One line naming the design and the value its committed evidence no longer states."""
+        return f"{self.kind} ({self.design_path}): {self.reason}"
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedValueReport:
+    """One walk of the registry: the designs it read, and the ones whose values did not resolve.
+
+    `walked` is carried for the reason the validation returns it -- a walk that checked nothing reads
+    exactly like one that checked everything -- and it is what lets a refresh name the designs its
+    clean answer speaks for rather than reporting only that nothing complained.
+    """
+
+    walked: tuple[str, ...]
+    unresolved: tuple[UnresolvedDesign, ...]
+
+
+def report_published_designs(
+    *, root: Path, design_root: Path | None = None, data_dir: Path | None = None
+) -> PublishedValueReport:
+    """Resolve every registered design's published values, collecting refusals instead of raising.
+
+    The collecting form is the primitive and the refusing one is built on it, so what CI fails on and
+    what a refresh reports are the same walk over the same registry rather than two that can drift.
+    """
+    walked: list[str] = []
+    unresolved: list[UnresolvedDesign] = []
+    for kind, design in sorted(PUBLISHED_VALUE_DESIGNS.items()):
+        walked.append(kind)
+        try:
+            path = registered_design_path(
+                kind, design, design_root if design_root is not None else root
+            )
+            design.validate_published_values(path, root=root, data_dir=data_dir)
+        except ValueError as exc:
+            unresolved.append(
+                UnresolvedDesign(kind=kind, design_path=design.design_path, reason=str(exc))
+            )
+    return PublishedValueReport(walked=tuple(walked), unresolved=tuple(unresolved))
+
+
 def validate_published_designs(
     *, root: Path, design_root: Path | None = None, data_dir: Path | None = None
 ) -> list[str]:
-    """Resolve every registered design's published values against the committed evidence.
+    """Resolve every registered design's published values, refusing if any of them does not.
 
     Returns the kinds walked. Returned rather than nothing, because the failure this walk exists to
     prevent is silence: a registry that validated no design passes exactly like one that validated
     them all, so a caller states how many it expected rather than trusting a clean run.
+
+    The refusal names EVERY unresolved design rather than the first, since the walk already has them
+    all and a reader fixing one at a time is the same slow loop in CI that it is at the refresh.
     """
-    walked: list[str] = []
-    for kind, design in sorted(PUBLISHED_VALUE_DESIGNS.items()):
-        path = registered_design_path(
-            kind, design, design_root if design_root is not None else root
-        )
-        design.validate_published_values(path, root=root, data_dir=data_dir)
-        walked.append(kind)
-    return walked
+    report = report_published_designs(root=root, design_root=design_root, data_dir=data_dir)
+    if report.unresolved:
+        raise ValueError("; ".join(unresolved.named() for unresolved in report.unresolved))
+    return list(report.walked)
 
 
 def published_citations(design_root: Path) -> dict[str, list[str]]:
@@ -195,3 +258,18 @@ def refresh_committed_evidence(
             )
         cited[artifact] = path.read_bytes()
     return write_provenance_fixture(root, cited, cited_by=citations)
+
+
+def refresh_committed_evidence_and_report(
+    *, root: Path, data_dir: Path, design_root: Path | None = None
+) -> tuple[Path, PublishedValueReport]:
+    """Re-commit the union, then say whether the published values still resolve out of what it wrote.
+
+    Reported, never rolled back. A refresh after a re-run IS the repair flow: the new aggregates are
+    what the operator has to commit before they can restate anything, so refusing the write would
+    leave them with neither the new evidence nor a way to record it. The write stands and the values
+    it no longer states are named while the run is still in front of the operator, instead of
+    arriving as a CI failure on a day when the fix is a design edit with no run context behind it.
+    """
+    manifest = refresh_committed_evidence(root=root, data_dir=data_dir, design_root=design_root)
+    return manifest, report_published_designs(root=root, design_root=design_root, data_dir=data_dir)

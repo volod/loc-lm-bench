@@ -1676,6 +1676,24 @@ validated, so a registry that checked nothing is distinguishable from one that c
 instead of both passing. A design the repo does not carry fails the validation walk for the same
 reason it fails the refresh: unknown claims are not the same as none.
 
+The refresh runs that walk over what it just wrote, so regenerating the evidence and finding out
+whether the published values still resolve out of it are one command rather than two days apart.
+They are the same question asked of the same registry, and while only the first half was answered at
+the refresh an operator who re-ran a study, re-committed its aggregates, and read a clean
+`provenance manifest -> ...` learned on some LATER `make ci` that the design's numbers are now the
+old run's -- at the point where the fix is a design edit and the run context is gone.
+`report_published_designs` is therefore the primitive: it collects what did not resolve instead of
+raising, `validate_published_designs` is the refusing form built on it (so CI and the refresh read
+the same walk, and the CI refusal names EVERY unresolved design rather than the first), and
+`refresh_committed_evidence_and_report` composes the write with the walk.
+`make bench-agentic-published-provenance` then either names the walked kinds -- named rather than
+counted, for the same reason the walk returns them -- or names each design and the value its own
+evidence no longer states, and exits `3` (distinct from the usage refusals' `2`, which write
+nothing). The write STANDS in that failing case, and is not rolled back: a refresh after a re-run is
+exactly the repair flow, so the new aggregates are what the operator has to commit before they can
+restate anything, and refusing would leave them with neither the evidence nor a way to record it.
+Report-and-exit, not refuse-and-revert.
+
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
 `depth_ladders[depth=10].boundary.guard_boundary_chars`, `cap_peak_prompt_chars.6`. One walk serves
@@ -1740,7 +1758,8 @@ both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_r
 read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
 manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
 `src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
-refresh, and the validation walk), `src/llb/bench/agentic_published_value_provenance.py` (the
+refresh, the collecting and refusing walks over it, and the refresh that reports on what it just
+wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
 `(artifact, field)` pair and the two-source read -- all four study-agnostic, so any published
 agentic number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
@@ -1771,7 +1790,11 @@ an aggregate both cite carried once, and each of the three refusals -- a partial
 unreadable registered design, and a write that would drop a still-cited copy -- plus the prune that
 a design retired from the registry still gets, the validation walk over every registered design
 including what it is handed and what it returns, a registered design whose values do not resolve,
-an entry that registers no validation, and the CI assertion over the shipped registry), and
+an entry that registers no validation, and the CI assertion over the shipped registry),
+`tests/llb/bench/test_agentic_published_evidence_refresh.py` (the collecting walk beside the
+refusing one, the refresh that names what it committed and does not roll it back, the real design
+against a host whose boundary-surface run moved the depth-10 guard, and the command's exit code on
+both answers), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
 resolved out of the committed aggregates, a transcription slip in each form, the re-derived band,
 the committed bytes checked against this host's own run artifacts, the growth budget, and the no-op

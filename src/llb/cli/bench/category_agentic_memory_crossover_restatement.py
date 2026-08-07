@@ -1,11 +1,43 @@
 """CLI orchestration for restating published crossovers under the shipped summarize-input cap."""
 
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import typer
 
 from llb.cli.app import app
+
+if TYPE_CHECKING:
+    from llb.bench.agentic_published_value_registry import PublishedValueReport
+
+# The refresh WROTE its evidence and the designs no longer state their published numbers out of it.
+# Distinct from the usage refusals, which exit 2 having written nothing: here the repair is a design
+# edit rather than a corrected command, and the operator's next step is to restate the named values.
+EXIT_UNRESOLVED_PUBLISHED_VALUES = 3
+
+
+def _echo_refresh_report(report: "PublishedValueReport") -> None:
+    """Say whether the evidence just committed still states the numbers the designs publish.
+
+    Reported with a non-zero exit rather than refused: the write is the first half of the repair
+    flow, so the operator keeps the new evidence and learns here which published numbers to restate,
+    instead of meeting the same answer as a `make ci` failure once the run context is gone.
+    """
+    for unresolved in report.unresolved:
+        typer.echo(f"[restatement] unresolved: {unresolved.named()}")
+    if report.unresolved:
+        typer.echo(
+            f"[restatement] {len(report.unresolved)}/{len(report.walked)} registered designs "
+            "publish values the evidence just committed does not state -- the write stands, so "
+            "restate the values named above rather than regenerating again"
+        )
+        raise typer.Exit(code=EXIT_UNRESOLVED_PUBLISHED_VALUES)
+    # The kinds are named rather than counted: a walk that checked nothing reports exactly like one
+    # that checked everything, and the operator is being told a clean answer they will act on.
+    typer.echo(
+        "[restatement] every published value resolves out of the evidence just committed "
+        f"(walked: {', '.join(report.walked)})"
+    )
 
 
 def _newest_surface_analysis(data_dir: Path) -> dict[str, object] | None:
@@ -44,7 +76,8 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
         False,
         "--refresh-provenance",
         help="re-commit the run aggregates EVERY registered design's published values are resolved "
-        "against, and their content pins, from the artifacts under DATA_DIR, and stop",
+        "against, and their content pins, from the artifacts under DATA_DIR, then report which of "
+        "those values the evidence just committed no longer states, and stop",
     ),
 ) -> None:
     """Audit which published cells the shipped cap can move, re-measure only those, and restate."""
@@ -62,7 +95,7 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     )
     from llb.bench.agentic_published_value_registry import (
         PUBLISHED_VALUE_DESIGNS,
-        refresh_committed_evidence,
+        refresh_committed_evidence_and_report,
     )
     from llb.bench.agentic_memory_crossover_restatement_report import (
         format_restatement_table,
@@ -90,10 +123,13 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
                 f"that design in PUBLISHED_VALUE_DESIGNS to have the refresh carry its evidence too"
             )
         try:
-            written = refresh_committed_evidence(root=root, data_dir=host_data_dir)
+            written, report = refresh_committed_evidence_and_report(
+                root=root, data_dir=host_data_dir
+            )
         except (KeyError, ValueError) as exc:
             cli_error(str(exc))
         typer.echo(f"[restatement] provenance manifest -> {written}")
+        _echo_refresh_report(report)
         return
     try:
         design = load_restatement_design(design_path)

@@ -43,31 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-evidence-refresh-does-not-say-whether-what-it-committed-still-resolves (optional)
+### agent-unresolved-published-values-are-named-one-design-at-a-time (optional)
 
-The regeneration and the validation walk the same registry and never speak to each other: a refresh
-commits the union of the cited aggregates and reports the manifest path, while whether the published
-values still resolve out of those bytes is answered by `validate_published_designs` in CI
+The refresh now names what the evidence it just wrote no longer states, and the walk over the
+registry collects every DESIGN rather than stopping at the first
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-So the operator who re-runs a study, regenerates the evidence, and sees a clean
-`provenance manifest -> ...` learns on the NEXT `make ci` that the design's published numbers are
-now the old run's -- at the point where the fix is a design edit they no longer have the run context
-for. Have the refresh run the validation over what it just wrote and REPORT the unresolved values by
-name, with a non-zero exit; report rather than refuse, because a refresh after a re-run is exactly
-the repair flow, and a refusal that rolled back the write would leave the operator unable to commit
-the new evidence at all.
+Inside one design the granularity is still coarse: `validate_published_provenance` raises at the
+first crossover whose value the aggregate does not hold, so a re-run that moved three of a study's
+six published numbers reports one, and the operator restates it, re-runs the refresh, and meets the
+next one -- the same one-name-per-run loop the refresh was built to end, just moved inside a design.
+Make the per-form resolution collect: resolve every crossover, gather the mismatches, and refuse
+once with all of them named. Two edges make it worth doing carefully rather than mechanically -- the
+derived band is a QUOTIENT of an interpolated guard, so a moved guard must not also be reported as a
+separate moved band (report the cause, mark the band as unresolvable-from-here), and shape refusals
+must still fail before any value is read, since a malformed design has no values to collect.
 
 - Agent status: CLEAR
-- Dependencies: the two walks are `refresh_committed_evidence` and `validate_published_designs` in
-  `src/llb/bench/agentic_published_value_registry.py`; the CLI seam is `--refresh-provenance` in
-  `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, which currently returns
-  straight after echoing the manifest path.
-- User-visible outcome: `make bench-agentic-published-provenance` says whether the evidence it just
-  committed still states the numbers the designs publish, instead of deferring that to a later CI
-  failure.
-- Scope boundary: in scope -- the post-write validation pass, the named unresolved values, the exit
-  code, and the fixture case where a re-run moved a value. Out of scope -- rewriting a published
-  value automatically, refusing or rolling back the write, and re-running a published cell.
+- Dependencies: the per-form resolution is
+  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the registry-level collecting
+  walk it would feed is `report_published_designs` in
+  `src/llb/bench/agentic_published_value_registry.py`, whose `UnresolvedDesign.reason` is the string
+  that would carry the list.
+- User-visible outcome: one `make bench-agentic-published-provenance` after a re-run names every
+  published number that moved, so restating a study is one design edit rather than a loop.
+- Scope boundary: in scope -- collecting the per-crossover mismatches, the cause-versus-consequence
+  rule for the derived band, keeping shape refusals fail-fast, and the fixture case where a re-run
+  moved several values at once. Out of scope -- restating a value automatically, changing the exit
+  code or the report's shape at the registry level, and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
