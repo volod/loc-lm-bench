@@ -9,7 +9,7 @@ LAST fold step at which compact is still cheaper.
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_gate import SIDE_CAP_CHEAPER, SIDE_COMPACT_CHEAPER
-from llb.bench.agentic_memory_boundary_probe import (
+from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,

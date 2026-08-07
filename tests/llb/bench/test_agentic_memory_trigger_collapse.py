@@ -7,11 +7,8 @@ import re
 
 import pytest
 
-from llb.bench.agentic_memory_boundary_probe import (
-    compaction_trigger_chars,
-    guard_is_cap_fitting,
-    oracle_controller,
-)
+from llb.bench.agentic_memory_boundary_probe import oracle_controller
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, guard_is_cap_fitting
 from llb.bench.agentic_memory_trigger_collapse import analyze_collapse, run_collapse_families
 from llb.bench.agentic_memory_trigger_collapse_design import (
     collapse_cap_peaks,

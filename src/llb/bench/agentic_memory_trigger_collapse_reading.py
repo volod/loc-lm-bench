@@ -10,7 +10,7 @@ does not clear the same band, an equal-trigger agreement measures nothing and th
 
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import compaction_trigger_chars, first_fold_step
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
 
 STUDY_KIND = "compact_trigger_guard_collapse"
 METHOD = "agentic-compact-trigger-guard-collapse"

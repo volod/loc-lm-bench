@@ -11,9 +11,11 @@ moved fields: each field audited ALONE must change no prompt, and the two togeth
 What differs per pair is the arithmetic those statements turn into, so the conditions live with the
 coupling (`agentic_policy_change_interaction_couplings`) and this module only intersects them.
 
-For `compact_share` x `summary_input_cap` all three are intervals the boundary probe computes -- the
-two shares' fold-step guard intervals, and the two elision inequalities against the transcript the
-fold offers the summarizer, measured once per fold step with an oracle controller and no model. The
+For `compact_share` x `summary_input_cap` all three are intervals solvable before any run -- the two
+shares' fold-step guard intervals, which are ladder arithmetic (`agentic_memory_fold_step_ladder`)
+over one measured prompt sequence, and the two elision inequalities against the transcript the fold
+offers the summarizer, which the boundary probe measures once per fold step by walking the episode
+with an oracle controller and no model. The
 direction is fixed there: the baseline bound must be `window` and the candidate `trigger`; the
 reverse cannot separate and is refused rather than answered. Every OTHER pair states conditions that
 contradict each other at every fold step, and the solver reports that as no band -- with the
@@ -26,7 +28,8 @@ interaction.py` replays the audit at both edges of a solved band and at the guar
 from dataclasses import dataclass
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, foldable_fold_steps
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import foldable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_SHARE,

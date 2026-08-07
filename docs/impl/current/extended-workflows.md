@@ -1121,7 +1121,9 @@ cell must also keep its preconditions -- zero cap overflows, zero compact overfl
 above the activation floor, paired completion, and both policies above the cell completion floor --
 or it is reported invalid with the named reason instead of bending the crossover.
 
-Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (oracle probe and usable band),
+Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (the oracle episode walk that
+measures the peak), `src/llb/bench/agentic_memory_fold_step_ladder.py` (`usable_guard_band` and
+`guard_is_cap_fitting`, the band arithmetic over that peak),
 `src/llb/bench/agentic_memory_boundary_gate.py` (the direction-aware lower-is-better cost gate,
 shared with the replication above), `src/llb/bench/agentic_memory_boundary_surface_cells.py` (grid
 contract and per-cell validity), `src/llb/bench/agentic_memory_boundary_crossover.py` (the
@@ -1275,9 +1277,22 @@ the flip is localized no better than the old bracket was). Cell preconditions --
 fires above the activation floor, completion paired -- are the surface's unchanged gate, and a cell
 whose measured fold step drifts from its declared one aborts the analysis rather than being re-read.
 
-Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (the trigger/guard interval
-inverse, the reachable and foldable ladders, and `compaction_trigger_chars`, now shared with the
-collapse study and with the policy-change band solver),
+That arithmetic is separated from the episode walk that feeds it, because the two cost wildly
+different things to call and a shared module name hid which one an import line was reaching for.
+`src/llb/bench/agentic_memory_fold_step_ladder.py` holds the pure half -- the trigger/guard interval
+inverse, `first_fold_step`, the reachable and foldable ladders, `live_entries_at_fold_step`,
+`compaction_trigger_chars`, `smallest_guard_reaching`, `usable_guard_band`, and
+`guard_is_cap_fitting` -- every one a function of a prompt-size SEQUENCE plus a share or a guard,
+cheap enough for the placement rules, the summarize-cap ladder, and the policy-change band solver to
+sweep in a tight loop. `src/llb/bench/agentic_memory_boundary_probe.py` keeps the half that RUNS
+episodes (`oracle_controller`, `oracle_compacting_controller`, `compact_fold_input_probe`,
+`cap_prompt_sequence`, `cap_peak_prompt_chars`), each call a full workflow walk per task. No
+re-export layer bridges them: every caller imports from the module that owns the name, so an import
+line says which cost it is paying.
+
+Core locations are `src/llb/bench/agentic_memory_fold_step_ladder.py` (the interval arithmetic
+above, shared with the collapse study, the summarize-cap arms, and the policy-change band solver),
+`src/llb/bench/agentic_memory_boundary_probe.py` (the oracle prompt sequence it is computed over),
 `src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
 `src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows),
 `src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
@@ -1715,8 +1730,9 @@ task world shifts every prompt size and walks the committed guards out of it. Th
 searched for, it is SOLVED: three conditions, each a half-open guard interval, intersected per fold
 step. The three are the same three for ANY pair of moved fields -- each field audited alone must
 change no prompt, and the two together must change one -- and what differs per pair is the
-arithmetic they turn into. For this pair all three are intervals the boundary probe already
-computes:
+arithmetic they turn into. For this pair all three are intervals the fold-step ladder and the
+boundary probe already give between them -- the guard intervals are ladder arithmetic over one
+measured prompt sequence, the offered transcript is what the probe's episode walk reports:
 
 | condition | why | interval |
 | --- | --- | --- |
@@ -1803,7 +1819,7 @@ about a fold that cannot happen, and since the report carries each condition onc
 blocked step, that vacuous row would LEAD the answer with its least informative line. Dropping it
 moves no solved band: the two committed bands are unchanged, and the step it drops states a
 condition no guard satisfies anyway. The ladder itself is `foldable_fold_steps` in
-`agentic_memory_boundary_probe`, beside the `reachable_fold_steps` it narrows, and the fold-step
+`agentic_memory_fold_step_ladder`, beside the `reachable_fold_steps` it narrows, and the fold-step
 placement rules are placed against the same one
 ([the crossover is a fold step](#the-crossover-is-a-fold-step-not-a-char-guard)).
 

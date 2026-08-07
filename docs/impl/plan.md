@@ -43,32 +43,27 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-boundary-probe-splits-the-episode-walk-from-the-ladder-arithmetic (optional)
+### agent-fold-step-ladder-tests-mirror-the-module-split (optional)
 
-`agentic_memory_boundary_probe` now holds two kinds of thing behind one name, and it is ~280 lines,
-over the ~250-line soft limit `scripts/code_quality.sh` reports: the probes that RUN episodes
-(`oracle_controller`, `oracle_compacting_controller`, `compact_fold_input_probe`,
-`cap_prompt_sequence`, `cap_peak_prompt_chars`) and the pure ladder arithmetic that needs no episode
-at all (`first_fold_step`, `fold_step_trigger_interval`, `reachable_fold_steps`,
-`foldable_fold_steps`, `live_entries_at_fold_step`, `compaction_trigger_chars`,
-`smallest_guard_reaching`, `fold_step_guard_interval`, `usable_guard_band`, `guard_is_cap_fitting`).
-The second group is what the fold-step placement rules, the summarize-cap ladder, and the
-policy-change band solver all import, and its members are cheap to call in a tight loop while the
-first group runs whole episodes -- a distinction the shared module name hides from a caller reading
-an import line. Split the arithmetic into its own module (e.g. `agentic_memory_fold_step_ladder`) and
-repoint call sites to it directly, with no re-export layer left behind; about 25 files import the
-probe today, so budget the change as mechanical breadth rather than depth.
+The ladder arithmetic is its own module (`src/llb/bench/agentic_memory_fold_step_ladder.py`) but has
+no test file of its own: its unit tests live inside the study test that happens to exercise the most
+of them, `tests/llb/bench/test_agentic_memory_fold_step_crossover.py`, which is ~355 lines and over
+the ~250-line soft limit `scripts/code_quality.sh` reports. That file now mixes two subjects -- the
+interval algebra (empty intervals, the reachable-versus-foldable difference, the truncating guard
+inverse, the usable band) and the crossover study's placement and reading rules -- so a failure in
+either reads as a failure of "the crossover test", and a caller looking for the ladder's contract has
+no file named for it. Move the pure-arithmetic cases into
+`tests/llb/bench/test_agentic_memory_fold_step_ladder.py` and leave the study cases behind; the same
+seam is visible in `tests/llb/bench/test_agentic_policy_change_interaction_{band,cap}.py`, which
+import ladder names to build their own geometry rather than to test it, so those stay put.
 
 - Agent status: CLEAR
-- Dependencies: the module is `src/llb/bench/agentic_memory_boundary_probe.py`; the heaviest callers
-  are `src/llb/bench/agentic_memory_fold_step_placement.py`,
-  `src/llb/bench/agentic_policy_change_interaction_{band,conditions,cap}.py`, and
-  `tests/llb/bench/test_agentic_memory_fold_step_crossover.py`.
-- User-visible outcome: an import line says whether the caller is doing interval arithmetic or
-  running episodes, and neither half of the module has to be read to understand the other.
-- Scope boundary: in scope -- the module split, the repointed imports, and the unchanged behavior of
-  every study that reads a ladder. Out of scope -- changing any interval rule, any placement rule, or
-  any committed design.
+- Dependencies: none. The module split and the repointed imports are current behavior
+  ([extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard)).
+- User-visible outcome: a failing ladder assertion names the ladder, and the crossover test file
+  reads as one subject.
+- Scope boundary: in scope -- the test move, the split file, and the unchanged assertion set. Out of
+  scope -- adding coverage, changing any interval rule, and touching the source modules.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 

@@ -33,8 +33,8 @@ already-computed sequences rather than a second replay.
 from dataclasses import dataclass
 from typing import Any
 
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import (
     live_entries_at_fold_step,
     smallest_guard_reaching,
 )

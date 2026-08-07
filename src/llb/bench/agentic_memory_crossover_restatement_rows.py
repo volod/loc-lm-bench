@@ -10,8 +10,8 @@ number still names the fold step the published one named.
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED, depth_surface_row
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,

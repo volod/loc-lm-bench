@@ -7,7 +7,8 @@ import re
 
 import pytest
 
-from llb.bench.agentic_memory_boundary_probe import (
+from llb.bench.agentic_memory_boundary_probe import oracle_controller
+from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,
@@ -15,7 +16,6 @@ from llb.bench.agentic_memory_boundary_probe import (
     foldable_fold_steps,
     guard_is_cap_fitting,
     live_entries_at_fold_step,
-    oracle_controller,
     reachable_fold_steps,
     smallest_guard_reaching,
 )

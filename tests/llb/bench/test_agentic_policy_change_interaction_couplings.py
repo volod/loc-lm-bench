@@ -21,7 +21,7 @@ from llb.bench.agentic.context import (
     is_summary_prompt,
 )
 from llb.bench.agentic.model import AgenticTask
-from llb.bench.agentic_memory_boundary_probe import live_entries_at_fold_step
+from llb.bench.agentic_memory_fold_step_ladder import live_entries_at_fold_step
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
 from llb.bench.agentic_policy_change_audit import AUDITABLE_FIELDS, PolicyChange, audit_cell_prompts
 from llb.bench.agentic_policy_change_interaction_band import (

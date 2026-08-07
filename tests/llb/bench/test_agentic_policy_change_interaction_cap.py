@@ -17,11 +17,8 @@ from llb.bench.agentic.context import (
     ContextState,
     compact_state,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
-    foldable_fold_steps,
-    smallest_guard_reaching,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import foldable_fold_steps, smallest_guard_reaching
 from llb.bench.agentic_policy_change_interaction_band import (
     format_band_report,
     separating_guard_bands,

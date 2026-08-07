@@ -3,8 +3,8 @@
 Every builder here answers the same three questions for one fold step -- is the first field silent
 audited alone, is the second, and do the two together move a prompt -- in the arithmetic that pair
 actually runs on (`agentic_policy_change_interaction_terms` holds the shape of an answer). For
-`compact_share` x `summary_input_cap` all three are intervals the boundary probe computes, which is
-why that pair has a solvable band. For every other pair two of the three contradict each other by
+`compact_share` x `summary_input_cap` all three are intervals the fold-step ladder and the boundary
+probe compute between them, which is why that pair has a solvable band. For every other pair two of the three contradict each other by
 construction, and the condition says so in its own words rather than by returning an empty answer
 nobody can read: a keep that folds the whole transcript cannot also fold a different span, and a
 head share that moves no prompt LENGTH gives no partner field anything to read.
@@ -17,8 +17,8 @@ that arithmetic is the substance of the answer rather than a detail of it.
 from typing import cast
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW
-from llb.bench.agentic_memory_boundary_probe import (
-    compact_fold_input_probe,
+from llb.bench.agentic_memory_boundary_probe import compact_fold_input_probe
+from llb.bench.agentic_memory_fold_step_ladder import (
     fold_step_guard_interval,
     fold_step_trigger_interval,
     live_entries_at_fold_step,
@@ -50,7 +50,7 @@ def folds_at_this_step(step: StepGeometry) -> BandCondition:
 
 
 def share_bound_conditions(step: StepGeometry) -> StepConditions:
-    """`compact_share` x `summary_input_cap`: three intervals the boundary probe already computes."""
+    """`compact_share` x `summary_input_cap`: three intervals the ladder and the probe already give."""
     baseline_share, candidate_share = _separating_shares(step.change)
     trigger = fold_step_trigger_interval(step.sequence, step.step)
     folds = [

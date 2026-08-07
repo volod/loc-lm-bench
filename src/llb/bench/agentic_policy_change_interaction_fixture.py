@@ -26,12 +26,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
-    compact_fold_input_probe,
-    compaction_trigger_chars,
-    first_fold_step,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
 from llb.bench.agentic_policy_change_audit import (
     KIND_INTERACTION,
     PolicyChange,

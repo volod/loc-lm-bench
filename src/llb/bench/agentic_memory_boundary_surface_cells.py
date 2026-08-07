@@ -14,11 +14,8 @@ from llb.bench.agentic_memory_boundary_gate import (
     SIDE_COMPACT_CHEAPER,
     boundary_cost_evidence,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_peak_prompt_chars,
-    guard_is_cap_fitting,
-    usable_guard_band,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars
+from llb.bench.agentic_memory_fold_step_ladder import guard_is_cap_fitting, usable_guard_band
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
 

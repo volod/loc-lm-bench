@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import compaction_trigger_chars
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars
 from llb.bench.agentic_memory_trigger_collapse_reading import (
     KIND_EQUAL_TRIGGER,
     METHOD,

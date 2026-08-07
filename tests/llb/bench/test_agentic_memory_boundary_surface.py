@@ -13,12 +13,8 @@ from llb.bench.agentic_memory_boundary_crossover import (
     READING_COMPACT_ACROSS_GRID,
     interpolate_crossover,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_peak_prompt_chars,
-    guard_is_cap_fitting,
-    oracle_controller,
-    usable_guard_band,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars, oracle_controller
+from llb.bench.agentic_memory_fold_step_ladder import guard_is_cap_fitting, usable_guard_band
 from llb.bench.agentic_memory_boundary_surface import (
     READING_INELIGIBLE,
     READING_INVALID,
