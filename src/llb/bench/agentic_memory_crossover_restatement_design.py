@@ -20,6 +20,9 @@ from llb.bench.agentic_memory_crossover_restatement_placement import (
     validate_derived_placements,
     validate_published_placement,
 )
+from llb.bench.agentic_memory_crossover_restatement_provenance import (
+    validate_published_provenance,
+)
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     CROSSOVER_FORMS,
     FORM_PORTABLE_RATIO,
@@ -36,8 +39,15 @@ def load_restatement_design(path: Path | str) -> dict[str, object]:
     return load_transfer_design(path)
 
 
-def validate_restatement_design(design: dict[str, object], *, root: Path) -> None:
-    """Refuse a design that does not pin the shipped bound or misnames a study it restates."""
+def validate_restatement_design(
+    design: dict[str, object], *, root: Path, data_dir: Path | None = None
+) -> None:
+    """Refuse a design that does not pin the shipped bound or misnames a study it restates.
+
+    `data_dir` is the host's run root. It is optional because the resolution below is authoritative
+    against the COMMITTED slice of each aggregate -- CI has no runs -- and the artifacts themselves
+    are read only as a check that the slice still matches what a host that ran the study holds.
+    """
     if design.get("schema_version") != 1 or design.get("study_kind") != STUDY_KIND:
         raise ValueError("crossover restatement design schema or study kind is invalid")
     if float(cast(float, design.get("reporting_confidence", 0.0))) != REPORTING_CONFIDENCE:
@@ -68,7 +78,12 @@ def validate_restatement_design(design: dict[str, object], *, root: Path) -> Non
         raise ValueError("the restatement needs at least one uniquely named audited study")
     for study in studies:
         _validate_study(study, root)
-    validate_derived_placements(published_crossovers(design))
+    crossovers = published_crossovers(design)
+    validate_derived_placements(crossovers)
+    # Resolution runs LAST: it is the only rule that reads outside the repo's design files, and its
+    # message is about a number's evidence rather than about the design's shape, so a malformed
+    # design should never reach it.
+    validate_published_provenance(crossovers, root=root, data_dir=data_dir)
 
 
 def audited_designs(design: dict[str, object], *, root: Path) -> dict[str, dict[str, object]]:

@@ -43,31 +43,29 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-crossover-values-are-transcribed-not-resolved (optional)
+### agent-published-value-slices-are-unfalsifiable-once-the-run-root-is-gone (optional)
 
-The fold-step ANNOTATION on every published crossover is now checked against the study's own
-geometry, but the VALUE beside it is still a hand-copied float
+A published crossover now resolves against a committed slice of its run aggregate, and the slice is
+cross-checked against the aggregate itself only on a host that still HAS that run root
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-`14159.929807575942` and `21899.890064587056` are the boundary surface's interpolated crossings and
-nothing resolves them back to the aggregate that produced them, so a digit dropped while transcribing
-lands INSIDE the same fold step for any small slip and passes every check the design has -- the
-annotation check catches only a slip large enough to leave the interval. Resolve the values instead:
-point each published crossover at the run artifact and the field it came from, load it at design
-validation, and refuse a mismatch. The same seam covers the fold-step study's boundary values and
-the collapse's band, and it is the crossover-level instance of the provenance idea
-[agent-published-number-provenance-pins](#agent-published-number-provenance-pins) proposes for the
-docs -- build whichever lands first against the other's fixture rather than two mappings.
+Every other host -- CI, a fresh clone, this host after a `.data` cleanup -- resolves against the
+slice alone, and nothing there can tell a slice cut from the cited run from a slice cut from a
+different one or edited by hand: the resolution proves internal agreement, not that the cited
+artifact ever said this. Pin the artifact instead of naming it: record a content digest of each
+cited aggregate beside its slice, refuse a slice whose digest is absent, and on a host that has the
+run refuse a digest that does not match the file. That turns "the slice agrees with itself" into
+"the slice was cut from THIS run", which is the claim the provenance seam is read as making.
 
 - Agent status: CLEAR
-- Dependencies: the values are `published_crossovers` in
-  `samples/benchmarks/agentic_compact_crossover_restatement_design.json`, validated by
-  `_validate_crossover` in `src/llb/bench/agentic_memory_crossover_restatement_design.py`; the
-  aggregates are the boundary-surface and fold-step run roots recorded in the evidence sections.
-- User-visible outcome: a published number in a design file is the number the run measured, not a
-  number someone typed from a table.
-- Scope boundary: in scope -- the artifact reference per crossover, the resolution at validation, a
-  committed fixture aggregate so CI resolves without a run, and the mismatch refusal. Out of scope --
-  re-running a published cell, and changing any published value the resolution confirms.
+- Dependencies: the slice and its two-source read are `PublishedValueResolver` and
+  `write_provenance_fixture` in `src/llb/bench/agentic_published_value_provenance.py`; the
+  regeneration that would record the digest is `refresh_provenance_fixture` in
+  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`.
+- User-visible outcome: a committed slice states which run it was cut from, so a hand-edited or
+  mis-cut slice fails on a host that never ran the study rather than only on one that did.
+- Scope boundary: in scope -- the per-artifact digest, its refusals, and the regeneration that
+  records it. Out of scope -- committing the aggregates themselves, re-running a published cell, and
+  changing any published value the resolution confirms.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
@@ -201,15 +199,18 @@ design values as the fallback for a hand-run CLI audit, and add the fixture case
 The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the
 numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
 fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
-find every affected figure by reading. Extend the pinning idea from constants to published values --
-a committed provenance fixture mapping each published agentic number to `(study kind, cell id,
-artifact path, metric)` -- and have the gate print the exact figures a drifted constant retires,
-not only the cells. The same fixture makes a second check cheap: assert every mapped artifact path
-still resolves, which catches a number whose evidence was garbage-collected.
+find every affected figure by reading. Extend the resolution the crossover design already carries --
+`(artifact, field)` per published value, resolved against a committed slice
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)) --
+from the six design values to the figures the DOCS publish, keyed additionally by study kind and
+cell id, and have the gate print the exact figures a drifted constant retires, not only the cells.
+Reuse the existing pointer walk and slice fixture rather than adding a second mapping.
 
 - Agent status: CLEAR
 - Dependencies: the cell ids and re-run scope come from
-  `src/llb/bench/agentic_policy_pin_gate.py`; the artifact paths are the run roots already recorded
+  `src/llb/bench/agentic_policy_pin_gate.py`; the resolution seam is
+  `src/llb/bench/agentic_published_value_provenance.py` (field pointers, committed slices, and the
+  refusal for an artifact no slice covers); the artifact paths are the run roots already recorded
   in the evidence sections of
   [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
 - User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody

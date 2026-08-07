@@ -40,6 +40,12 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
         "--audit-only",
         help="report the model-free bound audit and stop, without running any cell",
     ),
+    refresh_provenance: bool = typer.Option(
+        False,
+        "--refresh-provenance",
+        help="regenerate the committed slices of the aggregates the published values are resolved "
+        "against, from the run artifacts under DATA_DIR, and stop",
+    ),
 ) -> None:
     """Audit which published cells the shipped cap can move, re-measure only those, and restate."""
     import json
@@ -52,7 +58,11 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     )
     from llb.bench.agentic_memory_crossover_restatement_design import (
         load_restatement_design,
+        published_crossovers,
         validate_restatement_design,
+    )
+    from llb.bench.agentic_memory_crossover_restatement_provenance import (
+        refresh_provenance_fixture,
     )
     from llb.bench.agentic_memory_crossover_restatement_report import (
         format_restatement_table,
@@ -62,12 +72,23 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
     from llb.cli.helpers import best_effort_gpu_readers, cli_error, load_config
-    from llb.core.paths import PROJECT_ROOT
+    from llb.core.paths import PROJECT_ROOT, resolve_data_dir
 
     root = PROJECT_ROOT
+    host_data_dir = resolve_data_dir()
+    if refresh_provenance:
+        try:
+            design = load_restatement_design(design_path)
+            written = refresh_provenance_fixture(
+                published_crossovers(design), root=root, data_dir=host_data_dir
+            )
+        except (KeyError, ValueError) as exc:
+            cli_error(str(exc))
+        typer.echo(f"[restatement] provenance slices -> {written}")
+        return
     try:
         design = load_restatement_design(design_path)
-        validate_restatement_design(design, root=root)
+        validate_restatement_design(design, root=root, data_dir=host_data_dir)
         audit = audit_published_cells(design, root=root)
     except ValueError as exc:
         cli_error(str(exc))

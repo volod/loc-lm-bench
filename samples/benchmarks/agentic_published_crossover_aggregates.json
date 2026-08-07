@@ -1,0 +1,40 @@
+{
+  "aggregates": {
+    "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json": {
+      "depth_ladders": [
+        {
+          "boundary": {
+            "guard_boundary_chars": 14912
+          },
+          "depth": 6
+        },
+        {
+          "boundary": {
+            "guard_boundary_chars": 22016
+          },
+          "depth": 10
+        }
+      ]
+    },
+    "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json": {
+      "depth_surface": [
+        {
+          "crossover_max_prompt_chars": 14159.929807575942,
+          "depth": 6
+        },
+        {
+          "crossover_max_prompt_chars": 21899.890064587056,
+          "depth": 10
+        }
+      ]
+    },
+    "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json": {
+      "cap_peak_prompt_chars": {
+        "10": 11926,
+        "6": 8374
+      }
+    }
+  },
+  "note": "committed slices of the run artifacts the published agentic numbers were measured in; regenerate with make bench-agentic-published-provenance rather than by hand",
+  "schema_version": 1
+}
