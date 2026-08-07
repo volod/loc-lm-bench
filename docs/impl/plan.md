@@ -43,33 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-unresolved-published-values-are-named-one-design-at-a-time (optional)
+### agent-published-value-derivations-are-known-only-to-the-resolver (optional)
 
-The refresh now names what the evidence it just wrote no longer states, and the walk over the
-registry collects every DESIGN rather than stopping at the first
+The collecting resolution names every published value a re-run moved and marks the derived band
+NOT JUDGED against the guard it is a quotient of, so one moved measurement is reported once
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-Inside one design the granularity is still coarse: `validate_published_provenance` raises at the
-first crossover whose value the aggregate does not hold, so a re-run that moved three of a study's
-six published numbers reports one, and the operator restates it, re-runs the refresh, and meets the
-next one -- the same one-name-per-run loop the refresh was built to end, just moved inside a design.
-Make the per-form resolution collect: resolve every crossover, gather the mismatches, and refuse
-once with all of them named. Two edges make it worth doing carefully rather than mechanically -- the
-derived band is a QUOTIENT of an interpolated guard, so a moved guard must not also be reported as a
-separate moved band (report the cause, mark the band as unresolvable-from-here), and shape refusals
-must still fail before any value is read, since a malformed design has no values to collect.
+That cause-versus-consequence rule is knowledge of ONE derivation edge, written into the restatement's
+own resolver: the ratio at a depth is a quotient of the surface guard at the same depth. Nothing in
+the design says so, the study-agnostic accumulator cannot see it, and a second publishing design --
+or a third form here whose value derives from two others -- gets no such rule, so its consequences
+would be reported as causes and the loop this closed reopens one design over. Let a published value
+DECLARE what it is derived from (`derived_from`: the study kind, depth, and form its value is
+computed out of), validate the declaration against the design that publishes the source, and have the
+collector mark a value not-judged whenever anything it declares is already unresolved -- transitively,
+so a two-step derivation names only the measurement at its root.
 
 - Agent status: CLEAR
-- Dependencies: the per-form resolution is
-  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the registry-level collecting
-  walk it would feed is `report_published_designs` in
-  `src/llb/bench/agentic_published_value_registry.py`, whose `UnresolvedDesign.reason` is the string
-  that would carry the list.
-- User-visible outcome: one `make bench-agentic-published-provenance` after a re-run names every
-  published number that moved, so restating a study is one design edit rather than a loop.
-- Scope boundary: in scope -- collecting the per-crossover mismatches, the cause-versus-consequence
-  rule for the derived band, keeping shape refusals fail-fast, and the fixture case where a re-run
-  moved several values at once. Out of scope -- restating a value automatically, changing the exit
-  code or the report's shape at the registry level, and re-running a published cell.
+- Dependencies: the hardcoded edge is `DERIVED_RATIO_SOURCE_KIND` and the `unresolved_guards` branch
+  of `_derived_ratios` in `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the
+  accumulator that would carry the rule is `CollectedRefusals` in
+  `src/llb/bench/agentic_published_value_collection.py`; the design that would carry the declaration
+  is `samples/benchmarks/agentic_compact_crossover_restatement_design.json`.
+- User-visible outcome: the next study to publish a derived number inherits "name the cause, not the
+  consequence" from its design file instead of from a rule written for the trigger ratio.
+- Scope boundary: in scope -- the `derived_from` declaration and its validation, the transitive
+  not-judged marking in the collector, and fixture cases for a two-step derivation and a declaration
+  that names a source the design does not publish. Out of scope -- restating a value automatically,
+  a second publishing design (register one when a study needs it), and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

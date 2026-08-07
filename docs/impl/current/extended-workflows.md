@@ -1694,6 +1694,29 @@ exactly the repair flow, so the new aggregates are what the operator has to comm
 restate anything, and refusing would leave them with neither the evidence nor a way to record it.
 Report-and-exit, not refuse-and-revert.
 
+The same collecting move runs INSIDE a design, because a re-run moves as many published numbers as it
+moves. `validate_published_provenance` resolved crossovers in order but raised at the first one the
+aggregate no longer stated, so a re-run that moved three of this study's six numbers named one, and
+the operator restated it, re-ran the refresh, and met the next -- the loop above, moved down a level.
+It now resolves every crossover, collects, and refuses once with all of them named and counted
+against the total (`3/6 published values do not resolve out of the evidence the design cites: ...`),
+so restating a study is one design edit. The accumulator is
+`agentic_published_value_collection.py`, study-agnostic beside the resolver for the same reason: the
+next design to publish resolvable values inherits the behavior instead of re-deriving it.
+
+Collecting forces two distinctions that stopping at the first refusal never had to make. The derived
+band is a QUOTIENT of the surface's interpolated guard, so a guard the evidence no longer states is
+the CAUSE of that band being unresolvable rather than a second moved number -- reporting both would
+name one moved measurement twice and send the operator to restate a band nothing here can evaluate.
+The band is marked `[not judged]` against the guard named above it, and the band-level comparison
+(whose edges are the smallest and largest of the per-depth quotients) says so explicitly rather than
+passing quietly when a quotient it needs is missing, since a band nothing could re-derive would
+otherwise read exactly like one that was re-derived and held. SHAPE refusals stay fail-fast, ahead of
+the first read: a crossover with no `provenance` object, no numeric `value`, or no band edges is a
+design that never said what would state its number, and that message must not arrive underneath a
+list of values that could not be checked because of it. The three passes are exactly those -- shape,
+then every STATED value in the design's own order, then the DERIVED band out of what resolved.
+
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
 `depth_ladders[depth=10].boundary.guard_boundary_chars`, `cap_peak_prompt_chars.6`. One walk serves
@@ -1760,10 +1783,13 @@ manifest pins, the growth policy, and the refusal to write a manifest that drops
 `src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
 refresh, the collecting and refusing walks over it, and the refresh that reports on what it just
 wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
-`(artifact, field)` pair and the two-source read -- all four study-agnostic, so any published
-agentic number can adopt them),
+`(artifact, field)` pair and the two-source read),
+`src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
+not resolve, keep what that leaves unjudged apart from it, and refuse once naming both -- all five
+study-agnostic, so any published agentic number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
-resolves to, including the re-derived band),
+resolves to, including the re-derived band, its shape-first/stated/derived passes, and the
+cause-versus-consequence rule for a band whose source guard moved),
 `src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
 the per-form annotation rules, shared by design validation and the restatement),
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
@@ -1797,8 +1823,11 @@ against a host whose boundary-surface run moved the depth-10 guard, and the comm
 both answers), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
 resolved out of the committed aggregates, a transcription slip in each form, the re-derived band,
-the committed bytes checked against this host's own run artifacts, the growth budget, and the no-op
-regeneration on a host that still has the runs).
+the committed bytes checked against this host's own run artifacts, the growth budget, the no-op
+regeneration on a host that still has the runs, and the collecting refusal -- a re-run that moved
+three values named in one refusal in design order, a moved guard named as the cause with its derived
+band left unjudged rather than named twice, and a malformed crossover refused ahead of any read even
+when the evidence moved too).
 
 ```bash
 make bench-agentic-context-compact-crossover-restatement

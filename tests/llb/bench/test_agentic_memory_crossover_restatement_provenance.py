@@ -41,7 +41,7 @@ from llb.bench.agentic_published_value_registry import (
     published_citations,
     refresh_committed_evidence,
 )
-from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_SURFACE
+from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_FOLD_STEP, KIND_SURFACE
 from llb.core.paths import resolve_data_dir
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -139,14 +139,8 @@ def test_a_fold_step_boundary_is_resolved_against_its_own_study_s_ladder_artifac
     design = load_restatement_design(DESIGN_PATH)
     validate_published_provenance(published_crossovers(design), root=ROOT)
 
-    moved = _committed_bytes()
-    ladder_artifact = _cited(FORM_FOLD_STEP)
-    payload = json.loads(moved[ladder_artifact])
-    ladders = cast(list[dict[str, object]], payload["depth_ladders"])
-    cast(dict[str, object], ladders[0]["boundary"])["guard_boundary_chars"] = 14913
-    moved[ladder_artifact] = json.dumps(payload).encode("utf-8")
     with pytest.raises(ValueError, match="transcribed rather than resolved"):
-        _validate_against(design, moved, tmp_path)
+        _validate_against(design, _re_run(ladder={6: 14913}), tmp_path)
 
 
 @pytest.mark.parametrize("band", [[0.84, 0.92], [0.85, 0.93], [0.80, 0.99]])
@@ -198,6 +192,70 @@ def test_a_derived_band_with_no_resolved_source_guard_is_refused():
     ]
     with pytest.raises(ValueError, match="nothing resolves it"):
         validate_published_provenance(rows, root=ROOT)
+
+
+# --- one refusal per re-run, not one name per re-run --------------------------------------------
+
+
+def test_a_re_run_that_moved_several_published_values_names_every_one_of_them(tmp_path):
+    """The loop this ends: restate one number, re-run the check, meet the next one, six times over.
+
+    A re-run that moved three of this study's published numbers is three design edits, so the walk
+    resolves every crossover and refuses once with all three named, in the order the design publishes
+    them rather than in the order the resolution happens to reach them.
+    """
+    design = load_restatement_design(DESIGN_PATH)
+    moved = _re_run(surface={10: 21525.5}, ladder={6: 14913, 10: 22017})
+
+    with pytest.raises(ValueError) as excinfo:
+        _validate_against(design, moved, tmp_path)
+
+    message = str(excinfo.value)
+    assert "3/6 published values do not resolve" in message
+    named = [
+        message.index(f"{KIND_SURFACE} depth 10"),
+        message.index(f"{KIND_FOLD_STEP} depth 6"),
+        message.index(f"{KIND_FOLD_STEP} depth 10"),
+    ]
+    assert named == sorted(named)
+    assert message.count("transcribed rather than resolved") == 3
+
+
+def test_a_moved_guard_is_named_as_the_cause_and_its_derived_band_is_not_named_again(tmp_path):
+    """The band is a QUOTIENT of the guard, so reporting both names one moved measurement twice.
+
+    Worse than noise: the second name sends the operator to restate a band that nothing here can
+    evaluate, since its own edges are re-derived from the very guard that no longer resolves. The
+    cause is named, and the band is marked not-judged against it.
+    """
+    design = load_restatement_design(DESIGN_PATH)
+
+    with pytest.raises(ValueError) as excinfo:
+        _validate_against(design, _re_run(surface={10: 21525.5}), tmp_path)
+
+    message = str(excinfo.value)
+    assert "1/6 published values do not resolve" in message
+    assert f"{KIND_SURFACE} depth 10" in message
+    assert f"[not judged] {KIND_COLLAPSE} depth 10" in message
+    assert "the band was transcribed rather than resolved" not in message
+
+
+def test_a_malformed_crossover_is_refused_before_any_published_value_is_read(tmp_path):
+    """Shape refusals stay fail-fast: a design that never said what states a number has none to name.
+
+    Checked against evidence that has ALSO moved, because the point is which message survives -- the
+    defect is the design's shape, and it must not arrive underneath a list of values that could not
+    be checked because of it.
+    """
+    design = _drop_provenance(KIND_SURFACE, 10)
+
+    with pytest.raises(ValueError) as excinfo:
+        _validate_against(design, _re_run(ladder={6: 14913}), tmp_path)
+
+    message = str(excinfo.value)
+    assert "must carry a `provenance` object" in message
+    assert "do not resolve out of the evidence" not in message
+    assert "transcribed rather than resolved" not in message
 
 
 def test_the_committed_evidence_is_this_host_s_own_run_artifacts_byte_for_byte(tmp_path):
@@ -291,6 +349,46 @@ def _committed_bytes(root: Path = ROOT) -> dict[str, bytes]:
         artifact: committed_aggregate_path(root, artifact).read_bytes()
         for artifact in load_provenance_fixture(root)
     }
+
+
+def _re_run(
+    *, surface: dict[int, float] | None = None, ladder: dict[int, int] | None = None
+) -> dict[str, bytes]:
+    """The committed aggregates with named per-depth values re-measured, as a re-run would leave them.
+
+    Built by moving fields of the committed copies rather than by running anything: the copies ARE
+    the runs' bytes, so a moved field is exactly what the study would hand a refresh on a host that
+    re-ran it -- and the case reproduces on a machine that never ran the studies at all.
+    """
+    moved = _committed_bytes()
+    if surface:
+        moved[_cited(FORM_INTERPOLATED)] = _moved_rows(
+            moved[_cited(FORM_INTERPOLATED)],
+            "depth_surface",
+            {depth: {"crossover_max_prompt_chars": guard} for depth, guard in surface.items()},
+        )
+    if ladder:
+        moved[_cited(FORM_FOLD_STEP)] = _moved_rows(
+            moved[_cited(FORM_FOLD_STEP)],
+            "depth_ladders",
+            {depth: {"boundary": {"guard_boundary_chars": edge}} for depth, edge in ladder.items()},
+        )
+    return moved
+
+
+def _moved_rows(payload: bytes, rows_key: str, moved: dict[int, dict[str, object]]) -> bytes:
+    """One aggregate's per-depth rows, with the named depths' fields replaced."""
+    analysis = json.loads(payload)
+    for row in cast(list[dict[str, object]], analysis[rows_key]):
+        fields = moved.get(int(cast(int, row["depth"])))
+        if fields is None:
+            continue
+        for name, value in fields.items():
+            if isinstance(value, dict):
+                cast(dict[str, object], row[name]).update(cast(dict[str, object], value))
+            else:
+                row[name] = value
+    return json.dumps(analysis).encode("utf-8")
 
 
 def _validate_against(
