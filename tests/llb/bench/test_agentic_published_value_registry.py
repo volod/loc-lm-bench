@@ -1,10 +1,16 @@
-"""The committed evidence is the union over every design that publishes resolvable values.
+"""What registering a design buys it: its evidence in the union, and its claims in CI.
 
 The prune that keeps the committed tree tracking its citations is correct exactly while ONE study
-resolves published values through it. These tests drive the rule that keeps it correct for the
-second one: the refresh walks a registry of designs, commits the union of what they cite, and
-refuses to write a set that would retire a registered design's aggregates -- because that deletion
-would otherwise read as a clean prune rather than as evidence loss.
+resolves published values through it. The first half of these tests drives the rule that keeps it
+correct for the second one: the refresh walks a registry of designs, commits the union of what they
+cite, and refuses to write a set that would retire a registered design's aggregates -- because that
+deletion would otherwise read as a clean prune rather than as evidence loss.
+
+The second half drives the other guarantee, which is the one whose absence would look identical to
+its presence. Citations alone make a study's evidence DURABLE and say nothing about whether the
+numbers the design publishes are the ones that evidence holds, so a registry entry also carries the
+validation that resolves them -- walked here for every registered design, refused for an entry that
+registers none.
 """
 
 import json
@@ -23,21 +29,42 @@ from llb.bench.agentic_published_value_registry import (
     PublishedValueDesign,
     published_citations,
     refresh_committed_evidence,
+    validate_published_designs,
 )
 
 FIRST = "first-study/run/analysis.json"
 SECOND = "second-study/run/analysis.json"
 
 
-def _design(design_root: Path, name: str, artifacts: list[str]) -> PublishedValueDesign:
-    """A registered design standing for a study, with the artifacts its published values cite."""
+def _accept(_design_path: Path, *, root: Path, data_dir: Path | None) -> None:
+    """A validation that resolves every published value, for the designs a test is not about."""
+
+
+def _design(
+    design_root: Path,
+    name: str,
+    artifacts: list[str],
+    *,
+    validate: object = _accept,
+) -> PublishedValueDesign:
+    """A registered design standing for a study: what its values cite, and what resolves them."""
     path = design_root / "samples/benchmarks" / f"{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"study_kind": name}), encoding="utf-8")
     return PublishedValueDesign(
         design_path=f"samples/benchmarks/{name}.json",
         cited_artifacts=lambda _path: list(artifacts),
+        validate_published_values=validate,
     )
+
+
+def _recorder(name: str, calls: list[tuple[str, str, Path | None]]):
+    """A validation that records how the walk called it, so silence is distinguishable from work."""
+
+    def validate(design_path: Path, *, root: Path, data_dir: Path | None) -> None:
+        calls.append((name, design_path.name, data_dir))
+
+    return validate
 
 
 def _register(monkeypatch, designs: dict[str, PublishedValueDesign]) -> None:
@@ -147,6 +174,79 @@ def test_retiring_a_design_from_the_registry_is_what_prunes_its_evidence(tmp_pat
     assert not committed_aggregate_path(tmp_path, SECOND).exists()
 
 
+# --- registering is what buys the check ---------------------------------------------------------
+
+
+def test_the_walk_validates_every_registered_design_and_names_the_ones_it_walked(
+    tmp_path, monkeypatch
+):
+    """Citations make a study's evidence durable; only this walk makes its claims checkable.
+
+    The kinds come back because the failure worth guarding against is silence: a walk that validated
+    nothing passes exactly like one that validated everything, so the caller states what it expected.
+    """
+    calls: list[tuple[str, str, Path | None]] = []
+    _register(
+        monkeypatch,
+        {
+            "first": _design(tmp_path, "first", [FIRST], validate=_recorder("first", calls)),
+            "second": _design(tmp_path, "second", [SECOND], validate=_recorder("second", calls)),
+        },
+    )
+
+    assert validate_published_designs(root=tmp_path) == ["first", "second"]
+    assert calls == [("first", "first.json", None), ("second", "second.json", None)]
+
+
+def test_the_walk_hands_each_design_the_host_run_root_when_there_is_one(tmp_path, monkeypatch):
+    """The validation is authoritative against the committed copies and checks them against runs."""
+    calls: list[tuple[str, str, Path | None]] = []
+    _register(
+        monkeypatch,
+        {"first": _design(tmp_path, "first", [FIRST], validate=_recorder("first", calls))},
+    )
+    data_dir = _host(tmp_path / "data", FIRST)
+
+    validate_published_designs(root=tmp_path, data_dir=data_dir)
+    assert calls == [("first", "first.json", data_dir)]
+
+
+def test_a_registered_design_whose_published_values_do_not_resolve_fails_the_walk(
+    tmp_path, monkeypatch
+):
+    """The whole point: registering a second study subjects its numbers to the same refusal."""
+
+    def refuse(_design_path: Path, *, root: Path, data_dir: Path | None) -> None:
+        raise ValueError(
+            "second depth 6: the design publishes 1.0 while the aggregate measured 2.0"
+        )
+
+    _register(
+        monkeypatch,
+        {
+            "first": _design(tmp_path, "first", [FIRST]),
+            "second": _design(tmp_path, "second", [SECOND], validate=refuse),
+        },
+    )
+    with pytest.raises(ValueError, match="while the aggregate measured"):
+        validate_published_designs(root=tmp_path)
+
+
+def test_a_design_the_repo_does_not_carry_fails_the_validation_walk_too(tmp_path, monkeypatch):
+    """Unknown claims are refused for the same reason unknown citations are: not the same as none."""
+    _register(monkeypatch, {"first": _design(tmp_path, "first", [FIRST])})
+    (tmp_path / "samples/benchmarks/first.json").unlink()
+
+    with pytest.raises(ValueError, match="does not exist"):
+        validate_published_designs(root=tmp_path)
+
+
+def test_an_entry_that_registers_no_validation_is_refused(tmp_path):
+    """`None` is the shape an opt-out would take, and opting out is what the field prevents."""
+    with pytest.raises(ValueError, match="states no validation of its published values"):
+        _design(tmp_path, "first", [FIRST], validate=None)
+
+
 # --- the committed registry ---------------------------------------------------------------------
 
 
@@ -157,3 +257,10 @@ def test_the_shipped_registry_names_the_restatement_design_the_repo_carries():
     assert set(PUBLISHED_VALUE_DESIGNS) == {KIND_CROSSOVER_RESTATEMENT}
     for design in PUBLISHED_VALUE_DESIGNS.values():
         assert (PROJECT_ROOT / design.design_path).is_file()
+
+
+def test_every_registered_design_resolves_its_published_values_in_ci():
+    """The CI gate the registry buys: no run on the host, no per-design test to remember to add."""
+    from llb.core.paths import PROJECT_ROOT
+
+    assert validate_published_designs(root=PROJECT_ROOT) == [KIND_CROSSOVER_RESTATEMENT]

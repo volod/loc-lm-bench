@@ -1660,6 +1660,22 @@ design's aggregates by construction. `--refresh-provenance` is registry-driven f
 and refuses a `--design` the registry does not name instead of regenerating from it alone. Retiring
 a design from the registry is what prunes its evidence, which is the one act that should.
 
+A registry entry carries what CHECKS its published values as well as what they cite, because those
+are two different guarantees and the weaker one is the more convincing. Citations alone make a
+study's evidence DURABLE -- its aggregates committed, pinned, and safe from someone else's refresh
+-- while saying nothing about whether the numbers the design publishes are the ones those bytes
+hold, and committed bytes beside unchecked claims read exactly like the checked case. So each entry
+also states a `validate_published_values` callable (the restatement's runs its own
+`validate_restatement_design`, which resolves all six crossovers), `validate_published_designs`
+walks the registry and calls every one of them, and CI asserts that walk over the shipped registry
+with no run on the host. Registering a design is therefore what subjects it to the check, rather
+than remembering to add a test named after it. Two refusals keep that from degrading into silence:
+an entry that registers no validation is refused at construction -- `None` is the shape an opt-out
+would take, and opting out is what the field exists to prevent -- and the walk returns the kinds it
+validated, so a registry that checked nothing is distinguishable from one that checked everything
+instead of both passing. A design the repo does not carry fails the validation walk for the same
+reason it fails the refresh: unknown claims are not the same as none.
+
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
 `depth_ladders[depth=10].boundary.guard_boundary_chars`, `cap_peak_prompt_chars.6`. One walk serves
@@ -1723,8 +1739,8 @@ both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_r
 `src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
 read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
 manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
-`src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs and the
-union refresh that walks it), `src/llb/bench/agentic_published_value_provenance.py` (the
+`src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
+refresh, and the validation walk), `src/llb/bench/agentic_published_value_provenance.py` (the
 `(artifact, field)` pair and the two-source read -- all four study-agnostic, so any published
 agentic number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
@@ -1753,7 +1769,9 @@ that is not the pinned file even where the cited value agrees),
 `tests/llb/bench/test_agentic_published_value_registry.py` (the union over two registered designs,
 an aggregate both cite carried once, and each of the three refusals -- a partial host, an
 unreadable registered design, and a write that would drop a still-cited copy -- plus the prune that
-a design retired from the registry still gets), and
+a design retired from the registry still gets, the validation walk over every registered design
+including what it is handed and what it returns, a registered design whose values do not resolve,
+an entry that registers no validation, and the CI assertion over the shipped registry), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
 resolved out of the committed aggregates, a transcription slip in each form, the re-derived band,
 the committed bytes checked against this host's own run artifacts, the growth budget, and the no-op

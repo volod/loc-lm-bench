@@ -43,31 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-registered-publishing-design-is-unvalidated-in-ci (optional)
+### agent-evidence-refresh-does-not-say-whether-what-it-committed-still-resolves (optional)
 
-The refresh now walks a registry of every design that publishes resolvable values, so the committed
-evidence is the union over all of them
+The regeneration and the validation walk the same registry and never speak to each other: a refresh
+commits the union of the cited aggregates and reports the manifest path, while whether the published
+values still resolve out of those bytes is answered by `validate_published_designs` in CI
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-What no registry-driven check does is RESOLVE those values: CI validates the crossover restatement
-because one test names that design file, so a second design could register, have its aggregates
-committed and pruned correctly, and still publish a number nothing reads back out of them -- the
-registry would make its evidence durable without making its claims checkable, which is the more
-convincing failure of the two. Give each registry entry a validation callable beside its citation
-reader (the restatement's is `validate_restatement_design`), and add the CI test that walks the
-registry and validates every registered design, so registering is what buys the check rather than
-remembering to write a per-design test.
+So the operator who re-runs a study, regenerates the evidence, and sees a clean
+`provenance manifest -> ...` learns on the NEXT `make ci` that the design's published numbers are
+now the old run's -- at the point where the fix is a design edit they no longer have the run context
+for. Have the refresh run the validation over what it just wrote and REPORT the unresolved values by
+name, with a non-zero exit; report rather than refuse, because a refresh after a re-run is exactly
+the repair flow, and a refusal that rolled back the write would leave the operator unable to commit
+the new evidence at all.
 
 - Agent status: CLEAR
-- Dependencies: the registry is `PUBLISHED_VALUE_DESIGNS` in
-  `src/llb/bench/agentic_published_value_registry.py`; the per-design validation it would call is
-  `validate_restatement_design` in
-  `src/llb/bench/agentic_memory_crossover_restatement_design.py`, driven today only by
-  `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py`.
-- User-visible outcome: a study that registers for durable evidence gets its published values
-  resolved in CI by that same act, so committed bytes and checked claims cannot drift apart.
-- Scope boundary: in scope -- the validation seam on the registry entry, the registry-walking CI
-  test, and the refusal for an entry that registers no validation. Out of scope -- adopting the
-  resolver in another study and re-running a published cell.
+- Dependencies: the two walks are `refresh_committed_evidence` and `validate_published_designs` in
+  `src/llb/bench/agentic_published_value_registry.py`; the CLI seam is `--refresh-provenance` in
+  `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`, which currently returns
+  straight after echoing the manifest path.
+- User-visible outcome: `make bench-agentic-published-provenance` says whether the evidence it just
+  committed still states the numbers the designs publish, instead of deferring that to a later CI
+  failure.
+- Scope boundary: in scope -- the post-write validation pass, the named unresolved values, the exit
+  code, and the fixture case where a re-run moved a value. Out of scope -- rewriting a published
+  value automatically, refusing or rolling back the write, and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
