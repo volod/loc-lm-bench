@@ -16,8 +16,8 @@ from llb.bench.agentic_memory_boundary_probe import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,
+    foldable_fold_steps,
     guard_is_cap_fitting,
-    reachable_fold_steps,
 )
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
@@ -32,17 +32,23 @@ def step_guards(step: dict[str, object]) -> list[int]:
 
 
 def validate_ladder_shape(label: str, steps: list[dict[str, object]], sequence: list[int]) -> None:
-    """Two or more increasing fold steps, ADJACENT on the reachable ladder, sides in cost order."""
+    """Two or more increasing fold steps, ADJACENT on the foldable ladder, sides in cost order.
+
+    The ladder is the steps an episode can actually FOLD at, not every step a trigger can select: a
+    step whose prompt is built from zero entries is reachable by a small enough guard and still folds
+    nothing, so a cell declared there would measure a `compact` arm that never compacts and publish
+    it as a fold-step cost.
+    """
     declared = [int(cast(int, step.get("fold_step", 0))) for step in steps]
     if len(steps) < 2 or declared != sorted(declared) or len(set(declared)) != len(declared):
         raise ValueError(f"{label} needs two or more fold steps in increasing order")
-    reachable = reachable_fold_steps(sequence)
-    positions = [reachable.index(step) for step in declared if step in reachable]
+    ladder = foldable_fold_steps(sequence)
+    positions = [ladder.index(step) for step in declared if step in ladder]
     if len(positions) != len(declared) or positions != list(
         range(positions[0], positions[0] + len(positions))
     ):
         raise ValueError(
-            f"{label} must test fold steps that are ADJACENT on the reachable ladder {reachable}, "
+            f"{label} must test fold steps that are ADJACENT on the foldable ladder {ladder}, "
             f"got {declared}"
         )
     sides = [str(step.get("expected_side", "")) for step in steps]

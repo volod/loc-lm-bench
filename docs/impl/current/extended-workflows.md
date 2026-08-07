@@ -1256,12 +1256,19 @@ The geometry is the inverse of the fold-step prediction and needs no model.
 folds at one step -- `low` is the largest earlier step prompt, `high` is the step's own prompt --
 and `fold_step_guard_interval` converts it to prompt guards through the runtime's own truncating
 `int(guard * share)` rather than a float inverse. A step whose prompt does not exceed the running
-maximum before it is UNREACHABLE (no trigger selects it), so `reachable_fold_steps` is the ladder a
-design is placed against.
+maximum before it is UNREACHABLE (no trigger selects it), which `reachable_fold_steps` answers; the
+ladder a design is placed against is `foldable_fold_steps`, the reachable steps an episode can
+actually fold AT. The two differ by step 1: a guard under the first prompt selects it, and its
+prompt is built from zero entries, so `compact_state` finds nothing older to summarize and returns
+unchanged. A cell declared there would measure a `compact` arm that never compacts and publish it as
+a fold-step cost. That used to be refused only indirectly -- a step-1 guard sits far below the cap
+peak, so the per-CELL cap-fitting rule rejected it with a message about the usable guard band, and
+only for a geometry where those two facts happen to contradict each other. The ladder rule now
+refuses it directly, naming the ladder the design should have declared against.
 
 Placement is what lets the grid tell a step change apart from a smooth slide, and all four rules are
 checked in CI with no GPU: every declared cell must fold at the step it claims, the tested steps must
-be ADJACENT on the reachable ladder, the guards inside one step must span at least half of that
+be ADJACENT on the foldable ladder, the guards inside one step must span at least half of that
 step's guard interval (otherwise "same step, same cost" is measured over two nearly identical
 guards), and the guards on either side of a step change must straddle it within 8 chars (otherwise
 the flip is localized no better than the old bracket was). Cell preconditions -- cap fits, compact
@@ -1269,7 +1276,8 @@ fires above the activation floor, completion paired -- are the surface's unchang
 whose measured fold step drifts from its declared one aborts the analysis rather than being re-read.
 
 Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (the trigger/guard interval
-inverse, the reachable ladder, and `compaction_trigger_chars`, now shared with the collapse study),
+inverse, the reachable and foldable ladders, and `compaction_trigger_chars`, now shared with the
+collapse study and with the policy-change band solver),
 `src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
 `src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows),
 `src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
@@ -1366,7 +1374,7 @@ summary reply, and reports what each arm offers the summarizer and how much its 
 validation refuses a ladder whose reference arm elides nothing (no trimmed span to price), a
 step-aligned arm that elides anything (it is not step-aligned), and a step-aligned arm whose
 summarize input is not identical across the guards inside one step. The fold-step placement rules --
-declared step, adjacency on the reachable ladder, within-step guard span, straddle gap -- are shared
+declared step, adjacency on the foldable ladder, within-step guard span, straddle gap -- are shared
 verbatim with the crossover study (`src/llb/bench/agentic_memory_fold_step_placement.py`), so a
 residual measured here is on exactly the scale that study publishes.
 
@@ -1741,8 +1749,7 @@ contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
 `src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
 `src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in, and the ladder of steps an episode can fold at that the solver walks),
-`..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
+stated in), `..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
 observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
 prompt the loop merely builds), and the four test modules that ARE the CI assertion --
 `tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
@@ -1789,13 +1796,16 @@ Each `no geometry` answer is one contradiction, stated as a condition rather tha
 
 The solver reports a blocked step the way it reports a solved one, which is what makes the negative
 answer readable rather than merely empty. It asks only about the steps an episode can actually fold
-at (`foldable_fold_steps`) rather than every step a trigger can SELECT: step 1 is reachable on the
-shipped geometry -- a small enough guard trips on the first prompt -- but its prompt is built from
-zero entries, so `compact_state` finds nothing older to summarize and returns unchanged. Conditions
-stated there are about a fold that cannot happen, and since the report carries each condition once,
-at its first blocked step, that vacuous row would LEAD the answer with its least informative line.
-Dropping it moves no solved band: the two committed bands are unchanged, and the step it drops
-states a condition no guard satisfies anyway.
+at rather than every step a trigger can SELECT: step 1 is reachable on the shipped geometry -- a
+small enough guard trips on the first prompt -- but its prompt is built from zero entries, so
+`compact_state` finds nothing older to summarize and returns unchanged. Conditions stated there are
+about a fold that cannot happen, and since the report carries each condition once, at its first
+blocked step, that vacuous row would LEAD the answer with its least informative line. Dropping it
+moves no solved band: the two committed bands are unchanged, and the step it drops states a
+condition no guard satisfies anyway. The ladder itself is `foldable_fold_steps` in
+`agentic_memory_boundary_probe`, beside the `reachable_fold_steps` it narrows, and the fold-step
+placement rules are placed against the same one
+([the crossover is a fold step](#the-crossover-is-a-fold-step-not-a-char-guard)).
 
 ```text
 [band] depth 10, compact_share 0.5 -> 0.48, compact_keep_recent 1 -> 2

@@ -26,7 +26,6 @@ from llb.bench.agentic.context import (
     SUMMARY_INPUT_CAP_WINDOW,
     ContextPolicy,
 )
-from llb.bench.agentic_memory_boundary_probe import reachable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
 
 # The auditable `ContextPolicy` fields, by the name the audit and the pins use for them.
@@ -37,9 +36,6 @@ FIELD_SHARE = "compact_share"
 FIELD_KEEP_RECENT = "compact_keep_recent"
 FIELD_BOUND = "summary_input_cap"
 
-# A fold needs a transcript to fold: `compact_state` returns False when the state holds no entry, so
-# a step whose prompt is built from fewer live entries than this never folds however the guard moves.
-MIN_LIVE_ENTRIES_TO_FOLD = 1
 # The only bound direction that can separate: a baseline that elides nothing, and a candidate whose
 # cap rides the moved share down onto the folded transcript.
 SEPARATING_BOUNDS = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
@@ -110,33 +106,6 @@ class StepConditions:
 
 
 ConditionsFn = Callable[[StepGeometry], StepConditions]
-
-
-def live_entries_at_fold_step(step: int) -> int:
-    """How many transcript entries the prompt at `step` is built from, before any fold.
-
-    The loop appends one entry per completed step and rebuilds the prompt from the whole transcript,
-    so the prompt at step `s` is built from `s - 1` entries -- and that count, not the guard, is what
-    decides how much of the transcript a fold can leave live behind it.
-    """
-    return step - 1
-
-
-def foldable_fold_steps(prompt_sequence: list[int]) -> list[int]:
-    """Every step a trigger can select AND an episode can actually fold at, in order.
-
-    `reachable_fold_steps` answers a question about triggers alone: step 1 is reachable whenever the
-    first prompt is non-empty, because a small enough guard trips on it. No episode folds there --
-    the step-1 prompt is built from ZERO entries, so `compact_state` finds nothing older to summarize
-    and returns False -- which makes every condition stated about step 1 vacuously about a fold that
-    cannot happen. Since `_blocking_reasons` reports each condition once, at its FIRST blocked step,
-    the vacuous row would lead the no-band report with its least informative line.
-    """
-    return [
-        step
-        for step in reachable_fold_steps(prompt_sequence)
-        if live_entries_at_fold_step(step) >= MIN_LIVE_ENTRIES_TO_FOLD
-    ]
 
 
 def shipped_policy_value(field: str) -> Any:

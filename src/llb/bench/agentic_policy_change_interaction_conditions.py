@@ -21,6 +21,7 @@ from llb.bench.agentic_memory_boundary_probe import (
     compact_fold_input_probe,
     fold_step_guard_interval,
     fold_step_trigger_interval,
+    live_entries_at_fold_step,
     smallest_guard_reaching,
 )
 from llb.bench.agentic_policy_change_audit import PolicyChange
@@ -34,7 +35,6 @@ from llb.bench.agentic_policy_change_interaction_terms import (
     BandCondition,
     StepConditions,
     StepGeometry,
-    live_entries_at_fold_step,
 )
 
 

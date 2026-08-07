@@ -26,13 +26,12 @@ interaction.py` replays the audit at both edges of a solved band and at the guar
 from dataclasses import dataclass
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, foldable_fold_steps
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_SHARE,
     BandCondition,
     StepGeometry,
-    foldable_fold_steps,
 )
 from llb.bench.agentic_policy_change_interaction_couplings import Coupling, coupling_for
 from llb.bench.agentic_policy_change_interaction_fixture import geometry_kwargs

@@ -33,7 +33,11 @@ already-computed sequences rather than a second replay.
 from dataclasses import dataclass
 from typing import Any
 
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, smallest_guard_reaching
+from llb.bench.agentic_memory_boundary_probe import (
+    cap_prompt_sequence,
+    live_entries_at_fold_step,
+    smallest_guard_reaching,
+)
 from llb.bench.agentic_policy_change_interaction_conditions import folds_at_this_step
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_CAP,
@@ -42,7 +46,6 @@ from llb.bench.agentic_policy_change_interaction_terms import (
     BandCondition,
     StepConditions,
     StepGeometry,
-    live_entries_at_fold_step,
     shipped_policy_value,
 )
 

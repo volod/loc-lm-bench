@@ -10,7 +10,13 @@ the arithmetic cannot answer.
 import pytest
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, reachable_fold_steps
+from llb.bench.agentic_memory_boundary_probe import (
+    MIN_LIVE_ENTRIES_TO_FOLD,
+    cap_prompt_sequence,
+    foldable_fold_steps,
+    live_entries_at_fold_step,
+    reachable_fold_steps,
+)
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction import audit_interaction_cell
 from llb.bench.agentic_policy_change_interaction_band import (
@@ -29,10 +35,7 @@ from llb.bench.agentic_policy_change_interaction_fixture import (
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_KEEP_RECENT,
     FIELD_SHARE,
-    MIN_LIVE_ENTRIES_TO_FOLD,
     StepGeometry,
-    foldable_fold_steps,
-    live_entries_at_fold_step,
 )
 
 # A depth whose fold never offers the summarizer enough to overtake a trigger, so it separates
@@ -123,9 +126,6 @@ def test_the_ladder_skips_the_first_step_because_no_episode_folds_there(design: 
     foldable = foldable_fold_steps(sequence)
     assert UNFOLDABLE_FIRST_STEP not in foldable
     assert all(live_entries_at_fold_step(step) >= MIN_LIVE_ENTRIES_TO_FOLD for step in foldable)
-    # The filter is about the entry count alone, so it drops that step from ANY sequence and keeps
-    # every step behind it -- including one an interval-empty step would hide on the real ladder.
-    assert foldable_fold_steps([3000, 3900, 4800]) == [2, 3]
 
 
 def test_no_solved_band_moves_when_the_unfoldable_step_is_dropped(design: dict[str, object]):

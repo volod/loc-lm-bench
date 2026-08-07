@@ -36,6 +36,9 @@ _MEMORY_FACT = re.compile(r"\[memory: final_code=([^\]]+)\]")
 _WORKFLOW_DONE = OBS_WORKFLOW_COMPLETE.split("]", 1)[0] + "]"
 # The constant a probe answers the summarize call with, so a compact walk has no model in it.
 ORACLE_SUMMARY = "[стислий підсумок попередніх кроків]"
+# A fold needs a transcript to fold: `compact_state` returns False when the state holds no entry, so
+# a step whose prompt is built from fewer live entries than this never folds however the guard moves.
+MIN_LIVE_ENTRIES_TO_FOLD = 1
 
 
 def oracle_controller(prompt: str) -> str:
@@ -193,6 +196,33 @@ def reachable_fold_steps(prompt_sequence: list[int]) -> list[int]:
         step
         for step in range(1, len(prompt_sequence) + 1)
         if _has_triggers(fold_step_trigger_interval(prompt_sequence, step))
+    ]
+
+
+def live_entries_at_fold_step(step: int) -> int:
+    """How many transcript entries the prompt at `step` is built from, before any fold.
+
+    The loop appends one entry per completed step and rebuilds the prompt from the whole transcript,
+    so the prompt at step `s` is built from `s - 1` entries -- and that count, not the guard, is what
+    decides both whether a fold can happen at all and how much of the transcript it leaves live.
+    """
+    return step - 1
+
+
+def foldable_fold_steps(prompt_sequence: list[int]) -> list[int]:
+    """Every step a trigger can select AND an episode can actually fold at, in order.
+
+    `reachable_fold_steps` answers a question about triggers alone: step 1 is reachable whenever the
+    first prompt is non-empty, because a small enough guard trips on it. No episode folds there --
+    the step-1 prompt is built from ZERO entries, so `compact_state` finds nothing older to summarize
+    and returns False -- so a study that predeclares it measures a `compact` arm that never compacts,
+    and a band condition stated there is about a fold that cannot happen. This is the ladder both
+    read: the steps where a fold is a real event rather than a reachable trigger.
+    """
+    return [
+        step
+        for step in reachable_fold_steps(prompt_sequence)
+        if live_entries_at_fold_step(step) >= MIN_LIVE_ENTRIES_TO_FOLD
     ]
 
 

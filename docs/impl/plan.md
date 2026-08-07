@@ -43,32 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-fold-step-ladder-placement-admits-a-step-no-episode-folds-at (optional)
+### agent-boundary-probe-splits-the-episode-walk-from-the-ladder-arithmetic (optional)
 
-`validate_ladder_shape` checks a declared fold-step ladder against `reachable_fold_steps`, which
-answers a question about TRIGGERS alone: a step is reachable when some guard's trigger selects it,
-including step 1, whose prompt is built from zero entries so `compact_state` folds nothing there. A
-design that predeclares step 1 as a ladder cell therefore passes placement validation and then
-measures a `compact` arm that never compacts, reported as a fold-step cost. No committed design does
-this today, so the gap is latent rather than live. Restrict the placement ladder the same way the
-band solver's is -- steps with at least one live entry -- so an unfoldable cell is refused at
-validation with the ladder it should have declared instead; the filter already exists as
-`foldable_fold_steps` ([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)),
-and the decision to make is whether it belongs beside `reachable_fold_steps` in the boundary probe
-now that two callers want it.
+`agentic_memory_boundary_probe` now holds two kinds of thing behind one name, and it is ~280 lines,
+over the ~250-line soft limit `scripts/code_quality.sh` reports: the probes that RUN episodes
+(`oracle_controller`, `oracle_compacting_controller`, `compact_fold_input_probe`,
+`cap_prompt_sequence`, `cap_peak_prompt_chars`) and the pure ladder arithmetic that needs no episode
+at all (`first_fold_step`, `fold_step_trigger_interval`, `reachable_fold_steps`,
+`foldable_fold_steps`, `live_entries_at_fold_step`, `compaction_trigger_chars`,
+`smallest_guard_reaching`, `fold_step_guard_interval`, `usable_guard_band`, `guard_is_cap_fitting`).
+The second group is what the fold-step placement rules, the summarize-cap ladder, and the
+policy-change band solver all import, and its members are cheap to call in a tight loop while the
+first group runs whole episodes -- a distinction the shared module name hides from a caller reading
+an import line. Split the arithmetic into its own module (e.g. `agentic_memory_fold_step_ladder`) and
+repoint call sites to it directly, with no re-export layer left behind; about 25 files import the
+probe today, so budget the change as mechanical breadth rather than depth.
 
 - Agent status: CLEAR
-- Dependencies: the placement rules are `validate_ladder_shape` and `validate_step_cells` in
-  `src/llb/bench/agentic_memory_fold_step_placement.py`; the ladder is `reachable_fold_steps` in
-  `src/llb/bench/agentic_memory_boundary_probe.py`; the filter is `foldable_fold_steps` in
-  `src/llb/bench/agentic_policy_change_interaction_terms.py`.
-- User-visible outcome: a fold-step study cannot predeclare a cell whose `compact` arm has no fold
-  in it, so a published step ladder is a ladder of folds rather than of triggers.
-- Scope boundary: in scope -- the placement filter, where the shared helper lives, and a test that
-  every committed ladder still validates unchanged. Out of scope -- moving a committed cell or
-  re-running a published ladder.
+- Dependencies: the module is `src/llb/bench/agentic_memory_boundary_probe.py`; the heaviest callers
+  are `src/llb/bench/agentic_memory_fold_step_placement.py`,
+  `src/llb/bench/agentic_policy_change_interaction_{band,conditions,cap}.py`, and
+  `tests/llb/bench/test_agentic_memory_fold_step_crossover.py`.
+- User-visible outcome: an import line says whether the caller is doing interval arithmetic or
+  running episodes, and neither half of the module has to be read to understand the other.
+- Scope boundary: in scope -- the module split, the repointed imports, and the unchanged behavior of
+  every study that reads a ladder. Out of scope -- changing any interval rule, any placement rule, or
+  any committed design.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered).
+  [extended workflows](current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard).
 
 ### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
 

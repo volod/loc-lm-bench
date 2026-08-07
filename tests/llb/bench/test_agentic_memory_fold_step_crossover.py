@@ -12,7 +12,9 @@ from llb.bench.agentic_memory_boundary_probe import (
     first_fold_step,
     fold_step_guard_interval,
     fold_step_trigger_interval,
+    foldable_fold_steps,
     guard_is_cap_fitting,
+    live_entries_at_fold_step,
     oracle_controller,
     reachable_fold_steps,
     smallest_guard_reaching,
@@ -120,6 +122,11 @@ def test_trigger_and_guard_intervals_invert_the_fold_step_prediction():
     assert first_fold_step(sequence, compaction_trigger_chars(guard_high, 0.5)) == 7
     # A step whose prompt does not exceed the running maximum can never be selected.
     assert reachable_fold_steps([3000, 3000, 4000]) == [1, 3]
+    # A trigger can SELECT step 1; no episode folds there, because its prompt is built from zero
+    # entries and `compact_state` has nothing older to summarize.
+    assert live_entries_at_fold_step(1) == 0
+    assert foldable_fold_steps(sequence) == [2, 3, 4, 5, 6, 7]
+    assert foldable_fold_steps([3000, 3000, 4000]) == [3]
     # The guard is resolved against the runtime's truncating arithmetic, not a float inverse.
     assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45), 0.45) >= 7456
     assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45) - 1, 0.45) < 7456
@@ -185,6 +192,27 @@ def test_design_refuses_a_mislabelled_step_a_gap_in_the_ladder_and_a_loose_place
     unfittable["step_rule"]["within_step_cap_cost_fraction"] = 0.5
     with pytest.raises(ValueError, match="placement bounds"):
         validate_fold_step_design(unfittable)
+
+
+def test_a_ladder_that_declares_a_step_no_episode_folds_at_is_refused_by_the_ladder_rule():
+    """The placement ladder is the steps a fold HAPPENS at, not the steps a trigger can select.
+
+    Step 1 is reachable on both committed geometries -- a guard under the first prompt trips on it --
+    and folds nothing, so a cell there would measure a `compact` arm that never compacts. The refusal
+    used to be indirect and geometry-dependent: a step-1 guard sits far under the cap peak, so the
+    per-CELL cap-fitting rule rejected it with a message about the usable guard band, which reads as
+    a guard-placement mistake rather than as a ladder naming an impossible fold.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    sequences = fold_step_prompt_sequences(design)
+    for sequence in sequences.values():
+        assert reachable_fold_steps(sequence)[0] == 1
+        assert foldable_fold_steps(sequence)[0] == 2
+
+    unfoldable = deepcopy(design)
+    unfoldable["ladders"][0]["steps"][0]["fold_step"] = 1
+    with pytest.raises(ValueError, match="ADJACENT on the foldable ladder"):
+        validate_fold_step_design(unfoldable)
 
 
 def test_the_boundary_is_a_fold_step_and_the_interpolated_guard_is_an_artifact():

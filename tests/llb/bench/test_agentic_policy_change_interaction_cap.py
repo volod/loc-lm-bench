@@ -17,7 +17,11 @@ from llb.bench.agentic.context import (
     ContextState,
     compact_state,
 )
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, smallest_guard_reaching
+from llb.bench.agentic_memory_boundary_probe import (
+    cap_prompt_sequence,
+    foldable_fold_steps,
+    smallest_guard_reaching,
+)
 from llb.bench.agentic_policy_change_interaction_band import (
     format_band_report,
     separating_guard_bands,
@@ -40,7 +44,6 @@ from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_CAP,
     FIELD_SHARE,
     StepGeometry,
-    foldable_fold_steps,
 )
 
 # The depth the committed fixture separates at -- the geometry the `no geometry` answers are read on.
