@@ -1698,16 +1698,19 @@ contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
 `src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
 `src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in) and `..._conditions.py` (what each pair demands of a guard), and the three test modules
-that ARE the CI assertion -- `tests/llb/bench/test_agentic_policy_change_interaction.py` for the
-separation, `..._band.py` for the band, and `..._couplings.py` for the enumeration below. All run
-inside `make ci`, together in about two seconds, with no target of their own.
+stated in), `..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
+observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
+prompt the loop merely builds), and the four test modules that ARE the CI assertion --
+`tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
+the band, `..._couplings.py` for the enumeration below, and `..._cap.py` for the discarded-prompt
+arithmetic. All run inside `make ci`, together in about two seconds, with no target of their own.
 
 ```bash
 make ci                       # the separation assertion; a collapsed audit fails here
 .venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py \
   tests/llb/bench/test_agentic_policy_change_interaction_band.py \
-  tests/llb/bench/test_agentic_policy_change_interaction_couplings.py
+  tests/llb/bench/test_agentic_policy_change_interaction_couplings.py \
+  tests/llb/bench/test_agentic_policy_change_interaction_cap.py
 ```
 
 ##### One pair separates, and the other fourteen are answered
@@ -1736,7 +1739,7 @@ Each `no geometry` answer is one contradiction, stated as a condition rather tha
 | the field that blocks | the two conditions that cannot both hold |
 | --- | --- |
 | `compact_keep_recent` | silent alone needs at most `min(keeps)` live entries at the fold (`compact_state` folds the WHOLE transcript when the keep would leave nothing to fold); contributing to the compound needs more than that |
-| `observation_cap_chars` | silent alone needs it to trim nothing differently -- a differently trimmed observation is shown in the very next prompt, and the summarize call is built from RAW observations, so the cap never reaches the summarizer except by moving a fold step; contributing needs it to move a prompt size |
+| `observation_cap_chars` | silent alone needs every prompt it moves to be one no arm shows; contributing needs it to move a prompt size at all. The two cross even in the corner where a fold discards the moved prompt -- see [the cap's own case](#the-caps-silence-is-about-the-prompts-the-loop-builds) |
 | `observation_head_share` | `trim_observation` keeps `head + tail = cap_chars`, so the head share moves no length, no fold step, no trigger crossing and no overflow; the bytes it does move are shown at the same steps under either partner value |
 | `keep_last_n` | neither `observation_cap` nor `compact` reads it, so no value of it moves a prompt in either replayed arm |
 
@@ -1766,20 +1769,62 @@ cells separate, all of them `compact_share` x `summary_input_cap` at guards 2110
 asserts both halves: no other pair separates anywhere, and every hit for the separating pair falls
 inside a solved band.
 
-What the enumeration does NOT cover: a field is called silent when no prompt the episode SENDS
-moves, and a fold discards the prompt it was building. At a fold that folds the whole transcript
-(one live entry) that discarded prompt is the one place a cap could move a size unobserved, and the
-conditions treat it as if it were shown. The wide scan covers that corner empirically -- guards that
-small fold at step 2 and the episode dies immediately -- but the arithmetic does not.
+##### The cap's silence is about the prompts the loop builds
+
+A replay calls a field silent when no prompt the episode SENDS moves, and the loop builds one prompt
+it never sends: `step_prompt` assembles the step prompt, finds it over the compaction trigger, folds,
+and rebuilds. Everything downstream of that fold is cap-independent -- the summarize call is
+assembled from RAW observations (`summarize_entries`), and so are the aggregate and memory facts
+folded into the summary -- so a fold that drops every entry the two caps disagree about leaves the
+post-fold prompt identical under both. `observation_cap_chars` can therefore move a size the compact
+arm never shows, which is a case its `no geometry` answer has to ANSWER rather than assume away.
+
+That corner is not hypothetical. At depth 10 the shipped geometry has 37 guards (6000-7800) whose
+fold drops the whole transcript -- step 2, one live entry, so `compact_state` takes its
+fold-everything fallback -- and at every one of them a cap move of 800 -> 1600 audited alone reports
+`changed_arms = ['observation_cap']`: the compact arm really is blind to the cap there, and the only
+thing that reports it is the OTHER audited arm.
+
+So the cap states three cases instead of two (`agentic_policy_change_interaction_cap`):
+
+| what the two caps move | silent audited alone | reaching the compound |
+| --- | --- | --- |
+| no prompt at any step, sent or discarded | always | impossible -- nothing to move a fold step with |
+| a prompt some arm shows | impossible -- the union reports the cap alone | (already blocked) |
+| only prompts the fold discards | `guard < smallest`, because the `observation_cap` arm has no fold to hide it behind and either sends the prompt or overflows on it | needs a trigger inside `[smallest, largest)`, so `guard >= smallest_guard_reaching(smallest, share)` |
+
+The third row is the corner, and it closes: a compact share is at most 1, so a guard whose trigger
+REACHES a prompt is never smaller than that prompt, and the two bounds cross at every fold step. The
+answer is now a proof over every prompt the loop builds rather than over the ones it sends. Which
+entries a cap moved is read off the FIRST DIFFERENCE of the two prompt sequences the solver already
+computes -- a step prompt is a fixed scaffold plus one line per live entry -- so the third case
+costs no extra replay, and it catches a pair of entries that move in opposite directions where a
+comparison of prompt sizes would not. The shipped task world pads every observation alike, so a cap
+that re-trims the first one re-trims all ten: the corner's branch is exercised on stated sequences,
+and the fold-everything count it turns on is checked against `compact_state` itself.
+
+The blocked step reads as a derivation rather than as an empty list, and it names WHICH moved entry
+outlives the fold:
+
+```text
+fold step 2: nothing separates (caps 800 -> 1600 move step 2's prompt (3904 vs 4333 chars), and
+  the fold here discards entries 1-1) -- the_cap_audited_alone_is_silent impossible: a differently
+  trimmed observation the fold leaves live is shown in a prompt the episode sends; the fold here
+  discards entries 1-1 and entry 2 (9 of 10 moved entries) survives it
+```
 
 Core locations are `src/llb/bench/agentic_policy_change_interaction_couplings.py` (the enumeration,
 its mechanisms, and the one concrete move per field the scan asks with),
-`src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions),
+`src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions) and
+`..._cap.py` (the cap's three cases and the per-entry arithmetic),
 `src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan and its refusal to scan a
 baseline the per-field arm would not replay), and
 `tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`, which is the assertion: every
 pair enumerated, one pair separating, and the two independence claims (`keep_last_n` inert, the head
 share length-preserving) measured on real prompts rather than asserted.
+`tests/llb/bench/test_agentic_policy_change_interaction_cap.py` holds the cap's three cases: the
+shipped geometry's blocked steps stay blocked for the stated reason, the corner's branch is read on
+stated sequences, and the fold-everything count is measured against `compact_state`.
 
 ```bash
 make ci                       # the enumeration; a new policy constant fails here unpaired

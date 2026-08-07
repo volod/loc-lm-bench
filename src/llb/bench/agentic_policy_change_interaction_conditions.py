@@ -6,15 +6,18 @@ actually runs on (`agentic_policy_change_interaction_terms` holds the shape of a
 `compact_share` x `summary_input_cap` all three are intervals the boundary probe computes, which is
 why that pair has a solvable band. For every other pair two of the three contradict each other by
 construction, and the condition says so in its own words rather than by returning an empty answer
-nobody can read: a keep that folds the whole transcript cannot also fold a different span, and an
-observation cap that moves no prompt cannot move a fold step either.
+nobody can read: a keep that folds the whole transcript cannot also fold a different span, and a
+head share that moves no prompt LENGTH gives no partner field anything to read.
+
+`observation_cap_chars` is answered in `agentic_policy_change_interaction_cap` instead of here: its
+conditions have to separate the prompts the episode SENDS from the ones the loop merely builds, and
+that arithmetic is the substance of the answer rather than a detail of it.
 """
 
 from typing import cast
 
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW
 from llb.bench.agentic_memory_boundary_probe import (
-    cap_prompt_sequence,
     compact_fold_input_probe,
     fold_step_guard_interval,
     fold_step_trigger_interval,
@@ -24,7 +27,6 @@ from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction_terms import (
     AUDITED_POLICY_FIELDS,
     FIELD_BOUND,
-    FIELD_CAP,
     FIELD_HEAD,
     FIELD_KEEP_RECENT,
     FIELD_SHARE,
@@ -36,7 +38,7 @@ from llb.bench.agentic_policy_change_interaction_terms import (
 )
 
 
-def _folds_at_this_step(step: StepGeometry) -> BandCondition:
+def folds_at_this_step(step: StepGeometry) -> BandCondition:
     """The guards whose trigger selects THIS fold step -- every coupling starts from it."""
     low, high = fold_step_guard_interval(step.sequence, step.step, step.share)
     return BandCondition(
@@ -108,7 +110,7 @@ def keep_recent_conditions(step: StepGeometry) -> StepConditions:
     return StepConditions(
         detail=f"{live} live entries at the fold, keeps {keeps[0]} -> {keeps[1]}",
         conditions=(
-            _folds_at_this_step(step),
+            folds_at_this_step(step),
             BandCondition.satisfied_when(
                 live <= kept,
                 "the_keep_audited_alone_is_silent",
@@ -120,40 +122,6 @@ def keep_recent_conditions(step: StepGeometry) -> StepConditions:
                 "the_moved_keep_folds_a_different_span",
                 f"the compound must fold something the partner field alone does not, which needs "
                 f"more than {kept} live entries; step {step.step} has {live}",
-            ),
-        ),
-    )
-
-
-def observation_cap_conditions(step: StepGeometry) -> StepConditions:
-    """`observation_cap_chars` x anything: either it moves a prompt the episode sends, or nothing.
-
-    The cap reaches the loop through the RENDERED observations alone: the summarize call is built
-    from the entries' raw observations (`summarize_entries`), so the cap never reaches the summarizer
-    except by deciding which entries a fold folded. A cap that trims some observation differently
-    therefore shows up in the very next step's prompt -- audited alone, and reported by the union. A
-    cap that trims nothing differently moves no prompt at any guard, so it cannot move a fold step
-    either, and the compound reads exactly as its partner field alone.
-    """
-    caps = step.moved(FIELD_CAP)
-    before, after = (cap_prompt_sequence(**{**step.geometry, FIELD_CAP: int(cap)}) for cap in caps)
-    divergent = _first_divergent_prompt(before, after)
-    shown = "no step's prompt" if divergent is None else f"step {divergent}'s prompt"
-    return StepConditions(
-        detail=f"caps {caps[0]} -> {caps[1]} move {shown}",
-        conditions=(
-            _folds_at_this_step(step),
-            BandCondition.satisfied_when(
-                divergent is None,
-                "the_cap_audited_alone_is_silent",
-                "a differently trimmed observation is shown in the next step's prompt, so the cap "
-                f"is silent only when it trims nothing differently; here it moves {shown}",
-            ),
-            BandCondition.satisfied_when(
-                divergent is not None,
-                "the_cap_moves_the_fold_step",
-                "the compound needs the cap to move a prompt size, which a cap that trims nothing "
-                f"differently never does; here it moves {shown}",
             ),
         ),
     )
@@ -172,7 +140,7 @@ def head_share_conditions(step: StepGeometry) -> StepConditions:
     return StepConditions(
         detail=f"head share {head[0]} -> {head[1]} keeps every trimmed length exactly",
         conditions=(
-            _folds_at_this_step(step),
+            folds_at_this_step(step),
             BandCondition.always(
                 "the_head_share_moves_no_prompt_length",
                 "a head/tail split of the same cap keeps the trimmed length exactly, so no partner "
@@ -198,7 +166,7 @@ def inert_field_conditions(step: StepGeometry) -> StepConditions:
     return StepConditions(
         detail=f"{', '.join(inert)} parameterizes neither audited arm",
         conditions=(
-            _folds_at_this_step(step),
+            folds_at_this_step(step),
             BandCondition.always(
                 "the_inert_field_is_silent_audited_alone",
                 f"{', '.join(inert)} is read by neither `observation_cap` nor `compact`",
@@ -229,20 +197,6 @@ def _offered_at_one_fold(guard_chars: int, step: StepGeometry) -> int | None:
     if probe["n_compactions"] != 1 or probe["summary_input_elided_chars"] != 0:
         return None
     return probe["summary_input_chars"]
-
-
-def _first_divergent_prompt(before: list[int], after: list[int]) -> int | None:
-    """The first 1-based step whose prompt size differs between two task worlds, or None."""
-    if len(before) != len(after):
-        return min(len(before), len(after)) + 1
-    return next(
-        (
-            step
-            for step, sizes in enumerate(zip(before, after, strict=True), start=1)
-            if sizes[0] != sizes[1]
-        ),
-        None,
-    )
 
 
 def _separating_shares(change: PolicyChange) -> tuple[float, float]:

@@ -43,32 +43,56 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-silence-includes-the-discarded-prompt (optional)
+### agent-policy-change-replay-records-the-refused-prompt (optional)
 
-A coupling calls a field SILENT when no prompt the episode SENDS moves, and the fold discards the
-prompt it was building before it rebuilds
-([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)).
-At a fold that folds the WHOLE transcript -- one live entry, so `compact_state` takes its
-fold-everything fallback -- that discarded prompt is the one place a field can move a size nobody
-observes, and the cap conditions treat it as if it were shown. So the `no geometry` answers for
-every `observation_cap_chars` pair are one case short of a proof: a cap could in principle move the
-discarded prompt across the candidate share's trigger and move the fold with no field audible alone.
-Give the cap condition that case -- the fold-everything steps are exactly where
-`live_entries_at_fold_step(step) <= compact_keep_recent`, and both caps' prompt sequences are already
-computed -- and either widen the answer to a proof or report the corner as a band to commit a cell
-for.
+The replay records a prompt by intercepting the injected `complete`, so a prompt the guard REFUSES
+is built, never sent, and never compared: `run_episode` checks `budget.fits` before the model call
+and ends the episode as `context_overflow`. Two arms that overflow at the same step therefore read as
+byte-identical whatever the refused prompts measured, and the audit reports `prompt_invariant` for a
+change that moved the very prompt that ended the run
+([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
+Cap-fitting cells are chosen not to overflow, but nothing in the audit asserts that, and the
+observation cap's own band conditions now name the refused prompt as the thing that keeps a
+discarded size unobservable
+([extended workflows](current/extended-workflows.md#the-caps-silence-is-about-the-prompts-the-loop-builds)),
+so the replay should be able to see it. Record the refused prompt (or its char count plus the
+terminal status) alongside the sent ones, compare it in `arm_comparison`, and add the fixture case
+that a change moving only an overflowing prompt no longer reads as invariant.
 
 - Agent status: CLEAR
-- Dependencies: the conditions are `observation_cap_conditions` in
-  `src/llb/bench/agentic_policy_change_interaction_conditions.py`; the fold-everything fallback is
-  `compact_state` in `src/llb/bench/agentic/context.py`; the replay check that covers the corner
-  empirically today is the `slow` scan in
-  `tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`.
-- User-visible outcome: "no geometry separates this pair" is a statement about every prompt the loop
-  builds, not only the ones it sends.
-- Scope boundary: in scope -- the discarded-prompt case in the cap conditions, and the test that a
-  known blocked step stays blocked. Out of scope -- changing any shipped constant, re-running a
-  published cell, and widening the audited study set.
+- Dependencies: the recording seam is `replay_prompts` in
+  `src/llb/bench/agentic_policy_change_replay.py`; the refusal is the `budget.fits` branch of
+  `run_episode` in `src/llb/bench/agentic/episode.py`, which already stamps `prompt_chars` for the
+  prompt it refuses.
+- User-visible outcome: "this change invalidates nothing" covers the prompt that ended the episode,
+  not only the ones a model saw.
+- Scope boundary: in scope -- the recorded refusal, its comparison, and the fixture case. Out of
+  scope -- changing the overflow rule itself, changing any shipped constant, and re-running a
+  published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+
+### agent-policy-change-interaction-band-skips-the-unfoldable-first-step (optional)
+
+`reachable_fold_steps` calls step 1 a reachable fold step because some trigger sits below the first
+prompt, but no episode can fold there: the step-1 prompt is built from ZERO entries and
+`compact_state` returns false with nothing to fold. Every coupling therefore states three conditions
+about a step the loop never folds at, and because `_blocking_reasons` deduplicates by condition name
+the vacuous step-1 row is the one that LEADS the no-band report -- the reader's first line is the
+least informative one available
+([extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered)).
+Restrict the solved steps to those with at least one live entry
+(`live_entries_at_fold_step(step) >= 1`), and check that no solved band moves as a result.
+
+- Agent status: CLEAR
+- Dependencies: the step list is `reachable_fold_steps` in
+  `src/llb/bench/agentic_memory_boundary_probe.py`, consumed by `separating_guard_bands` in
+  `src/llb/bench/agentic_policy_change_interaction_band.py`; the entry count is
+  `live_entries_at_fold_step` in `..._interaction_terms.py`.
+- User-visible outcome: a blocked-step report opens with a fold that can actually happen, so a
+  drifted geometry is read from the first line rather than the third.
+- Scope boundary: in scope -- the step filter, the report, and the test that the two committed bands
+  are unchanged. Out of scope -- changing any shipped constant and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#one-pair-separates-and-the-other-fourteen-are-answered).
 

@@ -24,11 +24,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from llb.bench.agentic_policy_change_audit import AUDITABLE_FIELDS, PolicyChange
+from llb.bench.agentic_policy_change_interaction_cap import observation_cap_conditions
 from llb.bench.agentic_policy_change_interaction_conditions import (
     head_share_conditions,
     inert_field_conditions,
     keep_recent_conditions,
-    observation_cap_conditions,
     share_bound_conditions,
 )
 from llb.bench.agentic_policy_change_interaction_terms import (
