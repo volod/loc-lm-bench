@@ -26,8 +26,15 @@ Growth is bounded rather than unlimited, since these aggregates accumulate with 
 adopts the seam: a per-artifact byte cap, a total budget across the committed evidence, and a
 regeneration that PRUNES every copy no published value still cites -- so the cost tracks the number
 of CITED artifacts, not the number of runs.
+
+The tree is SHARED, so "still cites" is the union over every design that publishes resolvable
+values, not the citations of whichever design a refresh was handed. That registry and the refresh
+that walks it live in `llb.bench.agentic_published_value_registry`; this module refuses to write a
+manifest that omits an artifact the registry says is cited, so the prune here can never retire a
+registered study's evidence.
 """
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 import hashlib
 import json
@@ -108,13 +115,23 @@ def load_provenance_fixture(root: Path) -> dict[str, CommittedAggregate]:
     return {artifact: _committed(root, artifact, entry) for artifact, entry in entries.items()}
 
 
-def write_provenance_fixture(root: Path, aggregates: dict[str, bytes]) -> Path:
+def write_provenance_fixture(
+    root: Path,
+    aggregates: dict[str, bytes],
+    *,
+    cited_by: Mapping[str, Collection[str]] | None = None,
+) -> Path:
     """Commit each cited aggregate verbatim, pin it, and drop every copy nothing cites any more.
 
     Bytes in, never a re-serialized payload: a copy written from a parsed object would digest to
     something the run artifact never produced, which is the one way a pin and the file it pins could
     disagree by construction.
+
+    `cited_by` is the registry's whole citation map (artifact -> the designs that cite it). Passing
+    it makes this write a UNION rather than one caller's view of the tree; leaving it out states
+    that the caller speaks for no registry, which is what a synthetic set in a test does.
     """
+    _refuse_partial_union(aggregates, cited_by)
     _check_growth_budget(aggregates)
     for artifact, raw in aggregates.items():
         committed = committed_aggregate_path(root, artifact)
@@ -144,6 +161,32 @@ def _manifest(aggregates: dict[str, bytes]) -> dict[str, object]:
             for artifact in sorted(aggregates)
         },
     }
+
+
+def _refuse_partial_union(
+    aggregates: dict[str, bytes], cited_by: Mapping[str, Collection[str]] | None
+) -> None:
+    """The manifest is the union of every registered design's citations, or it is not written.
+
+    The prune below is what makes this worth refusing over: it deletes every copy the incoming set
+    omits, and the deletion reads as a clean prune rather than as evidence loss. So a caller holding
+    ONE design's citations must not be able to retire another registered study's aggregates by
+    regenerating -- the whole set is offered, or nothing is written.
+    """
+    if cited_by is None:
+        return
+    dropped = sorted(artifact for artifact in cited_by if artifact not in aggregates)
+    if not dropped:
+        return
+    named = "; ".join(
+        f"{artifact} (cited by {', '.join(sorted(cited_by[artifact]))})" for artifact in dropped
+    )
+    raise ValueError(
+        f"{PROVENANCE_FIXTURE}: regenerating from {len(aggregates)} aggregates would drop the "
+        f"committed copy of {named} -- a registered design still resolves published values through "
+        "it, so the refresh must offer the union over every registered design rather than one "
+        "design's citations"
+    )
 
 
 def _check_growth_budget(aggregates: dict[str, bytes]) -> None:

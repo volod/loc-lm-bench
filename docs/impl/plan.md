@@ -43,29 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-evidence-regeneration-is-single-design (optional)
+### agent-registered-publishing-design-is-unvalidated-in-ci (optional)
 
-The regeneration that re-commits the cited run aggregates prunes the committed tree down to the
-citations of the ONE design it was handed, so the evidence set is exactly what that design points at
+The refresh now walks a registry of every design that publishes resolvable values, so the committed
+evidence is the union over all of them
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-That is correct while the crossover restatement is the only study using the resolver and a landmine
-the moment a second one adopts it: refreshing through either design would then delete the other
-study's committed aggregates, and the deletion reads as a clean prune rather than as evidence loss.
-Make the cited set the UNION over every design that publishes resolvable values -- a registry of
-design paths the refresh walks, the way the policy audit already walks `AUDITED_DESIGN_PATHS` -- and
-refuse a refresh that would drop a copy some registered design still cites.
+What no registry-driven check does is RESOLVE those values: CI validates the crossover restatement
+because one test names that design file, so a second design could register, have its aggregates
+committed and pruned correctly, and still publish a number nothing reads back out of them -- the
+registry would make its evidence durable without making its claims checkable, which is the more
+convincing failure of the two. Give each registry entry a validation callable beside its citation
+reader (the restatement's is `validate_restatement_design`), and add the CI test that walks the
+registry and validates every registered design, so registering is what buys the check rather than
+remembering to write a per-design test.
 
 - Agent status: CLEAR
-- Dependencies: the prune is `_prune_uncited_copies` in
-  `src/llb/bench/agentic_published_value_fixture.py`, driven by the single-design
-  `refresh_provenance_fixture` in
-  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the registry pattern is
-  `AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
-- User-visible outcome: a second study can adopt the published-value resolver without a routine
-  regeneration silently retiring the first study's evidence.
-- Scope boundary: in scope -- the design registry the refresh walks, the union prune, and the
-  refusal. Out of scope -- adopting the resolver in another study (that is its own task) and
-  re-running a published cell.
+- Dependencies: the registry is `PUBLISHED_VALUE_DESIGNS` in
+  `src/llb/bench/agentic_published_value_registry.py`; the per-design validation it would call is
+  `validate_restatement_design` in
+  `src/llb/bench/agentic_memory_crossover_restatement_design.py`, driven today only by
+  `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py`.
+- User-visible outcome: a study that registers for durable evidence gets its published values
+  resolved in CI by that same act, so committed bytes and checked claims cannot drift apart.
+- Scope boundary: in scope -- the validation seam on the registry entry, the registry-walking CI
+  test, and the refusal for an entry that registers no validation. Out of scope -- adopting the
+  resolver in another study and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

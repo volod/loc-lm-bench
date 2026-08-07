@@ -43,8 +43,8 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     refresh_provenance: bool = typer.Option(
         False,
         "--refresh-provenance",
-        help="re-commit the run aggregates the published values are resolved against, and their "
-        "content pins, from the artifacts under DATA_DIR, and stop",
+        help="re-commit the run aggregates EVERY registered design's published values are resolved "
+        "against, and their content pins, from the artifacts under DATA_DIR, and stop",
     ),
 ) -> None:
     """Audit which published cells the shipped cap can move, re-measure only those, and restate."""
@@ -58,11 +58,11 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     )
     from llb.bench.agentic_memory_crossover_restatement_design import (
         load_restatement_design,
-        published_crossovers,
         validate_restatement_design,
     )
-    from llb.bench.agentic_memory_crossover_restatement_provenance import (
-        refresh_provenance_fixture,
+    from llb.bench.agentic_published_value_registry import (
+        PUBLISHED_VALUE_DESIGNS,
+        refresh_committed_evidence,
     )
     from llb.bench.agentic_memory_crossover_restatement_report import (
         format_restatement_table,
@@ -77,11 +77,20 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     root = PROJECT_ROOT
     host_data_dir = resolve_data_dir()
     if refresh_provenance:
-        try:
-            design = load_restatement_design(design_path)
-            written = refresh_provenance_fixture(
-                published_crossovers(design), root=root, data_dir=host_data_dir
+        # The refresh walks the REGISTRY, not this command's `--design`: the committed evidence tree
+        # is shared, so regenerating it from one design would prune every other registered design's
+        # aggregates. A `--design` the registry does not know is refused rather than walked alone.
+        registered = {
+            (root / design.design_path).resolve() for design in PUBLISHED_VALUE_DESIGNS.values()
+        }
+        if (root / design_path).resolve() not in registered:
+            cli_error(
+                f"--refresh-provenance regenerates the committed evidence of every registered "
+                f"published-value design, so it cannot be pointed at {design_path} alone; register "
+                f"that design in PUBLISHED_VALUE_DESIGNS to have the refresh carry its evidence too"
             )
+        try:
+            written = refresh_committed_evidence(root=root, data_dir=host_data_dir)
         except (KeyError, ValueError) as exc:
             cli_error(str(exc))
         typer.echo(f"[restatement] provenance manifest -> {written}")

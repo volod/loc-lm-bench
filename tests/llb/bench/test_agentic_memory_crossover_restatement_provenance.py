@@ -20,7 +20,6 @@ from llb.bench.agentic_memory_crossover_restatement_design import (
     validate_restatement_design,
 )
 from llb.bench.agentic_memory_crossover_restatement_provenance import (
-    refresh_provenance_fixture,
     validate_published_provenance,
 )
 from llb.bench.agentic_memory_crossover_restatement_reading import (
@@ -38,6 +37,10 @@ from llb.bench.agentic_published_value_fixture import (
     write_provenance_fixture,
 )
 from llb.bench.agentic_published_value_provenance import provenance_pair
+from llb.bench.agentic_published_value_registry import (
+    published_citations,
+    refresh_committed_evidence,
+)
 from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_SURFACE
 from llb.core.paths import resolve_data_dir
 
@@ -90,9 +93,15 @@ def test_every_committed_crossover_resolves_out_of_the_aggregate_it_cites():
         assert artifact in committed
 
 
-def test_the_committed_evidence_carries_no_artifact_no_crossover_points_at():
-    """A copy nothing resolves through is an aggregate the design stopped citing."""
-    assert set(load_provenance_fixture(ROOT)) == _cited_artifacts()
+def test_the_committed_evidence_is_the_union_over_every_registered_design():
+    """A copy nothing resolves through is an aggregate every registered design stopped citing.
+
+    Read off the registry rather than off this one design, because the tree is shared: the day a
+    second study adopts the resolver, "what the restatement cites" stops being the right set and a
+    refresh that used it would prune the newcomer's evidence.
+    """
+    assert set(load_provenance_fixture(ROOT)) == set(published_citations(ROOT))
+    assert _cited_artifacts() <= set(published_citations(ROOT))
 
 
 def test_the_committed_evidence_stays_inside_the_growth_budget():
@@ -103,7 +112,7 @@ def test_the_committed_evidence_stays_inside_the_growth_budget():
     """
     total = committed_evidence_bytes(ROOT)
     assert 0 < total <= MAX_COMMITTED_BYTES
-    for artifact in _cited_artifacts():
+    for artifact in published_citations(ROOT):
         assert committed_aggregate_path(ROOT, artifact).stat().st_size <= MAX_AGGREGATE_BYTES
 
 
@@ -218,8 +227,7 @@ def test_the_committed_evidence_is_what_the_run_artifacts_still_hold(tmp_path):
     tracked fixture reports a pass by having repaired what it was checking.
     """
     data_dir = _host_data_dir()
-    crossovers = published_crossovers(load_restatement_design(DESIGN_PATH))
-    regenerated = refresh_provenance_fixture(crossovers, root=tmp_path, data_dir=data_dir)
+    regenerated = refresh_committed_evidence(root=tmp_path, data_dir=data_dir, design_root=ROOT)
     assert regenerated.read_text(encoding="utf-8") == (ROOT / PROVENANCE_FIXTURE).read_text(
         encoding="utf-8"
     )
@@ -232,9 +240,8 @@ def test_the_committed_evidence_is_what_the_run_artifacts_still_hold(tmp_path):
 
 def test_regeneration_refuses_a_host_that_does_not_have_the_run(tmp_path):
     """Better a named refusal than a fixture silently regenerated with an artifact left out."""
-    crossovers = published_crossovers(load_restatement_design(DESIGN_PATH))
     with pytest.raises(ValueError, match="is not under DATA_DIR on this host"):
-        refresh_provenance_fixture(crossovers, root=tmp_path, data_dir=tmp_path / "empty")
+        refresh_committed_evidence(root=tmp_path, data_dir=tmp_path / "empty", design_root=ROOT)
 
 
 def test_regeneration_commits_each_cited_artifact_once_and_verbatim(tmp_path):
@@ -258,9 +265,7 @@ def test_a_regenerated_copy_pins_the_file_it_was_taken_from(tmp_path):
 
     surface = data_dir / _cited(FORM_INTERPOLATED)
     surface.write_text(surface.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-    refresh_provenance_fixture(
-        published_crossovers(load_restatement_design(DESIGN_PATH)), root=tmp_path, data_dir=data_dir
-    )
+    refresh_committed_evidence(root=tmp_path, data_dir=data_dir, design_root=ROOT)
     repinned = _pins(tmp_path)
     assert repinned[_cited(FORM_INTERPOLATED)] != pinned[_cited(FORM_INTERPOLATED)]
     assert repinned[_cited(FORM_FOLD_STEP)] == pinned[_cited(FORM_FOLD_STEP)]
@@ -272,9 +277,7 @@ def _fake_host(tmp_path: Path) -> Path:
     for artifact, payload in _FAKE_ARTIFACTS.items():
         (data_dir / artifact).parent.mkdir(parents=True, exist_ok=True)
         (data_dir / artifact).write_text(json.dumps(payload), encoding="utf-8")
-    refresh_provenance_fixture(
-        published_crossovers(load_restatement_design(DESIGN_PATH)), root=tmp_path, data_dir=data_dir
-    )
+    refresh_committed_evidence(root=tmp_path, data_dir=data_dir, design_root=ROOT)
     return data_dir
 
 
@@ -303,9 +306,11 @@ def _validate_against(
 
 
 def _host_data_dir() -> Path:
-    """This host's DATA_DIR, or a skip when it never ran the studies the design cites."""
+    """This host's DATA_DIR, or a skip when it never ran the studies the registry cites."""
     data_dir = resolve_data_dir()
-    missing = [artifact for artifact in _cited_artifacts() if not (data_dir / artifact).is_file()]
+    missing = [
+        artifact for artifact in published_citations(ROOT) if not (data_dir / artifact).is_file()
+    ]
     if missing:
         pytest.skip(f"this host never ran {missing[0]}")
     return data_dir

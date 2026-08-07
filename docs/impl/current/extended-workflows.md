@@ -1640,6 +1640,26 @@ and a regeneration that PRUNES every copy no published value still cites, so the
 number of CITED artifacts and not the number of runs. The three aggregates behind the six published
 crossovers total 128,649 bytes.
 
+The pruned tree is SHARED, so "still cites" is the union over every design that publishes resolvable
+values rather than the citations of whichever design a refresh was handed. That distinction is
+invisible with one study and is evidence loss with two: refreshing through either design would
+delete the other study's committed aggregates, and the deletion reads as a clean prune rather than
+as a retirement. `agentic_published_value_registry.py` therefore holds the registry the refresh
+walks -- `PUBLISHED_VALUE_DESIGNS`, one entry per publishing design carrying its in-repo path and
+the reader that names the artifacts its values resolve against, the same shape as
+`AUDITED_DESIGN_PATHS` in the policy audit and for the same reason: two code paths that disagree
+about which evidence exists are two answers to one question. `make bench-agentic-published-provenance`
+commits the union, an artifact two designs cite is carried once, and a design is invisible to the
+refresh until it is registered -- so adopting the resolver in a new study means registering it in
+the same commit. Three refusals guard the union rather than trusting the walk: a registered design
+the repo does not carry stops the refresh (unknown citations are not the same as none); a registered
+design whose run is not under DATA_DIR stops it too, naming that design, because a partial host is
+the ordinary way a study's evidence would have been silently retired; and the write seam itself
+refuses any set that omits an artifact the registry says is cited, so no caller can prune another
+design's aggregates by construction. `--refresh-provenance` is registry-driven for the same reason
+and refuses a `--design` the registry does not name instead of regenerating from it alone. Retiring
+a design from the registry is what prunes its evidence, which is the one act that should.
+
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
 `depth_ladders[depth=10].boundary.guard_boundary_chars`, `cap_peak_prompt_chars.6`. One walk serves
@@ -1702,11 +1722,13 @@ Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extract
 both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
 `src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
 read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
-manifest pins, and the growth policy), `src/llb/bench/agentic_published_value_provenance.py` (the
-`(artifact, field)` pair and the two-source read -- all three study-agnostic, so any published
+manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
+`src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs and the
+union refresh that walks it), `src/llb/bench/agentic_published_value_provenance.py` (the
+`(artifact, field)` pair and the two-source read -- all four study-agnostic, so any published
 agentic number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
-resolves to, including the re-derived band, and the fixture regeneration),
+resolves to, including the re-derived band),
 `src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
 the per-form annotation rules, shared by design validation and the restatement),
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
@@ -1727,7 +1749,11 @@ so a failure names the pointer rather than the study that used it),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact
-that is not the pinned file even where the cited value agrees), and
+that is not the pinned file even where the cited value agrees),
+`tests/llb/bench/test_agentic_published_value_registry.py` (the union over two registered designs,
+an aggregate both cite carried once, and each of the three refusals -- a partial host, an
+unreadable registered design, and a write that would drop a still-cited copy -- plus the prune that
+a design retired from the registry still gets), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
 resolved out of the committed aggregates, a transcription slip in each form, the re-derived band,
 the committed bytes checked against this host's own run artifacts, the growth budget, and the no-op

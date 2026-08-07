@@ -25,11 +25,7 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_fixture import write_provenance_fixture
-from llb.bench.agentic_published_value_provenance import (
-    PublishedValueResolver,
-    provenance_pair,
-)
+from llb.bench.agentic_published_value_provenance import PublishedValueResolver
 
 
 def validate_published_provenance(
@@ -49,30 +45,6 @@ def validate_published_provenance(
             # list, so a form added later is checked by default instead of silently skipped.
             _check_stated_value(crossover, resolver)
     _validate_published_band(crossovers, ratios)
-
-
-def refresh_provenance_fixture(
-    crossovers: list[dict[str, object]], *, root: Path, data_dir: Path
-) -> Path:
-    """Re-commit the cited run aggregates, and their pins, from the runs this host still has.
-
-    Copied, never typed: that is the whole difference between a resolution and a second
-    transcription of the number the first one got wrong. The bytes and the digest come out of one
-    read of one file, so a committed copy and the pin that makes it falsifiable cannot disagree.
-    """
-    cited: dict[str, bytes] = {}
-    for crossover in crossovers:
-        artifact, _field = provenance_pair(crossover.get("provenance"), where=_label(crossover))
-        if artifact in cited:
-            continue
-        path = data_dir / artifact
-        if not path.is_file():
-            raise ValueError(
-                f"{_label(crossover)}: the run artifact {artifact} is not under DATA_DIR on this "
-                "host, so its committed copy cannot be regenerated here"
-            )
-        cited[artifact] = path.read_bytes()
-    return write_provenance_fixture(root, cited)
 
 
 def _resolved_guards(
