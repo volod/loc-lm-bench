@@ -1793,10 +1793,29 @@ Reaching outside that raises with the input NAMED instead of the `KeyError` or `
 deeper; a declared input nothing reached for is refused as over-declaration. One distinction carries
 the second refusal: membership is not a read, because `apply` asks `name not in stated` for every
 declared field before computing anything, and counting that would mark every declaration read.
-Calling at all needs a point to call at, so a registered operation carries a `probe` -- a required
+Calling at all needs a point to call at, so a registered operation carries `probes` -- a required
 field, since an operation the self-check cannot call is one whose declaration nothing checks against
-its body -- and a probe that does not answer exactly what the operation declares is refused at
-construction, because answering MORE is what would hide a read the declaration lacks.
+its body -- and a point that does not answer exactly what the operation declares is refused at
+construction (named by position), because answering MORE is what would hide a read the declaration
+lacks.
+
+`probes` is a SET of points rather than one point, because a body reads its declaration along a
+PATH. One call observes one path, so a declared input a body reaches for only on a branch is unread
+at a point that misses the branch -- refused as over-declaration, a FALSE refusal -- and, in the
+direction that actually matters, a body reaching OUTSIDE its declaration on a missed branch is not
+seen at all. With one point per operation the author picked the point, so the check could be
+satisfied by picking an easy one. The self-check now calls at every point of the set into ONE
+recording: the over-declaration refusal is read off the UNION of the reads (an input read at any
+point is read, and the refusal says "never reads it at any of its N points"), while the first point
+that reaches outside the declaration ends the walk and is named at its position. A set whose points
+are equal in every input the operation declares is refused at construction -- two such points hand
+the body the same numbers and take the same path -- so exercising a second branch is a DECLARATION
+an author writes beside the arithmetic, not a review comment somebody has to think to make. The
+shipped `trigger_over_own_cap_peak` declares two points (a half share over a 1024-char guard, a
+quarter share over 4096) that differ in every declared input. What the set does not claim is branch
+COVERAGE: a branch no point takes is still unobserved. It makes that residual DECLARABLE rather than
+removing it -- generating the points that would cover a body is a solver, and the declared point is
+the readable thing.
 
 The third defect is a walk of the registered DESIGNS rather than of the operations, so a
 `PublishedValueDesign` entry now carries a reader for its published values beside its citations and
@@ -1922,6 +1941,14 @@ source, a self-reference, a cycle, and a duplicated identity),
 its named intermediate, the refusals for an unregistered operation and for inputs an operation did
 not declare, and the proof that ONE registered function serves both readers -- swapping it moves the
 band design validation re-derives and the ratio the restated row reports),
+`tests/llb/bench/test_agentic_published_value_operation_audit.py` (the registry self-check: a body
+reading a stated field, a measurement, or a source it did not declare, a declaration listing an
+input the body never reads, an operation that does not compute at its own probe point, the
+membership-is-not-a-read distinction the over-declaration refusal rests on, a read that happens on
+ONE branch driven in each direction -- at a probe set that misses the branch and at one that takes
+it -- the probe-set refusals for no point at all, for two points that cannot differ, and for a point
+that does not answer the declaration, plus arithmetic no registered design names and the CI gate
+over the shipped registry),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact

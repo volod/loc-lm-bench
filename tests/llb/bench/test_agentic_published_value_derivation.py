@@ -154,7 +154,9 @@ def test_an_operation_reading_a_field_the_design_does_not_state_is_refused(
             source_forms=(MEASURED,),
             stated_fields=("compact_share",),
             compute=summed,
-            probe=DerivationInputs(sources=(PROBE_SOURCE,), stated={"compact_share": PROBE_SOURCE}),
+            probes=(
+                DerivationInputs(sources=(PROBE_SOURCE,), stated={"compact_share": PROBE_SOURCE}),
+            ),
         ),
     )
     named = {

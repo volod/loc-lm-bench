@@ -132,7 +132,7 @@ def swapped_trigger(monkeypatch: pytest.MonkeyPatch) -> None:
             stated_fields=operation.stated_fields,
             reads_own_measurement=operation.reads_own_measurement,
             compute=_swapped,
-            probe=operation.probe,
+            probes=operation.probes,
         ),
     )
 

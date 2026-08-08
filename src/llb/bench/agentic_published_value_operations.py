@@ -21,8 +21,11 @@ design that named arithmetic nothing implements publishes a number no reader can
 The declaration is checked in BOTH directions. Against the design it is `_check_operands` next door;
 against the FUNCTION beside it, it is the registry self-check in
 `agentic_published_value_operation_audit`, which calls every entry here through inputs answering only
-what it declared. That is why an entry also carries a `probe` point: an operation the self-check
-cannot call is an operation whose declaration nothing checks against its body.
+what it declared. That is why an entry also carries `probes`: an operation the self-check cannot call
+is an operation whose declaration nothing checks against its body. It is a SET of points rather than
+one point because a body reads its declaration along a PATH -- a source read only when a share is
+partial is unread at a point with a whole one -- so which branches the declaration is certified on is
+the operation's own declaration too, and adding a point is how an author states one.
 
 What deliberately stays out is an expression language. A design picks an operation by NAME; adding a
 kind of arithmetic is a registered function with a test, not a formula in a JSON file that every
@@ -44,11 +47,16 @@ STATED_COMPACT_SHARE = "compact_share"
 # Intermediates an operation names so a reader can report them without recomputing them.
 TERM_TRIGGER_CHARS = "trigger_chars"
 
-# The point the registry self-check calls the trigger ratio at. Synthetic and round: the probe exists
-# to record WHICH declared inputs the arithmetic reaches for, not to re-check any published number.
+# The points the registry self-check calls the trigger ratio at. Synthetic and round: the probe set
+# exists to record WHICH declared inputs the arithmetic reaches for, not to re-check any published
+# number. Two points, differing in every declared input, so a read the quotient performs only at a
+# whole compact share or only at a guard the trigger truncates differently is still recorded.
 PROBE_GUARD_CHARS = 1024.0
 PROBE_COMPACT_SHARE = 0.5
 PROBE_CAP_PEAK_CHARS = 512.0
+PROBE_WIDE_GUARD_CHARS = 4096.0
+PROBE_PARTIAL_COMPACT_SHARE = 0.25
+PROBE_WIDE_CAP_PEAK_CHARS = 2048.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +86,11 @@ class DerivedValue:
     terms: Mapping[str, float] = field(default_factory=dict)
 
 
+def probe_point_named(position: int) -> str:
+    """How one point of a probe set is named in a refusal, positionally -- two may look alike."""
+    return f"probe point {position + 1}"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DerivationOperation:
     """One registered re-derivation: what it is computed over, and the pure function that does it."""
@@ -87,27 +100,66 @@ class DerivationOperation:
     stated_fields: tuple[str, ...] = ()
     reads_own_measurement: bool = False
     compute: Callable[[DerivationInputs], DerivedValue]
-    probe: DerivationInputs
+    probes: tuple[DerivationInputs, ...]
 
     def __post_init__(self) -> None:
-        """Refuse an operation whose probe point is not the declaration it is meant to exercise.
+        """Refuse a probe set that cannot check the declaration it is meant to exercise.
 
-        The probe is a required field rather than an optional convenience: it is how the registry
+        The set is a required field rather than an optional convenience: it is how the registry
         self-check (`agentic_published_value_operation_audit`) calls the arithmetic through inputs
         that answer only what it declared, so an operation registered without one would be arithmetic
         nothing could check the declaration of -- the exact gap the self-check exists to close.
         """
+        if not self.probes:
+            raise ValueError(
+                f"the `{self.name}` operation declares no probe point, so nothing can call it "
+                "through its own declaration and nothing checks what it is computed over"
+            )
+        for position, probe in enumerate(self.probes):
+            self._check_probe_answers_declaration(position, probe)
+        self._check_probes_differ()
+
+    def _check_probe_answers_declaration(self, position: int, probe: DerivationInputs) -> None:
+        """Refuse one point that answers more or less than the declaration it is checked against."""
         for field_name, declared, offered in (
-            ("source_forms", len(self.source_forms), len(self.probe.sources)),
-            ("stated_fields", sorted(self.stated_fields), sorted(self.probe.stated)),
-            ("reads_own_measurement", self.reads_own_measurement, self.probe.measured is not None),
+            ("source_forms", len(self.source_forms), len(probe.sources)),
+            ("stated_fields", sorted(self.stated_fields), sorted(probe.stated)),
+            ("reads_own_measurement", self.reads_own_measurement, probe.measured is not None),
         ):
             if declared != offered:
                 raise ValueError(
-                    f"the `{self.name}` operation declares {field_name} {declared!r} while the probe "
-                    f"point it is checked at offers {offered!r}; the probe must answer exactly what "
-                    "the operation declares, because answering more is what would hide a read the "
-                    "declaration does not carry"
+                    f"the `{self.name}` operation declares {field_name} {declared!r} while the "
+                    f"{probe_point_named(position)} it is checked at offers {offered!r}; every probe "
+                    "point must answer exactly what the operation declares, because answering more "
+                    "is what would hide a read the declaration does not carry"
+                )
+
+    def _declared_point(self, probe: DerivationInputs) -> tuple[object, ...]:
+        """Everything about one point the operation can actually reach, in declared order."""
+        return (
+            probe.sources,
+            tuple(probe.stated[name] for name in self.stated_fields),
+            probe.measured if self.reads_own_measurement else None,
+        )
+
+    def _check_probes_differ(self) -> None:
+        """Refuse a set whose points cannot exercise different paths through the body.
+
+        Two points equal in every input the operation declares hand the body the same numbers, so the
+        second takes whatever path the first took and the set certifies exactly what one point does.
+        Refused rather than tolerated so that adding a point is a claim about a BRANCH -- which is the
+        whole reason the probe is a set -- and not a line an author adds to look thorough.
+        """
+        seen: dict[tuple[object, ...], int] = {}
+        for position, probe in enumerate(self.probes):
+            first = seen.setdefault(self._declared_point(probe), position)
+            if first != position:
+                raise ValueError(
+                    f"the `{self.name}` operation declares {probe_point_named(position)} equal to "
+                    f"{probe_point_named(first)} in every input it declares, so it takes the same "
+                    "path through the body and certifies nothing the earlier point did not; a probe "
+                    "SET states which branches the declaration is checked on, and a repeated point "
+                    "states no branch"
                 )
 
     def apply(
@@ -171,10 +223,17 @@ DERIVATION_OPERATIONS: dict[str, DerivationOperation] = {
         stated_fields=(STATED_COMPACT_SHARE,),
         reads_own_measurement=True,
         compute=_trigger_over_own_cap_peak,
-        probe=DerivationInputs(
-            sources=(PROBE_GUARD_CHARS,),
-            stated={STATED_COMPACT_SHARE: PROBE_COMPACT_SHARE},
-            measured=PROBE_CAP_PEAK_CHARS,
+        probes=(
+            DerivationInputs(
+                sources=(PROBE_GUARD_CHARS,),
+                stated={STATED_COMPACT_SHARE: PROBE_COMPACT_SHARE},
+                measured=PROBE_CAP_PEAK_CHARS,
+            ),
+            DerivationInputs(
+                sources=(PROBE_WIDE_GUARD_CHARS,),
+                stated={STATED_COMPACT_SHARE: PROBE_PARTIAL_COMPACT_SHARE},
+                measured=PROBE_WIDE_CAP_PEAK_CHARS,
+            ),
         ),
     ),
 }

@@ -14,16 +14,21 @@ registered beside them, so three defects were invisible until a study adopted th
 
 The first two are read off the recording probe next door
 (`agentic_published_value_operation_probe`), which calls each registered operation through inputs
-answering only its declaration. The third is a walk of the registered DESIGNS, which is why a
-registry entry carries a reader for its published values: no per-design validation can answer a
-question about the designs collectively. All three are refusals rather than notes, on the reasoning
+answering only its declaration -- at every point of the probe SET the operation declares, unioning
+the reads, because a body reads its declaration along a path and one point observes one path. The
+third is a walk of the registered DESIGNS, which is why a registry entry carries a reader for its
+published values: no per-design validation can answer a question about the designs collectively.
+All three are refusals rather than notes, on the reasoning
 the registry uses everywhere else -- arithmetic exercised by no design is arithmetic whose first
 exercise is a published number.
 
 What deliberately stays out is any claim that an operation is PURE or deterministic beyond its
 declared inputs. The probe records reaches through the inputs it was handed; an operation that reads
 a module global is out of reach of anything short of an expression language, which is exactly what
-the design file does not have.
+the design file does not have. Out too is any claim of branch COVERAGE: the set certifies the
+declaration along the paths its points take, and a branch no point takes is unobserved. What the set
+buys is that those paths are a declaration -- refused when two points cannot differ, so an author
+exercising a second branch states it here rather than being asked for it in review.
 """
 
 from dataclasses import dataclass
@@ -37,7 +42,9 @@ from llb.bench.agentic_published_value_operation_probe import (
 from llb.bench.agentic_published_value_operations import (
     DERIVATION_OPERATIONS,
     OPERATION,
+    DerivationInputs,
     DerivationOperation,
+    probe_point_named,
 )
 from llb.bench.agentic_published_value_registry import (
     PUBLISHED_VALUE_DESIGNS,
@@ -45,11 +52,24 @@ from llb.bench.agentic_published_value_registry import (
 )
 
 
-def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
-    """Call one registered operation through its declaration, and say where the two disagree."""
-    reads: set[str] = set()
-    inputs = probe_inputs(operation, reads)
+def _named_at(operation: DerivationOperation, position: int) -> str:
+    """The operation as a refusal names it, located at a point only when the set has more than one.
+
+    Unqualified for a one-point set, because "at probe point 1" is noise an author has to read past
+    when there is nowhere else the reach could have happened.
+    """
     named = f"the `{operation.name}` operation"
+    if len(operation.probes) == 1:
+        return named
+    return f"{named} at {probe_point_named(position)}"
+
+
+def _reach_refusals(
+    operation: DerivationOperation, position: int, probe: DerivationInputs, reads: set[str]
+) -> tuple[str, ...]:
+    """Call the operation at ONE point of its set, recording into `reads` and naming any reach out."""
+    named = _named_at(operation, position)
+    inputs = probe_inputs(operation, probe, reads)
     try:
         operation.apply(inputs.sources, inputs.stated, measured=inputs.measured, where=named)
     except UndeclaredRead as undeclared:
@@ -68,12 +88,35 @@ def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
             f"{named} does not compute at the probe point it declares ({broken}), so nothing can "
             "check its declaration against its arithmetic",
         )
+    return ()
+
+
+def _over_declaration_refusals(operation: DerivationOperation, reads: set[str]) -> tuple[str, ...]:
+    """Read the UNION of the set's reads off, and name every declared input none of them reached."""
+    across = "" if len(operation.probes) == 1 else f" at any of its {len(operation.probes)} points"
     return tuple(
-        f"{named} declares {read} and never reads it, so every design adopting it would carry a "
-        "number for nothing and nothing would ever check that number"
+        f"the `{operation.name}` operation declares {read} and never reads it{across}, so every "
+        "design adopting it would carry a number for nothing and nothing would ever check that "
+        "number"
         for read in declared_reads(operation)
         if read not in reads
     )
+
+
+def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
+    """Call one registered operation at every point of its probe set, and say where it disagrees.
+
+    One recording spans the whole set: over-declaration is read off the UNION, so an input the body
+    reaches for only on a branch counts as read once the point taking that branch is declared. The
+    first point that reaches OUTSIDE the declaration ends the walk instead -- the reach is the
+    answer, and the remaining points would restate it or bury it.
+    """
+    reads: set[str] = set()
+    for position, probe in enumerate(operation.probes):
+        reached = _reach_refusals(operation, position, probe, reads)
+        if reached:
+            return reached
+    return _over_declaration_refusals(operation, reads)
 
 
 def published_operations(design_root: Path) -> dict[str, list[str]]:

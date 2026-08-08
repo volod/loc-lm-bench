@@ -49,7 +49,7 @@ def register_test_operations(monkeypatch: pytest.MonkeyPatch) -> None:
                 name=operation_name(forms),
                 source_forms=forms,
                 compute=summed,
-                probe=DerivationInputs(sources=tuple(PROBE_SOURCE for _ in forms), stated={}),
+                probes=(DerivationInputs(sources=tuple(PROBE_SOURCE for _ in forms), stated={}),),
             ),
         )
 

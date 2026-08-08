@@ -6,6 +6,13 @@ study adopted the arithmetic and published a number out of it. These tests drive
 that defect takes -- a body reaching past its declaration, a declaration listing an input the body
 never reads, and arithmetic no registered design names at all -- plus the CI gate over the shipped
 registry, which is the whole point of closing the loop.
+
+Each shape is driven twice over, because a body reads its declaration along a PATH: once at a probe
+set that misses the branch the read is on, and once at a set that takes it. That pair is what the
+probe set is for, in both directions -- a declared input read only on a missed branch is refused as
+over-declaration (a false refusal an author fixes by moving the probe), and an UNdeclared reach on a
+missed branch is simply not seen, which is the direction that decides whether the check is worth
+anything.
 """
 
 from pathlib import Path
@@ -27,6 +34,7 @@ from llb.bench.agentic_published_value_operations import (
     DerivationInputs,
     DerivationOperation,
     DerivedValue,
+    probe_point_named,
 )
 from llb.bench.agentic_published_value_registry import (
     KIND_CROSSOVER_RESTATEMENT,
@@ -44,6 +52,11 @@ STATED_VALUE = 0.5
 MEASURED_VALUE = 4.0
 ANSWER = 1.0
 
+# A body that branches on the source it was handed reads one thing below this and another above it,
+# so a probe SET declaring a point on each side is what certifies the declaration on both paths.
+BRANCH_THRESHOLD = 16.0
+OTHER_SOURCE_VALUE = 32.0
+
 
 def _operation(
     compute,
@@ -52,18 +65,26 @@ def _operation(
     stated_fields: tuple[str, ...] = (),
     reads_own_measurement: bool = False,
     name: str = "an_operation",
+    at: tuple[float, ...] = (SOURCE_VALUE,),
 ) -> DerivationOperation:
-    """A registered arithmetic whose probe point answers exactly what it declares, and no more."""
+    """A registered arithmetic probed once per source value in `at`, answering only its declaration.
+
+    The set is spelled as the source values it is checked at, because a body that branches branches
+    on what it was handed -- which is the whole subject of a probe SET rather than a probe point.
+    """
     return DerivationOperation(
         name=name,
         source_forms=source_forms,
         stated_fields=stated_fields,
         reads_own_measurement=reads_own_measurement,
         compute=compute,
-        probe=DerivationInputs(
-            sources=tuple(SOURCE_VALUE for _ in source_forms),
-            stated={field: STATED_VALUE for field in stated_fields},
-            measured=MEASURED_VALUE if reads_own_measurement else None,
+        probes=tuple(
+            DerivationInputs(
+                sources=tuple(source for _ in source_forms),
+                stated={field: STATED_VALUE for field in stated_fields},
+                measured=MEASURED_VALUE if reads_own_measurement else None,
+            )
+            for source in at
         ),
     )
 
@@ -166,7 +187,121 @@ def test_an_operation_whose_body_matches_its_declaration_raises_nothing():
     )
 
 
-# --- a probe point that does not answer the declaration ------------------------------------------
+# --- a read that happens on one branch only ------------------------------------------------------
+
+
+def _reads_the_declared_field_when_large(inputs: DerivationInputs) -> DerivedValue:
+    """Reads a DECLARED stated field on one branch and not the other."""
+    source = float(inputs.sources[0])
+    if source < BRANCH_THRESHOLD:
+        return DerivedValue(value=source)
+    return DerivedValue(value=source * inputs.stated[STATED])
+
+
+def _reads_an_undeclared_field_when_large(inputs: DerivationInputs) -> DerivedValue:
+    """Reaches OUTSIDE its declaration on one branch and not the other."""
+    source = float(inputs.sources[0])
+    if source < BRANCH_THRESHOLD:
+        return DerivedValue(value=source)
+    return DerivedValue(value=source * inputs.stated[OTHER_STATED])
+
+
+def test_a_declared_input_read_only_on_a_branch_no_point_takes_is_refused_as_over_declared():
+    """The false refusal, which an author fixes by moving the probe rather than the arithmetic."""
+    (refusal,) = operation_refusals(
+        _operation(_reads_the_declared_field_when_large, stated_fields=(STATED,))
+    )
+
+    assert f"declares the value's own stated `{STATED}` and never reads it" in refusal
+    assert "at any of its" not in refusal
+
+
+def test_a_point_on_that_branch_is_what_makes_the_declaration_hold():
+    """Union across the set: read at ONE point is read, so the declaration carries the field."""
+    operation = _operation(
+        _reads_the_declared_field_when_large,
+        stated_fields=(STATED,),
+        at=(SOURCE_VALUE, OTHER_SOURCE_VALUE),
+    )
+
+    assert operation_refusals(operation) == ()
+
+
+def test_an_undeclared_reach_on_a_branch_no_point_takes_is_not_seen():
+    """The residual the set makes DECLARABLE rather than removes, stated so it is not folklore."""
+    assert operation_refusals(_operation(_reads_an_undeclared_field_when_large)) == ()
+
+
+def test_a_point_on_that_branch_is_what_catches_the_undeclared_reach():
+    """First undeclared reach across the set, named at the point that took the branch."""
+    (refusal,) = operation_refusals(
+        _operation(_reads_an_undeclared_field_when_large, at=(SOURCE_VALUE, OTHER_SOURCE_VALUE))
+    )
+
+    assert f"`{OTHER_STATED}`" in refusal
+    assert f"at {probe_point_named(1)}" in refusal
+
+
+def test_the_over_declaration_refusal_says_the_whole_set_missed_the_input():
+    """A set of points that all miss a read reads differently from one point that missed it."""
+
+    def reads_one(inputs: DerivationInputs) -> DerivedValue:
+        return DerivedValue(value=float(inputs.sources[0]))
+
+    (refusal,) = operation_refusals(
+        _operation(reads_one, stated_fields=(STATED,), at=(SOURCE_VALUE, OTHER_SOURCE_VALUE))
+    )
+
+    assert "never reads it at any of its 2 points" in refusal
+
+
+# --- a probe set that cannot check the declaration ------------------------------------------------
+
+
+def test_a_probe_set_whose_points_cannot_differ_is_refused_at_registration():
+    """Two equal points take one path, so the second states no branch the first did not."""
+    with pytest.raises(ValueError, match="takes the same path through the body"):
+        _operation(lambda _inputs: DerivedValue(value=ANSWER), at=(SOURCE_VALUE, SOURCE_VALUE))
+
+
+def test_a_probe_set_differing_in_a_stated_field_alone_is_accepted():
+    """ANY declared input, not the sources only -- a body may branch on what its design states."""
+    operation = DerivationOperation(
+        name="an_operation",
+        source_forms=(FORM,),
+        stated_fields=(STATED,),
+        compute=lambda inputs: DerivedValue(value=inputs.stated[STATED]),
+        probes=(
+            DerivationInputs(sources=(SOURCE_VALUE,), stated={STATED: STATED_VALUE}),
+            DerivationInputs(sources=(SOURCE_VALUE,), stated={STATED: STATED_VALUE + ANSWER}),
+        ),
+    )
+
+    assert operation_refusals(operation) == (
+        f"the `an_operation` operation declares source 1 (the declared {FORM}) and never reads it "
+        "at any of its 2 points, so every design adopting it would carry a number for nothing and "
+        "nothing would ever check that number",
+    )
+
+
+def test_an_operation_declaring_no_probe_point_at_all_is_refused_at_registration():
+    """A set of nothing is the state the probe was made required to rule out."""
+    with pytest.raises(ValueError, match="declares no probe point"):
+        _operation(lambda _inputs: DerivedValue(value=ANSWER), at=())
+
+
+def test_the_point_that_does_not_answer_the_declaration_is_named_by_position():
+    """Which point to fix, not that some point is wrong -- the points are otherwise alike."""
+    with pytest.raises(ValueError, match=f"the {probe_point_named(1)} it is checked at"):
+        DerivationOperation(
+            name="an_operation",
+            source_forms=(FORM,),
+            compute=lambda _inputs: DerivedValue(value=ANSWER),
+            probes=(
+                DerivationInputs(sources=(SOURCE_VALUE,), stated={}),
+                DerivationInputs(sources=(SOURCE_VALUE, OTHER_SOURCE_VALUE), stated={}),
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -192,7 +327,7 @@ def test_a_probe_point_that_does_not_answer_the_declaration_is_refused_at_regist
             source_forms=(FORM,),
             stated_fields=(STATED,),
             compute=lambda _inputs: DerivedValue(value=ANSWER),
-            probe=probe,
+            probes=(probe,),
         )
 
 

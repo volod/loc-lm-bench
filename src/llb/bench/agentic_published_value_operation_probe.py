@@ -7,6 +7,12 @@ CALLED, through inputs built to answer exactly its declaration and nothing else,
 records the reach. Reading is then observed rather than argued from the source, which is what keeps
 the check honest as arithmetic is added.
 
+One call observes one PATH, so these inputs are built per point of the operation's declared probe SET
+and the audit unions the reads across them. A branch no point takes is still unobserved -- that is
+the residual the set makes declarable rather than removes -- but it is now the operation's own
+statement of which branches its declaration holds on, instead of whichever single point its author
+found convenient.
+
 Two rules make the recording mean what it says. A reach past the declaration RAISES with the input
 named -- an undeclared stated field, an undeclared measurement -- rather than producing the `KeyError`
 or `TypeError` two frames deeper that a caller would otherwise have to interpret. And membership is
@@ -169,9 +175,14 @@ def declared_reads(operation: DerivationOperation) -> tuple[str, ...]:
     return (*sources, *stated, *([MEASURED_READ] if operation.reads_own_measurement else []))
 
 
-def probe_inputs(operation: DerivationOperation, reads: set[str]) -> DerivationInputs:
-    """The operation's own probe point, answering only what it declared and recording every read."""
-    probe = operation.probe
+def probe_inputs(
+    operation: DerivationOperation, probe: DerivationInputs, reads: set[str]
+) -> DerivationInputs:
+    """One point of the operation's probe set, answering only its declaration and recording reads.
+
+    The point is passed in rather than taken off the operation, and `reads` is the caller's set, so
+    the audit walks the whole set into ONE recording -- an input read at only one point is read.
+    """
     return DerivationInputs(
         sources=tuple(
             _ProbeNumber(value, read=source_read(at, form), reads=reads)

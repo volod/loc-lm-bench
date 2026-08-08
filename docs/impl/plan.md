@@ -43,34 +43,33 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-registered-operation-is-checked-at-one-point-of-its-own-choosing (optional)
+### agent-a-probe-set-declares-branches-and-nothing-says-which-it-missed (optional)
 
-The registry self-check calls every registered arithmetic through inputs answering only its
-declaration and reads off which of them the body reached for
+An operation's probe set says which paths its declaration is certified on, and points that cannot
+differ are refused
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-It calls at exactly ONE point, the one the operation itself declares, so what it certifies is the
-declaration along whichever path that point takes. A body reading a declared input only on a branch
-the point misses is refused as over-declaration -- a false refusal an author fixes by moving the
-probe rather than the code -- and a body reaching OUTSIDE its declaration on a branch the point
-misses is not seen at all, which is the direction that matters: the author picks the point, so the
-check can be satisfied by choosing an easy one. Let an operation declare a probe SET rather than a
-probe point (a tuple of `DerivationInputs`), take the union of the recorded reads across it for the
-over-declaration refusal and the first undeclared reach across it for the other, and refuse a set
-whose points do not differ in any declared input -- so exercising a second branch is a declaration
-rather than a review comment.
+Nothing says which paths the set MISSED: a body whose reads sit behind a branch no point takes is
+certified on the paths that were walked and silent about the rest, so the residual is declarable but
+not visible, and a branch added to an existing operation lands with its probe set unchanged and CI
+green. Measure the branches the set actually reached -- run the probe calls under `sys.monitoring`
+(the `BRANCH` event, scoped to the operation's own code object, which is the whole reason these are
+small pure functions) and report the unreached ones per operation. Land it as a REPORT first
+(the count and the source lines beside `checked` in `OperationRegistryReport`) and only then decide
+whether an operation reaching full branch coverage of its own body is a refusal: an operation with a
+domain guard it cannot legally probe (the trigger ratio's `peak <= 0` raise) would fail a naive gate,
+so the gate needs a way to declare a branch unreachable-by-probe before it can refuse anything.
 
 - Agent status: CLEAR
-- Dependencies: the point is the `probe` field of `DerivationOperation` in
-  `src/llb/bench/agentic_published_value_operations.py`, checked against the declaration in its
-  `__post_init__`; the recording inputs are `probe_inputs` in
-  `src/llb/bench/agentic_published_value_operation_probe.py`, and the refusals are
-  `operation_refusals` in `src/llb/bench/agentic_published_value_operation_audit.py`.
-- User-visible outcome: a registered arithmetic whose declaration holds on one path and not another
-  is refused at CI, instead of passing on the path its author chose to be checked at.
-- Scope boundary: in scope -- the probe set, the union of reads, the differing-points refusal, and
-  fixture cases for a branch-only read in each direction. Out of scope -- generating probe points
-  (that is a solver, and the declared point is the readable thing), proving an operation pure beyond
-  its declared inputs, and re-running a published cell.
+- Dependencies: the set is `probes` on `DerivationOperation` in
+  `src/llb/bench/agentic_published_value_operations.py`; the calls to instrument are
+  `_reach_refusals` in `src/llb/bench/agentic_published_value_operation_audit.py`, and the report to
+  extend is `OperationRegistryReport` in the same module.
+- User-visible outcome: adding a branch to a registered arithmetic shows up as a branch its probe
+  set never reached, instead of as a silently narrower certification.
+- Scope boundary: in scope -- the branch measurement over the probe calls, the per-operation report,
+  and fixture cases for a body with a branch no point takes. Out of scope -- refusing on coverage
+  before unreachable-by-probe branches can be declared, generating the points that would cover a
+  body (that is a solver), and any claim of purity beyond the declared inputs.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
@@ -86,14 +85,16 @@ rather than a restated formula -- but it is invisible to the pin gate, which nam
 policy constant retires by reading the DESIGNS
 ([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
 Let an operation declare the shipped constants its arithmetic rests on, check that declaration by
-re-running the probe with each named constant perturbed (a constant it declared must move its
-answer, one it did not must not), and feed the declared set into the gate's re-run scope so a
-constant change names the published bands it retires as well as the cells.
+re-running its probe set with each named constant perturbed (a constant it declared must move the
+answer at some point of the set, one it did not must move it at none), and feed the declared set into
+the gate's re-run scope so a constant change names the published bands it retires as well as the
+cells.
 
 - Agent status: CLEAR
 - Dependencies: the arithmetic that closes over the runtime is `_trigger_over_own_cap_peak` in
   `src/llb/bench/agentic_published_value_operations.py` via `compaction_trigger_chars`
-  (`src/llb/bench/agentic_memory_fold_step_ladder.py`); the probe to re-run is `probe_inputs` in
+  (`src/llb/bench/agentic_memory_fold_step_ladder.py`); the points to re-run are the operation's
+  `probes`, called through `probe_inputs` in
   `src/llb/bench/agentic_published_value_operation_probe.py`; the gate that would consume the
   declaration is `src/llb/bench/agentic_policy_pin_gate.py`.
 - User-visible outcome: a policy-constant change names the published values whose ARITHMETIC it
