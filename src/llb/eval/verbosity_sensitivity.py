@@ -46,10 +46,8 @@ def _rank(values: Mapping[str, float]) -> dict[str, float]:
     return ranks
 
 
-def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
-    manifest = _read_json(run_dir / "manifest.json")
-    rows = _read_rows(run_dir / "scores.jsonl")
-    required = {
+_REQUIRED_COLUMNS = frozenset(
+    {
         "item_id",
         "objective_score",
         "token_f1",
@@ -59,11 +57,21 @@ def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
         "contains",
         "completion_tokens",
     }
-    missing = sorted({key for row in rows for key in required - set(row)})
+)
+_MEAN_COLUMNS = ("token_f1", "token_precision", "token_recall", "ranking_score", "contains")
+
+
+def _check_columns(run_dir: Path, rows: list[dict[str, Any]]) -> None:
+    """A bundle that predates the decomposition cannot answer this study at all."""
+    missing = sorted({key for row in rows for key in _REQUIRED_COLUMNS - set(row)})
     if missing:
         raise ValueError(
             f"{run_dir}: bundle predates verbosity decomposition; missing columns: {missing}"
         )
+
+
+def _check_reproduces(run_dir: Path, rows: list[dict[str, Any]]) -> None:
+    """The recorded scores must still be what the declared policies compute from their parts."""
     if any(float(row["objective_score"]) != float(row["token_f1"]) for row in rows):
         raise ValueError(
             f"{run_dir}: objective_score no longer reproduces token_f1 bit-identically"
@@ -74,16 +82,18 @@ def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
         for row in rows
     ):
         raise ValueError(f"{run_dir}: ranking_score does not reproduce the declared policy")
+
+
+def _check_manifest_objective(run_dir: Path, manifest: dict[str, Any], objective: float) -> None:
+    """The bundle's headline number must be the mean of the rows it shipped with."""
     manifest_metrics = manifest.get("metrics") or {}
-    objective = mean([float(row["objective_score"]) for row in rows])
-    if (
-        manifest_metrics.get("objective_score") is not None
-        and float(manifest_metrics["objective_score"]) != objective
-    ):
+    recorded = manifest_metrics.get("objective_score")
+    if recorded is not None and float(recorded) != objective:
         raise ValueError(f"{run_dir}: manifest objective does not reproduce its case rows")
-    config = manifest.get("config") or {}
-    model = str(config.get("model") or manifest.get("run_name") or run_dir.name)
-    item_ids = [str(row["item_id"]) for row in rows]
+
+
+def _bundle_metrics(run_dir: Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """One bundle's means, its generated-answer lengths, and each policy's length correlation."""
     generated = [
         row
         for row in rows
@@ -91,14 +101,7 @@ def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
     ]
     lengths = [float(row["completion_tokens"]) for row in generated]
     metrics: dict[str, Any] = {
-        column: mean([float(row[column]) for row in rows])
-        for column in (
-            "token_f1",
-            "token_precision",
-            "token_recall",
-            "ranking_score",
-            "contains",
-        )
+        column: mean([float(row[column]) for row in rows]) for column in _MEAN_COLUMNS
     }
     metrics["mean_completion_tokens"] = mean(lengths)
     metrics["length_correlations"] = {
@@ -106,13 +109,24 @@ def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
         for policy, column in POLICY_COLUMNS.items()
     }
     metrics["run_dir"] = str(run_dir)
-    return model, item_ids, metrics
+    return metrics
 
 
-def analyze(run_dirs: list[Path]) -> dict[str, Any]:
-    """Compare models over an identical item set under each candidate policy."""
-    if len(run_dirs) < 2:
-        raise ValueError("verbosity study requires at least two run bundles")
+def _bundle_summary(run_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
+    """One run bundle read as (model, item ids, metrics), refusing a bundle that cannot be read."""
+    manifest = _read_json(run_dir / "manifest.json")
+    rows = _read_rows(run_dir / "scores.jsonl")
+    _check_columns(run_dir, rows)
+    _check_reproduces(run_dir, rows)
+    objective = mean([float(row["objective_score"]) for row in rows])
+    _check_manifest_objective(run_dir, manifest, objective)
+    config = manifest.get("config") or {}
+    model = str(config.get("model") or manifest.get("run_name") or run_dir.name)
+    return model, [str(row["item_id"]) for row in rows], _bundle_metrics(run_dir, rows)
+
+
+def _collect_bundles(run_dirs: list[Path]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """One bundle per model over ONE ordered item set -- anything else is not a comparison."""
     models: dict[str, dict[str, Any]] = {}
     expected_ids: list[str] | None = None
     for run_dir in run_dirs:
@@ -124,6 +138,14 @@ def analyze(run_dirs: list[Path]) -> dict[str, Any]:
         elif item_ids != expected_ids:
             raise ValueError("verbosity study bundles must carry the same ordered item ids")
         models[model] = metrics
+    return models, expected_ids or []
+
+
+def analyze(run_dirs: list[Path]) -> dict[str, Any]:
+    """Compare models over an identical item set under each candidate policy."""
+    if len(run_dirs) < 2:
+        raise ValueError("verbosity study requires at least two run bundles")
+    models, expected_ids = _collect_bundles(run_dirs)
     ranks = {
         policy: _rank({model: float(metrics[column]) for model, metrics in models.items()})
         for policy, column in POLICY_COLUMNS.items()
@@ -150,8 +172,8 @@ def analyze(run_dirs: list[Path]) -> dict[str, Any]:
                 "instruction makes answer format material but secondary."
             ),
         },
-        "n": len(expected_ids or []),
-        "item_ids": expected_ids or [],
+        "n": len(expected_ids),
+        "item_ids": expected_ids,
         "models": models,
         "orders": {"token_f1": f1_order, POLICY_NAME: chosen_order},
         "rank_changes": changes,

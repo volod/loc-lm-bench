@@ -15,6 +15,7 @@ to price -- or an arm that does not do what its name says -- is refused before a
 from pathlib import Path
 from typing import cast
 
+from llb.bench.agentic_design_fields import as_int, as_rows
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAPS
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
@@ -220,39 +221,46 @@ def _validate_ladder(
     _validate_arm_elision(design, rule)
 
 
-def _validate_arm_elision(design: dict[str, object], rule: dict[str, object]) -> None:
-    """Each arm must do what its name says, and the reference arm must have an elision to price."""
-    probes = arm_fold_input_probes(design)
-    aligned_arm = next(
-        arm
-        for arm in cast(list[dict[str, object]], design["arms"])
-        if arm["role"] == ROLE_STEP_ALIGNED
-    )
-    aligned = [probe for probe in probes if probe["arm_id"] == aligned_arm["arm_id"]]
-    reference = [probe for probe in probes if probe["arm_id"] != aligned_arm["arm_id"]]
-    # One fold is what makes the probe's prediction EXACT: a second fold carries the running summary
-    # into the summarize input, and the probe answers with a constant summary the run will not.
-    if any(int(cast(int, probe["n_compactions"])) != 1 for probe in probes):
+def _check_single_fold(probes: list[dict[str, object]]) -> None:
+    """One fold per guard is what makes the probe EXACT.
+
+    A second fold carries the running summary into the summarize input, and the probe answers with a
+    constant summary the run will not produce -- so the number it predicts stops being the one the
+    run offers.
+    """
+    if any(as_int(probe, "n_compactions") != 1 for probe in probes):
         raise ValueError(
             "every declared guard must fold exactly once under perfect play, or the summarizer "
             "input the probe predicts is not the one the run offers"
         )
-    if any(int(cast(int, probe["summary_input_elided_chars"])) > 0 for probe in aligned):
+
+
+def _check_step_aligned_arm(aligned: list[dict[str, object]]) -> None:
+    """The step-aligned arm elides nothing, and offers one fixed input per fold step."""
+    if any(as_int(probe, "summary_input_elided_chars") > 0 for probe in aligned):
         raise ValueError(
             "the step-aligned arm still elides the folded transcript, so it is not step-aligned"
         )
-    for step in {int(cast(int, probe["fold_step"])) for probe in aligned}:
+    for step in {as_int(probe, "fold_step") for probe in aligned}:
         offered = {
-            int(cast(int, probe["summary_input_chars"]))
-            for probe in aligned
-            if probe["fold_step"] == step
+            as_int(probe, "summary_input_chars") for probe in aligned if probe["fold_step"] == step
         }
         if len(offered) != 1:
             raise ValueError(
                 f"the step-aligned arm offers the summarizer {sorted(offered)} chars inside fold "
                 f"step {step}, so its input is not fixed by the fold step"
             )
-    elided = max(int(cast(int, probe["summary_input_elided_chars"])) for probe in reference)
+
+
+def _validate_arm_elision(design: dict[str, object], rule: dict[str, object]) -> None:
+    """Each arm must do what its name says, and the reference arm must have an elision to price."""
+    probes = arm_fold_input_probes(design)
+    aligned_arm = next(arm for arm in as_rows(design, "arms") if arm["role"] == ROLE_STEP_ALIGNED)
+    aligned = [probe for probe in probes if probe["arm_id"] == aligned_arm["arm_id"]]
+    reference = [probe for probe in probes if probe["arm_id"] != aligned_arm["arm_id"]]
+    _check_single_fold(probes)
+    _check_step_aligned_arm(aligned)
+    elided = max(as_int(probe, "summary_input_elided_chars") for probe in reference)
     if rule["requires_elided_reference_arm"] and elided <= 0:
         raise ValueError(
             "the reference arm elides nothing on this ladder, so the study has no trimmed span to "

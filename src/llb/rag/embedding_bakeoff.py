@@ -19,6 +19,7 @@ Pure + injectable: the store builder is a seam, so the scoring, ranking, report 
 consent gate are unit-tested with fake stores/embedders -- no GPU, no FAISS, no network.
 """
 
+from dataclasses import dataclass, field
 import logging
 from collections.abc import Sequence
 from typing import Any, Callable
@@ -126,6 +127,49 @@ def api_lane_enabled(
     return True
 
 
+@dataclass(slots=True)
+class _ScoredCandidates:
+    """What one bake-off accumulates per candidate: its row, its per-item vectors, its store.
+
+    A record rather than three dicts closed over by a nested `score`: the noise floor is measured
+    over the SAME stores after every candidate is scored, so the three have to stay aligned, and a
+    caller reading this can see what "scored" means without reading a closure.
+    """
+
+    k: int
+    items: list[BakeoffItem]
+    rows: list[CandidateResult] = field(default_factory=list)
+    stores: dict[str, Any] = field(default_factory=dict)
+    vectors: dict[str, MetricVectors] = field(default_factory=dict)
+
+    def score(self, model: str, built: BuiltStore) -> None:
+        """Retrieve once for this candidate, keep its row, vectors, and store, then free weights."""
+        pairs = retrieve_pairs(built.store, self.items, self.k)
+        self.rows.append(score_pairs(model, built, pairs, self.k))
+        self.vectors[model] = item_vectors(pairs, self.k)
+        self.stores[model] = built.store
+        # Free encoder weights after the retrieval pass; noise-floor / later reads reload lazily.
+        release = getattr(getattr(built.store, "embedder", None), "release", None)
+        if callable(release):
+            release()
+
+
+def _paired_items(
+    vectors: dict[str, MetricVectors], count: int, item_ids: Sequence[str] | None
+) -> list[dict[str, object]]:
+    """The per-item ledger a paired reading is recomputable from."""
+    return [
+        {
+            "item_id": item_ids[index] if item_ids is not None else str(index),
+            "models": {
+                model: {metric: values[metric][index] for metric in values}
+                for model, values in vectors.items()
+            },
+        }
+        for index in range(count)
+    ]
+
+
 def run_bakeoff(
     items: list[BakeoffItem],
     k: int,
@@ -163,55 +207,40 @@ def run_bakeoff(
     """
     if item_ids is not None and len(item_ids) != len(items):
         raise ValueError("the embedder paired ledger needs one item id per scored item")
-    candidates: list[CandidateResult] = []
-    stores: dict[str, Any] = {}
-    vectors: dict[str, MetricVectors] = {}
-
-    def score(model: str, built: BuiltStore) -> None:
-        pairs = retrieve_pairs(built.store, items, k)
-        candidates.append(score_pairs(model, built, pairs, k))
-        vectors[model] = item_vectors(pairs, k)
-        stores[model] = built.store
-        # Free encoder weights after the retrieval pass; noise-floor / later reads reload lazily.
-        embedder = getattr(built.store, "embedder", None)
-        release = getattr(embedder, "release", None)
-        if callable(release):
-            release()
-
+    scored = _ScoredCandidates(k=k, items=items)
     for model in local_models:
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
-        score(model, build_local(model))
-
+        scored.score(model, build_local(model))
     if api_lane_enabled(api_model, data_classification, consent):
         assert api_model is not None and build_api is not None  # narrowed by the gate
         _LOG.info("[compare-embeddings] building API candidate (CORPUS EGRESS): %s", api_model)
-        score(api_model, build_api(api_model))
+        scored.score(api_model, build_api(api_model))
 
     report: BakeoffReport = {
         "k": k,
         "n": len(items),
         "corpus_root": corpus_root,
-        "candidates": candidates,
-        "best_recall": best_recall(candidates),
-        "paired_items": [
-            {
-                "item_id": item_ids[index] if item_ids is not None else str(index),
-                "models": {
-                    model: {metric: values[metric][index] for metric in values}
-                    for model, values in vectors.items()
-                },
-            }
-            for index in range(len(items))
-        ],
+        "candidates": scored.rows,
+        "best_recall": best_recall(scored.rows),
+        "paired_items": _paired_items(scored.vectors, len(items), item_ids),
     }
     _attach_uncertainty(
-        report, vectors, baseline, bars=bars, resamples=resamples, confidence=confidence, seed=seed
+        report,
+        scored.vectors,
+        baseline,
+        bars=bars,
+        resamples=resamples,
+        confidence=confidence,
+        seed=seed,
     )
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
 
         report["noise_floor"] = measure_noise_floor(
-            stores, list(items), k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
+            scored.stores,
+            list(items),
+            k,
+            replicates=noise_floor_replicates or DEFAULT_REPLICATES,
         )
     return report
 

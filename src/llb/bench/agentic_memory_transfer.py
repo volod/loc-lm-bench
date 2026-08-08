@@ -12,6 +12,15 @@ from llb.bench.agentic_compact_vs_cap_report import (
     VERDICT_PREFER_COMPACT,
 )
 from llb.bench.agentic_context import run_policy, task_set_digest
+from llb.bench.agentic_design_fields import (
+    as_float,
+    as_floats,
+    as_int,
+    as_ints,
+    as_mapping,
+    as_rows,
+    as_str,
+)
 from llb.bench.agentic_context_report import METRIC_TOTAL_MODEL_INPUT_TOKENS, PolicyReport
 from llb.bench.agentic_memory_transfer_cells import (
     held_summary_input_cap,
@@ -43,16 +52,18 @@ def load_transfer_design(path: Path | str) -> dict[str, object]:
     return cast(dict[str, object], raw)
 
 
-def validate_transfer_design(design: dict[str, object]) -> None:
-    """Refuse an underpowered, Qwen, or non-bracketing transfer contract."""
+def _check_transfer_identity(design: dict[str, object]) -> None:
+    """The design is the transfer schema and study this validator was written against."""
     if design.get("schema_version") != DESIGN_SCHEMA_VERSION:
         raise ValueError(f"transfer design schema_version must be {DESIGN_SCHEMA_VERSION}")
     if design.get("study_kind") != STUDY_KIND:
         raise ValueError(f"transfer design study_kind must be {STUDY_KIND}")
-    candidates = cast(list[dict[str, object]], design.get("candidate_roster", []))
-    identities = [
-        (str(row.get("model_family", "")), str(row.get("model", ""))) for row in candidates
-    ]
+
+
+def _check_candidate_roster(design: dict[str, object]) -> None:
+    """Unique non-Qwen families on the local backend -- the point of a transfer study."""
+    candidates = as_rows(design, "candidate_roster")
+    identities = [(as_str(row, "model_family"), as_str(row, "model")) for row in candidates]
     if not identities or len(identities) != len(set(identities)):
         raise ValueError("candidate roster must contain unique model-family/model pairs")
     if any(
@@ -63,20 +74,22 @@ def validate_transfer_design(design: dict[str, object]) -> None:
     if any(row.get("backend") != "ollama" for row in candidates):
         raise ValueError("the local transfer candidate roster must use Ollama")
 
-    control = cast(dict[str, object], design.get("control_pilot", {}))
-    if int(cast(int, control.get("n_tasks", 0))) < 1:
+
+def _check_control_pilot(design: dict[str, object]) -> None:
+    """The memory-free control block that decides eligibility before any matrix cell runs."""
+    control = as_mapping(design, "control_pilot")
+    if as_int(control, "n_tasks") < 1:
         raise ValueError("control pilot needs at least one task")
-    if int(cast(int, control.get("depth", 0))) < 3:
+    if as_int(control, "depth") < 3:
         raise ValueError("control pilot depth must be at least 3")
-    threshold = float(cast(float, control.get("minimum_completion_rate", 0.0)))
-    if not 0.0 < threshold <= 1.0:
+    if not 0.0 < as_float(control, "minimum_completion_rate") <= 1.0:
         raise ValueError("control pilot completion threshold must be in (0, 1]")
 
-    matrix = cast(dict[str, object], design.get("matrix", {}))
-    depths = cast(list[int], matrix.get("depths", []))
-    shares = cast(list[float], matrix.get("compact_shares", []))
-    reference_depth = int(cast(int, matrix.get("reference_depth", 0)))
-    reference_share = float(cast(float, matrix.get("reference_compact_share", 0.0)))
+
+def _check_matrix_depths(matrix: dict[str, object]) -> None:
+    """The depths must bracket the reference depth, or the matrix cannot answer portability."""
+    depths = as_ints(matrix, "depths")
+    reference_depth = as_int(matrix, "reference_depth")
     if (
         len(depths) < 2
         or len(set(depths)) != len(depths)
@@ -86,17 +99,36 @@ def validate_transfer_design(design: dict[str, object]) -> None:
         raise ValueError("matrix depths must uniquely bracket the reference depth")
     if any(depth < 3 for depth in depths):
         raise ValueError("every matrix depth must be at least 3")
+
+
+def _check_matrix_shares(matrix: dict[str, object]) -> None:
+    """The compact shares must bracket the reference trigger, for the same reason."""
+    shares = as_floats(matrix, "compact_shares")
+    reference_share = as_float(matrix, "reference_compact_share")
     if len(shares) < 2 or len(set(shares)) != len(shares):
         raise ValueError("matrix compact shares must contain at least two unique values")
-    if any(not 0.0 < share <= 1.0 for share in shares) or not min(shares) < reference_share < max(
-        shares
-    ):
+    brackets = min(shares) < reference_share < max(shares)
+    if any(not 0.0 < share <= 1.0 for share in shares) or not brackets:
         raise ValueError("matrix compact shares must bracket the reference trigger")
-    if int(cast(int, matrix.get("n_tasks", 0))) < 6:
+
+
+def _check_matrix_power(matrix: dict[str, object]) -> None:
+    """Enough paired tasks per cell to read a 95% sign test, and a legible compaction floor."""
+    if as_int(matrix, "n_tasks") < 6:
         raise ValueError("each matrix cell needs at least six paired tasks for 95% evidence")
-    rate = float(cast(float, matrix.get("minimum_compaction_rate", -1.0)))
-    if not 0.0 <= rate <= 1.0:
+    if not 0.0 <= as_float(matrix, "minimum_compaction_rate", -1.0) <= 1.0:
         raise ValueError("matrix minimum compaction rate must be in [0, 1]")
+
+
+def validate_transfer_design(design: dict[str, object]) -> None:
+    """Refuse an underpowered, Qwen, or non-bracketing transfer contract."""
+    _check_transfer_identity(design)
+    _check_candidate_roster(design)
+    _check_control_pilot(design)
+    matrix = as_mapping(design, "matrix")
+    _check_matrix_depths(matrix)
+    _check_matrix_shares(matrix)
+    _check_matrix_power(matrix)
 
 
 def run_control_pilot(

@@ -21,12 +21,45 @@ from llb.bench.agentic_loop_policy_report import (
     METHOD,
     AgenticLoopPolicyRun,
     LoopPolicyCell,
+    LoopPolicyReport,
     build_recommendation,
     format_policy_table,
     pair_reports,
 )
 from llb.bench.common import LLMComplete, Mirror, render_board, verified_data_config
 from llb.bench.common_backend import ThroughputMeter
+from llb.core.contracts.results import BoardRow
+
+
+def _check_known(values: list[str], known: tuple[str, ...] | list[str], subject: str) -> None:
+    """Refuse a grid axis naming something no policy implements, listing what it could have named."""
+    unknown = [name for name in values if name not in known]
+    if unknown:
+        raise SystemExit(f"unknown {subject}: {unknown}; choose from {list(known)}")
+
+
+def _expanded_cells(
+    max_steps: list[int],
+    malformed_policies: list[str],
+    repeated_call_policies: list[str],
+    feedback_variants: list[str],
+) -> list[LoopPolicyCell]:
+    """The full product, deduplicated in declared order.
+
+    The feedback axis only varies under `noop`: it is the text a repeated call is answered WITH, so
+    a grid that is not answering repeated calls has exactly one meaningful value for it.
+    """
+    return [
+        LoopPolicyCell(steps, LoopPolicy(malformed, repeated, feedback))
+        for steps in dict.fromkeys(max_steps)
+        for malformed in dict.fromkeys(malformed_policies)
+        for repeated in dict.fromkeys(repeated_call_policies)
+        for feedback in (
+            dict.fromkeys(feedback_variants)
+            if repeated == REPEATED_NOOP
+            else [DEFAULT_REPEAT_FEEDBACK]
+        )
+    ]
 
 
 def policy_grid(
@@ -38,37 +71,13 @@ def policy_grid(
     """Validate and expand the grid, requiring its exact legacy baseline."""
     if not max_steps or any(value < 1 for value in max_steps):
         raise SystemExit("agent max steps must be a non-empty list of positive integers")
-    unknown_malformed = [name for name in malformed_policies if name not in MALFORMED_POLICIES]
-    if unknown_malformed:
-        raise SystemExit(
-            f"unknown malformed-call policies: {unknown_malformed}; choose from {MALFORMED_POLICIES}"
-        )
-    unknown_repeated = [
-        name for name in repeated_call_policies if name not in REPEATED_CALL_POLICIES
-    ]
-    if unknown_repeated:
-        raise SystemExit(
-            f"unknown repeated-call policies: {unknown_repeated}; "
-            f"choose from {REPEATED_CALL_POLICIES}"
-        )
+    _check_known(malformed_policies, MALFORMED_POLICIES, "malformed-call policies")
+    _check_known(repeated_call_policies, REPEATED_CALL_POLICIES, "repeated-call policies")
     feedback_variants = repeated_feedback_variants or [DEFAULT_REPEAT_FEEDBACK]
-    unknown_feedback = [name for name in feedback_variants if name not in REPEAT_FEEDBACK_VARIANTS]
-    if unknown_feedback:
-        raise SystemExit(
-            f"unknown repeat-feedback variants: {unknown_feedback}; "
-            f"choose from {REPEAT_FEEDBACK_VARIANTS}"
-        )
-    cells = [
-        LoopPolicyCell(steps, LoopPolicy(malformed, repeated, feedback))
-        for steps in dict.fromkeys(max_steps)
-        for malformed in dict.fromkeys(malformed_policies)
-        for repeated in dict.fromkeys(repeated_call_policies)
-        for feedback in (
-            dict.fromkeys(feedback_variants)
-            if repeated == REPEATED_NOOP
-            else [DEFAULT_REPEAT_FEEDBACK]
-        )
-    ]
+    _check_known(feedback_variants, REPEAT_FEEDBACK_VARIANTS, "repeat-feedback variants")
+    cells = _expanded_cells(
+        max_steps, malformed_policies, repeated_call_policies, feedback_variants
+    )
     if not any(cell.is_baseline for cell in cells):
         raise SystemExit(
             f"grid must include baseline max_steps={BASELINE_MAX_STEPS}, "
@@ -76,6 +85,88 @@ def policy_grid(
             f"repeated={BASELINE_POLICY.repeated_call}"
         )
     return cells
+
+
+def _validate_study_design(
+    tasks: list[AgenticTask],
+    cells: list[LoopPolicyCell],
+    *,
+    repeat_power_design: dict[str, object] | None,
+    repeat_feedback_design: dict[str, object] | None,
+    model_family: str | None,
+    run_seed: int | None,
+) -> None:
+    """Check the prospective design this run is executing, before any model call.
+
+    At most one study at a time: the two designs pin overlapping fields, and a run under both would
+    be reported as evidence for a contract neither of them stated.
+    """
+    if repeat_power_design is not None and repeat_feedback_design is not None:
+        raise ValueError("choose either repeat_power_design or repeat_feedback_design")
+    if repeat_power_design is not None:
+        from llb.bench.agentic_loop_policy_power import validate_repeat_power_design
+
+        validate_repeat_power_design(
+            repeat_power_design, tasks, cells=cells, model_family=model_family
+        )
+    if repeat_feedback_design is not None:
+        from llb.bench.agentic_loop_feedback import validate_repeat_feedback_design
+
+        validate_repeat_feedback_design(
+            repeat_feedback_design,
+            tasks,
+            cells=cells,
+            model_family=model_family,
+            run_seed=run_seed,
+        )
+
+
+def _study_analysis(
+    tasks: list[AgenticTask],
+    reports: list[LoopPolicyReport],
+    *,
+    repeat_power_design: dict[str, object] | None,
+    repeat_feedback_design: dict[str, object] | None,
+    model_family: str | None,
+    run_seed: int | None,
+) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    """The study reading over the measured cells, if this run is executing a study at all."""
+    if repeat_power_design is not None:
+        from llb.bench.agentic_loop_policy_power import analyze_repeat_power
+
+        return (
+            analyze_repeat_power(repeat_power_design, tasks, reports, model_family=model_family),
+            None,
+        )
+    if repeat_feedback_design is not None:
+        from llb.bench.agentic_loop_feedback import analyze_repeat_feedback
+
+        return (
+            None,
+            analyze_repeat_feedback(
+                repeat_feedback_design,
+                tasks,
+                reports,
+                model_family=model_family,
+                run_seed=run_seed,
+            ),
+        )
+    return None, None
+
+
+def _render_tables(
+    reports: list[LoopPolicyReport], repeat_feedback_analysis: dict[str, object] | None
+) -> tuple[list[BoardRow], str]:
+    """The board over the cells, the per-policy table, and the feedback table when there is one."""
+    board, board_table = render_board(
+        [replace(report.run.result, model=report.cell.cell_id) for report in reports]
+    )
+    table = f"{board_table}\n\n{format_policy_table(reports)}"
+    if repeat_feedback_analysis is not None:
+        from llb.bench.agentic_loop_feedback_report import format_repeat_feedback_table
+
+        table = f"{table}\n\n{format_repeat_feedback_table(repeat_feedback_analysis)}"
+    return board, table
 
 
 def run_agentic_loop_policy(
@@ -105,33 +196,15 @@ def run_agentic_loop_policy(
     if not tasks:
         raise SystemExit("no agentic tasks provided")
     feedback_variants = repeated_feedback_variants or [DEFAULT_REPEAT_FEEDBACK]
-    cells = policy_grid(
-        max_steps,
-        malformed_policies,
-        repeated_call_policies,
-        feedback_variants,
+    cells = policy_grid(max_steps, malformed_policies, repeated_call_policies, feedback_variants)
+    _validate_study_design(
+        tasks,
+        cells,
+        repeat_power_design=repeat_power_design,
+        repeat_feedback_design=repeat_feedback_design,
+        model_family=model_family,
+        run_seed=run_seed,
     )
-    if repeat_power_design is not None and repeat_feedback_design is not None:
-        raise ValueError("choose either repeat_power_design or repeat_feedback_design")
-    if repeat_power_design is not None:
-        from llb.bench.agentic_loop_policy_power import validate_repeat_power_design
-
-        validate_repeat_power_design(
-            repeat_power_design,
-            tasks,
-            cells=cells,
-            model_family=model_family,
-        )
-    if repeat_feedback_design is not None:
-        from llb.bench.agentic_loop_feedback import validate_repeat_feedback_design
-
-        validate_repeat_feedback_design(
-            repeat_feedback_design,
-            tasks,
-            cells=cells,
-            model_family=model_family,
-            run_seed=run_seed,
-        )
     resolved_budget = budget if budget is not None else unbounded_budget()
     reports = [
         run_policy_cell(
@@ -149,37 +222,15 @@ def run_agentic_loop_policy(
     for report in reports:
         report.run.result = replace(report.run.result, tokens_per_s=tokens_per_s)
     pair_reports(reports)
-    repeat_power_analysis = None
-    repeat_feedback_analysis = None
-    if repeat_power_design is not None:
-        from llb.bench.agentic_loop_policy_power import analyze_repeat_power
-
-        repeat_power_analysis = analyze_repeat_power(
-            repeat_power_design,
-            tasks,
-            reports,
-            model_family=model_family,
-        )
-    if repeat_feedback_design is not None:
-        from llb.bench.agentic_loop_feedback import (
-            analyze_repeat_feedback,
-        )
-        from llb.bench.agentic_loop_feedback_report import format_repeat_feedback_table
-
-        repeat_feedback_analysis = analyze_repeat_feedback(
-            repeat_feedback_design,
-            tasks,
-            reports,
-            model_family=model_family,
-            run_seed=run_seed,
-        )
-    board, board_table = render_board(
-        [replace(report.run.result, model=report.cell.cell_id) for report in reports]
+    repeat_power_analysis, repeat_feedback_analysis = _study_analysis(
+        tasks,
+        reports,
+        repeat_power_design=repeat_power_design,
+        repeat_feedback_design=repeat_feedback_design,
+        model_family=model_family,
+        run_seed=run_seed,
     )
-    policy_table = format_policy_table(reports)
-    table = f"{board_table}\n\n{policy_table}"
-    if repeat_feedback_analysis is not None:
-        table = f"{table}\n\n{format_repeat_feedback_table(repeat_feedback_analysis)}"
+    board, table = _render_tables(reports, repeat_feedback_analysis)
     recommendation = build_recommendation(
         model,
         reports,

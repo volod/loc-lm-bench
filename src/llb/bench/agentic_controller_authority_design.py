@@ -18,6 +18,15 @@ from llb.bench.agentic.loop_policy import (
 )
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_context import task_set_digest
+from llb.bench.agentic_design_fields import (
+    as_float,
+    as_int,
+    as_ints,
+    as_mapping,
+    as_rows,
+    as_str,
+    as_strs,
+)
 
 STUDY_KIND = "agent_loop_policy_controller_channel_authority"
 CROSS_MODEL_STUDY_KIND = "agent_loop_policy_controller_channel_authority_cross_model"
@@ -68,9 +77,9 @@ FORBIDDEN_TERMS = (
 )
 
 
-def validate_channel_authority_design(design: dict[str, object], tasks: list[AgenticTask]) -> None:
-    """Refuse inference unless text, roles, fresh ledger, seeds, and gates are immutable."""
-    study_kind = str(design.get("study_kind", ""))
+def _validated_study_identity(design: dict[str, object]) -> str:
+    """The study this design claims to be, refused unless its hypothesis is the registered one."""
+    study_kind = as_str(design, "study_kind")
     expected_hypothesis = {
         STUDY_KIND: EXPECTED_HYPOTHESIS,
         CROSS_MODEL_STUDY_KIND: CROSS_MODEL_HYPOTHESIS,
@@ -78,9 +87,16 @@ def validate_channel_authority_design(design: dict[str, object], tasks: list[Age
     }.get(study_kind)
     if expected_hypothesis is None or design.get("hypothesis") != expected_hypothesis:
         raise ValueError("controller-channel study identity or hypothesis is not immutable")
-    reference = cast(dict[str, object], design["reference"])
+    return study_kind
+
+
+def _check_holdout_ledger(
+    design: dict[str, object], tasks: list[AgenticTask], study_kind: str
+) -> None:
+    """The task set is the one the design was written against, and it is fresh or declared reused."""
+    reference = as_mapping(design, "reference")
     digest = task_set_digest(tasks)
-    excluded = cast(list[str], reference["excluded_prior_task_set_digests"])
+    excluded = as_strs(reference, "excluded_prior_task_set_digests")
     if reference.get("task_set_digest") != digest:
         raise ValueError("controller-channel task digest does not match the holdout ledger")
     if study_kind == PREAMBLE_STUDY_KIND:
@@ -92,96 +108,121 @@ def validate_channel_authority_design(design: dict[str, object], tasks: list[Age
             raise ValueError("controller preamble source ledger is not predeclared exactly")
     elif not excluded or digest in excluded:
         raise ValueError("controller-channel ledger must be fresh relative to prior ledgers")
-    planned_n = int(cast(int, design["planned_n"]))
-    if len(tasks) != planned_n:
+    if len(tasks) != as_int(design, "planned_n"):
         raise ValueError("controller-channel planned_n does not match the task ledger")
     expected_counts = cast(dict[str, int], design["required_task_families"])
     actual_counts = Counter(task.family or "" for task in tasks)
     if dict(sorted(actual_counts.items())) != dict(sorted(expected_counts.items())):
         raise ValueError("controller-channel task-family balance does not match the design")
 
+
+def _check_placements_and_serialization(design: dict[str, object], study_kind: str) -> None:
+    """Where the authority text may be placed, and how each backend renders those placements."""
     placements = PREAMBLE_PLACEMENTS if study_kind == PREAMBLE_STUDY_KIND else PLACEMENTS
-    if cast(list[str], design["placements"]) != list(placements):
+    if as_strs(design, "placements") != list(placements):
         raise ValueError("controller-channel placements are not predeclared exactly")
     if study_kind == PREAMBLE_STUDY_KIND:
-        transforms = design.get("serializer_transforms")
-        if transforms != DEFAULT_PREAMBLE_SERIALIZATION:
+        if design.get("serializer_transforms") != DEFAULT_PREAMBLE_SERIALIZATION:
             raise ValueError(
                 "controller preamble serializer transforms are not predeclared exactly"
             )
-    else:
-        serialization = cast(dict[str, dict[str, str]], design["role_serialization"])
-        if serialization != DEFAULT_ROLE_SERIALIZATION:
-            raise ValueError(
-                "controller-channel backend role serialization is not predeclared exactly"
-            )
-    notice = cast(str, design["authority_text"])
-    expected_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_GEMMA_AUTHORITY]
-    if notice != expected_notice or not notice.isascii():
+        return
+    if design.get("role_serialization") != DEFAULT_ROLE_SERIALIZATION:
+        raise ValueError("controller-channel backend role serialization is not predeclared exactly")
+
+
+def _check_authority_text(design: dict[str, object]) -> None:
+    """The text under study is the immutable registered notice, and it names no task."""
+    notice = as_str(design, "authority_text")
+    if (
+        notice != REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_GEMMA_AUTHORITY]
+        or not notice.isascii()
+    ):
         raise ValueError("controller-channel authority text is not the immutable registered notice")
-    if cast(list[str], design["forbidden_terms"]) != list(FORBIDDEN_TERMS):
+    if as_strs(design, "forbidden_terms") != list(FORBIDDEN_TERMS):
         raise ValueError("controller-channel forbidden-term contract changed")
     if any(term in notice.casefold() for term in FORBIDDEN_TERMS):
         raise ValueError("controller-channel authority text contains task-specific language")
 
-    seeds = cast(list[int], design["run_seeds"])
+
+def _check_seeds_and_sampling(design: dict[str, object]) -> None:
+    """Two unique seeds and a decodable sampling contract, so a rerun is the same experiment."""
+    seeds = as_ints(design, "run_seeds")
     if len(seeds) != 2 or len(set(seeds)) != 2:
         raise ValueError("controller-channel study requires exactly two unique seeds")
-    sampling = cast(dict[str, object], design["sampling"])
-    if not 0.0 < float(cast(float, sampling["temperature"])) <= 1.0:
+    sampling = as_mapping(design, "sampling")
+    if not 0.0 < as_float(sampling, "temperature") <= 1.0:
         raise ValueError("controller-channel seeded temperature must be in (0, 1]")
-    if int(cast(int, sampling["max_tokens"])) <= 0:
+    if as_int(sampling, "max_tokens") <= 0:
         raise ValueError("controller-channel max_tokens must be positive")
-    if int(cast(int, design["max_model_len"])) <= 0:
+    if as_int(design, "max_model_len") <= 0:
         raise ValueError("controller-channel max_model_len must be positive")
-    roster = cast(list[dict[str, object]], design["roster"])
+
+
+def _validated_roster(design: dict[str, object], study_kind: str) -> list[dict[str, object]]:
+    """The backends this study runs on, refused unless each is complete and serializable."""
+    roster = as_rows(design, "roster")
     if not roster or any(not row.get("model") or not row.get("model_family") for row in roster):
         raise ValueError("controller-channel study requires complete backend roster rows")
     if study_kind != PREAMBLE_STUDY_KIND and len(roster) != 1:
         raise ValueError("controller-channel role study requires exactly one backend roster row")
-    if study_kind == PREAMBLE_STUDY_KIND:
-        if roster != PREAMBLE_ROSTER:
-            raise ValueError("controller preamble Gemma/Qwen roster is not predeclared exactly")
+    if study_kind == PREAMBLE_STUDY_KIND and roster != PREAMBLE_ROSTER:
+        raise ValueError("controller preamble Gemma/Qwen roster is not predeclared exactly")
     if study_kind == CROSS_MODEL_STUDY_KIND:
-        transfer = cast(dict[str, object], design.get("transfer_reference", {}))
+        transfer = as_mapping(design, "transfer_reference")
         if transfer != TRANSFER_REFERENCE:
             raise ValueError("cross-model controller-channel reference is not immutable")
         if roster[0]["model_family"] == transfer["model_family"]:
             raise ValueError("cross-model controller-channel roster must be non-Gemma")
-    for row in roster:
-        backend = str(row.get("backend", ""))
-        serialization_name = "ollama" if backend == "ollama" else "openai_compatible"
-        declared = (
-            cast(dict[str, object], design["serializer_transforms"])
-            if study_kind == PREAMBLE_STUDY_KIND
-            else cast(dict[str, object], design["role_serialization"])
-        )
-        if serialization_name not in declared:
-            raise ValueError("controller-channel roster backend has no serialization")
-    fixed = cast(dict[str, object], design["fixed_policy"])
-    if fixed != {
+    declared_key = (
+        "serializer_transforms" if study_kind == PREAMBLE_STUDY_KIND else "role_serialization"
+    )
+    declared = as_mapping(design, declared_key)
+    if any(_serialization_name(row) not in declared for row in roster):
+        raise ValueError("controller-channel roster backend has no serialization")
+    return roster
+
+
+def _serialization_name(row: dict[str, object]) -> str:
+    """Which serializer one roster row is rendered through."""
+    return "ollama" if as_str(row, "backend") == "ollama" else "openai_compatible"
+
+
+def _check_fixed_policy(design: dict[str, object]) -> None:
+    """The loop policy is held fixed, so the channel is the only thing that varies."""
+    if design.get("fixed_policy") != {
         "max_steps": 6,
         "malformed_call": MALFORMED_ANSWER,
         "repeated_call": REPEATED_NOOP,
     }:
         raise ValueError("controller-channel loop policy must remain 6/answer/noop")
 
+
+def _check_activation_and_response(
+    design: dict[str, object], tasks: list[AgenticTask], study_kind: str, roster_size: int
+) -> None:
+    """How much of the ledger must actually activate, and how broadly it must respond."""
     activation = cast(dict[str, int], design["activation_rule"])
-    if not 0 < activation["minimum_activated_tasks"] <= planned_n:
+    if not 0 < activation["minimum_activated_tasks"] <= len(tasks):
         raise ValueError("controller-channel activation total is outside the ledger")
     if activation["minimum_activated_tasks_per_family"] <= 0:
         raise ValueError("controller-channel family activation floor must be positive")
-    response = cast(dict[str, object], design["task_family_response_rule"])
-    if not 0.0 < float(cast(float, response["minimum_response_rate"])) <= 1.0:
+    response = as_mapping(design, "task_family_response_rule")
+    if not 0.0 < as_float(response, "minimum_response_rate") <= 1.0:
         raise ValueError("controller-channel response floor must be in (0, 1]")
-    minimum_families = int(cast(int, response["minimum_supported_task_families_per_seed"]))
-    if not 3 <= minimum_families <= len(expected_counts):
+    families = as_int(response, "minimum_supported_task_families_per_seed")
+    if not 3 <= families <= len(cast(dict[str, int], design["required_task_families"])):
         raise ValueError("controller-channel family breadth is outside the ledger")
-    required_cells = len(seeds) * (len(roster) if study_kind == PREAMBLE_STUDY_KIND else 1)
-    if int(cast(int, response["minimum_supported_seeds"])) != required_cells:
+    seeds = len(as_ints(design, "run_seeds"))
+    required_cells = seeds * (roster_size if study_kind == PREAMBLE_STUDY_KIND else 1)
+    if as_int(response, "minimum_supported_seeds") != required_cells:
         raise ValueError("controller-channel adoption must require every model-seed cell")
-    mde = float(cast(float, design["minimum_detectable_completion_gain"]))
-    discordant = int(cast(int, design["minimum_discordant_pairs"]))
+
+
+def _check_completion_and_cost_gates(design: dict[str, object], planned_n: int) -> None:
+    """The effect the study must reach, and the cost it may not exceed to reach it."""
+    mde = as_float(design, "minimum_detectable_completion_gain")
+    discordant = as_int(design, "minimum_discordant_pairs")
     if not 0.0 < mde <= 1.0 or not 4 <= discordant <= planned_n:
         raise ValueError("controller-channel completion gates are outside the ledger")
     costs = cast(dict[str, float], design["maximum_relative_cost_increase"])
@@ -189,3 +230,21 @@ def validate_channel_authority_design(design: dict[str, object], tasks: list[Age
         value < 0.0 for value in costs.values()
     ):
         raise ValueError("controller-channel cost gates are invalid")
+
+
+def validate_channel_authority_design(design: dict[str, object], tasks: list[AgenticTask]) -> None:
+    """Refuse inference unless text, roles, fresh ledger, seeds, and gates are immutable.
+
+    One named check per contract area, in the order a reader of the design file meets them: what
+    study this is, what it runs over, where the text goes, what the text says, how it is sampled,
+    what it runs on, what is held fixed, what must activate, and what it must reach.
+    """
+    study_kind = _validated_study_identity(design)
+    _check_holdout_ledger(design, tasks, study_kind)
+    _check_placements_and_serialization(design, study_kind)
+    _check_authority_text(design)
+    _check_seeds_and_sampling(design)
+    roster = _validated_roster(design, study_kind)
+    _check_fixed_policy(design)
+    _check_activation_and_response(design, tasks, study_kind, len(roster))
+    _check_completion_and_cost_gates(design, len(tasks))

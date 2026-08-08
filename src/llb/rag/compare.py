@@ -11,6 +11,7 @@ seam), so it is unit-tested with fake stores -- no GPU, no FAISS, no DuckDB. Eac
 one `evaluate_retrieval` span metric, so graph and FAISS score on identical rules.
 """
 
+from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -126,6 +127,112 @@ def _slice_reports(
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _ComparisonSettings:
+    """The resolved reading contract for one comparison: baseline, eligible lanes, resampling.
+
+    Resolved once, before anything is scored, because every defaulting and alignment rule here is
+    about what the report is ALLOWED to claim -- and a rule applied halfway through scoring is a
+    rule the report cannot state.
+    """
+
+    baseline: str | None
+    eligible: list[str]
+    resamples: int
+    confidence: float
+    seed: int
+
+    @classmethod
+    def resolve(
+        cls,
+        stores: dict[str, Retriever],
+        items: list[CompareItem],
+        *,
+        slice_labels: list[str | None] | None,
+        item_ids: Sequence[str] | None,
+        baseline: str | None,
+        eligible_lanes: Sequence[str] | None,
+        resamples: int | None,
+        confidence: float | None,
+        seed: int | None,
+    ) -> "_ComparisonSettings":
+        """Refuse a misaligned or unscorable request, then fill every unstated knob."""
+        from llb.rag.fusion_evidence.stats import (
+            DEFAULT_CONFIDENCE,
+            DEFAULT_RESAMPLES,
+            DEFAULT_SEED,
+        )
+
+        _check_alignment(items, slice_labels, item_ids)
+        resolved_baseline, eligible = _resolved_lanes(stores, baseline, eligible_lanes)
+        return cls(
+            baseline=resolved_baseline,
+            eligible=eligible,
+            resamples=DEFAULT_RESAMPLES if resamples is None else resamples,
+            confidence=DEFAULT_CONFIDENCE if confidence is None else confidence,
+            seed=DEFAULT_SEED if seed is None else seed,
+        )
+
+
+def _check_alignment(
+    items: list[CompareItem],
+    slice_labels: list[str | None] | None,
+    item_ids: Sequence[str] | None,
+) -> None:
+    """Per-item inputs must line up with the items, or a paired row means nothing."""
+    if slice_labels is not None and len(slice_labels) != len(items):
+        raise ValueError("retrieval slice labels must align one-to-one with items")
+    if item_ids is not None and len(item_ids) != len(items):
+        raise ValueError("retrieval item ids must align one-to-one with items")
+
+
+def _resolved_lanes(
+    stores: dict[str, Retriever], baseline: str | None, eligible_lanes: Sequence[str] | None
+) -> tuple[str | None, list[str]]:
+    """Which lane everything is read against, and which lanes may win -- both must be scored."""
+    if baseline is not None and baseline not in stores:
+        raise ValueError(f"retrieval baseline lane `{baseline}` was not scored")
+    resolved = baseline if baseline is not None else next(iter(stores), None)
+    eligible = list(eligible_lanes) if eligible_lanes is not None else list(stores)
+    unknown = [lane for lane in eligible if lane not in stores]
+    if unknown:
+        raise ValueError(f"unknown retrieval verdict lane(s): {', '.join(unknown)}")
+    if resolved is not None and resolved not in eligible:
+        eligible.insert(0, resolved)
+    return resolved, eligible
+
+
+def _lane_rows(
+    pairs_by_backend: dict[str, list[Any]], paired: Mapping[str, Any], k: int
+) -> dict[str, ComparisonLane]:
+    """One scored row per backend, carrying its paired reading against the baseline when it has one."""
+    rows: dict[str, ComparisonLane] = {}
+    for label, pairs in pairs_by_backend.items():
+        row = cast(ComparisonLane, evaluate_retrieval(pairs, k))
+        if label in paired:
+            row["paired_vs_baseline"] = paired[label]
+        rows[label] = row
+    return rows
+
+
+def _paired_items(
+    vectors: dict[str, "MetricVectors"], count: int, item_ids: Sequence[str] | None
+) -> list[ComparisonItemOutcome]:
+    """The per-item ledger a paired reading is recomputable from."""
+    return [
+        ComparisonItemOutcome(
+            {
+                "item_id": item_ids[index] if item_ids is not None else str(index),
+                "lanes": {
+                    lane: {metric: values[metric][index] for metric in values}
+                    for lane, values in vectors.items()
+                },
+            }
+        )
+        for index in range(count)
+    ]
+
+
 def compare_retrieval(
     stores: dict[str, Retriever],
     items: list[CompareItem],
@@ -141,28 +248,19 @@ def compare_retrieval(
 ) -> ComparisonReport:
     """Score each backend once and attach paired uncertainty against a named baseline lane."""
     from llb.rag.embedding_bakeoff_uncertainty import item_vectors, paired_rows
-    from llb.rag.fusion_evidence.stats import (
-        DEFAULT_CONFIDENCE,
-        DEFAULT_RESAMPLES,
-        DEFAULT_SEED,
-    )
+    from llb.rag.retrieval_comparison_uncertainty import decide_verdict, selection_adjustment
 
-    resamples = DEFAULT_RESAMPLES if resamples is None else resamples
-    confidence = DEFAULT_CONFIDENCE if confidence is None else confidence
-    seed = DEFAULT_SEED if seed is None else seed
-    if slice_labels is not None and len(slice_labels) != len(items):
-        raise ValueError("retrieval slice labels must align one-to-one with items")
-    if item_ids is not None and len(item_ids) != len(items):
-        raise ValueError("retrieval item ids must align one-to-one with items")
-    if baseline is not None and baseline not in stores:
-        raise ValueError(f"retrieval baseline lane `{baseline}` was not scored")
-    baseline = baseline if baseline is not None else next(iter(stores), None)
-    eligible = list(eligible_lanes) if eligible_lanes is not None else list(stores)
-    unknown_eligible = [lane for lane in eligible if lane not in stores]
-    if unknown_eligible:
-        raise ValueError(f"unknown retrieval verdict lane(s): {', '.join(unknown_eligible)}")
-    if baseline is not None and baseline not in eligible:
-        eligible.insert(0, baseline)
+    settings = _ComparisonSettings.resolve(
+        stores,
+        items,
+        slice_labels=slice_labels,
+        item_ids=item_ids,
+        baseline=baseline,
+        eligible_lanes=eligible_lanes,
+        resamples=resamples,
+        confidence=confidence,
+        seed=seed,
+    )
     pairs_by_backend = _retrieve_pairs(stores, items, k)
     vectors: dict[str, "MetricVectors"] = {
         label: item_vectors(pairs, k) for label, pairs in pairs_by_backend.items()
@@ -170,63 +268,43 @@ def compare_retrieval(
     paired = (
         paired_rows(
             vectors,
-            baseline,
-            resamples=resamples,
-            confidence=confidence,
-            seed=seed,
+            settings.baseline,
+            resamples=settings.resamples,
+            confidence=settings.confidence,
+            seed=settings.seed,
         )
-        if baseline is not None
+        if settings.baseline is not None
         else {}
     )
-    per_backend: dict[str, ComparisonLane] = {}
-    for label, pairs in pairs_by_backend.items():
-        row = cast(ComparisonLane, evaluate_retrieval(pairs, k))
-        if label in paired:
-            row["paired_vs_baseline"] = paired[label]
-        per_backend[label] = row
+    per_backend = _lane_rows(pairs_by_backend, paired, k)
     best_eligible = _best_recall(
-        {lane: per_backend[lane] for lane in eligible if lane in per_backend}
-    )
-    from llb.rag.retrieval_comparison_uncertainty import (
-        decide_verdict,
-        selection_adjustment,
-    )
-
-    adjustment = selection_adjustment(
-        vectors,
-        baseline,
-        eligible,
-        resamples=resamples,
-        seed=seed,
+        {lane: per_backend[lane] for lane in settings.eligible if lane in per_backend}
     )
     report: ComparisonReport = {
         "k": k,
         "n": len(items),
         "backends": per_backend,
         "best_recall": _best_recall(per_backend),
-        "paired_items": [
-            {
-                "item_id": item_ids[index] if item_ids is not None else str(index),
-                "lanes": {
-                    lane: {metric: values[metric][index] for metric in values}
-                    for lane, values in vectors.items()
-                },
-            }
-            for index in range(len(items))
-        ],
+        "paired_items": _paired_items(vectors, len(items), item_ids),
         "uncertainty": {
-            "baseline": baseline,
-            "eligible_lanes": eligible,
-            "resamples": resamples,
-            "confidence": confidence,
-            "seed": seed,
+            "baseline": settings.baseline,
+            "eligible_lanes": settings.eligible,
+            "resamples": settings.resamples,
+            "confidence": settings.confidence,
+            "seed": settings.seed,
         },
         "verdict": decide_verdict(
             paired,
-            baseline=baseline,
+            baseline=settings.baseline,
             winner=best_eligible,
-            confidence=confidence,
-            adjustment=adjustment,
+            confidence=settings.confidence,
+            adjustment=selection_adjustment(
+                vectors,
+                settings.baseline,
+                settings.eligible,
+                resamples=settings.resamples,
+                seed=settings.seed,
+            ),
         ),
     }
     if slice_labels is not None:

@@ -14,8 +14,8 @@ from llb.rag.encoder_throughput import (
     DEFAULT_MIN_WARM_PASSES,
     DEFAULT_TARGET_RELATIVE_PRECISION,
     ThroughputProfile,
-    profile_local_embedder,
 )
+from llb.rag.encoder_throughput_profile import profile_local_embedder
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig

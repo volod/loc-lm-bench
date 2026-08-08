@@ -1,5 +1,6 @@
 """CLI orchestration for restating published crossovers under the shipped summarize-input cap."""
 
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -9,6 +10,7 @@ from llb.cli.app import app
 
 if TYPE_CHECKING:
     from llb.bench.agentic_published_value_registry import PublishedValueReport
+    from llb.bench.common import LLMComplete
 
 # The refresh WROTE its evidence and the designs no longer state their published numbers out of it.
 # Distinct from the usage refusals, which exit 2 having written nothing: here the repair is a design
@@ -55,6 +57,108 @@ def _newest_surface_analysis(data_dir: Path) -> dict[str, object] | None:
     return analysis
 
 
+def _refresh_provenance(design_path: Path, root: Path, host_data_dir: Path) -> None:
+    """Regenerate the committed evidence of EVERY registered design, then report and stop.
+
+    The refresh walks the REGISTRY, not this command's `--design`: the committed evidence tree is
+    shared, so regenerating it from one design would prune every other registered design's
+    aggregates. A `--design` the registry does not know is refused rather than walked alone.
+    """
+    from llb.bench.agentic_published_value_registry import (
+        PUBLISHED_VALUE_DESIGNS,
+        refresh_committed_evidence_and_report,
+    )
+    from llb.cli.helpers import cli_error
+
+    registered = {
+        (root / design.design_path).resolve() for design in PUBLISHED_VALUE_DESIGNS.values()
+    }
+    if (root / design_path).resolve() not in registered:
+        cli_error(
+            f"--refresh-provenance regenerates the committed evidence of every registered "
+            f"published-value design, so it cannot be pointed at {design_path} alone; register "
+            f"that design in PUBLISHED_VALUE_DESIGNS to have the refresh carry its evidence too"
+        )
+    try:
+        written, report = refresh_committed_evidence_and_report(root=root, data_dir=host_data_dir)
+    except (KeyError, ValueError) as exc:
+        cli_error(str(exc))
+    typer.echo(f"[restatement] provenance manifest -> {written}")
+    _echo_refresh_report(report)
+
+
+def _echo_audit(summary: dict[str, object]) -> None:
+    """Report which published cells the shipped bound can move, before anything is re-measured."""
+    typer.echo(
+        f"[restatement] audit: {summary['n_bound_invariant']}/{summary['n_cells']} published cells "
+        f"are bit-identical under both bounds, {summary['n_bound_sensitive']} are bound-sensitive"
+    )
+    for cell in cast(list[dict[str, object]], summary["sensitive"]):
+        typer.echo(
+            f"[restatement] bound-sensitive: {cell['study_kind']} {cell['cell_id']} "
+            f"(depth {cell['depth']}, guard {cell['max_prompt_chars']}, "
+            f"elided {cell['trigger_elided_chars']} chars)"
+        )
+
+
+def _run_restatement(
+    complete: "LLMComplete",
+    *,
+    design: dict[str, object],
+    audit: dict[str, object],
+    root: Path,
+    model: str,
+    backend: str,
+    data_dir: Path,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Re-check the pinned family, then re-measure only the cells the audit found sensitive."""
+    from llb.bench.agentic_memory_crossover_restatement import run_sensitive_surface_cells
+    from llb.bench.agentic_memory_transfer import run_control_pilot
+
+    held = cast(dict[str, object], design["held_fixed"])
+    _report, control = run_control_pilot(
+        cast(dict[str, object], design["control_recheck"]),
+        model=model,
+        backend=backend,
+        complete=complete,
+    )
+    control["model_family"] = held["model_family"]
+    typer.echo(
+        f"[restatement] control completion={cast(float, control['completion']):.3f} "
+        f"eligible={str(control['eligible']).lower()}"
+    )
+    if not control["eligible"]:
+        return control, []
+    return control, run_sensitive_surface_cells(
+        design,
+        audit,
+        root=root,
+        model=model,
+        backend=backend,
+        complete=complete,
+        data_dir=data_dir,
+    )
+
+
+def _published_surface(surface_aggregate: Path | None, data_dir: Path) -> dict[str, object] | None:
+    """The boundary-surface analysis being restated: the named aggregate, else the newest one."""
+    import json
+
+    from llb.cli.helpers import cli_error
+
+    surface = (
+        json.loads(surface_aggregate.read_text(encoding="utf-8"))["config"]["analysis"]
+        if surface_aggregate is not None
+        else _newest_surface_analysis(data_dir)
+    )
+    if surface is None:
+        cli_error(
+            "no boundary-surface aggregate is available to restate; pass --surface-aggregate "
+            "or run make bench-agentic-context-compact-memory-boundary-surface first"
+        )
+    return cast(dict[str, object], surface)
+
+
 @app.command("bench-agentic-context-compact-crossover-restatement")
 def bench_agentic_context_compact_crossover_restatement_cmd(
     design_path: Path = typer.Option(
@@ -87,22 +191,15 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     from llb.bench.agentic_memory_crossover_restatement import (
         analyze_restatement,
         audit_published_cells,
-        run_sensitive_surface_cells,
     )
     from llb.bench.agentic_memory_crossover_restatement_design import (
         load_restatement_design,
         validate_restatement_design,
     )
-    from llb.bench.agentic_published_value_registry import (
-        PUBLISHED_VALUE_DESIGNS,
-        refresh_committed_evidence_and_report,
-    )
     from llb.bench.agentic_memory_crossover_restatement_report import (
         format_restatement_table,
         persist_restatement,
     )
-    from llb.bench.agentic_memory_transfer import run_control_pilot
-    from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
     from llb.cli.helpers import best_effort_gpu_readers, cli_error, load_config
     from llb.core.paths import PROJECT_ROOT, resolve_data_dir
@@ -110,26 +207,7 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     root = PROJECT_ROOT
     host_data_dir = resolve_data_dir()
     if refresh_provenance:
-        # The refresh walks the REGISTRY, not this command's `--design`: the committed evidence tree
-        # is shared, so regenerating it from one design would prune every other registered design's
-        # aggregates. A `--design` the registry does not know is refused rather than walked alone.
-        registered = {
-            (root / design.design_path).resolve() for design in PUBLISHED_VALUE_DESIGNS.values()
-        }
-        if (root / design_path).resolve() not in registered:
-            cli_error(
-                f"--refresh-provenance regenerates the committed evidence of every registered "
-                f"published-value design, so it cannot be pointed at {design_path} alone; register "
-                f"that design in PUBLISHED_VALUE_DESIGNS to have the refresh carry its evidence too"
-            )
-        try:
-            written, report = refresh_committed_evidence_and_report(
-                root=root, data_dir=host_data_dir
-            )
-        except (KeyError, ValueError) as exc:
-            cli_error(str(exc))
-        typer.echo(f"[restatement] provenance manifest -> {written}")
-        _echo_refresh_report(report)
+        _refresh_provenance(design_path, root, host_data_dir)
         return
     try:
         design = load_restatement_design(design_path)
@@ -138,16 +216,7 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     except ValueError as exc:
         cli_error(str(exc))
     summary = cast(dict[str, object], audit["summary"])
-    typer.echo(
-        f"[restatement] audit: {summary['n_bound_invariant']}/{summary['n_cells']} published cells "
-        f"are bit-identical under both bounds, {summary['n_bound_sensitive']} are bound-sensitive"
-    )
-    for cell in cast(list[dict[str, object]], summary["sensitive"]):
-        typer.echo(
-            f"[restatement] bound-sensitive: {cell['study_kind']} {cell['cell_id']} "
-            f"(depth {cell['depth']}, guard {cell['max_prompt_chars']}, "
-            f"elided {cell['trigger_elided_chars']} chars)"
-        )
+    _echo_audit(summary)
     if audit_only:
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
         return
@@ -157,7 +226,6 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
     backend = cast(str, held["backend"])
     if model not in set(list_models()):
         cli_error(f"the pinned restatement model is not installed: {model}")
-
     cfg = load_config(
         None,
         model=model,
@@ -166,46 +234,20 @@ def bench_agentic_context_compact_crossover_restatement_cmd(
         seed=int(cast(int, design["seed"])),
         temperature=0.0,
     )
-    published_surface = (
-        json.loads(surface_aggregate.read_text(encoding="utf-8"))["config"]["analysis"]
-        if surface_aggregate is not None
-        else _newest_surface_analysis(cfg.data_dir)
-    )
-    if published_surface is None:
-        cli_error(
-            "no boundary-surface aggregate is available to restate; pass --surface-aggregate "
-            "or run make bench-agentic-context-compact-memory-boundary-surface first"
-        )
+    published_surface = _published_surface(surface_aggregate, cfg.data_dir)
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
-
-    def run(complete: LLMComplete) -> tuple[dict[str, object], list[dict[str, object]]]:
-        _report, control = run_control_pilot(
-            cast(dict[str, object], design["control_recheck"]),
-            model=model,
-            backend=backend,
-            complete=complete,
-        )
-        control["model_family"] = held["model_family"]
-        typer.echo(
-            f"[restatement] control completion={cast(float, control['completion']):.3f} "
-            f"eligible={str(control['eligible']).lower()}"
-        )
-        if not control["eligible"]:
-            return control, []
-        return control, run_sensitive_surface_cells(
-            design,
-            audit,
+    control_row, restated_rows = drive_with_backend(
+        cfg,
+        partial(
+            _run_restatement,
+            design=design,
+            audit=audit,
             root=root,
             model=model,
             backend=backend,
-            complete=complete,
             data_dir=cfg.data_dir,
-        )
-
-    control_row, restated_rows = drive_with_backend(
-        cfg,
-        run,
+        ),
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
         meter=meter,

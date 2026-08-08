@@ -15,6 +15,7 @@ import argparse
 import logging
 import re
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 from llb.core.paths import PROJECT_ROOT
@@ -65,32 +66,45 @@ def tracked_docs(project_root: Path) -> list[Path]:
     return [project_root / name for name in sorted(set(listed.stdout.split()))]
 
 
+def relative_links(doc: Path) -> Iterator[tuple[int, str]]:
+    """Every non-external link target in one document, as `(line number, target)`.
+
+    Fenced blocks are skipped: a command sample routinely contains bracket-paren text that reads
+    like a link and that no reader can click.
+    """
+    fenced = False
+    for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+        if line.lstrip().startswith(_FENCE):
+            fenced = not fenced
+        if fenced:
+            continue
+        for target in _LINK.findall(line):
+            if not target.startswith(_EXTERNAL):
+                yield number, target
+
+
+def _landing_failure(doc: Path, target: str, known: dict[Path, set[str]]) -> str | None:
+    """Why one link does not land, or None when it does."""
+    path_part, _, anchor = target.partition("#")
+    resolved = ((doc.parent / path_part) if path_part else doc).resolve()
+    if not resolved.exists():
+        return "missing file"
+    if not anchor or resolved.suffix != ".md":
+        return None
+    if resolved not in known:
+        known[resolved] = anchors(resolved)
+    return None if anchor in known[resolved] else "missing anchor"
+
+
 def broken_links(project_root: Path = PROJECT_ROOT) -> list[str]:
     """Every relative link that does not land, named `file:line: reason -> target`."""
     known: dict[Path, set[str]] = {}
     findings: list[str] = []
     for doc in tracked_docs(project_root):
-        fenced = False
-        for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
-            if line.lstrip().startswith(_FENCE):
-                fenced = not fenced
-            if fenced:
-                continue
-            for target in _LINK.findall(line):
-                if target.startswith(_EXTERNAL):
-                    continue
-                where = f"{doc.relative_to(project_root)}:{number}"
-                path_part, _, anchor = target.partition("#")
-                resolved = ((doc.parent / path_part) if path_part else doc).resolve()
-                if not resolved.exists():
-                    findings.append(f"{where}: missing file -> {target}")
-                    continue
-                if not anchor or resolved.suffix != ".md":
-                    continue
-                if resolved not in known:
-                    known[resolved] = anchors(resolved)
-                if anchor not in known[resolved]:
-                    findings.append(f"{where}: missing anchor -> {target}")
+        for number, target in relative_links(doc):
+            failure = _landing_failure(doc, target, known)
+            if failure is not None:
+                findings.append(f"{doc.relative_to(project_root)}:{number}: {failure} -> {target}")
     return findings
 
 

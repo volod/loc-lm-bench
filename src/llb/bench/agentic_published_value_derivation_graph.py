@@ -107,6 +107,53 @@ def _published_keys(values: list[dict[str, object]]) -> set[ValueKey]:
     return published
 
 
+class _DerivationCycle(Exception):
+    """A declared source that closes the chain currently being explored."""
+
+    def __init__(self, source: ValueKey) -> None:
+        super().__init__(source.label())
+        self.source = source
+
+
+def _descend_target(
+    graph: DerivationGraph, node: ValueKey, on_stack: set[ValueKey], settled: set[ValueKey]
+) -> ValueKey | None:
+    """The next source to descend into, or None when this node's sources are all settled.
+
+    Raises when a source is already on the chain: that is the cycle, caught by the walk that owns
+    the stack, because the stack is the readable name for it.
+    """
+    for source in graph.sources_of(node):
+        if source in on_stack:
+            raise _DerivationCycle(source)
+        if source not in settled:
+            return source
+    return None
+
+
+def _settle_below(graph: DerivationGraph, start: ValueKey, settled: set[ValueKey]) -> None:
+    """Walk every chain below `start`, settling each node, and refuse one that closes on itself."""
+    # The stack IS the chain being explored, so a source already on it closes a loop.
+    stack: list[ValueKey] = [start]
+    on_stack: set[ValueKey] = {start}
+    while stack:
+        try:
+            target = _descend_target(graph, stack[-1], on_stack, settled)
+        except _DerivationCycle as cycle:
+            named = " -> ".join(node.label() for node in [*stack, cycle.source])
+            raise ValueError(
+                f"{start.label()}: the `{DERIVED_FROM}` declarations form a cycle ({named}), "
+                "so no value in it rests on a measurement anything could restate"
+            ) from None
+        if target is None:
+            node = stack.pop()
+            on_stack.discard(node)
+            settled.add(node)
+        else:
+            stack.append(target)
+            on_stack.add(target)
+
+
 def _refuse_cycles(graph: DerivationGraph) -> None:
     """Refuse a declaration set where a value transitively derives from itself.
 
@@ -116,27 +163,5 @@ def _refuse_cycles(graph: DerivationGraph) -> None:
     """
     settled: set[ValueKey] = set()
     for start in graph.sources:
-        if start in settled:
-            continue
-        # The stack IS the chain being explored, so a source already on it closes a loop and the
-        # stack itself is the readable name for that loop.
-        stack: list[ValueKey] = [start]
-        on_stack: set[ValueKey] = {start}
-        while stack:
-            descended = False
-            for source in graph.sources_of(stack[-1]):
-                if source in on_stack:
-                    named = " -> ".join(node.label() for node in [*stack, source])
-                    raise ValueError(
-                        f"{start.label()}: the `{DERIVED_FROM}` declarations form a cycle ({named}), "
-                        "so no value in it rests on a measurement anything could restate"
-                    )
-                if source not in settled:
-                    stack.append(source)
-                    on_stack.add(source)
-                    descended = True
-                    break
-            if not descended:
-                node = stack.pop()
-                on_stack.discard(node)
-                settled.add(node)
+        if start not in settled:
+            _settle_below(graph, start, settled)

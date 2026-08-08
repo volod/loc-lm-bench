@@ -203,53 +203,101 @@ def pair_kind_completion(
     return out
 
 
+def _reference_report(reports: list[PolicyReport]) -> PolicyReport | None:
+    """The report the kind breakdown is read against: the baseline policy, else the first run."""
+    return next((row for row in reports if row.policy == BASELINE_POLICY), None) or (
+        reports[0] if reports else None
+    )
+
+
+def _kind_header(present: list[str]) -> str:
+    """The column head for the kinds this run actually has rows for."""
+    header = f"{'policy':<16}" + "".join(f" {k:>10}" for k in present) + f" {'overflow-count':>14}"
+    return header + f" {'vs-pre-header':>14}" if KIND_COUNT in present else header
+
+
+def _kind_cells(report: PolicyReport, present: list[str]) -> str:
+    """One policy's completion per kind, dashed where the kind produced no row."""
+    cells = []
+    for kind in present:
+        value = kind_completion(report, kind)
+        cells.append(f"{value:>10.3f}" if value is not None else f"{'-':>10}")
+    return "".join(f" {cell}" for cell in cells)
+
+
+def _pre_header_cell(report: PolicyReport, pre: dict[str, float]) -> str:
+    """The count slice against the pre-header evidence: the recovery this table exists to show."""
+    prior = pre.get(report.policy)
+    now = kind_completion(report, KIND_COUNT)
+    if prior is None or now is None:
+        return f" {'-':>14}"
+    return f" {now - prior:>+14.3f}"
+
+
+def _kind_row(report: PolicyReport, present: list[str], pre: dict[str, float]) -> str:
+    """One table row: the policy, its per-kind completion, its overflows, its recovery."""
+    row = f"{report.policy:<16}" + _kind_cells(report, present)
+    if KIND_COUNT not in present:
+        return row
+    return row + f" {kind_overflow(report, KIND_COUNT):>14d}" + _pre_header_cell(report, pre)
+
+
+def _count_pair_lines(count_pairs: dict[str, PairedComparison]) -> list[str]:
+    """The paired count-slice reading under the table, one line per policy."""
+    lines = ["count-slice paired vs full:"]
+    for policy, comparison in count_pairs.items():
+        delta = comparison["delta"]
+        reading = READING_SEPARATED if delta["lo"] > 0.0 or delta["hi"] < 0.0 else READING_FLAT
+        lines.append(
+            f"  {policy:<14} d(completion)={delta['mean']:+.3f} "
+            f"[{delta['lo']:+.3f}, {delta['hi']:+.3f}] "
+            f"w/l/t={comparison['wins']}/{comparison['losses']}/{comparison['ties']} "
+            f"{reading_label(reading)}"
+        )
+    return lines
+
+
 def format_kind_table(
     reports: list[PolicyReport],
     *,
     pre_header_count: dict[str, float] | None = None,
 ) -> str:
     """Per-policy completion broken out by task kind, plus count-slice vs pre-header."""
-    reference = next((r for r in reports if r.policy == BASELINE_POLICY), None) or (
-        reports[0] if reports else None
-    )
+    reference = _reference_report(reports)
     if reference is None or not reference.rows:
         return ""
-    present = [k for k in KIND_ORDER if kind_indices(reference, k)]
+    present = [kind for kind in KIND_ORDER if kind_indices(reference, kind)]
     if not present:
         return ""
     pre = pre_header_count if pre_header_count is not None else PRE_HEADER_COUNT_COMPLETION
-    header = f"{'policy':<16}" + "".join(f" {k:>10}" for k in present) + f" {'overflow-count':>14}"
-    if KIND_COUNT in present:
-        header += f" {'vs-pre-header':>14}"
+    header = _kind_header(present)
     lines = ["by task kind:", header, "-" * len(header)]
+    lines.extend(_kind_row(report, present, pre) for report in reports)
     count_pairs = pair_kind_completion(reports, KIND_COUNT) if KIND_COUNT in present else {}
-    for report in reports:
-        cells = []
-        for kind in present:
-            value = kind_completion(report, kind)
-            cells.append(f"{value:>10.3f}" if value is not None else f"{'-':>10}")
-        row = f"{report.policy:<16}" + "".join(f" {c}" for c in cells)
-        row += f" {kind_overflow(report, KIND_COUNT):>14d}" if KIND_COUNT in present else ""
-        if KIND_COUNT in present:
-            prior = pre.get(report.policy)
-            now = kind_completion(report, KIND_COUNT)
-            if prior is None or now is None:
-                row += f" {'-':>14}"
-            else:
-                row += f" {now - prior:>+14.3f}"
-        lines.append(row)
     if count_pairs:
-        lines.append("count-slice paired vs full:")
-        for policy, comparison in count_pairs.items():
-            delta = comparison["delta"]
-            reading = READING_SEPARATED if delta["lo"] > 0.0 or delta["hi"] < 0.0 else READING_FLAT
-            lines.append(
-                f"  {policy:<14} d(completion)={delta['mean']:+.3f} "
-                f"[{delta['lo']:+.3f}, {delta['hi']:+.3f}] "
-                f"w/l/t={comparison['wins']}/{comparison['losses']}/{comparison['ties']} "
-                f"{reading_label(reading)}"
-            )
+        lines.extend(_count_pair_lines(count_pairs))
     return "\n".join(lines)
+
+
+def _recovery_bit(name: str, prior: float, now: float) -> str:
+    """One policy's count-slice movement against the pre-header evidence, read as prose."""
+    delta = now - prior
+    if delta > 0:
+        return f"`{name}` count {prior:.3f}->{now:.3f} (recovered {delta:+.3f})"
+    return f"`{name}` count {prior:.3f}->{now:.3f} (no recovery; loss is elsewhere or still flat)"
+
+
+def _count_recoveries(
+    reports: list[PolicyReport], pre: dict[str, float]
+) -> list[tuple[str, float, float]]:
+    """The trimming policies that produced a count-slice number this run, with what to compare."""
+    measured: list[tuple[str, float, float]] = []
+    for name in ("observation_cap", "compact"):
+        report = next((row for row in reports if row.policy == name), None)
+        now = kind_completion(report, KIND_COUNT) if report is not None else None
+        if now is not None:
+            measured.append((name, pre.get(name, 0.0), now))
+    return measured
 
 
 def aggregate_safe_verdict(
@@ -259,37 +307,17 @@ def aggregate_safe_verdict(
 ) -> str:
     """Whether aggregate-safe trimming recovered the count slice vs the pre-header evidence."""
     pre = pre_header_count if pre_header_count is not None else PRE_HEADER_COUNT_COMPLETION
-    reference = next((r for r in reports if r.policy == BASELINE_POLICY), None) or (
-        reports[0] if reports else None
-    )
+    reference = _reference_report(reports)
     if reference is None or not kind_indices(reference, KIND_COUNT):
         return "no count-slice tasks in this set; aggregate-safe trimming not scored"
-    bits: list[str] = []
-    recovered_any = False
-    for name in ("observation_cap", "compact"):
-        report = next((r for r in reports if r.policy == name), None)
-        if report is None:
-            continue
-        now = kind_completion(report, KIND_COUNT)
-        prior = pre.get(name, 0.0)
-        if now is None:
-            continue
-        delta = now - prior
-        if delta > 0:
-            recovered_any = True
-            bits.append(f"`{name}` count {prior:.3f}->{now:.3f} (recovered {delta:+.3f})")
-        else:
-            bits.append(
-                f"`{name}` count {prior:.3f}->{now:.3f} (no recovery; loss is elsewhere or "
-                "still flat)"
-            )
-    if not bits:
+    measured = _count_recoveries(reports, pre)
+    if not measured:
         return "count slice present but observation_cap/compact were not in this run"
-    if recovered_any:
-        return "aggregate-safe trimming recovered count-slice completion: " + "; ".join(bits)
+    bits = "; ".join(_recovery_bit(name, prior, now) for name, prior, now in measured)
+    if any(now > prior for _name, prior, now in measured):
+        return "aggregate-safe trimming recovered count-slice completion: " + bits
     return (
-        "aggregate-safe trimming did NOT move the count slice vs the pre-header evidence: "
-        + "; ".join(bits)
+        "aggregate-safe trimming did NOT move the count slice vs the pre-header evidence: " + bits
     )
 
 

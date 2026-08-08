@@ -25,6 +25,7 @@ The fixture publishes NO number: it is a geometry design, deliberately absent fr
 from pathlib import Path
 from typing import Any, cast
 
+from llb.bench.agentic_design_fields import as_mapping, as_rows
 from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
@@ -65,27 +66,27 @@ def interaction_cells(design: dict[str, object]) -> list[dict[str, object]]:
     return declared_geometry(design, KIND_INTERACTION)
 
 
-def validate_interaction_design(design: dict[str, object]) -> None:
-    """Refuse a fixture that could go quiet for a reason other than the seam it guards.
+def _check_change_shape(design: dict[str, object], change: PolicyChange) -> None:
+    """The fixture moves exactly the interacting pair, and `held_fixed` agrees with the baseline.
 
-    A cell that declares one of the moved fields is not described by the change at all, and a
-    `held_fixed` that disagrees with the baseline would replay a configuration neither reading is
-    about -- both would leave the separation untested while the file still looks like a fixture.
+    A `held_fixed` that disagrees would replay a configuration neither reading is about, leaving the
+    separation untested while the file still looks like a fixture.
     """
-    if design.get("study_kind") != KIND_INTERACTION:
-        raise ValueError(f"interaction fixture study_kind must be {KIND_INTERACTION!r}")
-    change = interaction_change(design)
     if change.fields != INTERACTING_FIELDS:
         raise ValueError(
             f"the interaction fixture must move exactly {INTERACTING_FIELDS}, got {change.fields}"
         )
-    held = cast(dict[str, object], design["held_fixed"])
+    held = as_mapping(design, "held_fixed")
     for field in change.fields:
         if field in held and held[field] != change.baseline[field]:
             raise ValueError(
                 f"held_fixed states {field}={held[field]!r} but the change baselines it at "
                 f"{change.baseline[field]!r}"
             )
+
+
+def _check_cells(design: dict[str, object], change: PolicyChange) -> None:
+    """Every cell is complete, and none of them pins a field the change is supposed to audit."""
     cells = interaction_cells(design)
     if not cells:
         raise ValueError("the interaction fixture must declare at least one cell")
@@ -96,10 +97,19 @@ def validate_interaction_design(design: dict[str, object]) -> None:
             raise ValueError(
                 f"cell {cell['cell_id']!r} declares {pinned} itself, so the change cannot audit it"
             )
-    for declared in cast(list[dict[str, object]], design["cells"]):
+    for declared in as_rows(design, "cells"):
         missing = [key for key in _REQUIRED_CELL_KEYS if key not in declared]
         if missing:
             raise ValueError(f"cell {declared['cell_id']!r} declares no {missing}")
+
+
+def validate_interaction_design(design: dict[str, object]) -> None:
+    """Refuse a fixture that could go quiet for a reason other than the seam it guards."""
+    if design.get("study_kind") != KIND_INTERACTION:
+        raise ValueError(f"interaction fixture study_kind must be {KIND_INTERACTION!r}")
+    change = interaction_change(design)
+    _check_change_shape(design, change)
+    _check_cells(design, change)
     if not any(row["separates"] for row in _expectations(design)):
         raise ValueError("the interaction fixture must declare at least one SEPARATING cell")
 

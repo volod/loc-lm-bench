@@ -49,6 +49,67 @@ def backend_serialization_name(backend: str) -> str:
     return "ollama" if backend == "ollama" else "openai_compatible"
 
 
+def _transform_for(
+    serializer_transforms: dict[str, dict[str, list[dict[str, str]]]],
+    feedback: list[ControllerFeedback],
+    backend_name: str,
+) -> list[dict[str, str]]:
+    """The declared message plan for this feedback's placement, refusing a mixed placement.
+
+    Mixed placements are refused rather than merged: the study this seam exists for compares ONE
+    placement against another, and a transcript carrying both is neither arm.
+    """
+    channels = {item.channel for item in feedback}
+    if len(channels) != 1:
+        raise ValueError("controller feedback cannot mix serializer placements")
+    channel = next(iter(channels))
+    try:
+        return serializer_transforms[backend_name][channel]
+    except KeyError as exc:
+        raise ValueError(
+            f"no {channel!r} transcript transform for backend {backend_name!r}"
+        ) from exc
+
+
+def _transformed_messages(
+    transform: list[dict[str, str]],
+    prompt: str,
+    feedback: list[ControllerFeedback],
+    backend_name: str,
+) -> list[ChatMessage]:
+    """Render the declared plan: each step places either the prompt or the authority text."""
+    channel = feedback[0].channel
+    messages: list[ChatMessage] = []
+    for step in transform:
+        source = step.get("source")
+        role = step.get("role")
+        if source == "prompt" and role:
+            messages.append({"role": role, "content": prompt})
+        elif source == "authority" and role:
+            messages.extend({"role": role, "content": item.content} for item in feedback)
+        else:
+            raise ValueError(
+                f"invalid {channel!r} transcript transform for backend {backend_name!r}"
+            )
+    return messages
+
+
+def _role_messages(
+    roles: dict[str, str], prompt: str, feedback: list[ControllerFeedback], backend_name: str
+) -> list[ChatMessage]:
+    """The ordinary path: the prompt as a user turn, each feedback item in its channel's role."""
+    messages: list[ChatMessage] = [{"role": "user", "content": prompt}]
+    for item in feedback:
+        try:
+            role = roles[item.channel]
+        except KeyError as exc:
+            raise ValueError(
+                f"no {item.channel!r} role serialization for backend {backend_name!r}"
+            ) from exc
+        messages.append({"role": role, "content": item.content})
+    return messages
+
+
 def serialize_controller_transcript(
     prompt: str,
     feedback: list[ControllerFeedback],
@@ -60,30 +121,8 @@ def serialize_controller_transcript(
     """Serialize a task prompt plus feedback; feedback text/order stay fixed across channels."""
     backend_name = backend_serialization_name(backend)
     if serializer_transforms is not None and feedback:
-        channels = {item.channel for item in feedback}
-        if len(channels) != 1:
-            raise ValueError("controller feedback cannot mix serializer placements")
-        channel = next(iter(channels))
-        try:
-            transform = serializer_transforms[backend_name][channel]
-        except KeyError as exc:
-            raise ValueError(
-                f"no {channel!r} transcript transform for backend {backend_name!r}"
-            ) from exc
-        messages: list[ChatMessage] = []
-        for step in transform:
-            source = step.get("source")
-            role = step.get("role")
-            if source == "prompt" and role:
-                messages.append({"role": role, "content": prompt})
-            elif source == "authority" and role:
-                messages.extend({"role": role, "content": item.content} for item in feedback)
-            else:
-                raise ValueError(
-                    f"invalid {channel!r} transcript transform for backend {backend_name!r}"
-                )
-        return messages
-
+        transform = _transform_for(serializer_transforms, feedback, backend_name)
+        return _transformed_messages(transform, prompt, feedback, backend_name)
     serialization = role_serialization or DEFAULT_ROLE_SERIALIZATION
     try:
         roles = serialization[backend_name]
@@ -91,16 +130,7 @@ def serialize_controller_transcript(
         raise ValueError(
             f"no controller-message serialization for backend {backend_name!r}"
         ) from exc
-    messages = [{"role": "user", "content": prompt}]
-    for item in feedback:
-        try:
-            role = roles[item.channel]
-        except KeyError as exc:
-            raise ValueError(
-                f"no {item.channel!r} role serialization for backend {backend_name!r}"
-            ) from exc
-        messages.append({"role": role, "content": item.content})
-    return messages
+    return _role_messages(roles, prompt, feedback, backend_name)
 
 
 def transcript_chars(messages: list[ChatMessage]) -> int:

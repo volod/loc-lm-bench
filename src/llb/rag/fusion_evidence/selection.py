@@ -75,6 +75,63 @@ def _tail_count(null: NDArray[np.float64], observed: float) -> int:
     return int(np.count_nonzero(null >= observed - tolerance))
 
 
+def _aligned_matrix(hypotheses: Mapping[str, Sequence[float]], keys: list[str]) -> np.ndarray:
+    """The family as one finite matrix over the SAME items, which is what makes max-T valid."""
+    lengths = {len(hypotheses[key]) for key in keys}
+    if len(lengths) != 1:
+        raise ValueError("selection hypotheses must use the same aligned items")
+    matrix = np.asarray([hypotheses[key] for key in keys], dtype=np.float64)
+    if not np.isfinite(matrix).all():
+        raise ValueError("selection hypotheses must contain only finite deltas")
+    return matrix
+
+
+def _tail_counts(
+    matrix: np.ndarray,
+    order: list[int],
+    observed: np.ndarray,
+    *,
+    exact: bool,
+    samples: int,
+    batch_size: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Walk the randomization distribution and count, per member, how often the null was as extreme.
+
+    Two counts, because the family needs both: the member's OWN tail (its unadjusted p) and the
+    step-down suffix maximum (its adjusted p).
+    """
+    n = matrix.shape[1]
+    sum_squares = np.square(matrix).sum(axis=1)
+    ordered_observed = observed[order]
+    raw_extreme = np.zeros(len(order), dtype=np.int64)
+    step_extreme = np.zeros(len(order), dtype=np.int64)
+    rng = np.random.default_rng(seed)
+    for start in range(0, samples, batch_size):
+        count = min(batch_size, samples - start)
+        signs = _exact_signs(start, start + count, n) if exact else _sampled_signs(rng, count, n)
+        null_sums = matrix @ signs.T
+        null_statistics = _statistics(null_sums, sum_squares[:, None], n) if n else null_sums
+        ordered_null = null_statistics[order]
+        suffix_max = np.maximum.accumulate(ordered_null[::-1], axis=0)[::-1]
+        for position, index in enumerate(order):
+            raw_extreme[index] += _tail_count(null_statistics[index], observed[index])
+            step_extreme[position] += _tail_count(suffix_max[position], ordered_observed[position])
+    return raw_extreme, step_extreme
+
+
+def _step_down_adjusted(
+    step_extreme: np.ndarray, order: list[int], *, correction: int, denominator: int
+) -> dict[int, float]:
+    """Enforce monotonicity down the ordered family: an adjusted p never drops below the one above."""
+    adjusted_ordered: list[float] = []
+    running = 0.0
+    for extreme in step_extreme:
+        running = max(running, (int(extreme) + correction) / denominator)
+        adjusted_ordered.append(running)
+    return {index: adjusted_ordered[position] for position, index in enumerate(order)}
+
+
 def selection_adjustment(
     hypotheses: Mapping[str, Sequence[float]],
     *,
@@ -89,48 +146,36 @@ def selection_adjustment(
     if exact_limit < 0 or batch_size <= 0:
         raise ValueError("exact_limit must be non-negative and batch_size must be positive")
     keys = list(hypotheses)
-    lengths = {len(hypotheses[key]) for key in keys}
-    if len(lengths) != 1:
-        raise ValueError("selection hypotheses must use the same aligned items")
-    original_n = lengths.pop()
-    matrix = np.asarray([hypotheses[key] for key in keys], dtype=np.float64)
-    if not np.isfinite(matrix).all():
-        raise ValueError("selection hypotheses must contain only finite deltas")
+    matrix = _aligned_matrix(hypotheses, keys)
+    original_n = matrix.shape[1]
+    # Items no hypothesis moved carry no sign information, so they leave the randomization.
     active = np.any(matrix != 0.0, axis=0) if original_n else np.asarray([], dtype=bool)
     matrix = matrix[:, active]
     n = matrix.shape[1]
-    sums = matrix.sum(axis=1)
-    sum_squares = np.square(matrix).sum(axis=1)
-    observed = _statistics(sums, sum_squares, n) if n else np.zeros(len(keys))
+    observed = (
+        _statistics(matrix.sum(axis=1), np.square(matrix).sum(axis=1), n)
+        if n
+        else np.zeros(len(keys))
+    )
     order = sorted(range(len(keys)), key=lambda index: (-observed[index], keys[index]))
-    ordered_observed = observed[order]
-    raw_extreme = np.zeros(len(keys), dtype=np.int64)
-    step_extreme = np.zeros(len(keys), dtype=np.int64)
-
     exact = n <= exact_limit
     samples = 2**n if exact else resamples
     if samples <= 0:
         raise ValueError("a Monte Carlo selection adjustment needs at least one resample")
-    rng = np.random.default_rng(seed)
-    for start in range(0, samples, batch_size):
-        count = min(batch_size, samples - start)
-        signs = _exact_signs(start, start + count, n) if exact else _sampled_signs(rng, count, n)
-        null_sums = matrix @ signs.T
-        null_statistics = _statistics(null_sums, sum_squares[:, None], n) if n else null_sums
-        ordered_null = null_statistics[order]
-        suffix_max = np.maximum.accumulate(ordered_null[::-1], axis=0)[::-1]
-        for position, index in enumerate(order):
-            raw_extreme[index] += _tail_count(null_statistics[index], observed[index])
-            step_extreme[position] += _tail_count(suffix_max[position], ordered_observed[position])
-
+    raw_extreme, step_extreme = _tail_counts(
+        matrix,
+        order,
+        observed,
+        exact=exact,
+        samples=samples,
+        batch_size=batch_size,
+        seed=seed,
+    )
     correction = 0 if exact else 1
     denominator = samples + correction
-    adjusted_ordered: list[float] = []
-    running = 0.0
-    for extreme in step_extreme:
-        running = max(running, (int(extreme) + correction) / denominator)
-        adjusted_ordered.append(running)
-    adjusted = {index: adjusted_ordered[position] for position, index in enumerate(order)}
+    adjusted = _step_down_adjusted(
+        step_extreme, order, correction=correction, denominator=denominator
+    )
     return {
         "method": SELECTION_METHOD,
         "statistic": STATISTIC,

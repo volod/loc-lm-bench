@@ -98,6 +98,50 @@ def borderline_bars(paired: PairedRow, bars: Sequence[str] = DEFAULT_BARS) -> li
     ]
 
 
+def _cleared_bars_by_model(
+    paired: dict[str, PairedRow],
+    baseline: str,
+    bars: Sequence[str],
+    confidence: float,
+    adjustment: SelectionAdjustment | None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Which candidates clear which bars, before and after the family-wise selection adjustment.
+
+    Both are needed by the reason: a candidate that cleared on its own row but not in the family
+    reads differently from one that never cleared at all.
+    """
+    per_row = {
+        model: cleared_bars(row, bars, confidence)
+        for model, row in paired.items()
+        if model != baseline and separates_from_baseline(row, bars, confidence)
+    }
+    adjusted = {
+        model: [
+            bar
+            for bar in marked
+            if adjustment is None
+            or selection_separates(adjustment, hypothesis_key(model, bar), confidence)
+        ]
+        for model, marked in per_row.items()
+    }
+    return per_row, {model: marked for model, marked in adjusted.items() if marked}
+
+
+def _retain_reason(
+    per_row_cleared: dict[str, list[str]], baseline: str, bars: Sequence[str]
+) -> str:
+    """Why the incumbent stands: nothing cleared, or nothing SURVIVED the adjustment."""
+    opening = (
+        "no candidate survives the selection-adjusted adoption family "
+        if per_row_cleared
+        else "no candidate clears an adoption bar "
+    )
+    return (
+        opening + f"({', '.join(bars)}) against `{baseline}`, "
+        "so the ranking is not supported by this item set"
+    )
+
+
 def decide_verdict(
     paired: dict[str, PairedRow],
     baseline: str | None,
@@ -134,21 +178,9 @@ def decide_verdict(
         for model, row in sorted(paired.items())
         if model != baseline and (marked := borderline_bars(row, bars))
     }
-    per_row_cleared = {
-        model: cleared_bars(row, bars, confidence)
-        for model, row in paired.items()
-        if model != baseline and separates_from_baseline(row, bars, confidence)
-    }
-    cleared = {
-        model: [
-            bar
-            for bar in marked
-            if adjustment is None
-            or selection_separates(adjustment, hypothesis_key(model, bar), confidence)
-        ]
-        for model, marked in per_row_cleared.items()
-    }
-    cleared = {model: marked for model, marked in cleared.items() if marked}
+    per_row_cleared, cleared = _cleared_bars_by_model(
+        paired, baseline, bars, confidence, adjustment
+    )
     if not cleared:
         return _verdict(
             DECISION_RETAIN,
@@ -158,15 +190,7 @@ def decide_verdict(
             borderline=borderline,
             per_row_cleared=per_row_cleared,
             adjustment=adjustment,
-            reason=(
-                (
-                    "no candidate survives the selection-adjusted adoption family "
-                    if per_row_cleared
-                    else "no candidate clears an adoption bar "
-                )
-                + f"({', '.join(bars)}) against `{baseline}`, "
-                "so the ranking is not supported by this item set"
-            )
+            reason=_retain_reason(per_row_cleared, baseline, bars)
             + _near_miss_note(paired, borderline)
             + _gate_note(paired, baseline, bars, confidence)
             + selection_note(adjustment),

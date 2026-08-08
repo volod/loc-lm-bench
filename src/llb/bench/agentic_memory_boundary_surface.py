@@ -18,6 +18,7 @@ from llb.bench.agentic_memory_boundary_crossover import (
     routing_rule,
 )
 from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars
+from llb.bench.agentic_design_fields import as_mapping, as_rows
 from llb.bench.agentic_memory_boundary_surface_cells import (
     surface_cell_row,
     validate_surface_cells,
@@ -141,26 +142,31 @@ def run_surface_grid(
     ]
 
 
+def _surface_cells(
+    design: dict[str, object], grid_rows: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Score every declared cell, refusing rows that are not the declared grid in declared order."""
+    declared = as_rows(as_mapping(design, "surface"), "cells")
+    if [row["cell_id"] for row in grid_rows] != [cell["cell_id"] for cell in declared]:
+        raise ValueError("boundary-surface rows do not match the exact declared cell order")
+    held = as_mapping(design, "held_fixed")
+    return [
+        surface_cell_row(row, cell, held_fixed=held, confidence=REPORTING_CONFIDENCE)
+        for row, cell in zip(grid_rows, declared, strict=True)
+    ]
+
+
 def analyze_surface(
     design: dict[str, object],
     control_row: dict[str, object] | None,
     grid_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     """Gate every cell, interpolate one crossover per depth, and state the routing surface."""
-    held = cast(dict[str, object], design["held_fixed"])
-    declared = cast(list[dict[str, object]], cast(dict[str, object], design["surface"])["cells"])
     peaks = surface_cap_peaks(design)
     eligible = bool(control_row is not None and control_row["eligible"])
-    cells: list[dict[str, object]] = []
-    depth_rows: list[dict[str, object]] = []
-    if eligible:
-        if [row["cell_id"] for row in grid_rows] != [cell["cell_id"] for cell in declared]:
-            raise ValueError("boundary-surface rows do not match the exact declared cell order")
-        cells = [
-            surface_cell_row(row, cell, held_fixed=held, confidence=REPORTING_CONFIDENCE)
-            for row, cell in zip(grid_rows, declared, strict=True)
-        ]
-        depth_rows = [
+    cells = _surface_cells(design, grid_rows) if eligible else []
+    depth_rows = (
+        [
             depth_surface_row(
                 depth,
                 [cell for cell in cells if cell["depth"] == depth],
@@ -168,10 +174,13 @@ def analyze_surface(
             )
             for depth in sorted(peaks)
         ]
+        if eligible
+        else []
+    )
     reading, reason = _surface_reading(eligible, cells, depth_rows)
     return {
         "study_id": design["study_id"],
-        "held_fixed": held,
+        "held_fixed": as_mapping(design, "held_fixed"),
         "cap_peak_prompt_chars": {str(depth): peak for depth, peak in peaks.items()},
         "control_recheck": control_row,
         "cells": cells,
