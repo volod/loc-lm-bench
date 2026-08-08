@@ -19,6 +19,7 @@ from llb.bench.agentic_published_value_derivation import (
 from llb.bench.agentic_published_value_operations import (
     DERIVATION_OPERATIONS,
     OPERATION,
+    DerivationInputs,
     DerivationOperation,
 )
 from tests.llb.bench._published_value_fixtures import (
@@ -26,6 +27,7 @@ from tests.llb.bench._published_value_fixtures import (
     DERIVED,
     MEASURED,
     OTHER,
+    PROBE_SOURCE,
     STUDY,
     key,
     operation_name,
@@ -152,6 +154,7 @@ def test_an_operation_reading_a_field_the_design_does_not_state_is_refused(
             source_forms=(MEASURED,),
             stated_fields=("compact_share",),
             compute=summed,
+            probe=DerivationInputs(sources=(PROBE_SOURCE,), stated={"compact_share": PROBE_SOURCE}),
         ),
     )
     named = {

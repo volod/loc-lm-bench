@@ -26,6 +26,9 @@ OTHER = "another_study"
 # The shapes of arithmetic these synthetic values are declared with, one registered operation each.
 TEST_SHAPES = ((MEASURED,), (DERIVED,), (BOUNDARY,), (MEASURED, MEASURED), (MEASURED, DERIVED))
 
+# The point the registry self-check would call a throwaway operation at; any number computes.
+PROBE_SOURCE = 1.0
+
 
 def summed(inputs: DerivationInputs) -> DerivedValue:
     """Arithmetic simple enough to disappear: what is asserted is which inputs reached it."""
@@ -42,7 +45,12 @@ def register_test_operations(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setitem(
             DERIVATION_OPERATIONS,
             operation_name(forms),
-            DerivationOperation(name=operation_name(forms), source_forms=forms, compute=summed),
+            DerivationOperation(
+                name=operation_name(forms),
+                source_forms=forms,
+                compute=summed,
+                probe=DerivationInputs(sources=tuple(PROBE_SOURCE for _ in forms), stated={}),
+            ),
         )
 
 

@@ -1773,6 +1773,42 @@ is checked the way it is meant to be used: swapping the registered function make
 validation and the restated row change, which is exactly what two modules carrying one quotient each
 could not do.
 
+That declaration is now checked in BOTH directions. It was checked against the DESIGN only -- the
+arity, the source forms, and the stated operands a design must supply -- and nothing checked it
+against the FUNCTION registered beside it, which left three defects invisible until a study adopted
+the arithmetic: a body reading a stated field it did not declare raised a `KeyError` inside whichever
+reader got there first rather than refusing the design that failed to state it; a declaration listing
+an input the body never reads made every adopting design carry a number for nothing; and an operation
+no registered design names was arithmetic nobody exercises, where a wrong quotient would sit until
+the first study published out of it. `agentic_published_value_operation_audit.py` closes the loop in
+CI, on the act of REGISTERING rather than at the first adoption.
+
+It closes it by CALLING each operation, not by reading its source.
+`agentic_published_value_operation_probe.py` builds inputs that answer exactly the declaration and
+nothing else -- a stated mapping holding only the declared fields, a source tuple of only the
+declared length, and a measurement only when `reads_own_measurement` says so -- and every input
+records the operation looking at it (the sources and the measurement are `float` subclasses recording
+through the arithmetic performed on them, so `int(guard)` and `float(peak)` are the observations).
+Reaching outside that raises with the input NAMED instead of the `KeyError` or `TypeError` two frames
+deeper; a declared input nothing reached for is refused as over-declaration. One distinction carries
+the second refusal: membership is not a read, because `apply` asks `name not in stated` for every
+declared field before computing anything, and counting that would mark every declaration read.
+Calling at all needs a point to call at, so a registered operation carries a `probe` -- a required
+field, since an operation the self-check cannot call is one whose declaration nothing checks against
+its body -- and a probe that does not answer exactly what the operation declares is refused at
+construction, because answering MORE is what would hide a read the declaration lacks.
+
+The third defect is a walk of the registered DESIGNS rather than of the operations, so a
+`PublishedValueDesign` entry now carries a reader for its published values beside its citations and
+its validation: which registered arithmetic anything actually names is a question no per-design
+validation can answer, and a reader-less entry would answer it as "this design publishes nothing".
+`report_operation_registry` collects and `validate_operation_registry` refuses over it -- the same
+collecting-primitive shape the design registry uses -- and it returns the operations it exercised,
+because a self-check that exercised nothing passes exactly like one that exercised every entry. What
+the probe deliberately does not claim is purity: it records reaches through the inputs it was handed,
+and an operation reading a module global is out of reach of anything short of the expression language
+the design file does not have.
+
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
 `depth_ladders[depth=10].boundary.guard_boundary_chars`, `cap_peak_prompt_chars.6`. One walk serves

@@ -28,6 +28,11 @@ unchecked claims, which reads exactly like the checked case. So registration buy
 here validates every registered design, and an entry that registers no validation is refused rather
 than skipped, since a registry that silently walks past an entry is how the gap would reopen.
 
+An entry carries its published VALUES too, for the walks that are about the designs collectively
+rather than about one design's numbers: which registered arithmetic anything actually names
+(`agentic_published_value_operation_audit`) is a question no per-design validation can answer, and a
+reader-less entry would answer it as "this design publishes nothing" -- silence again.
+
 The two walks are ONE walk, in both directions. Regenerating the evidence and asking whether the
 published values still resolve out of it are the same question asked by the same registry, so a
 refresh that answered only the first left the second to a later `make ci` -- an operator who re-ran a
@@ -74,26 +79,39 @@ class PublishedValueDesign:
     """
 
     design_path: str
+    published_values: Callable[[Path], list[dict[str, object]]]
     cited_artifacts: Callable[[Path], list[str]]
     validate_published_values: ValidatePublishedValues
 
     def __post_init__(self) -> None:
         # Stated rather than left to the type checker: `None` is the shape an opt-out would take,
-        # and an entry that opts out is the one thing this field exists to make impossible.
+        # and an entry that opts out is the one thing these fields exist to make impossible.
         if not callable(self.validate_published_values):
             raise ValueError(
                 f"the registered design {self.design_path} states no validation of its published "
                 "values, so registering it would commit its evidence without ever resolving the "
                 "numbers that evidence stands for -- durable bytes beside unchecked claims"
             )
+        if not callable(self.published_values):
+            raise ValueError(
+                f"the registered design {self.design_path} states no reader for its published "
+                "values, so a design-wide walk -- which arithmetic is named, which registered "
+                "operation nothing exercises -- would read it as a design that publishes nothing"
+            )
 
 
-def _crossover_restatement_citations(path: Path) -> list[str]:
-    """The run artifacts every published crossover of the restatement design resolves against."""
+def _crossover_restatement_values(path: Path) -> list[dict[str, object]]:
+    """Every value the restatement design publishes, each tagged with the study that measured it."""
     from llb.bench.agentic_memory_crossover_restatement_design import (
         load_restatement_design,
         published_crossovers,
     )
+
+    return published_crossovers(load_restatement_design(path))
+
+
+def _crossover_restatement_citations(path: Path) -> list[str]:
+    """The run artifacts every published crossover of the restatement design resolves against."""
     from llb.bench.agentic_published_value_provenance import provenance_pair
 
     return [
@@ -101,7 +119,7 @@ def _crossover_restatement_citations(path: Path) -> list[str]:
             crossover.get("provenance"),
             where=f"{crossover.get('study_kind')} depth {crossover.get('depth')}",
         )[0]
-        for crossover in published_crossovers(load_restatement_design(path))
+        for crossover in _crossover_restatement_values(path)
     ]
 
 
@@ -121,6 +139,7 @@ def _validate_crossover_restatement(
 PUBLISHED_VALUE_DESIGNS: dict[str, PublishedValueDesign] = {
     KIND_CROSSOVER_RESTATEMENT: PublishedValueDesign(
         design_path="samples/benchmarks/agentic_compact_crossover_restatement_design.json",
+        published_values=_crossover_restatement_values,
         cited_artifacts=_crossover_restatement_citations,
         validate_published_values=_validate_crossover_restatement,
     ),

@@ -40,12 +40,18 @@ def _accept(_design_path: Path, *, root: Path, data_dir: Path | None) -> None:
     """A validation that resolves every published value, for the designs a test is not about."""
 
 
+def _no_values(_design_path: Path) -> list[dict[str, object]]:
+    """A reader for a design standing in for a study whose published rows no test looks at."""
+    return []
+
+
 def _design(
     design_root: Path,
     name: str,
     artifacts: list[str],
     *,
     validate: object = _accept,
+    values: object = _no_values,
 ) -> PublishedValueDesign:
     """A registered design standing for a study: what its values cite, and what resolves them."""
     path = design_root / "samples/benchmarks" / f"{name}.json"
@@ -53,6 +59,7 @@ def _design(
     path.write_text(json.dumps({"study_kind": name}), encoding="utf-8")
     return PublishedValueDesign(
         design_path=f"samples/benchmarks/{name}.json",
+        published_values=values,
         cited_artifacts=lambda _path: list(artifacts),
         validate_published_values=validate,
     )
@@ -245,6 +252,12 @@ def test_an_entry_that_registers_no_validation_is_refused(tmp_path):
     """`None` is the shape an opt-out would take, and opting out is what the field prevents."""
     with pytest.raises(ValueError, match="states no validation of its published values"):
         _design(tmp_path, "first", [FIRST], validate=None)
+
+
+def test_an_entry_that_reads_no_published_values_is_refused(tmp_path):
+    """A reader-less entry would read as a design that publishes nothing -- silence again."""
+    with pytest.raises(ValueError, match="states no reader for its published values"):
+        _design(tmp_path, "first", [FIRST], values=None)
 
 
 # --- the committed registry ---------------------------------------------------------------------

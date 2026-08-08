@@ -70,6 +70,7 @@ def _design(
     path.write_text(json.dumps({"study_kind": name}), encoding="utf-8")
     return PublishedValueDesign(
         design_path=f"samples/benchmarks/{name}.json",
+        published_values=lambda _path: [],
         cited_artifacts=lambda _path: list(artifacts),
         validate_published_values=validate,
     )

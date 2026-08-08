@@ -18,6 +18,12 @@ whether it also reads the figure the value's own aggregate measured. Those are c
 declaration before a number is read, and an operation the registry does not carry is refused -- a
 design that named arithmetic nothing implements publishes a number no reader can reproduce.
 
+The declaration is checked in BOTH directions. Against the design it is `_check_operands` next door;
+against the FUNCTION beside it, it is the registry self-check in
+`agentic_published_value_operation_audit`, which calls every entry here through inputs answering only
+what it declared. That is why an entry also carries a `probe` point: an operation the self-check
+cannot call is an operation whose declaration nothing checks against its body.
+
 What deliberately stays out is an expression language. A design picks an operation by NAME; adding a
 kind of arithmetic is a registered function with a test, not a formula in a JSON file that every
 reader would have to evaluate the same way.
@@ -37,6 +43,12 @@ STATED_COMPACT_SHARE = "compact_share"
 
 # Intermediates an operation names so a reader can report them without recomputing them.
 TERM_TRIGGER_CHARS = "trigger_chars"
+
+# The point the registry self-check calls the trigger ratio at. Synthetic and round: the probe exists
+# to record WHICH declared inputs the arithmetic reaches for, not to re-check any published number.
+PROBE_GUARD_CHARS = 1024.0
+PROBE_COMPACT_SHARE = 0.5
+PROBE_CAP_PEAK_CHARS = 512.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +87,28 @@ class DerivationOperation:
     stated_fields: tuple[str, ...] = ()
     reads_own_measurement: bool = False
     compute: Callable[[DerivationInputs], DerivedValue]
+    probe: DerivationInputs
+
+    def __post_init__(self) -> None:
+        """Refuse an operation whose probe point is not the declaration it is meant to exercise.
+
+        The probe is a required field rather than an optional convenience: it is how the registry
+        self-check (`agentic_published_value_operation_audit`) calls the arithmetic through inputs
+        that answer only what it declared, so an operation registered without one would be arithmetic
+        nothing could check the declaration of -- the exact gap the self-check exists to close.
+        """
+        for field_name, declared, offered in (
+            ("source_forms", len(self.source_forms), len(self.probe.sources)),
+            ("stated_fields", sorted(self.stated_fields), sorted(self.probe.stated)),
+            ("reads_own_measurement", self.reads_own_measurement, self.probe.measured is not None),
+        ):
+            if declared != offered:
+                raise ValueError(
+                    f"the `{self.name}` operation declares {field_name} {declared!r} while the probe "
+                    f"point it is checked at offers {offered!r}; the probe must answer exactly what "
+                    "the operation declares, because answering more is what would hide a read the "
+                    "declaration does not carry"
+                )
 
     def apply(
         self,
@@ -137,6 +171,11 @@ DERIVATION_OPERATIONS: dict[str, DerivationOperation] = {
         stated_fields=(STATED_COMPACT_SHARE,),
         reads_own_measurement=True,
         compute=_trigger_over_own_cap_peak,
+        probe=DerivationInputs(
+            sources=(PROBE_GUARD_CHARS,),
+            stated={STATED_COMPACT_SHARE: PROBE_COMPACT_SHARE},
+            measured=PROBE_CAP_PEAK_CHARS,
+        ),
     ),
 }
 
