@@ -12,35 +12,33 @@ The three published forms resolve differently, for the same reason they place di
 - a fold-step boundary IS a field of the fold-step study's per-depth ladder;
 - a portable ratio is DERIVED, so nothing in the collapse's aggregate holds it. What that aggregate
   holds is the cap peak the ratio divides by, and the guard is the surface value resolved just
-  above, so the published band is re-derived with the runtime's own trigger arithmetic and the two
+  above, so the published band is re-derived through the operation the design names and the two
   edges are checked against the depths that produced them.
 
 The walk COLLECTS (`agentic_published_value_collection`), so a re-run that moved three of this
 study's six published numbers is met with one refusal naming three, not three runs of the check.
 Derivation is what makes that more than a loop over the forms: the band is a QUOTIENT of an
 interpolated guard, so a guard the evidence no longer states is the CAUSE of its band being
-unresolvable rather than a second moved number. WHICH guard is not knowledge of this module -- the
-design declares it (`derived_from`), the accumulator carries the graph, and the marking is
-transitive. Hence four passes -- shape, then every STATED value in the design's own order, then the
-consequences of anything that did not resolve, then the DERIVED band from what did.
+unresolvable rather than a second moved number. Neither WHICH guard nor HOW it divides one is
+knowledge of this module -- the design declares the sources (`derived_from`) and names the arithmetic
+(`operation`), the accumulator carries the graph, and the marking is transitive. Hence four passes --
+shape, then every STATED value in the design's own order, then the consequences of anything that did
+not resolve, then the DERIVED band from what did.
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars
-from llb.bench.agentic_memory_crossover_restatement_reading import (
-    FORM_INTERPOLATED,
-    FORM_PORTABLE_RATIO,
-)
+from llb.bench.agentic_memory_crossover_restatement_reading import FORM_PORTABLE_RATIO
 from llb.bench.agentic_published_value_collection import CollectedRefusals
 from llb.bench.agentic_published_value_derivation import (
     ValueKey,
-    derivation_graph,
-    derived_source_of_form,
     published_key,
+    required_derivation,
 )
+from llb.bench.agentic_published_value_derivation_graph import derivation_graph
+from llb.bench.agentic_published_value_operations import DerivedValue
 from llb.bench.agentic_published_value_provenance import PublishedValueResolver, provenance_pair
 
 
@@ -153,23 +151,20 @@ def _derived_ratios(
     """Re-derive each published depth's trigger ratio from the two aggregates that produced it.
 
     The ratio's own study measured no ratio -- it measured the cap PEAK the trigger is read against
-    -- so this is the only form whose resolution spans two artifacts. The arithmetic is the runtime's
-    (`compaction_trigger_chars`), and it is the same arithmetic the restatement applies to the
-    RESTATED guard, so a published edge and a restated ratio are never computed two different ways.
+    -- so this is the only form whose resolution spans two artifacts. Neither WHICH guard it divides
+    nor HOW is this module's knowledge: the design declares the sources and names the arithmetic, and
+    `required_derivation` hands back both. The restatement re-derives a restated ratio through that
+    same registered operation, so a published edge and a restated row cannot be computed two
+    different ways.
 
-    WHICH guard is the design's declaration, not this module's: the arithmetic knows only that it
-    divides one interpolated guard, and `derived_source_of_form` turns that shape into the identity
-    the design published it against. A ratio whose guard did not resolve was already marked NOT
-    JUDGED a pass above, and one whose own cap peak did not resolve is marked so here, because the
-    moved number is the one already named and this is its consequence.
+    A ratio whose guard did not resolve was already marked NOT JUDGED a pass above, and one whose own
+    cap peak did not resolve is marked so here, because the moved number is the one already named and
+    this is its consequence.
     """
     ratios: dict[int, float] = {}
     for crossover in crossovers:
         key = published_key(crossover)
         if key.form != FORM_PORTABLE_RATIO or key in consequences:
-            continue
-        guard = collected.collect(lambda: _declared_guard(crossover, stated), key=key)
-        if guard is None:
             continue
         if key.depth not in stated.peaks:
             collected.not_judged(
@@ -177,21 +172,24 @@ def _derived_ratios(
                 "the band cannot be re-derived from here"
             )
             continue
-        trigger = compaction_trigger_chars(int(guard), _stated_number(crossover, "compact_share"))
-        decimals = int(_stated_number(crossover, "band_decimals"))
-        ratios[key.depth] = round(trigger / stated.peaks[key.depth], decimals)
+        derived = collected.collect(lambda: _re_derived(crossover, stated), key=key)
+        if derived is None:
+            continue
+        ratios[key.depth] = round(derived.value, int(_stated_number(crossover, "band_decimals")))
     return ratios
 
 
-def _declared_guard(crossover: dict[str, object], stated: _Stated) -> float:
-    """The value of the interpolated guard this band declares it is a quotient of.
+def _re_derived(crossover: dict[str, object], stated: _Stated) -> DerivedValue:
+    """Run this value's declared operation over the values its declared sources resolved to.
 
     Total by construction rather than by a fallback: the declaration is validated against what the
     design publishes before any value is read, and every published value either resolved into
     `stated` or was collected as unresolved -- and an unresolved source is marked a pass above, so
-    what reaches here is a source that resolved.
+    what reaches here are sources that resolved.
     """
-    return stated.values[derived_source_of_form(crossover, FORM_INTERPOLATED)]
+    derivation = required_derivation(crossover)
+    sources = tuple(stated.values[source] for source in derivation.sources)
+    return derivation.compute(sources, measured=stated.peaks[published_key(crossover).depth])
 
 
 def _check_published_band(

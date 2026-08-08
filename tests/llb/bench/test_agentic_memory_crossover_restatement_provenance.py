@@ -39,7 +39,11 @@ from llb.bench.agentic_published_value_fixture import (
 from llb.bench.agentic_published_value_derivation import (
     DERIVED_FROM,
     ValueKey,
-    derived_source_of_form,
+    required_derivation,
+)
+from llb.bench.agentic_published_value_operations import (
+    OPERATION,
+    OPERATION_TRIGGER_OVER_OWN_CAP_PEAK,
 )
 from llb.bench.agentic_published_value_provenance import provenance_pair
 from llb.bench.agentic_published_value_registry import (
@@ -98,21 +102,24 @@ def test_every_committed_crossover_resolves_out_of_the_aggregate_it_cites():
         assert artifact in committed
 
 
-def test_every_committed_derived_value_declares_the_edge_the_resolver_used_to_hardcode():
-    """The cause-versus-consequence rule reads off the design now, so the design has to state it.
+def test_every_committed_derived_value_declares_the_edge_and_the_arithmetic_over_it():
+    """Both halves read off the design now, so the design has to state both.
 
-    Asserted in both directions: each band names the guard it is a quotient of, and no MEASURED
-    crossover names anything -- a measurement that declared a source would be marked not-judged for
-    a number it does not rest on.
+    Asserted in both directions: each band names the guard it is a quotient of AND the registered
+    operation that divides it, and no MEASURED crossover names either -- a measurement that declared
+    a source would be marked not-judged for a number it does not rest on.
     """
     rows = published_crossovers(load_restatement_design(DESIGN_PATH))
     derived = [row for row in rows if row["form"] == FORM_PORTABLE_RATIO]
     assert len(derived) == 2
     for row in derived:
-        assert derived_source_of_form(row, FORM_INTERPOLATED) == ValueKey(
+        derivation = required_derivation(row)
+        assert derivation.source_of_form(FORM_INTERPOLATED) == ValueKey(
             study_kind=KIND_SURFACE, depth=int(cast(int, row["depth"])), form=FORM_INTERPOLATED
         )
-    assert all(row.get(DERIVED_FROM) is None for row in rows if row["form"] != FORM_PORTABLE_RATIO)
+        assert derivation.operation.name == OPERATION_TRIGGER_OVER_OWN_CAP_PEAK
+    measured = [row for row in rows if row["form"] != FORM_PORTABLE_RATIO]
+    assert all(row.get(DERIVED_FROM) is None and row.get(OPERATION) is None for row in measured)
 
 
 def test_the_committed_evidence_is_the_union_over_every_registered_design():

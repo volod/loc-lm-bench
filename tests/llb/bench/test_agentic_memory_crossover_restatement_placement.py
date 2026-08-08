@@ -28,7 +28,7 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_derivation import DERIVED_FROM, derived_source_of_form
+from llb.bench.agentic_published_value_derivation import DERIVED_FROM, required_derivation
 from llb.bench.agentic_memory_fold_step_ladder import fold_step_guard_interval
 from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_FOLD_STEP, KIND_SURFACE
 
@@ -77,7 +77,7 @@ def test_every_committed_annotation_is_the_step_its_own_geometry_places_it_in():
         else:
             # A derived ratio has no guard; it names the step of the guard it DECLARES it is
             # derived from, which is read off the design rather than off a constant in the checker.
-            source = derived_source_of_form(row, FORM_INTERPOLATED)
+            source = required_derivation(row).source_of_form(FORM_INTERPOLATED)
             assert row["fold_step"] == rows[(source.study_kind, source.depth)]["fold_step"]
 
     assert rows[(KIND_SURFACE, 6)]["fold_step"] == 6

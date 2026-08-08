@@ -35,7 +35,8 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_derivation import derived_source_of_form
+from llb.bench.agentic_published_value_derivation import required_derivation
+from llb.bench.agentic_published_value_operations import TERM_TRIGGER_CHARS
 
 
 def crossover_row(
@@ -104,27 +105,29 @@ def _portable_ratio_row(
     """Derive the portable ratio from the restated guard over the re-measured cap peak.
 
     Both inputs come from ONE restated surface row, which is what makes this a restatement rather
-    than a recomputation in prose: the trigger is the runtime's own arithmetic on the re-interpolated
-    guard, and the peak is the one measured off the same prompt sequence that guard was placed on.
-    Dividing by the published peak instead would rescale the ratio whenever the task world moved,
-    which is the mistake the cap-peak comparison row exists to make visible.
+    than a recomputation in prose: the guard is the re-interpolated one, and the peak is the one
+    measured off the same prompt sequence that guard was placed on. Dividing by the published peak
+    instead would rescale the ratio whenever the task world moved, which is the mistake the cap-peak
+    comparison row exists to make visible.
+
+    The arithmetic itself is neither this module's nor the validation's: the design names its
+    `operation` and both call it, so a published edge and a restated ratio cannot disagree about what
+    a trigger ratio IS -- which is what they could do while each module carried its own quotient.
     """
     guard = float(cast(float, restated["crossover_max_prompt_chars"]))
     peak = int(cast(int, restated["cap_peak_prompt_chars"]))
-    share = float(cast(float, published["compact_share"]))
-    trigger = compaction_trigger_chars(int(guard), share)
-    ratio = trigger / peak
+    derivation = required_derivation(published)
+    derived = derivation.compute((guard,), measured=float(peak))
+    ratio = derived.value
     low, high = (float(edge) for edge in cast(list[float], published["published_band"]))
     row.update(
         {
             "restated_value": ratio,
-            "restated_trigger_chars": trigger,
+            "restated_trigger_chars": int(derived.terms[TERM_TRIGGER_CHARS]),
             "restated_cap_peak_prompt_chars": peak,
             # The design's own declaration, so a restated row names the study it was actually
             # derived from rather than the one this module was written against.
-            "derived_from_study_kind": derived_source_of_form(
-                published, FORM_INTERPOLATED
-            ).study_kind,
+            "derived_from_study_kind": derivation.source_of_form(FORM_INTERPOLATED).study_kind,
             "derived_from_guard_chars": guard,
             "basis": BASIS_DERIVED,
         }

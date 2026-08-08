@@ -31,7 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TypeVar
 
-from llb.bench.agentic_published_value_derivation import DerivationGraph, ValueKey
+from llb.bench.agentic_published_value_derivation import ValueKey
+from llb.bench.agentic_published_value_derivation_graph import DerivationGraph
 
 T = TypeVar("T")
 

@@ -32,11 +32,8 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_derivation import (
-    derivation_graph,
-    derived_source_of_form,
-    published_key,
-)
+from llb.bench.agentic_published_value_derivation import published_key, required_derivation
+from llb.bench.agentic_published_value_derivation_graph import derivation_graph
 
 
 def prompt_sequence(design: dict[str, object], depth: int) -> list[int]:
@@ -92,7 +89,7 @@ def validate_derived_placements(crossovers: list[dict[str, object]]) -> None:
         if row["form"] != FORM_PORTABLE_RATIO:
             continue
         kind, depth = row["study_kind"], int(cast(int, row["depth"]))
-        guard = rows[derived_source_of_form(row, FORM_INTERPOLATED)]
+        guard = rows[required_derivation(row).source_of_form(FORM_INTERPOLATED)]
         if int(cast(int, row["fold_step"])) != int(cast(int, guard["fold_step"])):
             raise ValueError(
                 f"{kind} depth {depth}: the derived ratio is annotated as fold step "

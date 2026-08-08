@@ -95,6 +95,30 @@ should never have to ask you to make `plan.md` forward-only again.
   ADDS it to the current docs (`current.md` index or `current/*.md` topic), and a grep of `plan.md`
   for `DONE` / `delivered` / `implemented` / an ISO date returns nothing left over from this task.
 
+## Leaving The Host Clean
+
+A "done" report claims the host is back to the state a reader would expect. Verify that before
+reporting -- a leftover process keeps burning a GPU or a core, and a leftover file is the next
+task's mystery diff.
+
+- **Background shells:** Before reporting done, list every background task this session started and
+  confirm each has EXITED. Stop the ones that have not (`TaskStop`), and say so in the report if any
+  was killed rather than finished. A task still running is not a finished task.
+- **Do not arm a poller for work the harness tracks:** a backgrounded command notifies on exit, so a
+  second shell that waits on it is pure waste. Poll only for state the harness cannot see (an
+  external queue, a remote job).
+- **A watcher must not match itself:** `pgrep -f` / `pgrep -a` match the FULL command line, so a
+  waiter that greps for the command it is waiting on finds its own shell and loops forever. Match on
+  the process name, the PID, or a pattern the watcher's own command line does not contain.
+- **Host processes:** No model server, run, or tool this task started may be left holding the GPU or
+  a port unless the user asked for it to stay up. Check with `nvidia-smi` after any heavy local run.
+- **Temporary artifacts:** `git status` must show only the files the task intended to change.
+  Throwaway roots, scratch scripts, half-written fixtures, and debug output go to the session
+  scratchpad directory or are deleted -- never left in the repo, `src/`, or `samples/`.
+- **Run artifacts are NOT temporary:** anything a real run wrote under
+  `$DATA_DIR/<method_name>/<run_timestamp>/` stays. Clean up what YOU scaffolded, not what the
+  pipeline produced.
+
 ## Formatting & Conventions
 
 - **ASCII Only:** Use ASCII in logs, docs, comments, and generated shell output. No emojis or

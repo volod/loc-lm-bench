@@ -1734,22 +1734,44 @@ entirely when the value is measured, so silence is the right default and an empt
 rather than read as "measured". The identity is `(study_kind, depth, form)` -- the form is part of it
 because one study can publish a guard and the boundary of the step it sits in at the same depth, and
 a declaration naming only the depth would be ambiguous exactly where the edge must be exact.
-`agentic_published_value_derivation.py` validates every declaration against the design that publishes
-the source (a source the design does not publish, a value that declares itself, a cycle, and two rows
-claiming one identity are all refused fail-fast, beside the other shape rules), and `CollectedRefusals`
-carries the resulting graph: `rests_on_unresolved` marks a value `[not judged]` whenever anything it
+`agentic_published_value_derivation.py` reads one value's declaration and
+`agentic_published_value_derivation_graph.py` walks the design's whole set, validating every
+declaration against the design that publishes the source (a source the design does not publish, a
+value that declares itself, a cycle, and two rows claiming one identity are all refused fail-fast,
+beside the other shape rules); `CollectedRefusals` carries the resulting graph:
+`rests_on_unresolved` marks a value `[not judged]` whenever anything it
 declares is already unresolved. Transitively, and naming only the ROOT of each chain -- a value two
 derivation steps above a moved measurement names that measurement, because the derived figure in
 between is a consequence too and restating it would fix nothing. So the four passes are shape, every
 STATED value in the design's own order, the consequences of whatever did not resolve, then the DERIVED
 band out of what did.
 
-What a declaration does NOT carry is the arithmetic: the re-derivation still knows that a trigger
-ratio divides exactly one interpolated guard. That shape is what the code asks for
-(`derived_source_of_form(value, form)`) and the design answers with the identity, so the annotation
-check, the provenance re-derivation, and the restated row all read one declared edge instead of three
-copies of a constant, and a ratio declaring a guard at another depth is caught by the fold-step
-annotation it then disagrees with.
+The sources are half a derivation; the ARITHMETIC over them is the other half, and it used to live in
+the readers -- the trigger ratio was `compaction_trigger_chars(guard, share)` over the depth's cap
+peak in design validation AND in the restated row, two copies that agreed only because both were
+written to agree. So the design names its arithmetic beside its sources, and both readers call it:
+
+```json
+"operation": "trigger_over_own_cap_peak"
+```
+
+`agentic_published_value_operations.py` is the registry the name resolves through -- a table of pure
+functions in the shape of `PUBLISHED_VALUE_DESIGNS`, each stating how many sources of which FORM it
+is computed over, which of the value's own stated fields it reads (`compact_share`), and whether it
+also reads the figure the value's own aggregate measured (the cap peak). Those are checked against
+the declaration before a number is read: an operation the registry does not carry, a declaration that
+is not the shape its operation takes, a stated operand the design does not state numerically, sources
+with no operation, and an operation with no sources are all refused. An operation returns the value
+plus the intermediates it is willing to NAME (`trigger_chars`), so a restated row reports the trigger
+it divided without a second module re-deriving it. What deliberately stays out is an expression
+language in the design file: a design picks arithmetic by name, and adding a kind of arithmetic is a
+registered pure function with a test rather than a formula every reader would have to evaluate
+identically. Identity-only readers still ask by shape -- a restated row names the study its figure
+came from via `source_of_form(FORM_INTERPOLATED)` over the declared sources -- so a ratio declaring a
+guard at another depth is still caught by the fold-step annotation it then disagrees with. The seam
+is checked the way it is meant to be used: swapping the registered function makes BOTH the design
+validation and the restated row change, which is exactly what two modules carrying one quotient each
+could not do.
 
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
@@ -1761,13 +1783,14 @@ surface's per-depth row; a fold-step boundary IS a field of the fold-step study'
 placement rule already pins from the geometry, so resolving it additionally ties it to what the run
 RECORDED -- drift between the two is exactly what neither check sees alone. The portable ratio is
 the interesting one: no aggregate anywhere states it. What the collapse measured is the cap PEAK the
-trigger is read against, so the published band is RE-DERIVED -- the runtime's own
-`compaction_trigger_chars` on the resolved surface guard, over the collapse's resolved peak, rounded
+trigger is read against, so the published band is RE-DERIVED -- the design's named
+`trigger_over_own_cap_peak` operation (the runtime's own `compaction_trigger_chars`) on the resolved
+surface guard, over the collapse's resolved peak, rounded
 to the design's own `band_decimals`, per published depth -- and the band's two edges must be the
-smallest and largest of those quotients. That is the same arithmetic the restatement applies to the
-RESTATED guard, so a published edge and a restated ratio are never computed two different ways, and
-the committed `0.85-0.92x` is now the pair `(0.845x, 0.918x)` rounds to rather than a pair of
-hand-copied edges. A band stated wider, narrower, or at a precision the quotients do not reach is
+smallest and largest of those quotients. That is literally the same function the restatement applies
+to the RESTATED guard, so a published edge and a restated ratio are never computed two different
+ways, and the committed `0.85-0.92x` is now the pair `(0.845x, 0.918x)` rounds to rather than a pair
+of hand-copied edges. A band stated wider, narrower, or at a precision the quotients do not reach is
 refused with the quotients named.
 
 The invariance criterion for a guard is the fold step, not a char tolerance. The fold-step study
@@ -1820,9 +1843,15 @@ wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
 `(artifact, field)` pair and the two-source read),
 `src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
 not resolve, keep what that leaves unjudged apart from it, and refuse once naming both),
-`src/llb/bench/agentic_published_value_derivation.py` (the `derived_from` declaration, its validation
-against the design that publishes the source, and the transitive walk from a value to the moved
-measurements at the root of what it rests on -- all six study-agnostic, so any published agentic
+`src/llb/bench/agentic_published_value_derivation.py` (one value's `derived_from` + `operation`
+declaration, read and validated against the arithmetic it names),
+`src/llb/bench/agentic_published_value_derivation_graph.py` (the design-wide walk over those
+declarations: the refusals for an unpublished source, a self-reference, a cycle, and a duplicated
+identity, plus the transitive walk from a value to the moved measurements at the root of what it
+rests on),
+`src/llb/bench/agentic_published_value_operations.py` (the registry of re-derivations: what each
+operation is computed over, the pure function that does it, the named intermediates it exposes, and
+the refusal of an operation nothing registered -- all eight study-agnostic, so any published agentic
 number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
 resolves to, including the re-derived band, its four passes, and the cause-versus-consequence rule
@@ -1844,11 +1873,19 @@ edges, including a ratio driven out of its published band), and
 placed on its own ladder, plus each way one can be wrong),
 `tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates
 so a failure names the pointer rather than the study that used it),
-`tests/llb/bench/test_agentic_published_value_derivation.py` (the declaration and the consequence
-marking, on synthetic published values for the same reason: a two-step chain naming only the
-measurement at its root, a figure derived from two moved measurements naming both, the form as part
-of the identity, and each way a declaration can be unsupportable -- an unpublished source, a
-self-reference, a cycle, a duplicated identity, and a malformed entry),
+`tests/llb/bench/test_agentic_published_value_derivation.py` (one value's declaration, on synthetic
+published values for the same reason: the form as part of the identity, a malformed entry, and every
+way the two halves can fail to agree -- an unregistered operation, sources with no operation, an
+operation with no sources, a declaration that is not the shape its operation takes, and a stated
+operand the design does not state),
+`tests/llb/bench/test_agentic_published_value_derivation_graph.py` (the design-wide walk and the
+consequence marking: a two-step chain naming only the measurement at its root, a figure derived from
+two moved measurements naming both, and each way a declaration can be unsupportable -- an unpublished
+source, a self-reference, a cycle, and a duplicated identity),
+`tests/llb/bench/test_agentic_published_value_operations.py` (the registered trigger arithmetic and
+its named intermediate, the refusals for an unregistered operation and for inputs an operation did
+not declare, and the proof that ONE registered function serves both readers -- swapping it moves the
+band design validation re-derives and the ratio the restated row reports),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact
@@ -1939,6 +1976,16 @@ same reading, and a `derived_from_study_kind` now read off the design that is th
 `compact_memory_boundary_surface` the constant used to supply. It lands on the 21861.6 reading of the
 interpolation, so its depth-10 ratio quotes 0.916x where the 21862.1 reading quotes 0.917x -- the
 across-run token variance above, inside the band at the two decimals it is published to either way.
+
+A sixth run on 2026-08-08
+(`.../agentic-compact-crossover-restatement/20260808T065453.191859Z-d159a1345fa6/manifest.json`,
+11.35 tok/s), the first whose ratios were re-derived through the design's NAMED operation rather than
+through a quotient this module carried, reproduces the fifth exactly: the same audit, the same
+21861.6-char restated guard, the same 0.845x and 0.916x against unmoved 8374- and 11926-char cap
+peaks, the same `published_crossovers_hold_under_the_shipped_cap`. That is the point of the run --
+moving the arithmetic behind the registry had to change nothing about the numbers, and the reported
+trigger chars (7079 and 10930) now come out of the operation's own named intermediate rather than
+from a second call beside it.
 
 The collapse's portable ratio is restated by the run rather than recomputed beside it, which is what
 its being DERIVED from the surface's guard demands: at depth 10 the restated 21862-char guard is a

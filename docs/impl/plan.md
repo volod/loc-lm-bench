@@ -43,36 +43,68 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-declared-derivation-states-its-inputs-but-not-its-arithmetic (optional)
+### agent-a-registered-operation-declares-its-inputs-but-is-never-checked-against-them (optional)
 
-A published value declares WHAT it is computed out of, so cause-versus-consequence is the design's
-statement and the transitive marking is study-agnostic
+A design names its arithmetic and every reader calls the one registered function, so a derived value
+is re-derived the same way wherever it is read
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-What the declaration does not carry is HOW: the re-derivation still hardcodes that a trigger ratio is
-`compaction_trigger_chars(guard, share)` over the depth's cap peak, so the code asks for a shape
-(`derived_source_of_form(value, FORM_INTERPOLATED)`) and only the identity comes from the design. A
-second publishing design whose derived number is a difference, a normalization, or a two-input
-quotient therefore still lands in a resolver edit, and the two places that re-derive the SAME ratio
-today -- design validation and the restated row -- agree only because both were written to. Give the
-derivation an OPERATION as well: a named, registered re-derivation (`operation` beside `derived_from`,
-resolved through a small registry of pure functions over the declared sources plus the value's own
-stated fields), so a design states its arithmetic once and both readers call it, and refuse a design
-whose operation the registry does not carry.
+The declaration that makes that checkable runs in ONE direction only: `source_forms`,
+`stated_fields`, and `reads_own_measurement` are checked against the DESIGN, and nothing checks them
+against the FUNCTION beside them. An operation whose body reads a stated field it did not declare
+raises a `KeyError` inside whichever reader got there first, instead of refusing the design that
+failed to state it; one that declares a field it never reads makes every adopting design carry a
+number for nothing; and an operation no registered design names is arithmetic nobody exercises,
+which is where a wrong quotient would sit until the first study adopted it. Close the loop with a
+registry self-check in CI: call every registered operation through inputs that answer only what it
+declared and record what it asked for, refusing an operation that reads outside its declaration or
+declares what it never reads, and walk the registered designs to name arithmetic nothing publishes.
 
 - Agent status: CLEAR
-- Dependencies: the shape-only seam is `derived_source_of_form` in
-  `src/llb/bench/agentic_published_value_derivation.py`; the two hardcoded re-derivations are
-  `_derived_ratios` in `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` and
-  `_portable_ratio_row` in `src/llb/bench/agentic_memory_crossover_restatement_forms.py`; the
-  registry pattern to follow is `PUBLISHED_VALUE_DESIGNS` in
-  `src/llb/bench/agentic_published_value_registry.py`.
-- User-visible outcome: a study publishing a derived number states the arithmetic in its design file
-  and inherits both the validation and the restatement, instead of adding a form branch to two
-  modules that can silently disagree.
-- Scope boundary: in scope -- the `operation` declaration, its registry and refusals, moving the
-  trigger-ratio arithmetic behind it, and fixture cases for an unregistered operation and a
-  two-input operation. Out of scope -- an expression language in the design file, restating a value
-  automatically, and re-running a published cell.
+- Dependencies: the declaration fields and the registry are `DerivationOperation` and
+  `DERIVATION_OPERATIONS` in `src/llb/bench/agentic_published_value_operations.py`; the arity and
+  form checks that already run in the design direction are `_check_operands` and `_stated_operands`
+  in `src/llb/bench/agentic_published_value_derivation.py`; the walk that would name the designs is
+  `PUBLISHED_VALUE_DESIGNS` in `src/llb/bench/agentic_published_value_registry.py`.
+- User-visible outcome: registering a new arithmetic is refused at CI when its stated inputs do not
+  match what it computes over, instead of at the first design that adopts it.
+- Scope boundary: in scope -- the recording probe over every registered operation, its refusals, the
+  unused-operation walk, and the CI assertion. Out of scope -- proving an operation pure or
+  deterministic beyond its declared inputs, an expression language in the design file, and
+  re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
+
+### agent-a-derived-value-states-its-arithmetic-but-not-its-reading (optional)
+
+The arithmetic over a derived value's declared sources is the design's statement now, and both
+readers call it
+([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
+Its READING is not: the precision the value is quoted to and the rule that decides whether a
+re-derived number still supports what was published are applied twice, by hand. Design validation
+rounds each quotient to `band_decimals` and asks whether the smallest and largest are the published
+edges; the restated row rounds the restated ratio to the same field and asks whether it falls inside
+those edges. They agree today because both were written against a value published as a BAND -- a
+second design publishing a point with a tolerance, a one-sided bound, or an interval on a log scale
+gets neither rule and lands in two reader edits, and the two can disagree about the same number
+(round-then-compare versus compare-then-round) with nothing in CI to notice. Declare the reading
+beside the operation: a named, registered comparison over the design's published statement and the
+re-derived value, returning whether it holds and the phrase an operator reads, so a design states
+how its number is judged once and both readers apply it.
+
+- Agent status: CLEAR
+- Dependencies: the two hand-applied readings are `_check_published_band` in
+  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` and the band comparison at the
+  end of `_portable_ratio_row` in `src/llb/bench/agentic_memory_crossover_restatement_forms.py`; the
+  criterion names they would replace are `CRITERION_BAND` and `CRITERION_FOLD_STEP` in
+  `src/llb/bench/agentic_memory_crossover_restatement_reading.py`; the registry pattern to follow is
+  `DERIVATION_OPERATIONS` in `src/llb/bench/agentic_published_value_operations.py`.
+- User-visible outcome: a study publishing a value as a band, a point with a tolerance, or a bound
+  states which in its design file and inherits both the validation and the invariance verdict.
+- Scope boundary: in scope -- the reading declaration, its registry and refusals, moving the band
+  comparison behind it, and fixture cases for a reading the registry does not carry and a
+  non-band reading. Out of scope -- the fold-step criterion for measured guards (a property of the
+  ladder, not of a published statement), restating a value automatically, and re-running a published
+  cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 
