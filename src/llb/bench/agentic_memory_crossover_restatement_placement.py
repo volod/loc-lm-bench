@@ -13,8 +13,9 @@ Each FORM places differently, which is the whole content of the check:
 - a fold-step boundary is that interval's exclusive upper EDGE, because "fold no later than step k"
   is the rule "keep the guard below this" -- the boundary value is the first guard that folds one
   step later, which is why it is not placed like a guard;
-- a portable ratio has no guard of its own. It is DERIVED from another study's, so its annotation is
-  checked against that study's row rather than against a value of its own.
+- a portable ratio has no guard of its own. It is DERIVED from another value the design publishes --
+  which one is the design's own `derived_from` declaration -- so its annotation is checked against
+  that value's row rather than against a value of its own.
 """
 
 from typing import cast
@@ -31,12 +32,11 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_policy_change_audit import KIND_SURFACE
-
-# The study a portable ratio is derived from: it is `compact_share * guard` over a cap peak, and the
-# guard is the boundary surface's interpolated one. Both the design check below and the restatement
-# row that derives the ratio read this, so the two cannot disagree about the source.
-DERIVED_RATIO_SOURCE_KIND = KIND_SURFACE
+from llb.bench.agentic_published_value_derivation import (
+    derivation_graph,
+    derived_source_of_form,
+    published_key,
+)
 
 
 def prompt_sequence(design: dict[str, object], depth: int) -> list[int]:
@@ -77,33 +77,28 @@ def validate_published_placement(
 
 
 def validate_derived_placements(crossovers: list[dict[str, object]]) -> None:
-    """A derived ratio must name the fold step of the guard it is derived from.
+    """A derived ratio must name the fold step of the guard it DECLARES it is derived from.
 
     This is the only check the form admits, and it is worth more than it looks: it ties two studies'
     annotations together, so a depth where they disagree is refused whichever of the two is wrong.
+    Which guard that is comes from the design (`derived_from`), validated here against what the
+    design publishes, so the edge is a property of the study rather than a constant in this module.
     """
-    source = {
-        int(cast(int, row["depth"])): row
-        for row in crossovers
-        if row["study_kind"] == DERIVED_RATIO_SOURCE_KIND and row["form"] == FORM_INTERPOLATED
-    }
+    # Built for its refusals rather than for the lookup: a declaration naming a value the design does
+    # not publish is refused here, ahead of the annotation comparison that would have nothing to make.
+    derivation_graph(crossovers)
+    rows = {published_key(row): row for row in crossovers}
     for row in crossovers:
         if row["form"] != FORM_PORTABLE_RATIO:
             continue
         kind, depth = row["study_kind"], int(cast(int, row["depth"]))
-        guard = source.get(depth)
-        if guard is None:
-            raise ValueError(
-                f"{kind} depth {depth}: a {FORM_PORTABLE_RATIO} crossover is derived from the "
-                f"{DERIVED_RATIO_SOURCE_KIND} guard at its depth, and no such guard is published "
-                "here, so nothing in the run can restate it"
-            )
+        guard = rows[derived_source_of_form(row, FORM_INTERPOLATED)]
         if int(cast(int, row["fold_step"])) != int(cast(int, guard["fold_step"])):
             raise ValueError(
                 f"{kind} depth {depth}: the derived ratio is annotated as fold step "
-                f"{row['fold_step']} while the {DERIVED_RATIO_SOURCE_KIND} guard it is derived from "
-                f"is annotated as fold step {guard['fold_step']} -- one of the two annotations is "
-                "wrong, and the restatement would check them against different steps"
+                f"{row['fold_step']} while the {guard['study_kind']} guard it declares it is derived "
+                f"from is annotated as fold step {guard['fold_step']} -- one of the two annotations "
+                "is wrong, and the restatement would check them against different steps"
             )
 
 

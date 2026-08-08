@@ -16,12 +16,13 @@ The three published forms resolve differently, for the same reason they place di
   edges are checked against the depths that produced them.
 
 The walk COLLECTS (`agentic_published_value_collection`), so a re-run that moved three of this
-study's six published numbers is met with one refusal naming three, not three runs of the check. The
-derivation is what makes that more than a loop over the forms: the band is a QUOTIENT of an
+study's six published numbers is met with one refusal naming three, not three runs of the check.
+Derivation is what makes that more than a loop over the forms: the band is a QUOTIENT of an
 interpolated guard, so a guard the evidence no longer states is the CAUSE of its band being
-unresolvable rather than a second moved number. Hence three passes -- shape, then every STATED value
-in the design's own order, then the DERIVED band from what resolved -- and a moved guard leaves its
-band NOT JUDGED, pointing at the guard named above it.
+unresolvable rather than a second moved number. WHICH guard is not knowledge of this module -- the
+design declares it (`derived_from`), the accumulator carries the graph, and the marking is
+transitive. Hence four passes -- shape, then every STATED value in the design's own order, then the
+consequences of anything that did not resolve, then the DERIVED band from what did.
 """
 
 from dataclasses import dataclass, field
@@ -29,12 +30,17 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars
-from llb.bench.agentic_memory_crossover_restatement_placement import DERIVED_RATIO_SOURCE_KIND
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
 from llb.bench.agentic_published_value_collection import CollectedRefusals
+from llb.bench.agentic_published_value_derivation import (
+    ValueKey,
+    derivation_graph,
+    derived_source_of_form,
+    published_key,
+)
 from llb.bench.agentic_published_value_provenance import PublishedValueResolver, provenance_pair
 
 
@@ -42,13 +48,13 @@ from llb.bench.agentic_published_value_provenance import PublishedValueResolver,
 class _Stated:
     """What the aggregates state, gathered before anything is derived from it.
 
-    Only the values a DERIVED form needs are kept: the interpolated guard a band is a quotient of,
-    the depths whose guard did not resolve (so the band can name its cause rather than repeat it),
-    and the cap peak the quotient divides by.
+    Keyed by published value rather than by depth, because what a derived form reads is the value at
+    the identity it DECLARED as its source -- which need not be the same depth, and in a design with
+    two forms at a depth is not even named by one. The cap peaks stay per depth: they are the ratio
+    study's own stated value, read at the depth that ratio is published at.
     """
 
-    guards: dict[int, float] = field(default_factory=dict)
-    unresolved_guards: set[int] = field(default_factory=set)
+    values: dict[ValueKey, float] = field(default_factory=dict)
     peaks: dict[int, float] = field(default_factory=dict)
 
 
@@ -57,10 +63,11 @@ def validate_published_provenance(
 ) -> None:
     """Refuse, once, every published crossover whose value the aggregate it cites does not state."""
     _refuse_malformed(crossovers)
-    collected = CollectedRefusals()
+    collected = CollectedRefusals(derivations=derivation_graph(crossovers))
     resolver = PublishedValueResolver(root=root, data_dir=data_dir)
     stated = _resolve_stated_values(crossovers, resolver, collected)
-    ratios = _derived_ratios(crossovers, stated, collected)
+    consequences = _mark_derived_consequences(crossovers, collected)
+    ratios = _derived_ratios(crossovers, stated, collected, consequences)
     _check_published_band(crossovers, ratios, collected)
     collected.refuse(total=len(crossovers))
 
@@ -77,23 +84,36 @@ def _resolve_stated_values(
     """
     stated = _Stated()
     for crossover in crossovers:
-        depth = _depth(crossover)
-        form = str(crossover["form"])
-        if form == FORM_PORTABLE_RATIO:
-            peak = collected.collect(lambda: _stated_cap_peak(crossover, resolver))
+        key = published_key(crossover)
+        if key.form == FORM_PORTABLE_RATIO:
+            peak = collected.collect(lambda: _stated_cap_peak(crossover, resolver), key=key)
             if peak is not None:
-                stated.peaks[depth] = peak
+                stated.peaks[key.depth] = peak
             continue
         # Every OTHER form that states a value resolves here, phrased as an exclusion rather than as
         # a list, so a form added later is checked by default instead of silently skipped.
-        value = collected.collect(lambda: _check_stated_value(crossover, resolver))
-        if form != FORM_INTERPOLATED:
-            continue
-        if value is None:
-            stated.unresolved_guards.add(depth)
-        else:
-            stated.guards[depth] = value
+        value = collected.collect(lambda: _check_stated_value(crossover, resolver), key=key)
+        if value is not None:
+            stated.values[key] = value
     return stated
+
+
+def _mark_derived_consequences(
+    crossovers: list[dict[str, object]], collected: CollectedRefusals
+) -> set[ValueKey]:
+    """Mark NOT JUDGED every value whose declaration rests on something that did not resolve.
+
+    Its own pass, over every published value rather than over one form, because "is this number a
+    consequence of a number already named" is a question of the design's declared edges and not of
+    what any particular form is computed with. The keys are returned so the derivation below skips
+    what has already been spoken for instead of naming it a second way.
+    """
+    consequences: set[ValueKey] = set()
+    for crossover in crossovers:
+        key = published_key(crossover)
+        if collected.rests_on_unresolved(key):
+            consequences.add(key)
+    return consequences
 
 
 def _check_stated_value(crossover: dict[str, object], resolver: PublishedValueResolver) -> float:
@@ -125,7 +145,10 @@ def _stated_cap_peak(crossover: dict[str, object], resolver: PublishedValueResol
 
 
 def _derived_ratios(
-    crossovers: list[dict[str, object]], stated: _Stated, collected: CollectedRefusals
+    crossovers: list[dict[str, object]],
+    stated: _Stated,
+    collected: CollectedRefusals,
+    consequences: set[ValueKey],
 ) -> dict[int, float]:
     """Re-derive each published depth's trigger ratio from the two aggregates that produced it.
 
@@ -134,38 +157,41 @@ def _derived_ratios(
     (`compaction_trigger_chars`), and it is the same arithmetic the restatement applies to the
     RESTATED guard, so a published edge and a restated ratio are never computed two different ways.
 
-    A depth whose guard or peak did not resolve is NOT JUDGED rather than reported as a moved band:
-    the moved number is the one already named, and this is its consequence.
+    WHICH guard is the design's declaration, not this module's: the arithmetic knows only that it
+    divides one interpolated guard, and `derived_source_of_form` turns that shape into the identity
+    the design published it against. A ratio whose guard did not resolve was already marked NOT
+    JUDGED a pass above, and one whose own cap peak did not resolve is marked so here, because the
+    moved number is the one already named and this is its consequence.
     """
     ratios: dict[int, float] = {}
     for crossover in crossovers:
-        if crossover["form"] != FORM_PORTABLE_RATIO:
+        key = published_key(crossover)
+        if key.form != FORM_PORTABLE_RATIO or key in consequences:
             continue
-        label = _label(crossover)
-        depth = _depth(crossover)
-        if depth in stated.unresolved_guards:
+        guard = collected.collect(lambda: _declared_guard(crossover, stated), key=key)
+        if guard is None:
+            continue
+        if key.depth not in stated.peaks:
             collected.not_judged(
-                f"{label}: the published band is a QUOTIENT of the {DERIVED_RATIO_SOURCE_KIND} "
-                "guard at this depth, which is named above, so whether the band moved as well "
-                "cannot be told from here -- restate that guard and re-run this check"
+                f"{_label(crossover)}: the cap peak this band is a quotient over is named above, so "
+                "the band cannot be re-derived from here"
             )
-        elif depth not in stated.guards:
-            collected.unresolvable(
-                f"{label}: the published band is derived from the {DERIVED_RATIO_SOURCE_KIND} "
-                "guard at this depth, and no such guard is published here, so nothing resolves it"
-            )
-        elif depth not in stated.peaks:
-            collected.not_judged(
-                f"{label}: the cap peak this band is a quotient over is named above, so the band "
-                "cannot be re-derived from here"
-            )
-        else:
-            trigger = compaction_trigger_chars(
-                int(stated.guards[depth]), _stated_number(crossover, "compact_share")
-            )
-            decimals = int(_stated_number(crossover, "band_decimals"))
-            ratios[depth] = round(trigger / stated.peaks[depth], decimals)
+            continue
+        trigger = compaction_trigger_chars(int(guard), _stated_number(crossover, "compact_share"))
+        decimals = int(_stated_number(crossover, "band_decimals"))
+        ratios[key.depth] = round(trigger / stated.peaks[key.depth], decimals)
     return ratios
+
+
+def _declared_guard(crossover: dict[str, object], stated: _Stated) -> float:
+    """The value of the interpolated guard this band declares it is a quotient of.
+
+    Total by construction rather than by a fallback: the declaration is validated against what the
+    design publishes before any value is read, and every published value either resolved into
+    `stated` or was collected as unresolved -- and an unresolved source is marked a pass above, so
+    what reaches here is a source that resolved.
+    """
+    return stated.values[derived_source_of_form(crossover, FORM_INTERPOLATED)]
 
 
 def _check_published_band(

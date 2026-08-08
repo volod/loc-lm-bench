@@ -43,33 +43,36 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-value-derivations-are-known-only-to-the-resolver (optional)
+### agent-a-declared-derivation-states-its-inputs-but-not-its-arithmetic (optional)
 
-The collecting resolution names every published value a re-run moved and marks the derived band
-NOT JUDGED against the guard it is a quotient of, so one moved measurement is reported once
+A published value declares WHAT it is computed out of, so cause-versus-consequence is the design's
+statement and the transitive marking is study-agnostic
 ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)).
-That cause-versus-consequence rule is knowledge of ONE derivation edge, written into the restatement's
-own resolver: the ratio at a depth is a quotient of the surface guard at the same depth. Nothing in
-the design says so, the study-agnostic accumulator cannot see it, and a second publishing design --
-or a third form here whose value derives from two others -- gets no such rule, so its consequences
-would be reported as causes and the loop this closed reopens one design over. Let a published value
-DECLARE what it is derived from (`derived_from`: the study kind, depth, and form its value is
-computed out of), validate the declaration against the design that publishes the source, and have the
-collector mark a value not-judged whenever anything it declares is already unresolved -- transitively,
-so a two-step derivation names only the measurement at its root.
+What the declaration does not carry is HOW: the re-derivation still hardcodes that a trigger ratio is
+`compaction_trigger_chars(guard, share)` over the depth's cap peak, so the code asks for a shape
+(`derived_source_of_form(value, FORM_INTERPOLATED)`) and only the identity comes from the design. A
+second publishing design whose derived number is a difference, a normalization, or a two-input
+quotient therefore still lands in a resolver edit, and the two places that re-derive the SAME ratio
+today -- design validation and the restated row -- agree only because both were written to. Give the
+derivation an OPERATION as well: a named, registered re-derivation (`operation` beside `derived_from`,
+resolved through a small registry of pure functions over the declared sources plus the value's own
+stated fields), so a design states its arithmetic once and both readers call it, and refuse a design
+whose operation the registry does not carry.
 
 - Agent status: CLEAR
-- Dependencies: the hardcoded edge is `DERIVED_RATIO_SOURCE_KIND` and the `unresolved_guards` branch
-  of `_derived_ratios` in `src/llb/bench/agentic_memory_crossover_restatement_provenance.py`; the
-  accumulator that would carry the rule is `CollectedRefusals` in
-  `src/llb/bench/agentic_published_value_collection.py`; the design that would carry the declaration
-  is `samples/benchmarks/agentic_compact_crossover_restatement_design.json`.
-- User-visible outcome: the next study to publish a derived number inherits "name the cause, not the
-  consequence" from its design file instead of from a rule written for the trigger ratio.
-- Scope boundary: in scope -- the `derived_from` declaration and its validation, the transitive
-  not-judged marking in the collector, and fixture cases for a two-step derivation and a declaration
-  that names a source the design does not publish. Out of scope -- restating a value automatically,
-  a second publishing design (register one when a study needs it), and re-running a published cell.
+- Dependencies: the shape-only seam is `derived_source_of_form` in
+  `src/llb/bench/agentic_published_value_derivation.py`; the two hardcoded re-derivations are
+  `_derived_ratios` in `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` and
+  `_portable_ratio_row` in `src/llb/bench/agentic_memory_crossover_restatement_forms.py`; the
+  registry pattern to follow is `PUBLISHED_VALUE_DESIGNS` in
+  `src/llb/bench/agentic_published_value_registry.py`.
+- User-visible outcome: a study publishing a derived number states the arithmetic in its design file
+  and inherits both the validation and the restatement, instead of adding a form branch to two
+  modules that can silently disagree.
+- Scope boundary: in scope -- the `operation` declaration, its registry and refusals, moving the
+  trigger-ratio arithmetic behind it, and fixture cases for an unregistered operation and a
+  two-input operation. Out of scope -- an expression language in the design file, restating a value
+  automatically, and re-running a published cell.
 - Documentation target:
   [extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap).
 

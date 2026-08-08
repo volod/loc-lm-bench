@@ -1575,8 +1575,9 @@ bound-sensitive. The committed design is
 `samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
 by its in-repo design path and every crossover that study published, and validation refuses a design
 whose path is missing, declares a different study kind, publishes a crossover at a depth the study
-does not test, omits the fold step a crossover lands in, or publishes a derived ratio without the
-band and the precision that band is quoted to.
+does not test, omits the fold step a crossover lands in, publishes a derived ratio without the band
+and the precision that band is quoted to, or publishes a derived value that does not declare what it
+is computed out of.
 
 The fold-step ANNOTATION is validated too, against the ladder the study that published the number
 measured, because the annotation is what a restated guard is then checked against: a mis-transcribed
@@ -1586,7 +1587,7 @@ moved. The three forms place by three different rules, and the check is exactly 
 interpolated guard lies INSIDE its step's guard interval, a fold-step boundary IS that interval's
 exclusive upper edge (`fold no later than step k` is the rule "keep the guard below this", so the
 boundary is the first guard that folds one step later), and a derived ratio, having no guard of its
-own, must name the step of the surface guard it is derived from. That last rule ties two studies'
+own, must name the step of the guard it DECLARES it is derived from. That last rule ties two studies'
 annotations together, so a depth where they disagree is refused whichever of the two is wrong. Every
 one of these is a pure function of the study's held geometry, so the whole check runs in CI with no
 GPU, and it is what corrected the depth-6 boundary-surface row below from step 7 to the step 6 its
@@ -1714,8 +1715,41 @@ passing quietly when a quotient it needs is missing, since a band nothing could 
 otherwise read exactly like one that was re-derived and held. SHAPE refusals stay fail-fast, ahead of
 the first read: a crossover with no `provenance` object, no numeric `value`, or no band edges is a
 design that never said what would state its number, and that message must not arrive underneath a
-list of values that could not be checked because of it. The three passes are exactly those -- shape,
-then every STATED value in the design's own order, then the DERIVED band out of what resolved.
+list of values that could not be checked because of it.
+
+WHICH value is a consequence of which is the DESIGN's statement, not the resolver's. Cause-versus-
+consequence was first written into the restatement's own resolver as one hardcoded edge -- "the
+trigger ratio is a quotient of the boundary surface's interpolated guard at the same depth" -- which
+the study-agnostic accumulator could not see, so a second publishing design, or a third form here
+whose value derives from two others, would have had its consequences reported as causes. Each
+published value now DECLARES what it is computed out of, beside its provenance:
+
+```json
+"derived_from": [{"study_kind": "compact_memory_boundary_surface", "depth": 6,
+                  "form": "interpolated_guard"}]
+```
+
+A list, because a derived figure can rest on two published numbers as readily as on one; absent
+entirely when the value is measured, so silence is the right default and an empty list is refused
+rather than read as "measured". The identity is `(study_kind, depth, form)` -- the form is part of it
+because one study can publish a guard and the boundary of the step it sits in at the same depth, and
+a declaration naming only the depth would be ambiguous exactly where the edge must be exact.
+`agentic_published_value_derivation.py` validates every declaration against the design that publishes
+the source (a source the design does not publish, a value that declares itself, a cycle, and two rows
+claiming one identity are all refused fail-fast, beside the other shape rules), and `CollectedRefusals`
+carries the resulting graph: `rests_on_unresolved` marks a value `[not judged]` whenever anything it
+declares is already unresolved. Transitively, and naming only the ROOT of each chain -- a value two
+derivation steps above a moved measurement names that measurement, because the derived figure in
+between is a consequence too and restating it would fix nothing. So the four passes are shape, every
+STATED value in the design's own order, the consequences of whatever did not resolve, then the DERIVED
+band out of what did.
+
+What a declaration does NOT carry is the arithmetic: the re-derivation still knows that a trigger
+ratio divides exactly one interpolated guard. That shape is what the code asks for
+(`derived_source_of_form(value, form)`) and the design answers with the identity, so the annotation
+check, the provenance re-derivation, and the restated row all read one declared edge instead of three
+copies of a constant, and a ratio declaring a guard at another depth is caught by the fold-step
+annotation it then disagrees with.
 
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
 rows by a field rather than by position -- `depth_surface[depth=6].crossover_max_prompt_chars`,
@@ -1785,11 +1819,14 @@ refresh, the collecting and refusing walks over it, and the refresh that reports
 wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
 `(artifact, field)` pair and the two-source read),
 `src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
-not resolve, keep what that leaves unjudged apart from it, and refuse once naming both -- all five
-study-agnostic, so any published agentic number can adopt them),
+not resolve, keep what that leaves unjudged apart from it, and refuse once naming both),
+`src/llb/bench/agentic_published_value_derivation.py` (the `derived_from` declaration, its validation
+against the design that publishes the source, and the transitive walk from a value to the moved
+measurements at the root of what it rests on -- all six study-agnostic, so any published agentic
+number can adopt them),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
-resolves to, including the re-derived band, its shape-first/stated/derived passes, and the
-cause-versus-consequence rule for a band whose source guard moved),
+resolves to, including the re-derived band, its four passes, and the cause-versus-consequence rule
+for a band whose declared source guard moved),
 `src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
 the per-form annotation rules, shared by design validation and the restatement),
 `src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
@@ -1807,6 +1844,11 @@ edges, including a ratio driven out of its published band), and
 placed on its own ladder, plus each way one can be wrong),
 `tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates
 so a failure names the pointer rather than the study that used it),
+`tests/llb/bench/test_agentic_published_value_derivation.py` (the declaration and the consequence
+marking, on synthetic published values for the same reason: a two-step chain naming only the
+measurement at its root, a figure derived from two moved measurements naming both, the form as part
+of the identity, and each way a declaration can be unsupportable -- an unpublished source, a
+self-reference, a cycle, a duplicated identity, and a malformed entry),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact
@@ -1822,7 +1864,8 @@ refusing one, the refresh that names what it committed and does not roll it back
 against a host whose boundary-surface run moved the depth-10 guard, and the command's exit code on
 both answers), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
-resolved out of the committed aggregates, a transcription slip in each form, the re-derived band,
+resolved out of the committed aggregates, the committed design's own derivation declarations, a
+transcription slip in each form, the re-derived band,
 the committed bytes checked against this host's own run artifacts, the growth budget, the no-op
 regeneration on a host that still has the runs, and the collecting refusal -- a re-run that moved
 three values named in one refusal in design order, a moved guard named as the cause with its derived
@@ -1887,6 +1930,15 @@ cross-check in the
 previous paragraph as a within-run property; ACROSS runs on different days the served model
 reproduces it to a token, which rounds to the same 21862 and stays inside the same fold step 10
 interval `[20240, 22016)`.
+
+A fifth run on 2026-08-08
+(`.../agentic-compact-crossover-restatement/20260808T045022.358884Z-4143107bb981/manifest.json`),
+the first taken with the derivation edge DECLARED rather than hardcoded, reproduces all of it: the
+same audit (18/22 cells bit-identical, four re-measured), the same 21862-char restated guard, the
+same reading, and a `derived_from_study_kind` now read off the design that is the same
+`compact_memory_boundary_surface` the constant used to supply. It lands on the 21861.6 reading of the
+interpolation, so its depth-10 ratio quotes 0.916x where the 21862.1 reading quotes 0.917x -- the
+across-run token variance above, inside the band at the two decimals it is published to either way.
 
 The collapse's portable ratio is restated by the run rather than recomputed beside it, which is what
 its being DERIVED from the surface's guard demands: at depth 10 the restated 21862-char guard is a

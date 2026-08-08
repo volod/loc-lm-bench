@@ -24,10 +24,7 @@ from llb.bench.agentic_memory_fold_step_ladder import (
     fold_step_guard_interval,
     foldable_fold_steps,
 )
-from llb.bench.agentic_memory_crossover_restatement_placement import (
-    DERIVED_RATIO_SOURCE_KIND,
-    prompt_sequence,
-)
+from llb.bench.agentic_memory_crossover_restatement_placement import prompt_sequence
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_ALREADY_MEASURED,
     BASIS_DERIVED,
@@ -38,6 +35,7 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
+from llb.bench.agentic_published_value_derivation import derived_source_of_form
 
 
 def crossover_row(
@@ -122,7 +120,11 @@ def _portable_ratio_row(
             "restated_value": ratio,
             "restated_trigger_chars": trigger,
             "restated_cap_peak_prompt_chars": peak,
-            "derived_from_study_kind": DERIVED_RATIO_SOURCE_KIND,
+            # The design's own declaration, so a restated row names the study it was actually
+            # derived from rather than the one this module was written against.
+            "derived_from_study_kind": derived_source_of_form(
+                published, FORM_INTERPOLATED
+            ).study_kind,
             "derived_from_guard_chars": guard,
             "basis": BASIS_DERIVED,
         }

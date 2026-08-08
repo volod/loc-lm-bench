@@ -36,6 +36,11 @@ from llb.bench.agentic_published_value_fixture import (
     load_provenance_fixture,
     write_provenance_fixture,
 )
+from llb.bench.agentic_published_value_derivation import (
+    DERIVED_FROM,
+    ValueKey,
+    derived_source_of_form,
+)
 from llb.bench.agentic_published_value_provenance import provenance_pair
 from llb.bench.agentic_published_value_registry import (
     published_citations,
@@ -91,6 +96,23 @@ def test_every_committed_crossover_resolves_out_of_the_aggregate_it_cites():
     for crossover in published_crossovers(design):
         artifact, _field = provenance_pair(crossover["provenance"], where="test")
         assert artifact in committed
+
+
+def test_every_committed_derived_value_declares_the_edge_the_resolver_used_to_hardcode():
+    """The cause-versus-consequence rule reads off the design now, so the design has to state it.
+
+    Asserted in both directions: each band names the guard it is a quotient of, and no MEASURED
+    crossover names anything -- a measurement that declared a source would be marked not-judged for
+    a number it does not rest on.
+    """
+    rows = published_crossovers(load_restatement_design(DESIGN_PATH))
+    derived = [row for row in rows if row["form"] == FORM_PORTABLE_RATIO]
+    assert len(derived) == 2
+    for row in derived:
+        assert derived_source_of_form(row, FORM_INTERPOLATED) == ValueKey(
+            study_kind=KIND_SURFACE, depth=int(cast(int, row["depth"])), form=FORM_INTERPOLATED
+        )
+    assert all(row.get(DERIVED_FROM) is None for row in rows if row["form"] != FORM_PORTABLE_RATIO)
 
 
 def test_the_committed_evidence_is_the_union_over_every_registered_design():
@@ -183,14 +205,19 @@ def test_a_crossover_citing_an_aggregate_the_repo_does_not_carry_is_refused():
         validate_restatement_design(design, root=ROOT)
 
 
-def test_a_derived_band_with_no_resolved_source_guard_is_refused():
-    """The ratio divides the surface's guard, so dropping that row leaves nothing to derive from."""
+def test_a_band_declaring_a_source_the_design_does_not_publish_is_refused_before_any_read():
+    """The ratio divides a guard it NAMES, so dropping that row leaves the declaration dangling.
+
+    Fail-fast alongside the other shape refusals rather than collected: a value pointing at a number
+    the design does not publish is a design that never said what its band rests on, and that is not
+    evidence which moved.
+    """
     rows = [
         row
         for row in published_crossovers(load_restatement_design(DESIGN_PATH))
         if not (row["study_kind"] == KIND_SURFACE and row["depth"] == 6)
     ]
-    with pytest.raises(ValueError, match="nothing resolves it"):
+    with pytest.raises(ValueError, match="which this design does not publish"):
         validate_published_provenance(rows, root=ROOT)
 
 
