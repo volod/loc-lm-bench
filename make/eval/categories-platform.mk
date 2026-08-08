@@ -19,6 +19,7 @@
 	bench-agentic-context-compact-fold-step \
 	bench-agentic-context-compact-summary-input-cap \
 	bench-agentic-context-compact-crossover-restatement \
+	bench-agentic-published-provenance \
 	bench-agentic-policy-change-audit \
 	bench-chain-context composite-headline platform-matrix
 
@@ -239,6 +240,13 @@ bench-agentic-context-compact-crossover-restatement: ## Restate every published 
 		--design "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_DESIGN)" \
 		$(if $(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE),--surface-aggregate "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE)",) \
 		$(if $(filter 1 true yes,$(AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY)),--audit-only,)
+
+bench-agentic-published-provenance: ## Re-commit the run aggregates EVERY registered published-value design resolves against (the union, so no study's evidence is pruned) and their content pins, from the artifacts under DATA_DIR, then name any published value that evidence no longer states (exit 3; the write still stands)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-crossover-restatement \
+		--design "$(AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_DESIGN)" \
+		--refresh-provenance
 
 bench-agentic-policy-change-audit: ## Report which published agentic numbers an agent context-policy constant change invalidates, with no GPU (POLICY_FIELD= POLICY_BASELINE= POLICY_CANDIDATE=; space-separated lists audit a compound change as ONE change)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

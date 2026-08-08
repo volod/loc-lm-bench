@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -12,7 +13,7 @@ from llb.bench.agentic.context import (
     SUMMARY_INPUT_CAP_WINDOW,
     ContextPolicy,
 )
-from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW, AgenticTask
 from llb.bench.agentic_memory_cap_audit import (
     VERDICT_INVARIANT as BOUND_INVARIANT,
     VERDICT_SENSITIVE as BOUND_SENSITIVE,
@@ -28,18 +29,28 @@ from llb.bench.agentic_policy_change_audit import (
     VERDICT_INVARIANT,
     VERDICT_NOT_APPLICABLE,
     PolicyChange,
+    audit_cell_prompts,
     audit_policy_change,
     coerce_policy_value,
     declared_geometry,
     load_audited_design,
 )
+from llb.bench.agentic.context_budget import fixed_budget
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller
 from llb.bench.agentic_policy_change_replay import (
     AUDITED_POLICIES,
+    ReplayedEpisode,
     arm_comparison,
     prompt_sequence_digest,
-    replay_prompts,
+    replay_digest,
+    replay_episode,
+    replay_sequence_digest,
 )
 from llb.bench.agentic_policy_change_audit_report import (
+    REFUSED_BYTES_NOTE,
+    REFUSED_PROMPT_NOTE,
+    format_invalidated_cells,
     format_policy_change_table,
     persist_policy_change_audit,
     policy_change_summary,
@@ -50,9 +61,13 @@ ROOT = Path(__file__).resolve().parents[3]
 KEEP_CHANGE = PolicyChange.of("keep_last_n", 3, 1)
 CAP_CHANGE = PolicyChange.of("observation_cap_chars", 800, 1600)
 SHARE_CHANGE = PolicyChange.of("compact_share", 0.5, 0.45)
+HEAD_SHARE_CHANGE = PolicyChange.of("observation_head_share", 0.6, 0.5)
 BOUND_CHANGE = PolicyChange.of(
     "summary_input_cap", SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
 )
+# A guard between the step-1 prompt (3000 chars, no observation yet) and the step-2 prompt under
+# either cap (3904 at 800, 4333 at 1600): every arm ends on a refused prompt the caps disagree on.
+OVERFLOW_GUARD = 3500
 DESIGNS = {
     KIND_SURFACE: ROOT / "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
     KIND_COLLAPSE: ROOT / "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
@@ -77,18 +92,190 @@ def test_a_replay_is_deterministic_and_records_both_kinds_of_model_call():
     """The recorded sequence is the whole model-facing history: step prompts and summarize calls."""
     policy = ContextPolicy(name=POLICY_COMPACT, compact_share=0.5)
     geometry = {"task": _task(), "max_prompt_chars": 13136, "max_steps": 10}
-    first = replay_prompts(policy, **geometry)
-    assert first and prompt_sequence_digest(first) == prompt_sequence_digest(
-        replay_prompts(policy, **geometry)
+    first = replay_episode(policy, **geometry)
+    assert first.prompts and replay_digest(first) == replay_digest(
+        replay_episode(policy, **geometry)
     )
-    assert any("Стисло підсумуй" in prompt for prompt in first)  # the summarize call is recorded
-    assert any("Стисло підсумуй" not in prompt for prompt in first)  # so are the step prompts
+    assert not first.refused and first.refused_prompt_chars is None  # nothing was refused here
+    assert any("Стисло підсумуй" in p for p in first.prompts)  # the summarize call is recorded
+    assert any("Стисло підсумуй" not in p for p in first.prompts)  # so are the step prompts
 
 
 def test_the_digest_separates_sequences_that_differ_only_in_where_a_boundary_falls():
     """Length-prefixing keeps `['ab','c']` from digesting the same as `['a','bc']`."""
     assert prompt_sequence_digest(["ab", "c"]) != prompt_sequence_digest(["a", "bc"])
     assert prompt_sequence_digest([]) == prompt_sequence_digest([])
+
+
+def _refused_at(**policy_fields: Any) -> ReplayedEpisode:
+    """One episode behind the overflow guard, under an `observation_cap` policy stated by field."""
+    return replay_episode(
+        ContextPolicy(name=POLICY_OBSERVATION_CAP, **policy_fields),
+        task=_task(),
+        max_prompt_chars=OVERFLOW_GUARD,
+        max_steps=10,
+    )
+
+
+def test_a_replay_records_the_prompt_the_guard_refused():
+    """The loop prices the overflowing prompt and never sends it, so no other seam can see it."""
+    # 3500 fits step 1 (3000 chars) and refuses step 2, the first prompt carrying an observation.
+    record = _refused_at(observation_cap_chars=800)
+    assert record.status == STATUS_CONTEXT_OVERFLOW and record.refused
+    assert [len(prompt) for prompt in record.prompts] == [3000]
+    assert record.refused_prompt_chars == 3904 > OVERFLOW_GUARD
+    # The observer hands over the prompt itself, and the priced size is that prompt's own length
+    # because this replay goes through `complete` rather than a serialized controller channel.
+    assert record.refused_prompt is not None
+    assert len(record.refused_prompt) == record.refused_prompt_chars
+    assert record.refused_prompt not in record.prompts  # refused means never sent
+
+    # Same episode under a wider cap: identical sent prompts, a bigger refusal, another digest.
+    wider = _refused_at(observation_cap_chars=1600)
+    assert prompt_sequence_digest(wider.prompts) == prompt_sequence_digest(record.prompts)
+    assert wider.refused_prompt_chars == 4333
+    assert replay_digest(wider) != replay_digest(record)
+
+
+def test_the_refused_prompt_is_compared_by_bytes_and_not_by_size():
+    """`observation_head_share` re-splits a trimmed observation without changing its length.
+
+    So a size-only refusal record is blind to exactly the field whose whole effect is where the
+    bytes went, and these two episodes -- same sent prompts, same 3904-char refusal -- would read
+    as one.
+    """
+    sides = [_refused_at(observation_cap_chars=800, observation_head_share=h) for h in (0.6, 0.5)]
+    assert prompt_sequence_digest(sides[0].prompts) == prompt_sequence_digest(sides[1].prompts)
+    assert sides[0].refused_prompt_chars == sides[1].refused_prompt_chars == 3904
+    assert sides[0].refused_prompt != sides[1].refused_prompt
+    assert replay_digest(sides[0]) != replay_digest(sides[1])
+
+
+def test_an_episode_that_sends_everything_it_builds_never_fires_the_refusal_observer():
+    """The seam is inert on a fitting run, so it cannot perturb any measured episode."""
+    seen: list[str] = []
+    episode = run_episode(
+        _task(),
+        oracle_compacting_controller,
+        max_steps=10,
+        policy=ContextPolicy(name=POLICY_COMPACT, compact_share=0.5),
+        budget=fixed_budget(13136),
+        on_refused_prompt=seen.append,
+    )
+    assert episode.status != STATUS_CONTEXT_OVERFLOW and seen == []
+
+
+def test_a_change_that_moves_only_an_overflowing_prompt_no_longer_reads_as_invariant():
+    """The audit's own blind spot, closed: an episode that ends on the prompt the change moved.
+
+    Both arms overflow at step 2 under both caps, so every prompt a model saw is byte-identical
+    and the pre-refusal audit called the cell prompt-invariant -- for a change that moved the very
+    prompt that ended the run. The compact arm here really is invariant (its fold at this guard
+    discards the whole transcript, which is cap-independent), so the refusal is the ONLY signal.
+    """
+    cell = {
+        "cell_id": "overflow-at-step-2",
+        "depth": 6,
+        "compact_share": 0.5,
+        "max_prompt_chars": OVERFLOW_GUARD,
+        "pinned_fields": [],
+    }
+    _, held = _surface_cell()
+    row = audit_cell_prompts(cell, held, CAP_CHANGE)
+    assert row["changed_arms"] == [POLICY_OBSERVATION_CAP]
+    assert row["verdict"] == VERDICT_CHANGED and row["refused_prompt_only"]
+
+    cap_arm = row["arms"][POLICY_OBSERVATION_CAP]
+    assert cap_arm["sent_identical"] and cap_arm["refused_prompt_moved"]
+    assert cap_arm["baseline_refused_tasks"] == cap_arm["candidate_refused_tasks"]
+    assert cap_arm["baseline_refused_tasks"] == cap_arm["n_tasks"] == held["n_tasks"]
+    # The refused prompt sits one call past the last one either replay made.
+    assert cap_arm["first_divergent_step"] == row["first_divergent_step"] == 2
+
+    # The compact arm neither refuses nor moves, which is what makes this cell the sharp case.
+    compact_arm = row["arms"][POLICY_COMPACT]
+    assert compact_arm["identical"] and compact_arm["baseline_refused_tasks"] == 0
+
+    # And the re-run scope says so rather than pointing at a prompt nobody sent. The two caps
+    # price the refusal differently, so this is the plain note.
+    summary = policy_change_summary({KIND_SURFACE: [row]}, CAP_CHANGE)
+    assert not row["refused_prompt_bytes_only"]
+    assert REFUSED_PROMPT_NOTE in "\n".join(format_invalidated_cells(summary))
+
+
+def test_a_change_that_moves_an_overflowing_prompt_without_resizing_it_is_still_read():
+    """The same cell under the one audited field that moves bytes and never a prompt LENGTH.
+
+    Both head shares send `[3000]` and are refused a 3904-char prompt, so every size the audit
+    could compare is equal; only the refused prompt's own bytes separate them.
+    """
+    cell = {
+        "cell_id": "overflow-at-step-2",
+        "depth": 6,
+        "compact_share": 0.5,
+        "max_prompt_chars": OVERFLOW_GUARD,
+        "pinned_fields": [],
+    }
+    _, held = _surface_cell()
+    row = audit_cell_prompts(cell, held, HEAD_SHARE_CHANGE)
+    assert row["verdict"] == VERDICT_CHANGED and row["changed_arms"] == [POLICY_OBSERVATION_CAP]
+    assert row["refused_prompt_only"] and row["refused_prompt_bytes_only"]
+
+    cap_arm = row["arms"][POLICY_OBSERVATION_CAP]
+    assert cap_arm["sent_identical"] and cap_arm["refused_prompt_moved_bytes_only"]
+    assert cap_arm["baseline_refused_tasks"] == cap_arm["candidate_refused_tasks"] == 7
+
+    # The scope line says the sizes agree, so nobody reads the equal counts as an equal prompt.
+    summary = policy_change_summary({KIND_SURFACE: [row]}, HEAD_SHARE_CHANGE)
+    assert REFUSED_BYTES_NOTE in "\n".join(format_invalidated_cells(summary))
+
+
+def test_no_published_cell_ends_on_a_refused_prompt_under_the_measured_policy():
+    """Cap-fitting cells are CHOSEN not to overflow -- now asserted rather than assumed.
+
+    Asserted on the BASELINE side, which is the configuration the published numbers were measured
+    under: with no refusal there, every recorded verdict is decided by sent prompts alone, which is
+    why the recorded table is unchanged by the refusal recording.
+    """
+    for change in (CAP_CHANGE, BOUND_CHANGE, KEEP_CHANGE):
+        rows = [row for study in audit_policy_change(_designs(), change).values() for row in study]
+        arms = [arm for row in rows for arm in cast(dict, row["arms"]).values()]
+        assert arms and all(arm["baseline_refused_tasks"] == 0 for arm in arms), change.label
+        assert not any(row["refused_prompt_only"] for row in rows), change.label
+
+
+def test_a_candidate_value_that_stops_a_published_cell_fitting_its_guard_is_recorded():
+    """A widened cap does not merely move `surface-d10-g14000`'s cap arm -- it overflows it.
+
+    At guard 14000 the cap arm peaks at 11926 chars under the pinned 800 and is refused a 14621-
+    char prompt at step 9 under 1600. The cell already read `prompts_change` from its sent prompts
+    (the trim reaches the prompt at model call 2), so no recorded verdict moves; what is new is
+    that the audit can now SAY the candidate leaves the cell un-runnable at its published guard.
+    """
+    rows = audit_policy_change(
+        {KIND_SURFACE: load_audited_design(DESIGNS[KIND_SURFACE])}, CAP_CHANGE
+    )
+    refused = {
+        cast(str, row["cell_id"]): arm
+        for row in rows[KIND_SURFACE]
+        for arm in cast(dict, row["arms"]).values()
+        if arm["candidate_refused_tasks"]
+    }
+    assert list(refused) == ["surface-d10-g14000"]
+    arm = refused["surface-d10-g14000"]
+    assert arm["policy"] == POLICY_OBSERVATION_CAP
+    assert arm["baseline_refused_tasks"] == 0
+    assert arm["candidate_refused_tasks"] == arm["n_tasks"]  # every task, not one unlucky one
+
+    # And the re-run scope says re-measuring it needs a new guard, not a re-run at the old one.
+    summary = policy_change_summary(rows, CAP_CHANGE)
+    assert summary["n_candidate_overflow"] == 1
+    scope = format_invalidated_cells(summary)
+    named = [line for line in scope if "no longer fits this guard" in line]
+    assert len(named) == 1 and "surface-d10-g14000" in named[0]
+
+    # Still reported at the sent-prompt divergence, which comes first.
+    assert not arm["sent_identical"] and arm["first_divergent_step"] == 2
 
 
 def test_an_unknown_field_and_a_no_op_change_are_both_refused():
@@ -180,11 +367,9 @@ def test_a_compound_arm_replays_a_whole_policy_rather_than_one_overridden_field(
             n_tasks=held["n_tasks"], depth=cell["depth"], pad_chars=held["pad_chars"]
         )
     ]
-    expected = prompt_sequence_digest(
+    expected = replay_sequence_digest(
         [
-            prompt
-            for task in tasks
-            for prompt in replay_prompts(
+            replay_episode(
                 ContextPolicy(
                     name=POLICY_COMPACT,
                     observation_cap_chars=1600,
@@ -196,6 +381,7 @@ def test_a_compound_arm_replays_a_whole_policy_rather_than_one_overridden_field(
                 max_prompt_chars=cell["max_prompt_chars"],
                 max_steps=cell["depth"] + held["max_steps_margin"],
             )
+            for task in tasks
         ]
     )
     assert compound["candidate_digest"] == expected

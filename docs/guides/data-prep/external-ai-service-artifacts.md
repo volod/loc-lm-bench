@@ -427,7 +427,7 @@ attack-success rate. Run only against **local** models -- this is a local-infere
 form. It does not convert that form into canonical `ChainItem` rows with exact `SourceSpan`
 offsets. Keep those curated exports outside scoring paths. For canonical locally generated chains,
 use the complete pipeline, review, acceptance, and promotion workflow in
-[current data prep](../../impl/current/data-prep.md#chain-of-questions-artifacts).
+[current data prep](../../impl/current/data-prep/chain-of-questions.md#chain-of-questions-artifacts).
 
 ## Step 8: Human verification gate
 

@@ -16,6 +16,13 @@ from llb.bench.agentic_policy_change_audit import (
     declared_geometry,
     load_audited_design,
 )
+from llb.bench.agentic_memory_crossover_restatement_placement import (
+    validate_derived_placements,
+    validate_published_placement,
+)
+from llb.bench.agentic_memory_crossover_restatement_provenance import (
+    validate_published_provenance,
+)
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     CROSSOVER_FORMS,
     FORM_PORTABLE_RATIO,
@@ -32,8 +39,15 @@ def load_restatement_design(path: Path | str) -> dict[str, object]:
     return load_transfer_design(path)
 
 
-def validate_restatement_design(design: dict[str, object], *, root: Path) -> None:
-    """Refuse a design that does not pin the shipped bound or misnames a study it restates."""
+def validate_restatement_design(
+    design: dict[str, object], *, root: Path, data_dir: Path | None = None
+) -> None:
+    """Refuse a design that does not pin the shipped bound or misnames a study it restates.
+
+    `data_dir` is the host's run root. It is optional because the resolution below is authoritative
+    against the COMMITTED slice of each aggregate -- CI has no runs -- and the artifacts themselves
+    are read only as a check that the slice still matches what a host that ran the study holds.
+    """
     if design.get("schema_version") != 1 or design.get("study_kind") != STUDY_KIND:
         raise ValueError("crossover restatement design schema or study kind is invalid")
     if float(cast(float, design.get("reporting_confidence", 0.0))) != REPORTING_CONFIDENCE:
@@ -64,6 +78,12 @@ def validate_restatement_design(design: dict[str, object], *, root: Path) -> Non
         raise ValueError("the restatement needs at least one uniquely named audited study")
     for study in studies:
         _validate_study(study, root)
+    crossovers = published_crossovers(design)
+    validate_derived_placements(crossovers)
+    # Resolution runs LAST: it is the only rule that reads outside the repo's design files, and its
+    # message is about a number's evidence rather than about the design's shape, so a malformed
+    # design should never reach it.
+    validate_published_provenance(crossovers, root=root, data_dir=data_dir)
 
 
 def audited_designs(design: dict[str, object], *, root: Path) -> dict[str, dict[str, object]]:
@@ -104,6 +124,10 @@ def _validate_study(study: dict[str, object], root: Path) -> None:
         raise ValueError(f"{kind}: a restated study must name the crossovers it published")
     for crossover in crossovers:
         _validate_crossover(kind, crossover, depths)
+        # The annotation is checked LAST, once the crossover is known to be well formed: it reads the
+        # value and the share, and a placement message about a crossover missing either would name
+        # the wrong defect.
+        validate_published_placement(kind, crossover, audited)
 
 
 def _validate_crossover(kind: str, crossover: dict[str, object], depths: set[int]) -> None:
@@ -121,6 +145,37 @@ def _validate_crossover(kind: str, crossover: dict[str, object], depths: set[int
             f"{kind} depth {depth}: every published crossover must name the fold step it lands in, "
             "because that is what the restatement checks it still names"
         )
-    # The portable ratio is a derived statement rather than a guard, so it carries no single value.
-    if form != FORM_PORTABLE_RATIO and crossover.get("value") is None:
+    # The portable ratio is a derived statement rather than a guard, so it carries no single value --
+    # it carries the BAND it was published as, which is what its restatement is read against.
+    if form == FORM_PORTABLE_RATIO:
+        _validate_published_band(kind, crossover, depth)
+    elif crossover.get("value") is None:
         raise ValueError(f"{kind} depth {depth}: a {form} crossover must carry its published value")
+
+
+def _validate_published_band(kind: str, crossover: dict[str, object], depth: int) -> None:
+    """A derived ratio needs both edges of its band and the precision the band is quoted to.
+
+    The precision is not decoration: the published edges are the ROUNDED ratios of the tested
+    depths, so a restated ratio a hair under the lower edge is inside the band as published and
+    outside it as compared. Stating the decimals makes that a predeclared reading rather than a
+    tolerance the restatement picks after seeing the number.
+    """
+    band = crossover.get("published_band")
+    if (
+        not isinstance(band, list)
+        or len(band) != 2
+        or not all(isinstance(edge, (int, float)) and float(edge) > 0.0 for edge in band)
+        or float(cast(float, band[0])) > float(cast(float, band[1]))
+    ):
+        raise ValueError(
+            f"{kind} depth {depth}: a {FORM_PORTABLE_RATIO} crossover is published as a band, so it "
+            "must carry an ascending pair of positive `published_band` edges"
+        )
+    decimals = crossover.get("band_decimals")
+    if isinstance(decimals, bool) or not isinstance(decimals, int) or decimals < 1:
+        raise ValueError(
+            f"{kind} depth {depth}: a {FORM_PORTABLE_RATIO} crossover must state the "
+            "`band_decimals` its band is quoted to, because that precision is the reading its "
+            "restatement is checked at"
+        )

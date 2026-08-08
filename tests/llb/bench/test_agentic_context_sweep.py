@@ -13,7 +13,8 @@ from llb.bench.agentic.context import (
 )
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
-from llb.bench.agentic_context_sweep import (
+from llb.bench.agentic_context_sweep import run_constant_sweep
+from llb.bench.agentic_context_sweep_model import (
     AXIS_CAP,
     AXIS_HEAD,
     AXIS_KEEP,
@@ -22,10 +23,9 @@ from llb.bench.agentic_context_sweep import (
     VERDICT_PIN,
     SettingReport,
     SweepSetting,
-    decide_axis_verdict,
     default_grid,
-    run_constant_sweep,
 )
+from llb.bench.agentic_context_sweep_verdict import decide_axis_verdict
 from llb.bench.agentic_context_report import PolicyReport
 from llb.bench.common import category_result
 from llb.core.contracts.benchmarks import AgenticCaseRow
@@ -152,7 +152,7 @@ def test_decide_axis_verdict_pins_when_grid_is_flat():
         _cell(AXIS_CAP, "cap=800", shipped=True, success=success, prompts=prompts, overflows=0),
         _cell(AXIS_CAP, "cap=1600", shipped=False, success=success, prompts=prompts, overflows=0),
     ]
-    from llb.bench.agentic_context_sweep import pair_against_shipped
+    from llb.bench.agentic_context_sweep_verdict import pair_against_shipped
 
     pair_against_shipped(cells)
     verdict = decide_axis_verdict(AXIS_CAP, cells)
@@ -220,7 +220,7 @@ def test_decide_axis_verdict_pins_when_alternative_is_worse():
             overflows=0,
         ),
     ]
-    from llb.bench.agentic_context_sweep import pair_against_shipped
+    from llb.bench.agentic_context_sweep_verdict import pair_against_shipped
 
     pair_against_shipped(cells)
     verdict = decide_axis_verdict(AXIS_CAP, cells)
@@ -247,7 +247,7 @@ def test_decide_axis_verdict_exposes_when_completion_separates_favorably():
             overflows=0,
         ),
     ]
-    from llb.bench.agentic_context_sweep import pair_against_shipped
+    from llb.bench.agentic_context_sweep_verdict import pair_against_shipped
 
     pair_against_shipped(cells)
     verdict = decide_axis_verdict(AXIS_CAP, cells)

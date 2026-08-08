@@ -132,3 +132,8 @@ ci-github: ci-checks ## `ci` for the base [dev]-only env: also deselects heavy_e
 lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pymarkdown scan -r --respect-gitignore $(MD_PATHS)
+	$(MAKE) lint-doc-links
+
+lint-doc-links: ## Check every relative docs link resolves (file exists, #anchor is a real heading)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.doc_links

@@ -9,18 +9,38 @@ the interpolated crossover.
 
 from typing import cast
 
+from llb.bench.agentic_design_fields import as_int, as_str
 from llb.bench.agentic_memory_boundary_gate import (
     SIDE_CAP_CHEAPER,
     SIDE_COMPACT_CHEAPER,
     boundary_cost_evidence,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_peak_prompt_chars,
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import (
     guard_is_cap_fitting,
+    measured_cap_peak,
     usable_guard_band,
 )
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
+
+
+def _cell_geometries(cells: list[dict[str, object]]) -> list[tuple[int, int]]:
+    """Each cell's (depth, guard) pair -- the identity a surface cell is placed by."""
+    return [(as_int(cell, "depth"), as_int(cell, "max_prompt_chars")) for cell in cells]
+
+
+def _check_cell_identity(cells: list[dict[str, object]], geometries: list[tuple[int, int]]) -> None:
+    """Uniquely named, uniquely placed, runnable, and predeclaring which side it expects."""
+    ids = [as_str(cell, "cell_id") for cell in cells]
+    if len(cells) < 3 or not all(ids) or len(set(ids)) != len(ids):
+        raise ValueError("the boundary surface needs at least three uniquely named cells")
+    if len(set(geometries)) != len(geometries):
+        raise ValueError("boundary-surface cells must name unique depth/guard geometries")
+    if any(depth < 3 or guard <= 0 for depth, guard in geometries):
+        raise ValueError("boundary-surface cell geometry is invalid")
+    if any(cell.get("expected_side") not in EXPECTED_SIDES for cell in cells):
+        raise ValueError(f"every boundary-surface cell must predeclare one of {EXPECTED_SIDES}")
 
 
 def validate_surface_cells(
@@ -30,26 +50,11 @@ def validate_surface_cells(
     held_fixed: dict[str, object],
 ) -> None:
     """Refuse a grid that cannot bracket a crossover or cannot keep both policies usable."""
-    ids = [str(cell.get("cell_id", "")) for cell in cells]
-    geometries = [
-        (int(cast(int, cell.get("depth", 0))), int(cast(int, cell.get("max_prompt_chars", 0))))
-        for cell in cells
-    ]
-    if len(cells) < 3 or not all(ids) or len(set(ids)) != len(ids):
-        raise ValueError("the boundary surface needs at least three uniquely named cells")
-    if len(set(geometries)) != len(geometries):
-        raise ValueError("boundary-surface cells must name unique depth/guard geometries")
-    if any(depth < 3 or guard <= 0 for depth, guard in geometries):
-        raise ValueError("boundary-surface cell geometry is invalid")
-    if any(cell.get("expected_side") not in EXPECTED_SIDES for cell in cells):
-        raise ValueError(f"every boundary-surface cell must predeclare one of {EXPECTED_SIDES}")
-    anchor = (
-        int(cast(int, reference.get("depth", 0))),
-        int(cast(int, reference.get("max_prompt_chars", 0))),
-    )
+    geometries = _cell_geometries(cells)
+    _check_cell_identity(cells, geometries)
+    anchor = (as_int(reference, "depth"), as_int(reference, "max_prompt_chars"))
     if anchor not in geometries:
         raise ValueError("the boundary surface must re-run the reference cap-fitting geometry")
-
     depths = sorted({depth for depth, _guard in geometries})
     if len(depths) < 2:
         raise ValueError("the boundary surface must vary depth as well as prompt guard")
@@ -127,14 +132,7 @@ def _invalid_reason(
 def _validate_band(
     depth: int, guards: list[int], held_fixed: dict[str, object], share: float
 ) -> None:
-    peak = cap_peak_prompt_chars(
-        depth=depth,
-        n_tasks=int(cast(int, held_fixed["n_tasks"])),
-        pad_chars=int(cast(int, held_fixed["pad_chars"])),
-        max_steps_margin=int(cast(int, held_fixed["max_steps_margin"])),
-        observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
-        observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
-    )
+    peak = _measured_cap_peak(depth, held_fixed)
     low, high = usable_guard_band(peak, share)
     outside = [guard for guard in guards if not guard_is_cap_fitting(guard, peak, share)]
     if outside:
@@ -142,6 +140,25 @@ def _validate_band(
             f"depth {depth} guards {outside} fall outside the usable band ({low}, {high}) "
             "where cap fits and compact still activates"
         )
+
+
+def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
+    """This depth's largest perfect-play cap prompt, read through the ladder's checked peak.
+
+    The surface is where a depth the probe measured nothing over can be NAMED, so the walk and the
+    checked read are paired here rather than left to the band arithmetic two layers down. The share
+    is NOT translated -- it is a `held_fixed` value the design states verbatim, and the ladder's own
+    "compact share must be in (0, 1]" already names it.
+    """
+    sequence = cap_prompt_sequence(
+        depth=depth,
+        n_tasks=int(cast(int, held_fixed["n_tasks"])),
+        pad_chars=int(cast(int, held_fixed["pad_chars"])),
+        max_steps_margin=int(cast(int, held_fixed["max_steps_margin"])),
+        observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
+        observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
+    )
+    return measured_cap_peak(sequence, geometry=f"depth {depth}")
 
 
 def _validate_window(held_fixed: dict[str, object], max_guard: int) -> None:

@@ -43,33 +43,271 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-audit-compound-interaction-fixture (optional)
+### agent-the-complexity-scans-are-clean-and-nothing-keeps-them-that-way (optional)
 
-The compound audit replays two whole policies, so its answer is right by construction -- but on the
-22 committed cells no constructible compound change SEPARATES it from the per-field reading: the
-`compact_share` + `summary_input_cap` pair names the same 12 cells at the same first-divergent steps
-either way, and the same-share-under-both-bounds probe finds zero cells whose verdict depends on
-where the other constant sits
-([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
-So the guarantee is untested against the case it exists for. Build the geometry that exercises the
-interaction -- a cell whose trigger crossing lands differently depending on the summarize-input
-bound, or a guard/depth pair where a per-field replay overshoots the transcript the compound one
-sends -- commit it as a fixture design, and assert in CI that the compound verdict and the
-per-field union DISAGREE there. Without it a future refactor can quietly collapse the compound
-replay back to a per-field one and every test stays green.
+Both complexity scans are now silent -- Radon at D-or-worse and Complexipy at the shipped maximum
+of 15 ([host validation](current/host-validation.md#code-quality-checks)) -- and nothing enforces
+that. `scripts/code_quality.sh` REPORTS complexity and never fails on it, and it is not part of
+`make ci`, so the next peak lands as a row in a report that only gets read when someone goes
+looking. An empty scan is exactly the state in which a threshold becomes cheap to enforce: turn the
+two complexity sections into failures (exit non-zero when either is non-empty) and add the check to
+`ci-checks` beside `llb.quality.acceptance_gates --check`, so a regression is a red build on the
+commit that causes it. Keep the numbers as they ship (`COGNITIVE_MAX=15`, Radon D) rather than
+raising them to whatever the tree happens to hold.
 
 - Agent status: CLEAR
-- Dependencies: the compound seam is `PolicyChange` in
-  `src/llb/bench/agentic_policy_change_audit.py`; the geometry can be predeclared with no model
-  through `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`.
-- User-visible outcome: the audit's compound guarantee is a tested property rather than a design
-  claim, so an operator can trust the one-verdict scope on a commit that moves two constants.
-- Scope boundary: in scope -- the interaction geometry, its committed design fixture, and the CI
-  assertion that the two readings disagree on it. Out of scope -- changing any shipped constant,
-  re-running a published cell, and widening the audited study set (that is
-  `agent-policy-change-audit-coverage-beyond-cap-fitting`).
+- Dependencies: `scripts/code_quality.sh` already runs both scans through
+  `llb_report_if_output`, which returns their status; `make/dev.mk` holds `ci-checks`; the soft
+  line-limit report must stay informational (AGENTS.md makes THAT limit soft on purpose, and it
+  currently has legitimate offenders).
+- User-visible outcome: a function that crosses the threshold fails CI on its own commit instead of
+  being found in a periodic sweep.
+- Scope boundary: in scope -- the exit status, the `ci-checks` wiring, and a note in the quality-gate
+  docs. Out of scope -- raising either threshold, gating the line-count report, and refactoring
+  anything to reach the gate (the tree already passes).
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-two-source-files-remain-over-the-soft-line-target (optional)
+
+`bench/agentic_context_report.py` (500 lines) and `bench/agentic/context.py` (487) are the two
+source files still meaningfully past the ~250-line soft target after the encoder-throughput and
+context-sweep splits ([host validation](current/host-validation.md#code-quality-checks)). Both have
+a visible seam: the report module is per-kind tables plus the aggregate-safe verdict plus the run
+manifest shape, and the context module is the policy vocabulary plus the transcript state machine
+plus summarization. Split each along that seam and repoint call sites at the real submodule (this
+repo keeps no re-export shim), or -- if the seam turns out to be one cohesive family -- record that
+decision instead, because AGENTS.md makes the limit soft on purpose.
+
+- Agent status: CLEAR
+- Dependencies: the two modules above; the split pattern to follow is
+  `rag/encoder_throughput{,_summary,_report,_profile}.py` and
+  `bench/agentic_context_sweep{,_model,_verdict}.py`.
+- User-visible outcome: the two files a reader is most often sent to stop being the two longest.
+- Scope boundary: in scope -- the split, the call-site repoint, and the import updates in tests.
+  Out of scope -- behavior changes, a re-export shim, and splitting a cohesive lookup family just
+  to reach a line count.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-a-probe-set-declares-branches-and-nothing-says-which-it-missed (optional)
+
+An operation's probe set says which paths its declaration is certified on, and points that cannot
+differ are refused
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+Nothing says which paths the set MISSED: a body whose reads sit behind a branch no point takes is
+certified on the paths that were walked and silent about the rest, so the residual is declarable but
+not visible, and a branch added to an existing operation lands with its probe set unchanged and CI
+green. Measure the branches the set actually reached -- run the probe calls under `sys.monitoring`
+(the `BRANCH` event, scoped to the operation's own code object, which is the whole reason these are
+small pure functions) and report the unreached ones per operation. Land it as a REPORT first
+(the count and the source lines beside `checked` in `OperationRegistryReport`) and only then decide
+whether an operation reaching full branch coverage of its own body is a refusal: an operation with a
+domain guard it cannot legally probe (the trigger ratio's `peak <= 0` raise) would fail a naive gate,
+so the gate needs a way to declare a branch unreachable-by-probe before it can refuse anything.
+
+- Agent status: CLEAR
+- Dependencies: the set is `probes` on `DerivationOperation` in
+  `src/llb/bench/agentic_published_value_operations.py`; the calls to instrument are
+  `_reach_refusals` in `src/llb/bench/agentic_published_value_operation_audit.py`, and the report to
+  extend is `OperationRegistryReport` in the same module.
+- User-visible outcome: adding a branch to a registered arithmetic shows up as a branch its probe
+  set never reached, instead of as a silently narrower certification.
+- Scope boundary: in scope -- the branch measurement over the probe calls, the per-operation report,
+  and fixture cases for a body with a branch no point takes. Out of scope -- refusing on coverage
+  before unreachable-by-probe branches can be declared, generating the points that would cover a
+  body (that is a solver), and any claim of purity beyond the declared inputs.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
+
+### agent-a-registered-operation-may-close-over-a-shipped-constant-undeclared (optional)
+
+The self-check observes what an operation reaches for THROUGH the inputs it was handed, which is
+every input the design supplies and nothing else
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+An operation is free to read a module global as well, and the shipped one does: the trigger ratio
+runs the runtime's own `compaction_trigger_chars`, so a published band depends on context-budget
+arithmetic no design row names. That dependency is correct -- it is why the number is the runtime's
+rather than a restated formula -- but it is invisible to the pin gate, which names what a moved
+policy constant retires by reading the DESIGNS
+([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
+Let an operation declare the shipped constants its arithmetic rests on, check that declaration by
+re-running its probe set with each named constant perturbed (a constant it declared must move the
+answer at some point of the set, one it did not must move it at none), and feed the declared set into
+the gate's re-run scope so a constant change names the published bands it retires as well as the
+cells.
+
+- Agent status: CLEAR
+- Dependencies: the arithmetic that closes over the runtime is `_trigger_over_own_cap_peak` in
+  `src/llb/bench/agentic_published_value_operations.py` via `compaction_trigger_chars`
+  (`src/llb/bench/agentic_memory_fold_step_ladder.py`); the points to re-run are the operation's
+  `probes`, called through `probe_inputs` in
+  `src/llb/bench/agentic_published_value_operation_probe.py`; the gate that would consume the
+  declaration is `src/llb/bench/agentic_policy_pin_gate.py`.
+- User-visible outcome: a policy-constant change names the published values whose ARITHMETIC it
+  moves, not only the cells whose geometry it moves.
+- Scope boundary: in scope -- the constant declaration, the perturbation check, and the gate's use of
+  it. Out of scope -- an expression language in the design file, tracing reads the perturbation
+  cannot reach, and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+
+### agent-a-derived-value-states-its-arithmetic-but-not-its-reading (optional)
+
+The arithmetic over a derived value's declared sources is the design's statement now, and both
+readers call it
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+Its READING is not: the precision the value is quoted to and the rule that decides whether a
+re-derived number still supports what was published are applied twice, by hand. Design validation
+rounds each quotient to `band_decimals` and asks whether the smallest and largest are the published
+edges; the restated row rounds the restated ratio to the same field and asks whether it falls inside
+those edges. They agree today because both were written against a value published as a BAND -- a
+second design publishing a point with a tolerance, a one-sided bound, or an interval on a log scale
+gets neither rule and lands in two reader edits, and the two can disagree about the same number
+(round-then-compare versus compare-then-round) with nothing in CI to notice. Declare the reading
+beside the operation: a named, registered comparison over the design's published statement and the
+re-derived value, returning whether it holds and the phrase an operator reads, so a design states
+how its number is judged once and both readers apply it.
+
+- Agent status: CLEAR
+- Dependencies: the two hand-applied readings are `_check_published_band` in
+  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` and the band comparison at the
+  end of `_portable_ratio_row` in `src/llb/bench/agentic_memory_crossover_restatement_forms.py`; the
+  criterion names they would replace are `CRITERION_BAND` and `CRITERION_FOLD_STEP` in
+  `src/llb/bench/agentic_memory_crossover_restatement_reading.py`; the registry pattern to follow is
+  `DERIVATION_OPERATIONS` in `src/llb/bench/agentic_published_value_operations.py`.
+- User-visible outcome: a study publishing a value as a band, a point with a tolerance, or a bound
+  states which in its design file and inherits both the validation and the invariance verdict.
+- Scope boundary: in scope -- the reading declaration, its registry and refusals, moving the band
+  comparison behind it, and fixture cases for a reading the registry does not carry and a
+  non-band reading. Out of scope -- the fold-step criterion for measured guards (a property of the
+  ladder, not of a published statement), restating a value automatically, and re-running a published
+  cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
+
+### agent-published-aggregate-is-unchecked-against-its-own-cells (optional)
+
+The repo now carries each cited run aggregate verbatim, so a published value is resolved against
+bytes every host can read
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+What no check reads is whether those bytes are INTERNALLY consistent: the aggregate states an
+interpolated crossover, a fold-step ladder, and a cap peak beside the per-cell rows they were
+computed from, and nothing re-derives the former from the latter. A hand-written aggregate re-pinned
+to its own digest therefore passes on every host without the run root -- the residual the committed
+copy deliberately does not close. Narrow it without a signature: re-derive each resolved field from
+the aggregate's own recorded cells (the interpolation from the bracketing rows, the ladder from the
+geometry, the peak from the prompt sequence) and refuse a field the aggregate's own data does not
+produce, so fabricating one number means fabricating a self-consistent study.
+
+- Agent status: CLEAR
+- Dependencies: the committed aggregates and the resolution seam are
+  `src/llb/bench/agentic_published_value_fixture.py` and
+  `src/llb/bench/agentic_published_value_provenance.py`; the interpolation and ladder arithmetic
+  already exist in `src/llb/bench/agentic_memory_crossover_restatement_rows.py` and
+  `src/llb/bench/agentic_memory_fold_step_ladder.py`.
+- User-visible outcome: a published number rests on evidence that has to hold together as a study,
+  not only on bytes the repo happens to carry.
+- Scope boundary: in scope -- the per-form re-derivation from the aggregate's own cells, its
+  refusals, and the fixture cases. Out of scope -- a repo-side signature (already weighed and
+  rejected), committing the per-episode bundles, and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
+
+### agent-restatement-a-derived-form-whose-source-is-unrestated-reads-as-invariant (optional)
+
+The portable ratio is derived from the surface's interpolated guard, so it is restated only when
+that depth's surface row is BRACKETED. When it is not -- a grid that reads
+`compact_cheaper_across_grid`, a depth the surface never tested, or an audit-only run -- the row
+falls back to `every_contributing_cell_is_bound_invariant` on the strength of the collapse's own
+eight cells, which is exactly the weaker statement the derived ratio replaced: those cells are not
+what the ratio rests on
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+Give a derived form its own unresolved state -- a basis naming the source that was not restated, and
+a reading beside `..._hold_under_the_shipped_cap` that says which derived figures went un-restated --
+so a silent fallback cannot present itself as an invariance result.
+
+- Agent status: CLEAR
+- Dependencies: the fallback is the `_restated_surface(...) is None` path in `crossover_row`
+  (`src/llb/bench/agentic_memory_crossover_restatement_forms.py`); the reading is
+  `restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py`.
+- User-visible outcome: an operator can tell a ratio that was re-derived and held from one that was
+  never re-derived at all.
+- Scope boundary: in scope -- the unresolved basis, the reading, the persisted metric, and their
+  tests. Out of scope -- the band criterion itself and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
+
+### agent-restatement-reading-is-blind-to-a-moved-cap-peak (optional)
+
+`restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py` decides on
+fold steps alone, so a run whose re-measured cap peak DISAGREES with the published one still reads
+`published_crossovers_hold_under_the_shipped_cap` and still persists `objective_score=1.0`
+([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
+The disagreement is reported -- a peak row names it and an operator line says which ratio to apply --
+but only a reader who reaches those lines learns that the published guard RATIOS were stated against
+a geometry this run no longer measures, while the headline verdict says everything holds. Decide what
+a moved peak should do to the verdict: either a reading of its own beside the fold-step one, or a
+qualifier on `..._hold_under_the_shipped_cap` that names the depths whose ratios were restated
+against a different peak. The fold-step criterion itself stays as it is -- a moved peak withdraws no
+COST, only the ratio's basis.
+
+- Agent status: CLEAR
+- Dependencies: the rows are `restated_cap_peaks` from `cap_peak_rows` in
+  `src/llb/bench/agentic_memory_crossover_restatement_rows.py`; the verdict and the persisted
+  `objective_score` are `restatement_reading` and `persist_restatement`.
+- User-visible outcome: the headline verdict of a restatement run cannot say "everything holds" while
+  a ratio it published rests on a retired geometry.
+- Scope boundary: in scope -- the reading, the persisted metric, and their tests. Out of scope --
+  the fold-step invariance criterion, the interpolation rule, and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
+
+### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
+
+The replay scan asks each pair about ONE concrete move per field (`FIELD_MOVES`, plus a second
+alternative set run by hand), so "no geometry separates this pair" is backed at two points of a
+value space the audit accepts continuously
+([extended workflows](current/extended-workflows/policy-constant-audit.md#one-pair-separates-and-the-other-fourteen-are-answered)).
+The separating pair shows why that matters: the band exists for `compact_share` 0.5 -> 0.48 and
+vanishes for 0.5 -> 0.55, because the direction of the move decides whether the candidate elides. Let
+the scan sweep the moved VALUES as well as the guards -- a small grid per field, sized so the whole
+sweep still fits a `slow` test -- and record which pairs stay silent across it.
+
+- Agent status: CLEAR
+- Dependencies: the per-field moves are `FIELD_MOVES` in
+  `src/llb/bench/agentic_policy_change_interaction_couplings.py`; the scan is
+  `scan_separating_cells` in `src/llb/bench/agentic_policy_change_interaction_scan.py`.
+- User-visible outcome: the enumeration's negative answers hold across the values a commit could
+  plausibly ship, not only the neighbour the fixture happens to name.
+- Scope boundary: in scope -- the value grid, the scan runtime budget, and the recorded result. Out
+  of scope -- changing any shipped constant and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#one-pair-separates-and-the-other-fourteen-are-answered).
+
+### agent-policy-change-interaction-band-past-the-first-fold (optional)
+
+The band solver reports a fold step only when the episode compacts exactly ONCE there, because
+`summary_input_chars` is a sum over folds and the elision inequality is a statement about one
+offered transcript
+([extended workflows](current/extended-workflows/policy-constant-audit.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
+Every multi-fold geometry -- a deep episode under a small guard, which is the ordinary case away
+from the cap-fitting band -- is therefore reported as "no band" whether or not one exists, so the
+solver's negative answer is weaker than it reads. Give the probe a per-fold breakdown (the telemetry
+already counts `n_compactions`; the offered spans want recording per fold rather than summed), state
+the inequality against the FIRST fold whose elision the candidate share flips, and either widen the
+solved bands or record that the extra folds never separate.
+
+- Agent status: CLEAR
+- Dependencies: the summed telemetry is `summary_input_chars` in `ContextTelemetry`
+  (`src/llb/bench/agentic/context.py`), surfaced by `compact_fold_input_probe` in
+  `src/llb/bench/agentic_memory_boundary_probe.py`; the refusal is `_offered_at_fold_step` in
+  `src/llb/bench/agentic_policy_change_interaction_band.py`.
+- User-visible outcome: "no separating band at this depth" means no band exists rather than none
+  the solver can see.
+- Scope boundary: in scope -- per-fold offered spans, the multi-fold band arithmetic, and the test
+  that a known single-fold band is unchanged by the generalization. Out of scope -- changing any
+  shipped constant and re-running a published cell.
+- Documentation target:
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-compound-guarantee-has-a-geometry-that-tests-it).
 
 ### agent-policy-change-replay-untouched-fields-from-the-pins (optional)
 
@@ -81,7 +319,7 @@ because every design happens to `agree` with its pin today. A pin marked `restat
 `observation_cap_chars` or `observation_head_share` would silently make the baseline arm replay the
 design's stale value instead of the pinned one, which is the same class of bug the compound audit
 just closed, one level down
-([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
+([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
 Feed the untouched fields from the PINS when the caller has them (the gate always does), keep the
 design values as the fallback for a hand-run CLI audit, and add the fixture case that proves a
 `restated` pin on a held field moves the baseline arm.
@@ -97,37 +335,42 @@ design values as the fallback for a hand-run CLI audit, and add the fixture case
   the `restated`-pin fixture case. Out of scope -- changing any shipped constant or any pin value,
   and re-running a published cell.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
 
 ### agent-published-number-provenance-pins (optional)
 
 The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the
 numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
 fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
-find every affected figure by reading. Extend the pinning idea from constants to published values --
-a committed provenance fixture mapping each published agentic number to `(study kind, cell id,
-artifact path, metric)` -- and have the gate print the exact figures a drifted constant retires,
-not only the cells. The same fixture makes a second check cheap: assert every mapped artifact path
-still resolves, which catches a number whose evidence was garbage-collected.
+find every affected figure by reading. Extend the resolution the crossover design already carries --
+`(artifact, field)` per published value, resolved against the run aggregate the repo commits
+([extended
+workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap))
+-- from the six design values to the figures the DOCS publish, keyed additionally by study kind and
+cell id, and have the gate print the exact figures a drifted constant retires, not only the cells.
+Reuse the existing pointer walk and committed evidence rather than adding a second mapping.
 
 - Agent status: CLEAR
 - Dependencies: the cell ids and re-run scope come from
-  `src/llb/bench/agentic_policy_pin_gate.py`; the artifact paths are the run roots already recorded
-  in the evidence sections of
-  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+  `src/llb/bench/agentic_policy_pin_gate.py`; the resolution seam is
+  `src/llb/bench/agentic_published_value_provenance.py` with the committed aggregates in
+  `src/llb/bench/agentic_published_value_fixture.py` (field pointers, pinned copies, and the
+  refusal for an artifact the evidence does not carry); the artifact paths are the run roots
+  already recorded in the evidence sections of
+  [extended workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface).
 - User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody
   greps the docs to find what a change retired.
 - Scope boundary: in scope -- the provenance fixture, the figure list in the gate message, and the
   artifact-path resolution check. Out of scope -- rewriting any published figure automatically,
   re-running cells, and provenance for non-agentic evidence.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
 
 ### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
 
 The audit walks the three cap-fitting memory studies (22 cells) and nothing else, so "this change
 invalidates NO published number" is only true of that slice
-([extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates)).
+([extended workflows](current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates)).
 The context-policy constant sweep, the keep-long lane, and the harness-comparison rows rest on the
 same constants and are not walked, and the `keep_last_n` result advertises the gap: the audit calls
 keep=1 free precisely because no cap-fitting cell runs that policy, while the sweep that EXPOSED
@@ -135,7 +378,7 @@ keep=1 is built on cells that do. Extend the audit's study registry to those lan
 own cell-geometry reader and a task builder other than the memory-chain one -- so the invariance
 answer covers the evidence a `keep_last_n` or observation-cap change actually threatens. The CI pin
 gate now fails a build on that same registry
-([extended workflows](current/extended-workflows.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
+([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
 so widening it widens the gate's re-run scope at no extra wiring: both read
 `AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
 
@@ -150,7 +393,7 @@ so widening it widens the gate's re-run scope at no extra wiring: both read
   sweep and keep-long lanes, and their cells in the audit. Out of scope -- re-running anything the
   wider audit invalidates, and changing any shipped constant.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#what-a-policy-constant-change-invalidates).
+  [extended workflows](current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates).
 
 ### agent-context-policy-imperfect-play-guard-margin (optional)
 
@@ -162,7 +405,7 @@ the run. Price that gap instead of leaving it implicit: extend the probe to the 
 budget allows (max steps rather than depth), record the measured extra steps per episode from the
 existing bundles, and turn the difference into a stated safety margin the design validation applies
 when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
-bound-invariant ([extended workflows](current/extended-workflows.md#published-crossovers-under-the-shipped-cap)),
+bound-invariant ([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)),
 which inherits the identical perfect-play limitation: a longer real transcript can reach a
 summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
 verdict too and state the invariance for the worst case the step budget allows.
@@ -179,20 +422,21 @@ verdict too and state the invariance for the worst case the step budget allows.
   the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
   interpolation rule, or relaxing the activation floor.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface).
+  [extended workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface).
 
 ### agent-context-policy-summary-elision-under-the-window-bound (optional)
 
 The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
 fit the resolved window, which no cap-fitting ladder reaches: every cell measured so far folds a
 transcript comfortably under the guard, so the shipped bound's elision path is unexercised
-([extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned)). That
-is the regime where an elision is unavoidable rather than incidental, and it is the one where the
-completion cost of losing the middle of a folded transcript actually matters. Build a geometry whose
-folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a larger
-`pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound elides
-there, and read completion against a control whose transcript fits -- the answer says whether an
-unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
+([extended
+workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned)).
+That is the regime where an elision is unavoidable rather than incidental, and it is the one where
+the completion cost of losing the middle of a folded transcript actually matters. Build a geometry
+whose folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a
+larger `pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound
+elides there, and read completion against a control whose transcript fits -- the answer says whether
+an unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
 head-and-tail trim.
 
 - Agent status: RUN NEEDED
@@ -204,14 +448,14 @@ head-and-tail trim.
   completion reading. Out of scope -- implementing a new folding strategy (that is what the reading
   would justify), and changing the shipped bound.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-summarize-input-cap-is-step-aligned).
+  [extended workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 
 Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
 out of the cost once the trigger is fixed: after the first summary, trigger hysteresis raises the
 next trigger to the full guard, and no tested transcript grows back that far
-([extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis)).
+([extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis)).
 The trigger-only rule is therefore established only in the one-fold regime, and the regime where
 compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
 (or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
@@ -231,7 +475,7 @@ other way the guard could re-enter.
   family inside it, and the validity statement. Out of scope -- new families, new task shapes, and
   changing shipped compaction hysteresis.
 - Documentation target:
-  [extended workflows](current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis).
+  [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
 
 ### agent-operating-profile-recommendation
 
@@ -251,14 +495,17 @@ is the whole failure mode a composed profile invites.
 
 - Agent status: RUN NEEDED
 - Dependencies: the
-  [agent loop-policy recommendation](current/extended-workflows.md#agent-loop-policy-recommendation)
+  [agent loop-policy
+  recommendation](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
   supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
-  ([extended workflows](current/extended-workflows.md#agent-context-management-policies)), and for
-  memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary surface
-  ([extended workflows](current/extended-workflows.md#cap-fitting-boundary-surface)); the
-  rest are current behavior. Reuse `src/llb/board/recommend/`
-  (sections, build, render), the adapter registry's `staleness()` and its retrieval-fingerprint axis
-  ([extended workflows](current/extended-workflows.md#staleness)), and the shared borderline
+  ([extended
+  workflows](current/extended-workflows/agent-context-policies.md#agent-context-management-policies)),
+  and for memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary
+  surface ([extended
+  workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface)); the
+  rest are current behavior. Reuse `src/llb/board/recommend/` (sections, build, render), the adapter
+  registry's `staleness()` and its retrieval-fingerprint axis ([extended
+  workflows](current/extended-workflows/adapter-registry.md#staleness)), and the shared borderline
   vocabulary in `src/llb/rag/fusion_evidence/stability.py` so a field resting on a knife-edge row is
   marked the same way every lane marks it.
 - User-visible outcome: one artifact an operator (or a runtime) can act on, where every recommended
@@ -285,20 +532,20 @@ is the whole failure mode a composed profile invites.
 ### reranker-bake-off
 
 The cross-encoder is pinned to one model (`BAAI/bge-reranker-v2-m3`, `DEFAULT_RERANKER` in
-`src/llb/rag/rerank.py`) and has never been compared with anything, while the adoption evidence shows
-the reranked cell is where a retrieval change actually reaches the answer for some models
-([RAG core](current/rag-core.md#the-scoped-first-hit-rank-adoption-bar)). A reranker is also the
-cheapest place to buy first-hit rank on a 16 GiB host, and the multilingual cross-encoder field has
-moved. Bake off the current candidates that cover Ukrainian -- `BAAI/bge-reranker-v2-m3` (incumbent),
-`jinaai/jina-reranker-v2-base-multilingual`, `Alibaba-NLP/gte-multilingual-reranker-base`,
-`mixedbread-ai/mxbai-rerank-base-v2`, `Qwen/Qwen3-Reranker-0.6B` -- on the accepted ledger at a fixed
-encoder and chunking, reporting recall@k / MRR / first-hit rank with the standard paired verdict plus
-the cost columns a reranker is actually chosen on (rerank latency per query, VRAM while the generator
-is resident).
+`src/llb/rag/rerank.py`) and has never been compared with anything, while the adoption evidence
+shows the reranked cell is where a retrieval change actually reaches the answer for some models
+([RAG core](current/rag-core/first-hit-rank-adoption.md#the-scoped-first-hit-rank-adoption-bar)). A
+reranker is also the cheapest place to buy first-hit rank on a 16 GiB host, and the multilingual
+cross-encoder field has moved. Bake off the current candidates that cover Ukrainian --
+`BAAI/bge-reranker-v2-m3` (incumbent), `jinaai/jina-reranker-v2-base-multilingual`,
+`Alibaba-NLP/gte-multilingual-reranker-base`, `mixedbread-ai/mxbai-rerank-base-v2`,
+`Qwen/Qwen3-Reranker-0.6B` -- on the accepted ledger at a fixed encoder and chunking, reporting
+recall@k / MRR / first-hit rank with the standard paired verdict plus the cost columns a reranker is
+actually chosen on (rerank latency per query, VRAM while the generator is resident).
 
 - Agent status: RUN NEEDED
 - Dependencies: reuse the paired lane and verdict machinery documented in
-  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict); this task feeds
+  [RAG core](current/rag-core/retrieval-metrics.md#paired-lane-uncertainty-and-verdict); this task feeds
   `embedder-decision-on-a-resolvable-item-set`. Reuse `CrossEncoderReranker` and the `+rerank` row
   seam in `src/llb/rag/compare.py`.
 - User-visible outcome: the shipped reranker is a measured choice with a cost, not a default nobody
@@ -315,14 +562,14 @@ is resident).
 - Acceptance gates: `make ci` green; every candidate is scored on the identical item set at the same
   seed with its own documented query/passage input format; each row carries a paired delta against
   the incumbent plus rerank latency; the report states keep or swap and names the cost of the swap.
-- Documentation target: [RAG core](current/rag-core.md#reranking-and-context-order-rerank-context-order)
+- Documentation target: [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order)
   and the recommendation line in [platform matrix](current/platform-vector-matrix.md).
 
 ### embedder-candidate-roster-refresh
 
 The bake-off's default candidate list is the 2023-2024 multilingual generation, and the paired lane
 now says the choice is undecidable on the item sets the repo has partly because the candidates are
-close together ([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)).
+close together ([RAG core](current/rag-core/embedders.md#the-recommendation-re-read-with-paired-uncertainty)).
 Add the current multilingual retrieval encoders that fit a 16 GiB host beside the incumbents --
 `intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
 `jinaai/jina-embeddings-v3`, `Qwen/Qwen3-Embedding-0.6B` -- and register each one's convention
@@ -331,7 +578,7 @@ substring, so `multilingual-e5-large-instruct` currently resolves to the plain `
 be scored with the plain `query:` / `passage:` prefixes instead of its instruction format, and an
 unrecognized id
 falls through to `plain` with no instruction at all -- the exact silent recall loss the family table
-exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-off)).
+exists to prevent ([RAG core](current/rag-core/embedders.md#embedder-conventions-and-bake-off)).
 
 - Agent status: RUN NEEDED
 - Dependencies: none, but the decision it feeds is `embedder-decision-on-a-resolvable-item-set`.
@@ -359,7 +606,7 @@ exists to prevent ([RAG core](current/rag-core.md#embedder-conventions-and-bake-
 ### cross-lingual-query-lane
 
 The query-robustness lane perturbs CHARACTERS -- transliteration, apostrophe variants, mixed script,
-keyboard typos ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark))
+keyboard typos ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark))
 -- and never changes the LANGUAGE of the query. Ukrainian deployments routinely receive Russian and
 code-switched questions against a Ukrainian corpus, and the repo already treats Russian as a
 first-class second language on the security side, where a model that refuses in Ukrainian and
@@ -421,16 +668,16 @@ is decided the same way an embedder swap now is.
 
 ### graph-lane-score-ties (optional)
 
-The graph lane's own recall is decided by tie order for two thirds of the questions it is scored
-on: its link-relevance scores saturate into long exact-tie blocks, the rank-k cut falls inside one
-for 68 of 95 items (33 of 35 on the multi-hop slice), and that is what sets the fusion sweep's
-whole measurement floor at `+/-0.021` recall@10 overall and `+/-0.043` on the focus slice
-([GraphRAG](current/graphrag-backend.md#the-sweep-re-read-against-its-measurement-floor)). The
-ranking is reproducible -- `_rank_dedup` breaks ties on `(doc_id, char_start, char_end)` -- but a
-document id is not a relevance signal, so every graph-only row is quoted to three decimals it has
-not earned. Find out whether the tie blocks are reducible: measure how much of each tie block is
-one relevance value versus rounding, and if a finer signal exists (edge weight, hop distance,
-mention count, community rank as a continuous term rather than a bucket) score the lane with it and
+The graph lane's own recall is decided by tie order for two thirds of the questions it is scored on:
+its link-relevance scores saturate into long exact-tie blocks, the rank-k cut falls inside one for
+68 of 95 items (33 of 35 on the multi-hop slice), and that is what sets the fusion sweep's whole
+measurement floor at `+/-0.021` recall@10 overall and `+/-0.043` on the focus slice
+([GraphRAG](current/graphrag-backend/fusion-sweep-evidence.md#the-sweep-re-read-against-its-measurement-floor)).
+The ranking is reproducible -- `_rank_dedup` breaks ties on `(doc_id, char_start, char_end)` -- but
+a document id is not a relevance signal, so every graph-only row is quoted to three decimals it has
+not earned. Find out whether the tie blocks are reducible: measure how much of each tie block is one
+relevance value versus rounding, and if a finer signal exists (edge weight, hop distance, mention
+count, community rank as a continuous term rather than a bucket) score the lane with it and
 re-measure the floor.
 
 - Agent status: RUN NEEDED
@@ -456,19 +703,19 @@ Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on ever
 recorded winner (`sentence`, +0.022 recall@10 over `recursive`) was scored on stores that still
 contained oversized units, and the unit-packing strategies are exactly the ones the cap changes:
 their chunk counts rise and their long table/heading spans are now split
-([RAG core](current/rag-core.md#chunking-strategies)). The ranking may hold, invert, or collapse
+([RAG core](current/rag-core/chunking.md#chunking-strategies)). The ranking may hold, invert, or collapse
 into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
 the same k and record whether the `sentence` recommendation survives. A second reason to re-run:
 those stores also predate exact-duplicate chunk collapse, which changes the chunk counts per
 strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the goods rows and drove
-that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-collapse)).
+that corpus's floor to zero ([RAG core](current/rag-core/retrieval-store.md#duplicate-chunk-collapse)).
 
 - Agent status: RUN NEEDED
 - Dependencies: use the paired verdict in
-  [RAG core](current/rag-core.md#paired-lane-uncertainty-and-verdict), because the recorded
-  winner's margin is smaller than one item on the sets involved. Reuse `make compare-retrieval`
-  with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own floor
-  ([RAG core](current/rag-core.md#measurement-floor---noise-floor)).
+  [RAG core](current/rag-core/retrieval-metrics.md#paired-lane-uncertainty-and-verdict), because the
+  recorded winner's margin is smaller than one item on the sets involved. Reuse `make
+  compare-retrieval` with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own
+  floor ([RAG core](current/rag-core/retrieval-metrics.md#measurement-floor---noise-floor)).
 - User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
   `size` the operator asked for.
 - Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
@@ -486,26 +733,25 @@ that corpus's floor to zero ([RAG core](current/rag-core.md#duplicate-chunk-coll
 Every fused row measured so far -- every weight, both depths, both identity policies -- retrieves
 BOTH hops for at most 3 of 35 two-hop questions (`all-spans@10` <= 0.086), while single-hop recall
 moves freely between 0.686 and 0.800
-([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). That ceiling is invariant to
-every ranking knob the lane exposes, which means it is probably not a ranking problem: either the
-second hop's chunk is not retrievable for the question's own wording (a query problem, addressable
-by decomposition), or it is not reachable at k=10 at all (a budget problem). Diagnose which:
-measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same items, and measure the
-per-hop retrievability of each labeled span when queried on its own. Record which of the two
-explanations the corpus supports, because they lead to opposite fixes.
+([GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#span-identity-evidence)). That
+ceiling is invariant to every ranking knob the lane exposes, which means it is probably not a
+ranking problem: either the second hop's chunk is not retrievable for the question's own wording (a
+query problem, addressable by decomposition), or it is not reachable at k=10 at all (a budget
+problem). Diagnose which: measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same
+items, and measure the per-hop retrievability of each labeled span when queried on its own. Record
+which of the two explanations the corpus supports, because they lead to opposite fixes.
 
 A third lead is already measured and worth folding into the k sweep: shrinking the CHUNK moves the
-ceiling where no ranking knob could, the vector baseline's multi-hop `all-spans@10` running
-0.057 -> 0.086 -> 0.114 as the chunking goes from `recursive@800/120` to `sentence@200` to
-`recursive@200/30`
-([GraphRAG](current/graphrag-backend.md#does-the-pin-survive-a-smaller-chunk-size)) -- which points
-at the budget explanation, since k=10 buys more distinct spans when a span is smaller. Overall
-recall falls at the same time, so treat it as a diagnostic, not a recommendation.
+ceiling where no ranking knob could, the vector baseline's multi-hop `all-spans@10` running 0.057 ->
+0.086 -> 0.114 as the chunking goes from `recursive@800/120` to `sentence@200` to `recursive@200/30`
+([GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#does-the-pin-survive-a-smaller-chunk-size))
+-- which points at the budget explanation, since k=10 buys more distinct spans when a span is
+smaller. Overall recall falls at the same time, so treat it as a diagnostic, not a recommendation.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,
   the sweep lane, and the existing query-decomposition step in
-  [RAG core](current/rag-core.md#query-side-processing-uk-query-processing).
+  [RAG core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing).
 - User-visible outcome: the operator learns whether multi-hop evidence coverage is limited by the
   retrieval budget or by the query, instead of tuning ranking knobs that provably cannot move it.
 - Scope boundary: in scope -- the k sweep, the per-hop probe, and a written diagnosis. Out of scope
@@ -517,21 +763,21 @@ recall falls at the same time, so treat it as a diagnostic, not a recommendation
 - Acceptance gates: `make ci` green; the report carries `all-spans@k` per budget and the per-hop
   hit rate, and states which explanation the measurement supports.
 - Documentation target: the graph-vector fusion evidence section of
-  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+  [GraphRAG](current/graphrag-backend.md).
 
 ### answer-side-span-coverage-metric
 
 The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
-`all_spans_at_k`, [RAG core](current/rag-core.md#retrieval-metrics)); the ANSWER side has no such
-distinction. `objective_score` is reference-answer token F1, so a two-hop answer that states one
-fact fluently and omits the other scores roughly half -- the same value a vague answer touching
-both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric that cannot
-say whether the model used both hops, which is precisely the question the lane exists to ask
-([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)). Build the answer-side
-counterpart: per gold span, decide whether the ANSWER carries that span's content (lemma and
-numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the correctness
-tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the objective and let
-the multi-hop verdict read them.
+`all_spans_at_k`, [RAG core](current/rag-core/retrieval-metrics.md#retrieval-metrics)); the ANSWER
+side has no such distinction. `objective_score` is reference-answer token F1, so a two-hop answer
+that states one fact fluently and omits the other scores roughly half -- the same value a vague
+answer touching both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric
+that cannot say whether the model used both hops, which is precisely the question the lane exists to
+ask ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)). Build
+the answer-side counterpart: per gold span, decide whether the ANSWER carries that span's content
+(lemma and numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the
+correctness tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the
+objective and let the multi-hop verdict read them.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the scoring tokenizer in `src/llb/scoring/correctness.py`, the
@@ -550,8 +796,8 @@ the multi-hop verdict read them.
 - Acceptance gates: `make ci` green; on single-span items the answer-side coverage agrees with the
   existing exact/contains signals; the multi-hop re-run reports the new columns with paired
   intervals and states whether they change the recorded verdict.
-- Documentation target: [RAG core](current/rag-core.md#scoring) and the answer-quality evidence
-  subsection of [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+- Documentation target: [RAG core](current/rag-core/scoring.md#scoring) and the answer-quality evidence
+  subsection of [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
 
 ### fusion-answer-quality-second-model (optional)
 
@@ -561,7 +807,7 @@ a measured coverage gain that one model ignores may be exactly what a stronger (
 instruction-following) model needs, and a single-model result cannot separate "fusion does not
 help answers" from "this model does not use the extra hop". The lane, its verdict vocabulary, and
 the drafted-grounding rules are current behavior
-([GraphRAG](current/graphrag-backend.md#answer-quality-evidence)).
+([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)).
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `compare-answer-quality` as-is with a different `MODEL`; the matched
@@ -580,7 +826,7 @@ the drafted-grounding rules are current behavior
   the report states whether the two models agree on the verdict per lane, including whether the
   factoid cost of the overlap row reproduces.
 - Documentation target: the answer-quality evidence subsection of
-  [GraphRAG](current/graphrag-backend.md#answer-quality-evidence).
+  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
 
 ### retrieved-document-long-context-lane
 
@@ -596,7 +842,7 @@ and the part that was pure oracle advantage.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the context-source seam, `fits_context_chars`, and the comparison in
-  [RAG core](current/rag-core.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
+  [RAG core](current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
 - User-visible outcome: the operator learns whether "retrieve the chunk, send the document" is a
   real configuration worth shipping, or whether the long-context gain was the gold label all along.
 - Scope boundary: in scope -- the strategy, its document-selection rule (top-1 versus top-k
@@ -615,14 +861,14 @@ and the part that was pure oracle advantage.
 
 A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
 same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
-the `rag` and `long_context` lanes were byte-identical
-([RAG core](current/rag-core.md#context-ablation-evidence)). An ungrounded prompt leaves a much
-flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift stayed well
-inside the uplift interval and changed no verdict, but a contamination rate quoted to one decimal
-place is currently over-stated precision. Measure it: repeat the closed-book lane N times at a
-fixed seed, report the between-repeat spread of the lane mean and of the contamination rate, and
-either quote the ablation's closed-book numbers with that spread or make the lane reproducible
-(pinned sampler / seeded backend options) if the backend allows it.
+the `rag` and `long_context` lanes were byte-identical ([RAG
+core](current/rag-core/context-ablation.md#context-ablation-evidence)). An ungrounded prompt leaves
+a much flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift
+stayed well inside the uplift interval and changed no verdict, but a contamination rate quoted to
+one decimal place is currently over-stated precision. Measure it: repeat the closed-book lane N
+times at a fixed seed, report the between-repeat spread of the lane mean and of the contamination
+rate, and either quote the ablation's closed-book numbers with that spread or make the lane
+reproducible (pinned sampler / seeded backend options) if the backend allows it.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
@@ -642,13 +888,13 @@ either quote the ablation's closed-book numbers with that spread or make the lan
 ### context-ablation-question-type-slices (optional)
 
 The context ablation slices by question type, but the committed UA fixture ships no
-`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane
-([RAG core](current/rag-core.md#context-ablation-evidence)). Pooling hides the question the lane is
-most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose answer is
-one span versus a comparative or numeric question whose evidence is scattered. Run the ablation on
-a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted multi-hop
-bundle) so the uplift and the long-context delta are reported per slice, and record which slices
-retrieval fails to pay for.
+`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane ([RAG
+core](current/rag-core/context-ablation.md#context-ablation-evidence)). Pooling hides the question
+the lane is most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose
+answer is one span versus a comparative or numeric question whose evidence is scattered. Run the
+ablation on a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted
+multi-hop bundle) so the uplift and the long-context delta are reported per slice, and record which
+slices retrieval fails to pay for.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. The slicing is already wired; this needs a labeled item set and the run.
@@ -713,8 +959,8 @@ other encoder.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse the embedder conventions and bake-off in
-  [RAG core](current/rag-core.md#embedder-conventions-and-bake-off), the lexical index for hard
-  negatives, and the split-guard pattern in `src/llb/finetune/hparam_search/`.
+  [RAG core](current/rag-core/embedders.md#embedder-conventions-and-bake-off), the lexical index for
+  hard negatives, and the split-guard pattern in `src/llb/finetune/hparam_search/`.
 - User-visible outcome: a corpus-adapted Ukrainian retriever the operator can adopt with measured
   final-split evidence, closing the recall gap on domain terms the general E5 encoder misses.
 - Scope boundary: in scope -- pair export, the trainer, the manifest, bake-off integration, and
@@ -730,7 +976,7 @@ other encoder.
   a heavy CUDA run trains on the quickstart tuning split and reports tuned-vs-base recall@10 /
   MRR on the held-out final split, where the adopt-or-keep-base verdict is the bake-off's own
   paired one -- the tuned row must clear zero against the base encoder, not merely outrank it
-  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
+  ([RAG core](current/rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
 - Documentation target: [RAG core](current/rag-core.md) embedder section and
   [extended workflows](current/extended-workflows.md) for the trainer lane.
 
@@ -746,7 +992,7 @@ so a small-sample rank reversal cannot silently change the recommended model.
 - Agent status: RUN NEEDED
 - Dependencies: use the roster/runtime behavior in
   [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh) and the
-  bounded baseline in [evaluation rigor](current/rigor-board-judge.md#joint-model--config-search).
+  bounded baseline in [evaluation rigor](current/rigor-board-judge/tuning-and-search.md#joint-model--config-search).
 - User-visible outcome: a stable refreshed-roster recommendation with uncertainty, public-task
   coverage, and an explicit adopt-or-retain verdict.
 - Scope boundary: in scope -- larger private joint search, public-screen lanes, uncertainty, and
@@ -765,7 +1011,7 @@ so a small-sample rank reversal cannot silently change the recommended model.
 Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
 final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
 noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
-the lane ([evaluation rigor](current/rigor-board-judge.md#ukrainian-query-robustness-benchmark)).
+the lane ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark)).
 The split noise classes sharpen the diagnosis: on the `apostrophe_variant` class the `normalize`
 lane loses an item (0.9756 -> 0.9634 recall@10) even though the affected-items table shows all 6
 perturbed questions retrieved perfectly in every lane -- the loss is on questions the noise class
@@ -795,11 +1041,12 @@ folded text -- the `retrieve_queries` seam already carries separate dense and le
 The restoration constraints ship with three unswept design constants: the surface-compatibility
 budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
 ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
-context ([RAG core](current/rag-core.md#query-side-processing-uk-query-processing)). Each was chosen
-to be conservative, and nothing measures what the conservatism costs: a budget of 1 admits a token
-that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words stay
-untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and the
-edit-precision audit per setting, and pin each value with evidence or expose it.
+context ([RAG
+core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing)). Each was
+chosen to be conservative, and nothing measures what the conservatism costs: a budget of 1 admits a
+token that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words
+stay untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and
+the edit-precision audit per setting, and pin each value with evidence or expose it.
 
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `select_restoration` in `src/llb/rag/query_prep/restore.py` and the
@@ -820,15 +1067,15 @@ edit-precision audit per setting, and pin each value with evidence or expose it.
 **Research task** -- the answer is not known in advance, and a negative result is a valid outcome
 that must be recorded rather than worked around.
 
-Find a defensible independent null for corpus-conflict detection, so the semantic tier can report
-a real false-positive rate instead of a rank cutoff. The current calibration measures the
-similarity distribution of the corpus's own comparable cross-document pairs, which contains
-whatever genuine duplicates the corpus has; with the pair space enumerated exactly the null and
-the observed population are the same set, empirical FDR is identically 1.000 at every threshold,
-and a budget of `N` returns exactly `N` pairs by construction (measured; see
-[data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)). Every downstream
-question an operator asks -- "is this pair worth reading?", "did tightening the threshold remove
-noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
+Find a defensible independent null for corpus-conflict detection, so the semantic tier can report a
+real false-positive rate instead of a rank cutoff. The current calibration measures the similarity
+distribution of the corpus's own comparable cross-document pairs, which contains whatever genuine
+duplicates the corpus has; with the pair space enumerated exactly the null and the observed
+population are the same set, empirical FDR is identically 1.000 at every threshold, and a budget of
+`N` returns exactly `N` pairs by construction (measured; see [data
+prep](current/data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null)). Every
+downstream question an operator asks -- "is this pair worth reading?", "did tightening the threshold
+remove noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
 answer.
 
 Candidate approaches to evaluate, cheapest first; none is known to work:
@@ -851,10 +1098,10 @@ Candidate approaches to evaluate, cheapest first; none is known to work:
 
 - Agent status: RUN NEEDED
 - Dependencies: the calibrated threshold and the enumerated distribution are current behavior
-  ([data prep](current/data-prep.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
+  ([data prep](current/data-prep/conflict-detection.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
   Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
   fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
-  post-filter population in [data prep](current/data-prep.md#what-the-semantic-tier-excludes-and-why).
+  post-filter population in [data prep](current/data-prep/conflict-detection.md#what-the-semantic-tier-excludes-and-why).
 - User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
   recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
   would justify moving threshold selection to the claim tier's measured precision instead.
@@ -882,7 +1129,7 @@ The RAG answer path emits FREE TEXT and every answer-side signal is recovered fr
 the fact by a heuristic: `classify_response` maps a completion to a status with regex markers,
 `is_abstention` reads first-person refusal stems, `parse_citations` scrapes `[i]` markers out of
 prose, and groundedness re-segments the answer into "sentence-ish claims" by punctuation
-([RAG core](current/rag-core.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
+([RAG core](current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
 The repo already validates typed model output with Pydantic -- but only inside the structured-output
 BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
 the completion satisfies it (`src/llb/scoring/structured_schema.py`); nothing on the answer path an
@@ -910,11 +1157,12 @@ status rather than being scored as a wrong answer.
   statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
   envelope, because the two call for different fixes and today collapse into one number), one
   bounded `repair_once` reprompt carrying the validation error (the same policy shape measured by
-  the [agent loop-policy lane](current/extended-workflows.md#agent-loop-policy-recommendation) for
-  tool calls), the per-case columns, and a
-  roster conformance study. Out of scope -- any SEMANTIC check on the envelope's contents (that is
-  `ontology-validated-answer-gate`), changing the headline objective, constrained/grammar decoding
-  in the backends, and making the envelope the default before the study supports it.
+  the [agent loop-policy
+  lane](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
+  for tool calls), the per-case columns, and a roster conformance study. Out of scope -- any
+  SEMANTIC check on the envelope's contents (that is `ontology-validated-answer-gate`), changing the
+  headline objective, constrained/grammar decoding in the backends, and making the envelope the
+  default before the study supports it.
 - Data and artifact paths: additive per-case columns (`envelope_status`, `n_claims`, `repaired`) in
   the standard `$DATA_DIR/run-eval/` bundles; the conformance study under
   `$DATA_DIR/answer-envelope/<run>/`.
@@ -929,8 +1177,8 @@ status rather than being scored as a wrong answer.
   already respects it; an envelope answer's objective score matches the free-text score of the same
   `answer` string.
 - Documentation target: the scoring and groundedness sections of
-  [RAG core](current/rag-core.md#scoring), plus a validation-architecture subsection that names the
-  boundary.
+  [RAG core](current/rag-core/scoring.md#scoring), plus a validation-architecture subsection that
+  names the boundary.
 
 ### ontology-axiom-layer
 
@@ -1045,7 +1293,7 @@ declining the hard items looks like a win.
   false-rejection rate under that verdict, and every class that does not is recorded as measured-and-
   not-adopted; an unsigned axiom file is refused with a named error rather than silently enabled.
 - Documentation target: a two-step answer-validation section in
-  [RAG core](current/rag-core.md#scoring) beside the groundedness metrics, and the adopt-or-reject
+  [RAG core](current/rag-core/scoring.md#scoring) beside the groundedness metrics, and the adopt-or-reject
   record per axiom class in [product decisions](current/scope-boundaries.md).
 
 ### thinking-suppression-and-answer-language-guard
@@ -1064,7 +1312,7 @@ throughput baseline in [backend telemetry](current/backend-telemetry.md).
 - Agent status: RUN NEEDED
 - Dependencies: the throughput protocol in
   [backend telemetry](current/backend-telemetry.md#telemetry-fields) and the correctness/reliability
-  fields in [RAG core](current/rag-core.md#scoring).
+  fields in [RAG core](current/rag-core/scoring.md#scoring).
 - User-visible outcome: a run bundle shows how many answers leaked reasoning or answered in the
   wrong language, per model, instead of silently scoring them as ordinary content.
 - Scope boundary: in scope -- the detection flags, their manifest fields, and a per-model
@@ -1076,7 +1324,7 @@ throughput baseline in [backend telemetry](current/backend-telemetry.md).
   carries an explicit suppression verdict, including the tags where no leak was observed.
 - Documentation target: the roster baseline in
   [backend telemetry](current/backend-telemetry.md) and the scoring fields in
-  [RAG core](current/rag-core.md#scoring).
+  [RAG core](current/rag-core/scoring.md#scoring).
 
 ### gemma4-gguf-runner-gap (optional)
 
@@ -1113,10 +1361,10 @@ requires human judgment or authorization.
 
 ### embedding-clustered chunk merging (optional)
 
-The measured near-duplicate residue is real but not text-reachable: on the goods corpus 20.7% of
-the exact-collapsed chunks have a neighbour at cosine >= 0.99, and the `normalized` collapse tier
-merges 26 of those 13105 pairs
-([RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers)). Only an
+The measured near-duplicate residue is real but not text-reachable: on the goods corpus 20.7% of the
+exact-collapsed chunks have a neighbour at cosine >= 0.99, and the `normalized` collapse tier merges
+26 of those 13105 pairs ([RAG
+core](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers)). Only an
 embedding-side merge can reach the rest, which the collapse lane deliberately does not do because a
 false merge silently deletes a distinct passage from the index. Decide it with a measured
 false-merge rate instead of by assumption: cluster the survivors by cosine at several thresholds,
@@ -1140,19 +1388,19 @@ on a corpus whose facts differ by one number.
 - Acceptance gates: `make ci` green; the report carries the per-threshold recall against the floor,
   the fragile count, and the human's false-merge reading.
 - Documentation target:
-  [RAG core](current/rag-core.md#near-duplicate-residue-and-the-collapse-tiers).
+  [RAG core](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers).
 
 ### goods-fusion-weight-accepted-ledger
 
-Settle the goods-corpus fusion-weight verdict on an item set someone accepted. The recorded
-verdict ("the BM25 side costs recall at w=0.5, pin `FUSION_WEIGHT=0.7`") was measured on a
-verified 44-item quickstart-PDF accepted goldset that is no longer on disk, and the lexical-row
-re-read could not reproduce it: on the SAME corpus at the SAME chunking, the 95-item drafted
-goldset inverts it -- fusion ADDS recall at w=0.5 (+0.021, +0.053 with lemmas, against a
-+/-0.000 floor) and w=0.7 is the worst of the three weights for the best row
-([RAG core](current/rag-core.md#lexical-row-re-read-of-the-fusion-weight-verdict)). The pin is
-already withdrawn; what remains is deciding whether the recorded verdict was an artifact of its
-item set or of the drafting, which only an accepted ledger over that corpus can answer.
+Settle the goods-corpus fusion-weight verdict on an item set someone accepted. The recorded verdict
+("the BM25 side costs recall at w=0.5, pin `FUSION_WEIGHT=0.7`") was measured on a verified 44-item
+quickstart-PDF accepted goldset that is no longer on disk, and the lexical-row re-read could not
+reproduce it: on the SAME corpus at the SAME chunking, the 95-item drafted goldset inverts it --
+fusion ADDS recall at w=0.5 (+0.021, +0.053 with lemmas, against a +/-0.000 floor) and w=0.7 is the
+worst of the three weights for the best row ([RAG
+core](current/rag-core/hybrid-retrieval.md#lexical-row-re-read-of-the-fusion-weight-verdict)). The
+pin is already withdrawn; what remains is deciding whether the recorded verdict was an artifact of
+its item set or of the drafting, which only an accepted ledger over that corpus can answer.
 
 - Agent status: HUMAN-GATED
 - Dependencies: none in code -- `make compare-retrieval HYBRID=1 NOISE_FLOOR=1` and the
@@ -1176,19 +1424,20 @@ item set or of the drafting, which only an accepted ledger over that corpus can 
   identical accepted item set with the `lexical` row and the corpus's floor; the recorded table is
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
-  [RAG core](current/rag-core.md#hybrid-retrieval-dense--bm25--rrf).
+  [RAG core](current/rag-core/hybrid-retrieval.md#hybrid-retrieval-dense--bm25--rrf).
 
 ### fusion-routing-calibration-power (optional)
 
 Increase the sidecar-free routing calibration's statistical power before reconsidering its
 production defaults. The first held-out measurement cannot separate its positive retrieval deltas
 from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend.md#sidecar-free-heuristic-calibration). Assemble a larger,
-independent multi-span tuning/final ledger, declare its minimum detectable gain and split sizes
-before retrieval, then repeat the frozen-policy workflow without widening the threshold grid.
+[GraphRAG](current/graphrag-backend/answer-quality-evidence.md#sidecar-free-heuristic-calibration).
+Assemble a larger, independent multi-span tuning/final ledger, declare its minimum detectable gain
+and split sizes before retrieval, then repeat the frozen-policy workflow without widening the
+threshold grid.
 
 - Agent status: BLOCKED BY HUMAN
-- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+- Dependencies: the [shared paired-power contract](current/rag-core/paired-verdicts.md#paired-power-contract-for-comparison-lanes)
   supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
   non-empty accepted multi-span ledger. Human
   step that gates completion: accept enough additional genuinely multi-span questions to meet the
@@ -1212,7 +1461,7 @@ before retrieval, then repeat the frozen-policy workflow without widening the th
 
 Calibrate the fact/format tradeoff against adversarial context-copy answers and human pairwise
 utility labels, then retain or revise the declared weight without changing the decomposition
-contract ([current scoring](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)).
+contract ([current scoring](current/rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy)).
 Sweep predeclared weights over matched terse, fluent-but-wrong, verbose-supported, and
 context-copy cases; measure agreement with the accepted labels and stability across model
 families; require a held-out confirmation before changing the default.
@@ -1231,41 +1480,41 @@ families; require a held-out confirmation before changing the default.
 - Acceptance gates: `make ci` green; all answer-shape strata are represented; held-out agreement
   and confidence intervals are reported per family; any default-weight change names every roster
   rank it changes.
-- Documentation target: [RAG core](current/rag-core.md#headline-decomposition-and-declared-ranking-policy)
+- Documentation target: [RAG core](current/rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy)
   and the ranking policy in [evaluation rigor](current/rigor-board-judge.md).
 
 ### embedder-decision-on-a-resolvable-item-set
 
-The embedder choice is undecidable on the item sets the repo currently has, and the paired lane
-says so precisely: on the accepted converted-PDF ledger 36 of 40 questions are TIED between the
-leader and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a
-consistent ~4-question gap could ever clear zero; on the committed fixture the baseline already
-retrieves 0.980, leaving 5 questions of headroom for any candidate to win
-([RAG core](current/rag-core.md#the-recommendation-re-read-with-paired-uncertainty)). The sub-base
-roster addition `intfloat/multilingual-e5-small` is ~3x faster on warm CUDA with flat quality on
-n=82 and still RETAIN
-([RAG core](current/rag-core.md#blackwell-sub-base-encoder-roster-e5-small)) -- include it when the
-enriched ledger re-runs so a cheap CUDA swap can clear an adoption bar if the discordance is there.
-Both existing sets are
-at their ceiling, which is a property of the QUESTIONS, not of the encoders. Build an item set that
-can decide it: predeclare a minimum detectable recall gain and the split size it needs, then
-assemble a ledger enriched with questions the incumbent currently MISSES (mine the per-item vectors
-in `report.json` for baseline zeros, plus domain-term and morphology-heavy questions the general E5
-encoder is expected to fail), accept it through the verification gate, and re-run the bake-off on
-it. Record whether any candidate then separates -- a recorded "still undecidable at n=N" is a valid
-outcome and is what would justify closing the question. The size the ENRICHMENT has to buy is
-already priced: the withdrawn `e5-large` adopt differs on 5 of 250 items, and at that rate the
-reporting level needs 300 items, which no committed goldset reaches -- so plain "more questions" is
-not the route, raising the discordance rate is (double the rate, halve the floor)
-([the re-decision](current/rag-core.md#the-re-decision-what-a-withdrawn-reading-needs)).
+The embedder choice is undecidable on the item sets the repo currently has, and the paired lane says
+so precisely: on the accepted converted-PDF ledger 36 of 40 questions are TIED between the leader
+and the incumbent, so the 95% paired interval spans `[-0.050, +0.150]` and only a consistent
+~4-question gap could ever clear zero; on the committed fixture the baseline already retrieves
+0.980, leaving 5 questions of headroom for any candidate to win ([RAG
+core](current/rag-core/embedders.md#the-recommendation-re-read-with-paired-uncertainty)). The
+sub-base roster addition `intfloat/multilingual-e5-small` is ~3x faster on warm CUDA with flat
+quality on n=82 and still RETAIN ([RAG
+core](current/rag-core/embedders.md#blackwell-sub-base-encoder-roster-e5-small)) -- include it when
+the enriched ledger re-runs so a cheap CUDA swap can clear an adoption bar if the discordance is
+there. Both existing sets are at their ceiling, which is a property of the QUESTIONS, not of the
+encoders. Build an item set that can decide it: predeclare a minimum detectable recall gain and the
+split size it needs, then assemble a ledger enriched with questions the incumbent currently MISSES
+(mine the per-item vectors in `report.json` for baseline zeros, plus domain-term and
+morphology-heavy questions the general E5 encoder is expected to fail), accept it through the
+verification gate, and re-run the bake-off on it. Record whether any candidate then separates -- a
+recorded "still undecidable at n=N" is a valid outcome and is what would justify closing the
+question. The size the ENRICHMENT has to buy is already priced: the withdrawn `e5-large` adopt
+differs on 5 of 250 items, and at that rate the reporting level needs 300 items, which no committed
+goldset reaches -- so plain "more questions" is not the route, raising the discordance rate is
+(double the rate, halve the floor) ([the
+re-decision](current/rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs)).
 
 - Agent status: BLOCKED BY HUMAN
-- Dependencies: the [shared paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes)
+- Dependencies: the [shared paired-power contract](current/rag-core/paired-verdicts.md#paired-power-contract-for-comparison-lanes)
   supplies the item count the predeclared gain needs; the paired bake-off lane, the verdict, and
-  `report.json` are current behavior
-  ([RAG core](current/rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). Human step
-  that gates completion: a reviewer accepts the enriched question set through
-  `make verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
+  `report.json` are current behavior ([RAG
+  core](current/rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
+  Human step that gates completion: a reviewer accepts the enriched question set through `make
+  verify-review` / `make verify-accept`, since an unaccepted ledger cannot settle a default.
 - User-visible outcome: either a measured embedder swap an operator can adopt, or a recorded
   statement of how many questions a decision would need -- instead of a permanently open ranking.
 - Scope boundary: in scope -- the power target, the enriched ledger, its acceptance, and one
@@ -1287,14 +1536,14 @@ BOTH draft-grounded lanes on the accepted ledger -- the fusion sweep and the end
 answer-quality comparison -- so the graph-weight verdict rests on human-reviewed questions instead
 of drafted ones. The drafted set, its worksheet, the matched vector/graph stores, and the measured
 draft-grounded sweep plus answer-quality comparison are current behavior in
-[GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence); every drafted multi-hop item
-is span-exact and Ukrainian-gated by construction, but only a reviewer can say whether a
-shared-bridge question genuinely needs both facts.
+[GraphRAG](current/graphrag-backend.md); every
+drafted multi-hop item is span-exact and Ukrainian-gated by construction, but only a reviewer can
+say whether a shared-bridge question genuinely needs both facts.
 
 - Agent status: HUMAN-GATED
-- Dependencies: the [widened handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff)
-  supplies the worksheet, while the
-  [paired-power contract](current/rag-core.md#paired-power-contract-for-comparison-lanes) derives
+- Dependencies: the [widened handoff](current/graphrag-backend/fusion-sweep-evidence.md#widened-multi-hop-review-handoff)
+  supplies the worksheet, while the [paired-power
+  contract](current/rag-core/paired-verdicts.md#paired-power-contract-for-comparison-lanes) derives
   the accepted-ledger requirement from a predeclared minimum detectable retrieval gain, expected
   discordance, confidence, and power. Human step that gates completion: a reviewer decides
   `accept`/`reject` for every worksheet row -- specifically whether the question is answerable ONLY
@@ -1306,13 +1555,14 @@ shared-bridge question genuinely needs both facts.
   span-identity policies on the accepted ledger, and the adopt-or-reject verdict per knob --
   including whether `graph_fusion_span_identity` flips from `exact` to `overlap` as the shipped
   default, which is currently gated only by the drafted ledger
-  ([GraphRAG](current/graphrag-backend.md#span-identity-evidence)). Out of scope -- graph schema
-  changes and fusion mechanics (the candidate-depth and span-identity verdicts are current
-  behavior in [GraphRAG](current/graphrag-backend.md#candidate-depth-evidence)).
+  ([GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#span-identity-evidence)). Out of
+  scope -- graph schema changes and fusion mechanics (the candidate-depth and span-identity verdicts
+  are current behavior in
+  [GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#candidate-depth-evidence)).
 - Data and artifact paths: the widened drafted bundle and worksheet named in
-  [the handoff](current/graphrag-backend.md#widened-multi-hop-review-handoff), plus a new
-  `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and its
-  `answer-quality/` comparison.
+  [the handoff](current/graphrag-backend/fusion-sweep-evidence.md#widened-multi-hop-review-handoff),
+  plus a new `$DATA_DIR/graph-vector-fusion-multihop/<run>/` sweep over `accepted/goldset.jsonl` and
+  its `answer-quality/` comparison.
 - Execution path: start at `make verify-review VERIFY_WS=<widened-multi-hop-worksheet>`, then
   `make verify-accept VERIFY_WS=<widened-multi-hop-worksheet>
   BUNDLE=<widened-multi-hop-bundle>`, then
@@ -1323,15 +1573,15 @@ shared-bridge question genuinely needs both facts.
   the drafted-grounding escape.
 - Acceptance gates: every worksheet row has a decision; the accepted ledger satisfies its
   predeclared paired-power requirement; retention is reported by relation pair, document mode, and
-  source document with uncertainty; the re-run sweep reports the same rows with paired intervals
-  and the human records the adopt-or-reject verdict per graph strategy and per span-identity
-  policy; the answer-quality comparison re-runs on the accepted ledger with `grounding: verified`.
-  If power remains insufficient or rejection failures are statistically concentrated in a
-  stratum, run the relation-stratified widening workflow from
-  [data prep](current/data-prep.md#widening-a-multi-hop-review-slice) against the latest reviewed
-  ledger.
+  source document with uncertainty; the re-run sweep reports the same rows with paired intervals and
+  the human records the adopt-or-reject verdict per graph strategy and per span-identity policy; the
+  answer-quality comparison re-runs on the accepted ledger with `grounding: verified`. If power
+  remains insufficient or rejection failures are statistically concentrated in a stratum, run the
+  relation-stratified widening workflow from [data
+  prep](current/data-prep/ingestion-corpora.md#widening-a-multi-hop-review-slice) against the latest
+  reviewed ledger.
 - Documentation target: the graph-vector fusion evidence section of
-  [GraphRAG](current/graphrag-backend.md#graph-vector-fusion-evidence).
+  [GraphRAG](current/graphrag-backend.md).
 
 ### corpus-conflict-resolution-review
 
@@ -1339,7 +1589,7 @@ Review the unresolved semantic conflict candidates through the workbench, then f
 ledger back into the resolver and repeat the retrieval plus verified answer-quality comparison.
 The resolver behavior and the reason semantic candidates have no automatic suppression authority
 are current behavior in
-[data prep](current/data-prep.md#corpus-conflict-resolution-corpus-conflict-resolution).
+[data prep](current/data-prep/conflict-resolution.md#corpus-conflict-resolution-corpus-conflict-resolution).
 
 - Agent status: HUMAN-GATED
 - Dependencies: the resolution lane is current behavior. Human step that gates completion: an
@@ -1365,7 +1615,7 @@ are current behavior in
 ### frontier-judge-authorization
 
 Authorize the frontier scorer lane against real providers. The report tooling is current behavior
-([frontier judge agreement and cost report](current/rigor-board-judge.md#frontier-judge-agreement-and-cost-report));
+([frontier judge agreement and cost report](current/rigor-board-judge/judging.md#frontier-judge-agreement-and-cost-report));
 what remains is entirely the human authorization and the judgment it produces.
 
 - Agent status: HUMAN-GATED human_decision: panding
@@ -1467,12 +1717,13 @@ value or many, whether `PERSON` and `ORG` are genuinely disjoint in this domain,
 relation's range is closed are claims about the world that no corpus statistic can settle. Inducing
 them from corpus frequency would only restate what the extractor happened to emit -- the same
 circularity the conflict tier already hit, where the null and the observed population turned out to
-be the same set ([data prep](current/data-prep.md#known-limitation-there-is-no-independent-null)) --
-and the cost of a wrong axiom is asymmetric and silent: at the ledger it deletes a true fact from
-the report's attention, and at the answer gate it converts correct answers into `ontology_violation`.
+be the same set ([data
+prep](current/data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null)) -- and
+the cost of a wrong axiom is asymmetric and silent: at the ledger it deletes a true fact from the
+report's attention, and at the answer gate it converts correct answers into `ontology_violation`.
 The corpus cannot review itself here, which is why this is the one piece of the validation
-architecture that sits in this section. The existing signed type-vocabulary review is the
-precedent for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
+architecture that sits in this section. The existing signed type-vocabulary review is the precedent
+for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
 
 - Agent status: HUMAN-GATED
 - Dependencies: `ontology-axiom-layer` supplies the candidate axioms, their Turtle rendering, and

@@ -1,8 +1,9 @@
 """Embedder bake-off command (`compare-embeddings`): rank encoders on one gold set."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import typer
 
@@ -29,6 +30,67 @@ from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 from llb.rag.embedding_bakeoff_verdict import (
     resolve_bars,
 )
+
+if TYPE_CHECKING:
+    from llb.rag.encoder_throughput import ThroughputProfile
+
+
+def _resolved_bars(adoption_bars: str) -> Sequence[str]:
+    """The adoption bars this run reads, refusing a name no bar implements."""
+    try:
+        return resolve_bars(adoption_bars)
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+
+
+def _egress_consent(cfg: Any, api_model: str | None, assumed: bool) -> bool:
+    """Ask once, out loud, before a full corpus leaves the host for a hosted embedder."""
+    if assumed:
+        return True
+    return typer.confirm(
+        f"[compare-embeddings] embed the corpus at {cfg.corpus_root} through {api_model} "
+        "(full corpus egress to a hosted API). Proceed?"
+    )
+
+
+def _write_throughput_summary(
+    profiles: list["ThroughputProfile"], *, baseline: str | None, data_dir: Path, run_ts: str
+) -> dict[str, Any]:
+    """Summarize the decomposed encoder rates, write the artifact, and echo the verdict."""
+    from llb.rag.encoder_throughput_report import format_host_summary, render_host_markdown
+    from llb.rag.encoder_throughput_summary import build_host_summary
+
+    summary = build_host_summary(
+        profiles,
+        corpus_n_texts=max((profile["n_texts"] for profile in profiles), default=0),
+        baseline_model=baseline,
+    )
+    throughput_dir = data_dir / "encoder-throughput" / run_ts
+    throughput_dir.mkdir(parents=True, exist_ok=True)
+    (throughput_dir / "report.md").write_text(render_host_markdown(summary), encoding="utf-8")
+    (throughput_dir / "report.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    typer.echo(format_host_summary(summary))
+    typer.echo(f"[encoder-throughput] wrote summary -> {throughput_dir}")
+    return cast(dict[str, Any], summary)
+
+
+def _write_bakeoff_report(report: Any, report_path: Path) -> None:
+    """Print the ranked report and write it beside the machine-readable ledger.
+
+    Both, because a later re-read of this recommendation needs the numbers rather than a rendered
+    table -- the paired ledger and every interval bound land in the JSON.
+    """
+    from llb.rag.embedding_bakeoff_report import format_report, render_markdown
+
+    typer.echo(format_report(report))
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(render_markdown(report), encoding="utf-8")
+    json_path = report_path.with_suffix(".json")
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    typer.echo(f"[compare-embeddings] wrote report -> {report_path} ; {json_path}")
 
 
 @app.command("compare-embeddings")
@@ -153,19 +215,9 @@ def compare_embeddings_cmd(
     from llb.rag.embedding_bakeoff import run_bakeoff
     from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_power import prepare_embedding_power, resolve_embedding_power
-    from llb.rag.embedding_bakeoff_report import format_report, render_markdown
-    from llb.rag.encoder_throughput import (
-        ThroughputProfile,
-        build_host_summary,
-        format_host_summary,
-        render_host_markdown,
-    )
+    from llb.rag.encoder_throughput import ThroughputProfile
 
-    try:
-        bars = resolve_bars(adoption_bars)
-    except ValueError as exc:
-        typer.echo(f"[error] {exc}", err=True)
-        raise typer.Exit(code=2) from None
+    bars = _resolved_bars(adoption_bars)
     cfg = load_config(
         config,
         goldset_path=goldset,
@@ -209,15 +261,6 @@ def compare_embeddings_cmd(
         max_warm_seconds=encoder_max_warm_seconds,
         compare_cpu=encoder_compare_cpu,
     )
-
-    def consent() -> bool:
-        if yes:
-            return True
-        return typer.confirm(
-            f"[compare-embeddings] embed the corpus at {cfg.corpus_root} through {api_model} "
-            "(full corpus egress to a hosted API). Proceed?"
-        )
-
     report = run_bakeoff(
         bakeoff_items,
         k,
@@ -235,7 +278,7 @@ def compare_embeddings_cmd(
         api_model=api_model,
         build_api=api_store_builder(cfg, stores_dir, egress_log, max_usd),
         data_classification=data_classification,
-        consent=consent,
+        consent=lambda: _egress_consent(cfg, api_model, yes),
         noise_floor=noise_floor,
         noise_floor_replicates=noise_floor_replicates,
         baseline=baseline.strip() or None,
@@ -250,29 +293,11 @@ def compare_embeddings_cmd(
         except ValueError as exc:
             typer.echo(f"[error] {exc}", err=True)
             raise typer.Exit(code=2) from None
-
     if throughput_profiles:
-        n_texts = max((p["n_texts"] for p in throughput_profiles), default=0)
-        summary = build_host_summary(
+        report["encoder_throughput"] = _write_throughput_summary(  # type: ignore[typeddict-item]
             throughput_profiles,
-            corpus_n_texts=n_texts,
-            baseline_model=baseline.strip() or None,
+            baseline=baseline.strip() or None,
+            data_dir=cfg.data_dir,
+            run_ts=run_ts,
         )
-        report["encoder_throughput"] = summary
-        throughput_dir = cfg.data_dir / "encoder-throughput" / run_ts
-        throughput_dir.mkdir(parents=True, exist_ok=True)
-        (throughput_dir / "report.md").write_text(render_host_markdown(summary), encoding="utf-8")
-        (throughput_dir / "report.json").write_text(
-            json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
-        )
-        typer.echo(format_host_summary(summary))
-        typer.echo(f"[encoder-throughput] wrote summary -> {throughput_dir}")
-
-    typer.echo(format_report(report))
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(render_markdown(report), encoding="utf-8")
-    # The paired ledger and every interval bound also land machine-readable beside the prose: a
-    # later re-read of this recommendation needs the numbers, not a rendered table.
-    json_path = report_path.with_suffix(".json")
-    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    typer.echo(f"[compare-embeddings] wrote report -> {report_path} ; {json_path}")
+    _write_bakeoff_report(report, report_path)

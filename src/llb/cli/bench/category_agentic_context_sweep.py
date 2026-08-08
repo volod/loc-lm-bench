@@ -51,7 +51,8 @@ def bench_agentic_context_sweep_cmd(
     task set and a raised ``--max-steps``.
     """
     from llb.bench.agentic.run import load_tasks_file
-    from llb.bench.agentic_context_sweep import ConstantSweepRun, parse_axes, run_constant_sweep
+    from llb.bench.agentic_context_sweep import run_constant_sweep
+    from llb.bench.agentic_context_sweep_model import ConstantSweepRun, parse_axes
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import ThroughputMeter, drive_with_backend
     from llb.cli.bench._agent_context import resolve_agent_context_budget

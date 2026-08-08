@@ -21,6 +21,7 @@ from llb.bench.agentic_controller_authority_design import (
     STUDY_KIND as STUDY_KIND,
     validate_channel_authority_design as validate_channel_authority_design,
 )
+from llb.bench.agentic_design_fields import as_float, as_int, as_ints, as_mapping, as_rows, as_str
 from llb.bench.agentic_loop_feedback_outcomes import (
     compact_family_outcomes,
     summarize_response_completion,
@@ -58,67 +59,91 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _serialization_name(backend: str) -> str:
+    """Which serializer a backend's transcript is rendered through."""
+    return "ollama" if backend == "ollama" else "openai_compatible"
+
+
+def _preamble_normalized(
+    baseline: list[ChatMessage],
+    candidate: list[ChatMessage],
+    task_id: str,
+    design: dict[str, object],
+    transforms: dict[str, list[dict[str, str]]],
+) -> object:
+    """Prove one preamble pair moved the SAME two messages, and return what both must digest to."""
+    if len(baseline) != 2 or len(candidate) != 2:
+        raise ValueError(f"preamble snapshot cardinality is invalid for task {task_id}")
+    if baseline[1]["content"] != design["authority_text"]:
+        raise ValueError(f"authority snapshot text is invalid for task {task_id}")
+    if candidate[0]["content"] != baseline[1]["content"]:
+        raise ValueError(f"authority snapshot content changed for task {task_id}")
+    if candidate[1]["content"] != baseline[0]["content"]:
+        raise ValueError(f"task snapshot content changed for task {task_id}")
+    expected_baseline = [
+        {"role": step["role"], "content": baseline[index]["content"]}
+        for index, step in enumerate(transforms[CHANNEL_OBSERVATION])
+    ]
+    expected_candidate = [
+        {"role": step["role"], "content": candidate[index]["content"]}
+        for index, step in enumerate(transforms[CHANNEL_PREAMBLE])
+    ]
+    if baseline != expected_baseline or candidate != expected_candidate:
+        raise ValueError(f"preamble snapshot structure is invalid for task {task_id}")
+    return {"prompt": baseline[0]["content"], "authority": baseline[1]["content"]}
+
+
+def _role_normalized(
+    baseline: list[ChatMessage],
+    candidate: list[ChatMessage],
+    task_id: str,
+    design: dict[str, object],
+    roles: dict[str, str],
+) -> object:
+    """Prove one role pair differs only in the authority message's ROLE, and return the content."""
+    if [item["content"] for item in baseline] != [item["content"] for item in candidate]:
+        raise ValueError(f"authority snapshot content changed for task {task_id}")
+    if baseline[-1]["content"] != design["authority_text"]:
+        raise ValueError(f"authority snapshot text is invalid for task {task_id}")
+    if baseline[:-1] != candidate[:-1] or baseline[-1]["role"] != roles[CHANNEL_OBSERVATION]:
+        raise ValueError(f"observation snapshot structure is invalid for task {task_id}")
+    if candidate[-1]["role"] != roles[CHANNEL_CONTROLLER]:
+        raise ValueError(f"controller snapshot structure is invalid for task {task_id}")
+    return [{**item, "role": "authority"} for item in baseline]
+
+
+def _content_digest(normalized: object) -> str:
+    """The digest both placements must produce, which is what "same text, other channel" means."""
+    return hashlib.sha256(
+        json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
 def _snapshot_proof(
     observation: ChannelCell,
     controller: ChannelCell,
     design: dict[str, object],
     backend: str,
 ) -> dict[str, object]:
+    """Pair every activated task's two snapshots and prove the placement was the only difference."""
     task_ids = sorted(observation.snapshots)
     if task_ids != sorted(controller.snapshots):
         raise ValueError("authority activation snapshots differ between placements")
-    serialization_name = "ollama" if backend == "ollama" else "openai_compatible"
+    serialization = _serialization_name(backend)
+    is_preamble = design["study_kind"] == PREAMBLE_STUDY_KIND
     pairs: list[dict[str, str]] = []
     for task_id in task_ids:
         baseline = observation.snapshots[task_id]
         candidate = controller.snapshots[task_id]
-        normalized: object
-        if design["study_kind"] == PREAMBLE_STUDY_KIND:
+        if is_preamble:
             transforms = cast(
                 dict[str, dict[str, list[dict[str, str]]]], design["serializer_transforms"]
-            )[serialization_name]
-            if len(baseline) != 2 or len(candidate) != 2:
-                raise ValueError(f"preamble snapshot cardinality is invalid for task {task_id}")
-            if baseline[1]["content"] != design["authority_text"]:
-                raise ValueError(f"authority snapshot text is invalid for task {task_id}")
-            if candidate[0]["content"] != baseline[1]["content"]:
-                raise ValueError(f"authority snapshot content changed for task {task_id}")
-            if candidate[1]["content"] != baseline[0]["content"]:
-                raise ValueError(f"task snapshot content changed for task {task_id}")
-            expected_baseline = [
-                {"role": step["role"], "content": baseline[index]["content"]}
-                for index, step in enumerate(transforms[CHANNEL_OBSERVATION])
-            ]
-            expected_candidate = [
-                {"role": step["role"], "content": candidate[index]["content"]}
-                for index, step in enumerate(transforms[CHANNEL_PREAMBLE])
-            ]
-            if baseline != expected_baseline or candidate != expected_candidate:
-                raise ValueError(f"preamble snapshot structure is invalid for task {task_id}")
-            normalized = {
-                "prompt": baseline[0]["content"],
-                "authority": baseline[1]["content"],
-            }
+            )[serialization]
+            normalized = _preamble_normalized(baseline, candidate, task_id, design, transforms)
         else:
-            roles = cast(dict[str, dict[str, str]], design["role_serialization"])[
-                serialization_name
-            ]
-            if [item["content"] for item in baseline] != [item["content"] for item in candidate]:
-                raise ValueError(f"authority snapshot content changed for task {task_id}")
-            if baseline[-1]["content"] != design["authority_text"]:
-                raise ValueError(f"authority snapshot text is invalid for task {task_id}")
-            if (
-                baseline[:-1] != candidate[:-1]
-                or baseline[-1]["role"] != roles[CHANNEL_OBSERVATION]
-            ):
-                raise ValueError(f"observation snapshot structure is invalid for task {task_id}")
-            if candidate[-1]["role"] != roles[CHANNEL_CONTROLLER]:
-                raise ValueError(f"controller snapshot structure is invalid for task {task_id}")
-            normalized = [{**item, "role": "authority"} for item in baseline]
-        digest = hashlib.sha256(
-            json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        pairs.append({"task_id": task_id, "content_digest": digest})
+            roles = cast(dict[str, dict[str, str]], design["role_serialization"])[serialization]
+            normalized = _role_normalized(baseline, candidate, task_id, design, roles)
+        pairs.append({"task_id": task_id, "content_digest": _content_digest(normalized)})
     return {"passed": True, "paired_tasks": len(pairs), "pairs": pairs}
 
 
@@ -134,102 +159,164 @@ def _cost_gate(comparison: dict[str, object], baseline: float, limit: float) -> 
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _ChannelGates:
+    """Everything the design fixes before any seed row is read.
+
+    Built once and handed to each row, so the per-seed reading cannot quietly resolve a threshold
+    differently from the row beside it -- and so the row function takes ONE argument instead of the
+    six rules it needs.
+    """
+
+    candidate_placement: str
+    placements: tuple[str, ...]
+    families_by_model: dict[str, str]
+    indexes: list[list[int]]
+    response_rule: dict[str, object]
+    activation_rule: dict[str, object]
+    cost_limits: dict[str, float]
+    minimum_completion_gain: float
+    minimum_discordant_pairs: int
+
+    @classmethod
+    def from_design(cls, design: dict[str, object]) -> "_ChannelGates":
+        """Resolve the design's rules once, in the shape the per-seed reading consumes them."""
+        placements = (
+            PREAMBLE_PLACEMENTS if design["study_kind"] == PREAMBLE_STUDY_KIND else PLACEMENTS
+        )
+        roster = as_rows(design, "roster")
+        return cls(
+            candidate_placement=placements[1],
+            placements=tuple(placements),
+            families_by_model={as_str(row, "model"): as_str(row, "model_family") for row in roster},
+            indexes=bootstrap_index_sets(
+                as_int(design, "planned_n"), DEFAULT_RESAMPLES, DEFAULT_SEED
+            ),
+            response_rule=as_mapping(design, "task_family_response_rule"),
+            activation_rule=as_mapping(design, "activation_rule"),
+            cost_limits=cast(dict[str, float], design["maximum_relative_cost_increase"]),
+            minimum_completion_gain=as_float(design, "minimum_detectable_completion_gain"),
+            minimum_discordant_pairs=as_int(design, "minimum_discordant_pairs"),
+        )
+
+
+def _check_seed_grid(design: dict[str, object], runs: list[ChannelSeedRun]) -> None:
+    """Every declared model ran on every declared seed, exactly once."""
+    expected = {
+        (as_str(row, "model"), seed)
+        for row in as_rows(design, "roster")
+        for seed in as_ints(design, "run_seeds")
+    }
+    actual = {(run.model, run.seed) for run in runs}
+    if actual != expected or len(runs) != len(expected):
+        raise ValueError("controller-channel runs do not match the exact seed grid")
+
+
+def _activation_passed(
+    redirect: dict[str, object], by_family: dict[str, dict[str, object]], rule: dict[str, object]
+) -> bool:
+    """Enough of the ledger actually triggered the notice, per family and overall."""
+    per_family = as_int(rule, "minimum_activated_tasks_per_family")
+    return all(
+        as_int(row, "activated_tasks") >= per_family for row in by_family.values()
+    ) and as_int(redirect, "activated_tasks") >= as_int(rule, "minimum_activated_tasks")
+
+
+def _completion_gate(
+    candidate: ChannelCell, baseline: ChannelCell, gates: _ChannelGates
+) -> tuple[dict[str, object], bool]:
+    """The paired completion reading, and whether it clears the predeclared effect gate."""
+    completion = paired_comparison(
+        _vector(candidate, "completion"), _vector(baseline, "completion"), gates.indexes
+    )
+    delta = cast(dict[str, float], completion["delta"])
+    passed = bool(
+        delta["mean"] >= gates.minimum_completion_gain
+        and completion["wins"] + completion["losses"] >= gates.minimum_discordant_pairs
+        and reading_of(completion) == "separated"
+    )
+    return cast(dict[str, object], completion), passed
+
+
+def _cost_gates(
+    candidate: ChannelCell, baseline: ChannelCell, gates: _ChannelGates
+) -> dict[str, dict[str, object]]:
+    """The paired cost readings the placement may not exceed to be adopted."""
+    return {
+        metric: _cost_gate(
+            cast(
+                dict[str, object],
+                paired_comparison(
+                    _vector(candidate, metric), _vector(baseline, metric), gates.indexes
+                ),
+            ),
+            _mean(_vector(baseline, metric)),
+            float(gates.cost_limits[metric]),
+        )
+        for metric in ("total_model_input_tokens", "elapsed_s")
+    }
+
+
+def _channel_seed_row(
+    run: ChannelSeedRun, design: dict[str, object], gates: _ChannelGates
+) -> dict[str, object]:
+    """One model/seed cell: the snapshot proof, every gate over it, and what it supports."""
+    if set(run.cells) != set(gates.placements):
+        raise ValueError("controller-channel run does not isolate the two placements")
+    baseline = run.cells[CHANNEL_OBSERVATION]
+    candidate = run.cells[gates.candidate_placement]
+    proof = _snapshot_proof(baseline, candidate, design, run.backend)
+    baseline_redirect = summarize_response_completion(baseline.rows)
+    redirect = summarize_response_completion(candidate.rows)
+    by_family = cast(dict[str, dict[str, object]], redirect["by_family"])
+    floor = as_float(gates.response_rule, "minimum_response_rate")
+    responsive = [
+        family for family, row in by_family.items() if as_float(row, "response_rate") >= floor
+    ]
+    family_passed = len(responsive) >= as_int(
+        gates.response_rule, "minimum_supported_task_families_per_seed"
+    )
+    activation_passed = _activation_passed(redirect, by_family, gates.activation_rule)
+    completion, completion_passed = _completion_gate(candidate, baseline, gates)
+    costs = _cost_gates(candidate, baseline, gates)
+    supports = bool(
+        proof["passed"]
+        and activation_passed
+        and family_passed
+        and completion_passed
+        and all(gate["passed"] for gate in costs.values())
+    )
+    return {
+        "seed": run.seed,
+        "model": run.model,
+        "model_family": gates.families_by_model[run.model],
+        "snapshot_proof": proof,
+        "activation_passed": activation_passed,
+        "baseline_response_rate": baseline_redirect["response_rate"],
+        "response_rate": redirect["response_rate"],
+        "task_family_response_completion": compact_family_outcomes(by_family),
+        "responsive_task_families": responsive,
+        "task_family_response_gate_passed": family_passed,
+        "baseline_completion_rate": _mean(_vector(baseline, "completion")),
+        "completion_rate": _mean(_vector(candidate, "completion")),
+        "completion_comparison": completion,
+        "completion_gate_passed": completion_passed,
+        "cost": costs,
+        "supports_candidate_placement": supports,
+        "supports_controller_channel": supports,
+        "manifests": {name: cell.manifest for name, cell in run.cells.items()},
+    }
+
+
 def analyze_channel_authority(
     design: dict[str, object], runs: list[ChannelSeedRun]
 ) -> dict[str, object]:
     """Apply snapshot, activation, family response, completion, and paired cost gates."""
-    seeds = cast(list[int], design["run_seeds"])
-    roster = cast(list[dict[str, object]], design["roster"])
-    expected_grid = {(str(row["model"]), seed) for row in roster for seed in seeds}
-    actual_grid = {(run.model, run.seed) for run in runs}
-    if actual_grid != expected_grid or len(runs) != len(expected_grid):
-        raise ValueError("controller-channel runs do not match the exact seed grid")
-    placements = PREAMBLE_PLACEMENTS if design["study_kind"] == PREAMBLE_STUDY_KIND else PLACEMENTS
-    candidate_placement = placements[1]
-    families_by_model = {str(row["model"]): str(row["model_family"]) for row in roster}
-    indexes = bootstrap_index_sets(
-        int(cast(int, design["planned_n"])), DEFAULT_RESAMPLES, DEFAULT_SEED
-    )
-    response_rule = cast(dict[str, object], design["task_family_response_rule"])
-    activation_rule = cast(dict[str, object], design["activation_rule"])
-    cost_limits = cast(dict[str, float], design["maximum_relative_cost_increase"])
-    seed_rows: list[dict[str, object]] = []
-    for run in sorted(runs, key=lambda item: (families_by_model[item.model], item.seed)):
-        if set(run.cells) != set(placements):
-            raise ValueError("controller-channel run does not isolate the two placements")
-        baseline = run.cells[CHANNEL_OBSERVATION]
-        candidate = run.cells[candidate_placement]
-        proof = _snapshot_proof(baseline, candidate, design, run.backend)
-        baseline_redirect = summarize_response_completion(baseline.rows)
-        redirect = summarize_response_completion(candidate.rows)
-        by_family = cast(dict[str, dict[str, object]], redirect["by_family"])
-        responsive = [
-            family
-            for family, row in by_family.items()
-            if float(cast(float, row["response_rate"]))
-            >= float(cast(float, response_rule["minimum_response_rate"]))
-        ]
-        activation_passed = all(
-            int(cast(int, row["activated_tasks"]))
-            >= int(cast(int, activation_rule["minimum_activated_tasks_per_family"]))
-            for row in by_family.values()
-        ) and int(cast(int, redirect["activated_tasks"])) >= int(
-            cast(int, activation_rule["minimum_activated_tasks"])
-        )
-        completion = paired_comparison(
-            _vector(candidate, "completion"), _vector(baseline, "completion"), indexes
-        )
-        completion_delta = cast(dict[str, float], completion["delta"])
-        completion_passed = bool(
-            completion_delta["mean"]
-            >= float(cast(float, design["minimum_detectable_completion_gain"]))
-            and completion["wins"] + completion["losses"]
-            >= int(cast(int, design["minimum_discordant_pairs"]))
-            and reading_of(completion) == "separated"
-        )
-        costs = {}
-        for metric in ("total_model_input_tokens", "elapsed_s"):
-            comparison = paired_comparison(
-                _vector(candidate, metric), _vector(baseline, metric), indexes
-            )
-            costs[metric] = _cost_gate(
-                cast(dict[str, object], comparison),
-                _mean(_vector(baseline, metric)),
-                float(cost_limits[metric]),
-            )
-        family_passed = len(responsive) >= int(
-            cast(int, response_rule["minimum_supported_task_families_per_seed"])
-        )
-        supports = bool(
-            proof["passed"]
-            and activation_passed
-            and family_passed
-            and completion_passed
-            and all(cast(dict[str, object], gate)["passed"] for gate in costs.values())
-        )
-        seed_rows.append(
-            {
-                "seed": run.seed,
-                "model": run.model,
-                "model_family": families_by_model[run.model],
-                "snapshot_proof": proof,
-                "activation_passed": activation_passed,
-                "baseline_response_rate": baseline_redirect["response_rate"],
-                "response_rate": redirect["response_rate"],
-                "task_family_response_completion": compact_family_outcomes(by_family),
-                "responsive_task_families": responsive,
-                "task_family_response_gate_passed": family_passed,
-                "baseline_completion_rate": _mean(_vector(baseline, "completion")),
-                "completion_rate": _mean(_vector(candidate, "completion")),
-                "completion_comparison": completion,
-                "completion_gate_passed": completion_passed,
-                "cost": costs,
-                "supports_candidate_placement": supports,
-                "supports_controller_channel": supports,
-                "manifests": {name: cell.manifest for name, cell in run.cells.items()},
-            }
-        )
-    required = int(cast(int, response_rule["minimum_supported_seeds"]))
+    _check_seed_grid(design, runs)
+    gates = _ChannelGates.from_design(design)
+    ordered = sorted(runs, key=lambda item: (gates.families_by_model[item.model], item.seed))
+    seed_rows = [_channel_seed_row(run, design, gates) for run in ordered]
+    required = as_int(gates.response_rule, "minimum_supported_seeds")
     supported = sum(bool(row["supports_controller_channel"]) for row in seed_rows)
     supports_candidate = supported >= required
     result: dict[str, object] = {
@@ -241,7 +328,7 @@ def analyze_channel_authority(
         "supports_candidate_placement": supports_candidate,
         "supports_structural_controller_authority": supports_candidate,
         "recommended_placement": (
-            candidate_placement if supports_candidate else CHANNEL_OBSERVATION
+            gates.candidate_placement if supports_candidate else CHANNEL_OBSERVATION
         ),
     }
     if design["study_kind"] == PREAMBLE_STUDY_KIND:

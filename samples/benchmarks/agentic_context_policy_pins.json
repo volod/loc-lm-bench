@@ -3,11 +3,11 @@
   "study_id": "agentic_context_policy_pins",
   "description": "The shipped ContextPolicy constants the published agentic evidence stands on. Editing a constant in src/llb/bench/agentic/context.py without editing its pin here fails the CI pin gate, which names the published cells the change invalidates.",
   "published_in": [
-    "docs/impl/current/extended-workflows.md#cap-fitting-boundary-surface",
-    "docs/impl/current/extended-workflows.md#the-routing-rule-lives-on-the-trigger-axis",
-    "docs/impl/current/extended-workflows.md#the-summarize-input-cap-is-step-aligned",
-    "docs/impl/current/extended-workflows.md#published-crossovers-under-the-shipped-cap",
-    "docs/impl/current/extended-workflows.md#what-a-policy-constant-change-invalidates"
+    "docs/impl/current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface",
+    "docs/impl/current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis",
+    "docs/impl/current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned",
+    "docs/impl/current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap",
+    "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates"
   ],
   "pins": {
     "observation_cap_chars": {

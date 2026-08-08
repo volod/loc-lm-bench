@@ -163,15 +163,16 @@ def format_policy_table(reports: list[LoopPolicyReport]) -> str:
     return "\n".join(lines)
 
 
-def build_recommendation(
-    model: str,
+def _separated_candidates(
     reports: list[LoopPolicyReport],
     *,
-    repeat_power_analysis: dict[str, object] | None = None,
-    repeat_feedback_analysis: dict[str, object] | None = None,
-) -> dict[str, object]:
-    """Change the baseline only for a positive completion delta under the standard verdict."""
-    baseline = next(report for report in reports if report.cell.is_baseline)
+    holds_noop_back: bool,
+) -> list[LoopPolicyReport]:
+    """Candidates that beat the baseline on completion under the standard verdict.
+
+    A study that measured `noop` on ONE model family holds it back here: a family-level pass is not
+    the cross-family support the shipped default requires.
+    """
     separated = [
         report
         for report in reports
@@ -179,51 +180,53 @@ def build_recommendation(
         and report.paired[METRIC_COMPLETION]["delta"]["mean"] > 0.0
         and reading_of(report.paired[METRIC_COMPLETION]) == "separated"
     ]
+    if holds_noop_back:
+        return [report for report in separated if report.cell.policy.repeated_call != "noop"]
+    return separated
+
+
+def _unchanged_reason(
+    repeat_power_analysis: dict[str, object] | None,
+    repeat_feedback_analysis: dict[str, object] | None,
+) -> str:
+    """Why the shipped default stands, in the terms of whichever study was run."""
+    if repeat_feedback_analysis is not None:
+        if repeat_feedback_analysis["supports_localized_feedback"]:
+            return "family-level feedback gates pass, but shipped defaults require cross-family support"
+        return cast(str, repeat_feedback_analysis["reason"])
     if repeat_power_analysis is not None:
-        separated = [report for report in separated if report.cell.policy.repeated_call != "noop"]
+        if repeat_power_analysis["supports_noop"]:
+            return (
+                "family-level gates pass, but shipped defaults require the full predeclared "
+                "model-family roster"
+            )
+        return "noop did not clear the prospective activation, completion, and paired cost gates"
+    return "no candidate has a positive paired completion delta under the standard verdict"
+
+
+def _study_fields(
+    repeat_power_analysis: dict[str, object] | None,
+    repeat_feedback_analysis: dict[str, object] | None,
+) -> dict[str, object]:
+    """The extra rows a repeat-power or repeat-feedback study attaches to its recommendation."""
+    fields: dict[str, object] = {}
+    if repeat_power_analysis is not None:
+        fields["model_family_supports_noop"] = repeat_power_analysis["supports_noop"]
+        fields["repeat_power"] = repeat_power_analysis
     if repeat_feedback_analysis is not None:
-        separated = [report for report in separated if report.cell.policy.repeated_call != "noop"]
-    winner = min(
-        separated,
-        key=lambda report: (
-            -report.run.result.objective_score,
-            report.metric_mean(METRIC_PROMPT_TOKENS),
-            report.metric_mean(METRIC_WALL_CLOCK),
-        ),
-        default=baseline,
-    )
-    completion_pair = winner.paired[METRIC_COMPLETION]
-    changed = not winner.cell.is_baseline
-    if repeat_feedback_analysis is not None:
-        unchanged_reason = (
-            "family-level feedback gates pass, but shipped defaults require cross-family support"
-            if repeat_feedback_analysis["supports_localized_feedback"]
-            else cast(str, repeat_feedback_analysis["reason"])
-        )
-    elif repeat_power_analysis is not None:
-        unchanged_reason = (
-            "family-level gates pass, but shipped defaults require the full predeclared "
-            "model-family roster"
-            if repeat_power_analysis["supports_noop"]
-            else "noop did not clear the prospective activation, completion, and paired cost gates"
-        )
-    else:
-        unchanged_reason = (
-            "no candidate has a positive paired completion delta under the standard verdict"
-        )
+        fields["repeat_feedback"] = repeat_feedback_analysis
+        fields["model_family_supports_feedback_variant"] = repeat_feedback_analysis[
+            "supports_localized_feedback"
+        ]
+        fields["model_family_recommended_feedback_variant"] = repeat_feedback_analysis[
+            "recommended_feedback_variant"
+        ]
+    return fields
+
+
+def _winner_measurements(winner: LoopPolicyReport) -> dict[str, object]:
+    """Everything the recommended cell measured, rounded the way the report publishes it."""
     return {
-        "model": model,
-        "max_steps": winner.cell.max_steps,
-        "malformed_call_policy": winner.cell.policy.malformed_call,
-        "repeated_call_policy": winner.cell.policy.repeated_call,
-        "repeat_feedback_variant": winner.cell.policy.repeat_feedback,
-        "changes_shipped_defaults": changed,
-        "verdict": reading_of(completion_pair),
-        "reason": (
-            "positive paired completion delta clears the standard verdict"
-            if changed
-            else unchanged_reason
-        ),
         "completion_rate": round(winner.run.result.objective_score, 6),
         "malformed_call_rate": round(winner.malformed_rate, 6),
         "mean_steps": round(winner.metric_mean(METRIC_STEPS), 4),
@@ -233,24 +236,46 @@ def build_recommendation(
         "mean_model_calls": round(winner.metric_mean("n_model_calls"), 4),
         "mean_total_model_input_tokens": round(winner.metric_mean(METRIC_PROMPT_TOKENS), 4),
         "mean_wall_clock_s": round(winner.metric_mean(METRIC_WALL_CLOCK), 4),
-        "paired_completion_vs_baseline": completion_pair,
-        **(
-            {"model_family_supports_noop": repeat_power_analysis["supports_noop"]}
-            if repeat_power_analysis is not None
-            else {}
+        "paired_completion_vs_baseline": winner.paired[METRIC_COMPLETION],
+    }
+
+
+def build_recommendation(
+    model: str,
+    reports: list[LoopPolicyReport],
+    *,
+    repeat_power_analysis: dict[str, object] | None = None,
+    repeat_feedback_analysis: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Change the baseline only for a positive completion delta under the standard verdict."""
+    baseline = next(report for report in reports if report.cell.is_baseline)
+    separated = _separated_candidates(
+        reports,
+        holds_noop_back=repeat_power_analysis is not None or repeat_feedback_analysis is not None,
+    )
+    winner = min(
+        separated,
+        key=lambda report: (
+            -report.run.result.objective_score,
+            report.metric_mean(METRIC_PROMPT_TOKENS),
+            report.metric_mean(METRIC_WALL_CLOCK),
         ),
-        **({"repeat_power": repeat_power_analysis} if repeat_power_analysis is not None else {}),
-        **(
-            {
-                "repeat_feedback": repeat_feedback_analysis,
-                "model_family_supports_feedback_variant": repeat_feedback_analysis[
-                    "supports_localized_feedback"
-                ],
-                "model_family_recommended_feedback_variant": repeat_feedback_analysis[
-                    "recommended_feedback_variant"
-                ],
-            }
-            if repeat_feedback_analysis is not None
-            else {}
+        default=baseline,
+    )
+    changed = not winner.cell.is_baseline
+    return {
+        "model": model,
+        "max_steps": winner.cell.max_steps,
+        "malformed_call_policy": winner.cell.policy.malformed_call,
+        "repeated_call_policy": winner.cell.policy.repeated_call,
+        "repeat_feedback_variant": winner.cell.policy.repeat_feedback,
+        "changes_shipped_defaults": changed,
+        "verdict": reading_of(winner.paired[METRIC_COMPLETION]),
+        "reason": (
+            "positive paired completion delta clears the standard verdict"
+            if changed
+            else _unchanged_reason(repeat_power_analysis, repeat_feedback_analysis)
         ),
+        **_winner_measurements(winner),
+        **_study_fields(repeat_power_analysis, repeat_feedback_analysis),
     }

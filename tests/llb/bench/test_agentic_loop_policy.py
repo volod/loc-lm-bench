@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
@@ -15,7 +16,7 @@ from llb.bench.agentic.loop_policy import (
     REPEATED_NOOP_OBSERVATION,
     LoopPolicy,
 )
-from llb.bench.agentic.model import STATUS_COMPLETED, AgenticTask
+from llb.bench.agentic.model import STATUS_COMPLETED, STATUS_CONTEXT_OVERFLOW, AgenticTask
 from llb.bench.agentic_loop_policy import policy_grid, run_agentic_loop_policy
 from llb.bench.agentic_loop_policy_report import METRICS
 from llb.scoring.tool_calls import parse_tool_call, parse_tool_call_detailed
@@ -107,6 +108,24 @@ def test_repair_once_recovers_an_unreadable_completion_and_counts_its_cost():
     assert episode.n_model_calls == 3
     assert "Parse error:" in prompts[1] and '"write_file"' in prompts[1]
     assert episode.telemetry.n_repair_prompts == 1
+
+
+def test_a_repair_prompt_that_cannot_fit_the_guard_is_refused_and_observed():
+    """The loop's SECOND refusal site: the repair prompt is longer than the one it repairs."""
+    refused: list[str] = []
+    episode = run_episode(
+        task(),
+        scripted(['{"name":"write_file","arguments":']),
+        loop_policy=LoopPolicy(malformed_call=MALFORMED_REPAIR_ONCE),
+        # Wide enough for the 2637-char step prompt, too tight for the repair prompt built
+        # from it (5247 chars: the step prompt plus the parse error and the raw completion).
+        budget=fixed_budget(3000),
+        on_refused_prompt=refused.append,
+    )
+    assert episode.status == STATUS_CONTEXT_OVERFLOW and episode.n_repair_attempts == 0
+    assert len(refused) == 1 and "Parse error:" in refused[0]
+    # What was observed is what was priced, and it is the thing the guard said no to.
+    assert len(refused[0]) == episode.telemetry.prompt_chars[-1] == 5247 > 3000
 
 
 def test_strict_policy_records_feedback_and_continues_without_executing():

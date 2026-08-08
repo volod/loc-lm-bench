@@ -13,6 +13,7 @@ from llb.bench.agentic.loop_policy import (
     REPEAT_FEEDBACK_VARIANTS,
 )
 from llb.bench.agentic.model import AgenticTask
+from llb.bench.agentic_design_fields import as_float, as_int, as_strs
 from llb.bench.agentic_loop_policy_report import (
     BASELINE_MAX_STEPS,
     METRIC_COMPLETION,
@@ -53,24 +54,20 @@ def _duplicate_payloads(tasks: list[AgenticTask]) -> int:
     return len(payloads) - len(set(payloads))
 
 
-def validate_repeat_power_design(
-    design: dict[str, object],
-    tasks: list[AgenticTask],
-    *,
-    cells: list[LoopPolicyCell],
-    model_family: str | None,
-) -> None:
-    """Refuse a run that does not match its predeclared sample, family, or policy contract."""
-    if design.get("schema_version") != DESIGN_SCHEMA_VERSION:
-        raise ValueError(f"repeat-power design schema_version must be {DESIGN_SCHEMA_VERSION}")
-    planned_n = int(cast(int, design["planned_n"]))
+def _check_task_ledger(design: dict[str, object], tasks: list[AgenticTask]) -> int:
+    """The task set is the declared size, uniquely identified, and not padded with repeats."""
+    planned_n = as_int(design, "planned_n")
     if len(tasks) != planned_n:
         raise ValueError(f"repeat-power design declares {planned_n} tasks, got {len(tasks)}")
     if len({task.id for task in tasks}) != len(tasks):
         raise ValueError("repeat-power tasks must have unique ids")
     if _duplicate_payloads(tasks):
         raise ValueError("repeat-power tasks must have non-duplicate prompt/setup/success payloads")
+    return planned_n
 
+
+def _check_family_coverage(design: dict[str, object], tasks: list[AgenticTask]) -> None:
+    """Every declared task family reaches its declared minimum, and nothing is unlabeled."""
     required = cast(dict[str, int], design["required_task_families"])
     counts = _family_counts(tasks)
     missing = {
@@ -81,16 +78,21 @@ def validate_repeat_power_design(
     if counts[""]:
         raise ValueError("every repeat-power task must carry a family label")
 
-    mde = float(cast(float, design["minimum_detectable_completion_gain"]))
-    minimum_discordant = int(cast(int, design["minimum_discordant_pairs"]))
+
+def _check_power_contract(design: dict[str, object], planned_n: int) -> None:
+    """The declared effect must be reachable at the declared sample, or the study cannot read."""
+    mde = as_float(design, "minimum_detectable_completion_gain")
     if not 0.0 < mde <= 1.0:
         raise ValueError("minimum_detectable_completion_gain must be in (0, 1]")
-    if planned_n * mde < minimum_discordant:
+    if planned_n * mde < as_int(design, "minimum_discordant_pairs"):
         raise ValueError(
             "planned task count cannot make the declared completion gain reach "
             "the discordant-pair gate"
         )
 
+
+def _check_grid(design: dict[str, object], cells: list[LoopPolicyCell]) -> None:
+    """The grid is exactly the fixed baseline plus one noop arm per declared feedback variant."""
     feedback_variants = cast(
         list[str], design.get("repeat_feedback_variants", [DEFAULT_REPEAT_FEEDBACK])
     )
@@ -98,14 +100,12 @@ def validate_repeat_power_design(
         name not in REPEAT_FEEDBACK_VARIANTS for name in feedback_variants
     ):
         raise ValueError(f"repeat_feedback_variants must come from {REPEAT_FEEDBACK_VARIANTS}")
-    expected_cells = {
-        (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_ALLOW, DEFAULT_REPEAT_FEEDBACK)
-    }
-    expected_cells.update(
+    expected = {(BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_ALLOW, DEFAULT_REPEAT_FEEDBACK)}
+    expected.update(
         (BASELINE_MAX_STEPS, MALFORMED_ANSWER, REPEATED_NOOP, feedback)
         for feedback in feedback_variants
     )
-    actual_cells = {
+    actual = {
         (
             cell.max_steps,
             cell.policy.malformed_call,
@@ -114,9 +114,25 @@ def validate_repeat_power_design(
         )
         for cell in cells
     }
-    if actual_cells != expected_cells:
+    if actual != expected:
         raise ValueError("repeat study grid does not match its fixed policy and feedback variants")
-    families = cast(list[str], design["required_model_families"])
+
+
+def validate_repeat_power_design(
+    design: dict[str, object],
+    tasks: list[AgenticTask],
+    *,
+    cells: list[LoopPolicyCell],
+    model_family: str | None,
+) -> None:
+    """Refuse a run that does not match its predeclared sample, family, or policy contract."""
+    if design.get("schema_version") != DESIGN_SCHEMA_VERSION:
+        raise ValueError(f"repeat-power design schema_version must be {DESIGN_SCHEMA_VERSION}")
+    planned_n = _check_task_ledger(design, tasks)
+    _check_family_coverage(design, tasks)
+    _check_power_contract(design, planned_n)
+    _check_grid(design, cells)
+    families = as_strs(design, "required_model_families")
     if model_family is None or model_family not in families:
         raise ValueError(f"model_family must be one of the predeclared families: {families}")
 

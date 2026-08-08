@@ -9,12 +9,8 @@ grid that could not answer the question is refused before a GPU is warmed.
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_peak_prompt_chars,
-    cap_prompt_sequence,
-    compaction_trigger_chars,
-    guard_is_cap_fitting,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars, cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, guard_is_cap_fitting
 from llb.bench.agentic_memory_transfer import load_transfer_design
 from llb.bench.agentic_memory_trigger_collapse_reading import (
     EQUIVALENCE_METRIC,

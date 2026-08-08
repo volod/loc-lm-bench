@@ -6,7 +6,7 @@
   "reporting_confidence": 0.975,
   "reference": {
     "study_id": "agent-context-policy-fold-step-crossover",
-    "evidence": "docs/impl/current/extended-workflows.md#the-crossover-is-a-fold-step-not-a-char-guard",
+    "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#the-crossover-is-a-fold-step-not-a-char-guard",
     "measured_within_step_residual": [
       {
         "depth": 10,

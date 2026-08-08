@@ -4,7 +4,7 @@ A committed micro-goldset for the question the two real corpora cannot answer: w
 apostrophe-variant tokenization buy when the index and the query disagree about WHICH apostrophe
 was typed? Both quickstart corpora are internally consistent about their variant, so index and
 query split identically and every recall number is flat before and after the fix
-([RAG core](../../../docs/impl/current/rag-core.md#apostrophe-variant-tokenization-evidence)).
+([RAG core](../../../docs/impl/current/rag-core/hybrid-retrieval.md#apostrophe-variant-tokenization-evidence)).
 This fixture plants the mismatch instead.
 
 Layout:
@@ -53,7 +53,7 @@ so nothing is recovered by boilerplate ties either.
 
 The heavy hybrid comparison over the same fixture (real e5-base embeddings, `recursive` 800/120,
 k=10, exact duplicate collapse: 180 chunks -> 80 indexed) is recorded in
-[RAG core](../../../docs/impl/current/rag-core.md#apostrophe-variant-tokenization-evidence).
+[RAG core](../../../docs/impl/current/rag-core/hybrid-retrieval.md#apostrophe-variant-tokenization-evidence).
 
 Regenerating: the fixture is deterministic (no randomness); edit and re-run the generation snippet
 recorded in the git history of this directory if the layout must change. Span offsets are

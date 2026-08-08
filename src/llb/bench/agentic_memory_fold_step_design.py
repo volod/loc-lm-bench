@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_fold_step_placement import (
     EXPECTED_SIDES,
     step_guards,
@@ -90,7 +91,10 @@ def fold_step_prompt_sequences(design: dict[str, object]) -> dict[int, list[int]
 
 def fold_step_cap_peaks(design: dict[str, object]) -> dict[int, int]:
     """The deterministic cap peak prompt behind every tested depth -- the sequence's own maximum."""
-    return {depth: max(sequence) for depth, sequence in fold_step_prompt_sequences(design).items()}
+    return {
+        depth: measured_cap_peak(sequence, geometry=f"depth {depth}")
+        for depth, sequence in fold_step_prompt_sequences(design).items()
+    }
 
 
 def declared_cells(design: dict[str, object]) -> list[dict[str, object]]:
@@ -138,6 +142,7 @@ def _validate_ladder(
     label = f"depth {depth}"
     share = float(cast(float, held["compact_share"]))
     sequence = _prompt_sequence(depth, held)
+    peak = measured_cap_peak(sequence, geometry=label)
     steps = cast(list[dict[str, object]], ladder.get("steps", []))
     validate_ladder_shape(label, steps, sequence)
     for step in steps:
@@ -146,7 +151,7 @@ def _validate_ladder(
             step,
             sequence=sequence,
             compact_share=share,
-            peak_prompt_chars=max(sequence),
+            peak_prompt_chars=peak,
             minimum_guard_span_fraction=float(
                 cast(float, rule["minimum_within_step_guard_span_fraction"])
             ),

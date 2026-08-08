@@ -11,11 +11,11 @@ from llb.bench.agentic.context import (
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic.success import check_success
-from llb.bench.agentic_context_sweep import (
+from llb.bench.agentic_context_sweep import run_constant_sweep
+from llb.bench.agentic_context_sweep_model import (
     AXIS_KEEP,
     keep_long_transcript_grid,
     parse_axes,
-    run_constant_sweep,
 )
 from llb.bench.agentic_long_transcript import (
     build_long_transcript_tasks,

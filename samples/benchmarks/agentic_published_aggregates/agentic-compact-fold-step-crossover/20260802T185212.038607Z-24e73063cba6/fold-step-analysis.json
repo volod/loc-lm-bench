@@ -1,0 +1,1679 @@
+{
+  "cap_peak_prompt_chars": {
+    "10": 11926,
+    "6": 8374
+  },
+  "cap_prompt_sequence": {
+    "10": [
+      3000,
+      3904,
+      4792,
+      5680,
+      6568,
+      7456,
+      8344,
+      9232,
+      10120,
+      11008,
+      11926
+    ],
+    "6": [
+      3000,
+      3904,
+      4792,
+      5680,
+      6568,
+      7456,
+      8374
+    ]
+  },
+  "cells": [
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "fold-d6-step6-lo",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 1984.0,
+      "compact_mean_controller_prompt_tokens": 11148.142857142857,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 6568,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 6,
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T175327.500675Z-3f6071f1f371/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T175326.496772Z-5c63950a5318/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 13136,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "fold-d6-step6-hi",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 1984.0,
+      "compact_mean_controller_prompt_tokens": 11148.142857142857,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7455,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 6,
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T180038.587913Z-8f7a2d706f5d/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T180038.351694Z-958a8df57b5b/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 14910,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 6,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "fold-d6-step7-lo",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 2420.0,
+      "compact_mean_controller_prompt_tokens": 11892.57142857143,
+      "compact_mean_total_model_input_tokens": 14312.57142857143,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 7456,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1061.7142857142858,
+          "lo": 1049.857142857143,
+          "mean": 1054.5714285714287
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 7,
+      "depth": 6,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T180724.032415Z-39141a81b1cd/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T180723.804707Z-061b19ef3bf3/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 14912,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1061.7142857142858,
+            "lo": 1049.857142857143,
+            "mean": 1054.5714285714287
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "predicted_fold_step": 7,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1054.571 [+1049.857, +1061.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "fold-d6-step7-hi",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 2420.0,
+      "compact_mean_controller_prompt_tokens": 11892.57142857143,
+      "compact_mean_total_model_input_tokens": 14312.57142857143,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 8373,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1061.7142857142858,
+          "lo": 1049.857142857143,
+          "mean": 1054.5714285714287
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 7,
+      "depth": 6,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T181401.743545Z-af5d07b170e1/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T181401.500202Z-24066cf41414/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 16746,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1061.7142857142858,
+            "lo": 1049.857142857143,
+            "mean": 1054.5714285714287
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "predicted_fold_step": 7,
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1054.571 [+1049.857, +1061.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "fold-d10-step10-lo",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 3614.0,
+      "compact_mean_controller_prompt_tokens": 22820.428571428572,
+      "compact_mean_total_model_input_tokens": 26434.428571428572,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 10120,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -902.0,
+          "lo": -918.7142857142857,
+          "mean": -908.5714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 10,
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T182335.278218Z-508d743e586c/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T182335.052551Z-7499e1f7e143/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 20240,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -902.0,
+            "lo": -918.7142857142857,
+            "mean": -908.5714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 10,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-908.571 [-918.714, -902.000])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "fold-d10-step10-hi",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 3729.0,
+      "compact_mean_controller_prompt_tokens": 22812.0,
+      "compact_mean_total_model_input_tokens": 26541.0,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 11007,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -782.8571428571429,
+          "lo": -821.1428571428571,
+          "mean": -802.0
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 10,
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T183305.365333Z-6b5f801a568b/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T183305.129566Z-6a2a39393f60/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 22014,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -782.8571428571429,
+            "lo": -821.1428571428571,
+            "mean": -802.0
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "predicted_fold_step": 10,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-802.000 [-821.143, -782.857])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "fold-d10-step11-lo",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 3910.0,
+      "compact_mean_controller_prompt_tokens": 24788.428571428572,
+      "compact_mean_total_model_input_tokens": 28698.428571428572,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 11008,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1361.142857142857,
+          "lo": 1349.142857142857,
+          "mean": 1355.4285714285713
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 11,
+      "depth": 10,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T184230.955070Z-5aed85f195c9/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T184230.736555Z-af63a587eeb4/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 22016,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1361.142857142857,
+            "lo": 1349.142857142857,
+            "mean": 1355.4285714285713
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "predicted_fold_step": 11,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1355.429 [+1349.143, +1361.143])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "fold-d10-step11-hi",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_compaction_prompt_tokens": 4081.0,
+      "compact_mean_controller_prompt_tokens": 24797.571428571428,
+      "compact_mean_total_model_input_tokens": 28878.571428571428,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "compaction_trigger_chars": 11520,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1543.7142857142858,
+          "lo": 1529.142857142857,
+          "mean": 1535.5714285714287
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "declared_fold_step": 11,
+      "depth": 10,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T185211.609521Z-7826a43ed005/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T185211.379465Z-6a50ade00d0d/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 23040,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1543.7142857142858,
+            "lo": 1529.142857142857,
+            "mean": 1535.5714285714287
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "predicted_fold_step": 11,
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1535.571 [+1529.143, +1543.714])"
+    }
+  ],
+  "changes_shipped_default": false,
+  "control_recheck": {
+    "backend": "ollama",
+    "completion": 1.0,
+    "depth": 10,
+    "eligible": true,
+    "episode_diagnostics": [
+      {
+        "answer": "CTRL-000-017",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-000-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-001-070",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-001-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-002-123",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-002-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-003-176",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-003-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      }
+    ],
+    "mean_steps": 11.0,
+    "mean_total_model_input_tokens": 12546.0,
+    "minimum_completion_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 4,
+    "statuses": [
+      "completed",
+      "completed",
+      "completed",
+      "completed"
+    ],
+    "task_set_digest": "fa29c3db192cabe520680ee66669ff47352bd36e67dedd976205e662a0ffd2bb",
+    "tokens_per_s": 10.56
+  },
+  "depth_ladders": [
+    {
+      "boundary": {
+        "compact_cheaper_guard_interval": [
+          13136,
+          14912
+        ],
+        "compact_cheaper_trigger_interval": [
+          6568,
+          7456
+        ],
+        "from_fold_step": 6,
+        "guard_boundary_chars": 14912,
+        "step_change_band": 265.16,
+        "step_change_separates": true,
+        "step_change_separation": 1180.4285714285716,
+        "straddling_guard_gap_chars": 2,
+        "to_fold_step": 7,
+        "trigger_boundary_chars": 7456
+      },
+      "cap_peak_prompt_chars": 8374,
+      "cap_prompt_sequence": [
+        3000,
+        3904,
+        4792,
+        5680,
+        6568,
+        7456,
+        8374
+      ],
+      "compact_share": 0.5,
+      "controller_cost_is_exact_step": true,
+      "depth": 6,
+      "fold_steps": [
+        6,
+        7
+      ],
+      "interpolated_guard_artifact": {
+        "fold_step": 6,
+        "gap_to_boundary_chars": 752,
+        "guard_chars": 14160,
+        "guard_interval": [
+          13136,
+          14912
+        ]
+      },
+      "last_compact_cheaper_fold_step": 6,
+      "reading": "fold_step_boundary_confirmed",
+      "steps": [
+        {
+          "bit_identical": true,
+          "cap_baseline_total_model_input_tokens": 13258.0,
+          "cell_ids": [
+            "fold-d6-step6-lo",
+            "fold-d6-step6-hi"
+          ],
+          "controller_prompt_spread": 0.0,
+          "cost_deltas": [
+            -125.85714285714286,
+            -125.85714285714286
+          ],
+          "equivalence_band": 265.16,
+          "fold_step": 6,
+          "guard_interval": [
+            13136,
+            14912
+          ],
+          "guard_interval_width_chars": 1776,
+          "guard_span_chars": 1774,
+          "guards": [
+            13136,
+            14910
+          ],
+          "mean_cost_delta": -125.85714285714286,
+          "measured_sides": [
+            "compact_cheaper"
+          ],
+          "same_side": true,
+          "side": "compact_cheaper",
+          "spread": 0.0,
+          "summarizer_prompt_spread": 0.0,
+          "trigger_interval": [
+            6568,
+            7456
+          ],
+          "triggers": [
+            6568,
+            7455
+          ],
+          "within_band": true
+        },
+        {
+          "bit_identical": true,
+          "cap_baseline_total_model_input_tokens": 13258.0,
+          "cell_ids": [
+            "fold-d6-step7-lo",
+            "fold-d6-step7-hi"
+          ],
+          "controller_prompt_spread": 0.0,
+          "cost_deltas": [
+            1054.5714285714287,
+            1054.5714285714287
+          ],
+          "equivalence_band": 265.16,
+          "fold_step": 7,
+          "guard_interval": [
+            14912,
+            16748
+          ],
+          "guard_interval_width_chars": 1836,
+          "guard_span_chars": 1834,
+          "guards": [
+            14912,
+            16746
+          ],
+          "mean_cost_delta": 1054.5714285714287,
+          "measured_sides": [
+            "cap_cheaper"
+          ],
+          "same_side": true,
+          "side": "cap_cheaper",
+          "spread": 0.0,
+          "summarizer_prompt_spread": 0.0,
+          "trigger_interval": [
+            7456,
+            8374
+          ],
+          "triggers": [
+            7456,
+            8373
+          ],
+          "within_band": true
+        }
+      ],
+      "within_step_residual_tokens": 0.0
+    },
+    {
+      "boundary": {
+        "compact_cheaper_guard_interval": [
+          20240,
+          22016
+        ],
+        "compact_cheaper_trigger_interval": [
+          10120,
+          11008
+        ],
+        "from_fold_step": 10,
+        "guard_boundary_chars": 22016,
+        "step_change_band": 546.86,
+        "step_change_separates": true,
+        "step_change_separation": 2300.785714285714,
+        "straddling_guard_gap_chars": 2,
+        "to_fold_step": 11,
+        "trigger_boundary_chars": 11008
+      },
+      "cap_peak_prompt_chars": 11926,
+      "cap_prompt_sequence": [
+        3000,
+        3904,
+        4792,
+        5680,
+        6568,
+        7456,
+        8344,
+        9232,
+        10120,
+        11008,
+        11926
+      ],
+      "compact_share": 0.5,
+      "controller_cost_is_exact_step": false,
+      "depth": 10,
+      "fold_steps": [
+        10,
+        11
+      ],
+      "interpolated_guard_artifact": {
+        "fold_step": 10,
+        "gap_to_boundary_chars": 116,
+        "guard_chars": 21900,
+        "guard_interval": [
+          20240,
+          22016
+        ]
+      },
+      "last_compact_cheaper_fold_step": 10,
+      "reading": "fold_step_boundary_confirmed",
+      "steps": [
+        {
+          "bit_identical": false,
+          "cap_baseline_total_model_input_tokens": 27343.0,
+          "cell_ids": [
+            "fold-d10-step10-lo",
+            "fold-d10-step10-hi"
+          ],
+          "controller_prompt_spread": 8.428571428572468,
+          "cost_deltas": [
+            -908.5714285714286,
+            -802.0
+          ],
+          "equivalence_band": 546.86,
+          "fold_step": 10,
+          "guard_interval": [
+            20240,
+            22016
+          ],
+          "guard_interval_width_chars": 1776,
+          "guard_span_chars": 1774,
+          "guards": [
+            20240,
+            22014
+          ],
+          "mean_cost_delta": -855.2857142857142,
+          "measured_sides": [
+            "compact_cheaper"
+          ],
+          "same_side": true,
+          "side": "compact_cheaper",
+          "spread": 106.57142857142856,
+          "summarizer_prompt_spread": 115.0,
+          "trigger_interval": [
+            10120,
+            11008
+          ],
+          "triggers": [
+            10120,
+            11007
+          ],
+          "within_band": true
+        },
+        {
+          "bit_identical": false,
+          "cap_baseline_total_model_input_tokens": 27343.0,
+          "cell_ids": [
+            "fold-d10-step11-lo",
+            "fold-d10-step11-hi"
+          ],
+          "controller_prompt_spread": 9.142857142855064,
+          "cost_deltas": [
+            1355.4285714285713,
+            1535.5714285714287
+          ],
+          "equivalence_band": 546.86,
+          "fold_step": 11,
+          "guard_interval": [
+            22016,
+            23852
+          ],
+          "guard_interval_width_chars": 1836,
+          "guard_span_chars": 1024,
+          "guards": [
+            22016,
+            23040
+          ],
+          "mean_cost_delta": 1445.5,
+          "measured_sides": [
+            "cap_cheaper"
+          ],
+          "same_side": true,
+          "side": "cap_cheaper",
+          "spread": 180.14285714285734,
+          "summarizer_prompt_spread": 171.0,
+          "trigger_interval": [
+            11008,
+            11926
+          ],
+          "triggers": [
+            11008,
+            11520
+          ],
+          "within_band": true
+        }
+      ],
+      "within_step_residual_tokens": 180.14285714285734
+    }
+  ],
+  "expectation_matches": 8,
+  "fold_step_reading": "fold_step_boundary_confirmed",
+  "fold_step_routing_rule": [
+    "depth 6: fold no later than step 6 -- use compact while compact_share * guard stays below 7456 chars (step 6's own cap prompt), which at compact_share=0.5 is a guard below 14912 chars; use observation_cap at or above it",
+    "depth 6: the interpolated 14160-char crossover guard lands inside step 6's guard interval [13136, 14912], where every guard costs the same, so it names a point at which nothing changes (752 chars below the step change that does)",
+    "depth 10: fold no later than step 10 -- use compact while compact_share * guard stays below 11008 chars (step 10's own cap prompt), which at compact_share=0.5 is a guard below 22016 chars; use observation_cap at or above it",
+    "depth 10: the interpolated 21900-char crossover guard lands inside step 10's guard interval [20240, 22016], where every guard costs the same, so it names a point at which nothing changes (116 chars below the step change that does)"
+  ],
+  "held_fixed": {
+    "backend": "ollama",
+    "compact_share": 0.5,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "minimum_cell_completion": 0.75,
+    "minimum_compaction_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 7,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "pad_chars": 1200
+  },
+  "reason": "every tested depth flips cost side exactly at a fold-step change (2 of 2); within a step, guards spanning the whole interval agree",
+  "step_rule": {
+    "maximum_step_change_guard_gap_chars": 8,
+    "metric": "compact_minus_cap_total_model_input_tokens",
+    "minimum_within_step_guard_span_fraction": 0.5,
+    "requires_adjacent_fold_steps": true,
+    "rule": "within_step_spread_within_cap_cost_fraction",
+    "within_step_cap_cost_fraction": 0.02
+  },
+  "study_id": "agent-context-policy-fold-step-crossover"
+}

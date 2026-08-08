@@ -119,10 +119,11 @@ exports, legacy aliases, or compatibility modules.
 - Four catch-all test modules are split by statistics/verdict, comparison/CLI, audit/CLI, and
   gate/report behavior with adjacent shared fixtures.
 
-All tracked Python and shell files are now at or below 250 lines; `make/config.mk` remains the one
-intentional larger code/config file. Validation: `make ci` passes Ruff format/lint, mypy over 757
-source files, and 2,230 lightweight tests with 45 tests deselected. `scripts/code_quality.sh`,
-`git diff --check`, and the direct-owner stale-import audit also pass.
+`make/config.mk` remains the one intentional larger code/config file; the source files that sit
+over the 250-line soft target are cohesive lanes kept whole on purpose, and
+`scripts/code_quality.sh` lists them so the set stays visible. Validation: `make ci` passes Ruff
+format/lint, mypy over 917 source files, and 2,880 lightweight tests with 60 deselected.
+`scripts/code_quality.sh`, `git diff --check`, and the direct-owner stale-import audit also pass.
 
 `scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,

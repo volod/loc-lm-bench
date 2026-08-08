@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
+from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_summary_cap_design import (
     arm_fold_input_probes,
     declared_cells,
@@ -135,7 +136,7 @@ def analyze_summary_cap(
         "shipped_summary_input_cap": shipped,
         "depth": depth,
         "cap_prompt_sequence": sequence,
-        "cap_peak_prompt_chars": max(sequence),
+        "cap_peak_prompt_chars": measured_cap_peak(sequence, geometry=f"the depth {depth} ladder"),
         "fold_input_probe": arm_fold_input_probes(design),
         "control_recheck": control_row,
         "cells": cells,

@@ -195,7 +195,7 @@ The canonical local `ChainItem` schema uses exact `SourceSpan` offsets. External
 author those offsets reliably, so collect their output in this provisional quote-based shape (one
 chain per JSONL line) and run `make curate-drafts CURATE_KIND=chains` to re-ground and filter it.
 The curator does not promote Artifact D into a scored fixture; canonical ontology-generated chains
-use the workflow in [current data prep](../impl/current/data-prep.md#chain-of-questions-artifacts).
+use the workflow in [current data prep](../impl/current/data-prep/chain-of-questions.md#chain-of-questions-artifacts).
 
 ```json
 {"chain_id": "ext-chain-20260703-001", "lang": "uk",

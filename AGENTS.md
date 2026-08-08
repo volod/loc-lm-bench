@@ -63,13 +63,31 @@ in topic files under `docs/impl/current/`. Running the cycle below is PART OF "d
 feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an optional extra. The user
 should never have to ask you to make `plan.md` forward-only again.
 
+**The delivered docs are a three-level tree.** `docs/impl/current.md` (areas) ->
+`docs/impl/current/<area>.md` (orientation + the tree of pages under it) ->
+`docs/impl/current/<area>/<topic>.md` (one subject). A large area owns a directory; a small one
+stays a single page. Rules for keeping it navigable:
+
+- **Write to the narrowest page.** Add delivered detail to the topic page that owns the subject.
+  Create a new topic page when a subject is genuinely new, and add its row to the area page in the
+  same change -- a page no index links to is a page nobody finds.
+- **An area page is an index, not a container.** It carries orientation plus a table of its pages;
+  it does not accumulate the detail itself.
+- **Split before a page becomes a scroll.** A topic page past ~500 lines, or one whose headings
+  describe two subjects, splits along the heading seam; a section that grows past ~500 lines with
+  no subheadings gets subheadings first.
+- **Links are the navigation, so they must land.** `make lint-doc-links` checks every relative
+  link (file + `#anchor`) and runs inside `make lint-md`. A heading's anchor does NOT depend on its
+  level, so a section moved between files keeps its fragment and only the path changes.
+
 **The plan/current update cycle (run after every implemented feature, before reporting done):**
 
 1. **Record in current docs.** Add or refresh the delivered behavior in the narrowest matching
-   topic file under `docs/impl/current/`: what was built, where it lives (modules / commands /
-   tests), how to run it, and the result if any (numbers, decisions, file locations, dates). Update
-   `docs/impl/current.md` only when a new topic or lookup path is needed. Results, "DONE" status,
-   and history belong HERE.
+   topic page (`docs/impl/current/<area>/<topic>.md`, or `docs/impl/current/<area>.md` for a
+   single-page area): what was built, where it lives (modules / commands / tests), how to run it,
+   and the result if any (numbers, decisions, file locations, dates). Update the area page when a
+   new topic page is added, and `docs/impl/current.md` only when a new area or frequent lookup
+   path is needed. Results, "DONE" status, and history belong HERE.
 2. **Delete from plan.md.** Remove the implemented item's description ENTIRELY. Do NOT leave a
    "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
    is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
@@ -94,6 +112,30 @@ should never have to ask you to make `plan.md` forward-only again.
 - Self-check before finishing: the task diff NET-REMOVES the implemented scope from `plan.md` and
   ADDS it to the current docs (`current.md` index or `current/*.md` topic), and a grep of `plan.md`
   for `DONE` / `delivered` / `implemented` / an ISO date returns nothing left over from this task.
+
+## Leaving The Host Clean
+
+A "done" report claims the host is back to the state a reader would expect. Verify that before
+reporting -- a leftover process keeps burning a GPU or a core, and a leftover file is the next
+task's mystery diff.
+
+- **Background shells:** Before reporting done, list every background task this session started and
+  confirm each has EXITED. Stop the ones that have not (`TaskStop`), and say so in the report if any
+  was killed rather than finished. A task still running is not a finished task.
+- **Do not arm a poller for work the harness tracks:** a backgrounded command notifies on exit, so a
+  second shell that waits on it is pure waste. Poll only for state the harness cannot see (an
+  external queue, a remote job).
+- **A watcher must not match itself:** `pgrep -f` / `pgrep -a` match the FULL command line, so a
+  waiter that greps for the command it is waiting on finds its own shell and loops forever. Match on
+  the process name, the PID, or a pattern the watcher's own command line does not contain.
+- **Host processes:** No model server, run, or tool this task started may be left holding the GPU or
+  a port unless the user asked for it to stay up. Check with `nvidia-smi` after any heavy local run.
+- **Temporary artifacts:** `git status` must show only the files the task intended to change.
+  Throwaway roots, scratch scripts, half-written fixtures, and debug output go to the session
+  scratchpad directory or are deleted -- never left in the repo, `src/`, or `samples/`.
+- **Run artifacts are NOT temporary:** anything a real run wrote under
+  `$DATA_DIR/<method_name>/<run_timestamp>/` stays. Clean up what YOU scaffolded, not what the
+  pipeline produced.
 
 ## Formatting & Conventions
 

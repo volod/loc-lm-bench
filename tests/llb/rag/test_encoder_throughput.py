@@ -6,14 +6,11 @@ from llb.rag.encoder_throughput import (
     STOP_MAX_PASSES,
     STOP_MAX_SECONDS,
     STOP_PRECISION,
-    build_host_summary,
-    format_host_summary,
     measure_encoder_throughput,
-    ordering_survives,
-    rate_order,
     relative_precision,
-    render_host_markdown,
 )
+from llb.rag.encoder_throughput_report import format_host_summary, render_host_markdown
+from llb.rag.encoder_throughput_summary import build_host_summary, ordering_survives, rate_order
 
 
 def _step_clock(values: list[float]):
