@@ -56,7 +56,7 @@ DEFAULT_BASELINE_MODEL = "intfloat/multilingual-e5-base"
 # cross-encoder reranker that can only re-sort what it is handed). At a generous `top_k` with room
 # in the context budget, ranking the same evidence earlier changes nothing the answer can see, so
 # the bar stays OFF unless the operator's configuration puts it in scope -- and the end-to-end
-# evidence for that scope lives in the embedder bake-off section of `docs/impl/current/rag-core.md`.
+# evidence for that scope lives in `docs/impl/current/rag-core/first-hit-rank-adoption.md`.
 BAR_RECALL = METRIC_RECALL
 BAR_FIRST_HIT = METRIC_MRR
 BARS = (BAR_RECALL, BAR_FIRST_HIT)

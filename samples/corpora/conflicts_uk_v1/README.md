@@ -3,7 +3,7 @@
 A seven-document Ukrainian corpus that plants one instance of every relation
 `llb audit-corpus-conflicts` is supposed to find, so each effort tier can be asserted against a
 known answer in CI. See
-[corpus hygiene](../../../docs/impl/current/data-prep.md#corpus-hygiene-conflict-detection-corpus-conflict-detection)
+[corpus hygiene](../../../docs/impl/current/data-prep/conflict-detection.md#corpus-hygiene-conflict-detection-corpus-conflict-detection)
 for the detector itself.
 
 The documents are a plausible institutional set: a 2021 regulation on handling citizens' appeals,

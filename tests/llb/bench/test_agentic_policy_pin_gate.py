@@ -118,7 +118,7 @@ def test_a_drift_that_retires_published_cells_names_every_one_of_them():
     assert "surface-d6-g12000: depth 6, guard 12000" in report
     assert "first divergent model call 2" in report
     assert "re-measure those cells" in report
-    assert "extended-workflows.md#cap-fitting-boundary-surface" in report
+    assert "extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface" in report
 
 
 def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free():

@@ -76,7 +76,8 @@ def test_candidate_budget_selects_exactly_n_pairs_over_an_exhaustive_distributio
     Over an exhaustive distribution the null and the observed population are the same set, so a
     budget of N cuts at the Nth largest similarity and the scan returns precisely N pairs. That
     exactness is the feature; the absence of any false-positive claim is the documented
-    limitation (see `no independent null` in docs/impl/current/data-prep.md).
+    limitation (see `no independent null` in
+    docs/impl/current/data-prep/conflict-detection.md).
     """
     rng = random.Random(0)
     values = sorted(rng.gauss(0.0, 1.0) for _ in range(10_000))

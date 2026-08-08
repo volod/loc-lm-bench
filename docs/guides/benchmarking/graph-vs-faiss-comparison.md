@@ -119,7 +119,7 @@ It writes `report.md` / `comparison.json` with, per graph weight and strategy, `
 item-level win/loss ledger, and an adopt / inconclusive / reject verdict for the multi-hop slice.
 Read `all-spans@k` first: a healthy `recall@k` on multi-hop questions usually means one hop was
 retrieved and the other was not. The measured host result is in
-[GraphRAG](../../impl/current/graphrag-backend.md#graph-vector-fusion-evidence).
+[GraphRAG](../../impl/current/graphrag-backend.md).
 
 `--graph-fusion-candidates` is the per-lane candidate depth the weight is applied over (`k` == the
 scored cutoff, the default). `--graph-fusion-span-identity` is the rule that decides when a graph
@@ -131,13 +131,13 @@ Sweep the two policies together, and read the report's cross-lane agreement tabl
 `exact` the depth rows tie unless your graph spans share EXACT chunk boundaries with the vector
 lane (on the measured Ukrainian corpus they shared 2 in 95 questions, so depth was inert), while
 `overlap` makes agreement the common case and depth a live knob. The measured host result is in
-[GraphRAG](../../impl/current/graphrag-backend.md#span-identity-evidence).
+[GraphRAG](../../impl/current/graphrag-backend/span-and-depth-evidence.md#span-identity-evidence).
 
 `--graph-fusion-span-merge-ratio` is the share of the shorter span `overlap` needs covered before
 it folds (`1.0` == containment only). Leave it alone unless your chunks are short or your graph
 spans are long: on the measured corpus 0.25 / 0.5 / 0.75 give byte-identical rows, because a graph
 mention is either wholly inside a chunk or misses it entirely
-([GraphRAG](../../impl/current/graphrag-backend.md#span-merge-threshold-evidence)).
+([GraphRAG](../../impl/current/graphrag-backend/span-and-depth-evidence.md#span-merge-threshold-evidence)).
 
 ## Step 5 (optional) -- does the extra evidence reach the ANSWER?
 
@@ -171,7 +171,7 @@ Two gotchas:
   model did not convert into a better answer.
 
 The measured host result is in
-[GraphRAG](../../impl/current/graphrag-backend.md#answer-quality-evidence).
+[GraphRAG](../../impl/current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
 
 ## Reference factoid-corpus result
 

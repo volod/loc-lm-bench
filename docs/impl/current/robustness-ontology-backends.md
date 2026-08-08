@@ -202,7 +202,7 @@ meta pins them).
   with shared-bridge fact pairs. Extracted graphs are usually too sparse in object-to-subject links
   for the strict walk to supply a measurable slice, and every grounding, language, and >= 2-span
   constraint above still applies to the filled seeds -- only the candidate supply widens. See
-  [data prep](data-prep.md#yield-max-empirical-acceptance) for the measured sparsity.
+  [data prep](data-prep/ingestion-corpora.md#yield-max-empirical-acceptance) for the measured sparsity.
 - **Near-duplicate suppression** (`--dedup-against <bundle[,bundle]>`, `DRAFT_DEDUP_AGAINST=`).
   `dedup.NearDuplicateFilter` drops a drafted question whose pinned-E5 (`multilingual-e5-base`,
   the RAG store's embedder) cosine similarity to any prior-bundle question is `>= 0.9`, so a
@@ -224,7 +224,7 @@ while holding model, extraction, retrieval, and review size constant. Both 40-ro
 samples achieved a 1.0 human accept rate. Coverage-target sampling retained 215 citation-valid and
 194 retrieval-unique needles versus 165 and 149 for the flat cap, so the broader lane clears the
 yield-at-equal-quality gate. Per-question-type fractions and accepted-ledger paths are recorded in
-[data prep](data-prep.md#yield-max-empirical-acceptance).
+[data prep](data-prep/ingestion-corpora.md#yield-max-empirical-acceptance).
 
 ```bash
 make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \

@@ -4,7 +4,7 @@ Three Ukrainian service regulations shaped like converted PDFs. Unlike the exact
 fixture [`duplicate_chunks_uk_v1`](../duplicate_chunks_uk_v1/README.md), their shared furniture is
 repeated with the small differences a PDF conversion actually produces, so each repeated block
 lands on a DIFFERENT duplicate tier
-([RAG core](../../../docs/impl/current/rag-core.md#duplicate-chunk-collapse)).
+([RAG core](../../../docs/impl/current/rag-core/retrieval-store.md#duplicate-chunk-collapse)).
 
 | repeated block | how the copies differ | merged by |
 | --- | --- | --- |

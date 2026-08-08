@@ -30,7 +30,7 @@ Current policy:
 - frontier *scoring* (the `scorer_policy=frontier` lane on `run-eval`) is a separate opt-in: one
   upfront egress consent plus a hard per-run USD and/or call budget enforced by the scorer cost
   ledger under `$DATA_DIR/<method>/<run>/scorer/`. Over-cap aborts are resumable and never silent.
-  See [evaluation rigor](rigor-board-judge.md#scorer-policy-seam).
+  See [evaluation rigor](rigor-board-judge/judging.md#scorer-policy-seam).
 
 ## Closed Graph Ontology
 
@@ -61,7 +61,7 @@ findings**, and the audit must not be presented as though it did. Threshold cali
 the corpus's own comparable cross-document pair similarities, a population that contains the very
 duplicates it is meant to detect; enumerated exactly, the null and the observed set are identical,
 so empirical FDR is 1.000 at every threshold and a budget of N returns exactly N pairs. Detail and
-measurements: [data prep](data-prep.md#known-limitation-there-is-no-independent-null).
+measurements: [data prep](data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null).
 
 Two consequences hold until `conflict-null-model-research` says otherwise. Confidence in a corpus
 conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so no
@@ -75,7 +75,7 @@ significance level, or confidence -- name it a candidate budget or a rank cutoff
 default retrieval policies and never leaderboard rows; `rag` remains the ranked lane. This is a
 decision, not an omission, and it survives the measured result that `long_context` beat `rag` on
 both scored roster models
-([RAG core](rag-core.md#context-ablation-evidence)):
+([RAG core](rag-core/context-ablation.md#context-ablation-evidence)):
 
 - `long_context` is **oracle-grounded**. It reads the item's own gold `doc_id`s, so it knows the
   answer's document for free. That is a legitimate ceiling to measure a retrieval layer against

@@ -8,7 +8,7 @@
     "model": "qwen3:14b",
     "depth": 8,
     "compact_share": 0.5,
-    "evidence": "docs/impl/current/extended-workflows.md#compact-versus-cap-with-active-compaction"
+    "evidence": "docs/impl/current/extended-workflows/compact-versus-cap.md#compact-versus-cap-with-active-compaction"
   },
   "candidate_roster": [
     {

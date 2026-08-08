@@ -4,7 +4,7 @@ Three Ukrainian equipment manuals shaped like converted PDFs: each one has its o
 section, and each one repeats the SAME page furniture -- a legal preamble, a mode-legend table,
 and a service-contact block. That is the structure that makes a converted-PDF index spend a large
 share of its budget on text it already holds, and makes identical chunks tie exactly at retrieval
-time. See [duplicate chunk collapse](../../../docs/impl/current/rag-core.md#duplicate-chunk-collapse)
+time. See [duplicate chunk collapse](../../../docs/impl/current/rag-core/retrieval-store.md#duplicate-chunk-collapse)
 for the behavior under test.
 
 | document | unique content | repeats |

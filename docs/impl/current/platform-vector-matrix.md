@@ -313,9 +313,9 @@ make compare-vector-stores GOLDSET=<bundle>/goldset.jsonl RAG_K=10 \
 
 When `--goldset <bundle>/goldset.jsonl` is passed and `<bundle>/corpus/` exists,
 `compare-vector-stores` uses the sibling corpus automatically. Pass `--corpus-root` when the paths
-are separate. `NOISE_FLOOR=1` adds the
-[measurement floor](rag-core.md#measurement-floor---noise-floor) per backend, which is what says
-whether a backend-to-backend delta is a ranking at all.
+are separate. `NOISE_FLOOR=1` adds the [measurement
+floor](rag-core/retrieval-metrics.md#measurement-floor---noise-floor) per backend, which is what
+says whether a backend-to-backend delta is a ranking at all.
 
 Use one isolated `DATA_DIR` per validation run when you need to keep persisted stores for multiple
 backends.
@@ -359,31 +359,31 @@ make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOP
 
 Every candidate row carries a PAIRED delta interval against `--baseline` plus the win/loss/tie
 ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
-rank; see [RAG core](rag-core.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
+rank; see [RAG core](rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict).
 
-Recommended embedder for the 16 GB host: `intfloat/multilingual-e5-base`, the current default.
-On a 12 GiB Blackwell host that must keep embeddings on CUDA beside a served generator,
+Recommended embedder for the 16 GB host: `intfloat/multilingual-e5-base`, the current default. On a
+12 GiB Blackwell host that must keep embeddings on CUDA beside a served generator,
 `intfloat/multilingual-e5-small` is the measured cheap alternative (~3x warm encode, lower VRAM)
-when quality is flat -- still RETAIN until a paired adopt clears
-([RAG core](rag-core.md#blackwell-sub-base-encoder-roster-e5-small)). The
-2026-07-10 `embedding-bakeoff-full-corpus` evidence (four local candidates over a verified 44-item
-quickstart-PDF accepted goldset, 1139 chunks) put it ahead on recall@10 (0.955 vs 0.932 for
-e5-large and bge-m3) with ~1.8x the embed throughput of the 1024-dim pair (69 vs 38 chunks/s on
-GPU) and the smallest index (4.99 MB vs 6.10 MB); e5-large was the MRR winner (0.795 vs 0.740) and
-tied e5-base at recall@20. That goldset is no longer on disk, and the 2026-07-24 floor re-read on
-the accepted goldset that survives does NOT reproduce the ranking -- `bge-m3` leads there by 0.050
-recall@10 against a zero floor, and e5-base ties e5-large. The 2026-07-24 paired re-read then
-settles the reading: on that accepted goldset the verdict is RETAIN (`bge-m3` +0.050
-`[-0.050, +0.150]`, 3 wins / 1 loss / 36 ties), while on the committed 250-item UA fixture the
-verdict is ADOPT `e5-large` (+0.020 `[+0.004, +0.040]`, 5 wins / 0 losses) -- two corpora, two
-different separated candidates, so the default stays put until an accepted operator-corpus ledger
-separates one. Tables and the full reading are in
-[RAG core](rag-core.md#the-recommendation-re-read-with-paired-uncertainty). Where `bge-m3` DOES
-separate on the PDF corpus is first-hit rank (MRR +0.064), and the end-to-end
-[scoped first-hit-rank bar](rag-core.md#the-scoped-first-hit-rank-adoption-bar) measures that this
+when quality is flat -- still RETAIN until a paired adopt clears ([RAG
+core](rag-core/embedders.md#blackwell-sub-base-encoder-roster-e5-small)). The 2026-07-10
+`embedding-bakeoff-full-corpus` evidence (four local candidates over a verified 44-item
+quickstart-PDF accepted goldset, 1139 chunks) put it ahead on recall@10 (0.955 vs 0.932 for e5-large
+and bge-m3) with ~1.8x the embed throughput of the 1024-dim pair (69 vs 38 chunks/s on GPU) and the
+smallest index (4.99 MB vs 6.10 MB); e5-large was the MRR winner (0.795 vs 0.740) and tied e5-base
+at recall@20. That goldset is no longer on disk, and the 2026-07-24 floor re-read on the accepted
+goldset that survives does NOT reproduce the ranking -- `bge-m3` leads there by 0.050 recall@10
+against a zero floor, and e5-base ties e5-large. The 2026-07-24 paired re-read then settles the
+reading: on that accepted goldset the verdict is RETAIN (`bge-m3` +0.050 `[-0.050, +0.150]`, 3 wins
+/ 1 loss / 36 ties), while on the committed 250-item UA fixture the verdict is ADOPT `e5-large`
+(+0.020 `[+0.004, +0.040]`, 5 wins / 0 losses) -- two corpora, two different separated candidates,
+so the default stays put until an accepted operator-corpus ledger separates one. Tables and the full
+reading are in [RAG core](rag-core/embedders.md#the-recommendation-re-read-with-paired-uncertainty).
+Where `bge-m3` DOES separate on the PDF corpus is first-hit rank (MRR +0.064), and the end-to-end
+[scoped first-hit-rank
+bar](rag-core/first-hit-rank-adoption.md#the-scoped-first-hit-rank-adoption-bar) measures that this
 rank gain reaches the answer under a reranker (+0.052 objective) or a small `top_k` (+0.034) but is
 free at the shipped k=10 default (-0.010) -- so `--adoption-bars recall_at_k,mrr` adopts `bge-m3`
-for those two configurations while the recall@k-only default is retained for the shipped one. The paraphrase/STS
-`lang-uk` model collapses on every run (recall@10 0.455 / 0.475 / 0.856) and is the one row that
-separates from the baseline in the negative direction on both corpora. Embed VRAM peaked ~4 GB, so
-all candidates fit the 16 GB host.
+for those two configurations while the recall@k-only default is retained for the shipped one. The
+paraphrase/STS `lang-uk` model collapses on every run (recall@10 0.455 / 0.475 / 0.856) and is the
+one row that separates from the baseline in the negative direction on both corpora. Embed VRAM
+peaked ~4 GB, so all candidates fit the 16 GB host.

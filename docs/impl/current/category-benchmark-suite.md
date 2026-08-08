@@ -271,7 +271,7 @@ wrong answer. Each case row carries the context accounting (`max_prompt_tokens`,
 `observation_bytes`, `n_compactions`, `n_trimmed_observations`) alongside the completion headline.
 `bench-agentic-context` ranks the four policies for one model; the lane, its paired reading, and its
 bundles are documented in
-[extended workflows](extended-workflows.md#agent-context-management-policies).
+[extended workflows](extended-workflows/agent-context-policies.md#agent-context-management-policies).
 
 ## Summarization
 

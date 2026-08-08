@@ -63,13 +63,31 @@ in topic files under `docs/impl/current/`. Running the cycle below is PART OF "d
 feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an optional extra. The user
 should never have to ask you to make `plan.md` forward-only again.
 
+**The delivered docs are a three-level tree.** `docs/impl/current.md` (areas) ->
+`docs/impl/current/<area>.md` (orientation + the tree of pages under it) ->
+`docs/impl/current/<area>/<topic>.md` (one subject). A large area owns a directory; a small one
+stays a single page. Rules for keeping it navigable:
+
+- **Write to the narrowest page.** Add delivered detail to the topic page that owns the subject.
+  Create a new topic page when a subject is genuinely new, and add its row to the area page in the
+  same change -- a page no index links to is a page nobody finds.
+- **An area page is an index, not a container.** It carries orientation plus a table of its pages;
+  it does not accumulate the detail itself.
+- **Split before a page becomes a scroll.** A topic page past ~500 lines, or one whose headings
+  describe two subjects, splits along the heading seam; a section that grows past ~500 lines with
+  no subheadings gets subheadings first.
+- **Links are the navigation, so they must land.** `make lint-doc-links` checks every relative
+  link (file + `#anchor`) and runs inside `make lint-md`. A heading's anchor does NOT depend on its
+  level, so a section moved between files keeps its fragment and only the path changes.
+
 **The plan/current update cycle (run after every implemented feature, before reporting done):**
 
 1. **Record in current docs.** Add or refresh the delivered behavior in the narrowest matching
-   topic file under `docs/impl/current/`: what was built, where it lives (modules / commands /
-   tests), how to run it, and the result if any (numbers, decisions, file locations, dates). Update
-   `docs/impl/current.md` only when a new topic or lookup path is needed. Results, "DONE" status,
-   and history belong HERE.
+   topic page (`docs/impl/current/<area>/<topic>.md`, or `docs/impl/current/<area>.md` for a
+   single-page area): what was built, where it lives (modules / commands / tests), how to run it,
+   and the result if any (numbers, decisions, file locations, dates). Update the area page when a
+   new topic page is added, and `docs/impl/current.md` only when a new area or frequent lookup
+   path is needed. Results, "DONE" status, and history belong HERE.
 2. **Delete from plan.md.** Remove the implemented item's description ENTIRELY. Do NOT leave a
    "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
    is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
