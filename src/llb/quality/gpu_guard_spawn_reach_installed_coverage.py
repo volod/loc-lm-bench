@@ -31,16 +31,18 @@ no `.py` by construction:
 - `archived` -- nothing in the tree, and an archive on the import path carries it. Classified so the
   partition stays whole and left to `unread_archived_packages`, which already refuses it per package
   -- reporting it twice would be one finding wearing two names.
-- `absent` -- nothing under the scanned root at all. Reported, never refused: this scan reads ONE
-  tree, and a published name that tree does not carry is provided from somewhere else on the import
-  path (an editable install -- `llb` itself is one -- or a second site directory), or is a
-  distribution recording a SUBMODULE as top-level, which `tree-sitter-*` (`_binding`) and `xxhash`
-  (`_xxhash`) both do here.
+- `absent` -- nothing the pass read provides it. The scan reads the whole import path now (the tree,
+  its archives, and the extra directories a `.pth` adds), so this is an answer rather than an
+  artifact of reading one root: what is left is a distribution recording a SUBMODULE as a top-level
+  name, which `tree-sitter-*` (`_binding`) and `xxhash` (`_xxhash`) both do here. Reported, never
+  refused -- a name nothing provides cannot start a child, and refusing two third-party metadata
+  quirks would be the naive gate again.
 
-Measured over this repo's venv (CPython 3.13, 34704 files read): of 421 published top-level names,
-**402 read as source, 10 extensions, 6 namespace, 0 compiled-only, 0 archived, 3 absent** -- every
-unread name accounted for, which is what makes the below-the-seams verdict a statement about the
-venv rather than about whichever installed files happened to carry source.
+Measured over this repo's venv (CPython 3.13, 35636 files read over site-packages plus the editable
+`<repo>/src` its `.pth` adds): of 421 published top-level names, **403 read as source,
+10 extensions, 6 namespace, 0 compiled-only, 0 archived, 2 absent** -- every unread name accounted
+for, which is what makes the below-the-seams verdict a statement about the venv rather than about
+whichever installed files happened to carry source.
 
 One level down is the same problem the stdlib half has and the same answer: the published list is
 per TOP-LEVEL name, so a package that ships its `__init__.py` and strips `pkg/util.py` classifies as
@@ -94,6 +96,7 @@ class InstalledReadCoverage:
     absent: tuple[str, ...]
     compiled_only_submodules: tuple[str, ...] = ()
     archives: tuple[str, ...] = ()
+    sites: tuple[str, ...] = ()
 
     @property
     def unread(self) -> tuple[str, ...]:
@@ -120,6 +123,7 @@ def installed_read_coverage(
     return InstalledReadCoverage(
         root=scan.root,
         archives=scan.archives,
+        sites=scan.sites,
         compiled_only_submodules=compiled_only_submodules(root),
         **{field: tuple(buckets.get(field, ())) for field in _FIELDS},
     )
@@ -151,6 +155,7 @@ def installed_read_coverage_message(coverage: InstalledReadCoverage) -> str:
         f"{named_list('namespace', coverage.namespace)}"
         f"{named_list('archived', coverage.archived)}{named_list('absent', coverage.absent)}"
         f"{named_list('archives read', coverage.archives)}"
+        f"{named_list('path entries read', coverage.sites)}"
     )
 
 

@@ -86,20 +86,21 @@ DECLARED_REACHERS: Mapping[str, SpawnCoverage] = {
 class ModuleReach:
     """One module and the process-starting names its source resolves.
 
-    `archive` names the zip the source was read out of, and is empty for the ordinary case of a file
-    on disk. `path` stays the path RELATIVE to whatever contained it either way, because it is what
-    the excuse tables are keyed on -- the top-level package of an archived `pkg/backend/start.py` is
-    the same `pkg` an operator declared.
+    `container` names what the source was read out of when that is not the scan's own root -- the
+    zip of an archived dependency, or the extra import-path tree a `.pth` file adds -- and is empty
+    for the ordinary case of a file under the root. `path` stays the path RELATIVE to whatever
+    contained it in every case, because it is what the excuse tables are keyed on: the top-level
+    package of an archived `pkg/backend/start.py` is the same `pkg` an operator declared.
     """
 
     path: str
     primitives: tuple[str, ...]
-    archive: str = ""
+    container: str = ""
 
     @property
     def location(self) -> str:
-        """The path plus the archive it came out of -- what an operator has to open to check it."""
-        return f"{self.path} (in {self.archive})" if self.archive else self.path
+        """The path plus what it came out of -- what an operator has to open to check it."""
+        return f"{self.path} (in {self.container})" if self.container else self.path
 
     def __str__(self) -> str:
         return f"{self.location} -> {', '.join(self.primitives)}"
@@ -116,9 +117,12 @@ class SpawnScan:
     is what `gpu_guard_spawn_reach_coverage` weighs against `sys.stdlib_module_names` to tell them
     apart in the middle, where a host ships half its library as source.
 
-    The last two fields carry what an ARCHIVE on the import path contributed, and are empty for a
-    directory-only pass: `archives` is what was opened, and `unread_archived` the dotted names those
-    archives ship with no source to parse. `llb.quality.gpu_guard_spawn_reach_installed` fills them.
+    The last three fields carry what the rest of the import path contributed, and are empty for a
+    root-only pass: `archives` is what was opened and `unread_archived` the dotted names those
+    archives ship with no source to parse, while `sites` names the extra DIRECTORIES a `.pth` file
+    adds -- an editable install's source tree, a vendored subdirectory. `root` is still one tree, so
+    these are what keeps a count over it a statement about the whole path;
+    `llb.quality.gpu_guard_spawn_reach_installed` fills all three.
     """
 
     root: str
@@ -127,6 +131,7 @@ class SpawnScan:
     reaches: tuple[ModuleReach, ...]
     archives: tuple[str, ...] = ()
     unread_archived: tuple[str, ...] = ()
+    sites: tuple[str, ...] = ()
 
 
 def spawn_primitives(

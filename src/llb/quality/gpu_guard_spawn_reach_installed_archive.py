@@ -109,7 +109,7 @@ def archive_reaches(
         if any(trigger in source for trigger in prefilter):
             primitives = source_reaches(source, alphabet)
             if primitives:
-                reaches.append(ModuleReach(entry, primitives, archive=str(archive)))
+                reaches.append(ModuleReach(entry, primitives, container=str(archive)))
     return ArchiveReading(tuple(read), tuple(reaches), tuple(unread))
 
 
@@ -139,6 +139,7 @@ def with_archives(
         reaches=scan.reaches + reaches,
         archives=tuple(str(archive) for archive in opened),
         unread_archived=tuple(sorted(name for name in unread if not has_source(root, name))),
+        sites=scan.sites,
     )
 
 

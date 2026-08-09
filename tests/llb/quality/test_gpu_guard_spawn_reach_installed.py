@@ -28,6 +28,7 @@ from llb.quality import gpu_guard_spawn_reach_installed as installed
 from llb.quality import gpu_guard_spawn_reach_installed_archive as installed_archive
 from llb.quality import gpu_guard_spawn_reach_installed_audit as installed_audit
 from llb.quality import gpu_guard_spawn_reach_installed_coverage as coverage
+from llb.quality import gpu_guard_spawn_reach_installed_sites as sites
 from llb.quality import gpu_guard_spawn_surface as surface
 from llb.quality import gpu_guard_spawn_surface_audit as audit
 
@@ -90,13 +91,21 @@ def test_the_declared_packages_still_reach_only_what_their_excuses_were_measured
     assert findings == (), audit.surface_message(findings)
 
 
+@pytest.fixture(scope="module")
+def installed_coverage(installed_scan) -> coverage.InstalledReadCoverage:
+    """What that scan read, weighed against what this environment publishes (0.9s on this host)."""
+    return coverage.installed_read_coverage(installed_scan)
+
+
 @pytest.mark.slow
-def test_the_installed_scan_accounts_for_every_published_name_it_read_no_source_for(installed_scan):
+def test_the_installed_scan_accounts_for_every_published_name_it_read_no_source_for(
+    installed_scan, installed_coverage
+):
     """The below-the-seams verdict is about this venv, so it has to say which venv it was read from:
     every top-level name the installed distributions publish is either read or excused by a
     construction that has no source. The file count this replaces said how much was read and not
     what was missed, which is the same middle the stdlib half outgrew."""
-    measured = coverage.installed_read_coverage(installed_scan)
+    measured = installed_coverage
     message = coverage.installed_read_coverage_message(measured)
     assert installed_audit.audit_installed_read_coverage(installed_scan, measured) == (), message
     # A partition of the published list: no name falls between two buckets or into both.
@@ -107,6 +116,22 @@ def test_the_installed_scan_accounts_for_every_published_name_it_read_no_source_
     # And one level down, where the published list stops: no dependency here ships a package whose
     # `__init__.py` is present and whose submodules are not.
     assert measured.compiled_only_submodules == (), message
+
+
+@pytest.mark.slow
+def test_this_repos_own_source_is_read_and_starts_no_child_below_the_seams(
+    installed_scan, installed_coverage
+):
+    """The tree neither scan used to open. `llb` is installed editable, so its modules live outside
+    site-packages and were parsed by nothing while every dependency around them was held to this
+    question. Reading the `.pth` entry puts it back on the same footing -- and the answer is that it
+    needs no excuse: this repo starts children in fifteen modules and every one of them goes through
+    `subprocess`, which the denial patches."""
+    assert "llb" in installed_scan.modules_read
+    assert any(entry.endswith("/src") for entry in installed_scan.sites), installed_scan.sites
+    assert "llb" not in installed_coverage.absent
+    reaching = {module.path.split("/")[0] for module in installed_scan.reaches}
+    assert "llb" not in reaching
 
 
 def test_the_installed_alphabet_is_only_what_goes_below_the_seams():
@@ -423,6 +448,89 @@ def test_a_published_name_this_tree_does_not_carry_is_reported_not_refused(tmp_p
     assert [finding.name for finding in installed_audit.unread_archived_packages(scan, {})] == [
         "zipped"
     ]
+
+
+def _elsewhere(tmp_path: Path, modules: Mapping[str, str]) -> Path:
+    """A tree OUTSIDE the scan root -- what an editable install's `.pth` points at."""
+    root = tmp_path / "elsewhere"
+    for relative, source in modules.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+    return root
+
+
+def test_a_tree_a_pth_file_adds_is_read_and_held_to_the_same_question(tmp_path):
+    """How this repo's own `src` is importable at all: one `.pth` line naming a directory outside
+    site-packages. The tree is parsed by neither the directory pass nor the archive one, so a
+    package that goes below the seams there is refused by nothing -- and the finding has to name the
+    tree, because the path alone reads like something under site-packages that is not there."""
+    outside = _elsewhere(tmp_path, {"editable/backend/start.py": BELOW})
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    (root / "__editable__.editable-1.0.pth").write_text(f"{outside}\n")
+    scan = installed.installed_spawn_reaches(root)
+    assert (scan.sites, scan.files_read) == ((str(outside),), 2)
+    assert set(scan.modules_read) == {"editable", "plain"}
+    findings = installed_audit.audit_installed_reach(scan, reachers={})
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        (f"editable/backend/start.py (in {outside})", reach_audit.PROBLEM_UNCOVERED_REACH)
+    ]
+    # And the excuse table is keyed on the package, wherever the package was read from.
+    assert installed_audit.audit_installed_reach(scan, reachers={"editable": _excused(1)}) == ()
+
+
+def test_a_published_name_an_added_tree_provides_reads_as_read_rather_than_absent(tmp_path):
+    """What the coverage's `absent` class means once the whole path is read: not "this root does not
+    carry it" -- which was true of `llb` itself while nothing scanned it -- but "nothing on this
+    import path provides it", which is an answer rather than an artifact of reading one tree."""
+    outside = _elsewhere(tmp_path, {"editable/__init__.py": "import json\n"})
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    (root / "editable.pth").write_text(f"{outside}\n")
+    scan = installed.installed_spawn_reaches(root)
+    measured = coverage.installed_read_coverage(scan, names=["editable", "gone", "plain"])
+    assert (measured.read, measured.absent) == (("editable", "plain"), ("gone",))
+    assert measured.sites == (str(outside),)
+    assert str(outside) in coverage.installed_read_coverage_message(measured)
+
+
+def test_a_pth_line_that_the_interpreter_runs_is_not_read_as_a_path(tmp_path):
+    """`site.addpackage` executes a line starting with `import `, which is the other editable style
+    (a finder module holding the paths in a dict) and every plugin hook besides. Its tree is not
+    read, so whatever it provides stays unread rather than being counted as read."""
+    outside = _elsewhere(tmp_path, {"editable/__init__.py": "import json\n"})
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    pth = root / "hooks.pth"
+    pth.write_text(f"# a comment\n\nimport __editable___pkg_finder\n{outside}\n")
+    scan = installed.installed_spawn_reaches(root)
+    assert scan.sites == (str(outside),)
+    assert set(scan.modules_read) == {"editable", "plain"}
+    # A comment and a blank line name nothing either, and a directory whose NAME begins with
+    # `import` is still a path -- matched on the trailing space, exactly as the interpreter does.
+    (root / "named.pth").write_text("importlib_vendored\nimport runs_this\n")
+    assert sites.path_lines(root / "named.pth") == ("importlib_vendored",)
+    assert sites.path_lines(pth) == (str(outside),)
+
+
+def test_a_pth_entry_inside_the_scan_root_is_left_to_the_pass_that_already_walked_it(tmp_path):
+    """`nvidia-cutlass-dsl` ships one of these, making `cutlass` importable out of a subdirectory of
+    site-packages. Reading it again would count its files twice and report one file under two
+    package names -- `cutlass` here, `nvidia_cutlass_dsl` in the pass that read it, which is the
+    name its distribution publishes and the name an excuse would be written at."""
+    root = _tree(tmp_path, {"vendor/packages/inner/start.py": BELOW})
+    (root / "vendor.pth").write_text("vendor/packages\n")
+    scan = installed.installed_spawn_reaches(root)
+    assert (scan.sites, scan.files_read) == ((), 1)
+    assert _paths(scan) == {"vendor/packages/inner/start.py": ("_posixsubprocess.fork_exec",)}
+
+
+def test_a_pth_entry_that_is_not_there_contributes_nothing_rather_than_failing(tmp_path):
+    """The same tolerance the scan gives an unreadable file: a `.pth` left behind by an uninstalled
+    editable package names a tree that is gone, and a scan that raises on one is a scan nobody
+    runs."""
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    (root / "stale.pth").write_text(f"{tmp_path / 'removed'}\n{tmp_path}/plain/__init__.py\n")
+    scan = installed.installed_spawn_reaches(root)
+    assert (scan.sites, scan.files_read) == ((), 1)
 
 
 def test_a_distribution_that_records_a_path_publishes_the_top_level_name_it_installs():

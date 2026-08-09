@@ -43,33 +43,56 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-no-reach-scan-reads-the-tree-this-repo-itself-ships (optional)
+### agent-a-path-entry-added-by-running-code-is-unread-and-silent (optional)
 
-Two trees are read for what starts a child -- the stdlib and site-packages -- and `src/llb` is
-neither ([host validation](current/host-validation.md#code-quality-checks)). The installed read
-coverage makes the hole visible rather than closing it: `llb` is published by
-`packages_distributions()` and classified `absent`, because an editable install points outside the
-scanned root, and `absent` is reported and not refused precisely because that scan reads ONE tree.
-So the repo's own modules -- the code an unmarked test runs the most -- could call
-`_posixsubprocess.fork_exec` and no check would say so, while every dependency around them is held
-to that question. Read the trees the import path actually carries instead of the one
-`sysconfig` names: resolve each `absent` published name to the path it imports from (an editable
-install's `__editable__*.pth` or `direct_url.json` names it) and scan those with the same
-below-the-seams alphabet, so `absent` becomes a name nothing on this host provides rather than a
-name this root does not. Decide on the evidence whether `llb`'s own reaches are declared like a
-dependency's or held to the stricter stdlib rule -- the repo starts children on purpose in
-`scripts/` and the CLI, and a naive gate would refuse every one of them.
+A `.pth` line the interpreter EXECUTES adds whatever paths it likes, and the reader takes the one
+decision it can from a text file: it skips the line
+([host validation](current/host-validation.md#code-quality-checks)). That is the
+`import __editable___pkg_finder` style setuptools writes for a flat layout -- the paths live in a
+`MAPPING` dict inside a generated finder module -- so on a host that installs this repo, or any
+dependency, that way, the tree is parsed by nothing and reported by nothing. It is the identical
+shape of the hole the `.pth` reading just closed, one indirection further in, and worse than the
+archive case because nothing names it: an unread archive is at least refused per package, while an
+unresolved path line is silence. Two moves and the task is to do both: report an unresolved line as
+a finding (a path entry the pass could not read is a statement about the scan, like the empty-read
+refusal), and close the common case by reading the finder module's `MAPPING` literal with `ast`,
+which is static -- no import, no execution -- exactly as the archive half reads a name list.
 
 - Agent status: CLEAR
-- Dependencies: the classes to consume are `absent` / `InstalledReadCoverage` in
-  `src/llb/quality/gpu_guard_spawn_reach_installed_coverage.py`; the scan to point at another tree is
-  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach_installed.py`, which already
-  takes a root; the excuse table is `DECLARED_PACKAGE_REACHERS`.
-- User-visible outcome: the below-the-seams verdict covers the code this repo ships, not only the
-  code it depends on.
-- Scope boundary: in scope -- resolving a published name to the tree it imports from, scanning those
-  trees, and the declare-or-refuse decision for this repo's own starts. Out of scope -- importing a
-  distribution to locate it, the stdlib half, and the no-download axis.
+- Dependencies: the reader is `path_lines` / `site_path_entries` in
+  `src/llb/quality/gpu_guard_spawn_reach_installed_sites.py`; the refusal to copy is
+  `unread_archived_packages` in `src/llb/quality/gpu_guard_spawn_reach_installed_audit.py`.
+- User-visible outcome: a tree on the import path is read, or it is named as unread -- never
+  neither.
+- Scope boundary: in scope -- the unresolved-line report, the static `MAPPING` read, and fixture
+  cases for both editable styles. Out of scope -- executing a `.pth` line, importing a finder
+  module, and the stdlib half.
+- Execution path: `make ci` for the fabricated cases; the real-import-path tier is `slow`.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-installed-read-coverage-still-measures-one-tree (optional)
+
+The installed scan reads the whole import path now -- the directory, its archives, and the trees a
+`.pth` adds -- but the coverage that says what it FAILED to read still reads its evidence under the
+scan root alone ([host validation](current/host-validation.md#code-quality-checks)). Two gaps follow,
+both currently reported rather than wrong: a name a `.pth`-added tree provides with no source (a
+stripped editable checkout) is classified against the root, so it lands in `absent` and is not the
+`compiled_only` REFUSAL it would be one directory over; and a top-level name that no distribution
+records is outside the published list entirely, which is what `cutlass` is on this host -- importable
+out of `nvidia_cutlass_dsl/python_packages`, read by the scan under another name, and invisible to
+the measurement. Close both from the same side: build the declared list from what the import-path
+entries actually PROVIDE (top-level names per entry) as well as from `packages_distributions()`, and
+classify each name against the entry that provides it rather than against the root.
+
+- Agent status: CLEAR
+- Dependencies: the classifier is `_kind` / `installed_read_coverage` in
+  `src/llb/quality/gpu_guard_spawn_reach_installed_coverage.py`; the entries to classify against are
+  `SpawnScan.sites` plus the root, filled by `src/llb/quality/gpu_guard_spawn_reach_installed_sites.py`.
+- User-visible outcome: a stripped tree is refused wherever on the import path it sits, and a name
+  no distribution records is still accounted for.
+- Scope boundary: in scope -- the per-entry classification, the provided-name list, and their
+  fixture cases. Out of scope -- importing anything to enumerate it, the archive half, and the
+  stdlib coverage.
 - Execution path: `make ci` for the fabricated cases; the real-import-path tier is `slow`.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 

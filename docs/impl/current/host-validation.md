@@ -500,7 +500,7 @@ while a zip-shipped dependency carries `.py` -- `bdist_egg` zips the source tree
 establish rather than assume by fabricating an egg-shaped archive, importing it through `zipimport`
 on this interpreter, and reading its source back out with `zipfile`. So a `.py` entry is parsed out
 of the archive (the same bytes through the same parser and the same import resolution as a file on
-disk) and counted as read, with `ModuleReach.archive` naming the zip it came from; the reach it finds
+disk) and counted as read, with `ModuleReach.container` naming the zip it came from; the reach it finds
 is weighed against the same `DECLARED_PACKAGE_REACHERS` excuse a file on disk would be, since the
 top-level package of `pkg/backend/start.py` is the same `pkg` either way. Both halves fold into ONE
 `SpawnScan` (`with_archives`) so `files_read` adds up over the whole import path -- a venv that ships
@@ -516,6 +516,36 @@ this host: 0 archives on the import path, 0 unread archived** -- every dependenc
 directory tree -- and the discovery costs 0.0013s. Residual: an archive is only as readable as its
 entries, so a `.pyc`-only dependency is still a refusal rather than a measurement, which is the same
 statement the stdlib half makes and for the same reason.
+
+**The tree this repo itself ships is read too, because a `.pth` file is the third kind of import-path
+entry.** An archive is not the only thing on the path that is not the scanned directory: a `.pth`
+file adds other DIRECTORIES to it, and that is not an exotic layout -- it is how this repo is
+installed. `__editable__.llb-0.1.0.pth` holds one line, `<repo>/src`, so `llb`'s own modules were
+parsed by neither scan while every dependency around them was held to the question, and the code an
+unmarked test runs the most was the one tree nobody asked it of.
+`llb.quality.gpu_guard_spawn_reach_installed_sites` reads those files with `site.addpackage`'s own
+rule -- a line starting with the word `import` plus a space or a tab is CODE the interpreter runs, a
+comment or a blank line is nothing, anything else is a path resolved against the file's directory --
+and `installed_spawn_reaches` folds the resulting trees into the same `SpawnScan` (`SpawnScan.sites`
+records which), so `files_read` and `modules_read` now add up over the whole import path. The `.pth`
+files are read rather than `sys.path`, deliberately: `sys.path` would answer too, and would answer
+wrong under pytest, which puts the repo root and the test directories on it, so a scan of those
+walks the venv it is trying to describe. Two entries are left alone, each for a stated reason: one
+INSIDE the scan root, which the directory pass already walked (`nvidia-cutlass-dsl` ships one,
+making `cutlass` importable out of a subdirectory of site-packages -- reading it again would count
+those files twice and report one file under two package names, `cutlass` here and the
+`nvidia_cutlass_dsl` its distribution publishes there, which is the name an excuse would be written
+at); and a `.pth` that adds its paths by RUNNING code, the `import __editable___pkg_finder` style
+setuptools uses for a flat layout, whose tree stays unread and is reported as such. A reach found in
+an added tree carries it as `ModuleReach.container`, so the finding names the file an operator has
+to open rather than a path that reads like site-packages and is not.
+**On this host: two entries, one under the root, so ONE tree scanned -- `<repo>/src`, 931 files in
+0.04s, and no reach below the seams at all.** That is the answer to whether this repo's own source
+needs a declaration like a dependency's: it starts children in fifteen modules (`backends/*`,
+`build/vllm.py`, `cli/ui.py`, `executor/*`, `tracking/server.py`, and the rest) and every one of
+them goes through `subprocess.run` / `subprocess.call` / `subprocess.Popen`, which the denial
+patches -- so it is held to exactly the question a dependency is held to, by the same
+`audit_installed_reach`, and needs no excuse to pass it.
 
 **The installed scan says what it FAILED to read, so "no dependency goes below the seams" names the
 venv it was read from.** The stdlib half accounts for every declared name it read no source for; the
@@ -534,34 +564,40 @@ an extension module installed under the name itself, or a directory shipping obj
 which is what the `nvidia-*` wheels are), `namespace` (a directory with no module of its own: an
 implicit namespace package, a PEP 561 `-stubs` directory, a data directory like `include` or
 `schemas`), `compiled_only` (a cached module with no source beside it), `archived` (nothing in the
-tree and an archive on the import path carries it), and `absent` (nothing under the scanned root at
-all). **On this venv, of 421 published top-level names: 402 read as source, 10 extensions,
-6 namespace, 0 compiled-only, 0 archived, 3 absent** -- the measurement costs 0.9s on top of the
+tree and an archive on the import path carries it), and `absent` (nothing the pass read provides
+it). **On this venv, of 421 published top-level names: 403 read as source, 10 extensions,
+6 namespace, 0 compiled-only, 0 archived, 2 absent** -- the measurement costs 0.9s on top of the
 2.2s scan, and the fields partition the list so a name cannot fall between two.
 `gpu_guard_spawn_reach_installed_audit.audit_installed_read_coverage` refuses ONLY `compiled_only`,
 decided on that evidence: it is the stripped tree, where the module is importable here and the scan
 did not read it. `extensions` and `namespace` have no source by construction, and a gate refusing
 either is the naive one that fails on any host with a CUDA wheel installed. `archived` is left to
 `unread_archived_packages`, which already refuses those names at this same granularity -- reporting
-them here too would be one finding wearing two names. `absent` is reported and not refused because
-this scan reads ONE tree: a published name it does not carry is provided from elsewhere on the
-import path (`llb` itself, editable-installed) or is a distribution recording a submodule as
-top-level, which `tree-sitter-*` (`_binding`) and `xxhash` (`_xxhash`) both do here. The refusal is
+them here too would be one finding wearing two names. `absent` is an ANSWER rather than an artifact
+of reading one root, now that the pass reads the tree, its archives, and the directories a `.pth`
+adds: what is left is a distribution recording a submodule as a top-level name, which
+`tree-sitter-*` (`_binding`) and `xxhash` (`_xxhash`) both do here. It is still reported and not
+refused -- a name nothing provides cannot start a child, and refusing two third-party metadata
+quirks is the naive gate again. The refusal is
 grouped per PACKAGE, the way the archive one is, and the submodule level joins its own package's
 line -- so a stripped dependency is one line naming the modules it hid, and a package the
 declarations already name is not refused at all. `compiled_only_submodules` is reused unchanged from
 the stdlib coverage, and `installed_read_coverage_message` renders the breakdown as the assertion
-message the venv test fails with. Residual: the classification reads filenames, so a directory
-carrying both a stripped module and a shared object is called stripped (cache evidence first, since
-a `.pyc` is the interpreter's own record that source WAS there), and a distribution that publishes
-no top-level name at all is outside the list this is measured against.
+message the venv test fails with. Residual: the classification reads filenames UNDER THE SCAN ROOT,
+so a directory carrying both a stripped module and a shared object is called stripped (cache
+evidence first, since a `.pyc` is the interpreter's own record that source WAS there), a name a
+`.pth`-added tree provides without source classifies against the root rather than against that
+tree, and a distribution that publishes no top-level name at all is outside the list this is
+measured against -- as is an importable name no distribution records, which is what `cutlass` is
+here.
 
 **The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
 stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119
 files and 556 MB here, 2.2s warm and disk-bound cold -- and it changes only when the lock file does,
 which is a `make test` moment rather than a `make ci` one. The mechanism itself (the package-level
 excuse, the narrow alphabet, a call that goes around `os` through `posix`, a source-carrying archive,
-a `.pyc`-only one) is pinned over fabricated trees and fabricated eggs in the non-slow tier, so
+a `.pyc`-only one, a `.pth`-added tree) is pinned over fabricated trees, eggs, and `.pth` files in
+the non-slow tier, so
 `make ci` still covers the code and only the 40k-file read is
 deferred. The split follows the same seam the source does: `test_gpu_guard_spawn_reach.py` is the
 stdlib pass and `test_gpu_guard_spawn_reach_installed.py` the dependency one. Residual: the scan

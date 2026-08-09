@@ -18,8 +18,11 @@ ships zipped -- a zipped egg, a `--zip-ok` install, any `sys.path` entry that is
 than a directory -- has no package directory to walk, so `rglob("*.py")` finds nothing in it,
 nothing is parsed, and `audit_installed_reach` would return clean for a venv half of which it never
 opened. `llb.quality.gpu_guard_spawn_reach_installed_archive` is the other half of the pass and
-states the reading it decided on; `installed_spawn_reaches` folds the two into ONE `SpawnScan`, so
-the counts add up over everything this interpreter can import from.
+states the reading it decided on. Nor is an archive the only entry that sits outside the tree: a
+`.pth` file adds DIRECTORIES to the path as well, which is how this repo's own `src` is importable
+at all, and `llb.quality.gpu_guard_spawn_reach_installed_sites` reads those.
+`installed_spawn_reaches` folds all three into ONE `SpawnScan`, so the counts add up over
+everything this interpreter can import from.
 
 The refusal that leaves is `gpu_guard_spawn_reach_audit.unread_archived_packages`, at PACKAGE
 granularity because that is the unit the excuses are written at and the unit an operator acts on: a
@@ -45,6 +48,7 @@ from llb.quality.gpu_guard_spawn_reach import (
 )
 from llb.quality.gpu_guard_spawn_reach_archive import openable_archives
 from llb.quality.gpu_guard_spawn_reach_installed_archive import installed_archives, with_archives
+from llb.quality.gpu_guard_spawn_reach_installed_sites import site_path_entries, with_path_entries
 from llb.quality.gpu_guard_spawn_surface import COVERAGE_RESIDUAL, SpawnCoverage
 
 # The two below-the-seams names every package declaration here was measured against. Named once so
@@ -132,24 +136,32 @@ def installed_spawn_reaches(
     root: Path | None = None,
     primitives: Mapping[str, frozenset[str]] | None = None,
     archives: Iterable[Path] | None = None,
+    sites: Iterable[Path] | None = None,
 ) -> SpawnScan:
     """The installed packages, read for the starts that go BELOW every name the denial patches.
 
-    One pass over the directory tree and one over each archive the same import path carries, folded
-    into a single scan: the counts add up over both, so a venv that ships zipped is not a tree the
-    audit refuses as `unscanned` while its source sat in a zip nobody opened.
+    One pass over the directory tree, one over each archive the same import path carries, and one
+    over each extra DIRECTORY a `.pth` file adds to it, folded into a single scan: the counts add up
+    over all three, so neither a venv that ships zipped nor the editable source tree this repo
+    itself installs is a part of the path the audit never opened.
 
     `sys.path` is consulted only for the DEFAULT root. A caller naming a tree is asking about that
     tree, so archive discovery is scoped to it -- otherwise a fabricated case would answer partly
-    out of the interpreter that happens to be running the test.
+    out of the interpreter that happens to be running the test. The `.pth` files need no such rule:
+    they live IN the root, so reading them is already scoped to the tree the caller named.
     """
     tree = root if root is not None else Path(sysconfig.get_paths()["purelib"])
     alphabet = primitives if primitives is not None else below_the_seams()
+    triggers = module_triggers(alphabet)
     found = (
         openable_archives(archives)
         if archives is not None
         else installed_archives(tree, sys.path if root is None else None)
     )
-    return with_archives(
-        spawn_scan(tree, alphabet, module_triggers(alphabet)), tree, found, alphabet
+    entries = site_path_entries(tree) if sites is None else tuple(sites)
+    return with_path_entries(
+        with_archives(spawn_scan(tree, alphabet, triggers), tree, found, alphabet),
+        entries,
+        alphabet,
+        triggers,
     )
