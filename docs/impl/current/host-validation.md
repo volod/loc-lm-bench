@@ -372,9 +372,27 @@ either class of by-construction absence is the naive gate that fails on every ho
 `read_coverage_message` renders the whole breakdown, and is the assertion message the stdlib
 coverage test fails with. The scan's excluded segments do not hide anything here: none of `test` /
 `tests` / `idle_test` / `site-packages` is a name `sys.stdlib_module_names` carries, which is
-asserted rather than assumed. Residual: the measurement is by top-level module, so a package that
-ships half its submodules as source is read as read -- the sharp version of that would need the
-same per-module list one level down, which CPython does not publish.
+asserted rather than assumed.
+
+**One level down, the package directories are the list CPython does not publish.** That
+classification is per TOP-LEVEL name, because `sys.stdlib_module_names` is the only list of its kind
+the interpreter ships -- so a package that ships its `__init__.py` and not its submodules counts as
+read, and the very layout the measurement exists for hides there: `multiprocessing/__init__.py`
+present with `multiprocessing/util.py` stripped reads exactly like a complete package.
+`compiled_only_submodules` needs no published list, because the interpreter leaves the evidence on
+disk -- inside every package directory the scan walked it compares the `.py` stems against the
+`__pycache__/*.pyc` stems, and a submodule with a cached module and no source beside it is the same
+compiled-only finding, named `multiprocessing.util` rather than `multiprocessing`. The vocabulary
+and the decision are reused rather than duplicated: `audit_read_coverage` raises these as the same
+`unread-module` problem, a `.py` with no `.pyc` is nothing (caching is incidental), and a name in
+neither list is simply not shipped -- the `absent` half of the same evidence-based split. A cached
+`__init__` is left to the package NAME that already classifies it, so a stripped package is one
+finding and not two, and the directories the scan skipped are skipped here through the scan's own
+`is_excluded` rather than a second copy of the rule. The field sits outside the six-way partition
+deliberately: its entries are dotted names the declared list does not contain. **On this host: 0
+compiled-only submodules** (the walk costs 0.024s), pinned alongside the name-level counts, with
+fabricated trees pinning both directions -- a stripped `pkg/util.py` and a nested
+`pkg/sub/deep.py` refused, a package whose submodules all ship source clean.
 
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine

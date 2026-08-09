@@ -43,34 +43,31 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-read-coverage-measurement-stops-at-the-top-level-module (optional)
+### agent-a-cached-submodule-with-no-source-is-refused-only-under-a-directory-stdlib (optional)
 
-The stdlib read coverage is measured per TOP-LEVEL name, because `sys.stdlib_module_names` is the
-only list of its kind CPython publishes
-([host validation](current/host-validation.md#code-quality-checks)). So a package that ships its
-`__init__.py` and not its submodules counts as read, and the very case the measurement exists for --
-a source-stripped layout -- hides one level down: `multiprocessing/__init__.py` present with
-`multiprocessing/util.py` stripped reads exactly like a complete package. That level needs no
-published list, because the interpreter leaves the evidence on disk: inside every package directory
-the scan walked, compare the `.py` stems against the `__pycache__/*.pyc` stems and report a
-submodule that has a cached module and no source. Reuse the classification vocabulary already
-there rather than adding a second one, and keep the same evidence-based decision -- a `.pyc` with no
-`.py` is the finding, an absent file is not.
+The per-package submodule comparison reads `__pycache__/*.pyc` stems off the DIRECTORY tree, which
+is the layout every source-stripped install this host can produce actually uses
+([host validation](current/host-validation.md#code-quality-checks)). A stdlib imported from a zip
+(`python313.zip` on `sys.path`, the layout an embedded or single-file build ships) has no package
+directory to walk at all, so both the name-level `compiled_only` classification and the submodule
+comparison find nothing under the root and the coverage reads as complete rather than as unmeasured.
+Decide it on evidence: fabricate a zip-imported stdlib, record what the scan and the coverage
+actually report for it, and either read the archive's own name list through `zipfile` (the entries
+are the evidence, exactly as the directory entries are today) or refuse a root that carries no
+readable source tree as a layout the measurement does not cover -- an honest refusal beats a
+coverage number that silently counts an unreadable stdlib as read.
 
 - Agent status: CLEAR
-- Dependencies: the measurement is `stdlib_read_coverage` in
-  `src/llb/quality/gpu_guard_spawn_reach_coverage.py`; the per-name classes it would extend are
-  `ReadCoverage.compiled_only` / `absent`, and the refusal is `audit_read_coverage` in
-  `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
-- User-visible outcome: a stripped submodule inside a package the scan otherwise read stops being
-  indistinguishable from a submodule that starts no children.
-- Scope boundary: in scope -- the per-package submodule comparison, its place in the coverage
-  record and message, and fabricated-tree cases for a stripped submodule and a complete package.
-  Out of scope -- importing anything to inspect it, disassembling a `.pyc`, zip-imported stdlib
-  layouts, and site-packages.
+- Dependencies: the directory walk is `compiled_only_submodules` in
+  `src/llb/quality/gpu_guard_spawn_reach_coverage.py` and `_compiled_stems` beside it; the scan that
+  would need the same treatment is `spawn_scan` in `src/llb/quality/gpu_guard_spawn_reach.py`, whose
+  `rglob("*.py")` is equally directory-shaped.
+- User-visible outcome: a host whose stdlib ships as an archive learns that the reach statement was
+  not measured there, instead of reading a clean coverage line.
+- Scope boundary: in scope -- the zip-layout evidence, the read-or-refuse decision, and the
+  fabricated archive case. Out of scope -- importing anything to inspect it, disassembling a `.pyc`,
+  and site-packages.
 - Execution path: `make ci` (the stdlib tier is not `slow`); no host services.
-- Acceptance gates: `make ci` green, this host still reporting zero stripped submodules, and the
-  fabricated cases pinning both directions.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)

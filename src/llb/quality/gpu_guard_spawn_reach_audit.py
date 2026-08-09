@@ -18,7 +18,10 @@ and the file count cannot tell, because it says how much was read and not what w
 `gpu_guard_spawn_reach_coverage` measures the reading against `sys.stdlib_module_names` and
 classifies every unread name; this module refuses the one class that is neither compiled in, an
 extension, nor declared sourceless -- a module with a `.pyc` under the stdlib root and no `.py`
-beside it, which this host can import and the scan did not read.
+beside it, which this host can import and the scan did not read. That list is per top-level name, so
+the same refusal reads one level down off the package directories themselves: a submodule with a
+cached module and no source is the same stripped layout inside a package that otherwise counts as
+read.
 
 A module reaching a name the surface DOES carry is never a finding, covered or residual: the
 declaration already carries that decision, and repeating it per call site would only mean two places
@@ -110,16 +113,34 @@ def audit_read_coverage(
     import what it does not have, so the claim holds vacuously for it. What is left is the layout
     this exists for -- a frozen, zipped, or source-stripped stdlib, where the module IS importable
     and the scan could not see whether it starts a child.
+
+    The same class one level down is refused on the same evidence. The declared list is per
+    top-level name, so a package that ships its `__init__.py` and not its submodules classifies as
+    read; `compiled_only_submodules` compares each walked package's `.py` stems against its cached
+    ones, and a submodule with a `.pyc` and no `.py` is exactly the stripped layout above -- the only
+    difference being that the finding names `multiprocessing.util` rather than `multiprocessing`.
     """
     measured = coverage if coverage is not None else stdlib_read_coverage(scan)
-    return tuple(
-        SurfaceFinding(
-            name,
-            PROBLEM_UNREAD_MODULE,
-            "a compiled module under the stdlib root with no source beside it, so this host can "
-            "import it and the scan could not read whether it starts a child",
-        )
-        for name in measured.compiled_only
+    return (
+        *(
+            SurfaceFinding(
+                name,
+                PROBLEM_UNREAD_MODULE,
+                "a compiled module under the stdlib root with no source beside it, so this host can "
+                "import it and the scan could not read whether it starts a child",
+            )
+            for name in measured.compiled_only
+        ),
+        *(
+            SurfaceFinding(
+                name,
+                PROBLEM_UNREAD_MODULE,
+                "a compiled submodule of a package the scan otherwise read, with no source beside "
+                "it, so this host can import it and the scan could not read whether it starts a "
+                "child",
+            )
+            for name in measured.compiled_only_submodules
+        ),
     )
 
 

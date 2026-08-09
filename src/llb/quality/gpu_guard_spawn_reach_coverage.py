@@ -27,9 +27,20 @@ Measured here (CPython 3.13, `/usr/lib/python3.13`): of 290 declared names, **18
 name accounted for, which is what makes the stdlib result a statement about the stdlib rather than
 about whichever files this host happened to ship.
 
+That classification is per TOP-LEVEL name, because `sys.stdlib_module_names` is the only list of its
+kind CPython publishes -- so a package that ships its `__init__.py` and not its submodules counts as
+read, and the source-stripped layout the measurement exists for hides one level down:
+`multiprocessing/__init__.py` present with `multiprocessing/util.py` stripped reads exactly like a
+complete package. That level needs no published list, because the interpreter leaves the evidence on
+disk. `compiled_only_submodules` walks the same directories the scan walked and compares each
+package's `.py` stems against its `__pycache__/*.pyc` stems: a submodule with a cached module and no
+source beside it is the same compiled-only finding one level down, and an absent file is -- as at the
+name level -- not a finding at all.
+
 The scan's excluded directory segments (`test`, `tests`, `idle_test`, `site-packages`) are not a
-hole in this measurement: none of them is a name `sys.stdlib_module_names` carries, which is
-asserted rather than assumed in `tests/llb/quality/test_gpu_guard_spawn_reach.py`.
+hole in either measurement: none of them is a name `sys.stdlib_module_names` carries, which is
+asserted rather than assumed in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, and the submodule
+comparison skips them through the scan's own `is_excluded` rather than a second copy of the rule.
 """
 
 import sys
@@ -38,7 +49,7 @@ from dataclasses import dataclass
 from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
 
-from llb.quality.gpu_guard_spawn_reach import SpawnScan
+from llb.quality.gpu_guard_spawn_reach import SpawnScan, is_excluded
 
 _FROZEN = (
     "frozen into the interpreter at build time, so it is importable with no file under the stdlib "
@@ -76,13 +87,22 @@ _COMPILED_PATTERNS = (
 # below, so the buckets and the report cannot drift apart.
 _FIELDS = ("read", "compiled", "extensions", "declared", "compiled_only", "absent")
 
+# A cached module names itself; a cached `__init__` names its PACKAGE, which is a top-level name and
+# is therefore already classified by `_kind` -- reporting it again one level down would be the same
+# finding twice.
+_PACKAGE_INIT = "__init__"
+
 
 @dataclass(frozen=True)
 class ReadCoverage:
     """How much of this interpreter's declared stdlib the scan actually read, and why the rest not.
 
-    A partition of `sys.stdlib_module_names`: every declared name lands in exactly one field, so the
-    counts add up to the list and a name cannot go missing between two of them.
+    The six name fields are a partition of `sys.stdlib_module_names`: every declared name lands in
+    exactly one of them, so the counts add up to the list and a name cannot go missing between two.
+
+    `compiled_only_submodules` is deliberately outside that partition: it is the same compiled-only
+    class one level down, read off the package directories rather than off a published list, and its
+    entries are dotted submodule names that the declared list does not contain.
     """
 
     root: str
@@ -92,6 +112,7 @@ class ReadCoverage:
     declared: tuple[str, ...]
     compiled_only: tuple[str, ...]
     absent: tuple[str, ...]
+    compiled_only_submodules: tuple[str, ...] = ()
 
     @property
     def unread(self) -> tuple[str, ...]:
@@ -119,7 +140,35 @@ def stdlib_read_coverage(
         kind = "read" if name in read else _kind(name, extensions, compiled_only, sourceless)
         buckets.setdefault(kind, []).append(name)
     return ReadCoverage(
-        root=scan.root, **{field: tuple(buckets.get(field, ())) for field in _FIELDS}
+        root=scan.root,
+        compiled_only_submodules=compiled_only_submodules(root),
+        **{field: tuple(buckets.get(field, ())) for field in _FIELDS},
+    )
+
+
+def compiled_only_submodules(root: Path) -> tuple[str, ...]:
+    """Submodules inside a package the scan walked that are cached with no source beside them.
+
+    The evidence the interpreter leaves on disk, in place of the per-submodule list CPython does not
+    publish: inside one package directory, a `__pycache__` stem with no `.py` stem to match it is a
+    module this host can import and the scan never parsed. A `.py` with no `.pyc` is nothing --
+    caching is incidental -- and a name that is in neither is simply not there, which is the same
+    evidence-based decision the `compiled_only` / `absent` split makes at the name level.
+    """
+    cached: dict[Path, set[str]] = {}
+    for path in root.rglob("__pycache__/*.pyc"):
+        relative = path.relative_to(root)
+        # `<package>/.../__pycache__/<stem>.<tag>.pyc`, so fewer than three parts is a TOP-LEVEL
+        # module's cache, which `_compiled_stems` already classifies as a declared name.
+        if len(relative.parts) < 3 or is_excluded(relative.as_posix()):
+            continue
+        cached.setdefault(path.parent.parent, set()).add(path.name.split(".")[0])
+    return tuple(
+        sorted(
+            ".".join((*package.relative_to(root).parts, stem))
+            for package, stems in cached.items()
+            for stem in stems - {_PACKAGE_INIT} - {source.stem for source in package.glob("*.py")}
+        )
     )
 
 
@@ -130,10 +179,13 @@ def read_coverage_message(coverage: ReadCoverage) -> str:
         for field in _FIELDS
         if field != "read"
     )
+    submodules = coverage.compiled_only_submodules
     return (
         f"[gpu-guard] stdlib read coverage under {coverage.root}: {len(coverage.read)} of "
-        f"{len(coverage.read) + len(coverage.unread)} declared modules read as source; {listed}"
+        f"{len(coverage.read) + len(coverage.unread)} declared modules read as source; {listed}; "
+        f"{len(submodules)} compiled-only submodules"
         f"{_named('compiled-only', coverage.compiled_only)}{_named('absent', coverage.absent)}"
+        f"{_named('compiled-only submodules', submodules)}"
     )
 
 

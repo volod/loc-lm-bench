@@ -98,6 +98,9 @@ def test_the_stdlib_scan_accounts_for_every_module_it_read_no_source_for(stdlib_
     assert len(measured.read) + len(measured.unread) == len(sys.stdlib_module_names), message
     assert {"multiprocessing", "subprocess", "asyncio", "pty", "os"} <= set(measured.read), message
     assert "_posixsubprocess" in measured.compiled + measured.extensions, message
+    # And one level down, where the declared list stops: this host strips no submodule of a package
+    # it otherwise ships, so "read as source" holds for `multiprocessing/util.py` too.
+    assert measured.compiled_only_submodules == (), message
 
 
 def test_the_scan_excludes_no_directory_this_interpreter_calls_a_stdlib_module():
@@ -124,6 +127,70 @@ def test_a_module_with_a_pyc_and_no_source_is_refused_rather_than_read_as_quiet(
         ("stripped", reach_audit.PROBLEM_UNREAD_MODULE)
     ]
     assert "stripped" in coverage.read_coverage_message(measured)
+    # A cached `__init__` names its PACKAGE, which is a declared name and is classified as one --
+    # reporting `stripped.__init__` beside it would be the same finding twice.
+    assert measured.compiled_only_submodules == ()
+
+
+def test_a_stripped_submodule_of_a_package_the_scan_read_is_refused(tmp_path):
+    """The level the declared list stops at: `sys.stdlib_module_names` names `pkg` and never
+    `pkg.util`, so a package that ships its `__init__.py` and not its submodules reads as read.
+    The interpreter leaves the evidence in the package directory instead."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "pkg/__init__.py": "import json\n",
+            "pkg/__pycache__/__init__.cpython-313.pyc": "",
+            "pkg/__pycache__/util.cpython-313.pyc": "",
+            "pkg/sub/__init__.py": "import json\n",
+            "pkg/sub/__pycache__/deep.cpython-313.pyc": "",
+        },
+    )
+    scan = reach.stdlib_spawn_reaches(root)
+    measured = coverage.stdlib_read_coverage(scan, names=["pkg"])
+    assert (measured.read, measured.compiled_only) == (("pkg",), ())
+    assert measured.compiled_only_submodules == ("pkg.sub.deep", "pkg.util")
+    findings = reach_audit.audit_read_coverage(scan, measured)
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("pkg.sub.deep", reach_audit.PROBLEM_UNREAD_MODULE),
+        ("pkg.util", reach_audit.PROBLEM_UNREAD_MODULE),
+    ]
+    assert "pkg.util" in coverage.read_coverage_message(measured)
+
+
+def test_a_package_whose_submodules_all_ship_source_is_clean(tmp_path):
+    """The other direction, and the naive gate this avoids: a `.py` with no `.pyc` is nothing --
+    caching is incidental -- and a submodule that is in neither list is simply not shipped."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "pkg/__init__.py": "import json\n",
+            "pkg/__pycache__/__init__.cpython-313.pyc": "",
+            "pkg/util.py": "import json\n",
+            "pkg/__pycache__/util.cpython-313.pyc": "",
+            "bare/__init__.py": "import json\n",
+            "bare/helper.py": "import json\n",
+        },
+    )
+    scan = reach.stdlib_spawn_reaches(root)
+    measured = coverage.stdlib_read_coverage(scan, names=["pkg", "bare"])
+    assert measured.compiled_only_submodules == ()
+    assert reach_audit.audit_read_coverage(scan, measured) == ()
+
+
+def test_a_cached_submodule_the_scan_never_walked_is_not_measured_either(tmp_path):
+    """The exclusion rule is the scan's, so the two halves cannot disagree about which directories
+    the statement covers."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "quiet.py": "import json\n",
+            "test/__pycache__/support.cpython-313.pyc": "",
+            "site-packages/vendored/__pycache__/child.cpython-313.pyc": "",
+        },
+    )
+    measured = coverage.stdlib_read_coverage(reach.stdlib_spawn_reaches(root), names=["quiet"])
+    assert measured.compiled_only_submodules == ()
 
 
 def test_a_declared_module_this_host_does_not_ship_is_recorded_rather_than_refused(tmp_path):

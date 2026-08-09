@@ -239,7 +239,7 @@ def spawn_scan(
     read = 0
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
-        source = None if _is_excluded(relative) else _read(path)
+        source = None if is_excluded(relative) else _read(path)
         if source is None:
             continue
         read += 1
@@ -283,8 +283,13 @@ def _module_triggers(alphabet: Mapping[str, frozenset[str]]) -> tuple[bytes, ...
     return tuple(sorted(module.encode() for module in alphabet))
 
 
-def _is_excluded(relative: str) -> bool:
-    """CPython's own tests and any third-party tree beside the stdlib, by directory segment."""
+def is_excluded(relative: str) -> bool:
+    """CPython's own tests and any third-party tree beside the stdlib, by directory segment.
+
+    Public because what the scan SKIPPED is part of every statement made about what it read:
+    `gpu_guard_spawn_reach_coverage` measures the same tree one level down and has to skip the same
+    directories, and a second copy of this rule is a second thing to keep in step.
+    """
     return bool(_EXCLUDED_SEGMENTS & set(relative.split("/")[:-1]))
 
 
