@@ -43,59 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-path-entry-added-by-running-code-is-unread-and-silent (optional)
-
-A `.pth` line the interpreter EXECUTES adds whatever paths it likes, and the reader takes the one
-decision it can from a text file: it skips the line
-([host validation](current/host-validation.md#code-quality-checks)). That is the
-`import __editable___pkg_finder` style setuptools writes for a flat layout -- the paths live in a
-`MAPPING` dict inside a generated finder module -- so on a host that installs this repo, or any
-dependency, that way, the tree is parsed by nothing and reported by nothing. It is the identical
-shape of the hole the `.pth` reading just closed, one indirection further in, and worse than the
-archive case because nothing names it: an unread archive is at least refused per package, while an
-unresolved path line is silence. Two moves and the task is to do both: report an unresolved line as
-a finding (a path entry the pass could not read is a statement about the scan, like the empty-read
-refusal), and close the common case by reading the finder module's `MAPPING` literal with `ast`,
-which is static -- no import, no execution -- exactly as the archive half reads a name list.
-
-- Agent status: CLEAR
-- Dependencies: the reader is `path_lines` / `site_path_entries` in
-  `src/llb/quality/gpu_guard_spawn_reach_installed_sites.py`; the refusal to copy is
-  `unread_archived_packages` in `src/llb/quality/gpu_guard_spawn_reach_installed_audit.py`.
-- User-visible outcome: a tree on the import path is read, or it is named as unread -- never
-  neither.
-- Scope boundary: in scope -- the unresolved-line report, the static `MAPPING` read, and fixture
-  cases for both editable styles. Out of scope -- executing a `.pth` line, importing a finder
-  module, and the stdlib half.
-- Execution path: `make ci` for the fabricated cases; the real-import-path tier is `slow`.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
-### agent-the-installed-read-coverage-still-measures-one-tree (optional)
-
-The installed scan reads the whole import path now -- the directory, its archives, and the trees a
-`.pth` adds -- but the coverage that says what it FAILED to read still reads its evidence under the
-scan root alone ([host validation](current/host-validation.md#code-quality-checks)). Two gaps follow,
-both currently reported rather than wrong: a name a `.pth`-added tree provides with no source (a
-stripped editable checkout) is classified against the root, so it lands in `absent` and is not the
-`compiled_only` REFUSAL it would be one directory over; and a top-level name that no distribution
-records is outside the published list entirely, which is what `cutlass` is on this host -- importable
-out of `nvidia_cutlass_dsl/python_packages`, read by the scan under another name, and invisible to
-the measurement. Close both from the same side: build the declared list from what the import-path
-entries actually PROVIDE (top-level names per entry) as well as from `packages_distributions()`, and
-classify each name against the entry that provides it rather than against the root.
-
-- Agent status: CLEAR
-- Dependencies: the classifier is `_kind` / `installed_read_coverage` in
-  `src/llb/quality/gpu_guard_spawn_reach_installed_coverage.py`; the entries to classify against are
-  `SpawnScan.sites` plus the root, filled by `src/llb/quality/gpu_guard_spawn_reach_installed_sites.py`.
-- User-visible outcome: a stripped tree is refused wherever on the import path it sits, and a name
-  no distribution records is still accounted for.
-- Scope boundary: in scope -- the per-entry classification, the provided-name list, and their
-  fixture cases. Out of scope -- importing anything to enumerate it, the archive half, and the
-  stdlib coverage.
-- Execution path: `make ci` for the fabricated cases; the real-import-path tier is `slow`.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-a-unit-test-verdict-rests-on-measured-wall-clock (optional)
 
 `analyze_repeat_feedback` gates a candidate on a paired WALL-CLOCK cost comparison alongside the

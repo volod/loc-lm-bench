@@ -140,6 +140,8 @@ def with_archives(
         archives=tuple(str(archive) for archive in opened),
         unread_archived=tuple(sorted(name for name in unread if not has_source(root, name))),
         sites=scan.sites,
+        unread_path_entries=scan.unread_path_entries,
+        path_entries=scan.path_entries,
     )
 
 

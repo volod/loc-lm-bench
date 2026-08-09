@@ -15,30 +15,38 @@ what makes this a statement about the import path rather than about the running 
 `sys.path` would answer too, and would answer wrong here, because a test runner puts the repo root
 and the test directories on it and a scan of those walks the venv it is trying to describe.
 
-Two kinds of entry are deliberately left alone:
+One kind of entry is deliberately left alone:
 
 - An entry INSIDE the scan root. `nvidia-cutlass-dsl` ships one (`nvidia_cutlass_dsl/python_packages`,
   which makes `cutlass` importable), and the directory pass has already read every file in it.
   Reading it again would count those files twice and report one file under two package names --
   once as `cutlass` and once as the `nvidia_cutlass_dsl` its distribution actually publishes, which
   is the name an excuse would be written at.
-- A `.pth` that adds its paths by RUNNING code -- the `import __editable___pkg_finder` style
-  setuptools uses for a flat layout, where the paths live in a dict inside the finder module. Its
-  tree is not read, so whatever it provides stays unread and is reported as such rather than
-  silently counted.
+The common executable form is not left silent: setuptools' generated
+`import __editable___pkg_finder; __editable___pkg_finder.install()` line is parsed with `ast`, and
+the generated finder's literal `MAPPING` is read without importing or executing either file. Every
+other executable line is retained in `SpawnScan.unread_path_entries`, which the audit refuses.
 
-Measured over this host: two entries, one of which is under the root, so ONE tree is scanned --
-`<repo>/src`, 931 files in 0.04s, and **no reach below the seams at all**. That is the answer to
-whether this repo's own source needs a declaration like a dependency's: it starts children in 15
-modules and every one of them goes through `subprocess.run` / `subprocess.call` /
-`subprocess.Popen`, which the denial patches, so it is held to exactly the question a dependency is
-held to and needs no excuse to pass it.
+Measured over this host: two literal entries, one of which is under the root, so ONE tree is scanned
+-- `<repo>/src`, with no reach below the seams at all -- while `_virtualenv.pth:1` and
+`distutils-precedence.pth:1` are named as the two unresolved executable lines. The source-tree
+answer is that this repo needs no declaration like a dependency's: its child starts all go through
+`subprocess.run` / `subprocess.call` / `subprocess.Popen`, which the denial patches.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-from llb.quality.gpu_guard_spawn_reach import ModuleReach, SpawnScan, spawn_scan
+from llb.quality.gpu_guard_spawn_reach import (
+    ImportPathEntry,
+    ModuleReach,
+    SpawnScan,
+    spawn_scan,
+)
+from llb.quality.gpu_guard_spawn_reach_installed_finder import finder_paths
+from llb.quality.gpu_guard_spawn_reach_installed_paths import source_top_level_names
+from llb.quality.gpu_guard_spawn_source import source_reaches
 
 # What `site.addpackage` executes rather than resolves. Matched exactly as the interpreter matches
 # it, so a module called `imports.py` on a path line stays a path.
@@ -47,28 +55,76 @@ _EXECUTED_PREFIXES = ("import ", "import\t")
 PTH_SUFFIX = "*.pth"
 
 
-def site_path_entries(root: Path) -> tuple[Path, ...]:
-    """The directories the `.pth` files under one root add to the import path.
+@dataclass(frozen=True)
+class SitePathEntry:
+    """One statically resolved entry; `module` is set for an editable finder mapping."""
 
-    Only the entries this scan can say something new about: a path that exists, is a directory, and
-    is not the root or a tree inside it that the root's own walk already read. Resolved, because two
-    `.pth` files naming one tree by different routes are one tree to read.
+    path: Path
+    module: str = ""
+
+
+@dataclass(frozen=True)
+class SitePathReading:
+    """The entries a static read resolved and the executable lines it could not."""
+
+    entries: tuple[SitePathEntry, ...]
+    unread: tuple[str, ...]
+
+
+def site_path_entries(root: Path) -> SitePathReading:
+    """The paths the `.pth` files under one root add, without executing their code.
+
+    Every existing directory is retained, including one inside the scan root: the root walk already
+    parsed its files, but coverage still needs the top-level import names that entry provides.
+    Duplicate routes collapse to one entry. The setuptools editable finder shape is resolved from
+    its literal `MAPPING`; every other executable line is named as unread rather than silently
+    skipped.
     """
-    base = root.resolve()
-    found: list[Path] = []
+    found: list[SitePathEntry] = []
+    unread: list[str] = []
     for pth in sorted(root.glob(PTH_SUFFIX)):
-        for line in path_lines(pth):
-            entry = (root / line).resolve()
-            if entry not in found and entry.is_dir() and not entry.is_relative_to(base):
-                found.append(entry)
-    return tuple(found)
+        reading = _pth_entries(root, pth)
+        found.extend(entry for entry in reading.entries if entry not in found)
+        unread.extend(reading.unread)
+    return SitePathReading(_without_covered_mappings(found), tuple(unread))
+
+
+def _pth_entries(root: Path, pth: Path) -> SitePathReading:
+    literal = tuple(
+        entry for line in path_lines(pth) if (entry := _literal_entry(root, line)) is not None
+    )
+    mapped: list[SitePathEntry] = []
+    unread = []
+    for number, line in executed_lines(pth):
+        paths = finder_paths(root, line)
+        if paths is None:
+            unread.append(f"{pth.name}:{number}")
+        else:
+            mapped.extend(SitePathEntry(entry.path, entry.module) for entry in paths)
+    return SitePathReading(literal + tuple(mapped), tuple(unread))
+
+
+def _literal_entry(root: Path, line: str) -> SitePathEntry | None:
+    path = (root / line).resolve()
+    return SitePathEntry(path) if path.is_dir() else None
+
+
+def _without_covered_mappings(entries: Iterable[SitePathEntry]) -> tuple[SitePathEntry, ...]:
+    found = tuple(entries)
+    direct = tuple(entry.path for entry in found if not entry.module)
+    return tuple(
+        entry
+        for entry in found
+        if not entry.module or not any(entry.path.is_relative_to(path) for path in direct)
+    )
 
 
 def with_path_entries(
     scan: SpawnScan,
-    entries: Iterable[Path],
+    entries: Iterable[SitePathEntry],
     alphabet: Mapping[str, frozenset[str]],
     triggers: Sequence[bytes],
+    unread: Iterable[str] = (),
 ) -> SpawnScan:
     """Fold what the extra trees contributed into the directory pass, as one scan of one path.
 
@@ -76,15 +132,26 @@ def with_path_entries(
     and its reaches carry the tree as their `container`, so a finding names the file an operator has
     to open rather than a path that looks like it is under site-packages and is not.
     """
-    trees = tuple(entries)
-    if not trees:
+    resolved = tuple(entries)
+    unread_entries = tuple(unread)
+    if not resolved and not unread_entries:
         return scan
-    read = [spawn_scan(tree, alphabet, triggers) for tree in trees]
+    base = Path(scan.root).resolve()
+    trees = tuple(entry for entry in resolved if not entry.path.is_relative_to(base))
+    covered = tuple(entry for entry in resolved if entry.path.is_relative_to(base))
+    read = [_scan_entry(tree, alphabet, triggers) for tree in trees]
+    covered_modules = tuple(
+        name
+        for entry in covered
+        for name in source_top_level_names(ImportPathEntry(str(entry.path), entry.module))
+    )
     return SpawnScan(
         root=scan.root,
         files_read=scan.files_read + sum(tree.files_read for tree in read),
         modules_read=tuple(
-            sorted(set(scan.modules_read).union(*(tree.modules_read for tree in read)))
+            sorted(
+                set(scan.modules_read).union(covered_modules, *(tree.modules_read for tree in read))
+            )
         ),
         reaches=scan.reaches
         + tuple(
@@ -94,8 +161,50 @@ def with_path_entries(
         ),
         archives=scan.archives,
         unread_archived=scan.unread_archived,
-        sites=tuple(str(tree) for tree in trees),
+        sites=scan.sites + tuple(str(entry.path) for entry in resolved),
+        unread_path_entries=scan.unread_path_entries + unread_entries,
+        path_entries=scan.path_entries
+        + tuple(ImportPathEntry(str(entry.path), entry.module) for entry in resolved),
     )
+
+
+def _scan_entry(
+    entry: SitePathEntry,
+    alphabet: Mapping[str, frozenset[str]],
+    triggers: Sequence[bytes],
+) -> SpawnScan:
+    """Read a literal path root or precisely one package/module exposed by a finder mapping."""
+    if not entry.module:
+        return spawn_scan(entry.path, alphabet, triggers)
+    if entry.path.is_dir():
+        scanned = spawn_scan(entry.path, alphabet, triggers)
+        prefix = entry.module.replace(".", "/")
+        return SpawnScan(
+            root=str(entry.path),
+            files_read=scanned.files_read,
+            modules_read=(entry.module.split(".")[0],) if scanned.files_read else (),
+            reaches=tuple(
+                ModuleReach(f"{prefix}/{reach.path}", reach.primitives) for reach in scanned.reaches
+            ),
+        )
+    return _scan_mapped_module(entry, alphabet, triggers)
+
+
+def _scan_mapped_module(
+    entry: SitePathEntry,
+    alphabet: Mapping[str, frozenset[str]],
+    triggers: Sequence[bytes],
+) -> SpawnScan:
+    try:
+        source = entry.path.read_bytes()
+    except OSError:
+        return SpawnScan(str(entry.path), 0, (), ())
+    primitives = (
+        source_reaches(source, alphabet) if any(item in source for item in triggers) else ()
+    )
+    relative = f"{entry.module.replace('.', '/')}.py"
+    reaches = (ModuleReach(relative, primitives),) if primitives else ()
+    return SpawnScan(str(entry.path), 1, (entry.module.split(".")[0],), reaches)
 
 
 def path_lines(pth: Path) -> tuple[str, ...]:
@@ -118,4 +227,17 @@ def path_lines(pth: Path) -> tuple[str, ...]:
         if (stripped := line.rstrip())
         and not stripped.startswith("#")
         and not line.startswith(_EXECUTED_PREFIXES)
+    )
+
+
+def executed_lines(pth: Path) -> tuple[tuple[int, str], ...]:
+    """Executable `.pth` lines, retaining their line number so an unread one is actionable."""
+    try:
+        lines = pth.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ()
+    return tuple(
+        (number, line.rstrip())
+        for number, line in enumerate(lines, 1)
+        if line.startswith(_EXECUTED_PREFIXES)
     )

@@ -28,6 +28,7 @@ from llb.quality import gpu_guard_spawn_reach_installed as installed
 from llb.quality import gpu_guard_spawn_reach_installed_archive as installed_archive
 from llb.quality import gpu_guard_spawn_reach_installed_audit as installed_audit
 from llb.quality import gpu_guard_spawn_reach_installed_coverage as coverage
+from llb.quality import gpu_guard_spawn_reach_installed_paths as installed_paths
 from llb.quality import gpu_guard_spawn_reach_installed_sites as sites
 from llb.quality import gpu_guard_spawn_surface as surface
 from llb.quality import gpu_guard_spawn_surface_audit as audit
@@ -70,9 +71,13 @@ def installed_scan() -> reach.SpawnScan:
 
 @pytest.mark.slow
 def test_this_venvs_packages_go_below_the_seams_only_where_a_package_declares_it(installed_scan):
-    """The dependencies an unmarked test actually drives, held to the same question."""
+    """The dependencies an unmarked test actually drives, held to the same question. This venv's
+    two bootstrap hooks are now explicit unread-path findings rather than invisible omissions."""
     findings = installed_audit.audit_installed_reach(installed_scan)
-    assert findings == (), audit.surface_message(findings)
+    assert {(finding.name, finding.problem) for finding in findings} == {
+        ("_virtualenv.pth:1", installed_audit.PROBLEM_UNREAD_PATH_ENTRY),
+        ("distutils-precedence.pth:1", installed_audit.PROBLEM_UNREAD_PATH_ENTRY),
+    }, audit.surface_message(findings)
 
 
 @pytest.mark.slow
@@ -109,10 +114,13 @@ def test_the_installed_scan_accounts_for_every_published_name_it_read_no_source_
     message = coverage.installed_read_coverage_message(measured)
     assert installed_audit.audit_installed_read_coverage(installed_scan, measured) == (), message
     # A partition of the published list: no name falls between two buckets or into both.
-    published = coverage.importable_top_level_names()
+    published = set(coverage.importable_top_level_names()) | set(
+        installed_paths.provided_top_level_names(installed_paths.scan_path_entries(installed_scan))
+    )
     assert len(measured.read) + len(measured.unread) == len(published), message
     assert installed_scan.files_read > 100, message
     assert {"joblib", "numpy", "pytest", "torch"} <= set(measured.read), message
+    assert "cutlass" in measured.read, message
     # And one level down, where the published list stops: no dependency here ships a package whose
     # `__init__.py` is present and whose submodules are not.
     assert measured.compiled_only_submodules == (), message
@@ -479,36 +487,102 @@ def test_a_tree_a_pth_file_adds_is_read_and_held_to_the_same_question(tmp_path):
     assert installed_audit.audit_installed_reach(scan, reachers={"editable": _excused(1)}) == ()
 
 
-def test_a_published_name_an_added_tree_provides_reads_as_read_rather_than_absent(tmp_path):
-    """What the coverage's `absent` class means once the whole path is read: not "this root does not
-    carry it" -- which was true of `llb` itself while nothing scanned it -- but "nothing on this
-    import path provides it", which is an answer rather than an artifact of reading one tree."""
+def test_an_unpublished_name_an_added_tree_provides_is_still_accounted_for(tmp_path):
+    """The declared surface is metadata PLUS what each resolved entry actually provides, so a
+    source tree no distribution records cannot disappear from the read-coverage partition."""
     outside = _elsewhere(tmp_path, {"editable/__init__.py": "import json\n"})
     root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
     (root / "editable.pth").write_text(f"{outside}\n")
     scan = installed.installed_spawn_reaches(root)
-    measured = coverage.installed_read_coverage(scan, names=["editable", "gone", "plain"])
+    measured = coverage.installed_read_coverage(scan, names=["gone", "plain"])
     assert (measured.read, measured.absent) == (("editable", "plain"), ("gone",))
     assert measured.sites == (str(outside),)
     assert str(outside) in coverage.installed_read_coverage_message(measured)
 
 
-def test_a_pth_line_that_the_interpreter_runs_is_not_read_as_a_path(tmp_path):
-    """`site.addpackage` executes a line starting with `import `, which is the other editable style
-    (a finder module holding the paths in a dict) and every plugin hook besides. Its tree is not
-    read, so whatever it provides stays unread rather than being counted as read."""
+def test_a_stripped_package_in_an_added_tree_is_refused_against_that_tree(tmp_path):
+    """A cached-only editable package is the same unread-module problem outside site-packages as
+    inside it; classifying only against the scan root used to mislabel this one absent."""
+    outside = _elsewhere(tmp_path, {cache_from_source("stripped/__init__.py"): ""})
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    (root / "stripped.pth").write_text(f"{outside}\n")
+    scan = installed.installed_spawn_reaches(root)
+
+    measured = coverage.installed_read_coverage(scan, names=["plain"])
+
+    assert (measured.read, measured.compiled_only) == (("plain",), ("stripped",))
+    findings = installed_audit.audit_installed_read_coverage(scan, measured, reachers={})
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("stripped", reach_audit.PROBLEM_UNREAD_MODULE)
+    ]
+    assert str(outside) in measured.sites
+
+
+def test_an_unresolved_executable_pth_line_is_named_as_unread(tmp_path):
+    """The reader does not execute arbitrary import-path code, but skipping it cannot make the
+    below-the-seams verdict silently claim that the whole path was read."""
     outside = _elsewhere(tmp_path, {"editable/__init__.py": "import json\n"})
     root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
     pth = root / "hooks.pth"
     pth.write_text(f"# a comment\n\nimport __editable___pkg_finder\n{outside}\n")
     scan = installed.installed_spawn_reaches(root)
     assert scan.sites == (str(outside),)
+    assert scan.unread_path_entries == ("hooks.pth:3",)
     assert set(scan.modules_read) == {"editable", "plain"}
+    findings = installed_audit.audit_installed_reach(scan, reachers={})
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("hooks.pth:3", installed_audit.PROBLEM_UNREAD_PATH_ENTRY)
+    ]
     # A comment and a blank line name nothing either, and a directory whose NAME begins with
     # `import` is still a path -- matched on the trailing space, exactly as the interpreter does.
     (root / "named.pth").write_text("importlib_vendored\nimport runs_this\n")
     assert sites.path_lines(root / "named.pth") == ("importlib_vendored",)
     assert sites.path_lines(pth) == (str(outside),)
+
+
+def test_a_setuptools_editable_finder_mapping_is_read_without_executing_it(tmp_path):
+    """The generated flat-layout style exposes exact package roots through a literal MAPPING.
+    Parse that declaration, including a single-file module, while a top-level raise proves the
+    finder was neither imported nor executed."""
+    outside = _elsewhere(
+        tmp_path,
+        {"editable/backend/start.py": BELOW, "flat.py": BELOW},
+    )
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    finder = root / "__editable___pkg_finder.py"
+    finder.write_text(
+        "raise RuntimeError('must not execute')\n"
+        f"MAPPING: dict[str, str] = {{'editable': {str(outside / 'editable')!r}, "
+        f"'flat': {str(outside / 'flat')!r}}}\n"
+    )
+    (root / "__editable__.pkg.pth").write_text(
+        "import __editable___pkg_finder; __editable___pkg_finder.install()\n"
+    )
+
+    scan = installed.installed_spawn_reaches(root)
+
+    assert scan.unread_path_entries == ()
+    assert scan.sites == (str(outside / "editable"), str(outside / "flat.py"))
+    assert [(entry.module, entry.path) for entry in scan.path_entries] == [
+        ("editable", str(outside / "editable")),
+        ("flat", str(outside / "flat.py")),
+    ]
+    assert {"editable", "flat", "plain"} <= set(scan.modules_read)
+    assert _paths(scan) == {
+        "editable/backend/start.py": ("_posixsubprocess.fork_exec",),
+        "flat.py": ("_posixsubprocess.fork_exec",),
+    }
+    findings = installed_audit.audit_installed_reach(scan, reachers={})
+    assert [finding.problem for finding in findings] == [
+        reach_audit.PROBLEM_UNCOVERED_REACH,
+        reach_audit.PROBLEM_UNCOVERED_REACH,
+    ]
+    assert {finding.name for finding in findings} == {
+        f"editable/backend/start.py (in {outside / 'editable'})",
+        f"flat.py (in {outside / 'flat.py'})",
+    }
+    measured = coverage.installed_read_coverage(scan, names=["plain"])
+    assert {"__editable___pkg_finder", "editable", "flat", "plain"} <= set(measured.read)
 
 
 def test_a_pth_entry_inside_the_scan_root_is_left_to_the_pass_that_already_walked_it(tmp_path):
@@ -519,8 +593,11 @@ def test_a_pth_entry_inside_the_scan_root_is_left_to_the_pass_that_already_walke
     root = _tree(tmp_path, {"vendor/packages/inner/start.py": BELOW})
     (root / "vendor.pth").write_text("vendor/packages\n")
     scan = installed.installed_spawn_reaches(root)
-    assert (scan.sites, scan.files_read) == ((), 1)
+    assert (scan.sites, scan.files_read) == ((str(root / "vendor/packages"),), 1)
+    assert set(scan.modules_read) == {"inner", "vendor"}
     assert _paths(scan) == {"vendor/packages/inner/start.py": ("_posixsubprocess.fork_exec",)}
+    measured = coverage.installed_read_coverage(scan, names=["vendor"])
+    assert measured.read == ("inner", "vendor")
 
 
 def test_a_pth_entry_that_is_not_there_contributes_nothing_rather_than_failing(tmp_path):

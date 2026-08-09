@@ -6,7 +6,7 @@ Only the granularity of the excuse differs -- per package rather than per file, 
 moves its modules around -- and an excuse is looked up as the exact path first and then the
 top-level package, so the stdlib and package tables read through one lookup.
 
-Two shapes are left that the stdlib table cannot have, and this module is both:
+Three shapes are left that the stdlib table cannot have, and this module owns all three:
 
 - a declared package whose reach has GROWN past the primitives and file count its excuse was
   measured against. Package granularity survives a release bump and, for exactly that reason,
@@ -17,6 +17,9 @@ Two shapes are left that the stdlib table cannot have, and this module is both:
   what is left after that -- a module a zip ships compiled with no copy on disk. It is the archive
   half of the same `unread-module` problem the stdlib coverage raises, named per package because
   that is the unit the excuses are written at and the unit an operator acts on.
+- an executable `.pth` line the static reader could not resolve. The common setuptools editable
+  finder is read through its literal `MAPPING`; any other code stays unexecuted and is named by file
+  and line as an `unread-path-entry`, because silence would make the import-path verdict incomplete.
 
 `audit_installed_read_coverage` is the directory-tree twin of that last one, and the counterpart of
 `gpu_guard_spawn_reach_audit.audit_read_coverage` one tree over: it weighs the scan against the
@@ -52,6 +55,7 @@ from llb.quality.gpu_guard_spawn_surface import (
 from llb.quality.gpu_guard_spawn_surface_audit import SurfaceFinding
 
 PROBLEM_OUTGROWN_REACH = "outgrown-reach"
+PROBLEM_UNREAD_PATH_ENTRY = "unread-path-entry"
 
 
 def audit_installed_reach(
@@ -62,16 +66,32 @@ def audit_installed_reach(
 ) -> tuple[SurfaceFinding, ...]:
     """The same question of the installed packages, whose excuses are declared per package.
 
-    Plus the two the stdlib table cannot ask: whether a declared package still reaches only what its
+    Plus what the stdlib table cannot ask: whether a declared package still reaches only what its
     excuse was measured on, since the package granularity that survives a release bump is also what
     would excuse a backend that release adds -- and whether a dependency that ships ZIPPED left
-    anything unread, which `unread_archived_packages` refuses.
+    anything unread, which `unread_archived_packages` refuses, or an executable `.pth` line was not
+    statically resolved.
     """
     scanned = scan if scan is not None else installed_spawn_reaches()
     return (
         *audit_spawn_reach(scanned, declared, package_coverage(reachers), surface),
         *outgrown_reachers(scanned, reachers),
         *unread_archived_packages(scanned, reachers),
+        *unread_path_entries(scanned),
+    )
+
+
+def unread_path_entries(scan: SpawnScan) -> tuple[SurfaceFinding, ...]:
+    """Executable `.pth` lines the scan deliberately did not run and could not resolve statically."""
+    return tuple(
+        SurfaceFinding(
+            line,
+            PROBLEM_UNREAD_PATH_ENTRY,
+            "executes code while constructing this interpreter's import path, and is not the "
+            "setuptools editable-finder shape whose literal MAPPING the scan can read; the scan "
+            "did not execute it and cannot know which source trees it adds",
+        )
+        for line in scan.unread_path_entries
     )
 
 

@@ -48,7 +48,12 @@ from llb.quality.gpu_guard_spawn_reach import (
 )
 from llb.quality.gpu_guard_spawn_reach_archive import openable_archives
 from llb.quality.gpu_guard_spawn_reach_installed_archive import installed_archives, with_archives
-from llb.quality.gpu_guard_spawn_reach_installed_sites import site_path_entries, with_path_entries
+from llb.quality.gpu_guard_spawn_reach_installed_sites import (
+    SitePathEntry,
+    SitePathReading,
+    site_path_entries,
+    with_path_entries,
+)
 from llb.quality.gpu_guard_spawn_surface import COVERAGE_RESIDUAL, SpawnCoverage
 
 # The two below-the-seams names every package declaration here was measured against. Named once so
@@ -158,10 +163,15 @@ def installed_spawn_reaches(
         if archives is not None
         else installed_archives(tree, sys.path if root is None else None)
     )
-    entries = site_path_entries(tree) if sites is None else tuple(sites)
+    path_reading = (
+        site_path_entries(tree)
+        if sites is None
+        else SitePathReading(tuple(SitePathEntry(path.resolve()) for path in sites), ())
+    )
     return with_path_entries(
         with_archives(spawn_scan(tree, alphabet, triggers), tree, found, alphabet),
-        entries,
+        path_reading.entries,
         alphabet,
         triggers,
+        path_reading.unread,
     )

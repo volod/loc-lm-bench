@@ -107,6 +107,14 @@ class ModuleReach:
 
 
 @dataclass(frozen=True)
+class ImportPathEntry:
+    """One statically resolved `.pth` entry and an optional finder-mapped import name."""
+
+    path: str
+    module: str = ""
+
+
+@dataclass(frozen=True)
 class SpawnScan:
     """One pass over a tree: what it read, and what it found starting children.
 
@@ -117,12 +125,13 @@ class SpawnScan:
     is what `gpu_guard_spawn_reach_coverage` weighs against `sys.stdlib_module_names` to tell them
     apart in the middle, where a host ships half its library as source.
 
-    The last three fields carry what the rest of the import path contributed, and are empty for a
+    The last five fields carry what the rest of the import path contributed, and are empty for a
     root-only pass: `archives` is what was opened and `unread_archived` the dotted names those
-    archives ship with no source to parse, while `sites` names the extra DIRECTORIES a `.pth` file
-    adds -- an editable install's source tree, a vendored subdirectory. `root` is still one tree, so
-    these are what keeps a count over it a statement about the whole path;
-    `llb.quality.gpu_guard_spawn_reach_installed` fills all three.
+    archives ship with no source to parse, while `sites` names the resolved paths a `.pth` file adds
+    and `path_entries` retains each path's optional finder-mapped import name;
+    `unread_path_entries` names executable `.pth` lines the static reader could not resolve. `root`
+    is still one tree, so these are what keeps a count over it a statement about the whole path;
+    `llb.quality.gpu_guard_spawn_reach_installed` fills all five.
     """
 
     root: str
@@ -132,6 +141,8 @@ class SpawnScan:
     archives: tuple[str, ...] = ()
     unread_archived: tuple[str, ...] = ()
     sites: tuple[str, ...] = ()
+    unread_path_entries: tuple[str, ...] = ()
+    path_entries: tuple[ImportPathEntry, ...] = ()
 
 
 def spawn_primitives(

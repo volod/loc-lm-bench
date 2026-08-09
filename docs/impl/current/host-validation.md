@@ -530,18 +530,34 @@ and `installed_spawn_reaches` folds the resulting trees into the same `SpawnScan
 records which), so `files_read` and `modules_read` now add up over the whole import path. The `.pth`
 files are read rather than `sys.path`, deliberately: `sys.path` would answer too, and would answer
 wrong under pytest, which puts the repo root and the test directories on it, so a scan of those
-walks the venv it is trying to describe. Two entries are left alone, each for a stated reason: one
-INSIDE the scan root, which the directory pass already walked (`nvidia-cutlass-dsl` ships one,
-making `cutlass` importable out of a subdirectory of site-packages -- reading it again would count
-those files twice and report one file under two package names, `cutlass` here and the
+walks the venv it is trying to describe. One entry is left alone for a stated reason: a path INSIDE
+the scan root, which the directory pass already walked (`nvidia-cutlass-dsl` ships one, making
+`cutlass` importable out of a subdirectory of site-packages -- reading it again would count those
+files twice and report one file under two package names, `cutlass` here and the
 `nvidia_cutlass_dsl` its distribution publishes there, which is the name an excuse would be written
-at); and a `.pth` that adds its paths by RUNNING code, the `import __editable___pkg_finder` style
-setuptools uses for a flat layout, whose tree stays unread and is reported as such. A reach found in
-an added tree carries it as `ModuleReach.container`, so the finding names the file an operator has
-to open rather than a path that reads like site-packages and is not.
-**On this host: two entries, one under the root, so ONE tree scanned -- `<repo>/src`, 931 files in
-0.04s, and no reach below the seams at all.** That is the answer to whether this repo's own source
-needs a declaration like a dependency's: it starts children in fifteen modules (`backends/*`,
+at). A reach found in an added tree carries it as `ModuleReach.container`, so the finding names the
+file an operator has to open rather than a path that reads like site-packages and is not.
+
+**Executable `.pth` lines are now resolved or refused, never silently skipped.** Setuptools' common
+flat-layout form writes `import __editable___pkg_finder; __editable___pkg_finder.install()` and
+keeps the exposed names and targets in the generated finder's `MAPPING`. The static decoder in
+`llb.quality.gpu_guard_spawn_reach_installed_finder` parses that exact installer statement and
+reads only an `ast.literal_eval`-compatible mapping assignment; it never imports the finder or
+executes either file. Package-directory targets are scanned under their mapped import name, and
+single-file module targets are read directly, so the pass does not expose or scan unrelated
+siblings from the source parent. Any other executable line is retained as `<pth-name>:<line>` in
+`SpawnScan.unread_path_entries`, and
+`gpu_guard_spawn_reach_installed_audit.unread_path_entries` emits an `unread-path-entry` finding
+that says the pass cannot know which trees the line adds. Fabricated coverage in
+`tests/llb/quality/test_gpu_guard_spawn_reach_installed.py` pins literal-path, generated-finder,
+single-file mapping, non-execution, and unresolved-line behavior; run it through `make ci`, while
+the real import-path assertions remain in the slow tier. This venv has no generated editable finder
+to decode: its direct `<repo>/src` line is still read, while `_virtualenv.pth:1` and
+`distutils-precedence.pth:1` are explicitly reported as the two unresolved bootstrap hooks.
+
+**On this host: two literal entries, one under the root, so ONE tree scanned -- `<repo>/src`, 931
+files in 0.04s, and no reach below the seams at all.** That is the answer to whether this repo's own
+source needs a declaration like a dependency's: it starts children in fifteen modules (`backends/*`,
 `build/vllm.py`, `cli/ui.py`, `executor/*`, `tracking/server.py`, and the rest) and every one of
 them goes through `subprocess.run` / `subprocess.call` / `subprocess.Popen`, which the denial
 patches -- so it is held to exactly the question a dependency is held to, by the same
@@ -553,21 +569,28 @@ installed half had only the degenerate end -- an empty read, plus a `files_read`
 is exactly the check the stdlib half outgrew, because a file count says how much was read and not
 what was missed. A dependency installed with its sources stripped is parsed by nothing and reported
 by nothing: the directory-tree twin of the archive case above.
-`llb.quality.gpu_guard_spawn_reach_installed_coverage` weighs the scan against the list
-`importlib.metadata` publishes in place of the one the interpreter does --
-`packages_distributions()`, which maps every importable top-level name an installed distribution
-provides to the distributions providing it, read through `importable_top_level_names` because a few
-distributions record a PATH there (`nvidia/cusparselt`, `sentencepiece/__init__`) and the scan
-reports top-level names. Every published name no source was read for is classified, and as one tree
-over the classification is the deliverable: `extensions` (the name resolves to a shared object --
+`llb.quality.gpu_guard_spawn_reach_installed_coverage` weighs the scan against the union of the
+top-level names `importlib.metadata.packages_distributions()` publishes and the names every
+resolved filesystem entry actually provides. The metadata half is read through
+`importable_top_level_names` because some distributions record a path (`nvidia/cusparselt`,
+`sentencepiece/__init__`); the filesystem half is read without imports by
+`gpu_guard_spawn_reach_installed_paths.provided_top_level_names`. `SpawnScan.path_entries` retains
+the optional import name from a generated finder mapping, while an ordinary directory entry is
+enumerated from its immediate packages, modules, caches, and extensions. In-root `.pth` entries are
+recorded too even though their files are not counted or parsed twice, which is what brings
+`cutlass` from `nvidia_cutlass_dsl/python_packages` into the declared surface. Every name no source
+was read for is classified against the entry or entries that provide it, and as one tree over the
+classification is the deliverable: `extensions` (the name resolves to a shared object --
 an extension module installed under the name itself, or a directory shipping objects and no Python,
 which is what the `nvidia-*` wheels are), `namespace` (a directory with no module of its own: an
 implicit namespace package, a PEP 561 `-stubs` directory, a data directory like `include` or
 `schemas`), `compiled_only` (a cached module with no source beside it), `archived` (nothing in the
 tree and an archive on the import path carries it), and `absent` (nothing the pass read provides
-it). **On this venv, of 421 published top-level names: 403 read as source, 10 extensions,
+it). **On this venv, of 424 provided or metadata-published top-level names: 406 read as source,
 6 namespace, 0 compiled-only, 0 archived, 2 absent** -- the measurement costs 0.9s on top of the
-2.2s scan, and the fields partition the list so a name cannot fall between two.
+2.2s scan, and the fields partition the list so a name cannot fall between two. The three names
+missing from distribution metadata -- `OleFileIO_PL`, `_virtualenv`, and `cutlass` -- are all
+accounted for as read; the namespace list includes filesystem-provided `cpp` and `saxonc` too.
 `gpu_guard_spawn_reach_installed_audit.audit_installed_read_coverage` refuses ONLY `compiled_only`,
 decided on that evidence: it is the stripped tree, where the module is importable here and the scan
 did not read it. `extensions` and `namespace` have no source by construction, and a gate refusing
@@ -582,14 +605,12 @@ quirks is the naive gate again. The refusal is
 grouped per PACKAGE, the way the archive one is, and the submodule level joins its own package's
 line -- so a stripped dependency is one line naming the modules it hid, and a package the
 declarations already name is not refused at all. `compiled_only_submodules` is reused unchanged from
-the stdlib coverage, and `installed_read_coverage_message` renders the breakdown as the assertion
-message the venv test fails with. Residual: the classification reads filenames UNDER THE SCAN ROOT,
-so a directory carrying both a stripped module and a shared object is called stripped (cache
-evidence first, since a `.pyc` is the interpreter's own record that source WAS there), a name a
-`.pth`-added tree provides without source classifies against the root rather than against that
-tree, and a distribution that publishes no top-level name at all is outside the list this is
-measured against -- as is an importable name no distribution records, which is what `cutlass` is
-here.
+the stdlib coverage for the scan root; the per-entry extension is deliberately top-level, the unit
+the task and distribution declarations use. `installed_read_coverage_message` renders the
+breakdown and every resolved entry as the assertion message the venv test fails with. Fabricated
+cases pin an unrecorded source package, a cached-only package in an external `.pth` tree, and an
+in-root entry under its actual import name; `make ci` runs those cases, and the live-path assertion
+remains in the slow tier.
 
 **The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
 stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119
