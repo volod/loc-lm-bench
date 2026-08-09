@@ -119,6 +119,13 @@ def audit_read_coverage(
     read; `compiled_only_submodules` compares each walked package's `.py` stems against its cached
     ones, and a submodule with a `.pyc` and no `.py` is exactly the stripped layout above -- the only
     difference being that the finding names `multiprocessing.util` rather than `multiprocessing`.
+
+    `archived` and `archived_submodules` are that same refusal for the layout both of those reads
+    are too directory-shaped to see: a stdlib imported from a zip, where nothing is under the root
+    to compare and every name would otherwise fall through to `absent` -- recorded as *this host
+    does not ship it* for a module the interpreter imports on demand. The name list of the archive
+    says the module is there and says nothing about whether it starts a child, so it is refused as
+    unread rather than counted as read.
     """
     measured = coverage if coverage is not None else stdlib_read_coverage(scan)
     return (
@@ -140,6 +147,26 @@ def audit_read_coverage(
                 "child",
             )
             for name in measured.compiled_only_submodules
+        ),
+        *(
+            SurfaceFinding(
+                name,
+                PROBLEM_UNREAD_MODULE,
+                "ships inside an archive this interpreter imports from, which the directory-shaped "
+                "scan does not walk, so this host can import it and the scan could not read "
+                f"whether it starts a child (archives read: {', '.join(measured.archives)})",
+            )
+            for name in measured.archived
+        ),
+        *(
+            SurfaceFinding(
+                name,
+                PROBLEM_UNREAD_MODULE,
+                "an archived submodule of a package the scan otherwise read off the directory tree, "
+                "with no source there, so this host can import it and the scan could not read "
+                f"whether it starts a child (archives read: {', '.join(measured.archives)})",
+            )
+            for name in measured.archived_submodules
         ),
     )
 

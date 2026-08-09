@@ -394,6 +394,41 @@ compiled-only submodules** (the walk costs 0.024s), pinned alongside the name-le
 fabricated trees pinning both directions -- a stripped `pkg/util.py` and a nested
 `pkg/sub/deep.py` refused, a package whose submodules all ship source clean.
 
+**A stdlib that ships as an ARCHIVE is refused, because every read above is directory-shaped.**
+`compiled_only`, `compiled_only_submodules`, and the scan's own `rglob("*.py")` all read filenames
+under the root, which is the layout every source-stripped install this host can produce and not the
+only layout CPython ships: a stdlib imported from a zip (`pythonXY.zip` on `sys.path`, what an
+embedded or single-file build carries) has no package directory to walk at all. Measured over
+fabricated archives before deciding anything, the untreated reading reported: with the root IS the
+zip, or the root holding it beside `lib-dynload`, 0 files read -- so `audit_spawn_reach` refused the
+tree as `unscanned`, while the coverage line called every declared name `absent` and
+`audit_read_coverage` passed clean, the one check that speaks about the stdlib saying the stdlib is
+not there; and with a MIXED layout -- part of the library as source on disk, the rest in the archive
+-- files ARE read, so nothing was refused anywhere, an archived `subprocess` was reported `absent`
+("this host does not ship it", for a module the interpreter imports on demand and which starts
+children), and an archived `multiprocessing/util.pyc` produced no submodule finding at all.
+`llb.quality.gpu_guard_spawn_reach_archive` closes both on the archive's own evidence: `zipfile`
+reads the name list -- importing nothing, disassembling no `.pyc` -- and the names become the
+`archived` bucket of the partition plus `archived_submodules` beside `compiled_only_submodules`,
+which `audit_read_coverage` refuses as the same `unread-module` problem. The reading is REFUSED
+rather than counted as read, deliberately: a name list says the module is there and says nothing
+about whether it starts a child, so "not measured here" is the only honest statement this scan can
+make about an archive. Three places an archive can sit are read -- the root itself, an archive
+inside it, and the sibling under the exact name CPython puts on `sys.path` (looked up by name and
+not by glob, since the parent of the stdlib directory is a shared library directory on most hosts)
+-- and only a candidate that exists and opens as a zip counts, so the placeholder `sys.path` entry
+of an ordinary source install contributes nothing. Source and cached entries count alike, because a
+`.py` inside an archive is as unread as a `.pyc`; an entry that is a directory, a data file, a
+non-identifier stem, or under an excluded segment names no module; an archived name whose source the
+directory tree also carries is not a finding (an archive shipped beside a full source tree is copies
+of what was read); and a submodule of a package that is itself archived is left to that package's
+one finding, the rule a cached `__init__` is already handled by. **On this host: 0 archives found,
+0 archived, 0 archived submodules** -- the `/usr/lib/python313.zip` entry CPython names does not
+exist here -- and the lookup costs 0.0002s. Whether to widen the scan to PARSE `.py` entries out of
+an archive is left to a host that produces the case: the embeddable builds ship `.pyc` only, the
+finding names the archive it read, and an unexercised reader written ahead of the layout is the
+speculation this refusal replaces.
+
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
 processes, uv, the build scripts), and each was covered only by that same unstated assumption.

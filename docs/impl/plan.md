@@ -43,31 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-cached-submodule-with-no-source-is-refused-only-under-a-directory-stdlib (optional)
+### agent-a-zipped-dependency-is-unread-where-a-zipped-stdlib-is-refused (optional)
 
-The per-package submodule comparison reads `__pycache__/*.pyc` stems off the DIRECTORY tree, which
-is the layout every source-stripped install this host can produce actually uses
-([host validation](current/host-validation.md#code-quality-checks)). A stdlib imported from a zip
-(`python313.zip` on `sys.path`, the layout an embedded or single-file build ships) has no package
-directory to walk at all, so both the name-level `compiled_only` classification and the submodule
-comparison find nothing under the root and the coverage reads as complete rather than as unmeasured.
-Decide it on evidence: fabricate a zip-imported stdlib, record what the scan and the coverage
-actually report for it, and either read the archive's own name list through `zipfile` (the entries
-are the evidence, exactly as the directory entries are today) or refuse a root that carries no
-readable source tree as a layout the measurement does not cover -- an honest refusal beats a
-coverage number that silently counts an unreadable stdlib as read.
+The archive reading is scoped to the stdlib root: `stdlib_archives` looks at the scan root, the
+archives inside it, and the sibling `pythonXY.zip` CPython names on `sys.path`
+([host validation](current/host-validation.md#code-quality-checks)). `installed_spawn_reaches` has
+the identical directory shape and no such treatment, so a dependency that ships zipped -- a zipped
+egg, a `--zip-ok` install, any `sys.path` entry that is an archive rather than a directory -- is
+parsed by nothing and reported by nothing, and `audit_installed_reach` returns clean for a venv half
+of which it never opened. That is the same silent pass the stdlib half just closed, one tree over,
+and worse there: site-packages is where the packages that start children constantly live. Extend the
+same evidence to the installed scan -- read the `sys.path` archive entries' name lists, attribute
+each name to its top-level package, and decide whether an archived package is a finding or rides the
+existing `DECLARED_PACKAGE_REACHERS` excuse. The read-or-refuse call the stdlib half deferred is the
+same one here and can be taken on real evidence for the first time if this host can produce a zipped
+dependency: an archive that carries `.py` entries is readable through `zipfile`, so parsing INTO one
+is available where refusing is currently the answer.
 
 - Agent status: CLEAR
-- Dependencies: the directory walk is `compiled_only_submodules` in
-  `src/llb/quality/gpu_guard_spawn_reach_coverage.py` and `_compiled_stems` beside it; the scan that
-  would need the same treatment is `spawn_scan` in `src/llb/quality/gpu_guard_spawn_reach.py`, whose
-  `rglob("*.py")` is equally directory-shaped.
-- User-visible outcome: a host whose stdlib ships as an archive learns that the reach statement was
-  not measured there, instead of reading a clean coverage line.
-- Scope boundary: in scope -- the zip-layout evidence, the read-or-refuse decision, and the
-  fabricated archive case. Out of scope -- importing anything to inspect it, disassembling a `.pyc`,
-  and site-packages.
-- Execution path: `make ci` (the stdlib tier is not `slow`); no host services.
+- Dependencies: the archive reading is `stdlib_archives` / `archived_modules` in
+  `src/llb/quality/gpu_guard_spawn_reach_archive.py`; the scan to extend is
+  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py` and the audit that
+  consumes it is `audit_installed_reach` in `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
+- User-visible outcome: a venv holding a zipped dependency learns that the below-the-seams statement
+  was not measured for it, instead of reading a clean audit.
+- Scope boundary: in scope -- the `sys.path` archive entries, the per-package attribution, and the
+  read-or-refuse decision for a source-carrying archive. Out of scope -- importing anything to
+  inspect it, disassembling a `.pyc`, and the stdlib half.
+- Execution path: `make ci` for the fabricated cases; the site-packages tier is `slow`.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)
