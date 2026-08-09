@@ -248,9 +248,29 @@ pass line then says `shellcheck NOT run` rather than claiming the tree is clean.
 is rarely needed: shellcheck now ships in the `dev` extra as the pinned `shellcheck-py` wheel
 (the real binary, upper-bounded like ruff so a new release cannot redden CI on unchanged scripts),
 so `.venv/bin/shellcheck` exists wherever `make ci` runs, GitHub CI included -- no apt step in the
-workflow. The gate prefers that binary and falls back to any `shellcheck` on `PATH`. Scans,
-severity, and the missing-binary policy live once in `scripts/shared/shell_lint.sh`, sourced by
-both the gate and the sweep; every scan runs before any of them fails.
+workflow. Scans, severity, and the missing-binary policy live once in
+`scripts/shared/shell_lint.sh`, sourced by both the gate and the sweep; every scan runs before any
+of them fails.
+
+**Exactly one binary decides the verdict: `$LLB_SHELLCHECK`, default `.venv/bin/shellcheck`.** The
+`command -v shellcheck` fallback is gone. It was what made a green run host-dependent: a distro
+package is releases behind the pin (this dev box ships 0.9.0 against the pinned 0.11.0) and
+shellcheck ADDS checks between releases, so the same commit could pass on the fallback host and
+fail in CI -- the split verdict a pinned linter exists to prevent, moved one level down. The gap is
+real, not theoretical: `out="$(echo hi >/tmp/f)"` draws SC2327 (warning) + SC2328 (error) from
+0.11.0 and nothing at all from 0.9.0, so a script written that way lints clean on the fallback host.
+On the shipped tree the two versions happen to agree today (both scans clean at `-S warning` and at
+`-S style -i SC1090,SC1091`), which is why the fix was cheap to take before a divergence landed.
+Requiring the wheel costs no workflow -- a venv without the `dev` extra cannot run `make ci` anyway
+-- and the missing-binary block now names the path it looked at, since "MISSING" is otherwise
+puzzling on a host that has `shellcheck` on `PATH`. `LLB_SHELLCHECK` still overrides the path for a
+venv living elsewhere. Consequently the `dev` apt profile is now **empty**
+(`scripts/apt/dev.packages` keeps the file and the comment; the profile stays for a future dev-only
+OS package) and [dev setup](../../guides/development/dev-setup.md#apt-dependencies-debianubuntu)
+no longer lists `shellcheck` as a fallback. Residual: the pin is a RANGE (`>=0.10,<0.12`), so two
+hosts resolving the extra months apart can still land on different wheels; `uv.lock` pins
+0.11.0.1 for anyone installing through the lock, and tightening the range itself is a separate
+call. Resolution behavior is covered by `tests/llb/quality/test_shell_lint_resolution.py`.
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.

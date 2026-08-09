@@ -5,8 +5,9 @@
 # Three scans over every TRACKED *.sh (git ls-files, so the gate covers exactly what a commit
 # carries, wherever it lives):
 #   * `bash -n` syntax -- needs nothing installed, so it always runs.
-#   * shellcheck at severity `warning` -- the binary ships in the `dev` extra (shellcheck-py), so
-#     every host that can run `make ci` has it, GitHub CI included.
+#   * shellcheck at severity `warning` -- the PINNED binary from the `dev` extra (shellcheck-py)
+#     and only that one, so every host that can run `make ci` reaches the same verdict, GitHub CI
+#     included.
 #   * every `# shellcheck source=` directive resolves, so the pass above is a CROSS-FILE result.
 #   * every `llb_*` call has a definition in its caller's declared scope (llb.quality.shell_symbols),
 #     which is the one cross-file mistake shellcheck does not model.
@@ -15,6 +16,8 @@
 # ran is worse than no linter. LLB_SHELLCHECK_OPTIONAL=1 downgrades that to a printed skip, for a
 # lean venv on a dev box that still wants the rest of the sweep.
 
+# The pinned wheel binary, and no PATH fallback -- see llb_shellcheck_step. LLB_SHELLCHECK still
+# overrides the path, for a venv that lives somewhere other than $PROJECT_ROOT/.venv.
 LLB_SHELLCHECK="${LLB_SHELLCHECK:-$PROJECT_ROOT/.venv/bin/shellcheck}"
 LLB_SHELLCHECK_SEVERITY="${LLB_SHELLCHECK_SEVERITY:-warning}"
 
@@ -92,10 +95,15 @@ llb_shell_symbols_scan() {
   return "$status"
 }
 
-# Resolve the venv binary, then any shellcheck on PATH (an apt install on an older host).
+# ONE binary decides this gate: the pinned wheel from the `dev` extra. There is deliberately no
+# `command -v shellcheck` fallback -- a distro package is releases behind the pin (this dev box
+# ships 0.9.0 against the pinned 0.11.0) and shellcheck ADDS checks between releases, so the
+# fallback made a green run mean different things on different hosts: the same commit passes on the
+# lean host and fails in CI, which is the split verdict a pinned linter exists to prevent. A venv
+# without the `dev` extra cannot run `make ci` anyway, so requiring the wheel costs no workflow.
 llb_shellcheck_step() {
   local failed=0
-  if [ -x "$LLB_SHELLCHECK" ] || LLB_SHELLCHECK="$(command -v shellcheck 2>/dev/null)"; then
+  if [ -x "$LLB_SHELLCHECK" ]; then
     llb_fail_if_output "$LLB_SHELLCHECK_LABEL" llb_shellcheck_scan || failed=1
     llb_fail_if_output "$LLB_SHELLCHECK_SOURCES_LABEL" llb_shellcheck_sources_scan || failed=1
     return "$failed"
@@ -105,7 +113,8 @@ llb_shellcheck_step() {
     LLB_SHELLCHECK_SKIPPED=1
     return 0
   fi
-  llb_print_block "shell lint (shellcheck) MISSING -- run: make venv EXTRAS=dev"
+  # Name the path: on a host that HAS a distro shellcheck, "missing" is otherwise puzzling.
+  llb_print_block "shell lint (shellcheck) MISSING at ${LLB_SHELLCHECK} -- run: make venv EXTRAS=dev"
   return 1
 }
 

@@ -71,29 +71,28 @@ command-position parsing. State which failure each option leaves open.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
-### agent-shell-lint-verdict-depends-on-which-shellcheck-the-host-has (optional)
+### agent-the-shellcheck-pin-is-a-range-so-two-hosts-can-still-differ (optional)
 
-The gate prefers the pinned `shellcheck-py` wheel and falls back to any `shellcheck` on `PATH`
-([host validation](current/host-validation.md#code-quality-checks)). The fallback is what makes the
-gate's answer host-dependent: a distro binary can be several releases behind the pin (this dev box
-ships 0.9.0 against the pinned 0.11.0), and shellcheck adds checks between releases, so the same
-commit can pass locally and fail in CI -- the failure mode a pinned linter exists to prevent, moved
-one level down. Decide it: either require the pinned wheel (drop the `PATH` fallback, drop
-`shellcheck` from `scripts/apt/dev.packages` and its dev-setup row, since the extra now supplies
-it) or keep the fallback and have the gate PRINT the resolved binary and version so a divergent
-verdict is self-explaining. Requiring the wheel is the smaller surface; the fallback only matters
-for a venv built without the `dev` extra, which cannot run `make ci` anyway.
+The shell-lint gate now runs exactly one binary, `.venv/bin/shellcheck` from the `dev` extra
+([host validation](current/host-validation.md#code-quality-checks)), which removed the distro-vs-pin
+split. What remains is one level up: the extra declares `shellcheck-py>=0.10,<0.12`, a RANGE, so a
+host that resolves the extra today and one that resolved it months ago can hold 0.10.x and 0.11.x
+and still disagree about a commit -- the same failure, smaller. `uv.lock` names an exact version,
+but `make venv` installs with `uv pip install -e ".[...]"`, which does not read the lock, so the
+lock protects nobody here. Two ways to close it, and the task is to pick one: pin the extra to an
+exact version (a bump becomes a deliberate commit, like a ruff bump) or have `make venv` install
+from the lock so the declared range stays a compatibility statement while the installed version is
+pinned by the lock. Say what a shellcheck upgrade then costs the person doing it.
 
 - Agent status: CLEAR
-- Dependencies: the resolution is `llb_shellcheck_step` in `scripts/shared/shell_lint.sh`; the pin
-  is `shellcheck-py` in the `dev` extra of `pyproject.toml`; the apt row is
-  `scripts/apt/dev.packages` and the table in
-  [dev setup](../guides/development/dev-setup.md#apt-dependencies-debianubuntu).
-- User-visible outcome: a green shell-lint run means the same thing on every host, or says which
-  binary produced it.
-- Scope boundary: in scope -- the resolution policy, the apt/docs cleanup that follows from it, and
-  the version line if the fallback stays. Out of scope -- changing the pin, the severity floor, and
-  the `LLB_SHELLCHECK_OPTIONAL` escape hatch.
+- Dependencies: the pin is `shellcheck-py` in the `dev` extra of `pyproject.toml`; the installer is
+  the `venv` target in `make/dev.mk`; the consumer is `llb_shellcheck_step` in
+  `scripts/shared/shell_lint.sh`.
+- User-visible outcome: two hosts that both pass `make shell-lint-gate` ran the same shellcheck
+  build, not merely the same major.
+- Scope boundary: in scope -- the pinning mechanism for this one tool, the upgrade path it implies,
+  and any `make venv` change it needs. Out of scope -- locking every other dependency the same way,
+  the severity floor, and the `LLB_SHELLCHECK_OPTIONAL` escape hatch.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-maintainability-index-scan-is-still-only-a-report (optional)
