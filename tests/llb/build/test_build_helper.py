@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from llb.backends.preflight_verdict import SAMPLER_NATIVE, SamplerVerdict, save_verdict
 from llb.core.paths import PROJECT_ROOT
 
 COMMON_SH = PROJECT_ROOT / "scripts" / "shared" / "common.sh"
@@ -55,6 +56,28 @@ fi
     return bin_dir, uv_log
 
 
+def _seed_sampler_preflight_verdict(data_dir: Path) -> None:
+    """Pre-record a sampler verdict so the installer's preflight reuses it instead of probing.
+
+    `llb.build.vllm.main` ends in the flashinfer sampler preflight, which the fake `uv` cannot
+    intercept: it is an in-process probe that imports torch and JIT-builds + launches a flashinfer
+    kernel on the real GPU. That probe, not any resolver call, is what makes an end-to-end
+    installer run expensive on a CUDA host (5.3s of a 5.6s test). A verdict recorded with
+    `driver: None` is current on every host (`verdict_is_current`), so the cache short-circuits the
+    probe and these tests stay about wheel export and uv calls.
+    """
+    verdict: SamplerVerdict = {
+        "sampler": SAMPLER_NATIVE,
+        "flashinfer_version": None,
+        "detail": "seeded by tests; the real probe needs a GPU",
+        "checked_at": "2026-01-01T00:00:00+00:00",
+        "driver": None,
+        "pinned_version": None,
+        "auto_pinned": False,
+    }
+    save_verdict(verdict, data_dir)
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_max_jobs_is_a_positive_int():
     out = subprocess.run(
@@ -82,11 +105,11 @@ def test_common_sh_exposes_helpers():
     assert out.stdout.strip() == "ok"
 
 
-@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path):
     bin_dir, uv_log = _fake_toolchain(tmp_path)
     data_dir = tmp_path / "data"
+    _seed_sampler_preflight_verdict(data_dir)
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -105,7 +128,6 @@ def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path)
     assert not (data_dir / "wheels").exists()
 
 
-@pytest.mark.slow
 @pytest.mark.skipif(
     shutil.which("bash") is None or shutil.which("git") is None,
     reason="bash and git are required",
@@ -155,6 +177,7 @@ cuda = _Cuda()
         check=True,
     )
     data_dir = tmp_path / "data"
+    _seed_sampler_preflight_verdict(data_dir)
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",

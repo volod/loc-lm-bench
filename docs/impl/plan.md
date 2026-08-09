@@ -43,29 +43,29 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-build-script-tests-are-visible-to-the-repo-but-not-to-ci (optional)
+### agent-a-unit-test-can-reach-the-gpu-and-nothing-says-so (optional)
 
-`tests/llb/build/test_build_helper.py` is committed and every clone now collects it, but two of its
-four tests are marked `slow` -- the ones that actually drive `scripts/build_vllm.sh` under a fake
-`uv` toolchain (prebuilt-wheel path, source-build wheel export). `make ci`, `make ci-github`, and
-GitHub CI all deselect `slow`, so the vLLM installer's behavior is still verified only where someone
-runs `make test` by hand; what CI gained is the two quick `llb_max_jobs` / `common.sh` assertions.
-The two are not alike, so one marker for both is the wrong shape: neither compiles anything (`uv`
-is a shell stub), and `test_source_vllm_exports_only_checkout_wheel` costs ~0.2s while
-`test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse` costs ~6s. Find where those 6
-seconds go in `scripts/build_vllm.sh` on the prebuilt path -- a real resolver call the stub does not
-intercept is the likely answer, and it is worth knowing whether CI would pay it too -- then unmark
-the cheap test outright and decide the expensive one on what the timing turns out to be (unmark,
-stub the remaining cost, or keep `slow` and state the gap on the topic page rather than leaving it
-implicit).
+`tests/llb/build/test_build_helper.py` ran a real flashinfer JIT build on the host GPU for as long
+as it existed, because driving an installer entrypoint end to end executes everything that
+entrypoint does and a fake `uv` on `PATH` only intercepts the SUBPROCESS calls
+([host validation](current/host-validation.md#code-quality-checks)). It is fixed there, but nothing
+prevents the next such test: the non-slow suite is meant to be the no-GPU, no-download tier
+(`heavy_env` and `opt_in_env` mark the exceptions) and that tier is a convention, not a check.
+Give it one -- run the non-slow suite with a guard that fails when an unmarked test initializes a
+CUDA context or imports `flashinfer` (a `torch.cuda` init hook, or a session-scoped fixture that
+compares `torch.cuda.is_initialized()` before and after each unmarked test) -- and decide on the
+evidence whether the guard refuses or reports, since a test that legitimately imports torch without
+touching the device must stay green.
 
 - Agent status: CLEAR
-- Dependencies: the markers are `@pytest.mark.slow` in `tests/llb/build/test_build_helper.py`; the
-  suite selectors are `NOT_SLOW` / `GITHUB_SUITE` in `make/dev.mk`.
-- User-visible outcome: the check that keeps a source build from OOMing a host runs in the same
-  place the build is trusted from.
-- Scope boundary: in scope -- the markers, the timing evidence, and the suite-selector consequence.
-  Out of scope -- new coverage for the build scripts and any change to the scripts themselves.
+- Dependencies: the suite selectors are `NOT_SLOW` / `GITHUB_SUITE` in `make/dev.mk`; the marker
+  vocabulary is `[tool.pytest.ini_options] markers` in `pyproject.toml`; the probe that motivated it
+  is `_default_flashinfer_probe` in `src/llb/backends/preflight.py`.
+- User-visible outcome: the lightweight suite's promise that it never does GPU work is enforced on
+  the commit that would break it, instead of being noticed as a slow test months later.
+- Scope boundary: in scope -- the guard, its marker escape hatch, and the decision to refuse or
+  report. Out of scope -- a torch dependency for the GitHub CI env (the guard must no-op where torch
+  is absent), marking existing tests differently, and download/network guards.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-a-sourced-fragments-declared-scope-is-wider-than-the-call-it-covers (optional)

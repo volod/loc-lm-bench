@@ -191,6 +191,24 @@ still catch root build output. The same blindness reaches the shell gate, which 
 `git ls-files --cached --others --exclude-standard` -- a script under an ignored tree is not linted
 either. `git status --ignored --short` is the manual read.
 
+**All four of those build tests run in the non-slow suite**, so `make ci`, `make ci-github`, and
+GitHub CI verify the vLLM installer's behavior -- the prebuilt path installs `--only-binary :all:`
+through uv's shared cache and writes no project wheelhouse, and the source path exports exactly one
+ABI-keyed wheel from a clean checkout -- not only the two `llb_max_jobs` / `common.sh` assertions.
+Two of them used to carry `@pytest.mark.slow` because an end-to-end run cost ~5.6s on this host.
+The cost was not a resolver call the fake `uv` fails to intercept: it was the flashinfer sampler
+preflight that `llb.build.vllm.main` ends in, an in-process probe that imports torch and
+JIT-builds + launches a kernel on the real GPU (5.3s measured; the other run was fast only by
+accident, because its fake `torch` fixture shadows the real one). GitHub CI would never have paid
+it -- torch is absent there, so the probe raises `ImportError` and the verdict is `native` in
+milliseconds -- which is exactly why the marker cost coverage where the code is trusted from while
+buying nothing. `_seed_sampler_preflight_verdict` in `tests/llb/build/test_build_helper.py` now
+pre-records a verdict with `driver: None`, which `verdict_is_current` accepts on every host, so the
+installer reuses the cached verdict and the tests stay about wheels and uv calls: 5.6s -> 0.08s and
+0.52s -> 0.14s. A unit suite that reaches the GPU is the general hazard here -- an end-to-end run of
+an installer entrypoint executes everything that entrypoint does, including probes no shell stub
+sits in front of.
+
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
 exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the
