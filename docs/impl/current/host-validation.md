@@ -335,16 +335,46 @@ already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` i
 `multiprocessing/util.py` + `multiprocessing/popen_spawn_win32.py`, which are the POSIX and Windows
 halves of the `spawn` / `forkserver` residual. `llb.quality.gpu_guard_spawn_reach_audit` refuses a
 module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
-mode a source scan invites -- a scan that found NOTHING, which means the tree was not read rather
-than that the stdlib starts no children. Two trees are excluded by a stated rule rather than by
-accident: CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`), a corpus that
-starts children on purpose, costs 4s and one extra declaration to include; and `site-packages`,
-which is third-party rather than stdlib and is a separate axis (torch, uv, and vLLM all start
-children). The whole scan is ~0.9s on this host: 631 files read, 372 parsed, run once per session by
-a module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it
-over fabricated trees for the cases the host cannot produce (an aliased import, a local helper that
-merely shares a name with a spawn entry point, a file that will not parse, a module reaching past
-every patchable name).
+mode a source scan invites -- a scan that read NO source, which says where the tree is rather than
+what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read").
+CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`) is excluded by a stated
+rule: a corpus that starts children on purpose, costing 4s and one extra declaration to include. The
+stdlib scan is ~0.9s on this host (631 files read, 372 parsed), run once per session by a
+module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it over
+fabricated trees for the cases the host cannot produce (an aliased import, a local helper that merely
+shares a name with a spawn entry point, a file that will not parse, a module reaching past every
+patchable name). The per-file half -- resolving a source buffer's call sites through its own imports
+-- is `llb.quality.gpu_guard_spawn_source`, shared by both scans.
+
+**The installed packages are read the same way, for the one question that can differ there.** This
+repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
+processes, uv, the build scripts), and each was covered only by that same unstated assumption.
+`installed_spawn_reaches` reads the venv's site-packages with a narrower alphabet --
+`below_the_seams()`: `posix`, `_posixsubprocess`, `_winapi` -- because a dependency calling
+`subprocess.Popen` says nothing the declaration does not already say, while scanning for the covered
+names too means parsing 7420 files instead of 301 (measured). A one-off full-alphabet pass over this
+host's 40119 site-packages files found **362 packages that start a child and exactly 5 files that go
+below the seams**, in two packages: `joblib`'s vendored `loky` (`backend/fork_exec.py` ->
+`_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in its Windows backend) and `multiprocess`
+(a `dill`-based fork of `multiprocessing`, carrying that module's residual verbatim). Both are
+private copies of a residual already on the record and neither is closable from here, so both are
+declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by file, since a release moves its
+modules and the decision an operator makes is about the dependency. A THIRD package arriving is what
+`audit_installed_reach` refuses; an excuse is looked up as the exact path first and then the
+top-level package, so the stdlib and package tables read through one lookup. `nt` is deliberately
+absent from the installed alphabet: it is the Windows twin of names `os` re-exports, and its
+two-letter module name matches too much text to prefilter on, so including it would cost a full-tree
+parse on every host for a platform whose denial mechanism is already a residual.
+
+**The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
+stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119
+files and 556 MB here, 2.2s warm and disk-bound cold -- and it changes only when the lock file does,
+which is a `make test` moment rather than a `make ci` one. The mechanism itself (the package-level
+excuse, the narrow alphabet, a call that goes around `os` through `posix`) is pinned over fabricated
+trees in the non-slow tier, so `make ci` still covers the code and only the 40k-file read is
+deferred. Residual: the scan reads SOURCE, so a dynamic import, a call through an object attribute,
+and anything a compiled extension does below Python stay invisible -- the last being the same
+native-extension residual the denial itself carries.
 
 Coverage is five files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
 suite wiring: the state reads over a fake module table, and the fixture body driven against the live

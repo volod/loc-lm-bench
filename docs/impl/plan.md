@@ -43,39 +43,38 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-child-starting-scan-stops-at-the-stdlib (optional)
+### agent-a-vendored-multiprocessing-is-a-residual-nothing-narrows (optional)
 
-The reach scan reads the stdlib and leaves `site-packages` out, on the stated ground that
-third-party code is a different axis
-([host validation](current/host-validation.md#code-quality-checks)). It is the axis this repo
-actually runs on: torch spawns dataloader workers through `multiprocessing`, vLLM starts engine
-processes, `uv` and the build scripts start children, and an unmarked test that drives any of them
-is covered only if that package reaches an `os` / `subprocess` name -- the exact claim the scan was
-built to stop taking on faith, one directory over. Point the same scan at the installed
-distributions (the venv's `site-packages`, or only the distributions the test suite imports) and
-decide on the evidence whether it becomes a gate or a report: a package that ships vendored copies
-of `subprocess`, or reaches a child through a compiled extension the scan cannot read at all, is the
-case that would make a naive gate either red or falsely green.
+Two installed packages carry a private copy of the `multiprocessing` spawn residual -- `joblib`'s
+vendored `loky` and `multiprocess` -- and both are declared at PACKAGE granularity, so the
+declaration excuses every module in them rather than the two files that actually go below the seams
+([host validation](current/host-validation.md#code-quality-checks)). That is the right unit for
+surviving a release bump and the wrong unit for a residual: a future `joblib` that starts children a
+second way, from a different file, is excused by a line written about `loky`. Narrow it without
+reintroducing per-file churn: record with each package declaration the primitives and file count it
+was written against, and report when a package's reach GROWS past what its declaration was measured
+on, so a widened vendored backend arrives as a line to re-read rather than as silence.
 
 - Agent status: CLEAR
-- Dependencies: the scan is `stdlib_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py`
-  (the excluded segments are `_EXCLUDED_SEGMENTS`); the refusal to reuse is
+- Dependencies: the declarations are `DECLARED_PACKAGE_REACHERS` in
+  `src/llb/quality/gpu_guard_spawn_reach.py`; the lookup that applies them is `_reach_finding` in
   `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
-- User-visible outcome: the packages an unmarked test actually drives are known to start their
-  children through names the denial covers, instead of being assumed to.
-- Scope boundary: in scope -- the site-packages scan, its runtime budget, and the gate-or-report
-  decision. Out of scope -- patching a new seam for a third-party name, a compiled-extension
-  residual the source scan cannot close, and the no-download axis.
+- User-visible outcome: a dependency that grows a second way to start a child is visible even when
+  its package already carries an excuse for the first.
+- Scope boundary: in scope -- the measured-against record, the growth report, and its fixture cases.
+  Out of scope -- closing either vendored residual, per-file declarations for third-party packages,
+  and the no-download axis.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-reach-scan-does-not-say-what-it-failed-to-read (optional)
 
-The reach scan reads the `*.py` files it finds under the stdlib root and refuses only the degenerate
-case where it found NOTHING
-([host validation](current/host-validation.md#code-quality-checks)). Between those two states is an
-unmeasured one: a module that ships without source (a frozen or zipped stdlib, a `python3-minimal`
-layout, a `.pyc`-only install) is not scanned and reports exactly like a module that starts no
-children, so a host could pass the check having read half the library. Measure the reading: compare
+The reach scan counts the files it read and refuses only the degenerate case where that count is
+ZERO ([host validation](current/host-validation.md#code-quality-checks)). Between an empty read and a
+complete one is an unmeasured middle: a module that ships without source (a frozen or zipped stdlib,
+a `python3-minimal` layout, a `.pyc`-only install) is not scanned and reports exactly like a module
+that starts no children, so a host could pass the check having read half the library -- and the file
+count cannot tell, because it says how much was read and not what was missed. Measure the reading:
+compare
 the modules the scan actually parsed against `sys.stdlib_module_names`, report the ones no source
 was found for, and decide on the evidence whether an unread module is a finding -- the C extension
 modules in that list have no `.py` by construction and are the case a naive gate would fail on

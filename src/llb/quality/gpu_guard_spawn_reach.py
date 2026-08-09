@@ -7,34 +7,44 @@ resolves a name in one of those two. That last sentence was the one claim the na
 standing: `pty.spawn` forks and execs, `asyncio`'s unix transport starts a `Popen`,
 `multiprocessing.util.spawnv_passfds` does neither, and nothing said which of those is which.
 
-So this module reads the stdlib instead of asserting about it. Every `*.py` under the stdlib root is
-parsed and its process-starting CALL SITES are resolved through the module's own imports (`os.fork`,
-`from subprocess import Popen`, `import os as operating`), against an alphabet that is the declared
+So this module reads the stdlib instead of asserting about it. Every `*.py` under the stdlib root
+goes through `llb.quality.gpu_guard_spawn_source`, which resolves its process-starting CALL SITES
+through that module's own imports (`os.fork`, `from subprocess import Popen`,
+`import os as operating`), against an alphabet that is the declared
 surface plus the C modules underneath it -- `posix` / `nt` (what `os` re-exports), and
 `_posixsubprocess` / `_winapi` (what `subprocess` and `multiprocessing` call below any patchable
 name). A module reaching a DECLARED name needs nothing: the declaration already carries that
 decision, covered or residual. A module reaching something the declared surface does not name is
 excused by `DECLARED_REACHERS` here, or refused by `llb.quality.gpu_guard_spawn_reach_audit`.
 
-Two trees are left out, both stated rather than assumed: CPython's own regression suite (`test/`,
-`*/tests/`, `idlelib/idle_test`), a corpus that starts children on purpose, is not runtime code any
-llb path imports, and costs 4s and an extra declaration to include; and `site-packages`, which is
-third-party rather than stdlib and is a different axis entirely (torch, uv, and vLLM all start
-children). Both are residuals of this check, not blind spots of it.
+The INSTALLED packages are read the same way and for a narrower question. A dependency calling
+`subprocess.Popen` says nothing the declaration does not already say, and looking for it means
+parsing the whole tree, so `installed_spawn_reaches` uses the `below_the_seams` alphabet: only the
+starts that go past every patchable name. Those are declared per package rather than per file
+(`DECLARED_PACKAGE_REACHERS`), because a release moves its modules and the decision is about the
+dependency.
 
-The measurement itself is the interesting half: on CPython 3.13 the scan finds 25 stdlib modules
-that start a child, of which 23 resolve a name the denial covers. The exceptions are exactly the
-residuals already on the record -- `multiprocessing/util.py` and `multiprocessing/popen_spawn_win32
-.py` -- plus `subprocess.py`, whose low-level starts sit BEHIND the `Popen` seam. Two modules is the
-right enumerated surface, and now it is a result rather than a claim.
+CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`) is left out by a stated
+rule: it is a corpus that starts children on purpose, is not runtime code any llb path imports, and
+costs 4s and an extra declaration to include.
+
+The measurements are the interesting half. On CPython 3.13 the stdlib scan finds 25 modules that
+start a child, of which 23 resolve a name the denial covers; the exceptions are the residuals
+already on the record -- `multiprocessing/util.py` and `multiprocessing/popen_spawn_win32.py` --
+plus `subprocess.py`, whose low-level starts sit BEHIND the `Popen` seam. Two modules is the right
+enumerated NAME surface, and that is now a result rather than a claim. Over this host's
+site-packages (40119 files), a one-off full-alphabet pass found 362 packages that start a child and
+exactly 5 files that go below the seams, all in two packages: `joblib`'s vendored `loky` and
+`multiprocess`. Both are private copies of the `multiprocessing` residual, and neither is closable
+from here -- so they are declared, and a THIRD package arriving is what this refuses.
 """
 
-import ast
 import sysconfig
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from llb.quality.gpu_guard_spawn_source import source_reaches
 from llb.quality.gpu_guard_spawn_surface import (
     COVERAGE_NOT_A_SPAWN,
     COVERAGE_RESIDUAL,
@@ -71,16 +81,46 @@ DECLARED_REACHERS: Mapping[str, SpawnCoverage] = {
     ),
 }
 
+# Installed packages are declared per PACKAGE rather than per file: a release moves its modules
+# around, and the decision an operator makes is about the dependency, not about a path inside it.
+DECLARED_PACKAGE_REACHERS: Mapping[str, SpawnCoverage] = {
+    "joblib": SpawnCoverage(
+        COVERAGE_RESIDUAL,
+        reason="vendors `loky`, whose `backend/fork_exec.py` calls `_posixsubprocess.fork_exec` and "
+        "whose Windows backend calls `_winapi.CreateProcess` -- a private copy of the same "
+        "`spawn` / `forkserver` residual `multiprocessing/util.py` carries",
+    ),
+    "multiprocess": SpawnCoverage(
+        COVERAGE_RESIDUAL,
+        reason="a `dill`-based fork of `multiprocessing`, so it carries that module's residual "
+        "verbatim: `util.spawnv_passfds` -> `_posixsubprocess.fork_exec`",
+    ),
+}
+
 
 @dataclass(frozen=True)
 class ModuleReach:
-    """One stdlib module and the process-starting names its source resolves."""
+    """One module and the process-starting names its source resolves."""
 
     path: str
     primitives: tuple[str, ...]
 
     def __str__(self) -> str:
         return f"{self.path} -> {', '.join(self.primitives)}"
+
+
+@dataclass(frozen=True)
+class SpawnScan:
+    """One pass over a tree: what it read, and what it found starting children.
+
+    `files_read` is the half that keeps the result honest. A tree whose source is absent -- a frozen
+    or `.pyc`-only install, a path that is not there at all -- yields no reaches, which is the same
+    answer as a tree where nothing starts a child, and only the count tells them apart.
+    """
+
+    root: str
+    files_read: int
+    reaches: tuple[ModuleReach, ...]
 
 
 def spawn_primitives(
@@ -107,23 +147,77 @@ def spawn_primitives(
     }
 
 
-def stdlib_spawn_reaches(
-    root: Path | None = None, primitives: Mapping[str, frozenset[str]] | None = None
-) -> tuple[ModuleReach, ...]:
-    """Every stdlib module whose source starts a child, and the names it starts it through."""
-    tree = root if root is not None else Path(sysconfig.get_paths()["stdlib"])
-    alphabet = primitives if primitives is not None else spawn_primitives()
-    triggers = tuple(sorted({name.encode() for names in alphabet.values() for name in names}))
+def below_the_seams() -> Mapping[str, frozenset[str]]:
+    """The alphabet for a tree that only has to be checked for reaches PAST the declared surface.
+
+    An installed package calling `subprocess.Popen` says nothing the declaration does not already
+    say, and looking for it costs the whole tree: on this host, scanning site-packages for the
+    covered names too means parsing 7420 files instead of 301 (measured). What is worth finding is a
+    package that goes below every patchable name, so the alphabet is the C modules only.
+
+    `nt` is deliberately absent where `posix` is present: it is the Windows twin of the same names,
+    and its two-letter module name matches too much text to prefilter on, so including it would cost
+    a full-tree parse for an alias of names `os` re-exports on a platform whose denial mechanism is
+    already a declared residual.
+    """
+    return {
+        "posix": frozenset(spawn_primitives()["os"]),
+        **_LOW_LEVEL_STARTS,
+    }
+
+
+def spawn_scan(
+    root: Path,
+    alphabet: Mapping[str, frozenset[str]],
+    triggers: Sequence[bytes],
+) -> SpawnScan:
+    """Read one tree: every module whose source starts a child, and how many files were read.
+
+    A trigger is a byte string whose ABSENCE proves a file cannot contain a call in the alphabet,
+    which is what lets a file be skipped without parsing it. Attribute names qualify (`os.fork()`
+    names `fork`), and so do module names (calling `posix.fork` means naming `posix`) -- each scan
+    passes whichever set is cheaper for the tree it reads.
+    """
     found: list[ModuleReach] = []
-    for path in sorted(tree.rglob("*.py")):
-        relative = path.relative_to(tree).as_posix()
+    read = 0
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
         source = None if _is_excluded(relative) else _read(path)
-        if source is None or not any(trigger in source for trigger in triggers):
+        if source is None:
             continue
-        reached = _source_reaches(source, alphabet)
+        read += 1
+        if not any(trigger in source for trigger in triggers):
+            continue
+        reached = source_reaches(source, alphabet)
         if reached:
             found.append(ModuleReach(path=relative, primitives=reached))
-    return tuple(found)
+    return SpawnScan(root=str(root), files_read=read, reaches=tuple(found))
+
+
+def stdlib_spawn_reaches(
+    root: Path | None = None, primitives: Mapping[str, frozenset[str]] | None = None
+) -> SpawnScan:
+    """The stdlib, read for every process-starting name the declared surface knows about."""
+    tree = root if root is not None else Path(sysconfig.get_paths()["stdlib"])
+    alphabet = primitives if primitives is not None else spawn_primitives()
+    return spawn_scan(tree, alphabet, _attribute_triggers(alphabet))
+
+
+def installed_spawn_reaches(
+    root: Path | None = None, primitives: Mapping[str, frozenset[str]] | None = None
+) -> SpawnScan:
+    """The installed packages, read for the starts that go BELOW every name the denial patches."""
+    tree = root if root is not None else Path(sysconfig.get_paths()["purelib"])
+    alphabet = primitives if primitives is not None else below_the_seams()
+    return spawn_scan(tree, alphabet, _module_triggers(alphabet))
+
+
+def _attribute_triggers(alphabet: Mapping[str, frozenset[str]]) -> tuple[bytes, ...]:
+    return tuple(sorted({name.encode() for names in alphabet.values() for name in names}))
+
+
+def _module_triggers(alphabet: Mapping[str, frozenset[str]]) -> tuple[bytes, ...]:
+    return tuple(sorted(module.encode() for module in alphabet))
 
 
 def _is_excluded(relative: str) -> bool:
@@ -136,67 +230,3 @@ def _read(path: Path) -> bytes | None:
         return path.read_bytes()
     except OSError:
         return None
-
-
-def _source_reaches(source: bytes, alphabet: Mapping[str, frozenset[str]]) -> tuple[str, ...]:
-    """The process-starting names one module's source resolves, through its own imports."""
-    try:
-        parsed = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return ()
-    modules, names, calls = _imports_and_calls(parsed, alphabet)
-    reached = {_call_label(call, modules, names, alphabet) for call in calls}
-    return tuple(sorted(label for label in reached if label is not None))
-
-
-def _imports_and_calls(
-    parsed: ast.AST, alphabet: Mapping[str, frozenset[str]]
-) -> tuple[dict[str, str], dict[str, str], list[ast.expr]]:
-    """One walk: local name -> module, local name -> label, and every call target in the module."""
-    modules: dict[str, str] = {}
-    names: dict[str, str] = {}
-    calls: list[ast.expr] = []
-    for node in ast.walk(parsed):
-        if isinstance(node, ast.Call):
-            calls.append(node.func)
-        elif isinstance(node, ast.Import):
-            modules.update(_module_aliases(node, alphabet))
-        elif isinstance(node, ast.ImportFrom):
-            names.update(_name_aliases(node, alphabet))
-    return modules, names, calls
-
-
-def _module_aliases(node: ast.Import, alphabet: Mapping[str, frozenset[str]]) -> dict[str, str]:
-    """`import os as operating` -> `{"operating": "os"}`, for the modules the alphabet names."""
-    return {
-        (alias.asname or alias.name): alias.name for alias in node.names if alias.name in alphabet
-    }
-
-
-def _name_aliases(node: ast.ImportFrom, alphabet: Mapping[str, frozenset[str]]) -> dict[str, str]:
-    """`from subprocess import Popen as Runner` -> `{"Runner": "subprocess.Popen"}`."""
-    module = node.module
-    if module is None or module not in alphabet:
-        return {}
-    return {
-        (alias.asname or alias.name): f"{module}.{alias.name}"
-        for alias in node.names
-        if alias.name in alphabet[module]
-    }
-
-
-def _call_label(
-    call: ast.expr,
-    modules: Mapping[str, str],
-    names: Mapping[str, str],
-    alphabet: Mapping[str, frozenset[str]],
-) -> str | None:
-    """`os.fork(...)` / `fork(...)` resolved back to the declared name it calls, or None."""
-    if isinstance(call, ast.Attribute) and isinstance(call.value, ast.Name):
-        module = modules.get(call.value.id)
-        if module is not None and call.attr in alphabet[module]:
-            return f"{module}.{call.attr}"
-        return None
-    if isinstance(call, ast.Name):
-        return names.get(call.id)
-    return None

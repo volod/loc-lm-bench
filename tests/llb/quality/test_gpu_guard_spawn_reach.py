@@ -1,11 +1,17 @@
-"""The stdlib's own child-starting call sites, read rather than assumed.
+"""The child-starting call sites of the library and its dependencies, read rather than assumed.
 
-The name surface covers `os` and `subprocess`; everything else in the stdlib is covered only if the
-helper it calls resolves a name in those two. This file is where that stops being a sentence: one
-pass over the stdlib this interpreter ships asserts that every module which starts a child does it
-through a DECLARED name, and that the only exceptions are the ones on the record.
+The name surface covers `os` and `subprocess`; everything else is covered only if the helper it
+calls resolves a name in those two. This file is where that stops being a sentence: one pass over
+the stdlib this interpreter ships asserts that every module which starts a child does it through a
+DECLARED name, and one pass over this venv's site-packages asserts that no dependency goes below the
+seams outside a declared package.
 
-The rest drives the scan over fabricated trees, because a stdlib that reaches past every patchable
+The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost: the
+stdlib is ~600 files that ship with the interpreter (0.9s), while site-packages is whatever is
+installed -- 40119 files and 556 MB on this host, 2.2s warm and disk-bound cold -- and it changes
+only when the lock file does, which is a `make test` moment rather than a `make ci` one.
+
+The rest drives both scans over fabricated trees, because a tree that reaches past every patchable
 name cannot be produced on demand -- and because the ways a source scan goes wrong (an aliased
 import, a local function that shares a name with a spawn entry point, a file that will not parse)
 are worth pinning where they can be written out in four lines.
@@ -23,9 +29,15 @@ from llb.quality import gpu_guard_spawn_surface_audit as audit
 
 
 @pytest.fixture(scope="module")
-def stdlib_reaches() -> tuple[reach.ModuleReach, ...]:
-    """The real scan, run once for the three cases that read it (0.9s on this host)."""
+def stdlib_scan() -> reach.SpawnScan:
+    """The real stdlib scan, run once for the four cases that read it (0.9s on this host)."""
     return reach.stdlib_spawn_reaches()
+
+
+@pytest.fixture(scope="module")
+def installed_scan() -> reach.SpawnScan:
+    """The same over this venv's site-packages, narrowed to reaches below the seams (2.2s)."""
+    return reach.installed_spawn_reaches()
 
 
 def _stdlib(tmp_path: Path, modules: Mapping[str, str]) -> Path:
@@ -38,39 +50,99 @@ def _stdlib(tmp_path: Path, modules: Mapping[str, str]) -> Path:
     return root
 
 
-def _paths(reaches: tuple[reach.ModuleReach, ...]) -> dict[str, tuple[str, ...]]:
-    return {module.path: module.primitives for module in reaches}
+def _paths(scan: reach.SpawnScan) -> dict[str, tuple[str, ...]]:
+    return {module.path: module.primitives for module in scan.reaches}
 
 
-def test_this_stdlib_starts_children_only_through_names_the_denial_declares(stdlib_reaches):
+def test_this_stdlib_starts_children_only_through_names_the_denial_declares(stdlib_scan):
     """The claim the name surface rested on, now a result: no undeclared way in."""
-    findings = reach_audit.audit_spawn_reach(stdlib_reaches)
+    findings = reach_audit.audit_spawn_reach(stdlib_scan)
     assert findings == (), audit.surface_message(findings)
 
 
 def test_the_modules_that_reach_past_the_declared_surface_are_exactly_the_declared_ones(
-    stdlib_reaches,
+    stdlib_scan,
 ):
     """The evidence behind "two modules is the right enumerated surface"."""
     past = {
         module.path
-        for module in stdlib_reaches
+        for module in stdlib_scan.reaches
         if any(name not in surface.DECLARED_SPAWN_SURFACE for name in module.primitives)
     }
     assert past == set(reach.DECLARED_REACHERS)
 
 
-def test_every_excused_module_is_one_the_scan_still_finds(stdlib_reaches):
+def test_every_excused_module_is_one_the_scan_still_finds(stdlib_scan):
     """An excuse that outlives what it excused is an excuse nobody re-reads."""
-    assert reach_audit.absent_reachers(stdlib_reaches) == ()
+    assert reach_audit.absent_reachers(stdlib_scan) == ()
 
 
-def test_the_scan_reads_the_stdlib_that_actually_ships_here(stdlib_reaches):
+def test_the_scan_reads_the_stdlib_that_actually_ships_here(stdlib_scan):
     """A guard against the scan quietly reading nothing: these three are stable across versions."""
-    found = _paths(stdlib_reaches)
+    found = _paths(stdlib_scan)
     assert "os.forkpty" in found["pty.py"]
     assert "subprocess.Popen" in found["asyncio/unix_events.py"]
     assert "_posixsubprocess.fork_exec" in found["multiprocessing/util.py"]
+
+
+@pytest.mark.slow
+def test_this_venvs_packages_go_below_the_seams_only_where_a_package_declares_it(installed_scan):
+    """The dependencies an unmarked test actually drives, held to the same question."""
+    findings = reach_audit.audit_installed_reach(installed_scan)
+    assert findings == (), audit.surface_message(findings)
+
+
+@pytest.mark.slow
+def test_the_packages_that_go_below_the_seams_are_a_subset_of_the_declared_ones(installed_scan):
+    """A subset, not equality: a host that never installed `joblib` is not a finding, and a THIRD
+    package arriving is what the audit above refuses."""
+    reaching = {module.path.split("/")[0] for module in installed_scan.reaches}
+    assert reaching <= set(reach.DECLARED_PACKAGE_REACHERS)
+
+
+@pytest.mark.slow
+def test_the_installed_scan_read_the_venv_rather_than_an_empty_path(installed_scan):
+    assert installed_scan.files_read > 100
+
+
+def test_the_installed_alphabet_is_only_what_goes_below_the_seams():
+    """A dependency calling `subprocess.Popen` says nothing the declaration does not already say,
+    and looking for it means parsing the whole tree."""
+    alphabet = reach.below_the_seams()
+    assert set(alphabet) == {"posix", "_posixsubprocess", "_winapi"}
+    assert "fork" in alphabet["posix"]
+
+
+def test_a_package_is_excused_as_a_whole_because_a_release_moves_its_files(tmp_path):
+    """`joblib` vendors `loky` at a path its next release may rename; the decision is the package."""
+    below = "import _posixsubprocess\n\ndef go():\n    _posixsubprocess.fork_exec()\n"
+    root = _stdlib(
+        tmp_path, {"declared/backend/fork_exec.py": below, "undeclared/backend/start.py": below}
+    )
+    excused = {
+        "declared": surface.SpawnCoverage(
+            surface.COVERAGE_RESIDUAL, reason="a private copy of the multiprocessing residual"
+        )
+    }
+    findings = reach_audit.audit_installed_reach(
+        reach.installed_spawn_reaches(root), reachers=excused
+    )
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("undeclared/backend/start.py", reach_audit.PROBLEM_UNCOVERED_REACH)
+    ]
+
+
+def test_the_installed_scan_reads_a_call_that_goes_around_os_and_ignores_one_that_does_not(
+    tmp_path,
+):
+    root = _stdlib(
+        tmp_path,
+        {
+            "around.py": "import posix\n\ndef go():\n    posix.fork()\n",
+            "through.py": "import subprocess\n\ndef go():\n    subprocess.Popen(['true'])\n",
+        },
+    )
+    assert _paths(reach.installed_spawn_reaches(root)) == {"around.py": ("posix.fork",)}
 
 
 def test_the_alphabet_is_taken_from_the_declared_surface_and_the_c_modules_under_it():
@@ -95,19 +167,20 @@ def test_a_module_that_starts_a_child_through_a_covered_name_is_found_and_passes
             ),
         },
     )
-    reaches = reach.stdlib_spawn_reaches(root)
-    assert _paths(reaches) == {
+    scan = reach.stdlib_spawn_reaches(root)
+    assert _paths(scan) == {
         "plain.py": ("os.fork",),
         "aliased.py": ("os.forkpty",),
         "imported.py": ("subprocess.Popen",),
     }
-    assert reach_audit.audit_spawn_reach(reaches) == ()
+    assert reach_audit.audit_spawn_reach(scan) == ()
 
 
 def test_a_local_name_that_only_looks_like_a_spawn_is_not_read_as_one(tmp_path):
     """The scan resolves through the module's own imports, so a same-named helper is not a hit."""
     root = _stdlib(tmp_path, {"own.py": "def fork():\n    return 0\n\ndef go():\n    fork()\n"})
-    assert reach.stdlib_spawn_reaches(root) == ()
+    scan = reach.stdlib_spawn_reaches(root)
+    assert (scan.files_read, scan.reaches) == (1, ())
 
 
 def test_a_module_that_reaches_past_every_patchable_name_is_refused(tmp_path):
@@ -181,9 +254,17 @@ def test_a_file_the_scan_cannot_parse_is_skipped_rather_than_failing(tmp_path):
     assert _paths(reach.stdlib_spawn_reaches(root)) == {"fine.py": ("os.fork",)}
 
 
-def test_a_tree_that_yields_nothing_reads_as_unscanned_rather_than_clean(tmp_path):
+def test_a_tree_the_scan_could_not_read_is_refused_rather_than_read_as_clean(tmp_path):
     """A scan that silently reads no source is the one way this check could pass for free."""
     findings = reach_audit.audit_spawn_reach(reach.stdlib_spawn_reaches(tmp_path))
     assert [(finding.name, finding.problem) for finding in findings] == [
-        ("<stdlib>", reach_audit.PROBLEM_UNSCANNED)
+        (str(tmp_path), reach_audit.PROBLEM_UNSCANNED)
     ]
+
+
+def test_a_tree_that_was_read_and_starts_no_children_is_clean(tmp_path):
+    """The distinction the file count buys: read-and-quiet is not the same as never read."""
+    root = _stdlib(tmp_path, {"quiet.py": "import json\n\ndef go():\n    return json.dumps({})\n"})
+    scan = reach.stdlib_spawn_reaches(root)
+    assert scan.files_read == 1
+    assert reach_audit.audit_spawn_reach(scan) == ()
