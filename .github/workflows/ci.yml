@@ -1,7 +1,8 @@
 # CI: format + lint + type checks + unit tests only.
 #
 # Deliberately lightweight -- it only checks that the code has no syntactic or logical
-# errors. It installs the base package + the `dev` extra (mypy, ruff, pytest, lightweight Optuna)
+# errors. It installs the base package + the `dev` extra (mypy, ruff, pytest, the radon/complexipy
+# and shellcheck gate tools, lightweight Optuna)
 # and nothing else, so it never pulls heavy/eval deps (faiss, datasets, mlflow,
 # sentence-transformers, torch/vLLM) and never runs an actual benchmark, model download, or GPU
 # work.

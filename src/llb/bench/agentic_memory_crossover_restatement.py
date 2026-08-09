@@ -25,8 +25,9 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     operator_lines,
     restatement_reading,
 )
+from llb.bench.agentic_memory_crossover_restatement_forms import crossover_row
 from llb.bench.agentic_memory_crossover_restatement_rows import (
-    crossover_row,
+    cap_peak_rows,
     restated_cells,
     restated_surfaces,
 )
@@ -101,9 +102,11 @@ def analyze_restatement(
     summary = cast(dict[str, object], audit["summary"])
     surfaces: list[dict[str, object]] = []
     cells: list[dict[str, object]] = []
+    cap_peaks: list[dict[str, object]] = []
     if eligible and published_surface is not None and restated_rows:
         cells = restated_cells(designs, restated_rows)
-        surfaces = restated_surfaces(published_surface, cells)
+        surfaces = restated_surfaces(designs, published_surface, cells)
+        cap_peaks = cap_peak_rows(published_surface, surfaces)
     crossovers = [
         crossover_row(row, designs, audit, surfaces) for row in published_crossovers(design)
     ]
@@ -119,9 +122,10 @@ def analyze_restatement(
         "control_recheck": control_row,
         "restated_cells": cells,
         "restated_depth_surface": surfaces,
+        "restated_cap_peaks": cap_peaks,
         "crossovers": crossovers,
         "restatement_reading": reading,
         "reason": reason,
-        "operator_lines": operator_lines(crossovers, reading, shipped),
+        "operator_lines": operator_lines(crossovers, cap_peaks, reading, shipped),
         "changes_shipped_default": False,
     }

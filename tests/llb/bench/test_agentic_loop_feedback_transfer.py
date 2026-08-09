@@ -204,7 +204,7 @@ def test_transfer_requires_response_in_three_families_and_support_on_both_seeds(
     assert weak["recommended_feedback_variant"] == "current"
 
 
-def test_loop_runner_applies_only_the_predeclared_neutral_candidate():
+def test_loop_runner_applies_only_the_predeclared_neutral_candidate(episode_clock):
     tasks = _tasks()
     design = _design(tasks)
     candidate_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_GEMMA_PROGRESS]
@@ -227,11 +227,54 @@ def test_loop_runner_applies_only_the_predeclared_neutral_candidate():
         repeat_feedback_design=design,
         model_family="gemma",
         run_seed=41,
+        clock=episode_clock(),
     )
     analysis = run.repeat_feedback_analysis
     assert analysis is not None
     assert set(analysis["variants"]) == {REPEAT_FEEDBACK_GEMMA_PROGRESS}
     assert analysis["variants"][REPEAT_FEEDBACK_GEMMA_PROGRESS]["supports_variant"] is True
+
+
+def test_loop_runner_wall_gate_rejects_a_measured_candidate_regression(episode_clock):
+    tasks = _tasks()
+    design = _design(tasks)
+    candidate_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_GEMMA_PROGRESS]
+
+    def complete(prompt: str) -> str:
+        if candidate_notice in prompt:
+            return '{"name":"finish","arguments":{"answer":"done"}}'
+        return '{"name":"db_get","arguments":{"key":"missing"}}'
+
+    task_count = len(tasks)
+    run = run_agentic_loop_policy(
+        tasks,
+        model="gemma-model",
+        backend="ollama",
+        complete=complete,
+        max_steps=[6],
+        malformed_policies=[MALFORMED_ANSWER],
+        repeated_call_policies=[REPEATED_ALLOW, REPEATED_NOOP],
+        repeated_feedback_variants=["current", REPEAT_FEEDBACK_GEMMA_PROGRESS],
+        persist=False,
+        repeat_feedback_design=design,
+        model_family="gemma",
+        run_seed=41,
+        clock=episode_clock([1.0] * (2 * task_count) + [1.25] * task_count),
+    )
+
+    analysis = run.repeat_feedback_analysis
+    assert analysis is not None
+    variant = analysis["variants"][REPEAT_FEEDBACK_GEMMA_PROGRESS]
+    assert variant["completion"]["passed"] is True
+    assert variant["cost"]["total_model_input_tokens"]["passed"] is True
+    assert variant["cost"]["elapsed_s"]["paired_delta"] == {
+        "mean": 0.25,
+        "lo": 0.25,
+        "hi": 0.25,
+    }
+    assert variant["cost"]["elapsed_s"]["allowed_delta"] == pytest.approx(0.2)
+    assert variant["cost"]["elapsed_s"]["passed"] is False
+    assert variant["supports_variant"] is False
 
 
 def test_committed_transfer_contract_is_balanced_fresh_and_valid():

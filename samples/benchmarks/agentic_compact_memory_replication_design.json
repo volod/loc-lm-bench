@@ -7,7 +7,7 @@
   "reference_model_families": ["qwen", "gemma4"],
   "reference": {
     "study_id": "agent-context-policy-compact-memory-cross-model-transfer",
-    "evidence": "docs/impl/current/extended-workflows.md#non-qwen-depthtrigger-transfer"
+    "evidence": "docs/impl/current/extended-workflows/compact-versus-cap.md#non-qwen-depthtrigger-transfer"
   },
   "candidate_roster": [
     {

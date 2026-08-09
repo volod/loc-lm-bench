@@ -1,0 +1,1122 @@
+{
+  "cap_peak_prompt_chars": {
+    "10": 11926,
+    "6": 8374
+  },
+  "cells": [
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "surface-d6-g12000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 12466.0,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -762.0,
+          "lo": -815.2857142857143,
+          "mean": -792.0
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T150616.605561Z-063609d22c7c/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T150615.708523Z-5dbfb0ea7245/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 12000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -762.0,
+            "lo": -815.2857142857143,
+            "mean": -792.0
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-792.000 [-815.286, -762.000])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "surface-d6-g14000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 13132.142857142857,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -112.71428571428571,
+          "lo": -138.42857142857142,
+          "mean": -125.85714285714286
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T151244.563663Z-e7ee48a96568/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T151244.327927Z-5180d104c57b/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 14000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -112.71428571428571,
+            "lo": -138.42857142857142,
+            "mean": -125.85714285714286
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-125.857 [-138.429, -112.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 13258.0,
+      "cell_id": "surface-d6-g15500",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 14312.57142857143,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1061.7142857142858,
+          "lo": 1049.857142857143,
+          "mean": 1054.5714285714287
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 6,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T151851.100765Z-ff6cee758809/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T151850.845688Z-aeb3d17bd13e/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 15500,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1061.7142857142858,
+            "lo": 1049.857142857143,
+            "mean": 1054.5714285714287
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "88b96166c74273be7633acb9cfefcd305afb29664ed6b99f34cad26799085425",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1054.571 [+1049.857, +1061.714])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "surface-d10-g14000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 22884.714285714286,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -4411.428571428572,
+          "lo": -4501.428571428572,
+          "mean": -4458.285714285715
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T152821.244943Z-d9440fac3b84/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T152820.999855Z-bdd160c7b3f4/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 14000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -4411.428571428572,
+            "lo": -4501.428571428572,
+            "mean": -4458.285714285715
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-4458.286 [-4501.429, -4411.429])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "surface-d10-g20000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 24709.571428571428,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": false,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": -2614.8571428571427,
+          "lo": -2652.714285714286,
+          "mean": -2633.4285714285716
+        },
+        "compact_preference_clears": true,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "compact_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 10,
+      "expected_side": "compact_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T153727.154007Z-6f3eed2ce444/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T153726.946081Z-bdf42f5040aa/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 20000,
+      "measured_side": "compact_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": -2614.8571428571427,
+            "lo": -2652.714285714286,
+            "mean": -2633.4285714285716
+          },
+          "losses": 7,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 128,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 0,
+          "wins": 0
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_compact",
+      "verdict_reason": "completion is not separated and compact uses fewer total model-input tokens including summarizer prompts (-2633.429 [-2652.714, -2614.857])"
+    },
+    {
+      "cap_completion": 1.0,
+      "cap_context_overflows": 0,
+      "cap_mean_total_model_input_tokens": 27343.0,
+      "cell_id": "surface-d10-g23000",
+      "compact_completion": 1.0,
+      "compact_context_overflows": 0,
+      "compact_mean_total_model_input_tokens": 28867.85714285714,
+      "compact_share": 0.5,
+      "compaction_activation_rate": 1.0,
+      "cost_evidence": {
+        "cap_preference_clears": true,
+        "compact_minus_cap_total_model_input_tokens": {
+          "hi": 1533.857142857143,
+          "lo": 1517.2857142857142,
+          "mean": 1524.857142857143
+        },
+        "compact_preference_clears": false,
+        "completion_tied": true,
+        "confidence": 0.975,
+        "cost_clears": true,
+        "cost_discordant_pairs": 7,
+        "cost_side": "cap_cheaper",
+        "cost_two_sided_sign_test_p": 0.015625
+      },
+      "depth": 10,
+      "expected_side": "cap_cheaper",
+      "invalid_reason": null,
+      "manifests": {
+        "compact": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T154633.890889Z-874885ac8474/manifest.json",
+        "observation_cap": "/home/vola/src/loc-lm-bench/.data/agentic-compact-vs-cap/20260802T154633.704705Z-dc9b902ac30a/manifest.json"
+      },
+      "matches_expectation": true,
+      "max_prompt_chars": 23000,
+      "measured_side": "cap_cheaper",
+      "n_compactions": 7,
+      "n_tasks": 7,
+      "paired": {
+        "completion": {
+          "delta": {
+            "hi": 0.0,
+            "lo": 0.0,
+            "mean": 0.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 1.0,
+          "randomization_samples": 1,
+          "sign_test_p": 1.0,
+          "stability": {
+            "borderline": false,
+            "discordant": 0,
+            "looser_reading": "flat",
+            "p_positive": 0.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 1.0,
+            "randomization_samples": 1,
+            "reading": "flat",
+            "side": null,
+            "tighter_reading": "flat"
+          },
+          "ties": 7,
+          "wins": 0
+        },
+        "n_model_calls": {
+          "delta": {
+            "hi": 1.0,
+            "lo": 1.0,
+            "mean": 1.0
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        },
+        "total_model_input_tokens": {
+          "delta": {
+            "hi": 1533.857142857143,
+            "lo": 1517.2857142857142,
+            "mean": 1524.857142857143
+          },
+          "losses": 0,
+          "randomization_method": "exact",
+          "randomization_p": 0.0078125,
+          "randomization_samples": 128,
+          "sign_test_p": 0.015625,
+          "stability": {
+            "borderline": false,
+            "discordant": 7,
+            "looser_reading": "separated",
+            "p_positive": 1.0,
+            "pairs": 7,
+            "randomization_method": "exact",
+            "randomization_p": 0.0078125,
+            "randomization_samples": 128,
+            "reading": "separated",
+            "side": null,
+            "tighter_reading": "separated"
+          },
+          "ties": 0,
+          "wins": 7
+        }
+      },
+      "require_cap_fits": true,
+      "task_set_digest": "f417f975273fb66e91af72c7a44cc0bfc8b124c41509f48f12e2d5a06c023386",
+      "valid": true,
+      "verdict": "prefer_cap",
+      "verdict_reason": "completion is not separated and compact uses more total model-input tokens including summarizer prompts (+1524.857 [+1517.286, +1533.857])"
+    }
+  ],
+  "changes_shipped_default": false,
+  "control_recheck": {
+    "backend": "ollama",
+    "completion": 1.0,
+    "depth": 10,
+    "eligible": true,
+    "episode_diagnostics": [
+      {
+        "answer": "CTRL-000-017",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-000-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-000-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-001-070",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-001-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-001-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-002-123",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-002-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-002-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      },
+      {
+        "answer": "CTRL-003-176",
+        "calls": [
+          {
+            "arguments": {
+              "token": "ctrl-003-0"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-1"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-2"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-3"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-4"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-5"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-6"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-7"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-8"
+            },
+            "name": "advance"
+          },
+          {
+            "arguments": {
+              "token": "ctrl-003-9"
+            },
+            "name": "advance"
+          }
+        ],
+        "status": "completed",
+        "success": true
+      }
+    ],
+    "mean_steps": 11.0,
+    "mean_total_model_input_tokens": 12546.0,
+    "minimum_completion_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 4,
+    "statuses": [
+      "completed",
+      "completed",
+      "completed",
+      "completed"
+    ],
+    "task_set_digest": "fa29c3db192cabe520680ee66669ff47352bd36e67dedd976205e662a0ffd2bb",
+    "tokens_per_s": 11.21
+  },
+  "depth_surface": [
+    {
+      "bracket": [
+        14000,
+        15500
+      ],
+      "cap_peak_prompt_chars": 8374,
+      "crossover_guard_ratio": 1.690939790730349,
+      "crossover_max_prompt_chars": 14159.929807575942,
+      "depth": 6,
+      "guards": [
+        12000,
+        14000,
+        15500
+      ],
+      "measured_sides": [
+        "compact_cheaper",
+        "compact_cheaper",
+        "cap_cheaper"
+      ],
+      "reading": "crossover_bracketed"
+    },
+    {
+      "bracket": [
+        20000,
+        23000
+      ],
+      "cap_peak_prompt_chars": 11926,
+      "crossover_guard_ratio": 1.836314779858046,
+      "crossover_max_prompt_chars": 21899.890064587056,
+      "depth": 10,
+      "guards": [
+        14000,
+        20000,
+        23000
+      ],
+      "measured_sides": [
+        "compact_cheaper",
+        "compact_cheaper",
+        "cap_cheaper"
+      ],
+      "reading": "crossover_bracketed"
+    }
+  ],
+  "expectation_matches": 6,
+  "held_fixed": {
+    "backend": "ollama",
+    "compact_share": 0.5,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "minimum_cell_completion": 0.75,
+    "minimum_compaction_rate": 0.75,
+    "model": "mistral-small3.1:24b",
+    "model_family": "mistral",
+    "n_tasks": 7,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "pad_chars": 1200
+  },
+  "reason": "every tested depth brackets a measured cost crossover",
+  "routing_rule": [
+    "depth 6: use compact below a 14160-char prompt guard (1.69x the 8374-char cap peak prompt); use observation_cap above it",
+    "depth 10: use compact below a 21900-char prompt guard (1.84x the 11926-char cap peak prompt); use observation_cap above it",
+    "portable form: the crossover sits at 1.69-1.84x the cap peak prompt (spread 0.15) across the tested depths"
+  ],
+  "study_id": "agent-context-policy-compact-memory-boundary-surface",
+  "surface_reading": "surface_mapped"
+}

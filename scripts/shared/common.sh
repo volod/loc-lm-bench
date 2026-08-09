@@ -13,6 +13,11 @@ PROJECT_ROOT="${PROJECT_ROOT:-$(llb_project_root)}"
 
 # Load .env (if present) and resolve DATA_DIR against the project root (per AGENTS.md).
 llb_load_env() {
+  # `.env` is an operator file, untracked and optional, so there is nothing for `shellcheck -x` to
+  # follow: `source=/dev/null` says so ONCE instead of the linter deciding per host. Without it the
+  # gate's verdict depends on whether this box happens to have a .env -- silent on a dev box that
+  # does, SC1091 in a fresh CI checkout that does not.
+  # shellcheck source=/dev/null
   if [ -f "$PROJECT_ROOT/.env" ]; then set -a; . "$PROJECT_ROOT/.env"; set +a; fi
   DATA_DIR="${DATA_DIR:-$PROJECT_ROOT/.data}"
   case "$DATA_DIR" in /*) ;; *) DATA_DIR="$PROJECT_ROOT/$DATA_DIR" ;; esac
@@ -120,9 +125,61 @@ llb_python() {
   fi
 }
 
+# --- Labelled report blocks -------------------------------------------------------------------
+# Shared by scripts/code_quality.sh and scripts/complexity_gate.sh so a finding reads the same
+# whether it was printed by the periodic sweep or by the CI gate. Set LLB_REPORT_PREFIX per script.
+LLB_REPORT_PREFIX="${LLB_REPORT_PREFIX:-code-quality}"
+LLB_PRINTED_BLOCK="${LLB_PRINTED_BLOCK:-0}"
+
+llb_print_block() {
+  local label="$1"
+  local output="${2:-}"
+  if [ "$LLB_PRINTED_BLOCK" -eq 1 ]; then
+    echo
+  fi
+  echo "[${LLB_REPORT_PREFIX}] ${label}"
+  LLB_PRINTED_BLOCK=1
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
+}
+
+# Run a command, print its output under LABEL only when it produced any (or failed), and return
+# the command's own status. Output alone is informational here -- see llb_fail_if_output.
+llb_report_if_output() {
+  local label="$1"
+  shift
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
+    llb_print_block "$label" "$output"
+  fi
+  return "$status"
+}
+
+# Same, for a scan whose OUTPUT IS the failure: a tool that reports findings on stdout and still
+# exits 0 (radon cc, complexipy --ignore-complexity) fails here as soon as it prints a row.
+llb_fail_if_output() {
+  local label="$1"
+  shift
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
+    llb_print_block "$label" "$output"
+    return 1
+  fi
+  return 0
+}
+
 # Canonical parallelism cap for from-source C++/CUDA builds (ninja/cmake/nvcc).
 # Formula (AGENTS.md): MAX_JOBS = min(cpu_cores // 2, RAM_GiB // 14), floored at 1.
-max_jobs() {
+llb_max_jobs() {
   local cores mem_kb mem_gib by_cpu by_ram n
   cores="$(nproc 2>/dev/null || echo 1)"
   mem_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"

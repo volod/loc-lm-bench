@@ -3,7 +3,7 @@
 
 .PHONY: \
 	demo-eval mlflow board recommend acceptance-gate-audit venv apt-deps test test-fast format \
-	ci ci-checks ci-github lint-md
+	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -121,6 +121,15 @@ ci-checks:
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
 	$(PY) -m llb.quality.acceptance_gates --check
+	@$(MAKE) --no-print-directory complexity-gate
+	@$(MAKE) --no-print-directory shell-lint-gate
+
+# Both also run inside ci-checks -- these aliases are for running one gate alone after a change.
+complexity-gate: ## Fail on any Radon D-or-worse or cognitive-complexity finding
+	@bash "$(PROJECT_ROOT)/scripts/complexity_gate.sh"
+
+shell-lint-gate: ## Fail on any bash -n syntax error or shellcheck warning in a repo *.sh
+	@bash "$(PROJECT_ROOT)/scripts/shell_lint_gate.sh"
 
 ci: ci-checks ## Format check + lint + type check + LIGHTWEIGHT unit tests (full local install)
 	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)
@@ -132,3 +141,8 @@ ci-github: ci-checks ## `ci` for the base [dev]-only env: also deselects heavy_e
 lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS overrides scope)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m pymarkdown scan -r --respect-gitignore $(MD_PATHS)
+	$(MAKE) lint-doc-links
+
+lint-doc-links: ## Check every relative docs link resolves (file exists, #anchor is a real heading)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.doc_links

@@ -195,6 +195,26 @@ def test_the_design_refuses_a_ladder_with_no_elision_to_price_or_a_loose_placeme
         validate_summary_cap_design(shallow)
 
 
+def test_a_ladder_the_probe_measured_nothing_over_names_the_ladder_not_an_empty_iterable():
+    """The design and the analysis each reduce the same walk to a peak, and both say which ladder.
+
+    The analysis peak is read even when the family is ineligible -- it describes the geometry, not
+    the cells -- so an unmeasured ladder has to be named there too rather than dying as a builtin
+    `max() iterable argument is empty` while reporting an ineligible run.
+    """
+    design = load_summary_cap_design(DESIGN_PATH)
+    depth = design["ladder"]["depth"]
+
+    unmeasured = deepcopy(design)
+    unmeasured["held_fixed"]["max_steps_margin"] = -depth
+    for read in (
+        validate_summary_cap_design,
+        lambda moved: analyze_summary_cap(moved, {**CONTROL_PASS, "eligible": False}, []),
+    ):
+        with pytest.raises(ValueError, match=f"the depth {depth} ladder measured no prompt"):
+            read(unmeasured)
+
+
 # --- the readings ---------------------------------------------------------------------------
 
 

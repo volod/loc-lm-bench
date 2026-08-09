@@ -40,6 +40,12 @@ KIND_SURFACE = "compact_memory_boundary_surface"
 KIND_COLLAPSE = "compact_trigger_guard_collapse"
 KIND_FOLD_STEP = "compact_fold_step_crossover"
 AUDITED_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+# A FIXTURE kind, not a published study: the interaction geometry that separates the compound
+# verdict from the per-field one (`agentic_policy_change_interaction`). It states its cells flat at
+# the design root and publishes no number, so it is readable as geometry but is deliberately absent
+# from `AUDITED_DESIGN_PATHS` -- nothing it declares is evidence a constant change can invalidate.
+KIND_INTERACTION = "policy_change_interaction"
+GEOMETRY_KINDS = (*AUDITED_KINDS, KIND_INTERACTION)
 
 # The committed studies whose published numbers an agent policy change can invalidate. One registry,
 # because the CLI audit and the CI pin gate must never walk different evidence.
@@ -182,6 +188,9 @@ def audit_cell_prompts(
             **row,
             "arms": {},
             "changed_arms": [],
+            "refused_prompt_only": False,
+            "refused_prompt_bytes_only": False,
+            "candidate_overflows": [],
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
         }
@@ -194,6 +203,23 @@ def audit_cell_prompts(
         **row,
         "arms": arms,
         "changed_arms": changed,
+        # The change moved only the prompt the guard REFUSED: every arm sent the same bytes and
+        # ended on a differently sized overflow. Nothing a model saw moved, and the published
+        # number still did, because the episode ended on the prompt that moved.
+        "refused_prompt_only": bool(changed)
+        and all(arms[name]["sent_identical"] for name in changed),
+        # The refusal the two sides priced identically and still wrote differently: invisible to
+        # anything that compares the refused prompt by size.
+        "refused_prompt_bytes_only": any(
+            arms[name]["refused_prompt_moved_bytes_only"] for name in changed
+        ),
+        # Stronger than "the prompts move": under the candidate the cell no longer FITS its
+        # published guard, so re-running it needs a new guard rather than a new measurement.
+        "candidate_overflows": sorted(
+            name
+            for name, arm in arms.items()
+            if arm["candidate_refused_tasks"] and not arm["baseline_refused_tasks"]
+        ),
         "first_divergent_step": min(
             (
                 cast(int, arm["first_divergent_step"])
@@ -219,6 +245,8 @@ def declared_geometry(design: dict[str, object], study_kind: str) -> list[dict[s
     groups: list[tuple[int | None, dict[str, object]]]
     if study_kind == KIND_SURFACE:
         groups = [(None, cast(dict[str, object], design["surface"]))]
+    elif study_kind == KIND_INTERACTION:
+        groups = [(None, design)]
     elif study_kind == KIND_COLLAPSE:
         groups = [
             (int(cast(int, family["depth"])), family)
@@ -268,8 +296,8 @@ def _share(cell: dict[str, object], default: object) -> float:
 
 
 def _held_fixed(design: dict[str, object], study_kind: str) -> dict[str, object]:
-    if study_kind not in AUDITED_KINDS:
+    if study_kind not in GEOMETRY_KINDS:
         raise ValueError(
-            f"{study_kind!r} is not an audited study kind; choose from {AUDITED_KINDS}"
+            f"{study_kind!r} is not a readable geometry kind; choose from {GEOMETRY_KINDS}"
         )
     return cast(dict[str, object], design["held_fixed"])

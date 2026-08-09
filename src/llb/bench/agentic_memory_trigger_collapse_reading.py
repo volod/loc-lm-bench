@@ -10,7 +10,8 @@ does not clear the same band, an equal-trigger agreement measures nothing and th
 
 from typing import cast
 
-from llb.bench.agentic_memory_boundary_probe import compaction_trigger_chars, first_fold_step
+from llb.bench.agentic_design_fields import as_mapping
+from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
 
 STUDY_KIND = "compact_trigger_guard_collapse"
 METHOD = "agentic-compact-trigger-guard-collapse"
@@ -99,6 +100,30 @@ def _family_row(
     }
 
 
+def _no_power_reading(contrast: dict[str, object], contrast_id: object) -> tuple[str, str]:
+    """The positive control failed: a family that SHOULD have moved stayed inside its own band.
+
+    Without it, an equal-trigger agreement says nothing -- the band would simply be too wide to
+    separate anything.
+    """
+    return (
+        READING_NO_POWER,
+        f"the contrast family {contrast_id} moved the trigger over {contrast['triggers']} "
+        f"chars and still stayed inside its own "
+        f"{cast(float, contrast['equivalence_band']):.1f}-token band, so an equal-trigger "
+        "agreement would say nothing",
+    )
+
+
+def _moved_families(families: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Equal-trigger families that did NOT hold: the collapse claim fails on any one of them."""
+    return [
+        row
+        for row in families
+        if row["kind"] == KIND_EQUAL_TRIGGER and not (row["within_band"] and row["same_side"])
+    ]
+
+
 def collapse_reading(
     design: dict[str, object],
     eligible: bool,
@@ -106,30 +131,20 @@ def collapse_reading(
     families: list[dict[str, object]],
 ) -> tuple[str, str]:
     """Eligibility, cell validity, and the positive control all gate the collapse claim."""
-    invalid = [cell for cell in cells if not cell["valid"]]
     if not eligible:
         return (
             READING_INELIGIBLE,
             "the pinned family no longer passes the unchanged token-chain control",
         )
+    invalid = [cell for cell in cells if not cell["valid"]]
     if invalid:
         named = "; ".join(f"{cell['cell_id']}: {cell['invalid_reason']}" for cell in invalid)
         return READING_INVALID, f"a declared cell did not hold its preconditions: {named}"
-    contrast_id = cast(dict[str, object], design["equivalence"])["contrast_family"]
+    contrast_id = as_mapping(design, "equivalence")["contrast_family"]
     contrast = next(row for row in families if row["family_id"] == contrast_id)
     if bool(contrast["within_band"]):
-        return (
-            READING_NO_POWER,
-            f"the contrast family {contrast_id} moved the trigger over {contrast['triggers']} "
-            f"chars and still stayed inside its own "
-            f"{cast(float, contrast['equivalence_band']):.1f}-token band, so an equal-trigger "
-            "agreement would say nothing",
-        )
-    moved = [
-        row
-        for row in families
-        if row["kind"] == KIND_EQUAL_TRIGGER and not (row["within_band"] and row["same_side"])
-    ]
+        return _no_power_reading(contrast, contrast_id)
+    moved = _moved_families(families)
     if moved:
         named = ", ".join(
             f"{row['family_id']} spread {cast(float, row['spread']):.1f} tok vs band "

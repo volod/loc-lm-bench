@@ -2,5 +2,10 @@
 # Installed by `make venv` when EXTRAS includes `dev`, and by
 # `make apt-deps APT_PROFILE=dev`.
 
-# Static analysis for scripts/*.sh (scripts/code_quality.sh).
-shellcheck
+# Intentionally EMPTY: the profile exists for a future dev-only OS package, and
+# `make apt-deps APT_PROFILE=dev` prints "nothing to install" until there is one.
+#
+# `shellcheck` used to live here as a fallback for the shell-lint gate. The gate now requires the
+# pinned `shellcheck-py` wheel from the `dev` extra (.venv/bin/shellcheck) and no longer falls back
+# to a PATH binary, because a distro shellcheck is releases behind the pin and reaches a different
+# verdict on the same commit. Nothing apt provides is needed for it.

@@ -5,6 +5,7 @@ answer-side + stage-latency signals, and collect optional backend telemetry.
 reader lives with the backend readers in `runner_backend.py`.
 """
 
+from dataclasses import dataclass
 from collections.abc import Mapping
 
 from llb.backends.base import BackendLauncher
@@ -18,6 +19,101 @@ from llb.scoring.leaderboard import ModelResult, rank_results
 from llb.scoring.judge.model import judge_is_trusted
 
 
+def _throughput(case_rows: list[CaseScoreRow], telemetry: Mapping[str, object]) -> float:
+    """The rate the run is credited with: the steady measured rate, else what the cases observed."""
+    steady_rate = telemetry.get("steady_tokens_per_s")
+    if isinstance(steady_rate, int | float) and steady_rate > 0:
+        return float(steady_rate)
+    rates = [
+        row["tokens_per_s"]
+        for row in case_rows
+        if row["status"] == eval_common.OK and row["tokens_per_s"] > 0
+    ]
+    return sum(rates) / len(rates) if rates else 0.0
+
+
+def _mean_completion_tokens(case_rows: list[CaseScoreRow]) -> float:
+    """Mean answer length over the cases that actually generated one."""
+    lengths = [
+        float(row["completion_tokens"])
+        for row in case_rows
+        if row["status"] == eval_common.OK and row["completion_tokens"] > 0
+    ]
+    return sum(lengths) / len(lengths) if lengths else 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class _CaseMeans:
+    """The per-case means a run publishes, read once so the result and the metrics cannot differ."""
+
+    objective: float
+    ranking: float
+    token_precision: float
+    token_recall: float
+    found_rate: float
+    mean_completion_tokens: float
+    reliability: float
+    tokens_per_s: float
+
+    @classmethod
+    def of(cls, case_rows: list[CaseScoreRow], telemetry: Mapping[str, object]) -> "_CaseMeans":
+        """Average the scored cases, crediting the run with the throughput it actually reached."""
+        n = len(case_rows)
+        ok = [row for row in case_rows if row["status"] == eval_common.OK]
+        return cls(
+            objective=_mean(case_rows, "objective_score"),
+            ranking=_mean(case_rows, "ranking_score"),
+            token_precision=_mean(case_rows, "token_precision"),
+            token_recall=_mean(case_rows, "token_recall"),
+            found_rate=_mean(case_rows, "contains"),
+            mean_completion_tokens=_mean_completion_tokens(case_rows),
+            reliability=len(ok) / n if n else 0.0,
+            tokens_per_s=_throughput(case_rows, telemetry),
+        )
+
+
+def _model_result(
+    config: RunConfig,
+    case_rows: list[CaseScoreRow],
+    means: _CaseMeans,
+    *,
+    peak_vram: object,
+    judge_score: float | None,
+) -> ModelResult:
+    """The one-model result the leaderboard ranks, built from the scored cases."""
+    return ModelResult(
+        model=config.model,
+        backend=config.backend,
+        objective_score=means.objective,
+        n_cases=len(case_rows),
+        reliability=means.reliability,
+        tokens_per_s=means.tokens_per_s,
+        peak_vram_mb=float(peak_vram) if isinstance(peak_vram, int | float) else None,
+        judge_score=judge_score,
+        ranking_score=means.ranking,
+        token_precision=means.token_precision,
+        token_recall=means.token_recall,
+        found_rate=means.found_rate,
+        mean_completion_tokens=means.mean_completion_tokens,
+        case_objectives=[float(row["objective_score"]) for row in case_rows],
+        case_ranking=[float(row["ranking_score"]) for row in case_rows],
+        feasible=True,
+    )
+
+
+def _attach_power_metrics(
+    metrics: RunMetrics, telemetry: Mapping[str, object], means: _CaseMeans
+) -> None:
+    """Power-derived efficiency rows, only on a run whose host actually measured power."""
+    mean_power = telemetry.get("mean_power_w")
+    if not isinstance(mean_power, int | float) or mean_power <= 0:
+        return
+    watts = float(mean_power)
+    metrics["mean_power_w"] = round(watts, 2)
+    metrics["tokens_per_watt"] = round(means.tokens_per_s / watts, 4)
+    metrics["quality_per_watt"] = round(means.ranking * means.tokens_per_s / watts, 4)
+
+
 def _aggregate(
     config: RunConfig,
     case_rows: list[CaseScoreRow],
@@ -25,67 +121,29 @@ def _aggregate(
     telemetry: Mapping[str, object],
     judge_score: float | None = None,
 ) -> tuple[list[LeaderboardRow], RunMetrics]:
-    n = len(case_rows)
-    objective = sum(r["objective_score"] for r in case_rows) / n if n else 0.0
-    ok = [r for r in case_rows if r["status"] == eval_common.OK]
-    reliability = len(ok) / n if n else 0.0
-    tok_rates = [r["tokens_per_s"] for r in ok if r["tokens_per_s"] > 0]
-    observed_tokens_per_s = sum(tok_rates) / len(tok_rates) if tok_rates else 0.0
-    steady_rate = telemetry.get("steady_tokens_per_s")
-    tokens_per_s = (
-        float(steady_rate)
-        if isinstance(steady_rate, int | float) and steady_rate > 0
-        else observed_tokens_per_s
-    )
-    peak_vram = telemetry.get("peak_vram_mb")
-    token_precision = _mean(case_rows, "token_precision")
-    token_recall = _mean(case_rows, "token_recall")
-    ranking = _mean(case_rows, "ranking_score")
-    found_rate = _mean(case_rows, "contains")
-    completion_lengths = [
-        float(row["completion_tokens"])
-        for row in case_rows
-        if row["status"] == eval_common.OK and row["completion_tokens"] > 0
-    ]
-    mean_completion_tokens = (
-        sum(completion_lengths) / len(completion_lengths) if completion_lengths else 0.0
-    )
-    result = ModelResult(
-        model=config.model,
-        backend=config.backend,
-        objective_score=objective,
-        n_cases=n,
-        reliability=reliability,
-        tokens_per_s=tokens_per_s,
-        peak_vram_mb=float(peak_vram) if isinstance(peak_vram, int | float) else None,
+    """Score the run: one ranked leaderboard row, and the metrics the manifest publishes."""
+    means = _CaseMeans.of(case_rows, telemetry)
+    result = _model_result(
+        config,
+        case_rows,
+        means,
+        peak_vram=telemetry.get("peak_vram_mb"),
         judge_score=judge_score,
-        ranking_score=ranking,
-        token_precision=token_precision,
-        token_recall=token_recall,
-        found_rate=found_rate,
-        mean_completion_tokens=mean_completion_tokens,
-        case_objectives=[float(row["objective_score"]) for row in case_rows],
-        case_ranking=[float(row["ranking_score"]) for row in case_rows],
-        feasible=True,
     )
     # The judge is trusted only when calibrated AND it actually produced a score this run.
     trusted = judge_is_trusted(judge_rho, config.judge_threshold) and judge_score is not None
     rows = rank_results([result], judge_trusted=trusted)
     metrics: RunMetrics = {
-        "objective_score": objective,
-        "ranking_score": ranking,
-        "token_precision": token_precision,
-        "token_recall": token_recall,
-        "found_rate": found_rate,
-        "mean_completion_tokens": mean_completion_tokens,
-        "reliability": reliability,
-        "tokens_per_s": tokens_per_s,
+        "objective_score": means.objective,
+        "ranking_score": means.ranking,
+        "token_precision": means.token_precision,
+        "token_recall": means.token_recall,
+        "found_rate": means.found_rate,
+        "mean_completion_tokens": means.mean_completion_tokens,
+        "reliability": means.reliability,
+        "tokens_per_s": means.tokens_per_s,
     }
-    mean_power = telemetry.get("mean_power_w")
-    if isinstance(mean_power, int | float) and mean_power > 0:
-        metrics["mean_power_w"] = round(float(mean_power), 2)
-        metrics["tokens_per_watt"] = round(tokens_per_s / float(mean_power), 4)
-        metrics["quality_per_watt"] = round(ranking * tokens_per_s / float(mean_power), 4)
+    _attach_power_metrics(metrics, telemetry, means)
     stage = _stage_latency(case_rows)
     if stage:
         metrics["stage_latency"] = stage

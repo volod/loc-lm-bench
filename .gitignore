@@ -26,22 +26,28 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+#
+# Every DIRECTORY rule below is anchored to the repo root with a leading slash. These are the
+# artifacts setuptools/uv write beside pyproject.toml; an unanchored `build/` matches a directory
+# of that name at ANY depth, which is how `tests/llb/build/` went missing from the repo while
+# pytest kept collecting it on the box that held the file (the `!src/llb/build/` negations that
+# used to sit here were the same rule being patched one package at a time). `lib/`, `var/`, and
+# `target/` are the same trap waiting for a source or test directory of that name. Heavy build
+# trees are written under $DATA_DIR and are covered by the `.data/` rule above.
 .Python
-build/
-!src/llb/build/
-!src/llb/build/*.py
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -94,7 +100,7 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints

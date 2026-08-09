@@ -3,17 +3,20 @@
 The trigger reaches the transcript only by selecting which step folds, so a step is the unit the
 cost is grouped on: every guard inside one step's interval sends the identical controller prompts.
 These builders attach that geometry to the measured cells and read each depth's ladder into the
-LAST fold step at which compact is still cheaper.
+LAST fold step at which compact is still cheaper. Both halves of that pairing are read off a probe
+result, so both are stated in cells and steps rather than left to the interval arithmetic: a group
+whose step the measured sequence cannot answer for is refused here, naming the cells.
 """
 
 from typing import cast
 
 from llb.bench.agentic_memory_boundary_gate import SIDE_CAP_CHEAPER, SIDE_COMPACT_CHEAPER
-from llb.bench.agentic_memory_boundary_probe import (
+from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
     fold_step_guard_interval,
     fold_step_trigger_interval,
+    foldable_fold_steps,
     smallest_guard_reaching,
 )
 from llb.bench.agentic_memory_fold_step_reading import (
@@ -35,7 +38,10 @@ def step_rows(
     cap_cost_fraction: float,
 ) -> list[dict[str, object]]:
     """One row per tested fold step: what selects it, what it cost, and whether it held together."""
-    steps = sorted({cast(int, cell["predicted_fold_step"]) for cell in cells})
+    steps = sorted(
+        {cast(int | None, cell["predicted_fold_step"]) for cell in cells},
+        key=lambda step: (step is None, step),
+    )
     return [
         _step_row(
             step,
@@ -98,13 +104,14 @@ def depth_fold_row(
 
 
 def _step_row(
-    step: int,
+    step: int | None,
     members: list[dict[str, object]],
     *,
     prompt_sequence: list[int],
     compact_share: float,
     cap_cost_fraction: float,
 ) -> dict[str, object]:
+    step = _fold_step_on_the_sequence(step, members, prompt_sequence)
     deltas = [_delta(cell) for cell in members]
     cap_costs = [float(cast(float, cell["cap_mean_total_model_input_tokens"])) for cell in members]
     baseline = sum(cap_costs) / len(cap_costs)
@@ -135,6 +142,30 @@ def _step_row(
         "same_side": len(sides) == 1,
         "side": sides[0] if len(sides) == 1 else None,
     }
+
+
+def _fold_step_on_the_sequence(
+    step: int | None, members: list[dict[str, object]], prompt_sequence: list[int]
+) -> int:
+    """The grouped step, or a refusal naming the CELLS the ladder was asked to read.
+
+    The step is a measured cell property (`predicted_fold_step`) and the sequence is the depth's own
+    oracle walk, so a step the sequence cannot answer for means the two describe different geometries
+    -- a probe that measured nothing, or rows grouped against another depth's ladder. The interval
+    arithmetic says that as a bare "outside an N-step sequence", two layers under the declared grid.
+    """
+    if step is not None and 1 <= step <= len(prompt_sequence):
+        return step
+    claim = (
+        "fold at no step of it -- no prompt exceeds their compact trigger"
+        if step is None
+        else f"sit at fold step {step}, off its foldable ladder "
+        f"{foldable_fold_steps(prompt_sequence)}"
+    )
+    raise ValueError(
+        f"cells {[cast(str, cell['cell_id']) for cell in members]} cannot be read against the "
+        f"measured {len(prompt_sequence)}-step prompt sequence: they {claim}"
+    )
 
 
 def _boundary(

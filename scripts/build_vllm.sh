@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 llb_load_env
 
 export PROJECT_ROOT
-MAX_JOBS="$(max_jobs)"
+MAX_JOBS="$(llb_max_jobs)"
 export MAX_JOBS
 PY="$(llb_python)"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"

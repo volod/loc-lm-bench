@@ -28,26 +28,69 @@ def _is_audited_make_symbol(symbol: str) -> bool:
     ) or symbol in {"GOLDSET_N", "PIPELINE_TOP_N", "RECOMMEND_MIN_CASES"}
 
 
-def audit(project_root: Path = PROJECT_ROOT) -> dict[str, Any]:
-    """Return the complete inventory and unexplained-control findings."""
-    declared = {(row.location, row.symbol) for row in DECLARATIONS}
+# Inferential controls that must stay derived: an absolute default here would be a gate again.
+_FIXED_MAKE_PATTERNS = {
+    "VERIFY_N": r"^VERIFY_N\s*\?=\s*[1-9][0-9]*$",
+    "CHAIN_VERIFY_N": r"^CHAIN_VERIFY_N\s*\?=\s*[1-9][0-9]*$",
+    "CHAIN_MIN_ACCEPTED": r"^CHAIN_MIN_ACCEPTED\s*\?=\s*[1-9][0-9]*$",
+    "QUICKSTART_DRAFT_VERIFY_N": r"^QUICKSTART_DRAFT_VERIFY_N\s*\?=\s*[1-9][0-9]*$",
+}
+_FIXED_CLI_PATTERNS = {
+    "src/llb/goldset/verify/cli.py": (
+        r'add_argument\(\s*"-n",\s*"--size"[\s\S]{0,160}?default=[0-9]+'
+    ),
+    "src/llb/goldset/promote_chains.py": (
+        r'add_argument\(\s*"--min-chains"[\s\S]{0,160}?default=[0-9]+'
+    ),
+}
+_RETIRED_CONTROLS = [
+    {
+        "id": "ua-model-roster-long-run",
+        "status": "absent",
+        "successor_controls": ["JOINT_SEARCH_TRIALS", "JOINT_SEARCH_MIN_FINALISTS"],
+        "reading": "resource and structural controls, not inferential gates",
+    }
+]
+
+
+def _discover_make_controls(make_text: str) -> list[dict[str, str]]:
+    """Every absolute Make assignment this audit is responsible for classifying."""
+    return [
+        {"location": MAKE_CONFIG, "symbol": symbol, "value": value}
+        for symbol, value in _MAKE_ASSIGNMENT.findall(make_text)
+        if _is_audited_make_symbol(symbol)
+    ]
+
+
+def _discover_cli_controls(project_root: Path) -> list[dict[str, str]]:
+    """Every absolute Typer default that looks like an experiment control."""
     discoveries: list[dict[str, str]] = []
-    findings: list[str] = []
-    make_text = (project_root / MAKE_CONFIG).read_text(encoding="utf-8")
-    for symbol, value in _MAKE_ASSIGNMENT.findall(make_text):
-        if not _is_audited_make_symbol(symbol):
-            continue
-        discoveries.append({"location": MAKE_CONFIG, "symbol": symbol, "value": value})
-        if (MAKE_CONFIG, symbol) not in declared:
-            findings.append(f"unclassified absolute Make control: {symbol}={value}")
     for path in sorted((project_root / "src" / "llb").rglob("*.py")):
         relative = str(path.relative_to(project_root))
-        text = path.read_text(encoding="utf-8")
-        for symbol, value in _TYPER_CONTROL.findall(text):
+        for symbol, value in _TYPER_CONTROL.findall(path.read_text(encoding="utf-8")):
             discoveries.append({"location": relative, "symbol": symbol, "value": value})
-            if (relative, symbol) not in declared:
-                findings.append(f"unclassified absolute CLI control: {relative}:{symbol}={value}")
-    discovered_values = {(row["location"], row["symbol"]): row["value"] for row in discoveries}
+    return discoveries
+
+
+def _undeclared_findings(
+    discoveries: list[dict[str, str]], declared: set[tuple[str, str]]
+) -> list[str]:
+    """A control nobody classified is the hole this audit exists to close."""
+    findings = []
+    for row in discoveries:
+        if (row["location"], row["symbol"]) in declared:
+            continue
+        kind = "Make" if row["location"] == MAKE_CONFIG else "CLI"
+        where = row["symbol"] if kind == "Make" else f"{row['location']}:{row['symbol']}"
+        findings.append(f"unclassified absolute {kind} control: {where}={row['value']}")
+    return findings
+
+
+def _declaration_findings(
+    project_root: Path, discovered_values: dict[tuple[str, str], str]
+) -> list[str]:
+    """Every declared gate still exists, and still carries the default it was declared with."""
+    findings: list[str] = []
     for row in DECLARATIONS:
         path = project_root / row.location
         if not path.is_file():
@@ -57,43 +100,59 @@ def audit(project_root: Path = PROJECT_ROOT) -> dict[str, Any]:
         if row.symbol not in text:
             findings.append(f"declared gate symbol is missing: {row.location}:{row.symbol}")
         if row.location == MAKE_CONFIG:
-            expected = (
-                rf"^{re.escape(row.symbol)}\s*\?=\s*$"
-                if row.default == "derived"
-                else rf"^{re.escape(row.symbol)}\s*\?=\s*{re.escape(row.default)}$"
-            )
-            if not re.search(expected, text, re.MULTILINE):
-                findings.append(
-                    f"declared Make default changed: {row.symbol} expected {row.default}"
-                )
+            findings.extend(_make_default_findings(row, text))
         elif row.default != "derived":
-            actual = discovered_values.get((row.location, row.symbol))
-            if actual is not None and actual != row.default:
-                findings.append(
-                    f"declared CLI default changed: {row.location}:{row.symbol} "
-                    f"expected {row.default}, got {actual}"
-                )
-    fixed_patterns = {
-        "VERIFY_N": r"^VERIFY_N\s*\?=\s*[1-9][0-9]*$",
-        "CHAIN_VERIFY_N": r"^CHAIN_VERIFY_N\s*\?=\s*[1-9][0-9]*$",
-        "CHAIN_MIN_ACCEPTED": r"^CHAIN_MIN_ACCEPTED\s*\?=\s*[1-9][0-9]*$",
-        "QUICKSTART_DRAFT_VERIFY_N": (r"^QUICKSTART_DRAFT_VERIFY_N\s*\?=\s*[1-9][0-9]*$"),
-    }
-    for symbol, pattern in fixed_patterns.items():
-        if re.search(pattern, make_text, re.MULTILINE):
-            findings.append(f"inferential Make control regained an absolute default: {symbol}")
-    cli_fixed_patterns = {
-        "src/llb/goldset/verify/cli.py": (
-            r'add_argument\(\s*"-n",\s*"--size"[\s\S]{0,160}?default=[0-9]+'
-        ),
-        "src/llb/goldset/promote_chains.py": (
-            r'add_argument\(\s*"--min-chains"[\s\S]{0,160}?default=[0-9]+'
-        ),
-    }
-    for location, pattern in cli_fixed_patterns.items():
-        text = (project_root / location).read_text(encoding="utf-8")
-        if re.search(pattern, text):
-            findings.append(f"inferential CLI control regained an absolute default: {location}")
+            findings.extend(_cli_default_findings(row, discovered_values))
+    return findings
+
+
+def _make_default_findings(row: Any, make_text: str) -> list[str]:
+    """One declared Make gate, read against the assignment actually in the config."""
+    expected = (
+        rf"^{re.escape(row.symbol)}\s*\?=\s*$"
+        if row.default == "derived"
+        else rf"^{re.escape(row.symbol)}\s*\?=\s*{re.escape(row.default)}$"
+    )
+    if re.search(expected, make_text, re.MULTILINE):
+        return []
+    return [f"declared Make default changed: {row.symbol} expected {row.default}"]
+
+
+def _cli_default_findings(row: Any, discovered_values: dict[tuple[str, str], str]) -> list[str]:
+    """One declared CLI gate, read against the default the discovery pass actually found."""
+    actual = discovered_values.get((row.location, row.symbol))
+    if actual is None or actual == row.default:
+        return []
+    return [
+        f"declared CLI default changed: {row.location}:{row.symbol} "
+        f"expected {row.default}, got {actual}"
+    ]
+
+
+def _regained_default_findings(project_root: Path, make_text: str) -> list[str]:
+    """A control that was deliberately made inferential must not grow an absolute default again."""
+    findings = [
+        f"inferential Make control regained an absolute default: {symbol}"
+        for symbol, pattern in _FIXED_MAKE_PATTERNS.items()
+        if re.search(pattern, make_text, re.MULTILINE)
+    ]
+    findings.extend(
+        f"inferential CLI control regained an absolute default: {location}"
+        for location, pattern in _FIXED_CLI_PATTERNS.items()
+        if re.search(pattern, (project_root / location).read_text(encoding="utf-8"))
+    )
+    return findings
+
+
+def audit(project_root: Path = PROJECT_ROOT) -> dict[str, Any]:
+    """Return the complete inventory and unexplained-control findings."""
+    make_text = (project_root / MAKE_CONFIG).read_text(encoding="utf-8")
+    discoveries = _discover_make_controls(make_text) + _discover_cli_controls(project_root)
+    discovered_values = {(row["location"], row["symbol"]): row["value"] for row in discoveries}
+    declared = {(row.location, row.symbol) for row in DECLARATIONS}
+    findings = _undeclared_findings(discoveries, declared)
+    findings.extend(_declaration_findings(project_root, discovered_values))
+    findings.extend(_regained_default_findings(project_root, make_text))
     return {
         "schema_version": 1,
         "method": METHOD,
@@ -102,17 +161,7 @@ def audit(project_root: Path = PROJECT_ROOT) -> dict[str, Any]:
         "declarations": [asdict(row) for row in DECLARATIONS],
         "discoveries": discoveries,
         "findings": findings,
-        "retired_controls": [
-            {
-                "id": "ua-model-roster-long-run",
-                "status": "absent",
-                "successor_controls": [
-                    "JOINT_SEARCH_TRIALS",
-                    "JOINT_SEARCH_MIN_FINALISTS",
-                ],
-                "reading": "resource and structural controls, not inferential gates",
-            }
-        ],
+        "retired_controls": _RETIRED_CONTROLS,
     }
 
 

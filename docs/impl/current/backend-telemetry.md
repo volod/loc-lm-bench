@@ -24,8 +24,8 @@ often happen before a JSON API is available.
 ## Build Rules
 
 `scripts/build_vllm.sh` is the shell entry point. It sources `scripts/shared/common.sh` and uses the
-canonical `max_jobs()` helper for source builds. `make venv` calls this helper automatically on CUDA
-hosts (`VENV_INSTALL_VLLM=auto`) after the editable install; set `VENV_INSTALL_VLLM=0` for a lean
+canonical `llb_max_jobs()` helper for source builds. `make venv` calls this helper automatically on
+CUDA hosts (`VENV_INSTALL_VLLM=auto`) after the editable install; set `VENV_INSTALL_VLLM=0` for a lean
 environment or `VENV_INSTALL_VLLM=1` to force the vLLM install. Ordinary installs use `uv` and the
 shared package cache with binary wheels only. Only wheels intentionally built from a clean local
 checkout are exported under `$DATA_DIR/wheels/<package>_<abi-key>_git<revision>/`.
@@ -107,7 +107,7 @@ Every logical entry in `samples/configs/models_uk.yaml` measured back to back un
 one discarded warmup pass, `num_ctx`/`max_model_len` pinned to 4096, and each model unloaded before
 the next so every run starts from the same VRAM state. These are SHORT-prompt decode rates; a RAG
 lane that prefills retrieved context reads lower for the same model (see the context-ablation rows
-in [RAG core](rag-core.md#context-ablation-evidence)).
+in [RAG core](rag-core/context-ablation.md#context-ablation-evidence)).
 
 `min/100` is the derived decode-only run-sizing figure from the estimator above: minutes to answer
 100 cases at 256 output tokens each, excluding load time and RAG prefill. `tok/UA-char` is the
@@ -154,7 +154,7 @@ What the full roster adds beyond the three-row table above:
   and English tokenizes far denser than Ukrainian. Its apparent character throughput is a
   language artifact, not Ukrainian delivered per second. Quote `tok/s` for run sizing and treat
   `tok/UA-char` as a diagnostic that requires reading the generations -- the same verbosity/content
-  confound documented for token-F1 scoring in [RAG core](rag-core.md#scoring).
+  confound documented for token-F1 scoring in [RAG core](rag-core/scoring.md#scoring).
 - **`think=false` did not stop `qwen3:30b` from emitting visible reasoning.** The launcher sends
   Ollama's native `think: false` on every call, yet this tag returned first-person deliberation in
   the answer body. Treat the manifest's "disable thinking for scoring" note as necessary but not

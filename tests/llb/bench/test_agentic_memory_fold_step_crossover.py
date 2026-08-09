@@ -1,4 +1,9 @@
-"""Fold-step crossover: ladder placement, within-step agreement, and the step-change boundary."""
+"""Fold-step crossover: ladder placement, within-step agreement, and the step-change boundary.
+
+The study's subject is the committed design and what a ladder of runs reads off it. The interval
+arithmetic it stands on -- `agentic_memory_fold_step_ladder` -- is tested on its own in
+`test_agentic_memory_fold_step_ladder.py`.
+"""
 
 from copy import deepcopy
 import json
@@ -7,15 +12,13 @@ import re
 
 import pytest
 
-from llb.bench.agentic_memory_boundary_probe import (
+from llb.bench.agentic_memory_boundary_probe import oracle_controller
+from llb.bench.agentic_memory_fold_step_ladder import (
     compaction_trigger_chars,
     first_fold_step,
-    fold_step_guard_interval,
-    fold_step_trigger_interval,
+    foldable_fold_steps,
     guard_is_cap_fitting,
-    oracle_controller,
     reachable_fold_steps,
-    smallest_guard_reaching,
 )
 from llb.bench.agentic_memory_fold_step import analyze_fold_steps, run_fold_step_ladders
 from llb.bench.agentic_memory_fold_step_design import (
@@ -25,8 +28,10 @@ from llb.bench.agentic_memory_fold_step_design import (
     load_fold_step_design,
     validate_fold_step_design,
 )
+from llb.bench.agentic_memory_fold_step_rows import step_rows
 from llb.bench.agentic_memory_fold_step_reading import (
     CONTROLLER_TOKEN_QUANTIZATION,
+    STEP_METRIC,
     READING_CONFIRMED,
     READING_INELIGIBLE,
     READING_INVALID,
@@ -106,25 +111,6 @@ def _rows(
     return rows
 
 
-def test_trigger_and_guard_intervals_invert_the_fold_step_prediction():
-    sequence = [3000, 3904, 4792, 5680, 6568, 7456, 8374]
-    assert reachable_fold_steps(sequence) == [1, 2, 3, 4, 5, 6, 7]
-    low, high = fold_step_trigger_interval(sequence, 6)
-    assert (low, high) == (6568, 7456)
-    # Every trigger inside the interval selects the step, and the first one outside does not.
-    assert {first_fold_step(sequence, trigger) for trigger in range(low, high)} == {6}
-    assert first_fold_step(sequence, high) == 7
-    guard_low, guard_high = fold_step_guard_interval(sequence, 6, 0.5)
-    assert (guard_low, guard_high) == (13136, 14912)
-    assert first_fold_step(sequence, compaction_trigger_chars(guard_high - 1, 0.5)) == 6
-    assert first_fold_step(sequence, compaction_trigger_chars(guard_high, 0.5)) == 7
-    # A step whose prompt does not exceed the running maximum can never be selected.
-    assert reachable_fold_steps([3000, 3000, 4000]) == [1, 3]
-    # The guard is resolved against the runtime's truncating arithmetic, not a float inverse.
-    assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45), 0.45) >= 7456
-    assert compaction_trigger_chars(smallest_guard_reaching(7456, 0.45) - 1, 0.45) < 7456
-
-
 def test_committed_ladders_sit_one_fold_step_apart_inside_the_usable_band():
     design = load_fold_step_design(DESIGN_PATH)
     validate_fold_step_design(design)
@@ -185,6 +171,47 @@ def test_design_refuses_a_mislabelled_step_a_gap_in_the_ladder_and_a_loose_place
     unfittable["step_rule"]["within_step_cap_cost_fraction"] = 0.5
     with pytest.raises(ValueError, match="placement bounds"):
         validate_fold_step_design(unfittable)
+
+
+def test_a_ladder_that_declares_a_step_no_episode_folds_at_is_refused_by_the_ladder_rule():
+    """The placement ladder is the steps a fold HAPPENS at, not the steps a trigger can select.
+
+    Step 1 is reachable on both committed geometries -- a guard under the first prompt trips on it --
+    and folds nothing, so a cell there would measure a `compact` arm that never compacts. The refusal
+    used to be indirect and geometry-dependent: a step-1 guard sits far under the cap peak, so the
+    per-CELL cap-fitting rule rejected it with a message about the usable guard band, which reads as
+    a guard-placement mistake rather than as a ladder naming an impossible fold.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    sequences = fold_step_prompt_sequences(design)
+    for sequence in sequences.values():
+        assert reachable_fold_steps(sequence)[0] == 1
+        assert foldable_fold_steps(sequence)[0] == 2
+
+    unfoldable = deepcopy(design)
+    unfoldable["ladders"][0]["steps"][0]["fold_step"] = 1
+    with pytest.raises(ValueError, match="ADJACENT on the foldable ladder"):
+        validate_fold_step_design(unfoldable)
+
+
+def test_a_depth_the_probe_measured_nothing_over_names_the_depth_in_both_peak_readers():
+    """The design states two peaks -- one per ladder, one per published row -- through one read.
+
+    Both used to reduce the walk with a bare `max`, so a depth whose oracle episodes end before
+    their first prompt failed as `max() iterable argument is empty` with nothing naming the depth.
+    The ladder validation additionally used to blame the DECLARED steps for not being adjacent on an
+    empty foldable ladder, which points the operator at the design rather than at the geometry.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    shallowest = min(int(ladder["depth"]) for ladder in design["ladders"])
+
+    unmeasured = deepcopy(design)
+    unmeasured["held_fixed"]["max_steps_margin"] = -shallowest
+    for read in (validate_fold_step_design, fold_step_cap_peaks):
+        with pytest.raises(
+            ValueError, match=f"depth {shallowest} measured no prompt under perfect play"
+        ):
+            read(unmeasured)
 
 
 def test_the_boundary_is_a_fold_step_and_the_interpolated_guard_is_an_artifact():
@@ -270,6 +297,60 @@ def test_cell_preconditions_and_eligibility_gate_the_study():
     drifted[0]["declared_fold_step"] = 5
     with pytest.raises(ValueError, match="no longer fold where they were declared"):
         analyze_fold_steps(design, CONTROL_PASS, drifted)
+
+
+def test_a_step_the_measured_sequence_cannot_answer_for_names_the_cells_not_the_arithmetic():
+    """Every ladder edge is reachable only through a caller, and this caller translates them.
+
+    `step_rows` groups measured cells by their probe-predicted fold step and reads each group's
+    trigger interval off the depth's own oracle walk. When the two describe different geometries --
+    a probe that measured nothing, or rows read against another depth's ladder -- the ladder answers
+    "fold step k is outside an N-step sequence", which is arithmetic the operator never wrote. The
+    caller restates it in the cells and the foldable ladder the grid was placed against.
+    """
+    design = load_fold_step_design(DESIGN_PATH)
+    sequence = fold_step_prompt_sequences(design)[6]
+    cells = _grouped_cells(design, predicted_fold_step=6)
+
+    # The positive control first: on its own depth's sequence the same cells read as one step row.
+    row = step_rows(cells, prompt_sequence=sequence, compact_share=0.5, cap_cost_fraction=0.02)[0]
+    assert row["fold_step"] == 6 and row["trigger_interval"] == [6568, 7456]
+
+    with pytest.raises(ValueError, match="measured 0-step prompt sequence") as unmeasured:
+        step_rows(cells, prompt_sequence=[], compact_share=0.5, cap_cost_fraction=0.02)
+    assert "off its foldable ladder []" in str(unmeasured.value)
+
+    with pytest.raises(ValueError, match=r"off its foldable ladder \[2, 3\]") as short:
+        step_rows(
+            cells, prompt_sequence=[3000, 3904, 4792], compact_share=0.5, cap_cost_fraction=0.02
+        )
+    assert all(cell["cell_id"] in str(short.value) for cell in cells)
+
+    # A cell whose trigger no prompt exceeds carries `predicted_fold_step` of None, which used to
+    # reach the ladder as a comparison against None rather than as a fold that never happens.
+    never = _grouped_cells(design, predicted_fold_step=None)
+    with pytest.raises(ValueError, match="fold at no step of it"):
+        step_rows(never, prompt_sequence=sequence, compact_share=0.5, cap_cost_fraction=0.02)
+
+
+def _grouped_cells(
+    design: dict[str, object], *, predicted_fold_step: int | None
+) -> list[dict[str, object]]:
+    """The two depth-6 step-6 cells as `step_rows` receives them, gated and annotated."""
+    return [
+        {
+            **_cell_row(cell, -125.9),
+            "measured_side": "compact_cheaper",
+            "compaction_trigger_chars": compaction_trigger_chars(
+                int(cell["max_prompt_chars"]), 0.5
+            ),
+            "compact_mean_controller_prompt_tokens": 1000.0,
+            "compact_mean_compaction_prompt_tokens": 500.0,
+            "cost_evidence": {STEP_METRIC: {"mean": -125.9}},
+            "predicted_fold_step": predicted_fold_step,
+        }
+        for cell in declared_cells(design)[:2]
+    ]
 
 
 def _fake_model(prompt: str) -> str:

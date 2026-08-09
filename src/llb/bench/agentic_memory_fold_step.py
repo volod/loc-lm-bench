@@ -12,6 +12,7 @@ still cheaper plus the trigger interval that selects it.
 from pathlib import Path
 from typing import cast
 
+from llb.bench.agentic_design_fields import as_float, as_mapping
 from llb.bench.agentic_memory_boundary_surface_cells import surface_cell_row
 from llb.bench.agentic_memory_fold_step_design import (
     declared_cells,
@@ -62,54 +63,71 @@ def run_fold_step_ladders(
     ]
 
 
+def _annotated_cells(
+    design: dict[str, object],
+    grid_rows: list[dict[str, object]],
+    sequences: dict[int, list[int]],
+) -> list[dict[str, object]]:
+    """Score every declared cell and annotate the fold step it actually lands on."""
+    declared = declared_cells(design)
+    if [row["cell_id"] for row in grid_rows] != [cell["cell_id"] for cell in declared]:
+        raise ValueError("fold-step rows do not match the exact declared cell order")
+    held = as_mapping(design, "held_fixed")
+    cells = annotate_fold_steps(
+        [
+            surface_cell_row(row, cell, held_fixed=held, confidence=REPORTING_CONFIDENCE)
+            for row, cell in zip(grid_rows, declared, strict=True)
+        ],
+        sequences,
+    )
+    _refuse_mispredicted_steps(cells)
+    return cells
+
+
+def _depth_ladders(
+    design: dict[str, object],
+    cells: list[dict[str, object]],
+    sequences: dict[int, list[int]],
+    peaks: dict[int, int],
+) -> list[dict[str, object]]:
+    """One step ladder per depth: which guards fold at which step, and what each step costs."""
+    held = as_mapping(design, "held_fixed")
+    share = as_float(held, "compact_share")
+    fraction = as_float(as_mapping(design, "step_rule"), "within_step_cap_cost_fraction")
+    return [
+        depth_fold_row(
+            depth,
+            step_rows(
+                [cell for cell in cells if cell["depth"] == depth],
+                prompt_sequence=sequences[depth],
+                compact_share=share,
+                cap_cost_fraction=fraction,
+            ),
+            prompt_sequence=sequences[depth],
+            compact_share=share,
+            cap_peak_prompt_chars=peaks[depth],
+            reference_guard=_reference_guard(design, depth),
+        )
+        for depth in sorted(sequences)
+    ]
+
+
 def analyze_fold_steps(
     design: dict[str, object],
     control_row: dict[str, object] | None,
     grid_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     """Gate the cells, group them by fold step, and read each depth's step ladder."""
-    held = cast(dict[str, object], design["held_fixed"])
-    share = float(cast(float, held["compact_share"]))
-    rule = cast(dict[str, object], design["step_rule"])
-    fraction = float(cast(float, rule["within_step_cap_cost_fraction"]))
     sequences = fold_step_prompt_sequences(design)
     peaks = fold_step_cap_peaks(design)
-    declared = declared_cells(design)
     eligible = bool(control_row is not None and control_row["eligible"])
-    cells: list[dict[str, object]] = []
-    depth_rows: list[dict[str, object]] = []
-    if eligible:
-        if [row["cell_id"] for row in grid_rows] != [cell["cell_id"] for cell in declared]:
-            raise ValueError("fold-step rows do not match the exact declared cell order")
-        cells = annotate_fold_steps(
-            [
-                surface_cell_row(row, cell, held_fixed=held, confidence=REPORTING_CONFIDENCE)
-                for row, cell in zip(grid_rows, declared, strict=True)
-            ],
-            sequences,
-        )
-        _refuse_mispredicted_steps(cells)
-        depth_rows = [
-            depth_fold_row(
-                depth,
-                step_rows(
-                    [cell for cell in cells if cell["depth"] == depth],
-                    prompt_sequence=sequences[depth],
-                    compact_share=share,
-                    cap_cost_fraction=fraction,
-                ),
-                prompt_sequence=sequences[depth],
-                compact_share=share,
-                cap_peak_prompt_chars=peaks[depth],
-                reference_guard=_reference_guard(design, depth),
-            )
-            for depth in sorted(sequences)
-        ]
+    cells = _annotated_cells(design, grid_rows, sequences) if eligible else []
+    depth_rows = _depth_ladders(design, cells, sequences, peaks) if eligible else []
     reading, reason = fold_step_reading(eligible, cells, depth_rows)
     return {
         "study_id": design["study_id"],
-        "held_fixed": held,
-        "step_rule": rule,
+        "held_fixed": as_mapping(design, "held_fixed"),
+        "step_rule": as_mapping(design, "step_rule"),
         "cap_peak_prompt_chars": {str(depth): peak for depth, peak in peaks.items()},
         "cap_prompt_sequence": {str(depth): sequence for depth, sequence in sequences.items()},
         "control_recheck": control_row,

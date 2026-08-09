@@ -6,7 +6,7 @@ needed).
 
     make venv     # apt + .venv + package + extras + .env
     make test     # unit tests
-    make ci       # lint (ruff) + tests (GitHub CI)
+    make ci       # lint (ruff) + types + complexity/shell gates + tests (GitHub CI)
     make          # list targets
 
 `make venv` installs every Python extra below so a fresh checkout can run every command without a
@@ -29,7 +29,7 @@ builds; only the OS package step is skipped.
 Lists live under [scripts/apt/](../../../scripts/apt/). Install manually with:
 
     make apt-deps                      # production profile (default)
-    make apt-deps APT_PROFILE=dev    # dev-only packages (shellcheck)
+    make apt-deps APT_PROFILE=dev    # dev-only packages (currently none)
     make apt-deps APT_PROFILE=all    # production + dev
 
 `make venv` installs **production** packages always, and **dev** packages when `EXTRAS` includes
@@ -39,27 +39,36 @@ installing.
 | Profile | Packages | Used for |
 | ------- | -------- | -------- |
 | **production** | `git`, `make`, `curl` | Makefile, git vLLM builds, HTTP probes |
-| **dev** | `shellcheck` | `scripts/code_quality.sh` shell lint |
+| **dev** | *(none)* | reserved for a future dev-only OS package |
 
-Production packages are safe on eval/GPU hosts. Dev packages are optional for contributors;
-GitHub CI does not run `make venv` and does not install them.
+Production packages are safe on eval/GPU hosts. The dev list is empty, so
+`make apt-deps APT_PROFILE=dev` prints `nothing to install`; GitHub CI does not run `make venv`
+and installs no apt packages at all.
 
-The installer uses `apt-get install --no-upgrade` so a small dev package (for example
-`shellcheck`) does not pull in pending kernel or NVIDIA DKMS upgrades. If apt still exits
-non-zero because of **unrelated** broken packages on the host, `make venv` continues when
-the requested profile packages are verified installed.
+**No apt package backs the shell lint.** The `dev` **extra** ships a pinned `shellcheck-py` wheel
+(it bundles the real binary), so `.venv/bin/shellcheck` exists wherever `make ci` can run, and the
+gate uses *that* binary only -- there is no `PATH` fallback, because a distro `shellcheck` is
+releases behind the pin and would give the same commit a different verdict per host (see
+[host validation](../../impl/current/host-validation.md#code-quality-checks)). A host whose venv
+lacks the `dev` extra cannot run `make ci` regardless; `make venv EXTRAS=dev` is the fix.
+
+The installer uses `apt-get install --no-upgrade` so a small dev package does not pull in pending
+kernel or NVIDIA DKMS upgrades. If apt still exits non-zero because of **unrelated** broken
+packages on the host, `make venv` continues when the requested profile packages are verified
+installed.
 
 ### Apt troubleshooting (broken dpkg / NVIDIA DKMS)
 
 If `apt install` fails with errors about `linux-headers-*`, `nvidia-dkms-*`, or
 `Sub-process /usr/bin/dpkg returned an error code (1)` while installing an unrelated package,
-the dev tool may still be installed. Check:
+the requested tool may still be installed. Check it by name, e.g. for `curl`:
 
-    shellcheck --version
-    dpkg -s shellcheck | grep ^Status
+    curl --version
+    dpkg -s curl | grep ^Status
 
-When `Status: install ok installed`, you can use `scripts/code_quality.sh` even though apt
-reported errors configuring kernel/NVIDIA packages that were already pending on the system.
+When `Status: install ok installed`, the tool is usable even though apt reported errors
+configuring kernel/NVIDIA packages that were already pending on the system (this is also why
+`make venv` continues once it verifies the requested packages).
 
 To repair the host package manager (run when convenient; may take several minutes):
 

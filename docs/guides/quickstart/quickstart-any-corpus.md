@@ -85,9 +85,9 @@ llb prepare-goldset-draft --resume <bundle>
 
 Resume reuses the completed extraction windows recorded in the bundle's `extraction_journal.jsonl`,
 re-extracts only the missing windows, and replays the deterministic seed/draft/emit stages, so the
-finished bundle matches an uninterrupted run. See
-[data prep](../../impl/current/data-prep.md#resumable-extraction-interrupt-safe-drafting) for the
-mechanics.
+finished bundle matches an uninterrupted run. See [data
+prep](../../impl/current/data-prep/drafting-lanes.md#resumable-extraction-interrupt-safe-drafting)
+for the mechanics.
 
 ## See also
 

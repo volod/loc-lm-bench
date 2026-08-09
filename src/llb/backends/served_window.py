@@ -69,12 +69,37 @@ def _model_aliases(model: str) -> set[str]:
     return aliases
 
 
-def parse_ollama_served_context(ps_body: str, model: str) -> int | None:
-    """Pull the loaded model's context from an Ollama `/api/ps` body (best-effort).
+def _positive_int(source: object, key: str) -> int | None:
+    """One positive integer field, rejecting `bool` -- which is an `int` and never a window."""
+    if not isinstance(source, dict):
+        return None
+    value = source.get(key)
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return int(value)
+    return None
 
-    Recent Ollama builds report `context_length`; older ones used `context`. Both are accepted,
-    including a nested `details.context_length`.
+
+def _entry_context(entry: dict[str, object]) -> int | None:
+    """The context one `/api/ps` entry reports, top level or nested under `details`.
+
+    Recent Ollama builds report `context_length`; older ones used `context`. Both are accepted.
     """
+    for source in (entry, entry.get("details")):
+        for key in ("context_length", "context"):
+            value = _positive_int(source, key)
+            if value is not None:
+                return value
+    return None
+
+
+def _names_this_model(entry: dict[str, object], aliases: set[str]) -> bool:
+    """Whether one resident entry is the model asked about, tag or not."""
+    name = str(entry.get("name") or entry.get("model") or "")
+    return name in aliases or name.rsplit(":", 1)[0] in aliases
+
+
+def parse_ollama_served_context(ps_body: str, model: str) -> int | None:
+    """Pull the loaded model's context from an Ollama `/api/ps` body (best-effort)."""
     try:
         data = json.loads(ps_body)
     except (ValueError, TypeError):
@@ -84,21 +109,10 @@ def parse_ollama_served_context(ps_body: str, model: str) -> int | None:
         return None
     aliases = _model_aliases(model)
     for entry in models:
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get("name") or entry.get("model") or "")
-        if name not in aliases and name.rsplit(":", 1)[0] not in aliases:
-            continue
-        for key in ("context_length", "context"):
-            value = entry.get(key)
-            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-                return int(value)
-        details = entry.get("details")
-        if isinstance(details, dict):
-            for key in ("context_length", "context"):
-                nested = details.get(key)
-                if isinstance(nested, int) and not isinstance(nested, bool) and nested > 0:
-                    return int(nested)
+        if isinstance(entry, dict) and _names_this_model(entry, aliases):
+            context = _entry_context(entry)
+            if context is not None:
+                return context
     return None
 
 

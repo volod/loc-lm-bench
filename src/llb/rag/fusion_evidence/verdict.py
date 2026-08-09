@@ -11,6 +11,8 @@ plausible gain and no more. Such a row is `inconclusive`: the direction is recor
 recommendation is not.
 """
 
+from dataclasses import dataclass
+
 from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
     METRIC_ALL_SPANS,
@@ -157,6 +159,72 @@ def _focus_n(rows: dict[str, RowReport], baseline: str, focus_slice: str) -> int
     return slice_report["n"] if slice_report else 0
 
 
+@dataclass(frozen=True, slots=True)
+class _Reading:
+    """One winning row read against the vector lane: the gains, and which of them may be read.
+
+    Assembled before any verdict branch, because the four decisions below all rest on the same four
+    facts and reading them per branch is how two branches come to disagree.
+    """
+
+    gains: dict[str, Interval]
+    overall: Interval
+    best_mean: float
+    per_row_separated: list[str]
+    separated: list[str]
+    detail: str
+    note: str
+
+
+def _reading_of(
+    row: RowReport,
+    label: str,
+    focus_slice: str,
+    confidence: float,
+    adjustment: SelectionAdjustment | None,
+) -> _Reading:
+    """Pair the focus slice on every gain metric and apply the reading rules to the result."""
+    paired = {metric: _focus_paired(row, focus_slice, metric) for metric in GAIN_METRICS}
+    gains = {metric: comparison["delta"] for metric, comparison in paired.items()}
+    per_row_separated = [
+        metric for metric, comparison in paired.items() if separates(comparison, confidence)
+    ]
+    return _Reading(
+        gains=gains,
+        overall=_overall_delta(row, METRIC_RECALL),
+        best_mean=max(gain["mean"] for gain in gains.values()),
+        per_row_separated=per_row_separated,
+        separated=[
+            metric
+            for metric in per_row_separated
+            if adjustment is None
+            or selection_separates(adjustment, hypothesis_key(label, metric), confidence)
+        ],
+        detail=(
+            f"recall {gains[METRIC_RECALL]['mean']:+.3f} "
+            f"[{gains[METRIC_RECALL]['lo']:+.3f}, {gains[METRIC_RECALL]['hi']:+.3f}], "
+            f"all-spans {gains[METRIC_ALL_SPANS]['mean']:+.3f} "
+            f"[{gains[METRIC_ALL_SPANS]['lo']:+.3f}, {gains[METRIC_ALL_SPANS]['hi']:+.3f}]"
+        ),
+        note=(
+            _gain_note(row, focus_slice)
+            + evidence_gate_clause(
+                [(metric, paired[metric]) for metric in GAIN_METRICS], confidence
+            )
+            + _selection_note(label, adjustment)
+        ),
+    )
+
+
+def _inconclusive_limit(reading: _Reading) -> str:
+    """WHICH rule stopped a positive gain from being read: selection, randomization, or evidence."""
+    if reading.per_row_separated:
+        return "the family-wise selection adjustment does not separate"
+    if all(gain["lo"] <= 0.0 for gain in reading.gains.values()):
+        return "the calibrated randomization test does not separate"
+    return "no gain clear of zero rests on enough differing items to be read as one"
+
+
 def _judge(
     row: RowReport,
     label: str,
@@ -165,57 +233,27 @@ def _judge(
     adjustment: SelectionAdjustment | None = None,
 ) -> tuple[str, str]:
     """The `(decision, reason)` for the winning fused row."""
-    paired = {metric: _focus_paired(row, focus_slice, metric) for metric in GAIN_METRICS}
-    gains = {metric: comparison["delta"] for metric, comparison in paired.items()}
-    overall = _overall_delta(row, METRIC_RECALL)
-    best_mean = max(gain["mean"] for gain in gains.values())
-    per_row_separated = [
-        metric for metric, comparison in paired.items() if separates(comparison, confidence)
-    ]
-    separated = [
-        metric
-        for metric in per_row_separated
-        if adjustment is None
-        or selection_separates(adjustment, hypothesis_key(label, metric), confidence)
-    ]
-    detail = (
-        f"recall {gains[METRIC_RECALL]['mean']:+.3f} "
-        f"[{gains[METRIC_RECALL]['lo']:+.3f}, {gains[METRIC_RECALL]['hi']:+.3f}], "
-        f"all-spans {gains[METRIC_ALL_SPANS]['mean']:+.3f} "
-        f"[{gains[METRIC_ALL_SPANS]['lo']:+.3f}, {gains[METRIC_ALL_SPANS]['hi']:+.3f}]"
-    )
-    note = (
-        _gain_note(row, focus_slice)
-        + evidence_gate_clause([(metric, paired[metric]) for metric in GAIN_METRICS], confidence)
-        + _selection_note(label, adjustment)
-    )
-    if best_mean <= 0.0:
+    reading = _reading_of(row, label, focus_slice, confidence, adjustment)
+    if reading.best_mean <= 0.0:
         return VERDICT_REJECT, (
-            f"{label} does not beat the vector lane on {focus_slice} ({detail}); "
-            "fusion stays opt-in" + note
+            f"{label} does not beat the vector lane on {focus_slice} ({reading.detail}); "
+            "fusion stays opt-in" + reading.note
         )
-    if not separated:
-        limit = (
-            "the family-wise selection adjustment does not separate"
-            if per_row_separated
-            else "the calibrated randomization test does not separate"
-            if all(gain["lo"] <= 0.0 for gain in gains.values())
-            else "no gain clear of zero rests on enough differing items to be read as one"
-        )
+    if not reading.separated:
         return VERDICT_INCONCLUSIVE, (
-            f"{label} gains {best_mean:+.3f} on {focus_slice} but {limit} "
-            f"({detail}); fusion stays opt-in until a larger {focus_slice} slice "
-            "separates it from the vector lane" + note
+            f"{label} gains {reading.best_mean:+.3f} on {focus_slice} but "
+            f"{_inconclusive_limit(reading)} ({reading.detail}); fusion stays opt-in until a "
+            f"larger {focus_slice} slice separates it from the vector lane" + reading.note
         )
-    if overall["mean"] < -OVERALL_RECALL_TOLERANCE:
+    if reading.overall["mean"] < -OVERALL_RECALL_TOLERANCE:
         return VERDICT_REJECT, (
-            f"{label} gains {best_mean:+.3f} on {focus_slice} but costs "
-            f"{overall['mean']:+.3f} overall recall@k; fusion stays opt-in" + note
+            f"{label} gains {reading.best_mean:+.3f} on {focus_slice} but costs "
+            f"{reading.overall['mean']:+.3f} overall recall@k; fusion stays opt-in" + reading.note
         )
     return VERDICT_ADOPT, (
-        f"{label} gains {best_mean:+.3f} on {focus_slice} ({detail}) with "
-        f"{overall['mean']:+.3f} [{overall['lo']:+.3f}, {overall['hi']:+.3f}] overall recall@k"
-        + note
+        f"{label} gains {reading.best_mean:+.3f} on {focus_slice} ({reading.detail}) with "
+        f"{reading.overall['mean']:+.3f} [{reading.overall['lo']:+.3f}, "
+        f"{reading.overall['hi']:+.3f}] overall recall@k" + reading.note
     )
 
 

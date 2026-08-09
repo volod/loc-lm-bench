@@ -196,7 +196,7 @@ def test_authority_requires_three_families_and_both_seeds(tmp_path: Path):
     assert weak["recommended_feedback_variant"] == "current"
 
 
-def test_loop_runner_applies_only_the_predeclared_authority_candidate():
+def test_loop_runner_applies_only_the_predeclared_authority_candidate(episode_clock):
     tasks = _tasks()
     design = _design(tasks)
     authority_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_GEMMA_AUTHORITY]
@@ -219,6 +219,7 @@ def test_loop_runner_applies_only_the_predeclared_authority_candidate():
         repeat_feedback_design=design,
         model_family="gemma",
         run_seed=107,
+        clock=episode_clock(),
     )
     analysis = run.repeat_feedback_analysis
     assert analysis is not None

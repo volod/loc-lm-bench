@@ -19,6 +19,10 @@ LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
 HF_TOKEN = "HF_TOKEN"
 GITHUB_TOKEN = "GITHUB_TOKEN"
 
+# Pytest no-GPU guard for the non-slow tier: refuse (default) | report | off. `report` keeps the
+# finding visible without failing the build; `off` disables the check (llb.quality.gpu_guard).
+GPU_GUARD = "LLB_GPU_GUARD"
+
 # Candidate inference endpoints (RunConfig + backends)
 OLLAMA_HOST = "OLLAMA_HOST"
 VLLM_HOST = "VLLM_HOST"

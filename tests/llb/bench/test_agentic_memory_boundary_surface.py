@@ -13,12 +13,8 @@ from llb.bench.agentic_memory_boundary_crossover import (
     READING_COMPACT_ACROSS_GRID,
     interpolate_crossover,
 )
-from llb.bench.agentic_memory_boundary_probe import (
-    cap_peak_prompt_chars,
-    guard_is_cap_fitting,
-    oracle_controller,
-    usable_guard_band,
-)
+from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars, oracle_controller
+from llb.bench.agentic_memory_fold_step_ladder import guard_is_cap_fitting, usable_guard_band
 from llb.bench.agentic_memory_boundary_surface import (
     READING_INELIGIBLE,
     READING_INVALID,
@@ -31,6 +27,7 @@ from llb.bench.agentic_memory_boundary_surface import (
     surface_cap_peaks,
     validate_surface_design,
 )
+from llb.bench.agentic_memory_boundary_surface_cells import validate_surface_cells
 from llb.bench.agentic_memory_boundary_surface_report import (
     format_surface_table,
     persist_surface,
@@ -139,6 +136,35 @@ def test_design_refuses_an_overflowing_guard_a_one_sided_depth_and_a_narrow_wind
     unpinned["surface"]["interpolation"]["rule"] = "eyeball"
     with pytest.raises(ValueError, match="zero-crossing"):
         validate_surface_design(unpinned)
+
+
+def test_a_depth_the_probe_measured_nothing_over_is_refused_at_the_surface_not_in_the_band():
+    """The usable band is arithmetic AROUND a probe result, so the probe result is stated here.
+
+    `usable_guard_band` refuses a non-positive peak because a band around one names guards for a
+    geometry that never ran, and the peak is the `max` of a probe walk -- so a depth whose oracle
+    episodes end before their first prompt fails inside that `max` instead, one layer lower still.
+    Read at the surface both are the same fact: the design declared cells at a depth nothing was
+    measured over, and the refusal names the depth. The SHARE is deliberately left to propagate --
+    it is a `held_fixed` value the design states verbatim, so the ladder's own message names it
+    exactly as well as a translation would.
+    """
+    design = load_surface_design(DESIGN_PATH)
+    cells = design["surface"]["cells"]
+    held, reference = design["held_fixed"], design["reference"]
+    shallowest = min(cell["depth"] for cell in cells)
+
+    unmeasured = deepcopy(design)
+    unmeasured["held_fixed"]["max_steps_margin"] = -shallowest
+    with pytest.raises(
+        ValueError, match=f"depth {shallowest} measured no prompt under perfect play"
+    ):
+        validate_surface_design(unmeasured)
+
+    with pytest.raises(ValueError, match="compact share must be in"):
+        validate_surface_cells(
+            cells, reference=reference, held_fixed={**held, "compact_share": 1.5}
+        )
 
 
 def test_linear_zero_crossing_lands_between_the_bracketing_guards():

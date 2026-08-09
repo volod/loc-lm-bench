@@ -174,7 +174,7 @@ def _throughput_section(report: BakeoffReport) -> list[str]:
     summary = report.get("encoder_throughput")
     if not summary:
         return []
-    from llb.rag.encoder_throughput import format_host_summary, render_host_markdown
+    from llb.rag.encoder_throughput_report import format_host_summary, render_host_markdown
 
     # Reuse the markdown table body (skip the H1) under an H2 in the bake-off report.
     md = render_host_markdown(summary)

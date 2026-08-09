@@ -2,7 +2,7 @@
 
 A converted-PDF-shaped Ukrainian manual whose boilerplate repeats INSIDE the one document, plus a
 short second document that shares one block with it. This is the shape that
-[duplicate chunk collapse](../../../docs/impl/current/rag-core.md#duplicate-chunk-collapse) hides
+[duplicate chunk collapse](../../../docs/impl/current/rag-core/retrieval-store.md#duplicate-chunk-collapse) hides
 but cannot fix at the source, and that the conversion-side handling in `llb.prep.pdf.repeats`
 acts on. The sibling `duplicate_chunks_uk_v1/` fixture plants the opposite shape (the same page
 furniture repeated ACROSS documents).
