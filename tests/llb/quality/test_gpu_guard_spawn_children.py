@@ -40,6 +40,13 @@ def _by_os_system(report: Path) -> None:
     assert os.system(_shell_writing(report)) == 0
 
 
+def _by_os_popen(report: Path) -> None:
+    """`os.popen` is written on top of `subprocess.Popen`, which it reads off the module at call
+    time -- the delegation `llb.quality.gpu_guard_spawn_surface` declares and re-checks."""
+    with os.popen(_shell_writing(report)) as pipe:
+        assert pipe.close() is None
+
+
 def _by_spawnv(report: Path) -> None:
     """`os.spawnv` forks and then calls the module-global `execv` -- two seams in one call."""
     assert os.spawnv(os.P_WAIT, "/bin/sh", ["sh", "-c", _shell_writing(report)]) == 0
@@ -86,6 +93,7 @@ def _by_multiprocessing_fork(report: Path) -> None:
 _MECHANISMS = {
     "subprocess.run": _by_subprocess,
     "os.system": _by_os_system,
+    "os.popen": _by_os_popen,
     "os.spawnv": _by_spawnv,
     "os.spawnlp": _by_spawnlp,
     "os.posix_spawn": _by_posix_spawn,

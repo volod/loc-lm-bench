@@ -43,29 +43,55 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-declared-spawn-surface-is-prose-nothing-rechecks (optional)
+### agent-the-enumerated-spawn-surface-stops-at-two-modules (optional)
 
-The device denial is installed at ten named spawn entry points, and the paths it does NOT reach are
-a bullet list in a docstring
-([host validation](current/host-validation.md#code-quality-checks)). Both halves are written against
-one CPython: the seam set is only complete because `os.py` builds `execl*` / `spawn*` on top of the
-four `exec*v*` names, and the residual list is only accurate because `multiprocessing`'s default
-start method on Linux is `fork`. A Python upgrade can move either -- 3.14 changes that default -- and
-nothing fails, because a name the seam set never heard of is indistinguishable from a name it
-deliberately excluded. Make the surface a check rather than a claim: enumerate the process-starting
-names the interpreter actually exposes (the `os` spawn/exec/fork/system family plus
-`subprocess.Popen`) and refuse one that is neither a registered seam nor a DECLARED residual, so a
-new spawn function arrives as a failing test on the commit that upgrades Python.
+The re-check enumerates `os` and `subprocess`, which is where a TEST reaches for a child, and
+declares every name it finds ([host validation](current/host-validation.md#code-quality-checks)).
+The stdlib starts children from other modules too, and those are outside the rule: `pty.spawn` forks
+and execs, `pty.fork` calls `os.forkpty`, `asyncio`'s unix child handling reaches
+`subprocess.Popen`, and `multiprocessing.util.spawnv_passfds` is covered only by the start-method
+declaration keyed on a method NAME rather than on the callable. Each of those is covered today
+because it goes through an `os` / `subprocess` seam, which is the same delegation claim the check
+now refuses to take on faith one module over -- so the module SET is the one part of the enumeration
+still written as prose. Widen it: add the stdlib modules that start children to the enumerated
+surface (their public callables, declared through the seam they reach and checked the same way), or
+record on the evidence that two modules is the right set because everything else provably resolves a
+name in them.
 
 - Agent status: CLEAR
-- Dependencies: the seam set is `spawn_seams` in `src/llb/quality/gpu_guard_spawn.py`; the residual
-  list is that module's docstring; the delegation the set relies on is pinned by
-  `tests/llb/quality/test_gpu_guard_spawn.py`.
-- User-visible outcome: the denial's coverage claim is re-checked against the running interpreter
-  instead of against the one it was written on.
-- Scope boundary: in scope -- the enumerated surface, the declared-residual vocabulary, and the
-  refusal. Out of scope -- closing any residual (that is the task below), the in-process observation
+- Dependencies: the enumeration rule is `interpreter_spawn_names` and `_SURFACE_MODULES` in
+  `src/llb/quality/gpu_guard_spawn_surface.py`; the delegation check to reuse is
+  `delegation_is_live` in the same module.
+- User-visible outcome: a stdlib helper that starts a child stops being covered by an unstated
+  assumption about which module it calls into.
+- Scope boundary: in scope -- the module set, the declarations it needs, and the widen-or-record
+  decision. Out of scope -- closing any residual, patching a new seam, the in-process observation
   half, and the no-download axis.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)
+
+`default_start_method` will not RESOLVE the default context -- doing so makes a later
+`set_start_method` raise for the whole session -- so when nothing has set one yet, which is the
+ordinary case in a pytest process, it takes the first entry of `get_all_start_methods()` on the
+strength of CPython documenting that list default-first
+([host validation](current/host-validation.md#code-quality-checks)). That is the same shape of claim
+the surface check exists to remove, one level down: an interpreter that reorders the list reports a
+default the audit never verifies, and the `multiprocessing` half of the refusal silently reads the
+wrong method. Ask something that can answer without side effects instead -- a child interpreter
+(`python -c "import multiprocessing; print(multiprocessing.get_start_method())"`) resolves its own
+context and throws it away -- and refuse a disagreement between what the child reports and what the
+ordering claims, so the ordering is checked once rather than trusted per run.
+
+- Agent status: CLEAR
+- Dependencies: the reader is `default_start_method` in
+  `src/llb/quality/gpu_guard_spawn_surface.py`; the audit that consumes it is
+  `_start_method_findings` in `src/llb/quality/gpu_guard_spawn_surface_audit.py`.
+- User-visible outcome: the start method the denial is judged against is the one a child of this
+  interpreter actually gets, not the one a list order implies.
+- Scope boundary: in scope -- the child-interpreter read, its cost, and the disagreement refusal.
+  Out of scope -- resolving this process's own start method, closing the spawn/forkserver residual,
+  and the no-download axis.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-denial-misses-multiprocessing-under-spawn-and-forkserver (optional)
@@ -76,7 +102,8 @@ denial that is reachable from ordinary Python: `multiprocessing.util.spawnv_pass
 `os` entry point, so the child inherits the device
 ([host validation](current/host-validation.md#code-quality-checks)). It is invisible today only
 because `fork` is the Linux default and IS covered -- a default that moves in Python 3.14, at which
-point every `multiprocessing` child in an unmarked test silently regains the GPU. Close it at the
+point the surface check refuses the build (it declares a residual default a finding) and every
+`multiprocessing` child in an unmarked test would otherwise regain the GPU. Close it at the
 one seam that is public: route `spawnv_passfds` through a denied `os.posix_spawn` for the duration
 of an unmarked test, and decide on the evidence whether the file-descriptor passing survives that
 (`pass_fds` is the reason the helper exists, so a naive substitution is exactly what would break the

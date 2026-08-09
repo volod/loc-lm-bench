@@ -293,16 +293,44 @@ entry point (`fork` is the Linux default and IS covered); a native extension tha
 runtime, not from NVML: `nvidia-smi` still lists the GPU under an empty `CUDA_VISIBLE_DEVICES`, so a
 child that only ASKS whether hardware exists still gets yes -- it just cannot open a context.
 
-Coverage is three files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
+**The coverage claim is re-checked against the running interpreter, not against the one it was
+written on.** Both halves above are CPython-specific -- ten seams cover the families only because
+`os.py` builds them in Python, and the residual list is accurate only because `multiprocessing`
+defaults to `fork` -- and a Python upgrade can move either without failing anything, since a name the
+seam set never heard of is indistinguishable from one it deliberately excluded.
+`llb.quality.gpu_guard_spawn_surface` closes that by ENUMERATING the process-starting names the
+running interpreter exposes (a rule, not a list: every `os` name in the exec / fork / spawn /
+posix_spawn families plus `system` / `popen` / `startfile`, and every public non-exception callable
+of `subprocess` -- 30 names on Python 3.13) and declaring each one in one of four states: a seam
+`spawn_seams()` patches, a delegation to another declared name, a residual with its reason, or not an
+entry point at all (`subprocess.CompletedProcess`). A delegation is CHECKED rather than believed:
+`delegation_is_live` reads the callable's code object and asks whether the target is still a name it
+resolves at call time, so `os.spawnv` rewritten in C -- or pointed somewhere else -- stops being
+covered loudly. `llb.quality.gpu_guard_spawn_surface_audit` refuses six shapes: an undeclared name, a
+delegation the interpreter no longer makes, a delegation chain that ends outside the seam set, a name
+declared a seam that `spawn_seams()` does not patch, a patched seam no declaration names, and -- the
+`multiprocessing` half -- a start method the interpreter offers that is undeclared, or a DEFAULT
+start method that is a declared residual, which is exactly what Python 3.14 does to the `fork`
+default this denial rests on. A declaration naming nothing on this host (`os.startfile`,
+`subprocess.STARTUPINFO`) is reported by `absent_declarations`, never refused: that is a host
+difference, the same reason the seam builder tolerates a missing attribute. The default start method
+is read WITHOUT resolving it (`get_start_method(allow_none=True)`, else the documented default-first
+head of `get_all_start_methods()`), because resolving it would make a later `set_start_method` raise
+for the whole session.
+
+Coverage is four files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
 suite wiring: the state reads over a fake module table, and the fixture body driven against the live
 process. `test_gpu_guard_spawn.py` puts a recorder behind each seam and asserts what it was passed,
 including the positional-`env` `Popen` shape, the `os.system` command text, and the `os.execl` /
 `os.execlp` delegation that the four exec seams rely on. `test_gpu_guard_spawn_children.py` is the
-end-to-end half: it starts a REAL child through `subprocess.run`, `os.system`, `os.spawnv`,
-`os.spawnlp`, `os.posix_spawn`, `os.posix_spawnp`, a raw `os.fork`, and a `fork`-context
+end-to-end half: it starts a REAL child through `subprocess.run`, `os.system`, `os.popen`,
+`os.spawnv`, `os.spawnlp`, `os.posix_spawn`, `os.posix_spawnp`, a raw `os.fork`, and a `fork`-context
 `multiprocessing.Process`, and reads back what each child saw -- `""` under the denial and the
 parent's own value without it, so each assertion is about the denial rather than about a host that
-never had a device.
+never had a device. `test_gpu_guard_spawn_surface.py` is the re-check: one assertion that this
+interpreter's surface is the declared one, and the rest driving the audit against FABRICATED
+interpreters (a Python that grew a spawn function, one that rewrote a delegation in C, one whose
+default start method is a residual), because those cases cannot be produced by the host.
 
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and

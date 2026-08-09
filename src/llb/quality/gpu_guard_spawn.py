@@ -28,6 +28,13 @@ through `execv` / `execvp`, `execle` / `execlpe` through `execve` / `execvpe`, a
 `spawnv*` / `spawnl*` family through `_spawnvef`, which forks and then calls `execv` / `execve`.
 `multiprocessing` with the default `fork` start method reaches `os.fork` directly.
 
+Both halves of that -- the delegation above and the residual list below -- were written against one
+CPython, so neither is left as prose: `llb.quality.gpu_guard_spawn_surface` enumerates the
+process-starting names the RUNNING interpreter exposes and declares each a seam, a delegation
+(checked against the callable's code object), or a residual, and `gpu_guard_spawn_surface_audit`
+refuses one that is none of the three -- so a Python that grows a spawn function, rewrites a
+delegation in C, or defaults `multiprocessing` to a residual start method fails a test instead.
+
 Residual -- what a child can still do with the device:
 
 - `multiprocessing` under the `spawn` or `forkserver` start method: `multiprocessing.util
