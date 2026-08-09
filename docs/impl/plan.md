@@ -43,33 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-denial-misses-multiprocessing-under-spawn-and-forkserver (optional)
-
-`multiprocessing` under the `spawn` or `forkserver` start method is the one residual of the device
-denial that is reachable from ordinary Python: `multiprocessing.util.spawnv_passfds` calls
-`_posixsubprocess.fork_exec` with no environment list, which is neither `subprocess.Popen` nor an
-`os` entry point, so the child inherits the device
-([host validation](current/host-validation.md#code-quality-checks)). It is invisible today only
-because `fork` is the Linux default and IS covered -- a default that moves in Python 3.14, at which
-point the surface check refuses the build (it declares a residual default a finding) and every
-`multiprocessing` child in an unmarked test would otherwise regain the GPU. Close it at the
-one seam that is public: route `spawnv_passfds` through a denied `os.posix_spawn` for the duration
-of an unmarked test, and decide on the evidence whether the file-descriptor passing survives that
-(`pass_fds` is the reason the helper exists, so a naive substitution is exactly what would break the
-resource tracker). If it does not survive, say so and record the residual instead.
-
-- Agent status: CLEAR
-- Dependencies: the seam set to extend is `spawn_seams` in `src/llb/quality/gpu_guard_spawn.py`; the
-  end-to-end shape to copy is the `fork`-context case in
-  `tests/llb/quality/test_gpu_guard_spawn_children.py`.
-- User-visible outcome: an unmarked test's `multiprocessing` child finds no device whichever start
-  method the interpreter defaults to.
-- Scope boundary: in scope -- the `spawnv_passfds` seam, its `pass_fds` evidence, and the
-  spawn/forkserver end-to-end cases. Out of scope -- patching `_posixsubprocess.fork_exec` itself (a
-  private C signature that changes between versions), the in-process observation half, and the
-  no-download axis.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-the-light-tier-has-a-no-gpu-check-and-no-no-download-check (optional)
 
 The non-slow suite is the no-GPU, no-download tier, and only the first half is checked: the autouse

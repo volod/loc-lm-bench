@@ -12,20 +12,43 @@ case and its control cannot differ.
 """
 
 import multiprocessing
+import multiprocessing.util
 import os
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from llb.quality import gpu_guard_spawn
+from llb.quality import gpu_guard_spawn_multiprocessing as multiprocessing_spawn
 
 _DEVICE = "CUDA_VISIBLE_DEVICES"
 # Written by every child below, so one reader covers every mechanism: the denied value is "" and an
 # untouched child reports the sentinel.
 _UNSET = "unset"
 _SHELL_REPORT = 'printf %s "${' + _DEVICE + "-" + _UNSET + '}" > '
+_FD_REPORT_SCRIPT = """
+import os
+import sys
+
+passed_fd, unlisted_fd = map(int, sys.argv[1:])
+try:
+    os.fstat(unlisted_fd)
+except OSError:
+    unlisted = "closed"
+else:
+    unlisted = "open"
+os.write(passed_fd, f"{os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}:{unlisted}".encode())
+"""
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _stop_forkserver_after_cases():
+    """The control starts a visible-device server; do not leave that process behind the module."""
+    yield
+    multiprocessing_spawn.stop_forkserver()
 
 
 def _shell_writing(report: Path) -> str:
@@ -90,7 +113,26 @@ def _by_multiprocessing_fork(report: Path) -> None:
     assert child.exitcode == 0
 
 
-_MECHANISMS = {
+def _by_multiprocessing_spawn(report: Path) -> None:
+    """The child bootstraps through `spawnv_passfds`; its successful report proves its data pipe
+    and resource-tracker descriptor both survived the replacement."""
+    child = multiprocessing.get_context("spawn").Process(target=_write_own_view, args=(report,))
+    child.start()
+    child.join()
+    assert child.exitcode == 0
+
+
+def _by_multiprocessing_forkserver(report: Path) -> None:
+    """The server starts through `spawnv_passfds`, then forks the reporting child from itself."""
+    child = multiprocessing.get_context("forkserver").Process(
+        target=_write_own_view, args=(report,)
+    )
+    child.start()
+    child.join()
+    assert child.exitcode == 0
+
+
+_MECHANISMS: dict[str, Callable[[Path], None]] = {
     "subprocess.run": _by_subprocess,
     "os.system": _by_os_system,
     "os.popen": _by_os_popen,
@@ -101,6 +143,47 @@ _MECHANISMS = {
     "os.fork": _by_raw_fork,
     "multiprocessing(fork)": _by_multiprocessing_fork,
 }
+if multiprocessing_spawn.supports_descriptor_closure():
+    _MECHANISMS.update(
+        {
+            "multiprocessing(forkserver)": _by_multiprocessing_forkserver,
+            "multiprocessing(spawn)": _by_multiprocessing_spawn,
+        }
+    )
+
+
+@pytest.mark.gpu_env
+def test_spawnv_passfds_keeps_only_the_listed_descriptor(monkeypatch):
+    """The real child receives its non-inheritable report pipe, not an unlisted inheritable pipe."""
+    report_read, report_write = os.pipe()
+    unlisted_read, unlisted_write = os.pipe()
+    os.set_inheritable(unlisted_read, True)
+    monkeypatch.setenv(_DEVICE, "0")
+    try:
+        with gpu_guard_spawn.denied_children():
+            pid = multiprocessing.util.spawnv_passfds(
+                os.fsencode(sys.executable),
+                [
+                    sys.executable,
+                    "-c",
+                    _FD_REPORT_SCRIPT,
+                    str(report_write),
+                    str(unlisted_read),
+                ],
+                [report_write],
+            )
+        os.close(report_write)
+        report_write = -1
+        report = os.read(report_read, 64)
+        assert os.waitpid(pid, 0)[1] == 0
+        expected = (
+            b":closed" if multiprocessing_spawn.supports_descriptor_closure() else b"0:closed"
+        )
+        assert report == expected
+    finally:
+        for fd in (report_read, report_write, unlisted_read, unlisted_write):
+            if fd >= 0:
+                os.close(fd)
 
 
 def _child_device_view(start_child: Callable[[Path], None], tmp_path: Path) -> str:

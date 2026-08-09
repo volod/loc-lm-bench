@@ -255,22 +255,55 @@ GPU away from every `slow` / `gpu_env` test after it. Patching the seams leaves 
 untouched, which is checkable end to end: an unmarked test's child reads `is_available() == False`,
 a `gpu_env` test's child reads True, and the parent still reads True afterwards. Only the refusing
 mode denies -- `report` exists to let a run through while SAYING what it did, and a denial says
-nothing to anyone. All 2955 non-slow tests pass with it live, so no test's child needed a device.
+nothing to anyone. All 3050 non-slow tests pass with it live, so no test's child needed a device.
 
 **The denial covers every spawn entry point, not only `subprocess`.** `llb.quality.gpu_guard_spawn`
 owns that half: `spawn_seams()` names each entry point and the replacement installed at it, and
-`denied_children()` is the context the autouse fixture enters. Three argument shapes cover the
+`denied_children()` is the context the autouse fixture enters. Four argument shapes cover the
 surface -- an entry point that TAKES an environment has it rewritten (`subprocess.Popen`,
 `os.execve`, `os.execvpe`, `os.posix_spawn`, `os.posix_spawnp`); one that takes none reaches its
 `*e` sibling with a denied one (`os.execv` -> `os.execve`, `os.execvp` -> `os.execvpe`) or, for
 `os.system`, carries `export CUDA_VISIBLE_DEVICES=''` on a line in front of the command; and a FORK
 (`os.fork`, `os.forkpty`) applies the denial inside the child, where poisoning the variable costs
-nothing because the child is not the session. Ten seams cover more than they name, because the rest
-of the `os` spawn surface is written in Python on top of those names and resolves them as module
-globals at call time: `execl` / `execlp` go through `execv` / `execvp`, `execle` / `execlpe` through
-`execve` / `execvpe`, the whole `spawnv*` / `spawnl*` family through `_spawnvef` (which forks and
-then calls `execv` / `execve`), and `multiprocessing` under the default `fork` start method reaches
-`os.fork` directly.
+nothing because the child is not the session. The eleventh seam is
+`multiprocessing.util.spawnv_passfds`: its replacement routes through the already-denied
+`os.posix_spawn`. Its file actions first copy every requested descriptor into the lowest temporary
+numbers that are not themselves requested, close every other slot in that dense prefix, apply
+`POSIX_SPAWN_CLOSEFROM` above it, restore the requested descriptor numbers, and close the
+temporaries. The dense prefix is material: it preserves the spawn data pipes and resource-tracker
+descriptor, closes an explicitly inheritable descriptor that was NOT listed, and covers a new
+descriptor another thread opens after the actions are built without reading `/proc/self/fd`.
+Ten `os` / `subprocess` seams still cover more than they name because
+the rest of the `os` spawn surface resolves those names as module globals at call time: `execl` /
+`execlp` go through `execv` / `execvp`, `execle` / `execlpe` through `execve` / `execvpe`, and the
+whole `spawnv*` / `spawnl*` family through `_spawnvef`. `multiprocessing(fork)` reaches `os.fork`;
+`multiprocessing(spawn)` and the initial forkserver launch reach the new helper seam.
+
+**Forkserver state is kept per-test too.** A forkserver inherits its environment once, then forks
+all later children from that long-lived process. Rewriting only its launch would therefore miss an
+unmarked test when a visible-device server already existed, and would leak a denied server into a
+later `gpu_env` test. `gpu_guard_spawn_multiprocessing.stop_forkserver` uses CPython's test lifecycle
+hook before and after each `denied_children()` context: the denied test gets a fresh denied server,
+and the next exempt test gets a fresh visible-device server. The real-child matrix in
+`tests/llb/quality/test_gpu_guard_spawn_children.py` exercises all three start methods with and
+without the seams. Both `spawn` and `forkserver` exit successfully and write their environment;
+that successful bootstrap is the end-to-end evidence that the passed data and resource-tracker
+descriptors survived. `make test` is the standard repository verification; the complete quality
+package passes with these cases included.
+
+**The public close-all primitive is a capability boundary.** This host's Python 3.13 exposes
+`POSIX_SPAWN_CLOSEFROM`; Python 3.12 exposes only one-descriptor close actions. Enumerating the
+currently open descriptors on 3.12 leaves an open-fd race, while emitting one close action for
+every number below this host's 1,048,576 descriptor ceiling is not a viable per-child operation.
+`supports_descriptor_closure` therefore makes the public helper a seam only when `CLOSEFROM` is
+available. On Python 3.12, `spawn` / `forkserver` remains an explicit non-default residual and the
+original `spawnv_passfds` stays installed, retaining its `close_fds=True` semantics; the surface and
+stdlib-reach audits derive the same residual from that capability check. The real-child descriptor
+case keeps a non-inheritable listed report pipe and deliberately marks a second pipe inheritable:
+Python 3.13's route reports the device denied and the second pipe closed, while the 3.12 residual
+reports the device visible and the second pipe still closed by the original helper. The focused
+spawn, surface, and stdlib-reach suite passes under both the host's Python 3.13 environment and an
+isolated Python 3.12 environment.
 
 **Widening the patch beat re-execing pytest, on evidence from the repo.** The other candidate was a
 pytest that re-execs itself once with an empty `CUDA_VISIBLE_DEVICES` and hands the device back only
@@ -283,25 +316,25 @@ caching reason above.
 
 **Residual: attribution and reach.** A CUDA context exists for the rest of the session once opened,
 so the first unmarked test to open one is named and a later one that would have runs unobserved. The
-denial still misses four paths, all stated in the `gpu_guard_spawn` docstring: `multiprocessing`
-under the `spawn` or `forkserver` start method, where `multiprocessing.util.spawnv_passfds` calls
-`_posixsubprocess.fork_exec` with no environment list -- neither `subprocess.Popen` nor an `os`
-entry point (`fork` is the Linux default and IS covered); a native extension that calls `fork(2)` /
-`execve(2)` / `system(3)` in C without coming back through `os`; a child that sets
-`CUDA_VISIBLE_DEVICES` back itself, since the denial is a default and not a sandbox; and the
-`os.system` mechanism being POSIX-shell-specific. As before, it hides the device from the CUDA
+denial still misses five paths, all stated in the `gpu_guard_spawn` docstring: explicit `spawn` /
+`forkserver` on a Python without `POSIX_SPAWN_CLOSEFROM`; a caller reaching the private
+`_posixsubprocess.fork_exec` directly instead of the patched public helper; a native
+extension that calls `fork(2)` / `execve(2)` / `system(3)` in C without coming back through `os`; a
+child that sets `CUDA_VISIBLE_DEVICES` back itself, since the denial is a default and not a sandbox;
+and the `os.system` mechanism being POSIX-shell-specific. As before, it hides the device from the CUDA
 runtime, not from NVML: `nvidia-smi` still lists the GPU under an empty `CUDA_VISIBLE_DEVICES`, so a
 child that only ASKS whether hardware exists still gets yes -- it just cannot open a context.
 
 **The coverage claim is re-checked against the running interpreter, not against the one it was
-written on.** Both halves above are CPython-specific -- ten seams cover the families only because
-`os.py` builds them in Python, and the residual list is accurate only because `multiprocessing`
-defaults to `fork` -- and a Python upgrade can move either without failing anything, since a name the
-seam set never heard of is indistinguishable from one it deliberately excluded.
+written on.** Both halves above are CPython-specific -- the `os` seams cover the families only
+because `os.py` builds them in Python, and the multiprocessing coverage depends on the public POSIX
+helper above its private C call -- and a Python upgrade can move either without failing anything,
+since a name the seam set never heard of is indistinguishable from one it deliberately excluded.
 `llb.quality.gpu_guard_spawn_surface` closes that by ENUMERATING the process-starting names the
 running interpreter exposes (a rule, not a list: every `os` name in the exec / fork / spawn /
 posix_spawn families plus `system` / `popen` / `startfile`, and every public non-exception callable
-of `subprocess` -- 30 names on Python 3.13) and declaring each one in one of four states: a seam
+of `subprocess`, plus `multiprocessing.util.spawnv_passfds` -- 31 names on Python 3.13) and declaring
+each one in one of four states: a seam
 `spawn_seams()` patches, a delegation to another declared name, a residual with its reason, or not an
 entry point at all (`subprocess.CompletedProcess`). A delegation is CHECKED rather than believed:
 `delegation_is_live` reads the callable's code object and asks whether the target is still a name it
@@ -310,8 +343,8 @@ covered loudly. `llb.quality.gpu_guard_spawn_surface_audit` refuses six shapes: 
 delegation the interpreter no longer makes, a delegation chain that ends outside the seam set, a name
 declared a seam that `spawn_seams()` does not patch, a patched seam no declaration names, and -- the
 `multiprocessing` half -- a start method the interpreter offers that is undeclared, or a DEFAULT
-start method that is a declared residual, which is exactly what Python 3.14 does to the `fork`
-default this denial rests on. A declaration naming nothing on this host (`os.startfile`,
+start method that is a platform residual because the POSIX helper is unavailable. A declaration
+naming nothing on this host (`os.startfile`,
 `subprocess.STARTUPINFO`) is reported by `absent_declarations`, never refused: that is a host
 difference, the same reason the seam builder tolerates a missing attribute. The default start method
 is read WITHOUT resolving the parent: `get_start_method(allow_none=True)` supplies an already-set
@@ -321,11 +354,12 @@ disagreement raises rather than letting the audit judge the wrong method. The ch
 per executable and parent process, so repeated surface reads pay for one child, and the parent stays
 free to call `set_start_method` later.
 
-**Two modules is the right enumerated surface, and that is a measurement now.** Everything else in
-the stdlib that starts a child was covered only because the helper it calls resolves an `os` /
-`subprocess` name -- a sentence, not a check. `llb.quality.gpu_guard_spawn_reach` reads the stdlib
-instead: every `*.py` under the stdlib root is parsed and its process-starting CALL SITES are
-resolved through that module's own imports (`os.fork`, `from subprocess import Popen`,
+**Two broad modules plus one exact helper is the right enumerated surface, and that is a measurement
+now.** Everything else in the stdlib that starts a child was covered only because the helper it
+calls resolves an `os` / `subprocess` name or the exact `multiprocessing` helper -- a sentence, not
+a check. `llb.quality.gpu_guard_spawn_reach` reads the stdlib instead: every `*.py` under the stdlib
+root is parsed and its process-starting CALL SITES are resolved through that module's own imports
+(`os.fork`, `from subprocess import Popen`,
 `import os as operating`), against an alphabet taken from the declared surface plus the C modules
 under it -- `posix` / `nt`, which `os` re-exports, and `_posixsubprocess` / `_winapi`, which
 `subprocess` and `multiprocessing` call below any patchable name. On CPython 3.13 that finds **25
@@ -335,8 +369,9 @@ stdlib modules that start a child, 23 of which resolve a declared name** (`pty.p
 `ensurepip`, `imaplib.py`, the idlelib trio, and the rest). The three that do not are the ones
 already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` itself, whose
 `_posixsubprocess` / `_winapi` starts are reached only from inside the patched `Popen`, and
-`multiprocessing/util.py` + `multiprocessing/popen_spawn_win32.py`, which are the POSIX and Windows
-halves of the `spawn` / `forkserver` residual. `llb.quality.gpu_guard_spawn_reach_audit` refuses a
+`multiprocessing/util.py`, whose low-level start is behind the new public helper seam, and
+`multiprocessing/popen_spawn_win32.py`, which remains the Windows residual.
+`llb.quality.gpu_guard_spawn_reach_audit` refuses a
 module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
 mode a source scan invites -- a scan that read NO source, which says where the tree is rather than
 what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read"; the
@@ -454,9 +489,9 @@ host's 40119 site-packages files found **362 packages that start a child and exa
 below the seams**, in two packages: `joblib`'s vendored `loky` (3 files -- `backend/fork_exec.py` ->
 `_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in `backend/popen_loky_win32.py` and
 `backend/resource_tracker.py`) and `multiprocess` (2 files -- a `dill`-based fork of
-`multiprocessing`, carrying that module's residual verbatim in `util.py` and
-`popen_spawn_win32.py`). Both are private copies of a residual already on the record and neither is
-closable from here, so both are declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by
+`multiprocessing`, carrying a private copy of the low-level bypass in `util.py` and the Windows
+residual in `popen_spawn_win32.py`). Neither private implementation reaches the stdlib helper seam,
+so both remain declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by
 file, since a release moves its modules and the decision an operator makes is about the dependency. A
 THIRD package arriving is what `gpu_guard_spawn_reach_installed_audit.audit_installed_reach`
 refuses; an excuse is looked up as the exact

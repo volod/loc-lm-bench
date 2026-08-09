@@ -12,7 +12,7 @@ under `make ci` too. That evidence is written down in
 `docs/impl/current/host-validation.md#code-quality-checks`.
 
 **The seams.** `spawn_seams()` names each entry point, the callable the denial goes THROUGH, and the
-replacement. Three shapes cover them:
+replacement. Four shapes cover them:
 
 - an entry point that takes an environment (`subprocess.Popen`, `os.execve`, `os.execvpe`,
   `os.posix_spawn`, `os.posix_spawnp`) has that argument rewritten, whatever the caller passed;
@@ -21,12 +21,18 @@ replacement. Three shapes cover them:
   sibling -- carries the denial as an exported assignment in front of the command;
 - a FORK is a copy of this process, so `os.fork` / `os.forkpty` apply the denial inside the CHILD,
   where poisoning the variable costs nothing because the child is not the session.
+- POSIX `multiprocessing` routes its public `util.spawnv_passfds` helper through the patched
+  `os.posix_spawn`. Dense temporary copies preserve the descriptors it was asked to pass while
+  individual close actions plus `POSIX_SPAWN_CLOSEFROM` close every other descriptor without an
+  open-fd race. A persistent forkserver is stopped on both sides of the context so its inherited
+  environment stays per-test.
 
 Patching those covers more than it names, because the rest of the `os` spawn surface is written in
 Python on top of them and resolves the names as module globals at call time: `execl` / `execlp` go
 through `execv` / `execvp`, `execle` / `execlpe` through `execve` / `execvpe`, and the whole
 `spawnv*` / `spawnl*` family through `_spawnvef`, which forks and then calls `execv` / `execve`.
-`multiprocessing` with the default `fork` start method reaches `os.fork` directly.
+`multiprocessing` with `fork` reaches `os.fork` directly; `spawn` and `forkserver` reach the
+`spawnv_passfds` seam.
 
 Both halves of that -- the delegation above and the residual list below -- were written against one
 CPython, so neither is left as prose: `llb.quality.gpu_guard_spawn_surface` enumerates the
@@ -37,10 +43,11 @@ delegation in C, or defaults `multiprocessing` to a residual start method fails 
 
 Residual -- what a child can still do with the device:
 
-- `multiprocessing` under the `spawn` or `forkserver` start method: `multiprocessing.util
-  .spawnv_passfds` calls `_posixsubprocess.fork_exec` with no environment list, which is neither
-  `subprocess.Popen` nor an `os` entry point. `fork` is the default on Linux and IS covered; a test
-  that asks for the other two, or any caller reaching `_posixsubprocess.fork_exec` itself, is not.
+- on a POSIX Python that does not expose `POSIX_SPAWN_CLOSEFROM` (including Python 3.12), explicit
+  `spawn` / `forkserver` remains uncovered: the public API cannot reproduce close-all-except-passfds
+  without racing another thread, so the seam is not installed.
+- a caller reaching `_posixsubprocess.fork_exec` itself instead of the public
+  `multiprocessing.util.spawnv_passfds` helper.
 - a native extension that calls `fork(2)` / `execve(2)` / `system(3)` in C without coming back
   through the `os` module.
 - a child that sets `CUDA_VISIBLE_DEVICES` back itself -- the denial is a default, not a sandbox.
@@ -50,6 +57,7 @@ Residual -- what a child can still do with the device:
 """
 
 import inspect
+import multiprocessing.util
 import os
 import subprocess
 from collections.abc import Callable, Iterator, Mapping
@@ -57,6 +65,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any
+
+from llb.quality.gpu_guard_spawn_multiprocessing import (
+    routing_spawnv_passfds,
+    stop_forkserver,
+    supports_descriptor_closure,
+)
 
 # What a child of an unmarked test inherits. An empty value is how the CUDA runtime is told there is
 # no device; flashinfer needs no switch of its own, since every probe here asks torch first.
@@ -77,14 +91,18 @@ def denied_children() -> Iterator[None]:
     Patching the seams rather than this process's environment is the whole point: the parent keeps
     its device (see `llb.quality.gpu_guard`, where the caching that forces that is written down).
     """
+    stop_forkserver()
     seams = spawn_seams()
     for seam in seams:
         seam.apply()
     try:
         yield
     finally:
-        for seam in reversed(seams):
-            seam.restore()
+        try:
+            stop_forkserver()
+        finally:
+            for seam in reversed(seams):
+                seam.restore()
 
 
 def denied_child_env(inherited: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -234,8 +252,22 @@ def spawn_seams() -> tuple[SpawnSeam, ...]:
         _seam(os, "posix_spawnp", denying_posix_spawn),
         _seam(os, "fork", denying_fork),
         _seam(os, "forkpty", denying_forkpty),
+        _multiprocessing_spawn_seam(),
     )
     return tuple(seam for seam in candidates if seam is not None)
+
+
+def _multiprocessing_spawn_seam() -> SpawnSeam | None:
+    """The POSIX helper below every `multiprocessing` spawn and forkserver launch."""
+    original = getattr(multiprocessing.util, "spawnv_passfds", None)
+    if original is None or not supports_descriptor_closure():
+        return None
+    return SpawnSeam(
+        module=multiprocessing.util,
+        attribute="spawnv_passfds",
+        original=original,
+        replacement=routing_spawnv_passfds(original),
+    )
 
 
 def _seam(

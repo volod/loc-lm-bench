@@ -68,7 +68,7 @@ def test_this_stdlib_starts_children_only_through_names_the_denial_declares(stdl
 def test_the_modules_that_reach_past_the_declared_surface_are_exactly_the_declared_ones(
     stdlib_scan,
 ):
-    """The evidence behind "two modules is the right enumerated surface"."""
+    """The low-level calls behind public seams and the Windows residual stay declared."""
     past = {
         module.path
         for module in stdlib_scan.reaches

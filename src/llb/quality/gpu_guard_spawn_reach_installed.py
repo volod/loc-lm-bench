@@ -92,8 +92,8 @@ DECLARED_PACKAGE_REACHERS: Mapping[str, PackageReacher] = {
             COVERAGE_RESIDUAL,
             reason="vendors `loky`, whose `backend/fork_exec.py` calls "
             "`_posixsubprocess.fork_exec` and whose Windows backend and resource tracker call "
-            "`_winapi.CreateProcess` -- a private copy of the same `spawn` / `forkserver` residual "
-            "`multiprocessing/util.py` carries",
+            "`_winapi.CreateProcess` -- a private copy of the low-level bypass closed at the "
+            "stdlib's public `multiprocessing.util.spawnv_passfds` seam",
         ),
         primitives=_VENDORED_MULTIPROCESSING_STARTS,
         files=3,
@@ -101,8 +101,8 @@ DECLARED_PACKAGE_REACHERS: Mapping[str, PackageReacher] = {
     "multiprocess": PackageReacher(
         SpawnCoverage(
             COVERAGE_RESIDUAL,
-            reason="a `dill`-based fork of `multiprocessing`, so it carries that module's residual "
-            "verbatim: `util.spawnv_passfds` -> `_posixsubprocess.fork_exec`, plus the "
+            reason="a `dill`-based fork of `multiprocessing`, so its private `util.spawnv_passfds` "
+            "still reaches `_posixsubprocess.fork_exec` below the stdlib seam, plus the "
             "`popen_spawn_win32` half",
         ),
         primitives=_VENDORED_MULTIPROCESSING_STARTS,

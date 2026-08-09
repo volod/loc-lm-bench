@@ -1,11 +1,10 @@
-"""Which stdlib module starts a child, MEASURED -- so the enumerated surface is not two modules on
-faith.
+"""Which stdlib module starts a child, MEASURED -- so the enumerated surface is not chosen on faith.
 
-`llb.quality.gpu_guard_spawn_surface` enumerates the process-starting names of `os` and
-`subprocess`, and every other way a test reaches a child is covered because the helper it calls
-resolves a name in one of those two. That last sentence was the one claim the name check left
-standing: `pty.spawn` forks and execs, `asyncio`'s unix transport starts a `Popen`,
-`multiprocessing.util.spawnv_passfds` does neither, and nothing said which of those is which.
+`llb.quality.gpu_guard_spawn_surface` enumerates the process-starting names of `os`, `subprocess`,
+and the exact public `multiprocessing.util.spawnv_passfds` helper. Every other way a test reaches a
+child is covered because the helper it calls resolves one of those names. That last sentence was
+the one claim the name check left standing: `pty.spawn` forks and execs, `asyncio`'s unix transport
+starts a `Popen`, and `spawnv_passfds` is the one additional public seam below both modules.
 
 So this module reads the stdlib instead of asserting about it. Every `*.py` under the stdlib root
 goes through `llb.quality.gpu_guard_spawn_source`, which resolves its process-starting CALL SITES
@@ -27,15 +26,15 @@ rule: it is a corpus that starts children on purpose, is not runtime code any ll
 costs 4s and an extra declaration to include.
 
 The measurements are the interesting half. On CPython 3.13 the stdlib scan finds 25 modules that
-start a child, of which 23 resolve a name the denial covers; the exceptions are the residuals
-already on the record -- `multiprocessing/util.py` and `multiprocessing/popen_spawn_win32.py` --
-plus `subprocess.py`, whose low-level starts sit BEHIND the `Popen` seam. Two modules is the right
-enumerated NAME surface, and that is now a result rather than a claim. Over this host's
+start a child. The low-level starts in `subprocess.py` and `multiprocessing/util.py` sit behind
+their public seams; `multiprocessing/popen_spawn_win32.py` remains the platform residual. Two broad
+modules plus one exact `multiprocessing` helper are the right enumerated NAME surface, and that is
+now a result rather than a claim. Over this host's
 site-packages (40119 files), a one-off full-alphabet pass found 362 packages that start a child and
 exactly 5 files that go below the seams, all in two packages: `joblib`'s vendored `loky` (3 files)
-and `multiprocess` (2). Both are private copies of the `multiprocessing` residual, and neither is
-closable from here -- so they are declared, measured against those files, and a THIRD package
-arriving is what the installed module refuses.
+and `multiprocess` (2). Both privately copy the low-level call instead of reaching the stdlib seam,
+and neither is closable from here -- so they are declared, measured against those files, and a
+THIRD package arriving is what the installed module refuses.
 """
 
 import sysconfig
@@ -47,6 +46,7 @@ from llb.quality.gpu_guard_spawn_source import source_reaches
 from llb.quality.gpu_guard_spawn_surface import (
     COVERAGE_NOT_A_SPAWN,
     COVERAGE_RESIDUAL,
+    COVERAGE_SEAM,
     COVERAGE_THROUGH,
     DECLARED_SPAWN_SURFACE,
     SpawnCoverage,
@@ -63,16 +63,24 @@ LOW_LEVEL_STARTS: Mapping[str, frozenset[str]] = {
     "_winapi": frozenset({"CreateProcess"}),
 }
 
+_MULTIPROCESSING_HELPER = DECLARED_SPAWN_SURFACE["multiprocessing.util.spawnv_passfds"]
+
 DECLARED_REACHERS: Mapping[str, SpawnCoverage] = {
     "subprocess.py": SpawnCoverage(
         COVERAGE_THROUGH,
         through="subprocess.Popen",
         reason="its `_posixsubprocess` / `_winapi` starts are reached only from inside `Popen`",
     ),
-    "multiprocessing/util.py": SpawnCoverage(
-        COVERAGE_RESIDUAL,
-        reason="`spawnv_passfds` calls `_posixsubprocess.fork_exec` with no environment list -- the "
-        "`spawn` / `forkserver` residual, declared as a start method in gpu_guard_spawn_surface",
+    "multiprocessing/util.py": (
+        SpawnCoverage(
+            COVERAGE_THROUGH,
+            through="multiprocessing.util.spawnv_passfds",
+            reason=(
+                "its `_posixsubprocess.fork_exec` call is reached only from inside the public seam"
+            ),
+        )
+        if _MULTIPROCESSING_HELPER.kind == COVERAGE_SEAM
+        else SpawnCoverage(COVERAGE_RESIDUAL, reason=_MULTIPROCESSING_HELPER.reason)
     ),
     "multiprocessing/popen_spawn_win32.py": SpawnCoverage(
         COVERAGE_RESIDUAL,
@@ -158,7 +166,7 @@ def spawn_primitives(
     for name, coverage in declared.items():
         if coverage.kind == COVERAGE_NOT_A_SPAWN:
             continue
-        module, _, attribute = name.partition(".")
+        module, _, attribute = name.rpartition(".")
         families.setdefault(module, set()).add(attribute)
     os_family = frozenset(families.get("os", set()))
     return {

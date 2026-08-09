@@ -1,16 +1,15 @@
 """The denial's coverage claim, restated as something the running interpreter can refute.
 
 `llb.quality.gpu_guard_spawn` makes two claims about the surface it covers, and both were written
-against one CPython. The ten seams reach the whole `os` spawn family only because `os.py` builds
-`execl*` / `spawn*` in Python on top of the four `exec*v*` names; the residual list in that module's
-docstring is accurate only because `multiprocessing` defaults to `fork` on Linux, which the fork seam
-covers. A Python upgrade can move either -- 3.14 changes that default -- and nothing fails on its
-own, because a name the seam set never heard of is indistinguishable from one it deliberately
-excluded.
+against one CPython. The `os` seams reach that whole spawn family only because `os.py` builds
+`execl*` / `spawn*` in Python on top of the four `exec*v*` names; the multiprocessing seam depends
+on the public POSIX `spawnv_passfds` helper still existing above the private C call. A Python upgrade
+can move either, and nothing fails on its own because a name the seam set never heard of is
+indistinguishable from one it deliberately excluded.
 
 This module is the other half of that: the process-starting surface ENUMERATED from the interpreter
-that is running, plus a declaration per name saying how the denial reaches it. Four states make up
-the vocabulary:
+that is running, plus the public `multiprocessing.util.spawnv_passfds` seam and a declaration per
+name saying how the denial reaches it. Four states make up the vocabulary:
 
 - `COVERAGE_SEAM` -- patched by `spawn_seams()` itself.
 - `COVERAGE_THROUGH` -- reached because the name's own implementation calls another declared name at
@@ -29,12 +28,12 @@ of `subprocess`. A name the rule catches and no declaration names is what
 `llb.quality.gpu_guard_spawn_surface_audit` refuses.
 
 Out of enumeration on purpose: `_posixsubprocess.fork_exec`, a private C signature that changes
-between versions and is reachable from ordinary Python only through `multiprocessing`'s
-`spawn` / `forkserver` start methods -- which are declared residuals HERE, keyed by start method, so
-an interpreter whose default moves onto one of them is refused rather than silently uncovered.
+between versions. The public `spawnv_passfds` helper above it is the seam when the interpreter also
+exposes the race-free `POSIX_SPAWN_CLOSEFROM` file action; otherwise it is a declared residual.
 """
 
 import multiprocessing
+import multiprocessing.util
 import os
 import subprocess
 import sys
@@ -45,6 +44,7 @@ from types import ModuleType
 from typing import Any
 
 from llb.quality.gpu_guard_spawn import spawn_seams
+from llb.quality.gpu_guard_spawn_multiprocessing import supports_descriptor_closure
 
 COVERAGE_SEAM = "seam"
 COVERAGE_THROUGH = "through"
@@ -56,7 +56,11 @@ COVERAGE_NOT_A_SPAWN = "not-a-spawn"
 _OS_SPAWN_PREFIXES = ("exec", "fork", "posix_spawn", "spawn")
 _OS_SPAWN_NAMES = ("popen", "startfile", "system")
 # The modules the declarations name. Also what a delegation is read out of.
-_SURFACE_MODULES: Mapping[str, ModuleType] = {"os": os, "subprocess": subprocess}
+_SURFACE_MODULES: Mapping[str, ModuleType] = {
+    "multiprocessing.util": multiprocessing.util,
+    "os": os,
+    "subprocess": subprocess,
+}
 _DEFAULT_START_METHOD_SCRIPT = "import multiprocessing; print(multiprocessing.get_start_method())"
 
 
@@ -91,6 +95,20 @@ def _not_a_spawn(reason: str) -> SpawnCoverage:
     return SpawnCoverage(COVERAGE_NOT_A_SPAWN, reason=reason)
 
 
+_MULTIPROCESSING_SPAWN_IS_SEAM = (
+    callable(getattr(multiprocessing.util, "spawnv_passfds", None))
+    and supports_descriptor_closure()
+)
+_MULTIPROCESSING_START = (
+    _through("multiprocessing.util.spawnv_passfds")
+    if _MULTIPROCESSING_SPAWN_IS_SEAM
+    else _residual(
+        "the public POSIX helper or race-free POSIX_SPAWN_CLOSEFROM action is unavailable on this "
+        "host"
+    )
+)
+
+
 DECLARED_SPAWN_SURFACE: Mapping[str, SpawnCoverage] = {
     # Patched by `spawn_seams()`.
     "subprocess.Popen": _seam(),
@@ -103,6 +121,9 @@ DECLARED_SPAWN_SURFACE: Mapping[str, SpawnCoverage] = {
     "os.posix_spawnp": _seam(),
     "os.fork": _seam(),
     "os.forkpty": _seam(),
+    "multiprocessing.util.spawnv_passfds": (
+        _seam() if _MULTIPROCESSING_SPAWN_IS_SEAM else _MULTIPROCESSING_START
+    ),
     # Written in `os.py` on top of the four `exec*v*` seams, which they resolve as module globals.
     "os.execl": _through("os.execv"),
     "os.execle": _through("os.execve"),
@@ -143,22 +164,29 @@ DECLARED_START_METHODS: Mapping[str, SpawnCoverage] = {
     # A `fork` child is a copy of this process, so the fork seam denies it from the inside; proved
     # end to end by the `multiprocessing(fork)` case in `test_gpu_guard_spawn_children.py`.
     "fork": _through("os.fork"),
-    "spawn": _residual(
-        "`multiprocessing.util.spawnv_passfds` calls `_posixsubprocess.fork_exec` with no "
-        "environment list, which is neither `subprocess.Popen` nor an `os` entry point"
-    ),
-    "forkserver": _residual(
-        "the server is started the same way as a `spawn` child, and every later child is forked "
-        "from IT rather than from this process"
-    ),
+    "spawn": _MULTIPROCESSING_START,
+    "forkserver": _MULTIPROCESSING_START,
 }
 
 
 def interpreter_spawn_names(
-    os_module: Any = os, subprocess_module: Any = subprocess
+    os_module: Any = os,
+    subprocess_module: Any = subprocess,
+    multiprocessing_module: Any = multiprocessing.util,
 ) -> tuple[str, ...]:
     """Every process-starting name the running interpreter exposes, by the rule above."""
-    return tuple(sorted(_os_spawn_names(os_module) + _subprocess_spawn_names(subprocess_module)))
+    multiprocessing_names = (
+        ("multiprocessing.util.spawnv_passfds",)
+        if callable(getattr(multiprocessing_module, "spawnv_passfds", None))
+        else ()
+    )
+    return tuple(
+        sorted(
+            _os_spawn_names(os_module)
+            + _subprocess_spawn_names(subprocess_module)
+            + multiprocessing_names
+        )
+    )
 
 
 def delegation_is_live(
@@ -270,5 +298,5 @@ def _is_exception(module: Any, attribute: str) -> bool:
 
 
 def _lookup(name: str, modules: Mapping[str, Any]) -> Any:
-    module_name, _, attribute = name.partition(".")
+    module_name, _, attribute = name.rpartition(".")
     return getattr(modules.get(module_name), attribute, None)

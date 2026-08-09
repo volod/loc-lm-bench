@@ -17,6 +17,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 
 from llb.quality import gpu_guard_spawn
+from llb.quality import gpu_guard_spawn_multiprocessing as multiprocessing_spawn
 
 _DEVICE = "CUDA_VISIBLE_DEVICES"
 
@@ -161,6 +162,68 @@ def test_posix_spawn_has_its_third_positional_rewritten_and_keeps_its_keywords()
     assert kwargs == {"file_actions": []}
 
 
+def test_spawnv_passfds_routes_through_posix_spawn_and_clears_close_on_exec():
+    """Dense temporary copies preserve passfds while every other descriptor number is closed."""
+    recorder = _Recorder()
+    fake_os = SimpleNamespace(
+        POSIX_SPAWN_CLOSE=11,
+        POSIX_SPAWN_CLOSEFROM=19,
+        POSIX_SPAWN_DUP2=17,
+        environ={"A": "1", _DEVICE: "0"},
+        posix_spawn=recorder,
+    )
+    routed = multiprocessing_spawn.routing_spawnv_passfds(lambda: None, fake_os)
+    assert routed("python", ["python", "-c", "pass"], [9, 4]) == 0
+    (path, args, env), kwargs = recorder.only
+    assert path == "python" and args == ["python", "-c", "pass"]
+    assert env == {"A": "1", _DEVICE: "0"}
+    assert kwargs == {
+        "file_actions": (
+            (17, 4, 3),
+            (17, 9, 5),
+            (11, 4),
+            (19, 6),
+            (17, 3, 4),
+            (17, 5, 9),
+            (11, 3),
+            (11, 5),
+        )
+    }
+
+
+def test_no_passfds_closes_every_nonstandard_descriptor_with_one_action():
+    fake_os = SimpleNamespace(
+        POSIX_SPAWN_CLOSE=11,
+        POSIX_SPAWN_CLOSEFROM=19,
+        POSIX_SPAWN_DUP2=17,
+    )
+    assert multiprocessing_spawn.descriptor_file_actions([], fake_os) == ((19, 3),)
+
+
+def test_close_actions_scale_with_the_number_passed_not_the_highest_descriptor():
+    fake_os = SimpleNamespace(
+        POSIX_SPAWN_CLOSE=11,
+        POSIX_SPAWN_CLOSEFROM=19,
+        POSIX_SPAWN_DUP2=17,
+    )
+    high_fd = 1_000_000
+    assert multiprocessing_spawn.descriptor_file_actions([high_fd], fake_os) == (
+        (17, high_fd, 3),
+        (19, 4),
+        (17, 3, high_fd),
+        (11, 3),
+    )
+
+
+def test_the_multiprocessing_seam_requires_race_free_closefrom_support():
+    incomplete = SimpleNamespace(
+        POSIX_SPAWN_CLOSE=11,
+        POSIX_SPAWN_DUP2=17,
+        posix_spawn=lambda: None,
+    )
+    assert not multiprocessing_spawn.supports_descriptor_closure(incomplete)
+
+
 def test_a_fork_applies_the_denial_in_the_child_and_leaves_the_parent_alone(monkeypatch):
     """There is no environment argument to rewrite, so the child rewrites its own."""
     monkeypatch.setenv(_DEVICE, "0")
@@ -206,7 +269,7 @@ def test_execlp_reaches_the_patched_execvp(monkeypatch):
 
 def test_the_seam_set_names_every_entry_point_the_denial_claims():
     labels = {seam.label for seam in gpu_guard_spawn.spawn_seams()}
-    assert labels == {
+    expected = {
         "subprocess.Popen",
         "os.system",
         "os.execve",
@@ -218,6 +281,9 @@ def test_the_seam_set_names_every_entry_point_the_denial_claims():
         "os.fork",
         "os.forkpty",
     }
+    if multiprocessing_spawn.supports_descriptor_closure():
+        expected.add("multiprocessing.util.spawnv_passfds")
+    assert labels == expected
 
 
 def test_applying_the_seams_replaces_every_entry_point_and_restoring_puts_it_back():

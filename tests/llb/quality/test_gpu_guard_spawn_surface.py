@@ -99,6 +99,7 @@ def test_the_enumeration_is_a_rule_over_the_families_rather_than_a_list():
     names = set(surface.interpreter_spawn_names())
     assert {"os.execl", "os.execve", "os.spawnv", "os.fork", "os.popen", "os.system"} <= names
     assert {"subprocess.Popen", "subprocess.run", "subprocess.getoutput"} <= names
+    assert "multiprocessing.util.spawnv_passfds" in names
     # Waiting on a child, killing one, or a constant is not a way to START one.
     assert not {"os.waitpid", "os.kill", "os.abort", "subprocess.PIPE"} & names
 
@@ -123,7 +124,7 @@ def test_a_delegation_the_implementation_does_not_make_reads_as_dead():
 def test_a_name_the_interpreter_grows_arrives_as_an_undeclared_finding():
     """The upgrade case: a spawn function the seam set never heard of is not silently residual."""
     grown = _fake_os(execv=execv, execveat=_NativeEntryPoint())
-    names = surface.interpreter_spawn_names(grown, SimpleNamespace(__all__=()))
+    names = surface.interpreter_spawn_names(grown, SimpleNamespace(__all__=()), SimpleNamespace())
     findings = audit.audit_spawn_surface(_surface(names), _declared(), _FORK_COVERED)
     assert _reported(findings) == [("os.execveat", audit.PROBLEM_UNDECLARED)]
 
@@ -206,12 +207,17 @@ def test_a_start_method_the_interpreter_grows_is_refused():
 
 
 def test_a_python_whose_default_start_method_is_a_declared_residual_is_refused():
-    """3.14 exactly: `forkserver` is a declared residual, and the accuracy of that residual list
-    rested on it not being the default."""
+    """The audit still refuses any platform-specific start method left declared residual."""
+    residual_methods = {
+        "forkserver": surface.SpawnCoverage(
+            surface.COVERAGE_RESIDUAL, reason="not covered on this fabricated platform"
+        ),
+        "fork": _FORK_COVERED["fork"],
+    }
     findings = audit.audit_spawn_surface(
         _surface(("os.execv",), start_methods=("forkserver", "fork"), default="forkserver"),
         _declared(),
-        surface.DECLARED_START_METHODS,
+        residual_methods,
     )
     assert _reported(findings) == [("multiprocessing(forkserver)", audit.PROBLEM_START_METHOD)]
     assert "keeps the device" in findings[0].detail

@@ -12,8 +12,7 @@ disagreement -- five about names, one about `multiprocessing`:
 - a name declared a seam that `spawn_seams()` does not patch, and a seam it patches that no
   declaration names -- the two halves of the set drifting apart;
 - a `multiprocessing` start method the interpreter offers and the declarations do not name, or a
-  DEFAULT start method that is a declared residual, which is exactly what Python 3.14 does to the
-  `fork` default this denial was written on.
+  DEFAULT start method that is a platform residual because the POSIX helper is unavailable.
 
 A residual stays a residual: nothing here closes one, and a declared residual is silent until the
 interpreter makes it the default. The audit is a plain function over an `ObservedSurface`, so a test
