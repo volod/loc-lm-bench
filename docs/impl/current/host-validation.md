@@ -209,6 +209,41 @@ installer reuses the cached verdict and the tests stay about wheels and uv calls
 an installer entrypoint executes everything that entrypoint does, including probes no shell stub
 sits in front of.
 
+**So the tier's no-GPU promise is a check now, not a convention.** `tests/conftest.py` wraps every
+test in an autouse guard (`llb.quality.gpu_guard`) that snapshots two device effects before it and
+reads them again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules`
+(its first sampling call is the JIT build). An unmarked test that flips either one fails at
+teardown, naming the test, what it did, and the ways out. Both reads come out of `sys.modules` and
+neither imports anything, so the guard no-ops where torch is absent -- GitHub CI installs no torch
+and must not start -- and costs two dict lookups per test: the whole non-slow suite runs in 101-102s
+with it and 105s under `LLB_GPU_GUARD=off`, which is run-to-run noise on this box. Importing torch
+is deliberately not a
+finding: `import torch`, `torch.cuda.is_available()`, and a test's own fake `torch` module all leave
+`is_initialized()` False, which is what keeps the many tests that pull torch in without touching the
+device green.
+
+**It refuses rather than reports, decided on the evidence.** All 2917 tests of the non-slow suite
+are clean under it on this CUDA host, so a finding is a new violation on the commit that adds it
+rather than an entry in a backlog nobody drains -- the cheap moment to enforce, the same reasoning
+the complexity gates were taken at. A probe run on this host shows both halves of the verdict: a
+test that runs `torch.rand(2, device="cuda")` and one that calls `_default_flashinfer_probe()`
+(10.3s, almost all of it the JIT build) each fail, while a third that only imports torch and calls
+`is_available()` passes. The escape hatches are markers: `slow`, because the intrinsically expensive
+tier is where a real backend run belongs, and `gpu_env` for a quick test that must reach the device
+anyway. `LLB_GPU_GUARD=report` downgrades a finding to a warning and `off` disables it; an
+unrecognized value is refused rather than read as off, so a typo'd knob cannot quietly disable the
+check it was aimed at.
+
+**Residual: the guard sees this process only.** Attribution is first-offender -- a CUDA context
+exists for the rest of the session once opened, so a later unmarked test that would have opened one
+runs unobserved. Device work in a CHILD process is invisible, and that covers the very tests that
+motivated the guard: `test_build_helper.py` drives `scripts/build_vllm.sh` through `subprocess.run`,
+so its flashinfer probe ran in a python no in-process fixture can inspect, and the seeded verdict
+above is still what keeps that cost off the suite. Closing the child-process axis means DENYING the
+device (an empty `CUDA_VISIBLE_DEVICES` for unmarked tests) rather than observing it, which is a
+different mechanism with its own cost. Coverage is `tests/llb/quality/test_gpu_guard.py`: the state
+reads over a fake module table, and the suite's own fixture body driven against the live one.
+
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
 exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the

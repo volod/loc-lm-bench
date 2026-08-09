@@ -339,6 +339,11 @@ fake-backed retrieval/fusion, hparam slice and guard checks, and small manifest 
 the full suite keeps the recursive splitter, resume/prune sweeps, and committed-corpus
 regressions.
 
+A fourth marker, `gpu_env`, selects nothing: it is the escape hatch for the autouse guard in
+`tests/conftest.py` that fails an unmarked test which initializes a CUDA context or imports
+`flashinfer`, so the lightweight tier's no-GPU promise is checked rather than assumed (see
+[host validation](host-validation.md#code-quality-checks)).
+
 Tests target durable specifications and business rules. Internal builders, helper splits, and
 deterministic intermediate values do not get dedicated tests when workflow or domain tests already
 guard the observable behavior.

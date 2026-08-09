@@ -43,29 +43,54 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-unit-test-can-reach-the-gpu-and-nothing-says-so (optional)
+### agent-the-device-guard-cannot-see-a-child-process (optional)
 
-`tests/llb/build/test_build_helper.py` ran a real flashinfer JIT build on the host GPU for as long
-as it existed, because driving an installer entrypoint end to end executes everything that
-entrypoint does and a fake `uv` on `PATH` only intercepts the SUBPROCESS calls
-([host validation](current/host-validation.md#code-quality-checks)). It is fixed there, but nothing
-prevents the next such test: the non-slow suite is meant to be the no-GPU, no-download tier
-(`heavy_env` and `opt_in_env` mark the exceptions) and that tier is a convention, not a check.
-Give it one -- run the non-slow suite with a guard that fails when an unmarked test initializes a
-CUDA context or imports `flashinfer` (a `torch.cuda` init hook, or a session-scoped fixture that
-compares `torch.cuda.is_initialized()` before and after each unmarked test) -- and decide on the
-evidence whether the guard refuses or reports, since a test that legitimately imports torch without
-touching the device must stay green.
+The autouse device guard reads `torch.cuda.is_initialized()` and `sys.modules` in the PYTEST
+process, so a test that reaches the GPU through a subprocess is invisible to it
+([host validation](current/host-validation.md#code-quality-checks)) -- which is precisely the shape
+that motivated the guard: `tests/llb/build/test_build_helper.py` runs `scripts/build_vllm.sh` via
+`subprocess.run`, and the installer's flashinfer probe lives in that child. A seeded verdict keeps
+that one cheap, per test, by hand. Close the axis by DENYING the device instead of observing it:
+export an empty `CUDA_VISIBLE_DEVICES` (plus the flashinfer JIT off-switch) for the duration of an
+unmarked test, so a child that tries to open a context gets none and the marked tests are the only
+ones that can. Decide on the evidence what that breaks -- a test asserting on host GPU detection, or
+one whose child now takes a different code path, is the case to find before this can be a default --
+and state whether the denial replaces the observation or runs beside it.
 
 - Agent status: CLEAR
-- Dependencies: the suite selectors are `NOT_SLOW` / `GITHUB_SUITE` in `make/dev.mk`; the marker
-  vocabulary is `[tool.pytest.ini_options] markers` in `pyproject.toml`; the probe that motivated it
-  is `_default_flashinfer_probe` in `src/llb/backends/preflight.py`.
-- User-visible outcome: the lightweight suite's promise that it never does GPU work is enforced on
-  the commit that would break it, instead of being noticed as a slow test months later.
-- Scope boundary: in scope -- the guard, its marker escape hatch, and the decision to refuse or
-  report. Out of scope -- a torch dependency for the GitHub CI env (the guard must no-op where torch
-  is absent), marking existing tests differently, and download/network guards.
+- Dependencies: the guard is `llb.quality.gpu_guard` with its fixture in `tests/conftest.py`; the
+  subprocess call sites are `subprocess.run(["bash", BUILD_VLLM], ...)` in
+  `tests/llb/build/test_build_helper.py`; the probe the child ends in is
+  `_default_flashinfer_probe` in `src/llb/backends/preflight.py`.
+- User-visible outcome: the tier's no-GPU promise covers what a test SPAWNS, not only what it
+  imports, so an end-to-end run of an entrypoint cannot smuggle a JIT build back in.
+- Scope boundary: in scope -- the denial mechanism, the tests it breaks, and whether it replaces or
+  joins the in-process guard. Out of scope -- the marker vocabulary, the no-download axis, and
+  removing the seeded sampler verdict that keeps the build tests fast today.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-light-tier-has-a-no-gpu-check-and-no-no-download-check (optional)
+
+The non-slow suite is the no-GPU, no-download tier, and only the first half is checked: the autouse
+device guard fails an unmarked test that initializes a CUDA context or imports `flashinfer`
+([host validation](current/host-validation.md#code-quality-checks)), while a test that reaches the
+network -- a `from_pretrained` with no local snapshot, an `hf_hub_download`, any socket to a host
+that is not localhost -- is caught by nothing, and lands as a suite that passes on the box with a
+warm HF cache and hangs or fails in GitHub CI. Give the tier the same treatment along the other
+axis: watch the effects rather than patching every client (`HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE`
+around unmarked tests, or a `socket.socket` connect hook that allows loopback and refuses the rest),
+name the same escape-hatch markers, and decide on the evidence whether it refuses or reports --
+the localhost backends the fake-server tests bind are the case a naive gate would break.
+
+- Agent status: CLEAR
+- Dependencies: the guard to extend is `llb.quality.gpu_guard` plus the autouse fixture in
+  `tests/conftest.py`; the marker vocabulary is `[tool.pytest.ini_options] markers` in
+  `pyproject.toml`.
+- User-visible outcome: a test that only passes because this host already downloaded the model fails
+  on the commit that adds it, instead of in CI on a cold cache.
+- Scope boundary: in scope -- the network/download guard, its escape hatch, and the refuse-or-report
+  decision. Out of scope -- the device guard itself, marking existing tests differently, and any new
+  dependency for the GitHub CI env.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-a-sourced-fragments-declared-scope-is-wider-than-the-call-it-covers (optional)
