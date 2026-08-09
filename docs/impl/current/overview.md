@@ -25,8 +25,9 @@ immutable run artifacts, and tier-separated leaderboards.
 Tracked Python and shell files target the ~250-line soft limit in `AGENTS.md`. Split only at a
 clear functional boundary; a cohesive schema or lookup family may remain whole. Run
 `scripts/code_quality.sh` to see file size and complexity findings. The line target stays a
-report; the two complexity thresholds are a CI gate (`make complexity-gate`, inside `make ci` --
-see [host validation](host-validation.md#code-quality-checks)).
+report; the two complexity thresholds and the shell-lint scans are CI gates
+(`make complexity-gate` / `make shell-lint-gate`, both inside `make ci` -- see
+[host validation](host-validation.md#code-quality-checks)).
 
 Callers import symbols from their concrete owner module. Package `__init__.py` files contain only
 the package docstring, except CLI area packages whose imports register Typer commands. Runnable

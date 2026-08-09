@@ -159,21 +159,22 @@ scripts/code_quality.sh
 
 `scripts/code_quality.sh` always prints the largest tracked Python files and largest tracked
 non-Python files. Root-file, markdown, shell, and complexity sections are quiet when clean and
-appear only when they have findings, missing optional tools, or failures; a complexity finding also
-exits the sweep non-zero (see [Code quality checks](#code-quality-checks)).
+appear only when they have findings, missing optional tools, or failures; a shell-lint or
+complexity finding also exits the sweep non-zero (see
+[Code quality checks](#code-quality-checks)).
 
 `make test` is the full local precommit flow when slow tests are acceptable.
 
 ### Code quality checks
 
-`make ci` checks Ruff formatting and lint, mypy, the acceptance-gate inventory, the complexity gate
-below, and the non-slow pytest suite. `make test` adds the full local test flow and Markdown lint;
-`make lint-md` also runs `make lint-doc-links` (`llb.quality.doc_links`), which resolves every
-relative docs link -- file plus `#anchor` -- so the three-level current-implementation tree cannot
-rot into unfindable pages. `scripts/code_quality.sh` is the wider sweep: it reports long source
-files and runs the complexity gate, so maintainers can split code at functional seams. The
-~250-line source-file target is soft; cohesive schemas and regular lookup families may remain
-whole.
+`make ci` checks Ruff formatting and lint, mypy, the acceptance-gate inventory, the complexity and
+shell-lint gates below, and the non-slow pytest suite. `make test` adds the full local test flow and
+Markdown lint; `make lint-md` also runs `make lint-doc-links` (`llb.quality.doc_links`), which
+resolves every relative docs link -- file plus `#anchor` -- so the three-level
+current-implementation tree cannot rot into unfindable pages. `scripts/code_quality.sh` is the
+wider sweep: it reports long source files and runs both gates, so maintainers can split code at
+functional seams. The ~250-line source-file target is soft; cohesive schemas and regular lookup
+families may remain whole.
 
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
@@ -189,10 +190,30 @@ accommodated by raising the maximum.
 The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
 gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
 identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`
-in `scripts/shared/common.sh`). Everything else in the sweep stays informational -- in particular
-the `.py`/`.sh` line-count report, which backs a target AGENTS.md keeps SOFT on purpose and which
-has legitimate offenders. The maintainability-index section (Radon MI grade C) is also still a
-report.
+in `scripts/shared/common.sh`).
+
+**Shell scripts are gated the same way.** `scripts/shell_lint_gate.sh` (`make shell-lint-gate`,
+also inside `ci-checks`) runs two scans over every tracked-or-new `*.sh` in the repo
+(`git ls-files --cached --others --exclude-standard`, so a script is linted before its first commit
+and nothing under a gitignored tree is scanned; a staged delete is dropped):
+
+- `bash -n` syntax, which needs nothing installed and therefore always runs.
+- `shellcheck -S warning`, over the whole set in one invocation so findings stay repo-relative.
+
+A MISSING shellcheck fails the gate rather than skipping it -- a linter that reports itself as fine
+when it never ran is worse than no linter, and the old sweep did exactly that on a host without the
+apt package. `LLB_SHELLCHECK_OPTIONAL=1` downgrades that to a printed skip for a lean venv, and the
+pass line then says `shellcheck NOT run` rather than claiming the tree is clean. That escape hatch
+is rarely needed: shellcheck now ships in the `dev` extra as the pinned `shellcheck-py` wheel
+(the real binary, upper-bounded like ruff so a new release cannot redden CI on unchanged scripts),
+so `.venv/bin/shellcheck` exists wherever `make ci` runs, GitHub CI included -- no apt step in the
+workflow. The gate prefers that binary and falls back to any `shellcheck` on `PATH`. Scans,
+severity, and the missing-binary policy live once in `scripts/shared/shell_lint.sh`, sourced by
+both the gate and the sweep; both scans always run before either fails.
+
+Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
+report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.
+The maintainability-index section (Radon MI grade C) is also still a report.
 
 The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
 accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and

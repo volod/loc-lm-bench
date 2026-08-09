@@ -83,6 +83,10 @@ dev = [
   "ruff>=0.6,<0.17",
   "radon>=6.0",
   "complexipy>=5.0",
+  # ShellCheck as a wheel (it bundles the real binary), so the shell-lint gate runs on every host
+  # that can run `make ci` -- including GitHub CI, which installs no apt packages. Upper bound for
+  # the same reason as ruff's: a new ShellCheck adds checks and would redden CI on unchanged code.
+  "shellcheck-py>=0.10,<0.12",
   "pymarkdownlnt>=0.9.32",
   "optuna>=3.6",
 ]

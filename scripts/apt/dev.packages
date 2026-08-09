@@ -2,5 +2,8 @@
 # Installed by `make venv` when EXTRAS includes `dev`, and by
 # `make apt-deps APT_PROFILE=dev`.
 
-# Static analysis for scripts/*.sh (scripts/code_quality.sh).
+# Static analysis for *.sh. OPTIONAL fallback only: the shell-lint gate prefers the pinned
+# `shellcheck-py` wheel from the `dev` extra (.venv/bin/shellcheck), which every host and GitHub CI
+# get from `uv`. This apt package is what a host with a lean venv falls back to, at whatever
+# version the distro ships.
 shellcheck

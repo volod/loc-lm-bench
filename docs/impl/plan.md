@@ -43,27 +43,53 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-shell-lint-never-runs-in-ci (optional)
+### agent-shell-lint-never-follows-a-sourced-file (optional)
 
-The complexity gate covers Python only, and the shell half of the tree has no gate at all: the
-`bash -n` and `shellcheck` sweeps live in `scripts/code_quality.sh`, which is not what CI runs
-([host validation](current/host-validation.md#code-quality-checks)). Worse, `llb_check_shellcheck`
-returns 0 with a "skipped" line when the binary is absent, and GitHub CI installs no apt packages
-at all -- so on the one host that gates every commit, shell lint is not merely absent but would
-report itself as fine if it were wired up naively. Give the scripts the same treatment Python just
-got: a `bash -n` syntax gate (needs nothing installed) inside `ci-checks`, plus a shellcheck gate
-that FAILS on a missing binary in CI while staying a skip locally, and decide there whether
-shellcheck is worth a `uv`-installable path or an apt step in the workflow.
+The shell gate lints each script in isolation: shellcheck does not follow a `source`/`.` line unless
+run with `-x`, so every `# shellcheck source=` directive in `scripts/` is decorative and SC1091 is
+below the `warning` floor anyway
+([host validation](current/host-validation.md#code-quality-checks)). That is exactly the axis the
+scripts grew along -- `scripts/shared/{common,complexity,shell_lint}.sh` define functions and
+variables that a dozen entrypoints call -- so the mistakes the gate cannot see are the cross-file
+ones: a caller invoking a helper that no longer exists, or reading a variable the sourced file
+stopped exporting. Run the scan with `-x`, fix or annotate what the followed sources surface, and
+check whether the directives resolve for every entrypoint (they are relative to the sourcing file).
+Sourcing is dynamic in a few places (`llb_load_env` reads `.env`), so expect some findings to be
+un-followable and needing an explicit `# shellcheck disable` with a reason rather than a fix.
 
 - Agent status: CLEAR
-- Dependencies: `llb_check_shell_syntax` / `llb_check_shellcheck` in `scripts/code_quality.sh` (both
-  already return a status); the gate pattern to follow is `scripts/complexity_gate.sh` plus
-  `scripts/shared/complexity.sh`; `.github/workflows/ci.yml` installs `.[dev]` and nothing else.
-- User-visible outcome: a broken shell script fails the build that introduced it, on the host that
-  actually gates commits.
-- Scope boundary: in scope -- the shared scan module, the CI entrypoint, the `ci-checks` wiring, and
-  the missing-binary policy split between CI and a local run. Out of scope -- new shellcheck rules,
-  raising the severity floor above `warning`, and fixing findings by disabling checks.
+- Dependencies: the scan to change is `llb_shellcheck_scan` in `scripts/shared/shell_lint.sh`; the
+  directives already in place are the `# shellcheck source=` lines in `scripts/*.sh`.
+- User-visible outcome: a call to a helper that a shared module no longer defines fails the build,
+  instead of at the moment an operator runs the script.
+- Scope boundary: in scope -- the `-x` flag, the directive fixes, and the annotated exceptions. Out
+  of scope -- lowering the severity floor below `warning` (the info-level findings are a separate
+  decision), rewriting scripts to avoid sourcing, and silencing a finding without a reason.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-shell-lint-verdict-depends-on-which-shellcheck-the-host-has (optional)
+
+The gate prefers the pinned `shellcheck-py` wheel and falls back to any `shellcheck` on `PATH`
+([host validation](current/host-validation.md#code-quality-checks)). The fallback is what makes the
+gate's answer host-dependent: a distro binary can be several releases behind the pin (this dev box
+ships 0.9.0 against the pinned 0.11.0), and shellcheck adds checks between releases, so the same
+commit can pass locally and fail in CI -- the failure mode a pinned linter exists to prevent, moved
+one level down. Decide it: either require the pinned wheel (drop the `PATH` fallback, drop
+`shellcheck` from `scripts/apt/dev.packages` and its dev-setup row, since the extra now supplies
+it) or keep the fallback and have the gate PRINT the resolved binary and version so a divergent
+verdict is self-explaining. Requiring the wheel is the smaller surface; the fallback only matters
+for a venv built without the `dev` extra, which cannot run `make ci` anyway.
+
+- Agent status: CLEAR
+- Dependencies: the resolution is `llb_shellcheck_step` in `scripts/shared/shell_lint.sh`; the pin
+  is `shellcheck-py` in the `dev` extra of `pyproject.toml`; the apt row is
+  `scripts/apt/dev.packages` and the table in
+  [dev setup](../guides/development/dev-setup.md#apt-dependencies-debianubuntu).
+- User-visible outcome: a green shell-lint run means the same thing on every host, or says which
+  binary produced it.
+- Scope boundary: in scope -- the resolution policy, the apt/docs cleanup that follows from it, and
+  the version line if the fallback stays. Out of scope -- changing the pin, the severity floor, and
+  the `LLB_SHELLCHECK_OPTIONAL` escape hatch.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-maintainability-index-scan-is-still-only-a-report (optional)

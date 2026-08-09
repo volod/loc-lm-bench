@@ -6,7 +6,7 @@ needed).
 
     make venv     # apt + .venv + package + extras + .env
     make test     # unit tests
-    make ci       # lint (ruff) + types + complexity gate + tests (GitHub CI)
+    make ci       # lint (ruff) + types + complexity/shell gates + tests (GitHub CI)
     make          # list targets
 
 `make venv` installs every Python extra below so a fresh checkout can run every command without a
@@ -39,10 +39,16 @@ installing.
 | Profile | Packages | Used for |
 | ------- | -------- | -------- |
 | **production** | `git`, `make`, `curl` | Makefile, git vLLM builds, HTTP probes |
-| **dev** | `shellcheck` | `scripts/code_quality.sh` shell lint |
+| **dev** | `shellcheck` | fallback shell lint (see below) |
 
 Production packages are safe on eval/GPU hosts. Dev packages are optional for contributors;
 GitHub CI does not run `make venv` and does not install them.
+
+The shell-lint gate does not depend on this apt package: the `dev` **extra** ships a pinned
+`shellcheck-py` wheel (it bundles the real binary), so `.venv/bin/shellcheck` exists wherever
+`make ci` can run -- GitHub CI included, which installs no apt packages at all. The gate prefers
+that binary and falls back to any `shellcheck` on `PATH`; a host with a lean venv is what the apt
+package is still there for.
 
 The installer uses `apt-get install --no-upgrade` so a small dev package (for example
 `shellcheck`) does not pull in pending kernel or NVIDIA DKMS upgrades. If apt still exits
