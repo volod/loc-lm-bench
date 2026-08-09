@@ -75,8 +75,11 @@ llb_shellcheck_scan() {
 # An unresolved source is reported at INFO, below the severity floor above, so the lint pass alone
 # cannot tell "followed and clean" from "never followed". Check the directives on their own: this
 # is the scan that keeps `-x` honest. A path that is genuinely computed at run time (an operator's
-# .env, a plugin dir) is annotated in the script with a reasoned `# shellcheck disable=SC1091`
-# rather than by dropping this scan.
+# .env, a plugin dir) is annotated at the source site with `# shellcheck source=/dev/null` and a
+# reason, rather than by dropping this scan. That annotation and not `disable=SC1091` is what this
+# scan wants, because it decides the same way everywhere: an untracked runtime file makes the
+# linter FOLLOW it where it exists and report SC1091 where it does not, so a gate written to give
+# every host one verdict would otherwise pass on a dev box with a .env and fail in a fresh checkout.
 llb_shellcheck_sources_scan() {
   llb_shellcheck_run -S style -i SC1090,SC1091
 }

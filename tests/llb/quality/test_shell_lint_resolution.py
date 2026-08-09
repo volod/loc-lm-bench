@@ -56,6 +56,65 @@ def _run_step(tmp_path: Path, **env_overrides: str) -> subprocess.CompletedProce
     )
 
 
+def _fresh_checkout(root: Path) -> Path:
+    """The tracked `*.sh` and nothing else, in a git tree -- a CI checkout, minus the dev box.
+
+    `git init` with no commit is enough: `llb_lintable_shell_scripts` lists new-but-not-ignored
+    files, so the copies show up the way a script does before its first commit.
+    """
+    for relative in _tracked_shell_scripts():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((PROJECT_ROOT / relative).read_bytes())
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    return root
+
+
+def _tracked_shell_scripts() -> list[str]:
+    listed = subprocess.run(
+        ["git", "ls-files", "*.sh"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return listed.stdout.split()
+
+
+def test_the_source_directive_scan_is_clean_in_a_checkout_that_has_no_env_file(tmp_path):
+    """One verdict per commit, not one per host.
+
+    `shellcheck -x` FOLLOWS a sourced path where it exists and reports SC1091 where it does not, so
+    a script that sources an untracked runtime file (`.env`) is silent on a dev box that has one and
+    a finding in a fresh checkout -- the split verdict the pinned binary exists to prevent, arriving
+    through the tree instead of through the linter. Every such site is annotated
+    `# shellcheck source=/dev/null` with its reason, and this is what checks that from the side the
+    dev box cannot see.
+    """
+    fresh = _fresh_checkout(tmp_path / "checkout")
+    assert not (fresh / ".env").exists()
+    driver = (
+        f'set -uo pipefail\n. "{fresh}/scripts/shared/common.sh"\nllb_load_env\n'
+        f'. "{fresh}/scripts/shared/shell_lint.sh"\nllb_shellcheck_sources_scan\n'
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", driver],
+        capture_output=True,
+        text=True,
+        cwd=fresh,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(tmp_path),
+            "DATA_DIR": str(tmp_path / "data"),
+            "LLB_SHELLCHECK": str(PROJECT_ROOT / ".venv" / "bin" / "shellcheck"),
+        },
+        check=False,
+    )
+
+    assert result.stdout == "", result.stdout
+
+
 def test_a_shellcheck_on_path_is_never_used(tmp_path):
     """The whole point: a distro binary must not be able to answer for the pinned one."""
     path_log = tmp_path / "path.log"

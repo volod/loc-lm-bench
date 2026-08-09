@@ -482,8 +482,21 @@ and `-x` followed nothing (9 such directives). An unresolved directive is report
 followed" -- hence the dedicated scan. The proof that following now happens is in the tree: the two
 gate entrypoints set `LLB_REPORT_PREFIX` for `common.sh` to read, which un-followed shellcheck
 called an unused variable (SC2034); both `# shellcheck disable` workarounds are gone and the gate
-stays green. A path genuinely computed at run time is annotated in the script with a reasoned
-`# shellcheck disable=SC1091` rather than by dropping the scan.
+stays green.
+
+**A path computed at run time is annotated `# shellcheck source=/dev/null` with its reason, and
+that choice is the difference between one verdict and one verdict per host.** `common.sh` sources
+`$PROJECT_ROOT/.env`, an untracked operator file, and `-x` FOLLOWS a sourced path where it exists
+while reporting SC1091 where it does not -- so the source-directive scan was silent on every dev
+box (which has a `.env`) and failed the gate in a fresh GitHub checkout (which does not). That is
+the same split verdict the pinned binary exists to prevent, arriving through the tree instead of
+through the linter, so the fix says once that there is nothing static to follow rather than letting
+the linter decide per host; `disable=SC1091` would have hidden the message while leaving the
+following itself host-dependent. `test_the_source_directive_scan_is_clean_in_a_checkout_that_has_no_env_file`
+in `tests/llb/quality/test_shell_lint_resolution.py` is the regression: it copies the tracked `*.sh`
+into a `git init` tmp tree with no `.env`, runs the real `llb_shellcheck_sources_scan` against it,
+and requires empty output -- the side a dev box cannot otherwise see (1.5s, non-slow, since a
+CI-only failure has to be caught in `make ci`).
 
 **Functions are checked by `llb.quality.shell_symbols`, because the linter does not model them.**
 `-x` shares VARIABLE knowledge across a followed source, not function definitions, so a call to a

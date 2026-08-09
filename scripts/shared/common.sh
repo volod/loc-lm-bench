@@ -13,6 +13,11 @@ PROJECT_ROOT="${PROJECT_ROOT:-$(llb_project_root)}"
 
 # Load .env (if present) and resolve DATA_DIR against the project root (per AGENTS.md).
 llb_load_env() {
+  # `.env` is an operator file, untracked and optional, so there is nothing for `shellcheck -x` to
+  # follow: `source=/dev/null` says so ONCE instead of the linter deciding per host. Without it the
+  # gate's verdict depends on whether this box happens to have a .env -- silent on a dev box that
+  # does, SC1091 in a fresh CI checkout that does not.
+  # shellcheck source=/dev/null
   if [ -f "$PROJECT_ROOT/.env" ]; then set -a; . "$PROJECT_ROOT/.env"; set +a; fi
   DATA_DIR="${DATA_DIR:-$PROJECT_ROOT/.data}"
   case "$DATA_DIR" in /*) ;; *) DATA_DIR="$PROJECT_ROOT/$DATA_DIR" ;; esac
