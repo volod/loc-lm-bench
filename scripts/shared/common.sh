@@ -174,7 +174,7 @@ llb_fail_if_output() {
 
 # Canonical parallelism cap for from-source C++/CUDA builds (ninja/cmake/nvcc).
 # Formula (AGENTS.md): MAX_JOBS = min(cpu_cores // 2, RAM_GiB // 14), floored at 1.
-max_jobs() {
+llb_max_jobs() {
   local cores mem_kb mem_gib by_cpu by_ram n
   cores="$(nproc 2>/dev/null || echo 1)"
   mem_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"

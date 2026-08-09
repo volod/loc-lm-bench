@@ -1,16 +1,19 @@
 # shellcheck shell=bash
 # Serving-config summaries and the goldset venv bootstrap.
+# Sourced by scripts/quickstart.sh, which loads the siblings below first; this fragment never
+# sources them itself, so it declares them for the llb_* call check.
+# llb-requires: helpers.sh
 
-summarize_serving_configs() {
+llb_summarize_serving_configs() {
   local tier_json
-  tier_json="$(latest_serving_tier_json)"
+  tier_json="$(llb_latest_serving_tier_json)"
   if [ -n "$tier_json" ]; then
-    result "serving target index: $(rel_path "$tier_json")"
+    llb_result "serving target index: $(llb_rel_path "$tier_json")"
     grep -E '"target"|"backend"|"model"' "$tier_json" | sed 's/^/[serving] /'
   fi
 }
 
-latest_serving_tier_json() {
+llb_latest_serving_tier_json() {
   local tier expected line
   tier="$QS_GPU_GB"
   if [ -z "$tier" ] && [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
@@ -32,7 +35,7 @@ latest_serving_tier_json() {
   find "$QS_A_DATA/llb/serving" -maxdepth 2 -name tier.json -print 2>/dev/null | sort | tail -n 1 || true
 }
 
-ensure_goldset_venv() {
+llb_ensure_goldset_venv() {
   case "$QS_SETUP_VENV" in
     0|false|no)
       test -x "$PROJECT_ROOT/.venv/bin/python" || {
@@ -40,17 +43,17 @@ ensure_goldset_venv() {
         echo "Run make venv or rerun with QUICKSTART_SETUP_VENV=1." >&2
         exit 1
       }
-      result "reusing existing .venv; setup disabled by QUICKSTART_SETUP_VENV=$QS_SETUP_VENV"
+      llb_result "reusing existing .venv; setup disabled by QUICKSTART_SETUP_VENV=$QS_SETUP_VENV"
       ;;
     auto)
       if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
-        result "reusing existing .venv; set QUICKSTART_SETUP_VENV=1 to refresh dependencies"
+        llb_result "reusing existing .venv; set QUICKSTART_SETUP_VENV=1 to refresh dependencies"
       else
-        make_cmd venv SKIP_APT="$QS_SKIP_APT"
+        llb_make_cmd venv SKIP_APT="$QS_SKIP_APT"
       fi
       ;;
     1|true|yes)
-      make_cmd venv SKIP_APT="$QS_SKIP_APT"
+      llb_make_cmd venv SKIP_APT="$QS_SKIP_APT"
       ;;
     *)
       echo "ERROR: QUICKSTART_SETUP_VENV must be auto, 1, or 0 (got $QS_SETUP_VENV)" >&2

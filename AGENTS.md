@@ -53,7 +53,12 @@
 - **Artifacts:** Runtime data and run artifacts belong under
   `$DATA_DIR/<method_name>/<run_timestamp>/`. Never write to a module-local data inside `src/`.
 - **Shell Scripts:** Reuse `scripts/shared/common.sh` for shared shell root/env/bootstrap
-  behavior instead of duplicating logic.
+  behavior instead of duplicating logic. Every function defined in a tracked `*.sh` MUST be named
+  `llb_*` -- `source` flattens all of them into one namespace, and the prefix is what lets
+  `llb.quality.shell_symbols` tell a call from a word, so an unprefixed helper is simply outside
+  that check. `make shell-lint-gate` enforces it. A helper defined inside a make recipe is exempt:
+  it lives and dies in one `bash -c`. A fragment that is sourced by an entrypoint and calls a
+  sibling declares it with `# llb-requires: <sibling>`.
 
 ## Documentation
 
@@ -164,7 +169,7 @@ Any installation that compiles C++/CUDA from source (git+, --no-binary, --no-bui
 MUST cap parallelism using formila MAX_JOBS=min(cpu_core_num//2, RAM // 14)
 
 Do not inline the formula — the helpers are the single source of truth. The canonical helper is
-`max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
+`llb_max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
 
 Only wheels deliberately built from a local git checkout (flash-attn forks, vLLM forks, xformers
 forks, etc.) may be exported under

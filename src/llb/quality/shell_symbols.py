@@ -1,4 +1,4 @@
-"""Every `llb_*` helper a caller names is defined in that file or in one it declares it sources.
+"""Every shell function carries the `llb_` prefix, and every `llb_*` a caller names is in its scope.
 
 The shell lint follows a sourced file (`shellcheck -x -P SCRIPTDIR`), but shellcheck resolves
 VARIABLES across that boundary, not FUNCTIONS: a call to a helper that no longer exists passes every
@@ -6,11 +6,21 @@ scan and fails as `command not found` on an operator's host, at whatever point o
 call sits. The shell layer here is exactly the shape that invites it -- one prefix, definitions in
 `scripts/shared/`, call sites in a dozen entrypoints and in the `make` recipes that source them.
 
+The prefix is what lets the call scan tell a CALL from a word, so it is a rule rather than a
+convention: `unprefixed_definitions` refuses a function defined in a tracked `*.sh` without it.
+Without that rule the call scan's coverage is whatever share of the tree happens to follow the
+convention, and it decays with every helper someone names `resolve_path`. A function defined inside
+a make recipe is exempt -- it lives and dies in one `bash -c` and is never in the sourced namespace.
+
 Scope is what the caller DECLARES, not what happens to be loaded at run time: a `# shellcheck
 source=` directive (the shell gate already checks those resolve), a make recipe's literal
 `$(PROJECT_ROOT)/...` source, or an explicit `# llb-requires:` line for a shared module whose
 functions assume a sibling was sourced by whoever sourced it. A call built by `eval` or through a
 variable is out of reach and stays out of scope.
+
+Residual: a name that never carried the prefix is still invisible. A call to an EXTERNAL command
+that does not exist reads exactly like a call to a helper that never existed, and separating them
+needs real command-position parsing rather than a prefix -- `command -v` guards own that case.
 """
 
 import argparse
@@ -25,6 +35,10 @@ from llb.core.paths import PROJECT_ROOT
 _LOG = logging.getLogger(__name__)
 
 _DEFINITION = re.compile(r"^\s*(?:function\s+)?(llb_[A-Za-z0-9_]+)\s*\(\s*\)")
+# Any function definition, prefixed or not. A definition only counts when it OPENS the line: a
+# recipe-local `wants_backend() { ...; }` sits after a tab inside a `\`-continued make recipe and is
+# matched here too, which is why the prefix scan reads `*.sh` only.
+_ANY_DEFINITION = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 # A name in command or argument position. The lookbehind drops the shapes that only READ like a
 # call: an expansion operand (`${name#llb_prefix}`, `${x:-llb_default}`), a variable (`$llb_x`), a
 # path segment, and an assigned string -- none of which stops working when a function is renamed.
@@ -135,15 +149,37 @@ def unresolved_calls(project_root: Path = PROJECT_ROOT) -> list[str]:
     return findings
 
 
+def unprefixed_definitions(project_root: Path = PROJECT_ROOT) -> list[str]:
+    """Every function a tracked `*.sh` defines without the prefix the call scan keys on."""
+    findings: list[str] = []
+    for caller in listed_callers(project_root):
+        if caller.suffix != ".sh":
+            continue
+        for number, line in enumerate(_code_lines(caller), 1):
+            found = _ANY_DEFINITION.match(line)
+            if found is None or found.group(1).startswith("llb_"):
+                continue
+            where = caller.relative_to(project_root)
+            findings.append(
+                f"{where}:{number}: shell function without the llb_ prefix -> {found.group(1)}"
+            )
+    return findings
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    parser = argparse.ArgumentParser(description="check llb_* helper calls against their scope")
+    parser = argparse.ArgumentParser(description="check llb_* helper definitions and calls")
     parser.add_argument("--root", type=Path, default=PROJECT_ROOT)
     args = parser.parse_args(argv)
-    findings = unresolved_calls(args.root)
+    unprefixed = unprefixed_definitions(args.root)
+    findings = unprefixed + unresolved_calls(args.root)
     for finding in findings:
         _LOG.error("ERROR: %s", finding)
-    _LOG.info("[shell-symbols] %d unresolved llb_* call(s)", len(findings))
+    _LOG.info(
+        "[shell-symbols] %d unprefixed definition(s), %d unresolved llb_* call(s)",
+        len(unprefixed),
+        len(findings) - len(unprefixed),
+    )
     return 1 if findings else 0
 
 

@@ -4,12 +4,20 @@ The shipped-tree assertion is the point of the tool. The synthetic cases pin wha
 (including a name handed to a runner) against what only LOOKS like one (prose in a comment, a `#`
 inside parameter expansion), and the two ways a definition legitimately enters scope: a sourced
 file, and the `# llb-requires:` line a shared module uses to name the sibling its functions assume.
+
+The prefix scan is the other half: the call scan can only see a helper that carries the prefix, so
+an unprefixed definition is refused rather than left silently outside the check -- with the one
+exemption that keeps the rule honest, a function defined inside a make recipe.
 """
 
 import subprocess
 
 from llb.core.paths import PROJECT_ROOT
-from llb.quality.shell_symbols import strip_comment, unresolved_calls
+from llb.quality.shell_symbols import (
+    strip_comment,
+    unprefixed_definitions,
+    unresolved_calls,
+)
 
 _COMMON = """#!/usr/bin/env bash
 llb_load_env() {
@@ -30,6 +38,44 @@ def _repo(tmp_path, files: dict[str, str]):
 def test_the_shipped_shell_layer_resolves_every_call():
     """The CI-able assertion: every `llb_*` name in the repo has a definition in its own scope."""
     assert unresolved_calls(PROJECT_ROOT) == []
+
+
+def test_the_shipped_shell_layer_prefixes_every_function():
+    """The rule that keeps the assertion above meaningful: no helper sits outside the scan."""
+    assert unprefixed_definitions(PROJECT_ROOT) == []
+
+
+def test_a_definition_without_the_prefix_is_named_with_its_line(tmp_path):
+    """An unprefixed helper is not a call the scan can see, so it is refused where it is written."""
+    root = _repo(
+        tmp_path,
+        {
+            "scripts/quickstart/helpers.sh": (
+                '# shellcheck shell=bash\nresolve_path() {\n  echo "$1"\n}\n'
+            ),
+        },
+    )
+
+    assert unprefixed_definitions(root) == [
+        "scripts/quickstart/helpers.sh:2: shell function without the llb_ prefix -> resolve_path"
+    ]
+
+
+def test_a_recipe_local_function_is_exempt_from_the_prefix(tmp_path):
+    """A function defined inside a `bash -c` recipe never enters the sourced namespace."""
+    root = _repo(
+        tmp_path,
+        {
+            "make/eval.mk": (
+                "matrix:\n"
+                "\t@set -e; \\\n"
+                '\twants_backend() { case " $(BACKENDS) " in *" $$1 "*) return 0 ;; esac; }; \\\n'
+                "\twants_backend ollama\n"
+            ),
+        },
+    )
+
+    assert unprefixed_definitions(root) == []
 
 
 def test_a_call_to_a_deleted_helper_is_named_with_its_line(tmp_path):

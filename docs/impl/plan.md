@@ -43,32 +43,54 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-call-check-covers-a-third-of-the-shell-functions (optional)
+### agent-the-build-script-tests-are-visible-to-the-repo-but-not-to-ci (optional)
 
-The call check keys on the `llb_*` prefix, which is what lets it tell a call from a word
-([host validation](current/host-validation.md#code-quality-checks)) -- and only 35 of the 92
-functions defined under `scripts/` carry it. The uncovered 57 are the ones with the MOST cross-file
-coupling: the eight `scripts/quickstart/*.sh` fragments source each other and share a vocabulary
-(`resolve_path`, `run_target`, `prompt_yes_no`, `make_with_data_dir`, ...) that no scan resolves, so
-the failure the check was built for is still live in the largest shell subsystem here. Two ways
-forward, and the task is to pick one on evidence rather than to build both: adopt the prefix for
-shared shell functions (a rename touching every fragment, after which the existing check covers
-them), or drop the prefix requirement by treating a name as a call only when it is DEFINED somewhere
-in the scanned set -- which catches a helper that moved out of scope but NOT one deleted outright,
-since a name defined nowhere is indistinguishable from an external command without real
-command-position parsing. State which failure each option leaves open.
+`tests/llb/build/test_build_helper.py` is committed and every clone now collects it, but two of its
+four tests are marked `slow` -- the ones that actually drive `scripts/build_vllm.sh` under a fake
+`uv` toolchain (prebuilt-wheel path, source-build wheel export). `make ci`, `make ci-github`, and
+GitHub CI all deselect `slow`, so the vLLM installer's behavior is still verified only where someone
+runs `make test` by hand; what CI gained is the two quick `llb_max_jobs` / `common.sh` assertions.
+The two are not alike, so one marker for both is the wrong shape: neither compiles anything (`uv`
+is a shell stub), and `test_source_vllm_exports_only_checkout_wheel` costs ~0.2s while
+`test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse` costs ~6s. Find where those 6
+seconds go in `scripts/build_vllm.sh` on the prebuilt path -- a real resolver call the stub does not
+intercept is the likely answer, and it is worth knowing whether CI would pay it too -- then unmark
+the cheap test outright and decide the expensive one on what the timing turns out to be (unmark,
+stub the remaining cost, or keep `slow` and state the gap on the topic page rather than leaving it
+implicit).
 
 - Agent status: CLEAR
-- Dependencies: the census, the scope model, and the reference rule are
-  `src/llb/quality/shell_symbols.py`, gated through `llb_shell_symbols_scan` in
-  `scripts/shared/shell_lint.sh`; the subsystem in question is `scripts/quickstart.sh` plus
-  `scripts/quickstart/*.sh`.
-- User-visible outcome: renaming a quickstart fragment helper fails the build that did it, the way
-  renaming an `llb_*` helper already does.
-- Scope boundary: in scope -- the chosen rule, its false-call cases, and the stated residual. Out of
-  scope -- a general shell parser, checking commands the scripts do not define (that is what
-  `command -v` guards already do), and any behavior change to the quickstart flow itself.
+- Dependencies: the markers are `@pytest.mark.slow` in `tests/llb/build/test_build_helper.py`; the
+  suite selectors are `NOT_SLOW` / `GITHUB_SUITE` in `make/dev.mk`.
+- User-visible outcome: the check that keeps a source build from OOMing a host runs in the same
+  place the build is trusted from.
+- Scope boundary: in scope -- the markers, the timing evidence, and the suite-selector consequence.
+  Out of scope -- new coverage for the build scripts and any change to the scripts themselves.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-a-sourced-fragments-declared-scope-is-wider-than-the-call-it-covers (optional)
+
+`# llb-requires:` names a whole sibling FILE, so a fragment that needs one helper from
+`model_select.sh` declares every function that file defines
+([host validation](current/host-validation.md#code-quality-checks)). The declaration is therefore an
+over-approximation of the real contract: `track_c.sh` declares four siblings to reach a handful of
+names, and if `track_b.sh` later stops sourcing `pdf_draft.sh` in a run where `track_c.sh` runs
+first, the check still resolves the call because the DECLARATION says it is in scope. Nothing
+verifies that the declared set is minimal either, so a `llb-requires:` line left behind by a deleted
+call is invisible. Narrow it: report a declared sibling whose definitions the caller never names
+(an unused declaration, the shell analogue of an unused import), and decide on the evidence whether
+an over-wide declaration should be a finding or stay a report -- a fragment that declares a sibling
+purely to document a load-order contract is the case that would fail a naive gate.
+
+- Agent status: CLEAR
+- Dependencies: the declaration is `_REQUIRES` / `declared_sources` in
+  `src/llb/quality/shell_symbols.py`; the declarations to read are the `# llb-requires:` headers in
+  `scripts/quickstart/*.sh`.
+- User-visible outcome: a fragment's declared scope stays the set of siblings it actually calls into,
+  so the declaration keeps naming a real contract instead of accumulating.
+- Scope boundary: in scope -- the unused-declaration report and the gate-or-record decision. Out of
+  scope -- per-symbol declarations (`# llb-requires: helpers.sh:llb_rel_path`), run-time load-order
+  checking, and any change to the quickstart flow.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-shellcheck-pin-is-a-range-so-two-hosts-can-still-differ (optional)

@@ -1,7 +1,12 @@
 # shellcheck shell=bash
 # Usage text and target dispatch.
+# Sourced by scripts/quickstart.sh, which loads the siblings below first; this fragment never
+# sources them itself, so it declares them for the llb_* call check.
+# llb-requires: track_a.sh
+# llb-requires: track_b.sh
+# llb-requires: track_c.sh
 
-usage() {
+llb_quickstart_usage() {
   cat <<'EOF'
 Usage: scripts/quickstart.sh <target>
 
@@ -31,32 +36,32 @@ Targets:
 EOF
 }
 
-run_target() {
+llb_run_target() {
   local target="$1"
   case "$target" in
-    goldset) track_a_all ;;
-    goldset-setup) track_a_setup ;;
-    goldset-rag) track_a_rag ;;
-    goldset-models) track_a_models ;;
-    goldset-eval) track_a_eval ;;
-    goldset-security) track_a_security ;;
-    goldset-prompt) track_a_prompt ;;
-    pdf-corpus) track_b_all ;;
-    pdf-corpus-convert) track_b_convert ;;
-    pdf-corpus-index) track_b_index ;;
-    pdf-corpus-draft) track_b_draft ;;
-    pdf-corpus-graph) track_b_graph ;;
-    pdf-corpus-validate) track_b_validate ;;
-    pdf-corpus-review) track_b_review ;;
-    pdf-corpus-accept) track_b_accept ;;
-    pdf-corpus-score) track_b_after_accept ;;
-    corpus) track_c_all ;;
-    corpus-convert) track_c_convert ;;
-    corpus-index) use_corpus_paths; track_b_index ;;
-    corpus-draft) use_corpus_paths; track_c_draft ;;
-    corpus-graph) use_corpus_paths; track_b_graph ;;
-    corpus-validate) use_corpus_paths; track_b_validate ;;
-    help|-h|--help|"") usage ;;
-    *) echo "ERROR: unknown quickstart target: $target" >&2; usage >&2; exit 2 ;;
+    goldset) llb_track_a_all ;;
+    goldset-setup) llb_track_a_setup ;;
+    goldset-rag) llb_track_a_rag ;;
+    goldset-models) llb_track_a_models ;;
+    goldset-eval) llb_track_a_eval ;;
+    goldset-security) llb_track_a_security ;;
+    goldset-prompt) llb_track_a_prompt ;;
+    pdf-corpus) llb_track_b_all ;;
+    pdf-corpus-convert) llb_track_b_convert ;;
+    pdf-corpus-index) llb_track_b_index ;;
+    pdf-corpus-draft) llb_track_b_draft ;;
+    pdf-corpus-graph) llb_track_b_graph ;;
+    pdf-corpus-validate) llb_track_b_validate ;;
+    pdf-corpus-review) llb_track_b_review ;;
+    pdf-corpus-accept) llb_track_b_accept ;;
+    pdf-corpus-score) llb_track_b_after_accept ;;
+    corpus) llb_track_c_all ;;
+    corpus-convert) llb_track_c_convert ;;
+    corpus-index) llb_use_corpus_paths; llb_track_b_index ;;
+    corpus-draft) llb_use_corpus_paths; llb_track_c_draft ;;
+    corpus-graph) llb_use_corpus_paths; llb_track_b_graph ;;
+    corpus-validate) llb_use_corpus_paths; llb_track_b_validate ;;
+    help|-h|--help|"") llb_quickstart_usage ;;
+    *) echo "ERROR: unknown quickstart target: $target" >&2; llb_quickstart_usage >&2; exit 2 ;;
   esac
 }

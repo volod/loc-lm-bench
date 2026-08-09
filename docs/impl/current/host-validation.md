@@ -176,6 +176,21 @@ wider sweep: it reports long source files and runs both gates, so maintainers ca
 functional seams. The ~250-line source-file target is soft; cohesive schemas and regular lookup
 families may remain whole.
 
+**Every check above only sees files the repo can see, so `.gitignore` is part of the gate.** The
+packaging rules are anchored to the repo root (`/build/`, `/dist/`, `/lib/`, `/var/`, `/target/`,
+...) because an unanchored directory rule matches that name at ANY depth. Unanchored `build/` hid
+`tests/llb/build/test_build_helper.py` -- the only test of `llb_max_jobs`, the canonical
+parallelism cap AGENTS.md names for heavy CUDA builds -- from every clone: pytest collected it and
+`make ci` ran it on the one box that held the file, while `git ls-files` did not know it existed
+and GitHub CI never ran it. Nothing failed, which is the whole problem. The rule now matches only
+where setuptools/uv actually write (heavy build trees go under `$DATA_DIR`, covered by `.data/`),
+the two `!src/llb/build/` negations that used to patch the rule one package at a time are gone, and
+the file is committed. `tests/llb/quality/test_ignored_sources.py` holds the invariant: no `.py`,
+`.sh`, or `.md` under `src/`, `tests/`, or `scripts/` may be ignored, and the packaging rules must
+still catch root build output. The same blindness reaches the shell gate, which scans
+`git ls-files --cached --others --exclude-standard` -- a script under an ignored tree is not linted
+either. `git status --ignored --short` is the manual read.
+
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
 exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the
@@ -202,8 +217,8 @@ and nothing under a gitignored tree is scanned; a staged delete is dropped):
   repo-relative.
 - the same run restricted to `SC1090,SC1091` at `-S style`: every `# shellcheck source=` directive
   must resolve.
-- `llb.quality.shell_symbols`: every `llb_*` name a caller uses has a definition in that caller's
-  declared scope.
+- `llb.quality.shell_symbols`: every function a tracked `*.sh` defines carries the `llb_` prefix,
+  and every `llb_*` name a caller uses has a definition in that caller's declared scope.
 
 **The lint is cross-file, and the third scan is what keeps it that way.** `-x` follows a sourced
 file, so a caller is checked against what `scripts/shared/{common,complexity,shell_lint}.sh`
@@ -240,6 +255,42 @@ goes. Prose in a comment, an expansion operand (`${name#llb_prefix}`), a `$llb_v
 segment are not calls. A call built by `eval` or through a variable is out of reach and stays out of
 scope. Coverage is `tests/llb/quality/test_shell_symbols.py`, whose first assertion is the shipped
 tree itself.
+
+**The prefix is a rule, not a convention, because the check has no other way to find a call.**
+Keying on `llb_*` is what separates a call from an English word, so the scan's coverage used to be
+whatever share of the tree happened to follow the convention: 35 of the 92 functions defined in
+tracked `*.sh`. The uncovered 57 were the most cross-file-coupled code here -- `scripts/quickstart.sh`
+plus the eight `scripts/quickstart/*.sh` fragments, which are sourced into one namespace and share a
+vocabulary (`resolve_path`, `run_target`, `prompt_yes_no`, `make_with_data_dir`, ...) that no scan
+resolved. Two rules could have closed it, and the tree now carries the first:
+
+- **Adopt the prefix** (taken). All 57 are renamed `llb_*`, and `unprefixed_definitions` refuses a
+  function defined in a tracked `*.sh` without it, so the coverage cannot decay back. Three names
+  needed more than a prefix, because `source` makes the namespace flat: `main` in `quickstart.sh` is
+  `llb_quickstart_main`, and the two different `usage` bodies are `llb_quickstart_usage` and
+  `llb_apt_usage`.
+- **Drop the prefix and treat a name as a call when it is DEFINED somewhere in the scanned set**
+  (rejected). It cannot deliver the outcome the check exists for. A rename removes the old name from
+  the defined set, so the stale call site stops looking like a call at the exact commit that broke
+  it; the rule only catches a helper that moved out of scope while still being defined elsewhere,
+  which is the narrower half of the failure. It also has a false-call surface the prefix does not:
+  the uncovered names include bare words (`main`, `usage`, `result`, `heading`), and a scan with no
+  command-position parsing reads `KNOWLEDGE_CUTOFF_REVISION ?= main` in `make/config.mk` as a call --
+  the one false positive a shipped-tree trial of the rule produced.
+
+The scope declarations were the shared cost either rule had to pay, not a cost of the rename: the
+fragments are sourced BY `quickstart.sh` and never source each other, so all 217 of their calls were
+out of scope under either rule until each fragment named its siblings with `# llb-requires:`
+(`track_c.sh` declares `helpers.sh`, `model_select.sh`, `pdf_draft.sh`, `track_b.sh`; the other
+seven are shorter). A function defined inside a make recipe is exempt from the prefix -- `wants_backend`
+and `record_failure` in `make/eval/categories-platform.mk` live and die in one `bash -c` and never
+enter the sourced namespace -- which is why the prefix scan reads `*.sh` only.
+
+**Residual: a name that never carried the prefix is still invisible.** The check finds a call whose
+helper was renamed, moved, or deleted; it cannot find a call to an EXTERNAL command that does not
+exist, because a name defined nowhere is indistinguishable from a binary the host is expected to
+have without real command-position parsing. That case stays with the `command -v` guards the scripts
+already carry.
 
 A MISSING shellcheck fails the gate rather than skipping it -- a linter that reports itself as fine
 when it never ran is worse than no linter, and the old sweep did exactly that on a host without the

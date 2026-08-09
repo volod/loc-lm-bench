@@ -44,7 +44,7 @@ The serving backends are Ollama, vLLM, and llama.cpp. All three must stay behind
 OpenAI-compatible launcher seam. New backend-specific behavior belongs in launcher, resolver,
 planner, telemetry, or preflight modules; it should not leak into scoring logic.
 
-CUDA source builds use `scripts/shared/common.sh:max_jobs()` for parallelism. Ordinary dependencies
+CUDA source builds use `scripts/shared/common.sh:llb_max_jobs()` for parallelism. Ordinary dependencies
 use `uv` caches. `$DATA_DIR/wheels/` is only for intentional local-source wheel outputs with ABI
 and git revision encoded in the directory name.
 

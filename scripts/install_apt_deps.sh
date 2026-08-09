@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APT_DIR="$PROJECT_ROOT/scripts/apt"
 VALID_PROFILES=(production dev all)
 
-usage() {
+llb_apt_usage() {
   cat <<EOF
 Usage: $(basename "$0") <production|dev|all>
 
@@ -27,7 +27,7 @@ Set SKIP_APT=1 to skip. Set APT_DRY_RUN=1 to list missing packages only.
 EOF
 }
 
-read_packages() {
+llb_read_packages() {
   local list_file="$1"
   local line pkg
   if [ ! -f "$list_file" ]; then
@@ -42,7 +42,7 @@ read_packages() {
   done <"$list_file"
 }
 
-collect_missing() {
+llb_collect_missing() {
   local list_file="$1"
   local pkg
   while IFS= read -r pkg; do
@@ -51,7 +51,7 @@ collect_missing() {
     else
       printf '%s\n' "$pkg"
     fi
-  done < <(read_packages "$list_file")
+  done < <(llb_read_packages "$list_file")
 }
 
 llb_dpkg_broken_count() {
@@ -87,7 +87,7 @@ llb_verify_installed() {
   return "$missing"
 }
 
-install_profile() {
+llb_install_profile() {
   local profile="$1"
   local list_file="$APT_DIR/${profile}.packages"
   local -a missing=()
@@ -98,7 +98,7 @@ install_profile() {
     [ -n "$pkg" ] || continue
     requested+=("$pkg")
     missing+=("$pkg")
-  done < <(collect_missing "$list_file")
+  done < <(llb_collect_missing "$list_file")
 
   if [ "${#missing[@]}" -eq 0 ]; then
     printf '[apt] profile=%s: nothing to install\n' "$profile"
@@ -139,14 +139,14 @@ install_profile() {
 
 profile="${1:-}"
 if [ -z "$profile" ]; then
-  usage >&2
+  llb_apt_usage >&2
   exit 1
 fi
 
 case "$profile" in
   production | dev | all) ;;
   -h | --help)
-    usage
+    llb_apt_usage
     exit 0
     ;;
   *)
@@ -166,8 +166,8 @@ if ! command -v apt-get >/dev/null 2>&1; then
 fi
 
 if [ "$profile" = "all" ]; then
-  install_profile production
-  install_profile dev
+  llb_install_profile production
+  llb_install_profile dev
 else
-  install_profile "$profile"
+  llb_install_profile "$profile"
 fi

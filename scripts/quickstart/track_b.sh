@@ -1,41 +1,46 @@
 # shellcheck shell=bash
 # Track B: PDF corpus conversion -> draft -> validation flow.
+# Sourced by scripts/quickstart.sh, which loads the siblings below first; this fragment never
+# sources them itself, so it declares them for the llb_* call check.
+# llb-requires: helpers.sh
+# llb-requires: model_select.sh
+# llb-requires: pdf_draft.sh
 
-track_b_convert() {
-  heading "1/2" "prepare PDF/OCR environment"
-  result "uv cache: $(rel_path "$UV_CACHE_DIR")"
-  make_cmd venv SKIP_APT="$QS_SKIP_APT" EXTRAS=pdf-quality
+llb_track_b_convert() {
+  llb_heading "1/2" "prepare PDF/OCR environment"
+  llb_result "uv cache: $(llb_rel_path "$UV_CACHE_DIR")"
+  llb_make_cmd venv SKIP_APT="$QS_SKIP_APT" EXTRAS=pdf-quality
 
-  heading "2/2" "convert PDFs to markdown with citation sidecars"
-  make_with_data_dir "$DATA_DIR" pdf-to-markdown \
+  llb_heading "2/2" "convert PDFs to markdown with citation sidecars"
+  llb_make_with_data_dir "$DATA_DIR" pdf-to-markdown \
     PDF_DIR="$QS_PDF_SOURCE" \
     PDF_OUT_DIR="$QS_PDF_MD" \
     PDF_MIN_CHARS="$QS_PDF_MIN_CHARS" \
     PDF_PARSER="$QS_PDF_PARSER"
-  result "converted markdown corpus: $(rel_path "$QS_PDF_MD")"
+  llb_result "converted markdown corpus: $(llb_rel_path "$QS_PDF_MD")"
 }
 
-track_b_index() {
-  heading "1/1" "build full-corpus FAISS index"
-  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" make_with_data_dir "$QS_PDF_RAG_DATA" build-index \
+llb_track_b_index() {
+  llb_heading "1/1" "build full-corpus FAISS index"
+  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" llb_make_with_data_dir "$QS_PDF_RAG_DATA" build-index \
     CORPUS="$QS_PDF_MD"
-  result "full PDF RAG store: $(rel_path "$QS_PDF_RAG_DATA/llb/rag")"
+  llb_result "full PDF RAG store: $(llb_rel_path "$QS_PDF_RAG_DATA/llb/rag")"
 }
 
-track_b_draft() {
-  heading "1/4" "select draft model"
-  select_pdf_draft_model
-  result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
+llb_track_b_draft() {
+  llb_heading "1/4" "select draft model"
+  llb_select_pdf_draft_model
+  llb_result "draft model: $QS_DRAFT_MODEL (endpoint=$QS_DRAFT_ENDPOINT backend=$QS_DRAFT_BACKEND)"
 
-  heading "2/4" "stage full draft corpus"
-  stage_pdf_draft_corpus
+  llb_heading "2/4" "stage full draft corpus"
+  llb_stage_pdf_draft_corpus
 
-  heading "3/4" "confirm full ontology and goldset draft"
+  llb_heading "3/4" "confirm full ontology and goldset draft"
   local stats draft_egress_consent
-  stats="$(pdf_draft_stats)"
-  result "estimated draft workload: $stats"
-  result "draft outputs include goldset.jsonl, needle_items.jsonl, ontology.json, extraction.jsonl, pdf_ontology_report.json, prompt_dictionary_candidates.jsonl"
-  if ! prompt_yes_no \
+  stats="$(llb_pdf_draft_stats)"
+  llb_result "estimated draft workload: $stats"
+  llb_result "draft outputs include goldset.jsonl, needle_items.jsonl, ontology.json, extraction.jsonl, pdf_ontology_report.json, prompt_dictionary_candidates.jsonl"
+  if ! llb_prompt_yes_no \
     "The next draft step is expected to take about ${stats##*, }. Proceed?" \
     "no" \
     "Rerun with QUICKSTART_ASSUME_YES=1 make quickstart-pdf-corpus, or reduce QUICKSTART_DRAFT_MAX_ITEMS for a bounded probe." \
@@ -47,7 +52,7 @@ track_b_draft() {
 
   draft_egress_consent=0
   if [ "$QS_DRAFT_ENDPOINT" = "frontier" ]; then
-    if ! prompt_yes_no \
+    if ! llb_prompt_yes_no \
       "Send corpus '$QS_PDF_DRAFT_MD' to Litellm destination '$QS_DRAFT_MODEL' (max calls: $QUICKSTART_DRAFT_MAX_CALLS)?" \
       "no" \
       "Set QUICKSTART_ASSUME_YES=1 only after approving this corpus egress and provider spend." \
@@ -58,8 +63,8 @@ track_b_draft() {
     draft_egress_consent=1
   fi
 
-  heading "4/4" "draft unverified goldset and ontology"
-  make_cmd prepare-goldset-draft \
+  llb_heading "4/4" "draft unverified goldset and ontology"
+  llb_make_cmd prepare-goldset-draft \
     DRAFT_CORPUS="$QS_PDF_DRAFT_MD" \
     DRAFT_MODEL="$QS_DRAFT_MODEL" \
     DRAFT_ENDPOINT="$QS_DRAFT_ENDPOINT" \
@@ -93,69 +98,69 @@ track_b_draft() {
     DRAFT_REQUIRE_PASSED_GATES=1 \
     DRAFT_OUT_DIR="$QS_PDF_DRAFT" \
     DRAFT_TIMEOUT="$QS_DRAFT_TIMEOUT"
-  result "draft bundle: $(rel_path "$QS_PDF_DRAFT")"
+  llb_result "draft bundle: $(llb_rel_path "$QS_PDF_DRAFT")"
 }
 
-track_b_graph() {
-  heading "1/1" "build graph from draft ontology extraction"
-  make_with_data_dir "$QS_PDF_GRAPH_DATA" build-graph BUNDLE="$QS_PDF_DRAFT"
-  result "graph artifacts: $(rel_path "$QS_PDF_GRAPH_DATA/llb/graph")"
+llb_track_b_graph() {
+  llb_heading "1/1" "build graph from draft ontology extraction"
+  llb_make_with_data_dir "$QS_PDF_GRAPH_DATA" build-graph BUNDLE="$QS_PDF_DRAFT"
+  llb_result "graph artifacts: $(llb_rel_path "$QS_PDF_GRAPH_DATA/llb/graph")"
 }
 
-track_b_validate() {
-  heading "1/2" "validate draft goldset structure"
-  make_cmd validate-goldset GOLDSET="$QS_PDF_DRAFT/goldset.jsonl" CORPUS="$QS_PDF_DRAFT/corpus"
+llb_track_b_validate() {
+  llb_heading "1/2" "validate draft goldset structure"
+  llb_make_cmd validate-goldset GOLDSET="$QS_PDF_DRAFT/goldset.jsonl" CORPUS="$QS_PDF_DRAFT/corpus"
 
-  heading "2/2" "validate draft retrieval against full PDF index"
-  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" make_with_data_dir "$QS_PDF_RAG_DATA" validate-retrieval \
+  llb_heading "2/2" "validate draft retrieval against full PDF index"
+  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" llb_make_with_data_dir "$QS_PDF_RAG_DATA" validate-retrieval \
     GOLDSET="$QS_PDF_DRAFT/goldset.jsonl" \
     RAG_K="$QS_RAG_K"
-  result "validation uses draft goldset: $(rel_path "$QS_PDF_DRAFT/goldset.jsonl")"
+  llb_result "validation uses draft goldset: $(llb_rel_path "$QS_PDF_DRAFT/goldset.jsonl")"
 }
 
-track_b_review() {
-  heading "1/1" "review verification sample"
-  make_cmd verify-review VERIFY_WS="$QS_PDF_DRAFT/verify_sample.csv"
-  result "review worksheet: $(rel_path "$QS_PDF_DRAFT/verify_sample.csv")"
+llb_track_b_review() {
+  llb_heading "1/1" "review verification sample"
+  llb_make_cmd verify-review VERIFY_WS="$QS_PDF_DRAFT/verify_sample.csv"
+  llb_result "review worksheet: $(llb_rel_path "$QS_PDF_DRAFT/verify_sample.csv")"
 }
 
-track_b_accept() {
-  heading "1/1" "emit accepted ledger after human review"
-  make_cmd verify-accept BUNDLE="$QS_PDF_DRAFT" VERIFY_WS="$QS_PDF_DRAFT/verify_sample.csv"
-  result "accepted ledger: $(rel_path "$QS_PDF_ACCEPTED")"
+llb_track_b_accept() {
+  llb_heading "1/1" "emit accepted ledger after human review"
+  llb_make_cmd verify-accept BUNDLE="$QS_PDF_DRAFT" VERIFY_WS="$QS_PDF_DRAFT/verify_sample.csv"
+  llb_result "accepted ledger: $(llb_rel_path "$QS_PDF_ACCEPTED")"
 }
 
-track_b_after_accept() {
+llb_track_b_after_accept() {
   test -f "$QS_PDF_ACCEPTED/goldset.jsonl" || {
-    echo "ERROR: accepted ledger not found at $(rel_path "$QS_PDF_ACCEPTED/goldset.jsonl")" >&2
+    echo "ERROR: accepted ledger not found at $(llb_rel_path "$QS_PDF_ACCEPTED/goldset.jsonl")" >&2
     echo "Run make quickstart-pdf-corpus-review and make quickstart-pdf-corpus-accept after human review." >&2
     exit 1
   }
-  heading "1/3" "build accepted-ledger RAG index"
-  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" build-index \
+  llb_heading "1/3" "build accepted-ledger RAG index"
+  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" llb_make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" build-index \
     CORPUS="$QS_PDF_ACCEPTED/corpus"
 
-  heading "2/3" "validate accepted-ledger retrieval"
-  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" validate-retrieval \
+  llb_heading "2/3" "validate accepted-ledger retrieval"
+  HF_HUB_OFFLINE="$QS_HF_HUB_OFFLINE" llb_make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" validate-retrieval \
     GOLDSET="$QS_PDF_ACCEPTED/goldset.jsonl" \
     RAG_K="$QS_RAG_K"
 
-  heading "3/3" "run accepted-ledger model sweep"
-  make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" sweep \
+  llb_heading "3/3" "run accepted-ledger model sweep"
+  llb_make_with_data_dir "$QS_PDF_LEADERBOARD_DATA" sweep \
     SWEEP_ID=quickstart-pdf-corpus \
     MODELS_MANIFEST="$QS_MODELS_MANIFEST" \
     GOLDSET="$QS_PDF_ACCEPTED/goldset.jsonl" \
     SPLIT="$QS_SPLIT"
-  result "accepted leaderboard artifacts: $(rel_path "$QS_PDF_LEADERBOARD_DATA")"
+  llb_result "accepted leaderboard artifacts: $(llb_rel_path "$QS_PDF_LEADERBOARD_DATA")"
 }
 
-track_b_all() {
-  track_b_convert
-  track_b_index
-  track_b_draft
-  track_b_graph
-  track_b_validate
-  result "PDF corpus quickstart stopped before scoring because drafted rows are verified=false"
+llb_track_b_all() {
+  llb_track_b_convert
+  llb_track_b_index
+  llb_track_b_draft
+  llb_track_b_graph
+  llb_track_b_validate
+  llb_result "PDF corpus quickstart stopped before scoring because drafted rows are verified=false"
   printf '[next] make quickstart-pdf-corpus-review\n'
   printf '[next] make quickstart-pdf-corpus-accept\n'
   printf '[next] make quickstart-pdf-corpus-score\n'

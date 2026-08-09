@@ -24,7 +24,7 @@ if ! command -v cmake >/dev/null 2>&1; then
 fi
 command -v ninja >/dev/null 2>&1 || uv pip install ninja >/dev/null
 
-JOBS="$(max_jobs)"
+JOBS="$(llb_max_jobs)"
 SRC_DIR="$DATA_DIR/llb/llamacpp/src"
 BUILD_DIR="$DATA_DIR/llb/llamacpp/build"
 REPO="${LLAMACPP_REPO:-https://github.com/ggml-org/llama.cpp.git}"
