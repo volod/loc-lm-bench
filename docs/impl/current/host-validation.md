@@ -193,12 +193,28 @@ identically (block reporting is `llb_print_block` / `llb_report_if_output` / `ll
 in `scripts/shared/common.sh`).
 
 **Shell scripts are gated the same way.** `scripts/shell_lint_gate.sh` (`make shell-lint-gate`,
-also inside `ci-checks`) runs two scans over every tracked-or-new `*.sh` in the repo
+also inside `ci-checks`) runs three scans over every tracked-or-new `*.sh` in the repo
 (`git ls-files --cached --others --exclude-standard`, so a script is linted before its first commit
 and nothing under a gitignored tree is scanned; a staged delete is dropped):
 
 - `bash -n` syntax, which needs nothing installed and therefore always runs.
-- `shellcheck -S warning`, over the whole set in one invocation so findings stay repo-relative.
+- `shellcheck -x -P SCRIPTDIR -S warning`, over the whole set in one invocation so findings stay
+  repo-relative.
+- the same run restricted to `SC1090,SC1091` at `-S style`: every `# shellcheck source=` directive
+  must resolve.
+
+**The lint is cross-file, and the third scan is what keeps it that way.** `-x` follows a sourced
+file, so a caller is checked against what `scripts/shared/{common,complexity,shell_lint}.sh`
+actually define instead of in isolation -- the axis these scripts grew along. `-P SCRIPTDIR` is
+what makes `-x` work here: a `source=` path resolves relative to the CWD by default, so running
+from the project root, every `source=shared/common.sh` directive in `scripts/` resolved to nothing
+and `-x` followed nothing (9 such directives). An unresolved directive is reported at INFO,
+*below* the severity floor, so the lint pass alone cannot tell "followed and clean" from "never
+followed" -- hence the dedicated scan. The proof that following now happens is in the tree: the two
+gate entrypoints set `LLB_REPORT_PREFIX` for `common.sh` to read, which un-followed shellcheck
+called an unused variable (SC2034); both `# shellcheck disable` workarounds are gone and the gate
+stays green. A path genuinely computed at run time is annotated in the script with a reasoned
+`# shellcheck disable=SC1091` rather than by dropping the scan.
 
 A MISSING shellcheck fails the gate rather than skipping it -- a linter that reports itself as fine
 when it never ran is worse than no linter, and the old sweep did exactly that on a host without the
@@ -209,7 +225,7 @@ is rarely needed: shellcheck now ships in the `dev` extra as the pinned `shellch
 so `.venv/bin/shellcheck` exists wherever `make ci` runs, GitHub CI included -- no apt step in the
 workflow. The gate prefers that binary and falls back to any `shellcheck` on `PATH`. Scans,
 severity, and the missing-binary policy live once in `scripts/shared/shell_lint.sh`, sourced by
-both the gate and the sweep; both scans always run before either fails.
+both the gate and the sweep; every scan runs before any of them fails.
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.

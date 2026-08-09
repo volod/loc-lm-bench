@@ -9,7 +9,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Label the report blocks as this gate rather than as the wider code-quality sweep (common.sh
 # honors a prefix set before it is sourced).
-# shellcheck disable=SC2034
 LLB_REPORT_PREFIX="complexity-gate"
 # shellcheck source=shared/common.sh
 . "$SCRIPT_DIR/shared/common.sh"

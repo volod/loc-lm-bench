@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # The shell half of the lint gates. SOURCE this after scripts/shared/common.sh + llb_load_env.
 #
-# Two scans over every TRACKED *.sh (git ls-files, so the gate covers exactly what a commit
+# Three scans over every TRACKED *.sh (git ls-files, so the gate covers exactly what a commit
 # carries, wherever it lives):
 #   * `bash -n` syntax -- needs nothing installed, so it always runs.
 #   * shellcheck at severity `warning` -- the binary ships in the `dev` extra (shellcheck-py), so
 #     every host that can run `make ci` has it, GitHub CI included.
+#   * every `# shellcheck source=` directive resolves, so the pass above is a CROSS-FILE result.
 #
 # A MISSING shellcheck is a failure, not a skip: a linter that reports itself as fine when it never
 # ran is worse than no linter. LLB_SHELLCHECK_OPTIONAL=1 downgrades that to a printed skip, for a
@@ -15,7 +16,8 @@ LLB_SHELLCHECK="${LLB_SHELLCHECK:-$PROJECT_ROOT/.venv/bin/shellcheck}"
 LLB_SHELLCHECK_SEVERITY="${LLB_SHELLCHECK_SEVERITY:-warning}"
 
 LLB_SHELL_SYNTAX_LABEL="shell syntax (bash -n) over tracked/new *.sh"
-LLB_SHELLCHECK_LABEL="shell lint (shellcheck -S ${LLB_SHELLCHECK_SEVERITY}) over tracked/new *.sh"
+LLB_SHELLCHECK_LABEL="shell lint (shellcheck -x -S ${LLB_SHELLCHECK_SEVERITY}) over tracked/new *.sh"
+LLB_SHELLCHECK_SOURCES_LABEL="shellcheck source directives that do not resolve (SC1090/SC1091)"
 
 # Tracked plus new-but-not-ignored *.sh, anywhere in the repo: a script is linted before its first
 # commit, and nothing under a gitignored tree (.venv, $DATA_DIR) is ever scanned. Index entries
@@ -46,18 +48,38 @@ llb_shell_syntax_scan() {
 
 # One invocation over the whole set: shellcheck names the file in every finding, and running from
 # the project root keeps those paths repo-relative.
-llb_shellcheck_scan() {
+#
+# `-x` follows a sourced file, so a caller is checked against what the shared module actually
+# defines instead of in isolation. `-P SCRIPTDIR` is what makes that work here: a `# shellcheck
+# source=` path resolves relative to CWD by default, so from the project root every
+# `source=shared/common.sh` directive in scripts/ resolved to nothing and `-x` followed nothing.
+llb_shellcheck_run() {
   (
     cd "$PROJECT_ROOT" || exit 1
-    llb_lintable_shell_scripts | xargs -0 -r "$LLB_SHELLCHECK" -S "$LLB_SHELLCHECK_SEVERITY"
+    llb_lintable_shell_scripts | xargs -0 -r "$LLB_SHELLCHECK" -x -P SCRIPTDIR "$@"
   )
+}
+
+llb_shellcheck_scan() {
+  llb_shellcheck_run -S "$LLB_SHELLCHECK_SEVERITY"
+}
+
+# An unresolved source is reported at INFO, below the severity floor above, so the lint pass alone
+# cannot tell "followed and clean" from "never followed". Check the directives on their own: this
+# is the scan that keeps `-x` honest. A path that is genuinely computed at run time (an operator's
+# .env, a plugin dir) is annotated in the script with a reasoned `# shellcheck disable=SC1091`
+# rather than by dropping this scan.
+llb_shellcheck_sources_scan() {
+  llb_shellcheck_run -S style -i SC1090,SC1091
 }
 
 # Resolve the venv binary, then any shellcheck on PATH (an apt install on an older host).
 llb_shellcheck_step() {
+  local failed=0
   if [ -x "$LLB_SHELLCHECK" ] || LLB_SHELLCHECK="$(command -v shellcheck 2>/dev/null)"; then
-    llb_fail_if_output "$LLB_SHELLCHECK_LABEL" llb_shellcheck_scan
-    return
+    llb_fail_if_output "$LLB_SHELLCHECK_LABEL" llb_shellcheck_scan || failed=1
+    llb_fail_if_output "$LLB_SHELLCHECK_SOURCES_LABEL" llb_shellcheck_sources_scan || failed=1
+    return "$failed"
   fi
   if [ "${LLB_SHELLCHECK_OPTIONAL:-0}" = "1" ]; then
     llb_print_block "shell lint (shellcheck) skipped -- LLB_SHELLCHECK_OPTIONAL=1"
@@ -82,7 +104,7 @@ llb_shell_lint_ok_line() {
   if [ "${LLB_SHELLCHECK_SKIPPED:-0}" = "1" ]; then
     echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses (shellcheck NOT run)"
   else
-    echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses and is clean at severity ${LLB_SHELLCHECK_SEVERITY}"
+    echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses, resolves its sources, and is clean at severity ${LLB_SHELLCHECK_SEVERITY}"
   fi
 }
 

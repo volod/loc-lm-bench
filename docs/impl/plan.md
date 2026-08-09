@@ -43,28 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-shell-lint-never-follows-a-sourced-file (optional)
+### agent-a-call-to-a-helper-that-does-not-exist-is-caught-by-nothing (optional)
 
-The shell gate lints each script in isolation: shellcheck does not follow a `source`/`.` line unless
-run with `-x`, so every `# shellcheck source=` directive in `scripts/` is decorative and SC1091 is
-below the `warning` floor anyway
-([host validation](current/host-validation.md#code-quality-checks)). That is exactly the axis the
-scripts grew along -- `scripts/shared/{common,complexity,shell_lint}.sh` define functions and
-variables that a dozen entrypoints call -- so the mistakes the gate cannot see are the cross-file
-ones: a caller invoking a helper that no longer exists, or reading a variable the sourced file
-stopped exporting. Run the scan with `-x`, fix or annotate what the followed sources surface, and
-check whether the directives resolve for every entrypoint (they are relative to the sourcing file).
-Sourcing is dynamic in a few places (`llb_load_env` reads `.env`), so expect some findings to be
-un-followable and needing an explicit `# shellcheck disable` with a reason rather than a fix.
+The shell lint now follows sourced files, so a caller is checked against what the shared modules
+define ([host validation](current/host-validation.md#code-quality-checks)) -- but shellcheck
+resolves VARIABLES across a followed source, not FUNCTIONS. `llb_check_shell_scripts` and
+`llb_print_script_failure` were deleted from `scripts/code_quality.sh` when the shared shell-lint
+module landed; had any caller still named them, every scan would have stayed green and the failure
+would have arrived as `command not found` on the operator's host, at whatever point of the script
+the call sits. That is the last cross-file mistake nothing catches, and
+the repo's shell layer is exactly the shape that invites it: one prefix (`llb_*`), definitions in
+three shared modules, call sites in a dozen entrypoints and in `make/*.mk` recipes that `source`
+them. Build the check the linter does not: collect `llb_*` definitions from a script plus its
+transitive `# shellcheck source=` closure, collect the `llb_*` call sites, and report a call with
+no definition in scope. Keep it a report until it is quiet, then add it to the shell gate.
 
 - Agent status: CLEAR
-- Dependencies: the scan to change is `llb_shellcheck_scan` in `scripts/shared/shell_lint.sh`; the
-  directives already in place are the `# shellcheck source=` lines in `scripts/*.sh`.
-- User-visible outcome: a call to a helper that a shared module no longer defines fails the build,
-  instead of at the moment an operator runs the script.
-- Scope boundary: in scope -- the `-x` flag, the directive fixes, and the annotated exceptions. Out
-  of scope -- lowering the severity floor below `warning` (the info-level findings are a separate
-  decision), rewriting scripts to avoid sourcing, and silencing a finding without a reason.
+- Dependencies: the source closure is already declared by the `# shellcheck source=` directives the
+  gate now verifies (`llb_shellcheck_sources_scan` in `scripts/shared/shell_lint.sh`); the call
+  sites outside `scripts/` are the `source .../common.sh` recipes in `make/dev.mk` and
+  `make/models.mk`.
+- User-visible outcome: renaming or deleting a shared helper fails the build that did it, instead of
+  the next run of whichever entrypoint still called it.
+- Scope boundary: in scope -- the definition/call census over the source closure, the make-recipe
+  call sites, and the report-then-gate promotion. Out of scope -- a general shell symbol resolver
+  (a call built by `eval` or `$cmd` stays out of reach and must be named as such), renaming any
+  helper, and checking non-`llb_*` commands (that is what `command -v` guards already do).
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-shell-lint-verdict-depends-on-which-shellcheck-the-host-has (optional)
