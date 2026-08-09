@@ -17,6 +17,13 @@ Two shapes are left that the stdlib table cannot have, and this module is both:
   what is left after that -- a module a zip ships compiled with no copy on disk. It is the archive
   half of the same `unread-module` problem the stdlib coverage raises, named per package because
   that is the unit the excuses are written at and the unit an operator acts on.
+
+`audit_installed_read_coverage` is the directory-tree twin of that last one, and the counterpart of
+`gpu_guard_spawn_reach_audit.audit_read_coverage` one tree over: it weighs the scan against the
+top-level names `importlib.metadata` publishes and refuses the stripped tree --
+a dependency whose modules ship cached with no source, which this host can import and the scan did
+not read. Everything else the classification finds is reported and not refused, decided on the
+evidence in `llb.quality.gpu_guard_spawn_reach_installed_coverage`.
 """
 
 from collections.abc import Mapping
@@ -32,6 +39,10 @@ from llb.quality.gpu_guard_spawn_reach_installed import (
     PackageReacher,
     installed_spawn_reaches,
     package_coverage,
+)
+from llb.quality.gpu_guard_spawn_reach_installed_coverage import (
+    InstalledReadCoverage,
+    installed_read_coverage,
 )
 from llb.quality.gpu_guard_spawn_surface import (
     DECLARED_SPAWN_SURFACE,
@@ -90,6 +101,44 @@ def unread_archived_packages(
             "ships inside an archive on this interpreter's import path with no source to parse "
             f"({', '.join(names)}), so this host can import it and the scan could not read whether "
             f"it starts a child (archives read: {', '.join(scan.archives)})",
+        )
+        for package, names in sorted(grouped.items())
+        if package not in reachers
+    )
+
+
+def audit_installed_read_coverage(
+    scan: SpawnScan,
+    coverage: InstalledReadCoverage | None = None,
+    reachers: Mapping[str, PackageReacher] = DECLARED_PACKAGE_REACHERS,
+) -> tuple[SurfaceFinding, ...]:
+    """Published top-level names this host can import and the scan read no source for.
+
+    Only the stripped tree is refused, and for the reason the compiled-only class is refused one
+    tree over: the module IS importable here and nothing read whether it starts a child. The other
+    classes have no source BY CONSTRUCTION -- a dependency shipped as a shared object, a namespace
+    or data directory with no module in it -- and a gate that refused those would fail on any host
+    with a CUDA wheel installed. `archived` is left to `unread_archived_packages`, which refuses the
+    same names at the same granularity, and `absent` is a name this ONE tree does not provide,
+    which an editable install and a distribution that records a submodule as top-level both produce.
+
+    Grouped per PACKAGE, the way the archive refusal is: that is the unit the excuses are written at
+    and the unit an operator acts on, so a stripped dependency is one line naming the modules it hid
+    rather than one line per module. The submodule level joins its own package's line for the same
+    reason -- and a package `DECLARED_PACKAGE_REACHERS` already names is not refused at all, because
+    the declaration IS the decision that it starts children and that this is accepted.
+    """
+    measured = coverage if coverage is not None else installed_read_coverage(scan)
+    grouped: dict[str, list[str]] = {}
+    for name in (*measured.compiled_only, *measured.compiled_only_submodules):
+        grouped.setdefault(name.split(".")[0], []).append(name)
+    return tuple(
+        SurfaceFinding(
+            package,
+            PROBLEM_UNREAD_MODULE,
+            f"ships under {measured.root} as cached modules with no source beside them "
+            f"({', '.join(sorted(names))}), so this host can import it and the scan could not read "
+            "whether it starts a child",
         )
         for package, names in sorted(grouped.items())
         if package not in reachers

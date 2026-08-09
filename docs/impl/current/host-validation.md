@@ -380,9 +380,19 @@ the interpreter ships -- so a package that ships its `__init__.py` and not its s
 read, and the very layout the measurement exists for hides there: `multiprocessing/__init__.py`
 present with `multiprocessing/util.py` stripped reads exactly like a complete package.
 `compiled_only_submodules` needs no published list, because the interpreter leaves the evidence on
-disk -- inside every package directory the scan walked it compares the `.py` stems against the
-`__pycache__/*.pyc` stems, and a submodule with a cached module and no source beside it is the same
-compiled-only finding, named `multiprocessing.util` rather than `multiprocessing`. The vocabulary
+disk -- inside every package directory the scan walked, a `__pycache__` entry whose source file is
+not beside the package is the same compiled-only finding, named `multiprocessing.util` rather than
+`multiprocessing`. Which source an entry claims is `cached_source`, and that rule is sharper than it
+looks: PEP 3147 names a cache `<stem>.<tag>.pyc` and neither half is one dot-separated component,
+since `optuna` ships alembic revisions as `v3.0.0.a.py` and pytest writes rewritten caches under
+`cpython-313-pytest-9.1`. Splitting on the running interpreter's own `cache_tag` reads both right
+(and the `.opt-1` of an optimized cache); `importlib.util.source_from_cache` answers neither, as it
+refuses any name past three dots. A cache with no tag to split on -- one written by another
+interpreter version, or the tagless `pkg/__pycache__/util.pyc` -- falls back to the PEP's shape. The
+stdlib exercises none of this (0 either way, before and after), and site-packages exercises all of
+it: reading the stem to the first dot called four `optuna` sources stripped, and reading the tag
+back from the last called 397 modules stripped across the venv, every one of them sitting on disk.
+The vocabulary
 and the decision are reused rather than duplicated: `audit_read_coverage` raises these as the same
 `unread-module` problem, a `.py` with no `.pyc` is nothing (caching is incidental), and a name in
 neither list is simply not shipped -- the `absent` half of the same evidence-based split. A cached
@@ -506,6 +516,45 @@ this host: 0 archives on the import path, 0 unread archived** -- every dependenc
 directory tree -- and the discovery costs 0.0013s. Residual: an archive is only as readable as its
 entries, so a `.pyc`-only dependency is still a refusal rather than a measurement, which is the same
 statement the stdlib half makes and for the same reason.
+
+**The installed scan says what it FAILED to read, so "no dependency goes below the seams" names the
+venv it was read from.** The stdlib half accounts for every declared name it read no source for; the
+installed half had only the degenerate end -- an empty read, plus a `files_read` assertion -- which
+is exactly the check the stdlib half outgrew, because a file count says how much was read and not
+what was missed. A dependency installed with its sources stripped is parsed by nothing and reported
+by nothing: the directory-tree twin of the archive case above.
+`llb.quality.gpu_guard_spawn_reach_installed_coverage` weighs the scan against the list
+`importlib.metadata` publishes in place of the one the interpreter does --
+`packages_distributions()`, which maps every importable top-level name an installed distribution
+provides to the distributions providing it, read through `importable_top_level_names` because a few
+distributions record a PATH there (`nvidia/cusparselt`, `sentencepiece/__init__`) and the scan
+reports top-level names. Every published name no source was read for is classified, and as one tree
+over the classification is the deliverable: `extensions` (the name resolves to a shared object --
+an extension module installed under the name itself, or a directory shipping objects and no Python,
+which is what the `nvidia-*` wheels are), `namespace` (a directory with no module of its own: an
+implicit namespace package, a PEP 561 `-stubs` directory, a data directory like `include` or
+`schemas`), `compiled_only` (a cached module with no source beside it), `archived` (nothing in the
+tree and an archive on the import path carries it), and `absent` (nothing under the scanned root at
+all). **On this venv, of 421 published top-level names: 402 read as source, 10 extensions,
+6 namespace, 0 compiled-only, 0 archived, 3 absent** -- the measurement costs 0.9s on top of the
+2.2s scan, and the fields partition the list so a name cannot fall between two.
+`gpu_guard_spawn_reach_installed_audit.audit_installed_read_coverage` refuses ONLY `compiled_only`,
+decided on that evidence: it is the stripped tree, where the module is importable here and the scan
+did not read it. `extensions` and `namespace` have no source by construction, and a gate refusing
+either is the naive one that fails on any host with a CUDA wheel installed. `archived` is left to
+`unread_archived_packages`, which already refuses those names at this same granularity -- reporting
+them here too would be one finding wearing two names. `absent` is reported and not refused because
+this scan reads ONE tree: a published name it does not carry is provided from elsewhere on the
+import path (`llb` itself, editable-installed) or is a distribution recording a submodule as
+top-level, which `tree-sitter-*` (`_binding`) and `xxhash` (`_xxhash`) both do here. The refusal is
+grouped per PACKAGE, the way the archive one is, and the submodule level joins its own package's
+line -- so a stripped dependency is one line naming the modules it hid, and a package the
+declarations already name is not refused at all. `compiled_only_submodules` is reused unchanged from
+the stdlib coverage, and `installed_read_coverage_message` renders the breakdown as the assertion
+message the venv test fails with. Residual: the classification reads filenames, so a directory
+carrying both a stripped module and a shared object is called stripped (cache evidence first, since
+a `.pyc` is the interpreter's own record that source WAS there), and a distribution that publishes
+no top-level name at all is outside the list this is measured against.
 
 **The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
 stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119

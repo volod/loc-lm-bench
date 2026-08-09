@@ -43,35 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-installed-scan-never-says-what-it-failed-to-read (optional)
+### agent-no-reach-scan-reads-the-tree-this-repo-itself-ships (optional)
 
-The stdlib scan measures its own reading against `sys.stdlib_module_names` and accounts for every
-name it read no source for; the installed scan has nothing of the kind
-([host validation](current/host-validation.md#code-quality-checks)). Its only guard is the degenerate
-end -- an empty read, plus a `files_read > 100` assertion in the slow tier -- which is exactly the
-check the stdlib half outgrew, because a file count says how much was read and not what was missed.
-A dependency installed with its sources stripped (a `.pyc`-only tree, a package whose modules ship as
-extension modules) is parsed by nothing and reported by nothing, and the below-the-seams verdict
-covers a venv part of which was never opened -- the directory-tree twin of the archive case just
-closed. Give the installed scan the same treatment: `importlib.metadata` publishes the list the
-stdlib gets from the interpreter (`packages_distributions()` maps every importable top-level name to
-its distribution), so weigh the top-level names the pass parsed against that list and classify the
-rest the way `stdlib_read_coverage` does -- an extension module, a namespace package with no modules
-of its own, a stripped tree. Decide on the evidence which classes are refusals: a pure-extension
-dependency (`nvidia-*` wheels ship little but shared objects) is the case a naive gate would break.
+Two trees are read for what starts a child -- the stdlib and site-packages -- and `src/llb` is
+neither ([host validation](current/host-validation.md#code-quality-checks)). The installed read
+coverage makes the hole visible rather than closing it: `llb` is published by
+`packages_distributions()` and classified `absent`, because an editable install points outside the
+scanned root, and `absent` is reported and not refused precisely because that scan reads ONE tree.
+So the repo's own modules -- the code an unmarked test runs the most -- could call
+`_posixsubprocess.fork_exec` and no check would say so, while every dependency around them is held
+to that question. Read the trees the import path actually carries instead of the one
+`sysconfig` names: resolve each `absent` published name to the path it imports from (an editable
+install's `__editable__*.pth` or `direct_url.json` names it) and scan those with the same
+below-the-seams alphabet, so `absent` becomes a name nothing on this host provides rather than a
+name this root does not. Decide on the evidence whether `llb`'s own reaches are declared like a
+dependency's or held to the stricter stdlib rule -- the repo starts children on purpose in
+`scripts/` and the CLI, and a naive gate would refuse every one of them.
 
 - Agent status: CLEAR
-- Dependencies: the pattern to copy is `stdlib_read_coverage` / `ReadCoverage` in
-  `src/llb/quality/gpu_guard_spawn_reach_coverage.py` and the refusal in
-  `gpu_guard_spawn_reach_audit.audit_read_coverage`; the scan to measure is
-  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach_installed.py` and the audit to
-  extend is `src/llb/quality/gpu_guard_spawn_reach_installed_audit.py`.
-- User-visible outcome: "no dependency goes below the seams" names the venv it was read from, rather
-  than whichever installed files happened to carry source.
-- Scope boundary: in scope -- the installed read coverage, its classification, and the refuse-or-
-  report decision per class. Out of scope -- importing a distribution to inspect it, disassembling a
-  `.pyc`, and the archive half (already read).
-- Execution path: `make ci` for the fabricated cases; the real-venv tier is `slow`.
+- Dependencies: the classes to consume are `absent` / `InstalledReadCoverage` in
+  `src/llb/quality/gpu_guard_spawn_reach_installed_coverage.py`; the scan to point at another tree is
+  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach_installed.py`, which already
+  takes a root; the excuse table is `DECLARED_PACKAGE_REACHERS`.
+- User-visible outcome: the below-the-seams verdict covers the code this repo ships, not only the
+  code it depends on.
+- Scope boundary: in scope -- resolving a published name to the tree it imports from, scanning those
+  trees, and the declare-or-refuse decision for this repo's own starts. Out of scope -- importing a
+  distribution to locate it, the stdlib half, and the no-download axis.
+- Execution path: `make ci` for the fabricated cases; the real-import-path tier is `slow`.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-a-unit-test-verdict-rests-on-measured-wall-clock (optional)

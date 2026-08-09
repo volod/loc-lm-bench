@@ -15,6 +15,8 @@ than a `make ci` one.
 import sys
 import zipfile
 from collections.abc import Mapping
+from importlib.machinery import EXTENSION_SUFFIXES
+from importlib.util import cache_from_source
 from pathlib import Path
 
 import pytest
@@ -25,11 +27,15 @@ from llb.quality import gpu_guard_spawn_reach_audit as reach_audit
 from llb.quality import gpu_guard_spawn_reach_installed as installed
 from llb.quality import gpu_guard_spawn_reach_installed_archive as installed_archive
 from llb.quality import gpu_guard_spawn_reach_installed_audit as installed_audit
+from llb.quality import gpu_guard_spawn_reach_installed_coverage as coverage
 from llb.quality import gpu_guard_spawn_surface as surface
 from llb.quality import gpu_guard_spawn_surface_audit as audit
 
 # A file that reaches past every patchable name -- the one thing the installed scan looks for.
 BELOW = "import _posixsubprocess\n\ndef go():\n    _posixsubprocess.fork_exec()\n"
+# What an extension module is named here, taken from the interpreter rather than spelled out, so a
+# fabricated pure-extension dependency is one on whatever platform runs the suite.
+EXTENSION = EXTENSION_SUFFIXES[0]
 
 
 def _tree(tmp_path: Path, modules: Mapping[str, str]) -> Path:
@@ -85,8 +91,22 @@ def test_the_declared_packages_still_reach_only_what_their_excuses_were_measured
 
 
 @pytest.mark.slow
-def test_the_installed_scan_read_the_venv_rather_than_an_empty_path(installed_scan):
-    assert installed_scan.files_read > 100
+def test_the_installed_scan_accounts_for_every_published_name_it_read_no_source_for(installed_scan):
+    """The below-the-seams verdict is about this venv, so it has to say which venv it was read from:
+    every top-level name the installed distributions publish is either read or excused by a
+    construction that has no source. The file count this replaces said how much was read and not
+    what was missed, which is the same middle the stdlib half outgrew."""
+    measured = coverage.installed_read_coverage(installed_scan)
+    message = coverage.installed_read_coverage_message(measured)
+    assert installed_audit.audit_installed_read_coverage(installed_scan, measured) == (), message
+    # A partition of the published list: no name falls between two buckets or into both.
+    published = coverage.importable_top_level_names()
+    assert len(measured.read) + len(measured.unread) == len(published), message
+    assert installed_scan.files_read > 100, message
+    assert {"joblib", "numpy", "pytest", "torch"} <= set(measured.read), message
+    # And one level down, where the published list stops: no dependency here ships a package whose
+    # `__init__.py` is present and whose submodules are not.
+    assert measured.compiled_only_submodules == (), message
 
 
 def test_the_installed_alphabet_is_only_what_goes_below_the_seams():
@@ -319,6 +339,104 @@ def test_an_archive_that_cannot_be_read_contributes_nothing_rather_than_failing(
         _tree(tmp_path, {"plain/__init__.py": ""}), archives=[broken, tmp_path / "missing.egg"]
     )
     assert (scan.archives, scan.unread_archived, scan.files_read) == ((), (), 1)
+
+
+def test_a_stripped_dependency_is_refused_where_a_pure_extension_one_is_not(tmp_path):
+    """The directory-tree twin of the `.pyc`-only egg, and the naive gate beside it. A dependency
+    whose modules ship cached with no source is importable here and was parsed by nothing, which is
+    the refusal; a dependency that ships shared objects (`nvidia-*` wheels ship little else) or a
+    directory with no module in it at all has no source BY CONSTRUCTION, and refusing either would
+    fail on any host with a CUDA wheel installed."""
+    root = _tree(
+        tmp_path,
+        {
+            "sourced/__init__.py": "import json\n",
+            cache_from_source("stripped/__init__.py"): "",
+            cache_from_source("stripped/util.py"): "",
+            f"accel{EXTENSION}": "",
+            f"cuda/lib/libkernels{EXTENSION}": "",
+            "shipped/data/rows.json": "{}\n",
+        },
+    )
+    scan = installed.installed_spawn_reaches(root)
+    measured = coverage.installed_read_coverage(
+        scan, names=["accel", "cuda", "shipped", "sourced", "stripped"]
+    )
+    assert (measured.read, measured.compiled_only) == (("sourced",), ("stripped",))
+    assert (measured.extensions, measured.namespace) == (("accel", "cuda"), ("shipped",))
+    findings = installed_audit.audit_installed_read_coverage(scan, measured, reachers={})
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("stripped", reach_audit.PROBLEM_UNREAD_MODULE)
+    ]
+    # One line per PACKAGE, as the archive refusal is: the stripped submodule joins the name's own
+    # finding rather than earning a second one.
+    assert "stripped.util" in findings[0].detail
+    assert "stripped" in coverage.installed_read_coverage_message(measured)
+
+
+def test_a_stripped_submodule_of_a_dependency_the_scan_read_joins_that_packages_line(tmp_path):
+    """The level the published list stops at: `packages_distributions()` names `pkg` and never
+    `pkg.util`, so a dependency that ships its `__init__.py` and strips the rest reads as read."""
+    root = _tree(
+        tmp_path, {"pkg/__init__.py": "import json\n", cache_from_source("pkg/util.py"): ""}
+    )
+    scan = installed.installed_spawn_reaches(root)
+    measured = coverage.installed_read_coverage(scan, names=["pkg"])
+    assert (measured.read, measured.compiled_only) == (("pkg",), ())
+    assert measured.compiled_only_submodules == ("pkg.util",)
+    findings = installed_audit.audit_installed_read_coverage(scan, measured, reachers={})
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("pkg", reach_audit.PROBLEM_UNREAD_MODULE)
+    ]
+    assert "pkg.util" in findings[0].detail
+
+
+def test_a_stripped_package_the_declaration_already_names_is_not_a_second_finding(tmp_path):
+    """The declaration IS the decision that this package starts children and that it is accepted,
+    which is the rule the archive refusal applies to the same shape one layout over."""
+    root = _tree(tmp_path, {cache_from_source("vendored/__init__.py"): ""})
+    scan = installed.installed_spawn_reaches(root)
+    measured = coverage.installed_read_coverage(scan, names=["vendored"])
+    assert measured.compiled_only == ("vendored",)
+    assert (
+        installed_audit.audit_installed_read_coverage(scan, measured, {"vendored": _excused(1)})
+        == ()
+    )
+
+
+def test_a_published_name_this_tree_does_not_carry_is_reported_not_refused(tmp_path):
+    """The two ways a name goes unread without this tree stripping anything. An editable install or
+    a second site directory provides it from elsewhere on the import path, and an archive provides
+    it from a zip -- which `unread_archived_packages` already refuses at this same granularity, so
+    refusing it here would be one finding wearing two names."""
+    egg = _egg(tmp_path / "stripped.egg", {"zipped/util.pyc": ""})
+    root = _tree(tmp_path, {"plain/__init__.py": "import json\n"})
+    scan = installed.installed_spawn_reaches(root, archives=[egg])
+    measured = coverage.installed_read_coverage(scan, names=["editable", "plain", "zipped"])
+    assert (measured.read, measured.archived, measured.absent) == (
+        ("plain",),
+        ("zipped",),
+        ("editable",),
+    )
+    assert measured.archives == (str(egg),)
+    assert installed_audit.audit_installed_read_coverage(scan, measured, reachers={}) == ()
+    assert [finding.name for finding in installed_audit.unread_archived_packages(scan, {})] == [
+        "zipped"
+    ]
+
+
+def test_a_distribution_that_records_a_path_publishes_the_top_level_name_it_installs():
+    """`packages_distributions()` reads each distribution's own record of what it installed, and a
+    few write a path there -- `sentencepiece/__init__`, `nvidia/cusparselt` on this host. The scan
+    reports top-level names, so the two are only comparable once the path is read as one."""
+    assert coverage.importable_top_level_names(
+        {
+            "joblib": ["joblib"],
+            "nvidia/cusparselt": ["nvidia-cusparselt"],
+            "sentencepiece": ["sentencepiece"],
+            "sentencepiece/__init__": ["sentencepiece"],
+        }
+    ) == ("joblib", "nvidia", "sentencepiece")
 
 
 @pytest.mark.slow

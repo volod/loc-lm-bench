@@ -17,6 +17,7 @@ parse) are worth pinning where they can be written out in four lines.
 import sys
 import zipfile
 from collections.abc import Mapping
+from importlib.util import cache_from_source
 from pathlib import Path
 
 import pytest
@@ -182,6 +183,48 @@ def test_a_package_whose_submodules_all_ship_source_is_clean(tmp_path):
     measured = coverage.stdlib_read_coverage(scan, names=["pkg", "bare"])
     assert measured.compiled_only_submodules == ()
     assert reach_audit.audit_read_coverage(scan, measured) == ()
+
+
+def test_a_cached_submodule_is_matched_to_the_source_name_that_actually_wrote_it(tmp_path):
+    """Neither half of `<stem>.<tag>.pyc` is one dot-separated component, and both shapes ship in
+    this repo's venv: `optuna` names its alembic revisions `v1.2.0.a.py`, so a stem read to the
+    first dot loses most of it, and pytest writes its rewritten caches under a tag of its own
+    (`cpython-313-pytest-9.1`), so a tag read back from the last dot eats into the module name.
+    Either misreading reports source that is sitting right there as stripped -- four `optuna`
+    modules, then 397 across the venv, before the split was anchored on the interpreter's own
+    `cache_tag`."""
+    dotted = "pkg/v1.2.0.a.py"
+    rewritten = f"pkg/__pycache__/helper.{sys.implementation.cache_tag}-pytest-9.1.pyc"
+    root = _stdlib(
+        tmp_path,
+        {
+            "pkg/__init__.py": "import json\n",
+            dotted: "import json\n",
+            cache_from_source(dotted): "",
+            "pkg/helper.py": "import json\n",
+            rewritten: "",
+            # The same two shapes with no source beside them, which IS the finding -- so the rule is
+            # pinned as reading the name rather than as never reporting a dotted one.
+            cache_from_source("pkg/v9.9.9.a.py"): "",
+        },
+    )
+    measured = coverage.stdlib_read_coverage(reach.stdlib_spawn_reaches(root), names=["pkg"])
+    assert measured.compiled_only_submodules == ("pkg.v9.9.9.a",)
+
+
+def test_a_cached_submodule_of_another_interpreter_reads_against_the_source_beside_it(tmp_path):
+    """A cache this interpreter cannot import from is not evidence that a module was stripped: the
+    tag it does carry is not the one to split on, so the PEP's shape is what is left to read."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "pkg/__init__.py": "import json\n",
+            "pkg/util.py": "import json\n",
+            "pkg/__pycache__/util.cpython-311.pyc": "",
+        },
+    )
+    measured = coverage.stdlib_read_coverage(reach.stdlib_spawn_reaches(root), names=["pkg"])
+    assert measured.compiled_only_submodules == ()
 
 
 def test_a_cached_submodule_the_scan_never_walked_is_not_measured_either(tmp_path):

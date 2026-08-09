@@ -46,6 +46,12 @@ package directory to walk, so `archived` / `archived_submodules` account for it 
 own name list instead; `llb.quality.gpu_guard_spawn_reach_archive` owns that reading and states the
 evidence it was decided on.
 
+The same measurement of the INSTALLED half is
+`llb.quality.gpu_guard_spawn_reach_installed_coverage`, which weighs its scan against the list
+`importlib.metadata` publishes in place of the one the interpreter does. It reuses the submodule
+walk and the message rendering here, and classifies what is left with the classes a venv can have
+rather than the ones a stdlib can.
+
 The scan's excluded directory segments (`test`, `tests`, `idle_test`, `site-packages`) are not a
 hole in any of these measurements: none of them is a name `sys.stdlib_module_names` carries, which
 is asserted rather than assumed in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, and the
@@ -88,6 +94,10 @@ SOURCELESS_STDLIB_MODULES: Mapping[str, str] = {
     "winsound": _OTHER_PLATFORM.format(platform="Windows"),
     "_scproxy": _OTHER_PLATFORM.format(platform="macOS"),
 }
+
+# What this interpreter writes between a cached module's stem and its `.pyc` -- the one part of a
+# cache name that is neither the module nor the suffix, and therefore the only place to split it.
+_CACHE_TAG = sys.implementation.cache_tag
 
 # Where a compiled module can sit under the stdlib root without a `.py` beside it: a package's
 # cached `__init__`, a top-level cached module, and the two flat layouts a stripped install uses.
@@ -179,47 +189,86 @@ def compiled_only_submodules(root: Path) -> tuple[str, ...]:
     """Submodules inside a package the scan walked that are cached with no source beside them.
 
     The evidence the interpreter leaves on disk, in place of the per-submodule list CPython does not
-    publish: inside one package directory, a `__pycache__` stem with no `.py` stem to match it is a
-    module this host can import and the scan never parsed. A `.py` with no `.pyc` is nothing --
-    caching is incidental -- and a name that is in neither is simply not there, which is the same
-    evidence-based decision the `compiled_only` / `absent` split makes at the name level.
+    publish: a `__pycache__` entry whose source file is not beside the package is a module this host
+    can import and the scan never parsed. A `.py` with no `.pyc` is nothing -- caching is incidental
+    -- and a name that is in neither is simply not there, which is the same evidence-based decision
+    the `compiled_only` / `absent` split makes at the name level.
+
+    Which source file an entry claims is `cached_source`, the interpreter's own rule rather than a
+    stem comparison, because a package can ship `v3.0.0.a.py` and a stem is not the text before the
+    first dot.
     """
-    cached: dict[Path, set[str]] = {}
+    names: set[str] = set()
     for path in root.rglob("__pycache__/*.pyc"):
         relative = path.relative_to(root)
         # `<package>/.../__pycache__/<stem>.<tag>.pyc`, so fewer than three parts is a TOP-LEVEL
         # module's cache, which `_compiled_stems` already classifies as a declared name.
         if len(relative.parts) < 3 or is_excluded(relative.as_posix()):
             continue
-        cached.setdefault(path.parent.parent, set()).add(path.name.split(".")[0])
-    return tuple(
-        sorted(
-            ".".join((*package.relative_to(root).parts, stem))
-            for package, stems in cached.items()
-            for stem in stems - {PACKAGE_INIT} - {source.stem for source in package.glob("*.py")}
-        )
-    )
+        source = cached_source(path)
+        # A cached `__init__` names its PACKAGE, which the declared list already carries.
+        if source.stem == PACKAGE_INIT or source.is_file():
+            continue
+        names.add(".".join((*source.relative_to(root).parts[:-1], source.stem)))
+    return tuple(sorted(names))
+
+
+def cached_source(path: Path) -> Path:
+    """The source file one `__pycache__` entry claims -- `v3.0.0.a.cpython-313.pyc` -> `v3.0.0.a.py`.
+
+    PEP 3147 names a cache `<stem>.<tag>.pyc`, and neither half of that is a dot away from the
+    other: `optuna` ships alembic revisions as `v3.0.0.a.py`, so the stem is not the text before the
+    first dot, and pytest writes its rewritten caches under `cpython-313-pytest-9.1`, so the tag is
+    not one dot-separated component either. Read against the running interpreter's own
+    `cache_tag`, both come out right -- as does the `.opt-1` an optimized cache appends.
+    (`importlib.util.source_from_cache` answers neither: it refuses any name with more than three
+    dots.) Two layouts carry no tag to split on -- a cache written by another interpreter version,
+    and the tagless `pkg/__pycache__/util.pyc` -- and are read on the PEP's shape instead, which is
+    what puts a stale `util.cpython-311.pyc` back on the `util.py` sitting beside it.
+
+    A cached module is measured against the source it claims and never against the source's own
+    existence elsewhere, so this stays a pure name rule; whether the file is there is the caller's
+    question.
+    """
+    head, tagged, _ = path.name.partition(f".{_CACHE_TAG}") if _CACHE_TAG else ("", "", "")
+    parts = path.name.rsplit(".", 2)
+    stem = head if tagged else (parts[0] if len(parts) == 3 else path.name.removesuffix(".pyc"))
+    return path.parent.parent / f"{stem}.py"
 
 
 def read_coverage_message(coverage: ReadCoverage) -> str:
     """The operator-facing line: what was read, and what each unread name is excused by."""
-    listed = ", ".join(
-        f"{len(getattr(coverage, field))} {field.replace('_', '-')}"
-        for field in _FIELDS
-        if field != "read"
-    )
     submodules = coverage.compiled_only_submodules
     return (
         f"[gpu-guard] stdlib read coverage under {coverage.root}: {len(coverage.read)} of "
-        f"{len(coverage.read) + len(coverage.unread)} declared modules read as source; {listed}; "
-        f"{len(submodules)} compiled-only and {len(coverage.archived_submodules)} archived "
-        f"submodules"
-        f"{_named('compiled-only', coverage.compiled_only)}"
-        f"{_named('archived', coverage.archived)}{_named('absent', coverage.absent)}"
-        f"{_named('compiled-only submodules', submodules)}"
-        f"{_named('archived submodules', coverage.archived_submodules)}"
-        f"{_named('archives read', coverage.archives)}"
+        f"{len(coverage.read) + len(coverage.unread)} declared modules read as source; "
+        f"{class_counts(coverage, _FIELDS)}; {len(submodules)} compiled-only and "
+        f"{len(coverage.archived_submodules)} archived submodules"
+        f"{named_list('compiled-only', coverage.compiled_only)}"
+        f"{named_list('archived', coverage.archived)}{named_list('absent', coverage.absent)}"
+        f"{named_list('compiled-only submodules', submodules)}"
+        f"{named_list('archived submodules', coverage.archived_submodules)}"
+        f"{named_list('archives read', coverage.archives)}"
     )
+
+
+def class_counts(coverage: object, fields: Iterable[str]) -> str:
+    """`61 compiled, 35 extensions, ...` -- the unread classes of one partition, in its own order.
+
+    Shared with the installed coverage, whose classes differ and whose reading is the same: the
+    counts come off the field tuple, so a class added to either partition is a class its line
+    reports without a second edit.
+    """
+    return ", ".join(
+        f"{len(getattr(coverage, field))} {field.replace('_', '-')}"
+        for field in fields
+        if field != "read"
+    )
+
+
+def named_list(label: str, names: tuple[str, ...]) -> str:
+    """`-- label: a, b` for a class with entries, and nothing at all for an empty one."""
+    return f" -- {label}: {', '.join(names)}" if names else ""
 
 
 def _kind(
@@ -265,7 +314,3 @@ def _compiled_stem(root: Path, path: Path) -> str:
     if path.name.split(".")[0] == "__init__":
         return path.relative_to(root).parts[0]
     return path.name.split(".")[0]
-
-
-def _named(label: str, names: tuple[str, ...]) -> str:
-    return f" -- {label}: {', '.join(names)}" if names else ""
