@@ -43,32 +43,32 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-call-to-a-helper-that-does-not-exist-is-caught-by-nothing (optional)
+### agent-the-call-check-covers-a-third-of-the-shell-functions (optional)
 
-The shell lint now follows sourced files, so a caller is checked against what the shared modules
-define ([host validation](current/host-validation.md#code-quality-checks)) -- but shellcheck
-resolves VARIABLES across a followed source, not FUNCTIONS. `llb_check_shell_scripts` and
-`llb_print_script_failure` were deleted from `scripts/code_quality.sh` when the shared shell-lint
-module landed; had any caller still named them, every scan would have stayed green and the failure
-would have arrived as `command not found` on the operator's host, at whatever point of the script
-the call sits. That is the last cross-file mistake nothing catches, and
-the repo's shell layer is exactly the shape that invites it: one prefix (`llb_*`), definitions in
-three shared modules, call sites in a dozen entrypoints and in `make/*.mk` recipes that `source`
-them. Build the check the linter does not: collect `llb_*` definitions from a script plus its
-transitive `# shellcheck source=` closure, collect the `llb_*` call sites, and report a call with
-no definition in scope. Keep it a report until it is quiet, then add it to the shell gate.
+The call check keys on the `llb_*` prefix, which is what lets it tell a call from a word
+([host validation](current/host-validation.md#code-quality-checks)) -- and only 35 of the 92
+functions defined under `scripts/` carry it. The uncovered 57 are the ones with the MOST cross-file
+coupling: the eight `scripts/quickstart/*.sh` fragments source each other and share a vocabulary
+(`resolve_path`, `run_target`, `prompt_yes_no`, `make_with_data_dir`, ...) that no scan resolves, so
+the failure the check was built for is still live in the largest shell subsystem here. Two ways
+forward, and the task is to pick one on evidence rather than to build both: adopt the prefix for
+shared shell functions (a rename touching every fragment, after which the existing check covers
+them), or drop the prefix requirement by treating a name as a call only when it is DEFINED somewhere
+in the scanned set -- which catches a helper that moved out of scope but NOT one deleted outright,
+since a name defined nowhere is indistinguishable from an external command without real
+command-position parsing. State which failure each option leaves open.
 
 - Agent status: CLEAR
-- Dependencies: the source closure is already declared by the `# shellcheck source=` directives the
-  gate now verifies (`llb_shellcheck_sources_scan` in `scripts/shared/shell_lint.sh`); the call
-  sites outside `scripts/` are the `source .../common.sh` recipes in `make/dev.mk` and
-  `make/models.mk`.
-- User-visible outcome: renaming or deleting a shared helper fails the build that did it, instead of
-  the next run of whichever entrypoint still called it.
-- Scope boundary: in scope -- the definition/call census over the source closure, the make-recipe
-  call sites, and the report-then-gate promotion. Out of scope -- a general shell symbol resolver
-  (a call built by `eval` or `$cmd` stays out of reach and must be named as such), renaming any
-  helper, and checking non-`llb_*` commands (that is what `command -v` guards already do).
+- Dependencies: the census, the scope model, and the reference rule are
+  `src/llb/quality/shell_symbols.py`, gated through `llb_shell_symbols_scan` in
+  `scripts/shared/shell_lint.sh`; the subsystem in question is `scripts/quickstart.sh` plus
+  `scripts/quickstart/*.sh`.
+- User-visible outcome: renaming a quickstart fragment helper fails the build that did it, the way
+  renaming an `llb_*` helper already does.
+- Scope boundary: in scope -- the chosen rule, its false-call cases, and the stated residual. Out of
+  scope -- a general shell parser, checking commands the scripts do not define (that is what
+  `command -v` guards already do), and any behavior change to the quickstart flow itself.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-shell-lint-verdict-depends-on-which-shellcheck-the-host-has (optional)

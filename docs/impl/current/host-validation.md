@@ -202,6 +202,8 @@ and nothing under a gitignored tree is scanned; a staged delete is dropped):
   repo-relative.
 - the same run restricted to `SC1090,SC1091` at `-S style`: every `# shellcheck source=` directive
   must resolve.
+- `llb.quality.shell_symbols`: every `llb_*` name a caller uses has a definition in that caller's
+  declared scope.
 
 **The lint is cross-file, and the third scan is what keeps it that way.** `-x` follows a sourced
 file, so a caller is checked against what `scripts/shared/{common,complexity,shell_lint}.sh`
@@ -215,6 +217,29 @@ gate entrypoints set `LLB_REPORT_PREFIX` for `common.sh` to read, which un-follo
 called an unused variable (SC2034); both `# shellcheck disable` workarounds are gone and the gate
 stays green. A path genuinely computed at run time is annotated in the script with a reasoned
 `# shellcheck disable=SC1091` rather than by dropping the scan.
+
+**Functions are checked by `llb.quality.shell_symbols`, because the linter does not model them.**
+`-x` shares VARIABLE knowledge across a followed source, not function definitions, so a call to a
+helper that no longer exists passes every scan above and fails as `command not found` on an
+operator's host. The module collects `llb_*` definitions over a caller's declared scope and names
+any `llb_*` it uses with no definition there, for tracked-or-new `*.sh` **and** `Makefile`/`*.mk`
+(the recipes that `source "$(PROJECT_ROOT)/scripts/shared/common.sh"` are call sites too). Scope is
+what a caller DECLARES, never what happens to be loaded at run time:
+
+- a `# shellcheck source=` directive (resolved script-dir first, then repo root, as shellcheck
+  resolves it -- and the scan above already proves these land),
+- a make recipe's literal `$(PROJECT_ROOT)/...` source,
+- a `# llb-requires: <sibling>` line, for a shared module whose functions assume the entrypoint
+  sourced a sibling. `scripts/shared/{complexity,shell_lint}.sh` carry it for `common.sh`: they
+  call `llb_fail_if_output` and never source it themselves, which is a contract their headers
+  stated in prose and now state in a line the check reads.
+
+What counts as a call is a name in command or argument position -- including one handed to a runner
+(`llb_fail_if_output "$LABEL" llb_cyclomatic_scan`), which breaks identically when the definition
+goes. Prose in a comment, an expansion operand (`${name#llb_prefix}`), a `$llb_var`, and a path
+segment are not calls. A call built by `eval` or through a variable is out of reach and stays out of
+scope. Coverage is `tests/llb/quality/test_shell_symbols.py`, whose first assertion is the shipped
+tree itself.
 
 A MISSING shellcheck fails the gate rather than skipping it -- a linter that reports itself as fine
 when it never ran is worse than no linter, and the old sweep did exactly that on a host without the

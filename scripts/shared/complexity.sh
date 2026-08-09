@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # The two Python complexity gates. SOURCE this file after scripts/shared/common.sh + llb_load_env.
+# llb-requires: common.sh
 #
 # Both scans are HARD gates: a function over either threshold fails the run on the commit that
 # introduces it (`make ci-checks` via scripts/complexity_gate.sh), not in a later sweep. Neither
