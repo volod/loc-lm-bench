@@ -76,6 +76,15 @@ strict continuation, repeated no-op behavior, mandatory baseline validation, pai
 recommendation gating, and per-cell comparison artifacts. The explicit default policy is also
 checked against the implicit legacy loop behavior.
 
+Episode elapsed time uses an injectable monotonic clock from `run_episode` through `loop_harness`,
+`run_policy_cell`, and `run_agentic_loop_policy`; production calls retain `time.monotonic`. The
+repeat-feedback fake-completion tests supply exact one-second episode measurements, so their
+support verdicts are determined by controller behavior and prompt-token cost instead of host
+scheduler jitter. A separate transfer test gives the candidate exact 1.25-second episodes against
+a 1-second baseline and verifies that the paired wall-time gate alone rejects the candidate at the
+declared 20% ceiling. Validation on 2026-08-09: `make ci` passed 3,039 tests with 64 opt-in/slow
+tests deselected, and `make lint-md` passed.
+
 ## Powered Repeat-Noop Comparison
 
 The focused power lane adds a prospective study contract without changing the general loop-policy

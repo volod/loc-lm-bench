@@ -55,6 +55,8 @@ from llb.core.contracts.benchmarks import ToolDef
 from llb.prompts.registry import render_text
 from llb.scoring.tool_calls import ToolCall, ToolCallParse, parse_tool_call_detailed
 
+Clock = Callable[[], float]
+
 
 def build_agent_prompt(
     task: AgenticTask,
@@ -151,6 +153,7 @@ class _EpisodeTally:
     """
 
     started: float
+    clock: Clock
     answer: str = ""
     status: str = STATUS_INCOMPLETE
     steps: int = 0
@@ -196,7 +199,7 @@ class _EpisodeTally:
             n_repeated_calls=self.n_repeated_calls,
             n_repeated_noops=self.n_repeated_noops,
             repeat_feedback_redirected=self.repeat_feedback_redirected,
-            elapsed_s=time.monotonic() - self.started,
+            elapsed_s=self.clock() - self.started,
         )
 
 
@@ -392,6 +395,7 @@ def run_episode(
     feedback_serialization: dict[str, dict[str, list[dict[str, str]]]] | None = None,
     snapshot: Callable[[list[ChatMessage]], None] | None = None,
     on_refused_prompt: Callable[[str], None] | None = None,
+    clock: Clock = time.monotonic,
 ) -> Episode:
     """Drive one task to completion (or the step budget) in the deterministic sandbox.
 
@@ -405,7 +409,9 @@ def run_episode(
     builds that no other seam can see: `complete`/`chat` are handed what is SENT, and a refusal by
     definition is not, so a caller comparing two runs byte for byte would otherwise have to treat
     the prompt that ended the episode as if it had never existed. It never fires on a run that
-    sends everything it builds, and it cannot change what the loop does.
+    sends everything it builds, and it cannot change what the loop does. `clock` defaults to the
+    monotonic system clock; tests can inject exact elapsed durations when the verdict itself uses
+    wall time.
 
     The body is the CYCLE and nothing else: what the model is asked, what it answered, and what the
     answer did. Counting lives in `_EpisodeTally`, transport in `_ControllerSeam`, the repair round
@@ -425,7 +431,7 @@ def run_episode(
         on_refused_prompt=on_refused_prompt,
     )
     state = ContextState()
-    tally = _EpisodeTally(started=time.monotonic())
+    tally = _EpisodeTally(started=clock(), clock=clock)
     for step in range(1, max_steps + 1):
         tally.steps = step
         prompt = step_prompt(task, catalog, policy, state, seam.budget, complete)

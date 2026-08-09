@@ -43,29 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-unit-test-verdict-rests-on-measured-wall-clock (optional)
-
-`analyze_repeat_feedback` gates a candidate on a paired WALL-CLOCK cost comparison alongside the
-prompt-token one (`_cost_gate` in `src/llb/bench/agentic_loop_feedback.py`), and the unit tests drive
-it through fake completions where both arms take microseconds. The gate is then measuring scheduler
-noise: `test_loop_runner_applies_only_the_predeclared_neutral_candidate` fails under a loaded full
-`make ci` run and passes on its own, which is a red build that says nothing about the code. The
-prompt-token half is deterministic and is the cost the design actually reasons about, so give the
-wall-clock gate an injectable clock (or a declared floor below which a wall delta is not a signal)
-and let the fixtures pin the verdict on tokens alone -- then assert the wall gate itself against a
-fake clock, where a real regression can be written out.
-
-- Agent status: CLEAR
-- Dependencies: the gate is `_cost_gate` and its `METRIC_WALL_CLOCK` call in
-  `src/llb/bench/agentic_loop_feedback.py`; the tests that flake on it are
-  `tests/llb/bench/test_agentic_loop_feedback_transfer.py` and its neighbours.
-- User-visible outcome: a red `make ci` means a behavior changed, not that the box was busy.
-- Scope boundary: in scope -- the injected clock or declared floor, the fixture updates, and a
-  wall-gate test that fails for a stated reason. Out of scope -- removing the wall-clock cost axis
-  from the design, and re-running any published lane.
-- Documentation target:
-  [extended workflows](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation).
-
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)
 
 `default_start_method` will not RESOLVE the default context -- doing so makes a later

@@ -1,9 +1,11 @@
 """Run and persist a paired sweep over the framework-free agent loop policy."""
 
+import time
 from dataclasses import replace
 from pathlib import Path
 
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.bench.agentic.episode import Clock
 from llb.bench.agentic.loop_policy import (
     DEFAULT_REPEAT_FEEDBACK,
     MALFORMED_POLICIES,
@@ -191,6 +193,7 @@ def run_agentic_loop_policy(
     repeat_feedback_design: dict[str, object] | None = None,
     model_family: str | None = None,
     run_seed: int | None = None,
+    clock: Clock = time.monotonic,
 ) -> AgenticLoopPolicyRun:
     """Measure every cell on the identical task set and recommend one policy per model."""
     if not tasks:
@@ -215,6 +218,7 @@ def run_agentic_loop_policy(
             complete=complete,
             budget=resolved_budget,
             meter=meter,
+            clock=clock,
         )
         for cell in cells
     ]

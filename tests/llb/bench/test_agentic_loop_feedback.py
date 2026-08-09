@@ -74,7 +74,7 @@ def test_feedback_grid_keeps_one_allow_cell_and_all_noop_variants():
     validate_repeat_feedback_design(_design(), _tasks(), cells=cells, model_family="family-a")
 
 
-def test_localized_feedback_redirects_and_clears_paired_gates(tmp_path: Path):
+def test_localized_feedback_redirects_and_clears_paired_gates(tmp_path: Path, episode_clock):
     current_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_CURRENT]
     uk_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_UK]
     bilingual_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_BILINGUAL]
@@ -103,6 +103,7 @@ def test_localized_feedback_redirects_and_clears_paired_gates(tmp_path: Path):
         mirror=lambda *_args: None,
         repeat_feedback_design=_design(),
         model_family="family-a",
+        clock=episode_clock(),
     )
     analysis = run.repeat_feedback_analysis
     assert analysis is not None

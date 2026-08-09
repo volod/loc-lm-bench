@@ -180,7 +180,7 @@ def test_stable_routes_require_both_seeds_and_cross_family_threshold(tmp_path: P
     assert persisted["supported_family_fraction"] == pytest.approx(2 / 3)
 
 
-def test_runner_resolves_only_the_candidate_declared_for_its_family():
+def test_runner_resolves_only_the_candidate_declared_for_its_family(episode_clock):
     tasks = _tasks()
     design = _design(tasks)
     candidate_notice = REPEATED_NOOP_OBSERVATIONS[REPEAT_FEEDBACK_AYA_DIRECT]
@@ -203,6 +203,7 @@ def test_runner_resolves_only_the_candidate_declared_for_its_family():
         repeat_feedback_design=design,
         model_family="aya",
         run_seed=13,
+        clock=episode_clock(),
     )
     assert run.repeat_feedback_analysis is not None
     assert set(run.repeat_feedback_analysis["variants"]) == {REPEAT_FEEDBACK_AYA_DIRECT}

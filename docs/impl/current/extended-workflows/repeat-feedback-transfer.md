@@ -224,8 +224,10 @@ cells, with no additional inference.
 
 `tests/llb/bench/test_agentic_loop_feedback_transfer.py` checks the immutable neutral notice and
 hypothesis, fresh digest, balanced ledger, exact seed grid, candidate isolation, three-family and
-two-seed response rule, completion and cost decisions, report persistence, and an end-to-end fake
-run. Validation on 2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
+two-seed response rule, completion and cost decisions, report persistence, and end-to-end fake
+runs with exact injected episode durations. The wall-cost regression case measures a 1.25-second
+candidate against a 1-second baseline and refuses it at the prospective 20% ceiling. Validation on
+2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
 
 ## Controller-Authority Gemma Transfer
 

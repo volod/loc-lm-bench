@@ -1,9 +1,11 @@
 """Execute one fixed cell of the agent-loop policy grid."""
 
 import logging
+import time
 
 from llb.bench.agentic.context import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
+from llb.bench.agentic.episode import Clock
 from llb.bench.agentic.model import HARNESS_LOOP, AgenticTask, Episode
 from llb.bench.agentic.run import run_agentic
 from llb.bench.agentic_loop_policy_report import (
@@ -28,6 +30,7 @@ def run_policy_cell(
     complete: LLMComplete,
     budget: ContextBudget,
     meter: ThroughputMeter | None,
+    clock: Clock = time.monotonic,
 ) -> LoopPolicyReport:
     """Run one fresh episode per task for a single immutable policy cell."""
     task_number = 0
@@ -58,6 +61,7 @@ def run_policy_cell(
             policy=policy,
             budget=budget,
             loop_policy=cell.policy,
+            clock=clock,
         )
         _LOG.info(
             "[agentic-loop-policy] cell=%s task=%d/%d done success=%s steps=%d calls=%d "
