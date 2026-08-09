@@ -43,28 +43,55 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-device-denial-stops-at-the-subprocess-seam (optional)
+### agent-the-declared-spawn-surface-is-prose-nothing-rechecks (optional)
 
-An unmarked test's `subprocess` children start with no visible CUDA device, but the denial is a
-patched `subprocess.Popen`, so a child started any other way -- `os.system`, `os.exec*`,
-`os.posix_spawn`, a `multiprocessing` fork -- inherits the device untouched
-([host validation](current/host-validation.md#code-quality-checks)). No test spawns that way today,
-which is exactly when the hole is cheap to close and impossible to notice. Two candidate mechanisms,
-and the task is to pick one on evidence: widen the patch to the other spawn entry points (more
-seams, each with its own env argument shape), or move the denial into the process the suite ALREADY
-controls -- a pytest that re-execs itself once with an empty `CUDA_VISIBLE_DEVICES` and hands the
-device back only to the marked tiers, which cannot work while `slow` and unmarked tests share one
-process. Say which spawn paths the chosen mechanism still misses.
+The device denial is installed at ten named spawn entry points, and the paths it does NOT reach are
+a bullet list in a docstring
+([host validation](current/host-validation.md#code-quality-checks)). Both halves are written against
+one CPython: the seam set is only complete because `os.py` builds `execl*` / `spawn*` on top of the
+four `exec*v*` names, and the residual list is only accurate because `multiprocessing`'s default
+start method on Linux is `fork`. A Python upgrade can move either -- 3.14 changes that default -- and
+nothing fails, because a name the seam set never heard of is indistinguishable from a name it
+deliberately excluded. Make the surface a check rather than a claim: enumerate the process-starting
+names the interpreter actually exposes (the `os` spawn/exec/fork/system family plus
+`subprocess.Popen`) and refuse one that is neither a registered seam nor a DECLARED residual, so a
+new spawn function arrives as a failing test on the commit that upgrades Python.
 
 - Agent status: CLEAR
-- Dependencies: the denial is `denying_popen` / `denied_child_env` in `src/llb/quality/gpu_guard.py`,
-  applied by `deny_the_device_to_children` in `tests/conftest.py`; the parent-side caching that rules
-  out setting the variable in-process is written down in the `gpu_guard` module docstring.
-- User-visible outcome: the tier's no-GPU promise does not depend on which spawn function a test
-  happens to use.
-- Scope boundary: in scope -- the additional spawn seams or the re-exec, and the residual list after
-  it. Out of scope -- the in-process observation half, the marker vocabulary, and the no-download
-  axis.
+- Dependencies: the seam set is `spawn_seams` in `src/llb/quality/gpu_guard_spawn.py`; the residual
+  list is that module's docstring; the delegation the set relies on is pinned by
+  `tests/llb/quality/test_gpu_guard_spawn.py`.
+- User-visible outcome: the denial's coverage claim is re-checked against the running interpreter
+  instead of against the one it was written on.
+- Scope boundary: in scope -- the enumerated surface, the declared-residual vocabulary, and the
+  refusal. Out of scope -- closing any residual (that is the task below), the in-process observation
+  half, and the no-download axis.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-denial-misses-multiprocessing-under-spawn-and-forkserver (optional)
+
+`multiprocessing` under the `spawn` or `forkserver` start method is the one residual of the device
+denial that is reachable from ordinary Python: `multiprocessing.util.spawnv_passfds` calls
+`_posixsubprocess.fork_exec` with no environment list, which is neither `subprocess.Popen` nor an
+`os` entry point, so the child inherits the device
+([host validation](current/host-validation.md#code-quality-checks)). It is invisible today only
+because `fork` is the Linux default and IS covered -- a default that moves in Python 3.14, at which
+point every `multiprocessing` child in an unmarked test silently regains the GPU. Close it at the
+one seam that is public: route `spawnv_passfds` through a denied `os.posix_spawn` for the duration
+of an unmarked test, and decide on the evidence whether the file-descriptor passing survives that
+(`pass_fds` is the reason the helper exists, so a naive substitution is exactly what would break the
+resource tracker). If it does not survive, say so and record the residual instead.
+
+- Agent status: CLEAR
+- Dependencies: the seam set to extend is `spawn_seams` in `src/llb/quality/gpu_guard_spawn.py`; the
+  end-to-end shape to copy is the `fork`-context case in
+  `tests/llb/quality/test_gpu_guard_spawn_children.py`.
+- User-visible outcome: an unmarked test's `multiprocessing` child finds no device whichever start
+  method the interpreter defaults to.
+- Scope boundary: in scope -- the `spawnv_passfds` seam, its `pass_fds` evidence, and the
+  spawn/forkserver end-to-end cases. Out of scope -- patching `_posixsubprocess.fork_exec` itself (a
+  private C signature that changes between versions), the in-process observation half, and the
+  no-download axis.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-light-tier-has-a-no-gpu-check-and-no-no-download-check (optional)

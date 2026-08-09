@@ -24,19 +24,16 @@ downgrades the refusal to a warning for a host that wants the finding without th
 
 A CHILD process leaves nothing here to read -- and the build tests above are exactly that shape,
 running the installer through `subprocess.run` -- so children are DENIED the device rather than
-observed: for the duration of an unmarked test, `subprocess.Popen` hands every child an empty
-`CUDA_VISIBLE_DEVICES`, and a child that tries to open a context finds no device. The denial is
-deliberately child-only. Setting the variable in THIS process would poison it for the rest of the
-session: `torch.cuda.is_available()` caches, and on torch 2.11 it keeps reporting False after the
-variable is restored, so one unmarked test would silently take the GPU away from every `slow` /
+observed: for the duration of an unmarked test, every spawn entry point hands the child an empty
+`CUDA_VISIBLE_DEVICES`, and a child that tries to open a context finds no device. That half lives in
+`llb.quality.gpu_guard_spawn`, along with the seams it covers and the ones it still misses. The
+denial is deliberately child-only. Setting the variable in THIS process would poison it for the rest
+of the session: `torch.cuda.is_available()` caches, and on torch 2.11 it keeps reporting False after
+the variable is restored, so one unmarked test would silently take the GPU away from every `slow` /
 `gpu_env` test that follows.
 
 Residual: attribution is first-offender -- once a context exists it exists for the rest of the
-session, so a later unmarked test that would have initialized one runs unobserved. The denial
-reaches what goes through `subprocess` (`run`, `call`, `check_output`, `Popen`), not
-`os.system`/`os.exec*`/`posix_spawn` or a forked child. And it hides the device from the CUDA
-runtime, not from NVML: `nvidia-smi` still lists the GPU under an empty `CUDA_VISIBLE_DEVICES`, so a
-child that only ASKS whether hardware exists still gets yes -- it just cannot open a context.
+session, so a later unmarked test that would have initialized one runs unobserved.
 """
 
 import os
@@ -51,11 +48,6 @@ from llb.core import env
 EXEMPT_MARKERS = ("slow", "gpu_env")
 # Importing one of these is device work in itself, whether or not a context is live yet.
 WATCHED_IMPORTS = ("flashinfer",)
-# What a child of an unmarked test inherits. An empty value is how the CUDA runtime is told there is
-# no device; flashinfer needs no switch of its own, since every probe here asks torch first.
-CHILD_DENIAL = {"CUDA_VISIBLE_DEVICES": ""}
-# `Popen(args, bufsize, executable, stdin, stdout, stderr, preexec_fn, close_fds, shell, cwd, env)`
-_POPEN_ENV_POSITION = 10
 
 MODE_REFUSE = "refuse"
 MODE_REPORT = "report"
@@ -152,33 +144,6 @@ class DeviceGuard:
         if not findings:
             return None
         return self.mode, guard_message(test_id, findings)
-
-
-def denied_child_env(inherited: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The environment a child gets: what it would have inherited, with the device taken out."""
-    base = dict(os.environ if inherited is None else inherited)
-    base.update(CHILD_DENIAL)
-    return base
-
-
-def denying_popen(original: type[Any]) -> type[Any]:
-    """A `subprocess.Popen` that starts every child with no visible CUDA device.
-
-    Substituted for the module attribute, so `subprocess.run` / `call` / `check_output` -- which all
-    reach for `subprocess.Popen` at call time -- are covered by the one patch.
-    """
-
-    class _DeviceDeniedPopen(original):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            if len(args) > _POPEN_ENV_POSITION:
-                mutable = list(args)
-                mutable[_POPEN_ENV_POSITION] = denied_child_env(mutable[_POPEN_ENV_POSITION])
-                args = tuple(mutable)
-            else:
-                kwargs["env"] = denied_child_env(kwargs.get("env"))
-            super().__init__(*args, **kwargs)
-
-    return _DeviceDeniedPopen
 
 
 def guard_message(test_id: str, findings: Iterable[str]) -> str:

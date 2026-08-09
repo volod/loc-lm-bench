@@ -7,9 +7,10 @@ that decide whether the guard is usable -- it fires on device work, it stays sil
 out of the way. The live suite is the fourth assertion: `tests/conftest.py` runs it over every
 unmarked test in this file too.
 
-The child-process half is the other axis: a `subprocess` child of an unmarked test starts with no
-visible CUDA device, whatever environment the caller passed it, while a declared test's child keeps
-the GPU and THIS process keeps it always.
+The child-process half is the other axis, and what belongs here is the WIRING: an unmarked test's
+child starts with no visible CUDA device, a declared test's child keeps the GPU, and this process
+keeps it always. The seams that denial is installed at are covered in
+`tests/llb/quality/test_gpu_guard_spawn.py`.
 """
 
 import importlib.util
@@ -168,40 +169,6 @@ def test_the_suite_wiring_leaves_a_declared_test_alone(monkeypatch):
     next(steps)
     _reach_the_device(monkeypatch)
     assert next(steps, None) is None
-
-
-class _RecordingPopen:
-    """Stands in for `subprocess.Popen` so the env rewrite is checkable without a process."""
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        self.seen_args = args
-        self.seen_kwargs = kwargs
-
-
-def test_a_child_inherits_the_callers_environment_minus_the_device():
-    child = gpu_guard.denied_child_env({"PATH": "/bin", "CUDA_VISIBLE_DEVICES": "0"})
-    assert child["PATH"] == "/bin"
-    assert child["CUDA_VISIBLE_DEVICES"] == ""
-
-
-def test_a_child_with_no_declared_environment_still_gets_one_with_the_device_removed():
-    child = gpu_guard.denied_child_env(None)
-    assert child["CUDA_VISIBLE_DEVICES"] == ""
-    assert len(child) > 1
-
-
-def test_the_denying_popen_rewrites_an_explicitly_passed_environment():
-    denied = gpu_guard.denying_popen(_RecordingPopen)(["true"], env={"A": "1"})
-    assert denied.seen_kwargs["env"]["A"] == "1"
-    assert denied.seen_kwargs["env"]["CUDA_VISIBLE_DEVICES"] == ""
-
-
-def test_the_denying_popen_rewrites_a_positional_environment():
-    """`env` is Popen's 11th positional; passing it that way must not slip past the rewrite."""
-    positional = (["true"], -1, None, None, None, None, None, True, False, None, {"A": "1"})
-    denied = gpu_guard.denying_popen(_RecordingPopen)(*positional)
-    assert denied.seen_args[10]["CUDA_VISIBLE_DEVICES"] == ""
-    assert denied.seen_args[10]["A"] == "1"
 
 
 def test_only_the_refusing_mode_denies_a_child():

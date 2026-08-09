@@ -1,32 +1,17 @@
 """Suite-wide fixtures. The only one here is the no-GPU guard for the lightweight tier.
 
-The rationale, the escape-hatch markers, the child-process denial, and the `LLB_GPU_GUARD` modes
-live in `llb.quality.gpu_guard`; this module is the pytest wiring and the reporting decision.
+The rationale, the escape-hatch markers, and the `LLB_GPU_GUARD` modes live in
+`llb.quality.gpu_guard`; the child-process denial and the spawn seams it is installed at live in
+`llb.quality.gpu_guard_spawn`. This module is the pytest wiring and the reporting decision.
 """
 
-import subprocess
 import warnings
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 
 import pytest
 
-from llb.quality import gpu_guard
-
-
-@contextmanager
-def deny_the_device_to_children() -> Iterator[None]:
-    """Hand every `subprocess` child an empty `CUDA_VISIBLE_DEVICES` for the duration.
-
-    Patching the module attribute rather than this process's environment is the whole point: the
-    parent keeps its device (see `gpu_guard`, where the caching that forces that is written down).
-    """
-    original = subprocess.Popen
-    subprocess.Popen = gpu_guard.denying_popen(original)  # type: ignore[misc]
-    try:
-        yield
-    finally:
-        subprocess.Popen = original  # type: ignore[misc]
+from llb.quality import gpu_guard, gpu_guard_spawn
 
 
 def device_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[None]:
@@ -39,7 +24,7 @@ def device_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[No
     if guard is None:
         yield
         return
-    with deny_the_device_to_children() if guard.denies_children else nullcontext():
+    with gpu_guard_spawn.denied_children() if guard.denies_children else nullcontext():
         yield
     outcome = guard.verdict(test_id)
     if outcome is None:

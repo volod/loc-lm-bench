@@ -223,7 +223,7 @@ finding: `import torch`, `torch.cuda.is_available()`, and a test's own fake `tor
 `is_initialized()` False, which is what keeps the many tests that pull torch in without touching the
 device green.
 
-**It refuses rather than reports, decided on the evidence.** All 2917 tests of the non-slow suite
+**It refuses rather than reports, decided on the evidence.** All tests of the non-slow suite
 are clean under it on this CUDA host, so a finding is a new violation on the commit that adds it
 rather than an entry in a backlog nobody drains -- the cheap moment to enforce, the same reasoning
 the complexity gates were taken at. A probe run on this host shows both halves of the verdict: a
@@ -236,10 +236,10 @@ unrecognized value is refused rather than read as off, so a typo'd knob cannot q
 check it was aimed at.
 
 **A CHILD process is denied the device rather than observed**, because there is nothing in this
-process to observe it by. For the duration of an unmarked test, `subprocess.Popen` is swapped for
-one that starts every child with an empty `CUDA_VISIBLE_DEVICES` -- whatever environment the caller
-passed, since the rewrite sits at the `Popen` seam that `run` / `call` / `check_output` all reach
-for at call time. That closes the shape that motivated the guard: `test_build_helper.py` drives
+process to observe it by. For the duration of an unmarked test, every spawn entry point is swapped
+for one that starts the child with an empty `CUDA_VISIBLE_DEVICES` -- whatever environment the
+caller passed. `subprocess.Popen` is the seam that `run` / `call` / `check_output` all reach for at
+call time. That closes the shape that motivated the guard: `test_build_helper.py` drives
 `scripts/build_vllm.sh` through `subprocess.run`, so its flashinfer probe lives in a python no
 in-process fixture can inspect. Remove the seeded verdict as an experiment and the prebuilt-installer
 test costs 5.99s under `LLB_GPU_GUARD=off` -- the child JIT-builds the sampler kernel on the real
@@ -251,20 +251,58 @@ cost off a run with the guard disabled, and it states the intent at the call sit
 process would poison the session: `torch.cuda.is_available()` caches, and on torch 2.11 it keeps
 reporting False after the variable is restored (measured -- `False` while denied, still `False`
 restored, though `device_count()` recovers to 1), so the first unmarked test to ask would take the
-GPU away from every `slow` / `gpu_env` test after it. Patching the seam leaves this process
+GPU away from every `slow` / `gpu_env` test after it. Patching the seams leaves this process
 untouched, which is checkable end to end: an unmarked test's child reads `is_available() == False`,
 a `gpu_env` test's child reads True, and the parent still reads True afterwards. Only the refusing
 mode denies -- `report` exists to let a run through while SAYING what it did, and a denial says
-nothing to anyone. All 2917 non-slow tests pass with it live, so no test's child needed a device.
+nothing to anyone. All 2955 non-slow tests pass with it live, so no test's child needed a device.
+
+**The denial covers every spawn entry point, not only `subprocess`.** `llb.quality.gpu_guard_spawn`
+owns that half: `spawn_seams()` names each entry point and the replacement installed at it, and
+`denied_children()` is the context the autouse fixture enters. Three argument shapes cover the
+surface -- an entry point that TAKES an environment has it rewritten (`subprocess.Popen`,
+`os.execve`, `os.execvpe`, `os.posix_spawn`, `os.posix_spawnp`); one that takes none reaches its
+`*e` sibling with a denied one (`os.execv` -> `os.execve`, `os.execvp` -> `os.execvpe`) or, for
+`os.system`, carries `export CUDA_VISIBLE_DEVICES=''` on a line in front of the command; and a FORK
+(`os.fork`, `os.forkpty`) applies the denial inside the child, where poisoning the variable costs
+nothing because the child is not the session. Ten seams cover more than they name, because the rest
+of the `os` spawn surface is written in Python on top of those names and resolves them as module
+globals at call time: `execl` / `execlp` go through `execv` / `execvp`, `execle` / `execlpe` through
+`execve` / `execvpe`, the whole `spawnv*` / `spawnl*` family through `_spawnvef` (which forks and
+then calls `execv` / `execve`), and `multiprocessing` under the default `fork` start method reaches
+`os.fork` directly.
+
+**Widening the patch beat re-execing pytest, on evidence from the repo.** The other candidate was a
+pytest that re-execs itself once with an empty `CUDA_VISIBLE_DEVICES` and hands the device back only
+to the marked tiers. It cannot work here: `make test` runs the WHOLE suite -- `slow` and unmarked
+together -- in one pytest process, and `gpu_env` is exempt from `slow` (`NOT_SLOW` deselects only
+`slow` and `opt_in_env`), so even `make ci`'s non-slow suite runs device-needing tests in the same
+process as the tests being guarded. A process-wide denial has no per-test granularity, and per-test
+granularity is the guard; handing the device back mid-session is not available either, for the
+caching reason above.
 
 **Residual: attribution and reach.** A CUDA context exists for the rest of the session once opened,
 so the first unmarked test to open one is named and a later one that would have runs unobserved. The
-denial covers `subprocess`, not `os.system` / `os.exec*` / `posix_spawn` or a forked child. And it
-hides the device from the CUDA runtime, not from NVML: `nvidia-smi` still lists the GPU under an
-empty `CUDA_VISIBLE_DEVICES`, so a child that only ASKS whether hardware exists still gets yes -- it
-just cannot open a context. Coverage is `tests/llb/quality/test_gpu_guard.py`: the state reads over
-a fake module table, the environment rewrite over a recording `Popen` stand-in (including the
-positional-`env` call shape), and the suite's own fixture body driven against the live process.
+denial still misses four paths, all stated in the `gpu_guard_spawn` docstring: `multiprocessing`
+under the `spawn` or `forkserver` start method, where `multiprocessing.util.spawnv_passfds` calls
+`_posixsubprocess.fork_exec` with no environment list -- neither `subprocess.Popen` nor an `os`
+entry point (`fork` is the Linux default and IS covered); a native extension that calls `fork(2)` /
+`execve(2)` / `system(3)` in C without coming back through `os`; a child that sets
+`CUDA_VISIBLE_DEVICES` back itself, since the denial is a default and not a sandbox; and the
+`os.system` mechanism being POSIX-shell-specific. As before, it hides the device from the CUDA
+runtime, not from NVML: `nvidia-smi` still lists the GPU under an empty `CUDA_VISIBLE_DEVICES`, so a
+child that only ASKS whether hardware exists still gets yes -- it just cannot open a context.
+
+Coverage is three files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
+suite wiring: the state reads over a fake module table, and the fixture body driven against the live
+process. `test_gpu_guard_spawn.py` puts a recorder behind each seam and asserts what it was passed,
+including the positional-`env` `Popen` shape, the `os.system` command text, and the `os.execl` /
+`os.execlp` delegation that the four exec seams rely on. `test_gpu_guard_spawn_children.py` is the
+end-to-end half: it starts a REAL child through `subprocess.run`, `os.system`, `os.spawnv`,
+`os.spawnlp`, `os.posix_spawn`, `os.posix_spawnp`, a raw `os.fork`, and a `fork`-context
+`multiprocessing.Process`, and reads back what each child saw -- `""` under the denial and the
+parent's own value without it, so each assertion is about the denial rather than about a host that
+never had a device.
 
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
