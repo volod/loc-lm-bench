@@ -3,7 +3,7 @@
 
 .PHONY: \
 	demo-eval mlflow board recommend acceptance-gate-audit venv apt-deps test test-fast format \
-	ci ci-checks ci-github lint-md
+	ci ci-checks ci-github complexity-gate lint-md
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -121,6 +121,11 @@ ci-checks:
 	$(VENV)/bin/ruff check src tests
 	$(VENV)/bin/mypy --python-version $(PYTHON_VERSION)
 	$(PY) -m llb.quality.acceptance_gates --check
+	@$(MAKE) --no-print-directory complexity-gate
+
+# Also runs inside ci-checks -- this alias is for running the gate alone after a refactor.
+complexity-gate: ## Fail on any Radon D-or-worse or cognitive-complexity finding
+	@bash "$(PROJECT_ROOT)/scripts/complexity_gate.sh"
 
 ci: ci-checks ## Format check + lint + type check + LIGHTWEIGHT unit tests (full local install)
 	$(PY) -m pytest $(PYTEST_CACHE_OPT) $(NOT_SLOW)

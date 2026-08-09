@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Repo hygiene: largest tracked files, Python complexity, markdown lint, shell checks.
+# Repo hygiene sweep: largest tracked files, Python complexity, markdown lint, shell checks.
+# Everything here is a report EXCEPT the two complexity scans, which are the same hard gate
+# `make ci-checks` runs (scripts/complexity_gate.sh); this script exits non-zero on their findings.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,47 +10,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 llb_load_env  # resolve + export DATA_DIR (default $PROJECT_ROOT/.data)
 
+# shellcheck source=shared/complexity.sh
+. "$SCRIPT_DIR/shared/complexity.sh"  # thresholds + the two gated scans (also run in `make ci`)
+
 TOP_K="${1:-10}"
 LONGEST_TOP_K="${LONGEST_TOP_K:-20}"
-RADON="${PROJECT_ROOT}/.venv/bin/radon"
-COMPLEXIPY="${PROJECT_ROOT}/.venv/bin/complexipy"
 PYMARKDOWN="${PROJECT_ROOT}/.venv/bin/pymarkdown"
 PYTHON="${PROJECT_ROOT}/.venv/bin/python"
-COGNITIVE_MAX="${COGNITIVE_MAX:-15}"
-# complexipy has no cache-dir flag -- it writes .complexipy_cache in its CWD. Run it from the shared
-# $DATA_DIR cache tree (against absolute src/tests) so nothing lands in the project root.
-COMPLEXIPY_CACHE_DIR="${DATA_DIR}/cache/complexipy"
-mkdir -p "$COMPLEXIPY_CACHE_DIR"
 
 ROOT_MARKDOWN=(README.md AGENTS.md CLAUDE.md GEMINI.md)
-LLB_PRINTED_BLOCK=0
-
-llb_print_block() {
-  local label="$1"
-  local output="${2:-}"
-  if [ "$LLB_PRINTED_BLOCK" -eq 1 ]; then
-    echo
-  fi
-  echo "[code-quality] ${label}"
-  LLB_PRINTED_BLOCK=1
-  if [ -n "$output" ]; then
-    printf '%s\n' "$output"
-  fi
-}
-
-llb_report_if_output() {
-  local label="$1"
-  shift
-  local output status
-  set +e
-  output="$("$@" 2>&1)"
-  status=$?
-  set -e
-  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
-    llb_print_block "$label" "$output"
-  fi
-  return "$status"
-}
 
 llb_markdown_scan() {
   local label="$1"
@@ -198,10 +168,11 @@ llb_longest_code_files "top ${LONGEST_TOP_K} longest tracked code files (lines, 
 
 llb_files_over_line_limit "tracked .py/.sh files over the ${LINE_SOFT_LIMIT:-250}-line soft limit"
 
-if [ ! -x "$RADON" ] || [ ! -x "$COMPLEXIPY" ] || [ ! -x "$PYMARKDOWN" ] || [ ! -x "$PYTHON" ]; then
+if [ ! -x "$PYMARKDOWN" ] || [ ! -x "$PYTHON" ]; then
   echo "ERROR: dev tools missing in .venv -- run 'make venv EXTRAS=dev' first" >&2
   exit 1
 fi
+llb_complexity_tools_ready
 
 llb_check_root_files
 llb_report_if_output "experiment acceptance-gate inventory" \
@@ -212,12 +183,10 @@ llb_check_shell_scripts
 
 llb_markdown_scan "docs markdown (recursive)" -r docs
 
-llb_report_if_output "cyclomatic complexity grade D or worse (src tests only)" \
-  "$RADON" cc src tests -s -n D
-
 llb_report_if_output "maintainability index grade C only (repo root; hidden dirs skipped)" \
-  bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$RADON"
+  bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$LLB_RADON"
 
-llb_report_if_output "cognitive complexity above ${COGNITIVE_MAX} (src tests only)" \
-  bash -c 'cd "$4" && "$2" "$1/src" "$1/tests" --max-complexity-allowed "$3" --failed --ignore-complexity --color no --plain --sort desc' \
-  _ "$PROJECT_ROOT" "$COMPLEXIPY" "$COGNITIVE_MAX" "$COMPLEXIPY_CACHE_DIR"
+# The two complexity scans are the same hard gate `make ci-checks` runs (scripts/complexity_gate.sh);
+# a finding fails this sweep too. Everything above stays informational, including the soft
+# line-limit report (AGENTS.md keeps that limit soft on purpose).
+llb_complexity_gate || { llb_complexity_failure_hint; exit 1; }

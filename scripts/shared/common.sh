@@ -120,6 +120,58 @@ llb_python() {
   fi
 }
 
+# --- Labelled report blocks -------------------------------------------------------------------
+# Shared by scripts/code_quality.sh and scripts/complexity_gate.sh so a finding reads the same
+# whether it was printed by the periodic sweep or by the CI gate. Set LLB_REPORT_PREFIX per script.
+LLB_REPORT_PREFIX="${LLB_REPORT_PREFIX:-code-quality}"
+LLB_PRINTED_BLOCK="${LLB_PRINTED_BLOCK:-0}"
+
+llb_print_block() {
+  local label="$1"
+  local output="${2:-}"
+  if [ "$LLB_PRINTED_BLOCK" -eq 1 ]; then
+    echo
+  fi
+  echo "[${LLB_REPORT_PREFIX}] ${label}"
+  LLB_PRINTED_BLOCK=1
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
+}
+
+# Run a command, print its output under LABEL only when it produced any (or failed), and return
+# the command's own status. Output alone is informational here -- see llb_fail_if_output.
+llb_report_if_output() {
+  local label="$1"
+  shift
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
+    llb_print_block "$label" "$output"
+  fi
+  return "$status"
+}
+
+# Same, for a scan whose OUTPUT IS the failure: a tool that reports findings on stdout and still
+# exits 0 (radon cc, complexipy --ignore-complexity) fails here as soon as it prints a row.
+llb_fail_if_output() {
+  local label="$1"
+  shift
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ] || [ "$status" -ne 0 ]; then
+    llb_print_block "$label" "$output"
+    return 1
+  fi
+  return 0
+}
+
 # Canonical parallelism cap for from-source C++/CUDA builds (ninja/cmake/nvcc).
 # Formula (AGENTS.md): MAX_JOBS = min(cpu_cores // 2, RAM_GiB // 14), floored at 1.
 max_jobs() {

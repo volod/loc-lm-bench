@@ -6,7 +6,7 @@ needed).
 
     make venv     # apt + .venv + package + extras + .env
     make test     # unit tests
-    make ci       # lint (ruff) + tests (GitHub CI)
+    make ci       # lint (ruff) + types + complexity gate + tests (GitHub CI)
     make          # list targets
 
 `make venv` installs every Python extra below so a fresh checkout can run every command without a

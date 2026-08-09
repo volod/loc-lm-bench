@@ -43,28 +43,50 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-complexity-scans-are-clean-and-nothing-keeps-them-that-way (optional)
+### agent-shell-lint-never-runs-in-ci (optional)
 
-Both complexity scans are now silent -- Radon at D-or-worse and Complexipy at the shipped maximum
-of 15 ([host validation](current/host-validation.md#code-quality-checks)) -- and nothing enforces
-that. `scripts/code_quality.sh` REPORTS complexity and never fails on it, and it is not part of
-`make ci`, so the next peak lands as a row in a report that only gets read when someone goes
-looking. An empty scan is exactly the state in which a threshold becomes cheap to enforce: turn the
-two complexity sections into failures (exit non-zero when either is non-empty) and add the check to
-`ci-checks` beside `llb.quality.acceptance_gates --check`, so a regression is a red build on the
-commit that causes it. Keep the numbers as they ship (`COGNITIVE_MAX=15`, Radon D) rather than
-raising them to whatever the tree happens to hold.
+The complexity gate covers Python only, and the shell half of the tree has no gate at all: the
+`bash -n` and `shellcheck` sweeps live in `scripts/code_quality.sh`, which is not what CI runs
+([host validation](current/host-validation.md#code-quality-checks)). Worse, `llb_check_shellcheck`
+returns 0 with a "skipped" line when the binary is absent, and GitHub CI installs no apt packages
+at all -- so on the one host that gates every commit, shell lint is not merely absent but would
+report itself as fine if it were wired up naively. Give the scripts the same treatment Python just
+got: a `bash -n` syntax gate (needs nothing installed) inside `ci-checks`, plus a shellcheck gate
+that FAILS on a missing binary in CI while staying a skip locally, and decide there whether
+shellcheck is worth a `uv`-installable path or an apt step in the workflow.
 
 - Agent status: CLEAR
-- Dependencies: `scripts/code_quality.sh` already runs both scans through
-  `llb_report_if_output`, which returns their status; `make/dev.mk` holds `ci-checks`; the soft
-  line-limit report must stay informational (AGENTS.md makes THAT limit soft on purpose, and it
-  currently has legitimate offenders).
-- User-visible outcome: a function that crosses the threshold fails CI on its own commit instead of
-  being found in a periodic sweep.
-- Scope boundary: in scope -- the exit status, the `ci-checks` wiring, and a note in the quality-gate
-  docs. Out of scope -- raising either threshold, gating the line-count report, and refactoring
-  anything to reach the gate (the tree already passes).
+- Dependencies: `llb_check_shell_syntax` / `llb_check_shellcheck` in `scripts/code_quality.sh` (both
+  already return a status); the gate pattern to follow is `scripts/complexity_gate.sh` plus
+  `scripts/shared/complexity.sh`; `.github/workflows/ci.yml` installs `.[dev]` and nothing else.
+- User-visible outcome: a broken shell script fails the build that introduced it, on the host that
+  actually gates commits.
+- Scope boundary: in scope -- the shared scan module, the CI entrypoint, the `ci-checks` wiring, and
+  the missing-binary policy split between CI and a local run. Out of scope -- new shellcheck rules,
+  raising the severity floor above `warning`, and fixing findings by disabling checks.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-maintainability-index-scan-is-still-only-a-report (optional)
+
+The two complexity scans are gates now; the third scan beside them is not. `scripts/code_quality.sh`
+still runs the Radon maintainability-index section (grade C only, repo root) through
+`llb_report_if_output`, so it prints and passes
+([host validation](current/host-validation.md#code-quality-checks)). It is silent today, which is
+the cheap moment to enforce it -- but unlike the other two it scans the whole repo root rather than
+`src`/`tests`, and MI mixes volume with complexity, so a large-but-regular lookup family can score C
+without being the kind of file the limit exists to catch. Decide it on evidence: scope the scan to
+`src`/`tests`, record what a C-grade module in this tree actually looks like, and either move the
+section into `llb_complexity_gate` or record the decision that MI stays a report because the soft
+line target already owns the volume axis.
+
+- Agent status: CLEAR
+- Dependencies: the section is the `radon mi . -s -n C -x C` call in `scripts/code_quality.sh`; the
+  gate to join is `llb_complexity_gate` in `scripts/shared/complexity.sh`.
+- User-visible outcome: the last complexity-family scan is either enforced like its neighbours or
+  documented as deliberately informational, instead of being neither by default.
+- Scope boundary: in scope -- the scan scope, the evidence for the threshold, and the gate-or-record
+  decision. Out of scope -- raising either enforced threshold, gating the line-count report, and
+  refactoring to reach a grade the evidence does not justify.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-two-source-files-remain-over-the-soft-line-target (optional)

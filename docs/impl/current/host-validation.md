@@ -159,20 +159,40 @@ scripts/code_quality.sh
 
 `scripts/code_quality.sh` always prints the largest tracked Python files and largest tracked
 non-Python files. Root-file, markdown, shell, and complexity sections are quiet when clean and
-appear only when they have findings, missing optional tools, or failures.
+appear only when they have findings, missing optional tools, or failures; a complexity finding also
+exits the sweep non-zero (see [Code quality checks](#code-quality-checks)).
 
 `make test` is the full local precommit flow when slow tests are acceptable.
 
 ### Code quality checks
 
-`make ci` checks Ruff formatting and lint, mypy, and the non-slow pytest suite. `make test` adds
-the full local test flow and Markdown lint; `make lint-md` also runs `make lint-doc-links`
-(`llb.quality.doc_links`), which resolves every relative docs link -- file plus `#anchor` -- so the
-three-level current-implementation tree cannot rot into unfindable pages.
-`scripts/code_quality.sh` reports long source files, cyclomatic complexity, and cognitive
-complexity so maintainers can split code at functional seams.
-The ~250-line source-file target is soft; cohesive schemas and regular lookup families may remain
+`make ci` checks Ruff formatting and lint, mypy, the acceptance-gate inventory, the complexity gate
+below, and the non-slow pytest suite. `make test` adds the full local test flow and Markdown lint;
+`make lint-md` also runs `make lint-doc-links` (`llb.quality.doc_links`), which resolves every
+relative docs link -- file plus `#anchor` -- so the three-level current-implementation tree cannot
+rot into unfindable pages. `scripts/code_quality.sh` is the wider sweep: it reports long source
+files and runs the complexity gate, so maintainers can split code at functional seams. The
+~250-line source-file target is soft; cohesive schemas and regular lookup families may remain
 whole.
+
+**Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
+Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
+exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the
+build red on its own commit instead of surfacing in a later sweep. `ci-checks` runs it beside
+`llb.quality.acceptance_gates --check` (so it runs in `make ci`, `make ci-github`, and GitHub CI);
+`make complexity-gate` runs it alone after a refactor. Neither tool signals through its exit status
+in this configuration (radon always exits 0, complexipy is asked for a plain listing with
+`--ignore-complexity`), so the gate treats printed output as the failure. Both scans always run --
+one pass shows every peak. The thresholds are the shipped numbers: a finding is split, not
+accommodated by raising the maximum.
+
+The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
+gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
+identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`
+in `scripts/shared/common.sh`). Everything else in the sweep stays informational -- in particular
+the `.py`/`.sh` line-count report, which backs a target AGENTS.md keeps SOFT on purpose and which
+has legitimate offenders. The maintainability-index section (Radon MI grade C) is also still a
+report.
 
 The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
 accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and
