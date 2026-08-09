@@ -6,9 +6,14 @@ that decide whether the guard is usable -- it fires on device work, it stays sil
 `import torch` and on a host with no torch at all, and a declared marker or `LLB_GPU_GUARD` takes it
 out of the way. The live suite is the fourth assertion: `tests/conftest.py` runs it over every
 unmarked test in this file too.
+
+The child-process half is the other axis: a `subprocess` child of an unmarked test starts with no
+visible CUDA device, whatever environment the caller passed it, while a declared test's child keeps
+the GPU and THIS process keeps it always.
 """
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -19,6 +24,8 @@ from llb.core import env
 from llb.quality import gpu_guard
 
 _CONFTEST = Path(__file__).resolve().parents[2] / "conftest.py"
+# Captured at import, before any guard wraps a test: what the patch must put back.
+_ORIGINAL_POPEN = subprocess.Popen
 
 
 def _suite_conftest() -> ModuleType:
@@ -160,6 +167,86 @@ def test_the_suite_wiring_leaves_a_declared_test_alone(monkeypatch):
     steps = _suite_conftest().device_guard_steps("tests/x.py::test_y", ["gpu_env"])
     next(steps)
     _reach_the_device(monkeypatch)
+    assert next(steps, None) is None
+
+
+class _RecordingPopen:
+    """Stands in for `subprocess.Popen` so the env rewrite is checkable without a process."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.seen_args = args
+        self.seen_kwargs = kwargs
+
+
+def test_a_child_inherits_the_callers_environment_minus_the_device():
+    child = gpu_guard.denied_child_env({"PATH": "/bin", "CUDA_VISIBLE_DEVICES": "0"})
+    assert child["PATH"] == "/bin"
+    assert child["CUDA_VISIBLE_DEVICES"] == ""
+
+
+def test_a_child_with_no_declared_environment_still_gets_one_with_the_device_removed():
+    child = gpu_guard.denied_child_env(None)
+    assert child["CUDA_VISIBLE_DEVICES"] == ""
+    assert len(child) > 1
+
+
+def test_the_denying_popen_rewrites_an_explicitly_passed_environment():
+    denied = gpu_guard.denying_popen(_RecordingPopen)(["true"], env={"A": "1"})
+    assert denied.seen_kwargs["env"]["A"] == "1"
+    assert denied.seen_kwargs["env"]["CUDA_VISIBLE_DEVICES"] == ""
+
+
+def test_the_denying_popen_rewrites_a_positional_environment():
+    """`env` is Popen's 11th positional; passing it that way must not slip past the rewrite."""
+    positional = (["true"], -1, None, None, None, None, None, True, False, None, {"A": "1"})
+    denied = gpu_guard.denying_popen(_RecordingPopen)(*positional)
+    assert denied.seen_args[10]["CUDA_VISIBLE_DEVICES"] == ""
+    assert denied.seen_args[10]["A"] == "1"
+
+
+def test_only_the_refusing_mode_denies_a_child():
+    """`report` lets a run through and says so; a denial says nothing, so the two do not mix."""
+    refusing = gpu_guard.DeviceGuard.start(["x"], environ={}, modules=_modules())
+    reporting = gpu_guard.DeviceGuard.start(
+        ["x"], environ={env.GPU_GUARD: gpu_guard.MODE_REPORT}, modules=_modules()
+    )
+    assert refusing is not None and refusing.denies_children
+    assert reporting is not None and not reporting.denies_children
+
+
+def _child_device_view() -> str:
+    """What a child of the current test sees, at the cost of one `sh`."""
+    out = subprocess.run(
+        ["sh", "-c", 'printf %s "${CUDA_VISIBLE_DEVICES-unset}"'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout
+
+
+# Both below carry `gpu_env` for the same reason: it takes the SUITE's own guard out of the way, so
+# what a child sees is decided by the steps the test drives rather than by the guard already
+# wrapping it -- with the suite's denial live, every child reads "" and the two cases cannot differ.
+@pytest.mark.gpu_env
+def test_the_suite_wiring_denies_the_device_to_an_unmarked_tests_child(monkeypatch):
+    monkeypatch.setenv(env.GPU_GUARD, gpu_guard.MODE_REFUSE)
+    steps = _suite_conftest().device_guard_steps("tests/x.py::test_y", [])
+    next(steps)
+    assert _child_device_view() == ""
+    assert subprocess.Popen is not _ORIGINAL_POPEN
+    assert next(steps, None) is None
+    assert subprocess.Popen is _ORIGINAL_POPEN
+
+
+@pytest.mark.gpu_env
+def test_the_suite_wiring_leaves_a_declared_tests_child_on_the_device(monkeypatch):
+    monkeypatch.setenv(env.GPU_GUARD, gpu_guard.MODE_REFUSE)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    steps = _suite_conftest().device_guard_steps("tests/x.py::test_y", ["gpu_env"])
+    next(steps)
+    assert _child_device_view() == "unset"
+    assert subprocess.Popen is _ORIGINAL_POPEN
     assert next(steps, None) is None
 
 

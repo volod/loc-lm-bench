@@ -341,7 +341,8 @@ regressions.
 
 A fourth marker, `gpu_env`, selects nothing: it is the escape hatch for the autouse guard in
 `tests/conftest.py` that fails an unmarked test which initializes a CUDA context or imports
-`flashinfer`, so the lightweight tier's no-GPU promise is checked rather than assumed (see
+`flashinfer`, and that starts an unmarked test's subprocesses with no visible CUDA device, so the
+lightweight tier's no-GPU promise is checked rather than assumed (see
 [host validation](host-validation.md#code-quality-checks)).
 
 Tests target durable specifications and business rules. Internal builders, helper splits, and

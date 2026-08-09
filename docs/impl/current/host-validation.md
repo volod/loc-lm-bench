@@ -210,9 +210,10 @@ an installer entrypoint executes everything that entrypoint does, including prob
 sits in front of.
 
 **So the tier's no-GPU promise is a check now, not a convention.** `tests/conftest.py` wraps every
-test in an autouse guard (`llb.quality.gpu_guard`) that snapshots two device effects before it and
-reads them again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules`
-(its first sampling call is the JIT build). An unmarked test that flips either one fails at
+test in an autouse guard (`llb.quality.gpu_guard`) that watches this process and denies the device
+to the children of an unmarked test. The watch snapshots two effects before the test and reads them
+again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules` (its first
+sampling call is the JIT build). An unmarked test that flips either one fails at
 teardown, naming the test, what it did, and the ways out. Both reads come out of `sys.modules` and
 neither imports anything, so the guard no-ops where torch is absent -- GitHub CI installs no torch
 and must not start -- and costs two dict lookups per test: the whole non-slow suite runs in 101-102s
@@ -234,15 +235,36 @@ anyway. `LLB_GPU_GUARD=report` downgrades a finding to a warning and `off` disab
 unrecognized value is refused rather than read as off, so a typo'd knob cannot quietly disable the
 check it was aimed at.
 
-**Residual: the guard sees this process only.** Attribution is first-offender -- a CUDA context
-exists for the rest of the session once opened, so a later unmarked test that would have opened one
-runs unobserved. Device work in a CHILD process is invisible, and that covers the very tests that
-motivated the guard: `test_build_helper.py` drives `scripts/build_vllm.sh` through `subprocess.run`,
-so its flashinfer probe ran in a python no in-process fixture can inspect, and the seeded verdict
-above is still what keeps that cost off the suite. Closing the child-process axis means DENYING the
-device (an empty `CUDA_VISIBLE_DEVICES` for unmarked tests) rather than observing it, which is a
-different mechanism with its own cost. Coverage is `tests/llb/quality/test_gpu_guard.py`: the state
-reads over a fake module table, and the suite's own fixture body driven against the live one.
+**A CHILD process is denied the device rather than observed**, because there is nothing in this
+process to observe it by. For the duration of an unmarked test, `subprocess.Popen` is swapped for
+one that starts every child with an empty `CUDA_VISIBLE_DEVICES` -- whatever environment the caller
+passed, since the rewrite sits at the `Popen` seam that `run` / `call` / `check_output` all reach
+for at call time. That closes the shape that motivated the guard: `test_build_helper.py` drives
+`scripts/build_vllm.sh` through `subprocess.run`, so its flashinfer probe lives in a python no
+in-process fixture can inspect. Remove the seeded verdict as an experiment and the prebuilt-installer
+test costs 5.99s under `LLB_GPU_GUARD=off` -- the child JIT-builds the sampler kernel on the real
+GPU -- against 0.81s with the denial, where the child finds no device and the probe returns `native`
+in milliseconds. It passes either way. The seeded verdict stays regardless: it is what keeps the
+cost off a run with the guard disabled, and it states the intent at the call site.
+
+**Child-only is the mechanism, not a shortcut.** Setting `CUDA_VISIBLE_DEVICES` in the pytest
+process would poison the session: `torch.cuda.is_available()` caches, and on torch 2.11 it keeps
+reporting False after the variable is restored (measured -- `False` while denied, still `False`
+restored, though `device_count()` recovers to 1), so the first unmarked test to ask would take the
+GPU away from every `slow` / `gpu_env` test after it. Patching the seam leaves this process
+untouched, which is checkable end to end: an unmarked test's child reads `is_available() == False`,
+a `gpu_env` test's child reads True, and the parent still reads True afterwards. Only the refusing
+mode denies -- `report` exists to let a run through while SAYING what it did, and a denial says
+nothing to anyone. All 2917 non-slow tests pass with it live, so no test's child needed a device.
+
+**Residual: attribution and reach.** A CUDA context exists for the rest of the session once opened,
+so the first unmarked test to open one is named and a later one that would have runs unobserved. The
+denial covers `subprocess`, not `os.system` / `os.exec*` / `posix_spawn` or a forked child. And it
+hides the device from the CUDA runtime, not from NVML: `nvidia-smi` still lists the GPU under an
+empty `CUDA_VISIBLE_DEVICES`, so a child that only ASKS whether hardware exists still gets yes -- it
+just cannot open a context. Coverage is `tests/llb/quality/test_gpu_guard.py`: the state reads over
+a fake module table, the environment rewrite over a recording `Popen` stand-in (including the
+positional-`env` call shape), and the suite's own fixture body driven against the live process.
 
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and

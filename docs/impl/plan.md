@@ -43,30 +43,28 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-device-guard-cannot-see-a-child-process (optional)
+### agent-the-device-denial-stops-at-the-subprocess-seam (optional)
 
-The autouse device guard reads `torch.cuda.is_initialized()` and `sys.modules` in the PYTEST
-process, so a test that reaches the GPU through a subprocess is invisible to it
-([host validation](current/host-validation.md#code-quality-checks)) -- which is precisely the shape
-that motivated the guard: `tests/llb/build/test_build_helper.py` runs `scripts/build_vllm.sh` via
-`subprocess.run`, and the installer's flashinfer probe lives in that child. A seeded verdict keeps
-that one cheap, per test, by hand. Close the axis by DENYING the device instead of observing it:
-export an empty `CUDA_VISIBLE_DEVICES` (plus the flashinfer JIT off-switch) for the duration of an
-unmarked test, so a child that tries to open a context gets none and the marked tests are the only
-ones that can. Decide on the evidence what that breaks -- a test asserting on host GPU detection, or
-one whose child now takes a different code path, is the case to find before this can be a default --
-and state whether the denial replaces the observation or runs beside it.
+An unmarked test's `subprocess` children start with no visible CUDA device, but the denial is a
+patched `subprocess.Popen`, so a child started any other way -- `os.system`, `os.exec*`,
+`os.posix_spawn`, a `multiprocessing` fork -- inherits the device untouched
+([host validation](current/host-validation.md#code-quality-checks)). No test spawns that way today,
+which is exactly when the hole is cheap to close and impossible to notice. Two candidate mechanisms,
+and the task is to pick one on evidence: widen the patch to the other spawn entry points (more
+seams, each with its own env argument shape), or move the denial into the process the suite ALREADY
+controls -- a pytest that re-execs itself once with an empty `CUDA_VISIBLE_DEVICES` and hands the
+device back only to the marked tiers, which cannot work while `slow` and unmarked tests share one
+process. Say which spawn paths the chosen mechanism still misses.
 
 - Agent status: CLEAR
-- Dependencies: the guard is `llb.quality.gpu_guard` with its fixture in `tests/conftest.py`; the
-  subprocess call sites are `subprocess.run(["bash", BUILD_VLLM], ...)` in
-  `tests/llb/build/test_build_helper.py`; the probe the child ends in is
-  `_default_flashinfer_probe` in `src/llb/backends/preflight.py`.
-- User-visible outcome: the tier's no-GPU promise covers what a test SPAWNS, not only what it
-  imports, so an end-to-end run of an entrypoint cannot smuggle a JIT build back in.
-- Scope boundary: in scope -- the denial mechanism, the tests it breaks, and whether it replaces or
-  joins the in-process guard. Out of scope -- the marker vocabulary, the no-download axis, and
-  removing the seeded sampler verdict that keeps the build tests fast today.
+- Dependencies: the denial is `denying_popen` / `denied_child_env` in `src/llb/quality/gpu_guard.py`,
+  applied by `deny_the_device_to_children` in `tests/conftest.py`; the parent-side caching that rules
+  out setting the variable in-process is written down in the `gpu_guard` module docstring.
+- User-visible outcome: the tier's no-GPU promise does not depend on which spawn function a test
+  happens to use.
+- Scope boundary: in scope -- the additional spawn seams or the re-exec, and the residual list after
+  it. Out of scope -- the in-process observation half, the marker vocabulary, and the no-download
+  axis.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-light-tier-has-a-no-gpu-check-and-no-no-download-check (optional)
