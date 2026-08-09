@@ -27,11 +27,15 @@ over. `zipfile` reads the name list without importing anything and without disas
 so a name that ships in an archive is accounted for by the same evidence-based split the rest of the
 classification uses -- and is REFUSED rather than counted, because reading the name list says the
 module is there and says nothing about whether it starts a child. That is the honest statement this
-scan can make about an archive: not measured here. An archive that carries `.py` entries could in
-principle be parsed instead of refused; no layout that actually ships does (the embeddable builds
-carry `.pyc` only), and the finding names the archive, so widening the scan to read INTO one is a
-decision to take on a host that produces the case rather than an unexercised reader written ahead of
-it.
+scan can make about a `.pyc`-only archive: not measured here. The stdlib layouts that actually ship
+zipped are `.pyc`-only (the embeddable builds), so the stdlib half refuses every archived name and
+parses none.
+
+The name-list reading, the entry-to-module rule, and the openable-candidate filter are shared with
+`llb.quality.gpu_guard_spawn_reach_installed`, which asks the same question of the archives on
+`sys.path`. It answers it differently where the evidence differs: a zipped DEPENDENCY (a zipped egg,
+a `--zip-ok` install) carries `.py` entries, so its source is read out of the archive and parsed
+rather than refused, and only the names with no source left to read are refused there.
 """
 
 import sys
@@ -47,10 +51,14 @@ from llb.quality.gpu_guard_spawn_reach import is_excluded
 # source install contributes nothing.
 ZIP_STDLIB_NAME = f"python{sys.version_info.major}{sys.version_info.minor}.zip"
 
+# The one suffix inside an archive that carries something to PARSE, as against something that only
+# says a module is there.
+SOURCE_SUFFIX = ".py"
+
 # What zipimport loads out of an archive. `__pycache__` is deliberately absent: zipimport reads
 # `pkg/util.pyc` in place of `pkg/util.py`, never a cache directory, so an archive is flat where a
 # directory tree is not.
-_IMPORTABLE_SUFFIXES = (".py", ".pyc")
+_IMPORTABLE_SUFFIXES = (SOURCE_SUFFIX, ".pyc")
 
 # A cached or archived `__init__` names its PACKAGE, which is a top-level name the declared list
 # already carries -- reporting it again one level down would be the same finding twice.
@@ -66,7 +74,16 @@ def stdlib_archives(root: Path) -> tuple[Path, ...]:
     that exact name rather than by glob: the parent of the stdlib directory is a shared library
     directory on most hosts, and an unrelated zip found there is not evidence about this stdlib.
     """
-    candidates = (root, *sorted(root.glob("*.zip")), root.parent / ZIP_STDLIB_NAME)
+    return openable_archives((root, *sorted(root.glob("*.zip")), root.parent / ZIP_STDLIB_NAME))
+
+
+def openable_archives(candidates: Iterable[Path]) -> tuple[Path, ...]:
+    """The candidates that exist and open as a zip, in the order given and without repeats.
+
+    A path that is not there, is a directory, or is a file that is not an archive contributes
+    nothing: only a candidate the interpreter could actually import from is evidence about what
+    this host ships, which is what keeps a placeholder `sys.path` entry out of every count.
+    """
     found: list[Path] = []
     for candidate in candidates:
         if candidate not in found and candidate.is_file() and zipfile.is_zipfile(candidate):
@@ -85,8 +102,8 @@ def archived_modules(archives: Iterable[Path]) -> tuple[str, ...]:
     """
     names: set[str] = set()
     for archive in archives:
-        for entry in _entries(archive):
-            name = _module_name(entry)
+        for entry in archive_entries(archive):
+            name = entry_module(entry)
             if name is not None:
                 names.add(name)
     return tuple(sorted(names))
@@ -105,17 +122,17 @@ def unread_submodules(root: Path, names: Iterable[str], packages: Iterable[str])
     return tuple(
         name
         for name in sorted(names)
-        if "." in name and name.split(".")[0] not in refused and not _has_source(root, name)
+        if "." in name and name.split(".")[0] not in refused and not has_source(root, name)
     )
 
 
-def _has_source(root: Path, name: str) -> bool:
+def has_source(root: Path, name: str) -> bool:
     """Whether the directory tree carries this dotted name as source, as a module or a package."""
     path = root.joinpath(*name.split("."))
     return path.with_suffix(".py").is_file() or (path / f"{PACKAGE_INIT}.py").is_file()
 
 
-def _entries(archive: Path) -> tuple[str, ...]:
+def archive_entries(archive: Path) -> tuple[str, ...]:
     """The archive's own name list, or nothing if it cannot be read as one."""
     try:
         with zipfile.ZipFile(archive) as opened:
@@ -124,7 +141,7 @@ def _entries(archive: Path) -> tuple[str, ...]:
         return ()
 
 
-def _module_name(entry: str) -> str | None:
+def entry_module(entry: str) -> str | None:
     """The dotted module one archive entry ships, or None if the entry is not an importable one."""
     if entry.endswith("/") or is_excluded(entry):
         return None

@@ -43,35 +43,59 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-zipped-dependency-is-unread-where-a-zipped-stdlib-is-refused (optional)
+### agent-the-installed-scan-never-says-what-it-failed-to-read (optional)
 
-The archive reading is scoped to the stdlib root: `stdlib_archives` looks at the scan root, the
-archives inside it, and the sibling `pythonXY.zip` CPython names on `sys.path`
-([host validation](current/host-validation.md#code-quality-checks)). `installed_spawn_reaches` has
-the identical directory shape and no such treatment, so a dependency that ships zipped -- a zipped
-egg, a `--zip-ok` install, any `sys.path` entry that is an archive rather than a directory -- is
-parsed by nothing and reported by nothing, and `audit_installed_reach` returns clean for a venv half
-of which it never opened. That is the same silent pass the stdlib half just closed, one tree over,
-and worse there: site-packages is where the packages that start children constantly live. Extend the
-same evidence to the installed scan -- read the `sys.path` archive entries' name lists, attribute
-each name to its top-level package, and decide whether an archived package is a finding or rides the
-existing `DECLARED_PACKAGE_REACHERS` excuse. The read-or-refuse call the stdlib half deferred is the
-same one here and can be taken on real evidence for the first time if this host can produce a zipped
-dependency: an archive that carries `.py` entries is readable through `zipfile`, so parsing INTO one
-is available where refusing is currently the answer.
+The stdlib scan measures its own reading against `sys.stdlib_module_names` and accounts for every
+name it read no source for; the installed scan has nothing of the kind
+([host validation](current/host-validation.md#code-quality-checks)). Its only guard is the degenerate
+end -- an empty read, plus a `files_read > 100` assertion in the slow tier -- which is exactly the
+check the stdlib half outgrew, because a file count says how much was read and not what was missed.
+A dependency installed with its sources stripped (a `.pyc`-only tree, a package whose modules ship as
+extension modules) is parsed by nothing and reported by nothing, and the below-the-seams verdict
+covers a venv part of which was never opened -- the directory-tree twin of the archive case just
+closed. Give the installed scan the same treatment: `importlib.metadata` publishes the list the
+stdlib gets from the interpreter (`packages_distributions()` maps every importable top-level name to
+its distribution), so weigh the top-level names the pass parsed against that list and classify the
+rest the way `stdlib_read_coverage` does -- an extension module, a namespace package with no modules
+of its own, a stripped tree. Decide on the evidence which classes are refusals: a pure-extension
+dependency (`nvidia-*` wheels ship little but shared objects) is the case a naive gate would break.
 
 - Agent status: CLEAR
-- Dependencies: the archive reading is `stdlib_archives` / `archived_modules` in
-  `src/llb/quality/gpu_guard_spawn_reach_archive.py`; the scan to extend is
-  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py` and the audit that
-  consumes it is `audit_installed_reach` in `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
-- User-visible outcome: a venv holding a zipped dependency learns that the below-the-seams statement
-  was not measured for it, instead of reading a clean audit.
-- Scope boundary: in scope -- the `sys.path` archive entries, the per-package attribution, and the
-  read-or-refuse decision for a source-carrying archive. Out of scope -- importing anything to
-  inspect it, disassembling a `.pyc`, and the stdlib half.
-- Execution path: `make ci` for the fabricated cases; the site-packages tier is `slow`.
+- Dependencies: the pattern to copy is `stdlib_read_coverage` / `ReadCoverage` in
+  `src/llb/quality/gpu_guard_spawn_reach_coverage.py` and the refusal in
+  `gpu_guard_spawn_reach_audit.audit_read_coverage`; the scan to measure is
+  `installed_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach_installed.py` and the audit to
+  extend is `src/llb/quality/gpu_guard_spawn_reach_installed_audit.py`.
+- User-visible outcome: "no dependency goes below the seams" names the venv it was read from, rather
+  than whichever installed files happened to carry source.
+- Scope boundary: in scope -- the installed read coverage, its classification, and the refuse-or-
+  report decision per class. Out of scope -- importing a distribution to inspect it, disassembling a
+  `.pyc`, and the archive half (already read).
+- Execution path: `make ci` for the fabricated cases; the real-venv tier is `slow`.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-a-unit-test-verdict-rests-on-measured-wall-clock (optional)
+
+`analyze_repeat_feedback` gates a candidate on a paired WALL-CLOCK cost comparison alongside the
+prompt-token one (`_cost_gate` in `src/llb/bench/agentic_loop_feedback.py`), and the unit tests drive
+it through fake completions where both arms take microseconds. The gate is then measuring scheduler
+noise: `test_loop_runner_applies_only_the_predeclared_neutral_candidate` fails under a loaded full
+`make ci` run and passes on its own, which is a red build that says nothing about the code. The
+prompt-token half is deterministic and is the cost the design actually reasons about, so give the
+wall-clock gate an injectable clock (or a declared floor below which a wall delta is not a signal)
+and let the fixtures pin the verdict on tokens alone -- then assert the wall gate itself against a
+fake clock, where a real regression can be written out.
+
+- Agent status: CLEAR
+- Dependencies: the gate is `_cost_gate` and its `METRIC_WALL_CLOCK` call in
+  `src/llb/bench/agentic_loop_feedback.py`; the tests that flake on it are
+  `tests/llb/bench/test_agentic_loop_feedback_transfer.py` and its neighbours.
+- User-visible outcome: a red `make ci` means a behavior changed, not that the box was busy.
+- Scope boundary: in scope -- the injected clock or declared floor, the fixture updates, and a
+  wall-gate test that fails for a stated reason. Out of scope -- removing the wall-clock cost axis
+  from the design, and re-running any published lane.
+- Documentation target:
+  [extended workflows](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation).
 
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)
 

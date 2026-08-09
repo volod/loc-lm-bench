@@ -424,15 +424,16 @@ directory tree also carries is not a finding (an archive shipped beside a full s
 of what was read); and a submodule of a package that is itself archived is left to that package's
 one finding, the rule a cached `__init__` is already handled by. **On this host: 0 archives found,
 0 archived, 0 archived submodules** -- the `/usr/lib/python313.zip` entry CPython names does not
-exist here -- and the lookup costs 0.0002s. Whether to widen the scan to PARSE `.py` entries out of
-an archive is left to a host that produces the case: the embeddable builds ship `.pyc` only, the
-finding names the archive it read, and an unexercised reader written ahead of the layout is the
-speculation this refusal replaces.
+exist here -- and the lookup costs 0.0002s. The stdlib half still refuses rather than parsing INTO
+an archive, and that stays a decision about the layouts that ship: the embeddable builds carry
+`.pyc` only, so there is nothing to parse there. The dependency half is where an archive does carry
+source, and it is read rather than refused -- below.
 
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
 processes, uv, the build scripts), and each was covered only by that same unstated assumption.
-`installed_spawn_reaches` reads the venv's site-packages with a narrower alphabet --
+`llb.quality.gpu_guard_spawn_reach_installed.installed_spawn_reaches` reads the venv's site-packages
+with a narrower alphabet --
 `below_the_seams()`: `posix`, `_posixsubprocess`, `_winapi` -- because a dependency calling
 `subprocess.Popen` says nothing the declaration does not already say, while scanning for the covered
 names too means parsing 7420 files instead of 301 (measured). A one-off full-alphabet pass over this
@@ -444,7 +445,8 @@ below the seams**, in two packages: `joblib`'s vendored `loky` (3 files -- `back
 `popen_spawn_win32.py`). Both are private copies of a residual already on the record and neither is
 closable from here, so both are declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by
 file, since a release moves its modules and the decision an operator makes is about the dependency. A
-THIRD package arriving is what `audit_installed_reach` refuses; an excuse is looked up as the exact
+THIRD package arriving is what `gpu_guard_spawn_reach_installed_audit.audit_installed_reach`
+refuses; an excuse is looked up as the exact
 path first and then the top-level package, so the stdlib and package tables read through one lookup.
 `nt` is deliberately absent from the installed alphabet: it is the Windows twin of names `os`
 re-exports, and its two-letter module name matches too much text to prefilter on, so including it
@@ -460,7 +462,8 @@ exists to avoid, so each declaration is a `PackageReacher` instead -- the `Spawn
 the primitives and the file count it was written on (`joblib`: 3 files,
 `multiprocess`: 2, both through `_posixsubprocess.fork_exec` + `_winapi.CreateProcess`). A
 declaration cannot be added without that record: `PackageReacher.__post_init__` refuses an empty
-primitive list or a zero file count. `gpu_guard_spawn_reach_audit.outgrown_reachers` then reports a
+primitive list or a zero file count. `gpu_guard_spawn_reach_installed_audit.outgrown_reachers` then
+reports a
 declared package that reaches a primitive its excuse was not measured on, or starts children from
 more files than it was (naming those files), and `audit_installed_reach` includes those findings, so
 the widening turns the suite red on the release that introduces it rather than passing under the old
@@ -472,17 +475,52 @@ COUNT and a primitive set, not the file identities, so a release that renames on
 dropping another reaches the same way from the same number of files and stays quiet -- naming the
 paths is the per-file churn the package unit exists to avoid.
 
+**A dependency that ships ZIPPED is parsed out of its archive, where a zipped stdlib is refused.**
+The installed scan was directory-shaped in exactly the way the stdlib scan had been: a dependency
+with no package directory to walk -- a zipped egg, a `--zip-ok` install, any `sys.path` entry that
+is an archive rather than a directory -- was parsed by nothing and reported by nothing, so
+`audit_installed_reach` returned clean for a venv half of which it never opened. That is worse here
+than one tree over, because site-packages is where the packages that start children constantly live.
+`llb.quality.gpu_guard_spawn_reach_installed_archive` reads the archives on the import path --
+`sys.path` entries that open as a zip, plus `*.egg` / `*.zip` under the scan root, minus the stdlib's
+own `pythonXY.zip`, which the stdlib half already accounts for and which reporting here would be the
+same finding twice. And the read-or-refuse call the stdlib half deferred is taken the OTHER way,
+because the evidence differs: a zip-shipped stdlib is `.pyc`-only (what the embeddable builds carry),
+while a zip-shipped dependency carries `.py` -- `bdist_egg` zips the source tree -- which the tests
+establish rather than assume by fabricating an egg-shaped archive, importing it through `zipimport`
+on this interpreter, and reading its source back out with `zipfile`. So a `.py` entry is parsed out
+of the archive (the same bytes through the same parser and the same import resolution as a file on
+disk) and counted as read, with `ModuleReach.archive` naming the zip it came from; the reach it finds
+is weighed against the same `DECLARED_PACKAGE_REACHERS` excuse a file on disk would be, since the
+top-level package of `pkg/backend/start.py` is the same `pkg` either way. Both halves fold into ONE
+`SpawnScan` (`with_archives`) so `files_read` adds up over the whole import path -- a venv that ships
+only zipped is then a scan that read source, not a tree refused as `unscanned` while its source sat
+in a zip nobody opened. What is left over is refused by
+`gpu_guard_spawn_reach_installed_audit.unread_archived_packages` as the same `unread-module` problem:
+a module an archive ships compiled with no source anywhere -- not in that archive, not in another one
+on the same path, not as a copy in the directory tree. Per PACKAGE, because that is the unit the
+excuses are written at and an operator acts on, so a `.pyc`-only egg is one line naming the modules
+it hid rather than one line per module; and a package the declarations already name is not refused at
+all, because the declaration IS the decision that it starts children and that this is accepted. **On
+this host: 0 archives on the import path, 0 unread archived** -- every dependency here installs as a
+directory tree -- and the discovery costs 0.0013s. Residual: an archive is only as readable as its
+entries, so a `.pyc`-only dependency is still a refusal rather than a measurement, which is the same
+statement the stdlib half makes and for the same reason.
+
 **The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
 stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119
 files and 556 MB here, 2.2s warm and disk-bound cold -- and it changes only when the lock file does,
 which is a `make test` moment rather than a `make ci` one. The mechanism itself (the package-level
-excuse, the narrow alphabet, a call that goes around `os` through `posix`) is pinned over fabricated
-trees in the non-slow tier, so `make ci` still covers the code and only the 40k-file read is
-deferred. Residual: the scan reads SOURCE, so a dynamic import, a call through an object attribute,
+excuse, the narrow alphabet, a call that goes around `os` through `posix`, a source-carrying archive,
+a `.pyc`-only one) is pinned over fabricated trees and fabricated eggs in the non-slow tier, so
+`make ci` still covers the code and only the 40k-file read is
+deferred. The split follows the same seam the source does: `test_gpu_guard_spawn_reach.py` is the
+stdlib pass and `test_gpu_guard_spawn_reach_installed.py` the dependency one. Residual: the scan
+reads SOURCE, so a dynamic import, a call through an object attribute,
 and anything a compiled extension does below Python stay invisible -- the last being the same
 native-extension residual the denial itself carries.
 
-Coverage is five files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
+Coverage is six files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
 suite wiring: the state reads over a fake module table, and the fixture body driven against the live
 process. `test_gpu_guard_spawn.py` puts a recorder behind each seam and asserts what it was passed,
 including the positional-`env` `Popen` shape, the `os.system` command text, and the `os.execl` /
