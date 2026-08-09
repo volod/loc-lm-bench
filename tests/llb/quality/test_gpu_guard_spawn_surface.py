@@ -237,7 +237,7 @@ def test_a_delegation_declaration_has_to_name_what_it_is_covered_through():
         surface.SpawnCoverage(surface.COVERAGE_THROUGH)
 
 
-def test_the_default_start_method_is_read_without_fixing_this_processes_context():
+def test_the_default_start_method_is_read_from_a_child_without_fixing_the_parent_context():
     """`get_start_method()` RESOLVES the default, after which `set_start_method` raises -- a check
     must not be what pins the suite's start method."""
 
@@ -248,11 +248,48 @@ def test_the_default_start_method_is_read_without_fixing_this_processes_context(
     unresolved = SimpleNamespace(
         get_start_method=refuse, get_all_start_methods=lambda: ["fork", "spawn"]
     )
-    assert surface.default_start_method(unresolved) == "fork"
+    assert surface.default_start_method(unresolved, lambda: "fork") == "fork"
     resolved = SimpleNamespace(
         get_start_method=lambda allow_none=False: "spawn", get_all_start_methods=lambda: ["fork"]
     )
-    assert surface.default_start_method(resolved) == "spawn"
+    assert (
+        surface.default_start_method(
+            resolved, lambda: pytest.fail("an already-set context needs no child")
+        )
+        == "spawn"
+    )
+
+
+def test_a_child_default_that_disagrees_with_the_documented_ordering_is_refused():
+    unresolved = SimpleNamespace(
+        get_start_method=lambda allow_none=False: None,
+        get_all_start_methods=lambda: ["fork", "spawn"],
+    )
+    with pytest.raises(RuntimeError, match="child interpreter reported 'spawn'.*'fork' first"):
+        surface.default_start_method(unresolved, lambda: "spawn")
+
+
+def test_the_child_default_is_resolved_only_once(monkeypatch: pytest.MonkeyPatch):
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(command: list[str], **options: object) -> SimpleNamespace:
+        calls.append((command, options))
+        return SimpleNamespace(stdout="fork\n")
+
+    monkeypatch.setattr(surface.subprocess, "run", run)
+    surface._child_default_start_method.cache_clear()
+    try:
+        assert surface._child_default_start_method("python-under-test") == "fork"
+        assert surface._child_default_start_method("python-under-test") == "fork"
+    finally:
+        surface._child_default_start_method.cache_clear()
+
+    assert calls == [
+        (
+            ["python-under-test", "-c", surface._DEFAULT_START_METHOD_SCRIPT],
+            {"check": True, "capture_output": True, "text": True},
+        )
+    ]
 
 
 def test_a_declaration_this_host_has_no_name_for_is_reported_and_not_refused():

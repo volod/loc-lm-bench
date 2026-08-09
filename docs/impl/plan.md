@@ -43,31 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)
-
-`default_start_method` will not RESOLVE the default context -- doing so makes a later
-`set_start_method` raise for the whole session -- so when nothing has set one yet, which is the
-ordinary case in a pytest process, it takes the first entry of `get_all_start_methods()` on the
-strength of CPython documenting that list default-first
-([host validation](current/host-validation.md#code-quality-checks)). That is the same shape of claim
-the surface check exists to remove, one level down: an interpreter that reorders the list reports a
-default the audit never verifies, and the `multiprocessing` half of the refusal silently reads the
-wrong method. Ask something that can answer without side effects instead -- a child interpreter
-(`python -c "import multiprocessing; print(multiprocessing.get_start_method())"`) resolves its own
-context and throws it away -- and refuse a disagreement between what the child reports and what the
-ordering claims, so the ordering is checked once rather than trusted per run.
-
-- Agent status: CLEAR
-- Dependencies: the reader is `default_start_method` in
-  `src/llb/quality/gpu_guard_spawn_surface.py`; the audit that consumes it is
-  `_start_method_findings` in `src/llb/quality/gpu_guard_spawn_surface_audit.py`.
-- User-visible outcome: the start method the denial is judged against is the one a child of this
-  interpreter actually gets, not the one a list order implies.
-- Scope boundary: in scope -- the child-interpreter read, its cost, and the disagreement refusal.
-  Out of scope -- resolving this process's own start method, closing the spawn/forkserver residual,
-  and the no-download axis.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-the-denial-misses-multiprocessing-under-spawn-and-forkserver (optional)
 
 `multiprocessing` under the `spawn` or `forkserver` start method is the one residual of the device

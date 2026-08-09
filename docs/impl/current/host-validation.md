@@ -314,9 +314,12 @@ start method that is a declared residual, which is exactly what Python 3.14 does
 default this denial rests on. A declaration naming nothing on this host (`os.startfile`,
 `subprocess.STARTUPINFO`) is reported by `absent_declarations`, never refused: that is a host
 difference, the same reason the seam builder tolerates a missing attribute. The default start method
-is read WITHOUT resolving it (`get_start_method(allow_none=True)`, else the documented default-first
-head of `get_all_start_methods()`), because resolving it would make a later `set_start_method` raise
-for the whole session.
+is read WITHOUT resolving the parent: `get_start_method(allow_none=True)` supplies an already-set
+method, while an unresolved parent asks a disposable child interpreter to resolve its own context.
+That answer is checked against the documented default-first head of `get_all_start_methods()`; a
+disagreement raises rather than letting the audit judge the wrong method. The child result is cached
+per executable and parent process, so repeated surface reads pay for one child, and the parent stays
+free to call `set_start_method` later.
 
 **Two modules is the right enumerated surface, and that is a measurement now.** Everything else in
 the stdlib that starts a child was covered only because the helper it calls resolves an `os` /
@@ -638,7 +641,10 @@ parent's own value without it, so each assertion is about the denial rather than
 never had a device. `test_gpu_guard_spawn_surface.py` is the re-check: one assertion that this
 interpreter's surface is the declared one, and the rest driving the audit against FABRICATED
 interpreters (a Python that grew a spawn function, one that rewrote a delegation in C, one whose
-default start method is a residual), because those cases cannot be produced by the host.
+default start method is a residual), because those cases cannot be produced by the host. Its default
+reader cases also prove that the parent remains unresolved, an existing choice avoids a child, a
+child/order mismatch is refused, and two reads start the child only once. The standard `make ci`
+gate runs the focused proof; all 3,041 non-slow tests pass, including all 22 cases in that suite.
 
 **Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
 Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and

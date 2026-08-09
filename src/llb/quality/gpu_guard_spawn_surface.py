@@ -37,8 +37,10 @@ an interpreter whose default moves onto one of them is refused rather than silen
 import multiprocessing
 import os
 import subprocess
-from collections.abc import Mapping
+import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import cache
 from types import ModuleType
 from typing import Any
 
@@ -55,6 +57,7 @@ _OS_SPAWN_PREFIXES = ("exec", "fork", "posix_spawn", "spawn")
 _OS_SPAWN_NAMES = ("popen", "startfile", "system")
 # The modules the declarations name. Also what a delegation is read out of.
 _SURFACE_MODULES: Mapping[str, ModuleType] = {"os": os, "subprocess": subprocess}
+_DEFAULT_START_METHOD_SCRIPT = "import multiprocessing; print(multiprocessing.get_start_method())"
 
 
 @dataclass(frozen=True)
@@ -176,16 +179,41 @@ def delegation_is_live(
     return target_module == name.partition(".")[0] or target_module in code.co_names
 
 
-def default_start_method(context: Any = multiprocessing) -> str:
+@cache
+def _child_default_start_method(executable: str = sys.executable) -> str:
+    """Resolve the default in a disposable interpreter, once per executable and parent process."""
+    result = subprocess.run(
+        [executable, "-c", _DEFAULT_START_METHOD_SCRIPT],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def default_start_method(
+    context: Any = multiprocessing,
+    child_default: Callable[[], str] = _child_default_start_method,
+) -> str:
     """The start method a bare `multiprocessing.Process()` would use, read without fixing it.
 
     `get_start_method()` RESOLVES the default context as a side effect, after which a
     `set_start_method` call raises, so a check must not be what pins the suite's start method. An
-    already-set method is exact; otherwise the first of `get_all_start_methods()`, which CPython
-    documents as the default.
+    already-set method is exact. Otherwise a disposable child resolves its own default, and the
+    documented default-first ordering of `get_all_start_methods()` is checked against that answer
+    rather than trusted. The child read is cached because an interpreter's default does not move.
     """
     chosen = context.get_start_method(allow_none=True)
-    return str(chosen if chosen is not None else context.get_all_start_methods()[0])
+    if chosen is not None:
+        return str(chosen)
+    ordered_first = str(context.get_all_start_methods()[0])
+    child_chosen = child_default()
+    if child_chosen != ordered_first:
+        raise RuntimeError(
+            "multiprocessing default start method disagrees with get_all_start_methods(): "
+            f"child interpreter reported {child_chosen!r}, ordering reports {ordered_first!r} first"
+        )
+    return child_chosen
 
 
 @dataclass(frozen=True)
