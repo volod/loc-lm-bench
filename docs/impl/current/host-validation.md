@@ -318,7 +318,35 @@ is read WITHOUT resolving it (`get_start_method(allow_none=True)`, else the docu
 head of `get_all_start_methods()`), because resolving it would make a later `set_start_method` raise
 for the whole session.
 
-Coverage is four files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
+**Two modules is the right enumerated surface, and that is a measurement now.** Everything else in
+the stdlib that starts a child was covered only because the helper it calls resolves an `os` /
+`subprocess` name -- a sentence, not a check. `llb.quality.gpu_guard_spawn_reach` reads the stdlib
+instead: every `*.py` under the stdlib root is parsed and its process-starting CALL SITES are
+resolved through that module's own imports (`os.fork`, `from subprocess import Popen`,
+`import os as operating`), against an alphabet taken from the declared surface plus the C modules
+under it -- `posix` / `nt`, which `os` re-exports, and `_posixsubprocess` / `_winapi`, which
+`subprocess` and `multiprocessing` call below any patchable name. On CPython 3.13 that finds **25
+stdlib modules that start a child, 23 of which resolve a declared name** (`pty.py` ->
+`os.fork` / `os.forkpty` / `os.execlp`, `asyncio/unix_events.py`, `socketserver.py`,
+`http/server.py`, `webbrowser.py`, `uuid.py`, `venv/__init__.py`, `platform.py`, `ctypes/util.py`,
+`ensurepip`, `imaplib.py`, the idlelib trio, and the rest). The three that do not are the ones
+already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` itself, whose
+`_posixsubprocess` / `_winapi` starts are reached only from inside the patched `Popen`, and
+`multiprocessing/util.py` + `multiprocessing/popen_spawn_win32.py`, which are the POSIX and Windows
+halves of the `spawn` / `forkserver` residual. `llb.quality.gpu_guard_spawn_reach_audit` refuses a
+module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
+mode a source scan invites -- a scan that found NOTHING, which means the tree was not read rather
+than that the stdlib starts no children. Two trees are excluded by a stated rule rather than by
+accident: CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`), a corpus that
+starts children on purpose, costs 4s and one extra declaration to include; and `site-packages`,
+which is third-party rather than stdlib and is a separate axis (torch, uv, and vLLM all start
+children). The whole scan is ~0.9s on this host: 631 files read, 372 parsed, run once per session by
+a module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it
+over fabricated trees for the cases the host cannot produce (an aliased import, a local helper that
+merely shares a name with a spawn entry point, a file that will not parse, a module reaching past
+every patchable name).
+
+Coverage is five files. `tests/llb/quality/test_gpu_guard.py` is the observation half plus the
 suite wiring: the state reads over a fake module table, and the fixture body driven against the live
 process. `test_gpu_guard_spawn.py` puts a recorder behind each seam and asserts what it was passed,
 including the positional-`env` `Popen` shape, the `os.system` command text, and the `os.execl` /

@@ -43,30 +43,53 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-enumerated-spawn-surface-stops-at-two-modules (optional)
+### agent-the-child-starting-scan-stops-at-the-stdlib (optional)
 
-The re-check enumerates `os` and `subprocess`, which is where a TEST reaches for a child, and
-declares every name it finds ([host validation](current/host-validation.md#code-quality-checks)).
-The stdlib starts children from other modules too, and those are outside the rule: `pty.spawn` forks
-and execs, `pty.fork` calls `os.forkpty`, `asyncio`'s unix child handling reaches
-`subprocess.Popen`, and `multiprocessing.util.spawnv_passfds` is covered only by the start-method
-declaration keyed on a method NAME rather than on the callable. Each of those is covered today
-because it goes through an `os` / `subprocess` seam, which is the same delegation claim the check
-now refuses to take on faith one module over -- so the module SET is the one part of the enumeration
-still written as prose. Widen it: add the stdlib modules that start children to the enumerated
-surface (their public callables, declared through the seam they reach and checked the same way), or
-record on the evidence that two modules is the right set because everything else provably resolves a
-name in them.
+The reach scan reads the stdlib and leaves `site-packages` out, on the stated ground that
+third-party code is a different axis
+([host validation](current/host-validation.md#code-quality-checks)). It is the axis this repo
+actually runs on: torch spawns dataloader workers through `multiprocessing`, vLLM starts engine
+processes, `uv` and the build scripts start children, and an unmarked test that drives any of them
+is covered only if that package reaches an `os` / `subprocess` name -- the exact claim the scan was
+built to stop taking on faith, one directory over. Point the same scan at the installed
+distributions (the venv's `site-packages`, or only the distributions the test suite imports) and
+decide on the evidence whether it becomes a gate or a report: a package that ships vendored copies
+of `subprocess`, or reaches a child through a compiled extension the scan cannot read at all, is the
+case that would make a naive gate either red or falsely green.
 
 - Agent status: CLEAR
-- Dependencies: the enumeration rule is `interpreter_spawn_names` and `_SURFACE_MODULES` in
-  `src/llb/quality/gpu_guard_spawn_surface.py`; the delegation check to reuse is
-  `delegation_is_live` in the same module.
-- User-visible outcome: a stdlib helper that starts a child stops being covered by an unstated
-  assumption about which module it calls into.
-- Scope boundary: in scope -- the module set, the declarations it needs, and the widen-or-record
-  decision. Out of scope -- closing any residual, patching a new seam, the in-process observation
-  half, and the no-download axis.
+- Dependencies: the scan is `stdlib_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py`
+  (the excluded segments are `_EXCLUDED_SEGMENTS`); the refusal to reuse is
+  `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
+- User-visible outcome: the packages an unmarked test actually drives are known to start their
+  children through names the denial covers, instead of being assumed to.
+- Scope boundary: in scope -- the site-packages scan, its runtime budget, and the gate-or-report
+  decision. Out of scope -- patching a new seam for a third-party name, a compiled-extension
+  residual the source scan cannot close, and the no-download axis.
+- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
+
+### agent-the-reach-scan-does-not-say-what-it-failed-to-read (optional)
+
+The reach scan reads the `*.py` files it finds under the stdlib root and refuses only the degenerate
+case where it found NOTHING
+([host validation](current/host-validation.md#code-quality-checks)). Between those two states is an
+unmeasured one: a module that ships without source (a frozen or zipped stdlib, a `python3-minimal`
+layout, a `.pyc`-only install) is not scanned and reports exactly like a module that starts no
+children, so a host could pass the check having read half the library. Measure the reading: compare
+the modules the scan actually parsed against `sys.stdlib_module_names`, report the ones no source
+was found for, and decide on the evidence whether an unread module is a finding -- the C extension
+modules in that list have no `.py` by construction and are the case a naive gate would fail on
+every host.
+
+- Agent status: CLEAR
+- Dependencies: the scan is `stdlib_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py`;
+  the degenerate refusal it would sit beside is `PROBLEM_UNSCANNED` in
+  `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
+- User-visible outcome: "no stdlib module starts a child undeclared" states which part of the
+  stdlib it was read from, rather than resting on whichever files the host happened to ship.
+- Scope boundary: in scope -- the read-coverage measurement, its report, and the finding-or-record
+  decision. Out of scope -- importing a module to inspect it (side effects), disassembling a `.pyc`
+  when no source exists, and third-party packages.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)

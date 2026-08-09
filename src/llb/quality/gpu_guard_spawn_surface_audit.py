@@ -126,7 +126,7 @@ def _delegation_finding(
             f"declared covered through {target}, which its implementation no longer resolves "
             f"(rewritten in C, or reaching somewhere else now)",
         )
-    if not _reaches_a_seam(target, observed, declared):
+    if not reaches_a_seam(target, observed, declared):
         return SurfaceFinding(
             name,
             PROBLEM_UNREACHED,
@@ -185,7 +185,7 @@ def _start_method_finding(
         )
     if coverage.kind == COVERAGE_RESIDUAL:
         return None
-    if coverage.through is None or not _reaches_a_seam(coverage.through, observed, declared):
+    if coverage.through is None or not reaches_a_seam(coverage.through, observed, declared):
         return SurfaceFinding(
             label,
             PROBLEM_UNREACHED,
@@ -194,7 +194,7 @@ def _start_method_finding(
     return None
 
 
-def _reaches_a_seam(
+def reaches_a_seam(
     target: str, observed: ObservedSurface, declared: Mapping[str, SpawnCoverage]
 ) -> bool:
     """Walk a delegation chain to the seam that carries it, refusing a cycle or a dead end."""
