@@ -18,6 +18,7 @@ import, a local function that shares a name with a spawn entry point, a file tha
 are worth pinning where they can be written out in four lines.
 """
 
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -25,6 +26,7 @@ import pytest
 
 from llb.quality import gpu_guard_spawn_reach as reach
 from llb.quality import gpu_guard_spawn_reach_audit as reach_audit
+from llb.quality import gpu_guard_spawn_reach_coverage as coverage
 from llb.quality import gpu_guard_spawn_surface as surface
 from llb.quality import gpu_guard_spawn_surface_audit as audit
 
@@ -84,6 +86,69 @@ def test_the_scan_reads_the_stdlib_that_actually_ships_here(stdlib_scan):
     assert "os.forkpty" in found["pty.py"]
     assert "subprocess.Popen" in found["asyncio/unix_events.py"]
     assert "_posixsubprocess.fork_exec" in found["multiprocessing/util.py"]
+
+
+def test_the_stdlib_scan_accounts_for_every_module_it_read_no_source_for(stdlib_scan):
+    """The claim is about the stdlib, so it has to say which stdlib it was read from: every name the
+    interpreter declares is either read or excused by a construction that has no source."""
+    measured = coverage.stdlib_read_coverage(stdlib_scan)
+    message = coverage.read_coverage_message(measured)
+    assert reach_audit.audit_read_coverage(stdlib_scan, measured) == (), message
+    # A partition of the declared list: no name falls between two buckets or into both.
+    assert len(measured.read) + len(measured.unread) == len(sys.stdlib_module_names), message
+    assert {"multiprocessing", "subprocess", "asyncio", "pty", "os"} <= set(measured.read), message
+    assert "_posixsubprocess" in measured.compiled + measured.extensions, message
+
+
+def test_the_scan_excludes_no_directory_this_interpreter_calls_a_stdlib_module():
+    """The exclusion rule and the coverage measurement meet here: a skipped directory that IS a
+    declared module would read as unread source rather than as a stated omission."""
+    assert not (reach._EXCLUDED_SEGMENTS & set(sys.stdlib_module_names))
+
+
+def test_a_module_with_a_pyc_and_no_source_is_refused_rather_than_read_as_quiet(tmp_path):
+    """The middle the file count cannot see: a frozen, zipped, or stripped layout, where the module
+    is importable, can start a child, and was never parsed."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "quiet.py": "import json\n\ndef go():\n    return json.dumps({})\n",
+            "stripped/__pycache__/__init__.cpython-313.pyc": "",
+        },
+    )
+    scan = reach.stdlib_spawn_reaches(root)
+    measured = coverage.stdlib_read_coverage(scan, names=["quiet", "stripped"])
+    assert (measured.read, measured.compiled_only) == (("quiet",), ("stripped",))
+    findings = reach_audit.audit_read_coverage(scan, measured)
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("stripped", reach_audit.PROBLEM_UNREAD_MODULE)
+    ]
+    assert "stripped" in coverage.read_coverage_message(measured)
+
+
+def test_a_declared_module_this_host_does_not_ship_is_recorded_rather_than_refused(tmp_path):
+    """`sys.stdlib_module_names` is what CPython contains, not what this host installed: a
+    split-package or python3-minimal layout cannot import what is not there."""
+    root = _stdlib(tmp_path, {"quiet.py": "import json\n"})
+    scan = reach.stdlib_spawn_reaches(root)
+    measured = coverage.stdlib_read_coverage(scan, names=["quiet", "tkinter"])
+    assert measured.absent == ("tkinter",)
+    assert reach_audit.audit_read_coverage(scan, measured) == ()
+
+
+def test_a_module_that_has_no_source_by_construction_is_not_an_unread_one(tmp_path):
+    """Two thirds of the declared list is compiled in, an extension, or a name of another platform;
+    a gate that refused those would fail on every host."""
+    root = _stdlib(
+        tmp_path,
+        {"quiet.py": "import json\n", f"speedy{coverage.EXTENSION_SUFFIXES[0]}": ""},
+    )
+    scan = reach.stdlib_spawn_reaches(root)
+    measured = coverage.stdlib_read_coverage(scan, names=["sys", "_winapi", "speedy", "quiet"])
+    assert measured.compiled == ("sys",)
+    assert measured.declared == ("_winapi",)
+    assert measured.extensions == ("speedy",)
+    assert (measured.compiled_only, measured.absent) == ((), ())
 
 
 @pytest.mark.slow

@@ -165,13 +165,17 @@ class ModuleReach:
 class SpawnScan:
     """One pass over a tree: what it read, and what it found starting children.
 
-    `files_read` is the half that keeps the result honest. A tree whose source is absent -- a frozen
+    What it READ is the half that keeps the result honest. A tree whose source is absent -- a frozen
     or `.pyc`-only install, a path that is not there at all -- yields no reaches, which is the same
-    answer as a tree where nothing starts a child, and only the count tells them apart.
+    answer as a tree where nothing starts a child. `files_read` tells those two apart at the
+    degenerate end; `modules_read` -- the top-level names the pass parsed at least one file of --
+    is what `gpu_guard_spawn_reach_coverage` weighs against `sys.stdlib_module_names` to tell them
+    apart in the middle, where a host ships half its library as source.
     """
 
     root: str
     files_read: int
+    modules_read: tuple[str, ...]
     reaches: tuple[ModuleReach, ...]
 
 
@@ -231,6 +235,7 @@ def spawn_scan(
     passes whichever set is cheaper for the tree it reads.
     """
     found: list[ModuleReach] = []
+    modules: set[str] = set()
     read = 0
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
@@ -238,12 +243,18 @@ def spawn_scan(
         if source is None:
             continue
         read += 1
+        modules.add(relative.split("/")[0].removesuffix(".py"))
         if not any(trigger in source for trigger in triggers):
             continue
         reached = source_reaches(source, alphabet)
         if reached:
             found.append(ModuleReach(path=relative, primitives=reached))
-    return SpawnScan(root=str(root), files_read=read, reaches=tuple(found))
+    return SpawnScan(
+        root=str(root),
+        files_read=read,
+        modules_read=tuple(sorted(modules)),
+        reaches=tuple(found),
+    )
 
 
 def stdlib_spawn_reaches(

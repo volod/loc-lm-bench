@@ -43,29 +43,34 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-reach-scan-does-not-say-what-it-failed-to-read (optional)
+### agent-the-read-coverage-measurement-stops-at-the-top-level-module (optional)
 
-The reach scan counts the files it read and refuses only the degenerate case where that count is
-ZERO ([host validation](current/host-validation.md#code-quality-checks)). Between an empty read and a
-complete one is an unmeasured middle: a module that ships without source (a frozen or zipped stdlib,
-a `python3-minimal` layout, a `.pyc`-only install) is not scanned and reports exactly like a module
-that starts no children, so a host could pass the check having read half the library -- and the file
-count cannot tell, because it says how much was read and not what was missed. Measure the reading:
-compare
-the modules the scan actually parsed against `sys.stdlib_module_names`, report the ones no source
-was found for, and decide on the evidence whether an unread module is a finding -- the C extension
-modules in that list have no `.py` by construction and are the case a naive gate would fail on
-every host.
+The stdlib read coverage is measured per TOP-LEVEL name, because `sys.stdlib_module_names` is the
+only list of its kind CPython publishes
+([host validation](current/host-validation.md#code-quality-checks)). So a package that ships its
+`__init__.py` and not its submodules counts as read, and the very case the measurement exists for --
+a source-stripped layout -- hides one level down: `multiprocessing/__init__.py` present with
+`multiprocessing/util.py` stripped reads exactly like a complete package. That level needs no
+published list, because the interpreter leaves the evidence on disk: inside every package directory
+the scan walked, compare the `.py` stems against the `__pycache__/*.pyc` stems and report a
+submodule that has a cached module and no source. Reuse the classification vocabulary already
+there rather than adding a second one, and keep the same evidence-based decision -- a `.pyc` with no
+`.py` is the finding, an absent file is not.
 
 - Agent status: CLEAR
-- Dependencies: the scan is `stdlib_spawn_reaches` in `src/llb/quality/gpu_guard_spawn_reach.py`;
-  the degenerate refusal it would sit beside is `PROBLEM_UNSCANNED` in
+- Dependencies: the measurement is `stdlib_read_coverage` in
+  `src/llb/quality/gpu_guard_spawn_reach_coverage.py`; the per-name classes it would extend are
+  `ReadCoverage.compiled_only` / `absent`, and the refusal is `audit_read_coverage` in
   `src/llb/quality/gpu_guard_spawn_reach_audit.py`.
-- User-visible outcome: "no stdlib module starts a child undeclared" states which part of the
-  stdlib it was read from, rather than resting on whichever files the host happened to ship.
-- Scope boundary: in scope -- the read-coverage measurement, its report, and the finding-or-record
-  decision. Out of scope -- importing a module to inspect it (side effects), disassembling a `.pyc`
-  when no source exists, and third-party packages.
+- User-visible outcome: a stripped submodule inside a package the scan otherwise read stops being
+  indistinguishable from a submodule that starts no children.
+- Scope boundary: in scope -- the per-package submodule comparison, its place in the coverage
+  record and message, and fabricated-tree cases for a stripped submodule and a complete package.
+  Out of scope -- importing anything to inspect it, disassembling a `.pyc`, zip-imported stdlib
+  layouts, and site-packages.
+- Execution path: `make ci` (the stdlib tier is not `slow`); no host services.
+- Acceptance gates: `make ci` green, this host still reporting zero stripped submodules, and the
+  fabricated cases pinning both directions.
 - Documentation target: [host validation](current/host-validation.md#code-quality-checks).
 
 ### agent-the-default-start-method-is-read-from-a-documented-ordering (optional)

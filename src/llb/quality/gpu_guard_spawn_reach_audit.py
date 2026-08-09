@@ -12,6 +12,14 @@ shapes:
   that silently reads nothing is the one way this check could pass for free, so an empty read is
   treated as a failure rather than as a clean bill.
 
+`audit_read_coverage` closes the middle of that last one. An empty read is the degenerate end; a
+host that ships PART of its library as source reads exactly like a library that starts no children,
+and the file count cannot tell, because it says how much was read and not what was missed.
+`gpu_guard_spawn_reach_coverage` measures the reading against `sys.stdlib_module_names` and
+classifies every unread name; this module refuses the one class that is neither compiled in, an
+extension, nor declared sourceless -- a module with a `.pyc` under the stdlib root and no `.py`
+beside it, which this host can import and the scan did not read.
+
 A module reaching a name the surface DOES carry is never a finding, covered or residual: the
 declaration already carries that decision, and repeating it per call site would only mean two places
 to keep in step.
@@ -37,6 +45,7 @@ from llb.quality.gpu_guard_spawn_reach import (
     package_coverage,
     stdlib_spawn_reaches,
 )
+from llb.quality.gpu_guard_spawn_reach_coverage import ReadCoverage, stdlib_read_coverage
 from llb.quality.gpu_guard_spawn_surface import (
     COVERAGE_THROUGH,
     DECLARED_SPAWN_SURFACE,
@@ -52,6 +61,7 @@ from llb.quality.gpu_guard_spawn_surface_audit import (
 PROBLEM_UNCOVERED_REACH = "uncovered-reach"
 PROBLEM_UNSCANNED = "unscanned"
 PROBLEM_OUTGROWN_REACH = "outgrown-reach"
+PROBLEM_UNREAD_MODULE = "unread-module"
 
 
 def audit_spawn_reach(
@@ -85,6 +95,31 @@ def audit_installed_reach(
     return (
         *audit_spawn_reach(scanned, declared, package_coverage(reachers), surface),
         *outgrown_reachers(scanned, reachers),
+    )
+
+
+def audit_read_coverage(
+    scan: SpawnScan, coverage: ReadCoverage | None = None
+) -> tuple[SurfaceFinding, ...]:
+    """Declared stdlib modules this host can import and the scan read no source for.
+
+    Only the compiled-only class is refused. A module that is compiled into the interpreter, ships
+    as an extension, or is declared sourceless has no `.py` BY CONSTRUCTION -- two thirds of
+    `sys.stdlib_module_names` are one of those here, and refusing them is the naive gate that fails
+    on every host. A module absent from the root entirely is not refused either: this host cannot
+    import what it does not have, so the claim holds vacuously for it. What is left is the layout
+    this exists for -- a frozen, zipped, or source-stripped stdlib, where the module IS importable
+    and the scan could not see whether it starts a child.
+    """
+    measured = coverage if coverage is not None else stdlib_read_coverage(scan)
+    return tuple(
+        SurfaceFinding(
+            name,
+            PROBLEM_UNREAD_MODULE,
+            "a compiled module under the stdlib root with no source beside it, so this host can "
+            "import it and the scan could not read whether it starts a child",
+        )
+        for name in measured.compiled_only
     )
 
 

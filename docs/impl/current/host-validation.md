@@ -336,15 +336,45 @@ already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` i
 halves of the `spawn` / `forkserver` residual. `llb.quality.gpu_guard_spawn_reach_audit` refuses a
 module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
 mode a source scan invites -- a scan that read NO source, which says where the tree is rather than
-what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read").
-CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`) is excluded by a stated
-rule: a corpus that starts children on purpose, costing 4s and one extra declaration to include. The
+what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read"; the
+unmeasured middle between those is `audit_read_coverage`, below). CPython's own regression suite
+(`test/`, `*/tests/`, `idlelib/idle_test`) is excluded by a stated rule: a corpus that starts
+children on purpose, costing 4s and one extra declaration to include. The
 stdlib scan is ~0.9s on this host (631 files read, 372 parsed), run once per session by a
 module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it over
 fabricated trees for the cases the host cannot produce (an aliased import, a local helper that merely
 shares a name with a spawn entry point, a file that will not parse, a module reaching past every
 patchable name). The per-file half -- resolving a source buffer's call sites through its own imports
 -- is `llb.quality.gpu_guard_spawn_source`, shared by both scans.
+
+**The scan says what it FAILED to read, so the result is about the stdlib rather than about
+whichever files this host shipped.** A file count says how much was read, not what was missed: a
+module that ships without source is never parsed and reports exactly like a module that starts no
+children, so a host could pass having read half the library.
+`llb.quality.gpu_guard_spawn_reach_coverage` measures the reading against `sys.stdlib_module_names`
+-- the interpreter's own list of what its standard library contains -- using the top-level names the
+pass parsed (`SpawnScan.modules_read`), and classifies every declared name no source was read for.
+Most of that list has no `.py` by construction, which is why the classification is the deliverable
+and not the refusal: `compiled` (in `sys.builtin_module_names`), `extensions` (a shared object under
+the root or its `lib-dynload`, matched on `importlib.machinery.EXTENSION_SUFFIXES`), `declared`
+(`SOURCELESS_STDLIB_MODULES`: the two frozen bootstrap modules, plus the Windows and macOS names the
+list carries because it is documented platform-independent -- `_winapi`, `nt`, `msvcrt`, `winreg`,
+`winsound`, `_overlapped`, `_wmi`, `_scproxy`), `compiled_only` (a `.pyc` under the root with no
+`.py` beside it), and `absent` (nothing under the root at all). **On this host, of 290 declared
+names: 184 read as source, 61 compiled in, 35 extensions, 10 declared sourceless, 0 compiled-only,
+0 absent** -- every unread name accounted for, and the fields partition the list so a name cannot
+fall between two of them. `gpu_guard_spawn_reach_audit.audit_read_coverage` refuses ONLY the
+compiled-only class, decided on that evidence: it is the frozen / zipped / source-stripped layout,
+where the module is importable on this host, can start a child, and was not parsed. `absent` is
+recorded and not refused, because a `python3-minimal` or split-package host (Debian ships `tkinter`
+apart) cannot import what it does not have, so the claim holds vacuously for it -- and refusing
+either class of by-construction absence is the naive gate that fails on every host.
+`read_coverage_message` renders the whole breakdown, and is the assertion message the stdlib
+coverage test fails with. The scan's excluded segments do not hide anything here: none of `test` /
+`tests` / `idle_test` / `site-packages` is a name `sys.stdlib_module_names` carries, which is
+asserted rather than assumed. Residual: the measurement is by top-level module, so a package that
+ships half its submodules as source is read as read -- the sharp version of that would need the
+same per-module list one level down, which CPython does not publish.
 
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
