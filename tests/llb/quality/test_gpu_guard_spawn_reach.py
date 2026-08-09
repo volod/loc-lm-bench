@@ -4,7 +4,8 @@ The name surface covers `os` and `subprocess`; everything else is covered only i
 calls resolves a name in those two. This file is where that stops being a sentence: one pass over
 the stdlib this interpreter ships asserts that every module which starts a child does it through a
 DECLARED name, and one pass over this venv's site-packages asserts that no dependency goes below the
-seams outside a declared package.
+seams outside a declared package -- nor from more files, or through more primitives, than the
+package's excuse was measured against.
 
 The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost: the
 stdlib is ~600 files that ship with the interpreter (0.9s), while site-packages is whatever is
@@ -101,6 +102,14 @@ def test_the_packages_that_go_below_the_seams_are_a_subset_of_the_declared_ones(
 
 
 @pytest.mark.slow
+def test_the_declared_packages_still_reach_only_what_their_excuses_were_measured_on(installed_scan):
+    """A package excuse survives a release bump, which is also how a widened vendored backend would
+    arrive unread; the measurement is what makes the widening say so."""
+    findings = reach_audit.outgrown_reachers(installed_scan)
+    assert findings == (), audit.surface_message(findings)
+
+
+@pytest.mark.slow
 def test_the_installed_scan_read_the_venv_rather_than_an_empty_path(installed_scan):
     assert installed_scan.files_read > 100
 
@@ -113,23 +122,86 @@ def test_the_installed_alphabet_is_only_what_goes_below_the_seams():
     assert "fork" in alphabet["posix"]
 
 
+def _excused(files: int, *primitives: str) -> reach.PackageReacher:
+    """A package excuse measured against `files` files reaching `primitives`."""
+    return reach.PackageReacher(
+        surface.SpawnCoverage(
+            surface.COVERAGE_RESIDUAL, reason="a private copy of the multiprocessing residual"
+        ),
+        primitives=primitives or ("_posixsubprocess.fork_exec",),
+        files=files,
+    )
+
+
 def test_a_package_is_excused_as_a_whole_because_a_release_moves_its_files(tmp_path):
     """`joblib` vendors `loky` at a path its next release may rename; the decision is the package."""
     below = "import _posixsubprocess\n\ndef go():\n    _posixsubprocess.fork_exec()\n"
     root = _stdlib(
         tmp_path, {"declared/backend/fork_exec.py": below, "undeclared/backend/start.py": below}
     )
-    excused = {
-        "declared": surface.SpawnCoverage(
-            surface.COVERAGE_RESIDUAL, reason="a private copy of the multiprocessing residual"
-        )
-    }
     findings = reach_audit.audit_installed_reach(
-        reach.installed_spawn_reaches(root), reachers=excused
+        reach.installed_spawn_reaches(root), reachers={"declared": _excused(1)}
     )
     assert [(finding.name, finding.problem) for finding in findings] == [
         ("undeclared/backend/start.py", reach_audit.PROBLEM_UNCOVERED_REACH)
     ]
+
+
+def test_a_declared_package_that_starts_children_from_a_new_file_is_reported(tmp_path):
+    """The failure package granularity invites: a line written about one backend excusing the one
+    the next release adds. The excuse still covers it -- the growth is what arrives to be re-read."""
+    below = "import _posixsubprocess\n\ndef go():\n    _posixsubprocess.fork_exec()\n"
+    root = _stdlib(
+        tmp_path, {"vendored/backend/fork_exec.py": below, "vendored/backend/added.py": below}
+    )
+    findings = reach_audit.audit_installed_reach(
+        reach.installed_spawn_reaches(root), reachers={"vendored": _excused(1)}
+    )
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("vendored", reach_audit.PROBLEM_OUTGROWN_REACH)
+    ]
+    assert "vendored/backend/added.py" in findings[0].detail
+
+
+def test_a_declared_package_that_reaches_a_primitive_its_excuse_never_saw_is_reported(tmp_path):
+    """A second WAY down, from the same file count -- a POSIX-only excuse grown a Windows half."""
+    root = _stdlib(
+        tmp_path,
+        {"vendored/win.py": "import _winapi\n\ndef go():\n    _winapi.CreateProcess()\n"},
+    )
+    findings = reach_audit.outgrown_reachers(
+        reach.installed_spawn_reaches(root), {"vendored": _excused(1)}
+    )
+    assert [(finding.name, finding.problem) for finding in findings] == [
+        ("vendored", reach_audit.PROBLEM_OUTGROWN_REACH)
+    ]
+    assert "_winapi.CreateProcess" in findings[0].detail
+
+
+def test_a_declared_package_that_reaches_the_same_way_from_fewer_files_is_not_growth(tmp_path):
+    """Shrinking is not a decision to revisit: a dropped backend, or a host that vendors less."""
+    root = _stdlib(
+        tmp_path,
+        {
+            "vendored/util.py": (
+                "import _posixsubprocess\n\ndef go():\n    _posixsubprocess.fork_exec()\n"
+            )
+        },
+    )
+    measured = _excused(3, "_posixsubprocess.fork_exec", "_winapi.CreateProcess")
+    assert (
+        reach_audit.outgrown_reachers(reach.installed_spawn_reaches(root), {"vendored": measured})
+        == ()
+    )
+
+
+def test_a_package_excuse_must_record_the_reach_it_was_measured_against():
+    """The record is the narrowing, so a declaration cannot be added without one."""
+    residual = surface.SpawnCoverage(surface.COVERAGE_RESIDUAL, reason="vendored multiprocessing")
+    with pytest.raises(ValueError, match="measured against"):
+        reach.PackageReacher(residual, primitives=(), files=1)
+    with pytest.raises(ValueError, match="measured against"):
+        reach.PackageReacher(residual, primitives=("_posixsubprocess.fork_exec",), files=0)
 
 
 def test_the_installed_scan_reads_a_call_that_goes_around_os_and_ignores_one_that_does_not(

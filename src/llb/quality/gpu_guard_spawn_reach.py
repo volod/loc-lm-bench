@@ -22,7 +22,13 @@ The INSTALLED packages are read the same way and for a narrower question. A depe
 parsing the whole tree, so `installed_spawn_reaches` uses the `below_the_seams` alphabet: only the
 starts that go past every patchable name. Those are declared per package rather than per file
 (`DECLARED_PACKAGE_REACHERS`), because a release moves its modules and the decision is about the
-dependency.
+dependency. Package granularity is the right unit for surviving a release bump and the wrong unit
+for a residual -- it excuses every module in the package, so a future `joblib` that starts children a
+second way, from a file the declaration never saw, would be excused by a line written about `loky`.
+What narrows it without per-file churn is the MEASUREMENT each declaration carries
+(`PackageReacher`): the primitives and the file count it was written against, so a package whose
+reach grows past them is reported by `gpu_guard_spawn_reach_audit.outgrown_reachers` rather than
+silently covered.
 
 CPython's own regression suite (`test/`, `*/tests/`, `idlelib/idle_test`) is left out by a stated
 rule: it is a corpus that starts children on purpose, is not runtime code any llb path imports, and
@@ -34,9 +40,10 @@ already on the record -- `multiprocessing/util.py` and `multiprocessing/popen_sp
 plus `subprocess.py`, whose low-level starts sit BEHIND the `Popen` seam. Two modules is the right
 enumerated NAME surface, and that is now a result rather than a claim. Over this host's
 site-packages (40119 files), a one-off full-alphabet pass found 362 packages that start a child and
-exactly 5 files that go below the seams, all in two packages: `joblib`'s vendored `loky` and
-`multiprocess`. Both are private copies of the `multiprocessing` residual, and neither is closable
-from here -- so they are declared, and a THIRD package arriving is what this refuses.
+exactly 5 files that go below the seams, all in two packages: `joblib`'s vendored `loky` (3 files)
+and `multiprocess` (2). Both are private copies of the `multiprocessing` residual, and neither is
+closable from here -- so they are declared, measured against those files, and a THIRD package
+arriving is what this refuses.
 """
 
 import sysconfig
@@ -81,21 +88,66 @@ DECLARED_REACHERS: Mapping[str, SpawnCoverage] = {
     ),
 }
 
+# The two below-the-seams names every package declaration here was measured against. Named once so
+# a declaration records what it was written on rather than restating the alphabet.
+_VENDORED_MULTIPROCESSING_STARTS = ("_posixsubprocess.fork_exec", "_winapi.CreateProcess")
+
+
+@dataclass(frozen=True)
+class PackageReacher:
+    """A dependency's excuse, plus the reach that excuse was MEASURED against.
+
+    The excuse is declared per package because a release moves its modules around, and that is also
+    what makes it too wide: it covers every module in the package, including a backend a future
+    release adds. The measurement is the narrowing -- the primitives resolved and the number of files
+    that resolved them when the reason was written -- so a package that grows a second way to start a
+    child arrives as a line to re-read instead of as silence. Shrinking is not growth: a release that
+    drops a backend, or a host that installs a slimmer build, is not a decision to revisit.
+    """
+
+    coverage: SpawnCoverage
+    primitives: tuple[str, ...]
+    files: int
+
+    def __post_init__(self) -> None:
+        if not self.primitives or self.files < 1:
+            raise ValueError(
+                "a package excuse must record the primitives and file count it was measured against"
+            )
+
+
 # Installed packages are declared per PACKAGE rather than per file: a release moves its modules
 # around, and the decision an operator makes is about the dependency, not about a path inside it.
-DECLARED_PACKAGE_REACHERS: Mapping[str, SpawnCoverage] = {
-    "joblib": SpawnCoverage(
-        COVERAGE_RESIDUAL,
-        reason="vendors `loky`, whose `backend/fork_exec.py` calls `_posixsubprocess.fork_exec` and "
-        "whose Windows backend calls `_winapi.CreateProcess` -- a private copy of the same "
-        "`spawn` / `forkserver` residual `multiprocessing/util.py` carries",
+DECLARED_PACKAGE_REACHERS: Mapping[str, PackageReacher] = {
+    "joblib": PackageReacher(
+        SpawnCoverage(
+            COVERAGE_RESIDUAL,
+            reason="vendors `loky`, whose `backend/fork_exec.py` calls "
+            "`_posixsubprocess.fork_exec` and whose Windows backend and resource tracker call "
+            "`_winapi.CreateProcess` -- a private copy of the same `spawn` / `forkserver` residual "
+            "`multiprocessing/util.py` carries",
+        ),
+        primitives=_VENDORED_MULTIPROCESSING_STARTS,
+        files=3,
     ),
-    "multiprocess": SpawnCoverage(
-        COVERAGE_RESIDUAL,
-        reason="a `dill`-based fork of `multiprocessing`, so it carries that module's residual "
-        "verbatim: `util.spawnv_passfds` -> `_posixsubprocess.fork_exec`",
+    "multiprocess": PackageReacher(
+        SpawnCoverage(
+            COVERAGE_RESIDUAL,
+            reason="a `dill`-based fork of `multiprocessing`, so it carries that module's residual "
+            "verbatim: `util.spawnv_passfds` -> `_posixsubprocess.fork_exec`, plus the "
+            "`popen_spawn_win32` half",
+        ),
+        primitives=_VENDORED_MULTIPROCESSING_STARTS,
+        files=2,
     ),
 }
+
+
+def package_coverage(
+    reachers: Mapping[str, PackageReacher] = DECLARED_PACKAGE_REACHERS,
+) -> Mapping[str, SpawnCoverage]:
+    """The excuse half of the package declarations, so both tables read through one lookup."""
+    return {package: declared.coverage for package, declared in reachers.items()}
 
 
 @dataclass(frozen=True)

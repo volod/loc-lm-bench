@@ -354,17 +354,40 @@ processes, uv, the build scripts), and each was covered only by that same unstat
 `subprocess.Popen` says nothing the declaration does not already say, while scanning for the covered
 names too means parsing 7420 files instead of 301 (measured). A one-off full-alphabet pass over this
 host's 40119 site-packages files found **362 packages that start a child and exactly 5 files that go
-below the seams**, in two packages: `joblib`'s vendored `loky` (`backend/fork_exec.py` ->
-`_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in its Windows backend) and `multiprocess`
-(a `dill`-based fork of `multiprocessing`, carrying that module's residual verbatim). Both are
-private copies of a residual already on the record and neither is closable from here, so both are
-declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by file, since a release moves its
-modules and the decision an operator makes is about the dependency. A THIRD package arriving is what
-`audit_installed_reach` refuses; an excuse is looked up as the exact path first and then the
-top-level package, so the stdlib and package tables read through one lookup. `nt` is deliberately
-absent from the installed alphabet: it is the Windows twin of names `os` re-exports, and its
-two-letter module name matches too much text to prefilter on, so including it would cost a full-tree
-parse on every host for a platform whose denial mechanism is already a residual.
+below the seams**, in two packages: `joblib`'s vendored `loky` (3 files -- `backend/fork_exec.py` ->
+`_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in `backend/popen_loky_win32.py` and
+`backend/resource_tracker.py`) and `multiprocess` (2 files -- a `dill`-based fork of
+`multiprocessing`, carrying that module's residual verbatim in `util.py` and
+`popen_spawn_win32.py`). Both are private copies of a residual already on the record and neither is
+closable from here, so both are declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by
+file, since a release moves its modules and the decision an operator makes is about the dependency. A
+THIRD package arriving is what `audit_installed_reach` refuses; an excuse is looked up as the exact
+path first and then the top-level package, so the stdlib and package tables read through one lookup.
+`nt` is deliberately absent from the installed alphabet: it is the Windows twin of names `os`
+re-exports, and its two-letter module name matches too much text to prefilter on, so including it
+would cost a full-tree parse on every host for a platform whose denial mechanism is already a
+residual.
+
+**A package excuse carries the reach it was MEASURED against, so a widened vendored backend arrives
+as a line to re-read.** Package granularity is the right unit for surviving a release bump and the
+wrong unit for a residual: it excuses every module in the package, so a future `joblib` that starts
+children a second way, from a file the reason never saw, would be covered by a line written about
+`loky`. Narrowing it back to per-file declarations would reintroduce the churn the package unit
+exists to avoid, so each declaration is a `PackageReacher` instead -- the `SpawnCoverage` reason plus
+the primitives and the file count it was written on (`joblib`: 3 files,
+`multiprocess`: 2, both through `_posixsubprocess.fork_exec` + `_winapi.CreateProcess`). A
+declaration cannot be added without that record: `PackageReacher.__post_init__` refuses an empty
+primitive list or a zero file count. `gpu_guard_spawn_reach_audit.outgrown_reachers` then reports a
+declared package that reaches a primitive its excuse was not measured on, or starts children from
+more files than it was (naming those files), and `audit_installed_reach` includes those findings, so
+the widening turns the suite red on the release that introduces it rather than passing under the old
+reason. Growth only: a package reaching the same way from FEWER files -- a dropped backend, a slimmer
+build -- is not a decision to revisit, and an excuse that matches nothing at all is already what
+`absent_reachers` reports. What this does NOT do is close either vendored residual or check the
+declarations of third-party packages per file; both remain what they were. Residual: the record is a
+COUNT and a primitive set, not the file identities, so a release that renames one backend while
+dropping another reaches the same way from the same number of files and stays quiet -- naming the
+paths is the per-file churn the package unit exists to avoid.
 
 **The site-packages cases are `slow` and the stdlib ones are not, decided on the measured cost.** The
 stdlib is ~600 files that ship with the interpreter; site-packages is whatever is installed -- 40119

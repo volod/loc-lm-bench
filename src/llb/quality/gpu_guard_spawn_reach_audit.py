@@ -19,7 +19,10 @@ to keep in step.
 `audit_installed_reach` asks the same question of the installed packages. Only the granularity of
 the excuse differs -- per package rather than per file, since a release moves its modules around --
 and an excuse is looked up as the exact path first, then the top-level package, so both tables read
-through one lookup.
+through one lookup. It refuses a fourth shape the stdlib table cannot have: a declared package whose
+reach has GROWN past the primitives and file count its excuse was measured against. Package
+granularity survives a release bump and, for exactly that reason, excuses a backend the declaration
+never saw; `outgrown_reachers` is what turns that widening into a line to re-read.
 """
 
 from collections.abc import Mapping
@@ -28,8 +31,10 @@ from llb.quality.gpu_guard_spawn_reach import (
     DECLARED_PACKAGE_REACHERS,
     DECLARED_REACHERS,
     ModuleReach,
+    PackageReacher,
     SpawnScan,
     installed_spawn_reaches,
+    package_coverage,
     stdlib_spawn_reaches,
 )
 from llb.quality.gpu_guard_spawn_surface import (
@@ -46,6 +51,7 @@ from llb.quality.gpu_guard_spawn_surface_audit import (
 
 PROBLEM_UNCOVERED_REACH = "uncovered-reach"
 PROBLEM_UNSCANNED = "unscanned"
+PROBLEM_OUTGROWN_REACH = "outgrown-reach"
 
 
 def audit_spawn_reach(
@@ -66,21 +72,47 @@ def audit_spawn_reach(
 def audit_installed_reach(
     scan: SpawnScan | None = None,
     declared: Mapping[str, SpawnCoverage] = DECLARED_SPAWN_SURFACE,
-    reachers: Mapping[str, SpawnCoverage] = DECLARED_PACKAGE_REACHERS,
+    reachers: Mapping[str, PackageReacher] = DECLARED_PACKAGE_REACHERS,
     surface: ObservedSurface | None = None,
 ) -> tuple[SurfaceFinding, ...]:
-    """The same question of the installed packages, whose excuses are declared per package."""
-    return audit_spawn_reach(
-        scan if scan is not None else installed_spawn_reaches(), declared, reachers, surface
+    """The same question of the installed packages, whose excuses are declared per package.
+
+    Plus the one the stdlib table cannot ask: whether a declared package still reaches only what its
+    excuse was measured on, since the package granularity that survives a release bump is also what
+    would excuse a backend that release adds.
+    """
+    scanned = scan if scan is not None else installed_spawn_reaches()
+    return (
+        *audit_spawn_reach(scanned, declared, package_coverage(reachers), surface),
+        *outgrown_reachers(scanned, reachers),
     )
 
 
 def absent_reachers(
-    scan: SpawnScan, reachers: Mapping[str, SpawnCoverage] = DECLARED_REACHERS
+    scan: SpawnScan,
+    reachers: Mapping[str, SpawnCoverage] | Mapping[str, PackageReacher] = DECLARED_REACHERS,
 ) -> tuple[str, ...]:
     """Excused names the scan no longer finds -- an excuse that has outlived what it excused."""
     scanned = {reach.path for reach in scan.reaches} | {_package(reach) for reach in scan.reaches}
     return tuple(name for name in reachers if name not in scanned)
+
+
+def outgrown_reachers(
+    scan: SpawnScan, reachers: Mapping[str, PackageReacher] = DECLARED_PACKAGE_REACHERS
+) -> tuple[SurfaceFinding, ...]:
+    """Declared packages whose reach has grown past what their excuse was measured against.
+
+    Growth only: a package that reaches the same way from FEWER files -- a release that drops a
+    backend, a slimmer build, a host that vendors less -- is not a decision to revisit, and an
+    excuse that stops matching anything at all is what `absent_reachers` reports. An UNdeclared
+    package is not this function's finding either; `audit_installed_reach` already refuses it.
+    """
+    findings = (
+        _growth_finding(package, modules, reachers[package])
+        for package, modules in _package_reaches(scan).items()
+        if package in reachers
+    )
+    return tuple(finding for finding in findings if finding is not None)
 
 
 def _unscanned(scan: SpawnScan) -> SurfaceFinding:
@@ -124,3 +156,45 @@ def _reach_finding(
 def _package(reach: ModuleReach) -> str:
     """The top-level package a module belongs to -- the unit a dependency is declared at."""
     return reach.path.split("/")[0]
+
+
+def _package_reaches(scan: SpawnScan) -> dict[str, list[ModuleReach]]:
+    """The scan regrouped onto the unit the excuses are written at."""
+    grouped: dict[str, list[ModuleReach]] = {}
+    for reach in scan.reaches:
+        grouped.setdefault(_package(reach), []).append(reach)
+    return grouped
+
+
+def _growth_finding(
+    package: str, modules: list[ModuleReach], declared: PackageReacher
+) -> SurfaceFinding | None:
+    """How one package's reach has widened since its excuse was written, or None if it has not."""
+    widened = tuple(
+        sorted(
+            {name for module in modules for name in module.primitives} - set(declared.primitives)
+        )
+    )
+    if not widened and len(modules) <= declared.files:
+        return None
+    return SurfaceFinding(
+        package, PROBLEM_OUTGROWN_REACH, _growth_detail(modules, widened, declared)
+    )
+
+
+def _growth_detail(
+    modules: list[ModuleReach], widened: tuple[str, ...], declared: PackageReacher
+) -> str:
+    clauses = []
+    if widened:
+        clauses.append(f"now reaches {', '.join(widened)}, which its excuse was not measured on")
+    if len(modules) > declared.files:
+        listed = ", ".join(module.path for module in modules)
+        clauses.append(
+            f"now starts children from {len(modules)} files rather than the {declared.files} its "
+            f"excuse was measured on ({listed})"
+        )
+    return (
+        f"{'; '.join(clauses)} -- the package excuse still covers it, so re-read that reason "
+        "against what the package does now and re-measure it"
+    )
