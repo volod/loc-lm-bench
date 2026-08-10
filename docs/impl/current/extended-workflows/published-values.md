@@ -263,10 +263,20 @@ are equal in every input the operation declares is refused at construction -- tw
 the body the same numbers and take the same path -- so exercising a second branch is a DECLARATION
 an author writes beside the arithmetic, not a review comment somebody has to think to make. The
 shipped `trigger_over_own_cap_peak` declares two points (a half share over a 1024-char guard, a
-quarter share over 4096) that differ in every declared input. What the set does not claim is branch
-COVERAGE: a branch no point takes is still unobserved. It makes that residual DECLARABLE rather than
-removing it -- generating the points that would cover a body is a solver, and the declared point is
-the readable thing.
+quarter share over 4096) that differ in every declared input.
+
+The audit also measures the residual the set used to leave silent.
+`agentic_published_value_operation_branches.py` reserves an available `sys.monitoring` tool ID for
+each probe call, enables the `BRANCH` event only on the operation's own compute code object, and
+unions the source/destination arcs reached across the declared set. `OperationRegistryReport`
+carries one `OperationUnreachedBranches` record beside each entry in `checked`: an explicit missed
+arc count and one source line per missed arc (with a repeated line when two arcs from that line were
+missed). A body with no missed arc still gets a zero-count record, so adding an unprobed branch
+changes visible evidence rather than leaving the certification silently narrower. This is REPORT
+only. The shipped trigger operation currently exposes two legal-domain misses -- its absent
+measurement fallback and its non-positive peak raise -- so refusing on a nonzero count would reject
+an operation whose successful probes cannot take those paths. Generating covering points is also out
+of scope: that is a solver, while the probe set remains the readable declaration.
 
 The third defect is a walk of the registered DESIGNS rather than of the operations, so a
 `PublishedValueDesign` entry now carries a reader for its published values beside its citations and
@@ -363,6 +373,11 @@ rests on),
 operation is computed over, the pure function that does it, the named intermediates it exposes, and
 the refusal of an operation nothing registered -- all eight study-agnostic, so any published agentic
 number can adopt them),
+`src/llb/bench/agentic_published_value_operation_probe.py` (the declared-input read recorder),
+`src/llb/bench/agentic_published_value_operation_branches.py` (operation-local `sys.monitoring`
+branch arcs and the per-operation missed-branch record),
+`src/llb/bench/agentic_published_value_operation_audit.py` (the registry report and refusing
+wrapper),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
 resolves to, including the re-derived band, its four passes, and the cause-versus-consequence rule
 for a band whose declared source guard moved),
@@ -401,9 +416,10 @@ reading a stated field, a measurement, or a source it did not declare, a declara
 input the body never reads, an operation that does not compute at its own probe point, the
 membership-is-not-a-read distinction the over-declaration refusal rests on, a read that happens on
 ONE branch driven in each direction -- at a probe set that misses the branch and at one that takes
-it -- the probe-set refusals for no point at all, for two points that cannot differ, and for a point
-that does not answer the declaration, plus arithmetic no registered design names and the CI gate
-over the shipped registry),
+it -- a report-only missed branch with its count and source line, the zero-count result when the set
+takes both outcomes, the probe-set refusals for no point at all, for two points that cannot differ,
+and for a point that does not answer the declaration, plus arithmetic no registered design names and
+the CI gate over the shipped registry),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact

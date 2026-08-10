@@ -8,10 +8,10 @@ records the reach. Reading is then observed rather than argued from the source, 
 the check honest as arithmetic is added.
 
 One call observes one PATH, so these inputs are built per point of the operation's declared probe SET
-and the audit unions the reads across them. A branch no point takes is still unobserved -- that is
-the residual the set makes declarable rather than removes -- but it is now the operation's own
-statement of which branches its declaration holds on, instead of whichever single point its author
-found convenient.
+and the audit unions the reads across them. A branch no point takes can still hide an undeclared
+READ, but the branch audit beside this recorder now reports that missed arc and its source line. The
+set remains the operation's own statement of which paths its declaration holds on, instead of
+whichever single point its author found convenient.
 
 Two rules make the recording mean what it says. A reach past the declaration RAISES with the input
 named -- an undeclared stated field, an undeclared measurement -- rather than producing the `KeyError`

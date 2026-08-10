@@ -43,36 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-probe-set-declares-branches-and-nothing-says-which-it-missed (optional)
-
-An operation's probe set says which paths its declaration is certified on, and points that cannot
-differ are refused
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-Nothing says which paths the set MISSED: a body whose reads sit behind a branch no point takes is
-certified on the paths that were walked and silent about the rest, so the residual is declarable but
-not visible, and a branch added to an existing operation lands with its probe set unchanged and CI
-green. Measure the branches the set actually reached -- run the probe calls under `sys.monitoring`
-(the `BRANCH` event, scoped to the operation's own code object, which is the whole reason these are
-small pure functions) and report the unreached ones per operation. Land it as a REPORT first
-(the count and the source lines beside `checked` in `OperationRegistryReport`) and only then decide
-whether an operation reaching full branch coverage of its own body is a refusal: an operation with a
-domain guard it cannot legally probe (the trigger ratio's `peak <= 0` raise) would fail a naive gate,
-so the gate needs a way to declare a branch unreachable-by-probe before it can refuse anything.
-
-- Agent status: CLEAR
-- Dependencies: the set is `probes` on `DerivationOperation` in
-  `src/llb/bench/agentic_published_value_operations.py`; the calls to instrument are
-  `_reach_refusals` in `src/llb/bench/agentic_published_value_operation_audit.py`, and the report to
-  extend is `OperationRegistryReport` in the same module.
-- User-visible outcome: adding a branch to a registered arithmetic shows up as a branch its probe
-  set never reached, instead of as a silently narrower certification.
-- Scope boundary: in scope -- the branch measurement over the probe calls, the per-operation report,
-  and fixture cases for a body with a branch no point takes. Out of scope -- refusing on coverage
-  before unreachable-by-probe branches can be declared, generating the points that would cover a
-  body (that is a solver), and any claim of purity beyond the declared inputs.
-- Documentation target:
-  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
-
 ### agent-a-registered-operation-may-close-over-a-shipped-constant-undeclared (optional)
 
 The self-check observes what an operation reaches for THROUGH the inputs it was handed, which is
