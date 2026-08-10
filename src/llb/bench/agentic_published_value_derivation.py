@@ -14,6 +14,7 @@ so. Here the EDGE is a property of the published value, declared beside its prov
 
     "derived_from": [{"study_kind": ..., "depth": ..., "form": ...}, ...]
     "operation": "<a name the operation registry carries>"
+    "reading": "<a name the reading registry carries>"
 
 Each entry names another value the SAME design publishes, so the declaration is checkable against the
 design rather than taken on faith -- which is what the DESIGN-wide walk next door
@@ -25,6 +26,10 @@ the readers -- so `operation` names a registered pure function
 states how many sources of which form it takes, and a declaration that does not match it is refused
 here rather than misread later. A value declares both or neither: sources with no operation is a
 number nothing can re-derive, and an operation with no sources is arithmetic over nothing.
+
+Reproducing the number still does not say how its published statement is JUDGED, so a derived value
+also names a registered `reading`. `Derivation` binds that comparison beside the operation, making a
+missing or unknown rule a declaration refusal rather than a choice each downstream reader repeats.
 """
 
 from dataclasses import dataclass
@@ -35,6 +40,11 @@ from llb.bench.agentic_published_value_operations import (
     DerivationOperation,
     DerivedValue,
     registered_operation,
+)
+from llb.bench.agentic_published_value_readings import (
+    READING,
+    PublishedValueReading,
+    required_reading,
 )
 
 # The field a published value declares its sources in. A list rather than a single object, because a
@@ -88,7 +98,7 @@ def declared_sources(value: dict[str, object]) -> tuple[ValueKey, ...]:
 
 @dataclass(frozen=True, slots=True)
 class Derivation:
-    """One published value's whole declaration: its sources, in order, and the arithmetic over them.
+    """One derived value's sources, arithmetic, and reading of its published statement.
 
     Built once and handed to whoever re-derives the value, so the design is read in one place and
     every reader computes the number the same way by construction rather than by review.
@@ -96,6 +106,7 @@ class Derivation:
 
     key: ValueKey
     operation: DerivationOperation
+    reading: PublishedValueReading
     sources: tuple[ValueKey, ...]
     stated: dict[str, float]
 
@@ -122,15 +133,20 @@ class Derivation:
 def declared_derivation(value: dict[str, object]) -> Derivation | None:
     """What a published value declares it is computed out of and how, or None when it is measured.
 
-    Both halves or neither, refused together: sources with no operation is a number the design says
-    rests on something and gives no one a way to reproduce, and an operation with no sources is
-    arithmetic over nothing. Silence on both is the ordinary case -- a measurement.
+    Sources, operation, and reading are refused together when partial. Silence on all three is the
+    ordinary measured value; any declaration makes it derived and requires the other two.
     """
     key = published_key(value)
     sources = declared_sources(value)
     named = value.get(OPERATION)
+    named_reading = value.get(READING)
     if not sources and named is None:
-        return None
+        if named_reading is None:
+            return None
+        raise ValueError(
+            f"{key.label()}: it names the `{READING}` {named_reading!r} but declares neither "
+            f"`{DERIVED_FROM}` nor `{OPERATION}`; a measured value declares none of the three"
+        )
     if named is None:
         raise ValueError(
             f"{key.label()}: it declares what it is derived from but names no `{OPERATION}`, so "
@@ -148,6 +164,7 @@ def declared_derivation(value: dict[str, object]) -> Derivation | None:
     return Derivation(
         key=key,
         operation=operation,
+        reading=required_reading(value, where=key.label()),
         sources=sources,
         stated=_stated_operands(value, key, operation),
     )
@@ -158,8 +175,9 @@ def required_derivation(value: dict[str, object]) -> Derivation:
     derivation = declared_derivation(value)
     if derivation is None:
         raise ValueError(
-            f"{published_key(value).label()}: this value is derived, so it must declare its sources "
-            f"and its `{OPERATION}` -- it declares neither, so nothing in the run can restate it"
+            f"{published_key(value).label()}: this value is derived, so it must declare its "
+            f"sources, its `{OPERATION}`, and its `{READING}` -- it declares none, so nothing in the run "
+            "can restate it"
         )
     return derivation
 

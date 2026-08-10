@@ -23,22 +23,27 @@ the registry uses everywhere else -- arithmetic exercised by no design is arithm
 exercise is a published number.
 
 What deliberately stays out is any claim that an operation is PURE or deterministic beyond its
-declared inputs. The probe records reaches through the inputs it was handed; an operation that reads
-a module global is out of reach of anything short of an expression language, which is exactly what
-the design file does not have. Out too is any claim of branch COVERAGE: the set certifies the
-declaration along the paths its points take, and a branch no point takes is unobserved. What the set
-buys is that those paths are a declaration -- refused when two points cannot differ, so an author
-exercising a second branch states it here rather than being asked for it in review.
+declared inputs. The probe records reaches through design inputs directly and checks shipped policy
+fields by perturbing the `ContextPolicy` supplied to every point. An unrelated module global remains
+out of reach of anything short of an expression language, which is exactly what the design file does
+not have. Branch COVERAGE is reported rather than refused: ``sys.monitoring`` records the arcs each
+probe call takes through the operation's own code, making a missed path visible without rejecting a
+legal domain guard that no successful probe may take.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
+from llb.bench.agentic_published_value_operation_branches import (
+    OperationBranchMonitor,
+    OperationUnreachedBranches,
+)
 from llb.bench.agentic_published_value_operation_probe import (
     UndeclaredRead,
     declared_reads,
     probe_inputs,
 )
+from llb.bench.agentic_published_value_operation_policy import policy_declaration_refusals
 from llb.bench.agentic_published_value_operations import (
     DERIVATION_OPERATIONS,
     OPERATION,
@@ -65,13 +70,18 @@ def _named_at(operation: DerivationOperation, position: int) -> str:
 
 
 def _reach_refusals(
-    operation: DerivationOperation, position: int, probe: DerivationInputs, reads: set[str]
+    operation: DerivationOperation,
+    position: int,
+    probe: DerivationInputs,
+    reads: set[str],
+    branches: OperationBranchMonitor,
 ) -> tuple[str, ...]:
     """Call the operation at ONE point of its set, recording into `reads` and naming any reach out."""
     named = _named_at(operation, position)
     inputs = probe_inputs(operation, probe, reads)
     try:
-        operation.apply(inputs.sources, inputs.stated, measured=inputs.measured, where=named)
+        with branches.recording_call():
+            operation.apply(inputs.sources, inputs.stated, measured=inputs.measured, where=named)
     except UndeclaredRead as undeclared:
         return (
             f"{named} reads {undeclared.read}, which its declaration does not carry -- a design "
@@ -103,7 +113,9 @@ def _over_declaration_refusals(operation: DerivationOperation, reads: set[str]) 
     )
 
 
-def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
+def _audit_operation(
+    operation: DerivationOperation,
+) -> tuple[tuple[str, ...], OperationUnreachedBranches]:
     """Call one registered operation at every point of its probe set, and say where it disagrees.
 
     One recording spans the whole set: over-declaration is read off the UNION, so an input the body
@@ -112,11 +124,22 @@ def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
     answer, and the remaining points would restate it or bury it.
     """
     reads: set[str] = set()
+    branches = OperationBranchMonitor(operation)
     for position, probe in enumerate(operation.probes):
-        reached = _reach_refusals(operation, position, probe, reads)
+        reached = _reach_refusals(operation, position, probe, reads, branches)
         if reached:
-            return reached
-    return _over_declaration_refusals(operation, reads)
+            return reached, branches.report()
+    refusals = (
+        *_over_declaration_refusals(operation, reads),
+        *policy_declaration_refusals(operation),
+    )
+    return refusals, branches.report()
+
+
+def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:
+    """Return declaration/body disagreements; branch misses remain report-only evidence."""
+    refusals, _branches = _audit_operation(operation)
+    return refusals
 
 
 def published_operations(design_root: Path) -> dict[str, list[str]]:
@@ -146,14 +169,17 @@ def unpublished_operations(design_root: Path) -> tuple[str, ...]:
 
 @dataclass(frozen=True, slots=True)
 class OperationRegistryReport:
-    """One self-check of the operation registry: what it called, and where declaration met body.
+    """One registry self-check: what it called, missed branches, and declaration/body refusals.
 
     `checked` is carried for the reason the design walk carries `walked` -- a self-check that
     exercised nothing passes exactly like one that exercised every entry, so the caller states what
-    it expected rather than trusting a clean run.
+    it expected rather than trusting a clean run.  `unreached_branches` has one record per checked
+    operation, including a zero count, so adding a path changes visible evidence without becoming a
+    refusal before unreachable-by-probe branches can be declared.
     """
 
     checked: tuple[str, ...]
+    unreached_branches: tuple[OperationUnreachedBranches, ...]
     refusals: tuple[str, ...]
 
 
@@ -165,15 +191,22 @@ def report_operation_registry(*, design_root: Path) -> OperationRegistryReport:
     """
     checked = tuple(sorted(DERIVATION_OPERATIONS))
     refusals: list[str] = []
+    unreached_branches: list[OperationUnreachedBranches] = []
     for name in checked:
-        refusals.extend(operation_refusals(DERIVATION_OPERATIONS[name]))
+        operation_refusal, branch_report = _audit_operation(DERIVATION_OPERATIONS[name])
+        refusals.extend(operation_refusal)
+        unreached_branches.append(branch_report)
     refusals.extend(
         f"the `{name}` operation is registered and no registered design names it, so its arithmetic "
         "is exercised by nothing -- a wrong quotient would sit here until the first study adopted "
         "it and published a number out of it"
         for name in unpublished_operations(design_root)
     )
-    return OperationRegistryReport(checked=checked, refusals=tuple(refusals))
+    return OperationRegistryReport(
+        checked=checked,
+        unreached_branches=tuple(unreached_branches),
+        refusals=tuple(refusals),
+    )
 
 
 def validate_operation_registry(*, design_root: Path) -> list[str]:

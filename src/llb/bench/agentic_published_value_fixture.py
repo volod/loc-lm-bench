@@ -11,11 +11,13 @@ accepted there. With the bytes committed, the pin is verified on EVERY host agai
 carries them, the published value is read out of those bytes rather than out of a hand-shaped
 excerpt, and a host that still has the run root falsifies the copy against the run.
 
-What this does not claim to do is stop a determined fabricator: a hand-written aggregate re-pinned
-to its own digest passes on a host with no run root, because nothing there can contradict it. What
-it removes is the gap between the evidence and the claim -- the bytes are present and reviewable as
-an ordinary diff, so fabricating a published number now means fabricating a whole analysis file in
-the open rather than a hash of an absent one.
+What this does not claim to do is stop a determined fabricator: a hand-written aggregate whose
+cells, geometry, and derived fields were all made self-consistent can be re-pinned on a host with no
+run root, because nothing there can contradict the invented study. The internal derivation check in
+`llb.bench.agentic_published_aggregate_consistency` does reject changing one cited field alone. What
+the committed copy removes is the gap between the evidence and the claim -- the bytes are present
+and reviewable as an ordinary diff, so fabrication means fabricating a coherent analysis file in the
+open rather than a hash of an absent one.
 
 A signed manifest was the alternative. It was rejected: a key committed beside the manifest signs
 whatever the fabricator wants, and a key held outside the repo authenticates the operator who ran

@@ -16,6 +16,7 @@ from llb.bench.agentic_published_value_operations import (
     DerivationOperation,
     DerivedValue,
 )
+from llb.bench.agentic_published_value_readings import READING, READING_POINT_TOLERANCE
 
 MEASURED = "measured_form"
 DERIVED = "derived_form"
@@ -71,6 +72,9 @@ def value(kind: str, depth: int, form: str, *sources: object) -> dict[str, objec
         published[OPERATION] = operation_name(
             tuple(source.form if isinstance(source, ValueKey) else MEASURED for source in sources)
         )
+        published[READING] = READING_POINT_TOLERANCE
+        published["published_value"] = 0.0
+        published["absolute_tolerance"] = 1e9
     return published
 
 

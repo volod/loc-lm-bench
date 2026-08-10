@@ -7,7 +7,7 @@ and a change to how a verdict reads can never change what was measured.
 
 from collections.abc import Sequence
 
-from llb.bench.agentic.context import DEFAULT_KEEP_LAST_N
+from llb.bench.agentic.context_policy import DEFAULT_KEEP_LAST_N
 from llb.bench.agentic_context_report import METRIC_COMPLETION, METRIC_PROMPT_TOKENS, METRICS
 from llb.bench.agentic_context_sweep_model import (
     AXES,

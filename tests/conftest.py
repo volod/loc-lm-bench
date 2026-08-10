@@ -1,8 +1,7 @@
-"""Suite-wide fixtures. The only one here is the no-GPU guard for the lightweight tier.
+"""Suite-wide no-GPU and no-download guards for the lightweight tier.
 
-The rationale, the escape-hatch markers, and the `LLB_GPU_GUARD` modes live in
-`llb.quality.gpu_guard`; the child-process denial and the spawn seams it is installed at live in
-`llb.quality.gpu_guard_spawn`. This module is the pytest wiring and the reporting decision.
+The rationale, escape hatches, and modes live in `llb.quality.gpu_guard` and
+`llb.quality.download_guard`. This module owns the pytest wiring and reporting decisions.
 """
 
 import warnings
@@ -11,7 +10,7 @@ from contextlib import nullcontext
 
 import pytest
 
-from llb.quality import gpu_guard, gpu_guard_spawn
+from llb.quality import download_guard, gpu_guard, gpu_guard_spawn
 
 
 def device_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[None]:
@@ -35,6 +34,16 @@ def device_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[No
     warnings.warn(message, stacklevel=1)
 
 
+def download_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[None]:
+    """Refuse non-loopback connections for an undeclared lightweight-tier test."""
+    guard = download_guard.DownloadGuard.start(test_id, marker_names)
+    if guard is None:
+        yield
+        return
+    with guard.connections():
+        yield
+
+
 @pytest.fixture(autouse=True)
 def light_tier_device_guard(request: pytest.FixtureRequest) -> Iterator[None]:
     """Fail an unmarked test that reaches the device, and keep its children off the device.
@@ -43,5 +52,13 @@ def light_tier_device_guard(request: pytest.FixtureRequest) -> Iterator[None]:
     after-snapshot sees what a test's own fixtures did on the way out, not only its body.
     """
     yield from device_guard_steps(
+        request.node.nodeid, [marker.name for marker in request.node.iter_markers()]
+    )
+
+
+@pytest.fixture(autouse=True)
+def light_tier_download_guard(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail an unmarked test before it can connect to a non-loopback destination."""
+    yield from download_guard_steps(
         request.node.nodeid, [marker.name for marker in request.node.iter_markers()]
     )

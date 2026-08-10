@@ -29,7 +29,7 @@ import statistics
 import zlib
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
-from llb.rag.compare import CompareItem, Retriever
+from llb.rag.compare_models import CompareItem, Retriever
 from llb.rag.noise_floor_models import FloorMargin, LaneFloor, MetricSpread, NoiseFloorReport
 from llb.rag.retrieval import evaluate_retrieval
 

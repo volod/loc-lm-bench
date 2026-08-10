@@ -18,9 +18,9 @@ bound-sensitive. The committed design is
 `samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
 by its in-repo design path and every crossover that study published, and validation refuses a design
 whose path is missing, declares a different study kind, publishes a crossover at a depth the study
-does not test, omits the fold step a crossover lands in, publishes a derived ratio without the band
-and the precision that band is quoted to, or publishes a derived value that does not declare what it
-is computed out of.
+does not test, omits the fold step a crossover lands in, publishes a malformed statement, or
+publishes a derived value that does not declare what it is computed out of, how it is computed, and
+how the published statement is read.
 
 The fold-step ANNOTATION is validated too, against the ladder the study that published the number
 measured, because the annotation is what a restated guard is then checked against: a mis-transcribed
@@ -40,9 +40,12 @@ The annotation check bounds how wrong a published VALUE can be, and the bound is
 dropped from `14159.929807575942` still lands inside step 6's `[13136, 14912)`, so every rule above
 passes and the restatement re-checks a number no run produced. Each published crossover therefore
 also names the run artifact and the field it came from (`provenance: {artifact, field}`, the artifact
-DATA_DIR-relative), and design validation reads the number back out instead of trusting it. The
-comparison is EXACT -- the aggregate writes the full float and JSON round-trips it, so any tolerance
-at all would license precisely the slip that stays inside the published step.
+DATA_DIR-relative), and the cells that aggregate measured at that depth (`cell_ids`), and design
+validation reads the number back out instead of trusting it. The comparison is EXACT -- the aggregate
+writes the full float and JSON round-trips it, so any tolerance at all would license precisely the
+slip that stays inside the published step. The cell list is checked against the committed copy
+through the same pointer walk (`cells[cell_id=...]`), so a pin-gate failure that invalidates those
+cells can name the exact figures the docs publish rather than only the cell ids to re-measure.
 
 ## Committed aggregates, content pins, and the growth budget
 
@@ -63,14 +66,24 @@ stands for a file nobody present can read, so evidence and pin fabricated togeth
 there and the resolution proved "agrees with itself, plus a hash of something absent". With the file
 carried, the pin is verified on EVERY host against the copy that holds those bytes, so a manifest
 entry that pins nothing, pins a malformed digest, pins bytes the repo does not carry, or pins a
-digest the committed copy does not have is refused before any value is read. What this does not
-claim is to stop a determined fabricator -- a hand-written aggregate re-pinned to its own digest
-passes where no run root can contradict it -- but fabricating a published number now means
-fabricating a whole analysis file in the open, reviewable as an ordinary diff, rather than a hash of
-an absent one. A signed manifest was the alternative and was rejected: a key committed beside the
-manifest signs whatever the fabricator wants, and a key held outside the repo authenticates the
-operator who ran the regeneration rather than the run, while adding key distribution to a check that
-must work in a fresh clone with nothing configured.
+digest the committed copy does not have is refused before any value is read. A signed manifest was
+the alternative and was rejected: a key committed beside the manifest signs whatever the fabricator
+wants, and a key held outside the repo authenticates the operator who ran the regeneration rather
+than the run, while adding key distribution to a check that must work in a fresh clone with nothing
+configured.
+
+The bytes must also hold together INTERNALLY. `agentic_published_aggregate_consistency.py` binds
+each supported field pointer to the production arithmetic that created it: an interpolated guard is
+re-run through `depth_surface_row` over the aggregate's scored cells; a fold-step boundary is rebuilt
+through `step_rows` and `depth_fold_row` from its cells, compact share, measured prompt sequence, and
+step rule; and a cap peak is re-measured from the prompt sequence produced by the aggregate's held
+geometry. Comparison is exact, a missing source row is a refusal, and an unregistered numeric field
+is not resolvable by default. `PublishedValueResolver` applies this check after reading the cited
+field, so editing a derived number and re-pinning the aggregate fails on a host with no run root.
+The focused fixture cases in `test_agentic_published_aggregate_consistency.py` exercise all three
+forms plus missing-source and unknown-field refusals. This still makes no signature claim: a
+determined fabricator can rewrite and re-pin a whole SELF-CONSISTENT study, but can no longer invent
+one cited number while leaving the evidence beside it unchanged.
 
 The `DATA_DIR` artifact stays as the third source and the strongest one, on the hosts that have it:
 the committed copy IS the run's file, so the check is byte-for-byte, and a copy taken from another
@@ -263,10 +276,32 @@ are equal in every input the operation declares is refused at construction -- tw
 the body the same numbers and take the same path -- so exercising a second branch is a DECLARATION
 an author writes beside the arithmetic, not a review comment somebody has to think to make. The
 shipped `trigger_over_own_cap_peak` declares two points (a half share over a 1024-char guard, a
-quarter share over 4096) that differ in every declared input. What the set does not claim is branch
-COVERAGE: a branch no point takes is still unobserved. It makes that residual DECLARABLE rather than
-removing it -- generating the points that would cover a body is a solver, and the declared point is
-the readable thing.
+quarter share over 4096) that differ in every declared input.
+
+The audit also measures the residual the set used to leave silent.
+`agentic_published_value_operation_branches.py` reserves an available `sys.monitoring` tool ID for
+each probe call, enables the `BRANCH` event only on the operation's own compute code object, and
+unions the source/destination arcs reached across the declared set. `OperationRegistryReport`
+carries one `OperationUnreachedBranches` record beside each entry in `checked`: an explicit missed
+arc count and one source line per missed arc (with a repeated line when two arcs from that line were
+missed). A body with no missed arc still gets a zero-count record, so adding an unprobed branch
+changes visible evidence rather than leaving the certification silently narrower. This is REPORT
+only. The shipped trigger operation currently exposes two legal-domain misses -- its absent
+measurement fallback and its non-positive peak raise -- so refusing on a nonzero count would reject
+an operation whose successful probes cannot take those paths. Generating covering points is also out
+of scope: that is a solver, while the probe set remains the readable declaration.
+
+Shipped policy fields are a fourth operation input, separate from sources, stated row fields, and a
+value's own measurement. `DerivationOperation.policy_fields` names the `ContextPolicy` attributes
+the arithmetic reads, and production `apply` supplies the live policy. The registry self-check in
+`agentic_published_value_operation_policy.py` re-runs every probe after perturbing each of the six
+auditable fields with the same plausible neighbour the policy interaction audit uses. A field the
+operation declares must change its `DerivedValue` at some point; a field it does not declare must
+change it at none. Both a missing dependency and an unused one are refusals, so the pin gate can use
+the declaration without widening or narrowing the re-derivation scope silently. The shipped
+`trigger_over_own_cap_peak` declares `compact_share` and reads it from the supplied policy while the
+design row remains the statement of the measured crossover. Arbitrary globals outside the shipped
+policy are still out of scope; the check makes no general purity claim.
 
 The third defect is a walk of the registered DESIGNS rather than of the operations, so a
 `PublishedValueDesign` entry now carries a reader for its published values beside its citations and
@@ -278,6 +313,32 @@ because a self-check that exercised nothing passes exactly like one that exercis
 the probe deliberately does not claim is purity: it records reaches through the inputs it was handed,
 and an operation reading a module global is out of reach of anything short of the expression language
 the design file does not have.
+
+## The registered reading beside the arithmetic
+
+The re-derived number and the rule for JUDGING it are now two declarations. Each portable ratio in
+the committed design names both:
+
+```json
+"operation": "trigger_over_own_cap_peak",
+"reading": "rounded_extent_and_membership"
+```
+
+`agentic_published_value_readings.py` registers the comparison over the design's published
+statement. A bound reading validates and normalizes the statement fields, gives equivalent rows a
+stable grouping identity, checks whether the original re-derived values resolve that statement,
+and checks whether one restated value still supports it. Both checks return `holds` plus the phrase
+the operator report reads. Design validation and `_portable_ratio_row` now call those two sides of
+the SAME bound reading; neither rounds or compares a ratio itself. The committed rounded-band rule
+therefore owns both semantics: its published edges must be the rounded minimum and maximum across
+the original depths, and a restated value holds when its rounded reading is within those edges.
+
+The registry also carries a point with an absolute tolerance and a one-sided upper bound. Fixture
+coverage changes the portable-ratio declaration to the point rule and exercises BOTH production
+readers without editing either, proving that the rule rather than the form supplies the verdict.
+A missing reading, an unregistered name, malformed statement fields, and arithmetic declared with
+no reading are refused before evidence is read. The fold-step criterion remains separate: it judges
+a measured guard on the deterministic ladder, not a derived value against a published statement.
 
 ## Field pointers, forms, and the restatement rule
 
@@ -293,13 +354,12 @@ RECORDED -- drift between the two is exactly what neither check sees alone. The 
 the interesting one: no aggregate anywhere states it. What the collapse measured is the cap PEAK the
 trigger is read against, so the published band is RE-DERIVED -- the design's named
 `trigger_over_own_cap_peak` operation (the runtime's own `compaction_trigger_chars`) on the resolved
-surface guard, over the collapse's resolved peak, rounded
-to the design's own `band_decimals`, per published depth -- and the band's two edges must be the
-smallest and largest of those quotients. That is literally the same function the restatement applies
-to the RESTATED guard, so a published edge and a restated ratio are never computed two different
-ways, and the committed `0.85-0.92x` is now the pair `(0.845x, 0.918x)` rounds to rather than a pair
-of hand-copied edges. A band stated wider, narrower, or at a precision the quotients do not reach is
-refused with the quotients named.
+surface guard, over the collapse's resolved peak. The declared `rounded_extent_and_membership`
+reading rounds those values to `band_decimals` and requires the band's two edges to be their minimum
+and maximum. The same bound reading judges the restated value, so a published edge and a restated
+ratio cannot differ on round-then-compare versus compare-then-round. The committed `0.85-0.92x` is
+the pair `(0.845x, 0.918x)` resolves to rather than a pair of hand-copied edges; a band stated wider,
+narrower, or at a precision the quotients do not reach is refused with the quotients named.
 
 The invariance criterion for a guard is the fold step, not a char tolerance. The fold-step study
 established that the cost changes only at a step boundary, so a restated guard that moves INSIDE one
@@ -322,9 +382,17 @@ re-measured geometry supports), reading
 `..._has_a_different_cap_peak`, or `the_published_surface_states_no_cap_peak_at_this_depth`. So a
 moved task world surfaces as a named moved peak with an operator line telling the reader which ratio
 to apply, instead of as a rescaled number nothing in the run mentions. The fold-step invariance
-criterion is unchanged by this: a moved peak is reported, not treated as a withdrawn crossover.
+criterion is unchanged by this: a moved peak withdraws no COST, only the ratio's basis. When every
+published crossover still holds its fold-step or band statement but at least one re-measured peak
+disagrees with the published one, the aggregate reading is
+`published_crossovers_hold_under_the_shipped_cap_against_a_moved_peak` rather than the bare hold --
+the reason and an operator line name the depths whose ratios were restated against the retired peak,
+and `persist_restatement` still writes `objective_score=1.0` because the cost criterion held. A
+reader of the headline therefore cannot take "everything holds" as permission to apply a ratio that
+rests on a geometry this run no longer measures.
 
-The FORM a number was published in decides both what restates it and what it is checked against.
+The FORM decides what restates a number; a derived value's declared READING decides what it is
+checked against.
 An interpolated guard is re-interpolated over the substituted cells and placed back on the step
 ladder. A fold-step boundary is a property of that ladder rather than of a measured cost, so the
 summarize-input-cap study's re-measurement of its cells confirms it directly. The collapse's
@@ -334,104 +402,29 @@ guard rather than measured on cells of its own, so its own eight bound-invariant
 about it -- the guard it divides is exactly the number the restatement moves. It is therefore
 restated from that restated guard (the runtime's own `compaction_trigger_chars` applied to it) over
 the same depth's re-measured cap peak, both read off ONE restated surface row, and checked against
-the BAND the collapse published rather than against a fold step the form does not name. The design
-carries the band and the precision it is quoted to (`published_band`, `band_decimals`) because the
-band's edges are the ROUNDED ratios of the tested depths: a restated ratio a hair under the lower
-edge is inside the band as published, and predeclaring the precision makes that a stated reading
-rather than a tolerance chosen after seeing the number.
+the statement its registered reading binds rather than against a fold step the form does not name.
+For the committed rule that statement is the band and its quoted precision (`published_band`,
+`band_decimals`): a restated ratio a hair under the raw lower edge is inside when it rounds to the
+published edge, and the same registry function makes that choice in validation and restatement.
 
-## Where it lives
+A portable ratio now has an explicit unresolved result when that declared source has no BRACKETED
+restated surface row. Its crossover row uses the
+`source_interpolated_guard_was_not_restated` basis, records the source study, depth, and form, and
+sets `invariance_holds` to null; it never falls back to the collapse's
+`every_contributing_cell_is_bound_invariant` basis. The aggregate reading is then
+`derived_crossovers_were_not_restated`, whose reason and operator line name both the derived ratio
+and the exact declared source that was absent. That reading persists `objective_score=0.0`, and the
+unresolved row contributes no successful reliability result, so a grid with no bracketed crossing
+cannot present an uncomputed quotient as an invariance result. The form, reading, operator, and
+manifest regression is in
+`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py`; run the standard validation
+with `make test`.
 
-Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
-both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
-`src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
-read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
-manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
-`src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
-refresh, the collecting and refusing walks over it, and the refresh that reports on what it just
-wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
-`(artifact, field)` pair and the two-source read),
-`src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
-not resolve, keep what that leaves unjudged apart from it, and refuse once naming both),
-`src/llb/bench/agentic_published_value_derivation.py` (one value's `derived_from` + `operation`
-declaration, read and validated against the arithmetic it names),
-`src/llb/bench/agentic_published_value_derivation_graph.py` (the design-wide walk over those
-declarations: the refusals for an unpublished source, a self-reference, a cycle, and a duplicated
-identity, plus the transitive walk from a value to the moved measurements at the root of what it
-rests on),
-`src/llb/bench/agentic_published_value_operations.py` (the registry of re-derivations: what each
-operation is computed over, the pure function that does it, the named intermediates it exposes, and
-the refusal of an operation nothing registered -- all eight study-agnostic, so any published agentic
-number can adopt them),
-`src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
-resolves to, including the re-derived band, its four passes, and the cause-versus-consequence rule
-for a band whose declared source guard moved),
-`src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
-the per-form annotation rules, shared by design validation and the restatement),
-`src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute the re-measured cells,
-re-interpolate against a re-measured cap peak, and compare that peak with the published one),
-`src/llb/bench/agentic_memory_crossover_restatement_forms.py` (one restated row per published form:
-place a restated guard on the step ladder, confirm a fold-step boundary, derive the portable ratio
-and read it against its band), `src/llb/bench/agentic_memory_crossover_restatement.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_report.py`,
-`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`,
-`tests/llb/bench/test_agentic_memory_crossover_restatement.py`,
-`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py` (each form's row rule at its
-edges, including a ratio driven out of its published band), and
-`tests/llb/bench/test_agentic_memory_crossover_restatement_placement.py` (every committed annotation
-placed on its own ladder, plus each way one can be wrong),
-`tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates
-so a failure names the pointer rather than the study that used it),
-`tests/llb/bench/test_agentic_published_value_derivation.py` (one value's declaration, on synthetic
-published values for the same reason: the form as part of the identity, a malformed entry, and every
-way the two halves can fail to agree -- an unregistered operation, sources with no operation, an
-operation with no sources, a declaration that is not the shape its operation takes, and a stated
-operand the design does not state),
-`tests/llb/bench/test_agentic_published_value_derivation_graph.py` (the design-wide walk and the
-consequence marking: a two-step chain naming only the measurement at its root, a figure derived from
-two moved measurements naming both, and each way a declaration can be unsupportable -- an unpublished
-source, a self-reference, a cycle, and a duplicated identity),
-`tests/llb/bench/test_agentic_published_value_operations.py` (the registered trigger arithmetic and
-its named intermediate, the refusals for an unregistered operation and for inputs an operation did
-not declare, and the proof that ONE registered function serves both readers -- swapping it moves the
-band design validation re-derives and the ratio the restated row reports),
-`tests/llb/bench/test_agentic_published_value_operation_audit.py` (the registry self-check: a body
-reading a stated field, a measurement, or a source it did not declare, a declaration listing an
-input the body never reads, an operation that does not compute at its own probe point, the
-membership-is-not-a-read distinction the over-declaration refusal rests on, a read that happens on
-ONE branch driven in each direction -- at a probe set that misses the branch and at one that takes
-it -- the probe-set refusals for no point at all, for two points that cannot differ, and for a point
-that does not answer the declaration, plus arithmetic no registered design names and the CI gate
-over the shipped registry),
-`tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
-refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
-with no run at all -- the prune and the size caps, and the two-source read including an artifact
-that is not the pinned file even where the cited value agrees),
-`tests/llb/bench/test_agentic_published_value_registry.py` (the union over two registered designs,
-an aggregate both cite carried once, and each of the three refusals -- a partial host, an
-unreadable registered design, and a write that would drop a still-cited copy -- plus the prune that
-a design retired from the registry still gets, the validation walk over every registered design
-including what it is handed and what it returns, a registered design whose values do not resolve,
-an entry that registers no validation, and the CI assertion over the shipped registry),
-`tests/llb/bench/test_agentic_published_evidence_refresh.py` (the collecting walk beside the
-refusing one, the refresh that names what it committed and does not roll it back, the real design
-against a host whose boundary-surface run moved the depth-10 guard, and the command's exit code on
-both answers), and
-`tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
-resolved out of the committed aggregates, the committed design's own derivation declarations, a
-transcription slip in each form, the re-derived band,
-the committed bytes checked against this host's own run artifacts, the growth budget, the no-op
-regeneration on a host that still has the runs, and the collecting refusal -- a re-run that moved
-three values named in one refusal in design order, a moved guard named as the cause with its derived
-band left unjudged rather than named twice, and a malformed crossover refused ahead of any read even
-when the evidence moved too).
+## Implementation map
 
-```bash
-make bench-agentic-context-compact-crossover-restatement
-make bench-agentic-context-compact-crossover-restatement AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY=1
-make bench-agentic-published-provenance
-```
+The module and test inventory moved to
+[Published-value implementation map](published-value-implementation.md) so this behavior page
+stays readable as the registries grow.
 
 ## The result: every published crossover holds
 

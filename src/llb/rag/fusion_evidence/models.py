@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
-from llb.rag.compare import (
+from llb.rag.compare_models import (
     Retriever as Retriever,
 )  # the one `.retrieve` seam, re-used not re-declared
 from llb.rag.fusion_evidence.slices import SliceReport

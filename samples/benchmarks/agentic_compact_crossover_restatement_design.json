@@ -36,10 +36,38 @@
       "design_path": "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
       "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface",
       "published_crossovers": [
-        {"depth": 6, "compact_share": 0.5, "form": "interpolated_guard", "value": 14159.929807575942, "fold_step": 6,
-         "provenance": {"artifact": "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json", "field": "depth_surface[depth=6].crossover_max_prompt_chars"}},
-        {"depth": 10, "compact_share": 0.5, "form": "interpolated_guard", "value": 21899.890064587056, "fold_step": 10,
-         "provenance": {"artifact": "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json", "field": "depth_surface[depth=10].crossover_max_prompt_chars"}}
+        {
+          "depth": 6,
+          "compact_share": 0.5,
+          "form": "interpolated_guard",
+          "value": 14159.929807575942,
+          "fold_step": 6,
+          "provenance": {
+            "artifact": "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json",
+            "field": "depth_surface[depth=6].crossover_max_prompt_chars"
+          },
+          "cell_ids": [
+            "surface-d6-g12000",
+            "surface-d6-g14000",
+            "surface-d6-g15500"
+          ]
+        },
+        {
+          "depth": 10,
+          "compact_share": 0.5,
+          "form": "interpolated_guard",
+          "value": 21899.890064587056,
+          "fold_step": 10,
+          "provenance": {
+            "artifact": "agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/boundary-surface-analysis.json",
+            "field": "depth_surface[depth=10].crossover_max_prompt_chars"
+          },
+          "cell_ids": [
+            "surface-d10-g14000",
+            "surface-d10-g20000",
+            "surface-d10-g23000"
+          ]
+        }
       ]
     },
     {
@@ -47,14 +75,66 @@
       "design_path": "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
       "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis",
       "published_crossovers": [
-        {"depth": 6, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 6, "published_band": [0.85, 0.92], "band_decimals": 2,
-         "operation": "trigger_over_own_cap_peak",
-         "derived_from": [{"study_kind": "compact_memory_boundary_surface", "depth": 6, "form": "interpolated_guard"}],
-         "provenance": {"artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json", "field": "cap_peak_prompt_chars.6"}},
-        {"depth": 10, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 10, "published_band": [0.85, 0.92], "band_decimals": 2,
-         "operation": "trigger_over_own_cap_peak",
-         "derived_from": [{"study_kind": "compact_memory_boundary_surface", "depth": 10, "form": "interpolated_guard"}],
-         "provenance": {"artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json", "field": "cap_peak_prompt_chars.10"}}
+        {
+          "depth": 6,
+          "compact_share": 0.5,
+          "form": "portable_trigger_ratio",
+          "fold_step": 6,
+          "published_band": [
+            0.85,
+            0.92
+          ],
+          "band_decimals": 2,
+          "operation": "trigger_over_own_cap_peak",
+          "reading": "rounded_extent_and_membership",
+          "derived_from": [
+            {
+              "study_kind": "compact_memory_boundary_surface",
+              "depth": 6,
+              "form": "interpolated_guard"
+            }
+          ],
+          "provenance": {
+            "artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json",
+            "field": "cap_peak_prompt_chars.6"
+          },
+          "cell_ids": [
+            "collapse-d6-s0.4-g17500",
+            "collapse-d6-s0.5-g14000",
+            "collapse-d6-s0.6-g11667",
+            "collapse-d6-s0.4-g12000",
+            "collapse-d6-s0.5-g12000",
+            "collapse-d6-s0.6-g12000"
+          ]
+        },
+        {
+          "depth": 10,
+          "compact_share": 0.5,
+          "form": "portable_trigger_ratio",
+          "fold_step": 10,
+          "published_band": [
+            0.85,
+            0.92
+          ],
+          "band_decimals": 2,
+          "operation": "trigger_over_own_cap_peak",
+          "reading": "rounded_extent_and_membership",
+          "derived_from": [
+            {
+              "study_kind": "compact_memory_boundary_surface",
+              "depth": 10,
+              "form": "interpolated_guard"
+            }
+          ],
+          "provenance": {
+            "artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json",
+            "field": "cap_peak_prompt_chars.10"
+          },
+          "cell_ids": [
+            "collapse-d10-s0.45-g22224",
+            "collapse-d10-s0.6-g16667"
+          ]
+        }
       ]
     },
     {
@@ -62,10 +142,40 @@
       "design_path": "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
       "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#the-crossover-is-a-fold-step-not-a-char-guard",
       "published_crossovers": [
-        {"depth": 6, "compact_share": 0.5, "form": "fold_step_boundary", "value": 14912, "fold_step": 6,
-         "provenance": {"artifact": "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json", "field": "depth_ladders[depth=6].boundary.guard_boundary_chars"}},
-        {"depth": 10, "compact_share": 0.5, "form": "fold_step_boundary", "value": 22016, "fold_step": 10,
-         "provenance": {"artifact": "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json", "field": "depth_ladders[depth=10].boundary.guard_boundary_chars"}}
+        {
+          "depth": 6,
+          "compact_share": 0.5,
+          "form": "fold_step_boundary",
+          "value": 14912,
+          "fold_step": 6,
+          "provenance": {
+            "artifact": "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json",
+            "field": "depth_ladders[depth=6].boundary.guard_boundary_chars"
+          },
+          "cell_ids": [
+            "fold-d6-step6-lo",
+            "fold-d6-step6-hi",
+            "fold-d6-step7-lo",
+            "fold-d6-step7-hi"
+          ]
+        },
+        {
+          "depth": 10,
+          "compact_share": 0.5,
+          "form": "fold_step_boundary",
+          "value": 22016,
+          "fold_step": 10,
+          "provenance": {
+            "artifact": "agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/fold-step-analysis.json",
+            "field": "depth_ladders[depth=10].boundary.guard_boundary_chars"
+          },
+          "cell_ids": [
+            "fold-d10-step10-lo",
+            "fold-d10-step10-hi",
+            "fold-d10-step11-lo",
+            "fold-d10-step11-hi"
+          ]
+        }
       ]
     }
   ],
@@ -73,6 +183,7 @@
     "every_published_cell_is_bound_invariant": "no published cell's summarize input changes under the shipped cap, so every published crossover stands with no run",
     "published_crossovers_hold_under_the_shipped_cap": "the bound-sensitive cells were re-measured and every crossover still names the fold step it named before",
     "a_published_crossover_moves_under_the_shipped_cap": "a restated crossover crosses a fold-step boundary, so the published routing rule must be re-derived",
-    "a_bound_sensitive_cell_could_not_be_re_measured": "a re-measured cell failed the surface's own preconditions, so its crossover is not restated"
+    "a_bound_sensitive_cell_could_not_be_re_measured": "a re-measured cell failed the surface's own preconditions, so its crossover is not restated",
+    "derived_crossovers_were_not_restated": "a derived figure's declared source was not restated, so the derived figure has no invariance result"
   }
 }

@@ -20,7 +20,7 @@ uses which set in `agentic_policy_change_interaction_couplings`.
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     SUMMARY_INPUT_CAP_TRIGGER,
     SUMMARY_INPUT_CAP_WINDOW,

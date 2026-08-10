@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.agentic.controller_channel import (
     CHANNEL_CONTROLLER,
@@ -21,11 +21,8 @@ from llb.bench.agentic.loop_policy import (
     REPEAT_FEEDBACK_GEMMA_AUTHORITY,
     LoopPolicy,
 )
-from llb.bench.agentic_controller_authority import (
-    PLACEMENTS,
-    ChannelCell,
-    ChannelSeedRun,
-)
+from llb.bench.agentic_controller_authority import PLACEMENTS
+from llb.bench.agentic_controller_authority_model import ChannelCell, ChannelSeedRun
 from llb.bench.agentic_controller_authority_report import persist_channel_cell
 from llb.bench.common import LLMChat, LLMComplete, Mirror
 from llb.bench.common_backend import ThroughputMeter

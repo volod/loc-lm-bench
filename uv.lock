@@ -3773,7 +3773,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6,<0.17" },
     { name = "scipy", marker = "extra == 'rag'", specifier = ">=1.11" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3.0" },
-    { name = "shellcheck-py", marker = "extra == 'dev'", specifier = ">=0.10,<0.12" },
+    { name = "shellcheck-py", marker = "extra == 'dev'", specifier = "==0.11.0.1" },
     { name = "streamlit", marker = "extra == 'board'", specifier = ">=1.36" },
     { name = "textual", marker = "extra == 'dev'", specifier = ">=0.60" },
     { name = "textual", marker = "extra == 'review'", specifier = ">=0.60" },

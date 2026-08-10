@@ -15,8 +15,9 @@ a make recipe is exempt -- it lives and dies in one `bash -c` and is never in th
 Scope is what the caller DECLARES, not what happens to be loaded at run time: a `# shellcheck
 source=` directive (the shell gate already checks those resolve), a make recipe's literal
 `$(PROJECT_ROOT)/...` source, or an explicit `# llb-requires:` line for a shared module whose
-functions assume a sibling was sourced by whoever sourced it. A call built by `eval` or through a
-variable is out of reach and stays out of scope.
+functions assume a sibling was sourced by whoever sourced it. Every `llb-requires` declaration must
+justify that added scope with at least one direct reference to a function the sibling defines. A call
+built by `eval` or through a variable is out of reach and stays out of scope.
 
 Residual: a name that never carried the prefix is still invisible. A call to an EXTERNAL command
 that does not exist reads exactly like a call to a helper that never existed, and separating them
@@ -149,6 +150,24 @@ def unresolved_calls(project_root: Path = PROJECT_ROOT) -> list[str]:
     return findings
 
 
+def unused_requirements(project_root: Path = PROJECT_ROOT) -> list[str]:
+    """Every `llb-requires` sibling whose functions the declaring caller never references."""
+    findings: list[str] = []
+    for caller in listed_callers(project_root):
+        text = caller.read_text(encoding="utf-8")
+        named = {name for _, name in references(caller)}
+        for required in _REQUIRES.finditer(text):
+            sibling = _resolved(required.group(1), caller, project_root)
+            if sibling is None or named & definitions(sibling):
+                continue
+            number = text.count("\n", 0, required.start()) + 1
+            where = caller.relative_to(project_root)
+            findings.append(
+                f"{where}:{number}: unused llb-requires declaration -> {required.group(1)}"
+            )
+    return findings
+
+
 def unprefixed_definitions(project_root: Path = PROJECT_ROOT) -> list[str]:
     """Every function a tracked `*.sh` defines without the prefix the call scan keys on."""
     findings: list[str] = []
@@ -172,13 +191,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=PROJECT_ROOT)
     args = parser.parse_args(argv)
     unprefixed = unprefixed_definitions(args.root)
-    findings = unprefixed + unresolved_calls(args.root)
+    unresolved = unresolved_calls(args.root)
+    unused = unused_requirements(args.root)
+    findings = unprefixed + unresolved + unused
     for finding in findings:
         _LOG.error("ERROR: %s", finding)
     _LOG.info(
-        "[shell-symbols] %d unprefixed definition(s), %d unresolved llb_* call(s)",
+        "[shell-symbols] %d unprefixed definition(s), %d unresolved llb_* call(s), "
+        "%d unused llb-requires declaration(s)",
         len(unprefixed),
-        len(findings) - len(unprefixed),
+        len(unresolved),
+        len(unused),
     )
     return 1 if findings else 0
 

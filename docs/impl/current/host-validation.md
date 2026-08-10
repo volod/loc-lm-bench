@@ -157,8 +157,9 @@ make lint-md
 scripts/code_quality.sh
 ```
 
-`scripts/code_quality.sh` always prints the largest tracked Python files and largest tracked
-non-Python files. Root-file, markdown, shell, and complexity sections are quiet when clean and
+`scripts/code_quality.sh` always prints the largest repository-visible Python files and non-Python
+files, including new non-ignored files before they are staged. Root-file, markdown, shell, and
+complexity sections are quiet when clean and
 appear only when they have findings, missing optional tools, or failures; a shell-lint or
 complexity finding also exits the sweep non-zero (see
 [Code quality checks](#code-quality-checks)).
@@ -175,6 +176,42 @@ current-implementation tree cannot rot into unfindable pages. `scripts/code_qual
 wider sweep: it reports long source files and runs both gates, so maintainers can split code at
 functional seams. The ~250-line source-file target is soft; cohesive schemas and regular lookup
 families may remain whole.
+
+The source-size refactor separates the most frequently edited long modules at their functional
+boundaries:
+
+- agent context policy vocabulary, transcript state, and bounded summarization live in
+  `bench/agentic/context_policy.py`, `context.py`, and `context_summary.py`;
+- context comparison models/pairing, task-kind analysis, recommendation rendering, and persistence
+  live in `bench/agentic_context_report.py` plus the `_kind`, `_recommendation`, and `_persist`
+  modules;
+- the episode loop delegates prompt/compaction assembly, controller transport/repair, and mutable
+  tally state to `agentic/episode_prompt.py`, `episode_controller.py`, and `episode_state.py`;
+- retrieval comparison contracts, resolved settings, and optional output rows live in
+  `rag/compare_models.py`, `compare_settings.py`, and `compare_rows.py`;
+- controller-authority run contracts and snapshot-isolation proof live in
+  `agentic_controller_authority_model.py` and `agentic_controller_authority_snapshot.py`;
+- embedding adoption reason clauses live in `rag/embedding_bakeoff_reason.py`;
+- policy-change replay geometry and design loading live in
+  `bench/agentic_policy_change_geometry.py`;
+- embedding CLI validation/output persistence and persisted agentic comparison commands live in
+  `cli/rag/compare_embeddings_output.py` and `cli/bench/category_agentic_compare.py`.
+
+Callers and tests import each symbol from its owning module; the split adds no compatibility
+re-export layer. `scripts/code_quality.sh` now prints production `.py`/`.sh` soft-limit findings
+separately from the all-files list, whose longer scenario-ledger tests remain visible without being
+mistaken for production modules. No tracked shell file currently exceeds the 250-line soft target.
+The context, report, episode, retrieval, authority, and embedding verdict modules named above are
+all at or below 250 lines after the split. Focused regression suites, Ruff, and full-source mypy
+pass.
+
+The two production modules still above 300 lines are cohesive soft-limit exceptions:
+`quality/gpu_guard_spawn_surface.py` keeps one exhaustive declaration table beside the interpreter
+enumeration that audits it, while `quality/gpu_guard_spawn_reach_coverage.py` keeps the documented
+stdlib classification partition beside its coverage record and filesystem classifiers. Splitting
+either lookup/classifier family would add navigation without creating an independent functional
+owner. The remaining production findings are within 47 lines of the soft target and stay visible
+for future seam-driven cleanup.
 
 **Every check above only sees files the repo can see, so `.gitignore` is part of the gate.** The
 packaging rules are anchored to the repo root (`/build/`, `/dist/`, `/lib/`, `/var/`, `/target/`,
@@ -234,6 +271,24 @@ tier is where a real backend run belongs, and `gpu_env` for a quick test that mu
 anyway. `LLB_GPU_GUARD=report` downgrades a finding to a warning and `off` disables it; an
 unrecognized value is refused rather than read as off, so a typo'd knob cannot quietly disable the
 check it was aimed at.
+
+**The tier's no-download promise is enforced along the same axis.** The second root autouse fixture
+wraps every unmarked test in `llb.quality.download_guard`, which replaces
+`socket.socket.connect` and `connect_ex` for the test's lifetime. A connection to a non-loopback
+destination raises `DownloadGuardError` before the original connector runs, naming the test,
+destination, and remedies. This effect-level seam catches a cold-cache `from_pretrained`,
+`hf_hub_download`, or ordinary HTTP client without importing or patching any of them. Loopback IPv4
+and IPv6, `localhost`, IPv4-mapped loopback, and Unix-domain sockets remain available, so local fake
+servers do not need an exemption. `slow` declares integration work; `network_env` is the narrow
+escape hatch for a quick test that legitimately connects elsewhere. `LLB_DOWNLOAD_GUARD=report`
+warns and allows the connector, `off` disables the guard, and an unknown mode is refused.
+
+Refusal is again the evidence-backed default: the complete `make ci` run is clean with the guard
+live (3068 passed, 64 deselected), without changing any existing marker. The focused contract in
+`tests/llb/quality/test_download_guard.py` proves that refusal happens before a connector runs,
+report mode passes through, the root fixture honors `network_env`, and a real TCP client can reach a
+fake server bound to `127.0.0.1`. The implementation adds no dependency to the base GitHub CI
+environment.
 
 **A CHILD process is denied the device rather than observed**, because there is nothing in this
 process to observe it by. For the duration of an unmarked test, every spawn entry point is swapped
@@ -681,8 +736,9 @@ reader cases also prove that the parent remains unresolved, an existing choice a
 child/order mismatch is refused, and two reads start the child only once. The standard `make ci`
 gate runs the focused proof; all 3,041 non-slow tests pass, including all 22 cases in that suite.
 
-**Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
-Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
+**Both function-complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh`
+runs the Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and
+`tests`, and
 exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the
 build red on its own commit instead of surfacing in a later sweep. `ci-checks` runs it beside
 `llb.quality.acceptance_gates --check` (so it runs in `make ci`, `make ci-github`, and GitHub CI);
@@ -695,7 +751,8 @@ accommodated by raising the maximum.
 The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
 gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
 identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`
-in `scripts/shared/common.sh`).
+in `scripts/shared/common.sh`). The same shared module owns the informational maintainability-index
+scan so its scope cannot drift from the two gates.
 
 **Shell scripts are gated the same way.** `scripts/shell_lint_gate.sh` (`make shell-lint-gate`,
 also inside `ci-checks`) runs three scans over every tracked-or-new `*.sh` in the repo
@@ -752,6 +809,21 @@ what a caller DECLARES, never what happens to be loaded at run time:
   call `llb_fail_if_output` and never source it themselves, which is a contract their headers
   stated in prose and now state in a line the check reads.
 
+`llb-requires` scope is also minimal at the file boundary. `unused_requirements` reports the
+declaration line when the declaring caller names none of the `llb_*` functions its sibling defines,
+and the command exits non-zero so `make shell-lint-gate` refuses the stale declaration. One direct
+reference justifies the whole sibling; this remains a file-level contract rather than a per-symbol
+import list. Real `source` directives are not subject to this rule because a sourced file can supply
+variables or intentional side effects without a function call.
+
+The gate decision came from the shipped tree rather than an exception policy: all 19 current
+`llb-requires` declarations support direct calls, including the four declarations in `track_c.sh`.
+No declaration exists only to document load order. A downstream fragment owns its own sibling
+requirements, and transitive scope already follows them, so adding a load-order-only declaration to
+an otherwise unrelated caller would widen the symbol contract without resolving one of that
+caller's names. The shipped-tree assertion and synthetic stale/used declaration cases live in
+`tests/llb/quality/test_shell_symbols.py`.
+
 What counts as a call is a name in command or argument position -- including one handed to a runner
 (`llb_fail_if_output "$LABEL" llb_cyclomatic_scan`), which breaks identically when the definition
 goes. Prose in a comment, an expansion operand (`${name#llb_prefix}`), a `$llb_var`, and a path
@@ -799,10 +871,10 @@ A MISSING shellcheck fails the gate rather than skipping it -- a linter that rep
 when it never ran is worse than no linter, and the old sweep did exactly that on a host without the
 apt package. `LLB_SHELLCHECK_OPTIONAL=1` downgrades that to a printed skip for a lean venv, and the
 pass line then says `shellcheck NOT run` rather than claiming the tree is clean. That escape hatch
-is rarely needed: shellcheck now ships in the `dev` extra as the pinned `shellcheck-py` wheel
-(the real binary, upper-bounded like ruff so a new release cannot redden CI on unchanged scripts),
-so `.venv/bin/shellcheck` exists wherever `make ci` runs, GitHub CI included -- no apt step in the
-workflow. Scans, severity, and the missing-binary policy live once in
+is rarely needed: shellcheck now ships in the `dev` extra as the exactly pinned
+`shellcheck-py==0.11.0.1` wheel (the real 0.11.0 binary), so `.venv/bin/shellcheck` exists wherever
+`make ci` runs, GitHub CI included -- no apt step in the workflow. Scans, severity, and the
+missing-binary policy live once in
 `scripts/shared/shell_lint.sh`, sourced by both the gate and the sweep; every scan runs before any
 of them fails.
 
@@ -821,14 +893,26 @@ puzzling on a host that has `shellcheck` on `PATH`. `LLB_SHELLCHECK` still overr
 venv living elsewhere. Consequently the `dev` apt profile is now **empty**
 (`scripts/apt/dev.packages` keeps the file and the comment; the profile stays for a future dev-only
 OS package) and [dev setup](../../guides/development/dev-setup.md#apt-dependencies-debianubuntu)
-no longer lists `shellcheck` as a fallback. Residual: the pin is a RANGE (`>=0.10,<0.12`), so two
-hosts resolving the extra months apart can still land on different wheels; `uv.lock` pins
-0.11.0.1 for anyone installing through the lock, and tightening the range itself is a separate
-call. Resolution behavior is covered by `tests/llb/quality/test_shell_lint_resolution.py`.
+no longer lists `shellcheck` as a fallback. The exact project requirement is intentional because
+`make venv` uses `uv pip install -e ".[dev]"`, which does not consume `uv.lock`: a host resolving the
+extra today and one resolving it months later still install the same wheel. An upgrade therefore
+costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification with
+`make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move together.
+The binary resolution behavior remains covered by
+`tests/llb/quality/test_shell_lint_resolution.py`.
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.
-The maintainability-index section (Radon MI grade C) is also still a report.
+The maintainability-index section is deliberately a report too. It now scans only `src` and
+`tests`, at grade C by default (`LLB_MI_MIN_GRADE=C`), rather than sweeping the repository root. The
+decision not to add it to `llb_complexity_gate` is evidence-based: the C-only scan is empty, while
+the next band contains one file, `tests/llb/bench/test_agentic_context.py`, at B (10.66). That file
+is large (728 lines, 563 source lines) but regular: Radon finds 48 blocks with average cyclomatic
+complexity A (4.15), and its two highest blocks are only B (10). It is already the kind of volume
+case covered by the soft line target, so making the nearby MI boundary hard would turn that soft
+policy into an indirect gate rather than add an independent complexity signal. Focused coverage in
+`tests/llb/quality/test_maintainability_report.py` pins both the `src tests` arguments and the
+informational exit behavior when Radon prints a C row.
 
 The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
 accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and

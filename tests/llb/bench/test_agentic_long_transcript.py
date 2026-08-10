@@ -2,12 +2,8 @@
 
 import json
 
-from llb.bench.agentic.context import (
-    POLICY_KEEP_LAST_N,
-    ContextPolicy,
-    ContextState,
-    policy_history_lines,
-)
+from llb.bench.agentic.context import ContextState, policy_history_lines
+from llb.bench.agentic.context_policy import POLICY_KEEP_LAST_N, ContextPolicy
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic.success import check_success

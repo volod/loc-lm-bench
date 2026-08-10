@@ -88,7 +88,9 @@ over sent prompts plus the refused one, and the per-arm comparison, which takes 
 maps), the `on_refused_prompt` observer in `src/llb/bench/agentic/episode.py`,
 `src/llb/bench/agentic_policy_change_audit.py`
 (`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
-`src/llb/bench/agentic_policy_change_audit_report.py`,
+`src/llb/bench/agentic_policy_change_geometry.py` (geometry readers for cap-fitting and the
+flat-cell lanes), `src/llb/bench/agentic_policy_change_tasks.py` (the per-study task-builder
+seam), `src/llb/bench/agentic_policy_change_audit_report.py`,
 `src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
 `tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
 (`src/llb/bench/agentic_memory_cap_audit.py`) is now ONE use of this mechanism rather than a second
@@ -104,34 +106,49 @@ make bench-agentic-policy-change-audit \
   POLICY_BASELINE="800 1" POLICY_CANDIDATE="1600 2"
 ```
 
-Every auditable field against the 22 published cells of the three cap-fitting studies (2026-08-05,
-no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
+Every auditable field against the 27 published cells of the audited registry -- the three
+cap-fitting memory studies (22) plus the constant-sweep shipped baselines, the keep-long shipped
+baseline, and the harness-comparison rows (5 more) -- (2026-08-10, no GPU, about a second per
+field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
 
 | field(s) | change | invariant | invalidated | not applicable |
 | --- | --- | ---: | ---: | ---: |
-| `observation_cap_chars` | 800 -> 400 | 0 | **22** | 0 |
-| `observation_cap_chars` | 800 -> 1600 | 0 | **22** | 0 |
-| `observation_head_share` | 0.6 -> 0.5 | 0 | **22** | 0 |
-| `keep_last_n` | 3 -> 1 | **22** | **0** | 0 |
-| `compact_share` | 0.5 -> 0.45 | 2 | 12 | 8 |
-| `compact_keep_recent` | 1 -> 2 | 0 | **22** | 0 |
-| `summary_input_cap` | trigger -> window | **18** | 4 | 0 |
-| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 0 | **22** | 0 |
-| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 10 | 12 | 0 (8 partial) |
+| `observation_cap_chars` | 800 -> 400 | 4 | **23** | 0 |
+| `observation_cap_chars` | 800 -> 1600 | 4 | **23** | 0 |
+| `observation_head_share` | 0.6 -> 0.5 | 4 | **23** | 0 |
+| `keep_last_n` | 3 -> 1 | 25 | **2** | 0 |
+| `compact_share` | 0.5 -> 0.45 | 7 | 12 | 8 |
+| `compact_keep_recent` | 1 -> 2 | 5 | **22** | 0 |
+| `summary_input_cap` | trigger -> window | 23 | 4 | 0 |
+| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 4 | **23** | 0 |
+| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 15 | 12 | 0 (8 partial) |
 
-Two readings an operator can act on. **`keep_last_n` is free**: the constant sweep EXPOSES keep=1 as
-cheaper on prompt tokens, and this says taking that up costs no published compact evidence at all,
-because no cap-fitting cell runs the `keep_last_n` policy. **The observation-trim constants are
-not**: `observation_cap_chars` and `observation_head_share` change both arms of every cell from
-model call 2 -- the first prompt that carries a trimmed observation -- so re-pinning either one
-retires all three studies at once.
+The registry is one list (`AUDITED_DESIGN_PATHS` in
+`src/llb/bench/agentic_policy_change_audit.py`), so the CLI audit and the CI pin gate never walk
+different evidence. Cap-fitting cells still replay both `observation_cap` and `compact` arms over
+the memory-dependent chain; the added lanes each declare their own policy arm(s) and a task builder
+other than the memory-chain one (`src/llb/bench/agentic_policy_change_tasks.py`): fat-observation
+pipelines for the constant sweep, medium long-transcript pipelines for keep-long, and seed-shaped
+file/db tasks for the harness rows.
+
+Two readings an operator can act on. **`keep_last_n` is no longer free**: on the 22 cap-fitting
+cells alone it still invalidates nothing (no memory-chain cell runs that policy), but the wider
+registry names the two shipped keep baselines the constant sweep and the keep-long lane measured
+against (`sweep-keep-shipped`, `keep-long-shipped`), so taking keep=1 up costs a re-measure of those
+lanes. **The observation-trim constants are not free either**: `observation_cap_chars` and
+`observation_head_share` change both arms of every cap-fitting cell from model call 2 -- the first
+prompt that carries a trimmed observation -- and the sweep's shipped `observation_cap` baseline as
+well, so re-pinning either one retires the three cap-fitting studies plus that sweep cell. The four
+invariant cells under a trim change are the keep-long / harness rows, whose policies or seed-sized
+observations never read the trim constants.
 
 The `compact_share` row also reproduces the fold-step mechanism from a direction that owes it
-nothing. Of the 14 applicable cells, the two that survive 0.5 -> 0.45 are `fold-d6-step6-hi` and
-`fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share still lands the trigger
-inside the same step's interval and folds the identical transcript. At the low guards the trigger
-drops into the previous step and everything downstream changes. A byte-level prompt comparison that
-knows nothing about fold steps rediscovers exactly where they are.
+nothing. Of the 14 applicable cap-fitting cells, the two that survive 0.5 -> 0.45 are
+`fold-d6-step6-hi` and `fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share
+still lands the trigger inside the same step's interval and folds the identical transcript. At the
+low guards the trigger drops into the previous step and everything downstream changes. A byte-level
+prompt comparison that knows nothing about fold steps rediscovers exactly where they are. The five
+non-cap-fitting cells stay invariant because none of them runs the compact policy.
 
 The two compound rows are the mechanism's own check on itself. `compact_share` + `summary_input_cap`
 is the interesting one: read field by field it reports 12 invalidated plus 8 cells the share half
@@ -214,6 +231,16 @@ geometry mismatch:
   fold step 11: guards [23604, 23852) separate (offered 11802, folds at triggers [11008, 11926))
 ```
 
+The elision inequality is about ONE offered transcript. The probe therefore keeps a per-fold
+breakdown (`summary_fold_input_chars` on `ContextTelemetry`, surfaced by `compact_fold_input_probe`)
+beside the summed `summary_input_chars`, and the solver states the inequality against the first fold
+whose candidate share would flip elision relative to the baseline -- the compaction at the fold step
+being solved. A deep episode under a small guard still folds more than once; those later folds are
+checked against the same both-shares interval and, on the shipped geometry, never open a band of
+their own, which the empty-band detail records (`N later fold(s) never separate`). The committed
+single-fold bands above are unchanged by that generalization: "no separating band at this depth"
+now means no band exists rather than none the solver could read past the first fold.
+
 Only the VERDICT direction separates for this pair. A scan of depths 6 / 10 / 14 across guards 6000
 to 34000 found no geometry where both readings report an invalidated cell but name different
 first-divergent steps, so the committed cells are the whole separating set the pair offers. The
@@ -225,11 +252,13 @@ contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
 `src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
 `src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in), `..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
+stated in), `..._conditions.py` (what each pair demands of a guard, including the per-fold elision
+read) and `..._cap.py` (the
 observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
 prompt the loop merely builds), and the four test modules that ARE the CI assertion --
 `tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
-the band, `..._couplings.py` for the enumeration below, and `..._cap.py` for the discarded-prompt
+the band (including that a multi-fold step answers rather than refusing), `..._couplings.py` for the
+enumeration below, and `..._cap.py` for the discarded-prompt
 arithmetic. All run inside `make ci`, together in about two seconds, with no target of their own.
 
 ```bash
@@ -297,14 +326,21 @@ placement rules are placed against the same one
 An inequality can be wrong about the loop it describes, so the same question is asked by REPLAY too:
 `agentic_policy_change_interaction_scan` walks a grid of geometries, reads every cell both ways, and
 reports where they actually disagree. Arithmetic and replay agree -- inside a solved band and
-nowhere else. Evidence (2026-08-06, no GPU, ~3 min): 9630 cells at depth 10 over guards 2000 to
-34000 in steps of 100, every pair scanned twice (the shipped value against a plausible neighbour,
-then against a second alternative so an answer cannot be a property of one chosen value). Exactly 10
-cells separate, all of them `compact_share` x `summary_input_cap` at guards 21100-21800 and
-23700-23800 -- the two solved bands. The `slow`-marked test replays the compact form of that grid
-(depths 6 / 10 / 14, guards 2000 to 34000 in steps of 1000 plus the two committed guards, ~30 s) and
-asserts both halves: no other pair separates anywhere, and every hit for the separating pair falls
-inside a solved band.
+nowhere else. The scan also sweeps the moved VALUES (`FIELD_CANDIDATE_GRID` per field, with the
+`FIELD_MOVES` neighbour as the first entry): every pair is asked at every candidate combo, not only
+at one neighbour, and the result records which pairs stay silent across that grid. The share
+direction is why that matters -- the band that opens for `compact_share` 0.5 -> 0.48 vanishes for
+0.5 -> 0.55, because only a lower share can elide where the baseline did not -- so a silent answer
+backed only at 0.48 would be a property of one chosen value. Evidence (2026-08-06, no GPU, ~3 min):
+9630 cells at depth 10 over guards 2000 to 34000 in steps of 100, every pair scanned twice (the
+shipped value against a plausible neighbour, then against a second alternative so an answer cannot
+be a property of one chosen value). Exactly 10 cells separate, all of them `compact_share` x
+`summary_input_cap` at guards 21100-21800 and 23700-23800 -- the two solved bands. The `slow`-marked
+test replays the compact form of that grid (depths 6 / 10 / 14, guards 2000 to 34000 in steps of
+1000 plus the two committed guards) across the candidate-value grid and asserts both halves: the
+other fourteen pairs stay silent at every candidate combo, and every hit for the separating pair
+falls inside a solved band for the change that produced it (share 0.48 only; 0.55 contributes none).
+`make ci` runs the same value sweep at the fixture depth and the two committed guards.
 
 ## The cap's silence is about the prompts the loop builds
 
@@ -356,14 +392,16 @@ fold step 2: nothing separates (caps 800 -> 1600 move step 2's prompt (3904 vs 4
 ```
 
 Core locations are `src/llb/bench/agentic_policy_change_interaction_couplings.py` (the enumeration,
-its mechanisms, and the one concrete move per field the scan asks with),
+its mechanisms, the one concrete move per field, and the per-field candidate grid the value sweep
+asks with),
 `src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions) and
 `..._cap.py` (the cap's three cases and the per-entry arithmetic),
-`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan and its refusal to scan a
-baseline the per-field arm would not replay), and
+`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan, the candidate-value
+sweep, and its refusal to scan a baseline the per-field arm would not replay), and
 `tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`, which is the assertion: every
-pair enumerated, one pair separating, and the two independence claims (`keep_last_n` inert, the head
-share length-preserving) measured on real prompts rather than asserted.
+pair enumerated, one pair separating, the two independence claims (`keep_last_n` inert, the head
+share length-preserving) measured on real prompts rather than asserted, and the fourteen other pairs
+silent across the candidate-value grid.
 `tests/llb/bench/test_agentic_policy_change_interaction_cap.py` holds the cap's three cases: the
 shipped geometry's blocked steps stay blocked for the stated reason, the corner's branch is read on
 stated sequences, and the fold-everything count is measured against `compact_state`.
@@ -377,12 +415,17 @@ make ci                       # the enumeration; a new policy constant fails her
 ## The audit runs in CI, on the act that creates the problem
 
 The audit above answers the question only when someone asks it, and the person editing a constant in
-`src/llb/bench/agentic/context.py` is precisely the person who does not know the question exists.
+`src/llb/bench/agentic/context_policy.py` is precisely the person who does not know the question
+exists.
 `samples/benchmarks/agentic_context_policy_pins.json` closes that loop: it PINS each shipped
 `ContextPolicy` constant to the value the published evidence stands on, and CI compares the pins with
 the live dataclass defaults on every run. A drifted field is audited on the spot and the failure
 message is the re-run scope -- every invalidated cell by id, depth, guard, changed arms, and the model
-call where the change first bites -- plus the doc sections that publish those numbers.
+call where the change first bites -- plus the doc sections that publish those numbers. The scope also
+walks every registered published value whose operation declares the moved field. A
+`compact_share` drift therefore names both portable trigger-ratio bands (depths 6 and 10) through
+their `trigger_over_own_cap_peak` operation, even though the trigger-collapse cells themselves pin
+share as their study axis and are excluded from the cell replay.
 
 Constants that drift TOGETHER are audited together, as the one change the commit made: the baseline
 arm replays the full pinned policy, the candidate arm the full shipped policy, and the failure
@@ -390,29 +433,58 @@ message carries one scope under a `2 constants moved together and are audited as
 that lists every move (`- observation_cap_chars: pinned 800 -> shipped 1600`) plus each constant's
 own `pinned because` note. Auditing each drifted constant separately would have compared "pinned cap
 + shipped keep" against "shipped cap + shipped keep": two configurations no published cell was
-measured under, reported as two re-run scopes for one act.
+measured under, reported as two re-run scopes for one act. The gate also feeds the full pinned map
+into the replay for fields the change does NOT move: without that, a `restated` pin on a held field
+(`observation_cap_chars` or `observation_head_share`) would leave the design's stale `held_fixed`
+value on the baseline arm -- the same class of bug the compound audit closed, one level down. A
+hand-run CLI audit that has no pins keeps the design / dataclass-default fallback; CI always has the
+pins, so the baseline arm is the policy the published numbers were measured under for every field.
+
+When the audit invalidates cells, the gate also lists the exact published figures those cells stand
+under. Each registered crossover carries `cell_ids` -- the cells its cited aggregate measured at that
+depth, checked against the committed copy through the same pointer walk that resolves
+`(artifact, field)` -- and a drift that hits any of those cells retires the figure, plus every
+derived figure that declares it as a source. The failure therefore names `published value
+21899.89...` (and the portable band that rests on it) rather than leaving an operator to grep the
+docs for what a cell id retired.
 
 The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
 evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
-and the message says so (`no published cell is invalidated ... restating the pin is free`). What is
-refused is the silent case: a constant moving while the docs keep quoting numbers measured under its
-old value. A clean build replays nothing, and a drifted one costs under a second per field.
+only when no registered arithmetic depends on it; the message says `restating the pin is free` in
+that case. A cell-free change with affected arithmetic instead lists each published statement, its
+operation, and the moved dependency, then requires those values to be re-derived and restated. What
+is refused is the silent case: a constant moving while the docs keep quoting numbers measured under
+its old value. A clean build replays nothing, and a drifted one costs under a second per field.
 
 Each pin also declares how it relates to the committed designs -- `agree` (every design's
 `held_fixed` states the pinned value), `restated` (a design states another value and the pin
 supersedes it, which is where `summary_input_cap` sits: the designs record the retired `trigger`
 bound and the crossover restatement moved the published numbers to `window`), or `unstated` (no
-design states the field, as for `keep_last_n` and `compact_keep_recent`) -- and CI verifies that claim
-against the designs themselves, so a pin cannot quietly disagree with the studies it names. CI also
-asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped constant is
-pinned here or the build is red, and that every doc anchor the fixture names still resolves.
+design states the field, as for `compact_keep_recent`) -- and CI verifies that claim against the
+designs themselves, so a pin cannot quietly disagree with the studies it names. `keep_last_n` is
+`agree`: the constant-sweep and keep-long designs hold it fixed at 3 under the `keep_last_n`
+policy. CI also asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped
+constant is pinned here or the build is red, and that every doc anchor the fixture names still
+resolves.
 
 Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
-check), `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
-re-run scope through the audit's own reporter), the shared study registry `AUDITED_DESIGN_PATHS` in
-`src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
-walk different evidence), and `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate
-itself -- it runs inside `make ci`, with no target of its own.
+check, which passes the full pinned policy into the replay for untouched fields and joins
+invalidated cells to published figures),
+`src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
+re-run scope through the audit's own reporter and lists retired figures),
+`src/llb/bench/agentic_published_value_figures.py` (the study/cell join over registered published
+values, including derived consequences),
+`src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
+scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
+makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in
+`src/llb/bench/agentic_policy_change_audit.py` (one registry spanning the three cap-fitting studies,
+the constant sweep, the keep-long lane, and the harness-comparison rows, so the CLI audit and the
+gate can never walk different evidence), `src/llb/bench/agentic_policy_change_tasks.py` (the
+per-study task-builder seam the wider registry needs),
+`src/llb/bench/agentic_policy_change_replay.py` (`_policy`, which prefers pins over design
+`held_fixed` for fields the change does not move), and
+`tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate itself -- it runs inside
+`make ci`, with no target of its own.
 
 ```bash
 make ci                       # the gate; a drifted constant fails here with the re-run scope

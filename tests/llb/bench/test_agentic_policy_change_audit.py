@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
     SUMMARY_INPUT_CAP_TRIGGER,
@@ -32,9 +32,8 @@ from llb.bench.agentic_policy_change_audit import (
     audit_cell_prompts,
     audit_policy_change,
     coerce_policy_value,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller
@@ -310,13 +309,34 @@ def test_both_arms_of_a_cell_are_replayed():
 # --- the verdicts ---------------------------------------------------------------------------
 
 
-def test_a_field_no_audited_arm_reads_invalidates_nothing():
+def test_a_field_no_audited_arm_reads_invalidates_nothing_on_cap_fitting_cells():
     """`keep_last_n` only steers its own policy, which no cap-fitting cell runs."""
     audits = audit_policy_change(_designs(), KEEP_CHANGE)
     rows = [row for study in audits.values() for row in study]
     assert rows and all(row["verdict"] == VERDICT_INVARIANT for row in rows)
     summary = policy_change_summary(audits, KEEP_CHANGE)
     assert summary["n_invalidated"] == 0 and summary["studies_invalidated"] == []
+
+
+def test_keep_last_n_invalidates_the_lanes_that_actually_run_that_policy():
+    """The gap the wider registry closes: keep=1 looked free only while the audit skipped keep cells."""
+    from llb.bench.agentic_policy_change_audit import KIND_CONSTANT_SWEEP, KIND_KEEP_LONG
+    from llb.bench.agentic_policy_change_geometry import load_audited_designs
+
+    audits = audit_policy_change(load_audited_designs(), KEEP_CHANGE)
+    summary = policy_change_summary(audits, KEEP_CHANGE)
+    assert summary["n_cells"] == 27 and summary["n_invalidated"] == 2
+    assert summary["studies_invalidated"] == [KIND_CONSTANT_SWEEP, KIND_KEEP_LONG]
+    changed = {
+        (cast(str, row["study_kind"]), cast(str, row["cell_id"]))
+        for row in cast(list[dict[str, object]], summary["invalidated"])
+    }
+    assert changed == {
+        (KIND_CONSTANT_SWEEP, "sweep-keep-shipped"),
+        (KIND_KEEP_LONG, "keep-long-shipped"),
+    }
+    # Cap-fitting and harness seed rows stay invariant -- they never apply keep_last_n.
+    assert summary["n_prompt_invariant"] == 25
 
 
 def test_a_field_every_trimming_policy_reads_invalidates_every_cell():
@@ -390,6 +410,73 @@ def test_a_compound_arm_replays_a_whole_policy_rather_than_one_overridden_field(
         POLICY_COMPACT, cell, held, {"observation_cap_chars": 800}, {"observation_cap_chars": 1600}
     )
     assert single["candidate_digest"] != compound["candidate_digest"]
+
+
+def test_a_restated_pin_on_a_held_field_feeds_the_baseline_arm():
+    """A restated pin on observation_cap_chars beats the design's stale held value on untouched fields.
+
+    The change moves only compact_keep_recent, so the cap is untouched. Without pins the baseline
+    arm would replay the design's stale 400; with pins it replays the pinned 800 -- the same class
+    of bug the compound audit closed, one level down.
+    """
+    cell, held = _surface_cell()
+    stale = {**cast(dict[str, object], held), "observation_cap_chars": 400}
+    pins = {
+        "observation_cap_chars": 800,
+        "observation_head_share": held["observation_head_share"],
+        "keep_last_n": 3,
+        "compact_share": 0.5,
+        "compact_keep_recent": 1,
+        "summary_input_cap": "window",
+    }
+    baseline, candidate = {"compact_keep_recent": 1}, {"compact_keep_recent": 2}
+    from_design = arm_comparison(POLICY_COMPACT, cell, stale, baseline, candidate)
+    from_pins = arm_comparison(POLICY_COMPACT, cell, stale, baseline, candidate, pinned=pins)
+    assert from_design["baseline_digest"] != from_pins["baseline_digest"]
+    # The pin-fed baseline is exactly the episode under the pinned cap, not the stale held one.
+    tasks = [
+        AgenticTask.from_record(record)
+        for record in build_memory_dependent_tasks(
+            n_tasks=held["n_tasks"], depth=cell["depth"], pad_chars=held["pad_chars"]
+        )
+    ]
+    expected = replay_sequence_digest(
+        [
+            replay_episode(
+                ContextPolicy(
+                    name=POLICY_COMPACT,
+                    observation_cap_chars=800,
+                    compact_keep_recent=1,
+                    observation_head_share=held["observation_head_share"],
+                    compact_share=cell["compact_share"],
+                ),
+                task=task,
+                max_prompt_chars=cell["max_prompt_chars"],
+                max_steps=cell["depth"] + held["max_steps_margin"],
+            )
+            for task in tasks
+        ]
+    )
+    assert from_pins["baseline_digest"] == expected
+    # A moved field still beats a conflicting pin: settings win over the restated map.
+    moved = arm_comparison(
+        POLICY_COMPACT,
+        cell,
+        held,
+        {"observation_cap_chars": 800},
+        {"observation_cap_chars": 1600},
+        pinned={**pins, "observation_cap_chars": 400},
+    )
+    assert (
+        moved["baseline_digest"]
+        == arm_comparison(
+            POLICY_COMPACT,
+            cell,
+            held,
+            {"observation_cap_chars": 800},
+            {"observation_cap_chars": 1600},
+        )["baseline_digest"]
+    )
 
 
 def test_two_constants_that_move_together_get_one_verdict_and_one_re_run_scope():

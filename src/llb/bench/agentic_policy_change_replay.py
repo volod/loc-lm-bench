@@ -44,15 +44,28 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from llb.bench.agentic.context import POLICY_COMPACT, POLICY_OBSERVATION_CAP, ContextPolicy
+from llb.bench.agentic.context_policy import (
+    DEFAULT_COMPACT_SHARE,
+    POLICY_COMPACT,
+    POLICY_OBSERVATION_CAP,
+    ContextPolicy,
+)
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW, AgenticTask, Episode
-from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller
-from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
+from llb.bench.agentic_policy_change_tasks import build_replay_tasks, replay_controller_for
+from llb.bench.common import LLMComplete
 
 # Both arms of every published cap-fitting cell: its number is the delta between them.
 AUDITED_POLICIES = (POLICY_OBSERVATION_CAP, POLICY_COMPACT)
+# Policy fields a design may hold fixed and that the replay must honour when the change leaves them.
+HELD_POLICY_FIELDS = (
+    "observation_cap_chars",
+    "observation_head_share",
+    "keep_last_n",
+    "compact_keep_recent",
+    "summary_input_cap",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +119,12 @@ def replay_sequence_digest(records: list[ReplayedEpisode]) -> str:
 
 
 def replay_episode(
-    policy: ContextPolicy, *, task: AgenticTask, max_prompt_chars: int, max_steps: int
+    policy: ContextPolicy,
+    *,
+    task: AgenticTask,
+    max_prompt_chars: int,
+    max_steps: int,
+    complete: LLMComplete | None = None,
 ) -> ReplayedEpisode:
     """One oracle episode under `policy`: every prompt it sends, plus the one the guard refuses.
 
@@ -114,13 +132,19 @@ def replay_episode(
     callable IS the seam every model call passes through, controller prompts and summarize calls
     alike. The refused prompt never reaches that seam, so the loop's own refusal observer supplies
     it -- at most once per episode, since a refusal ends the episode.
+
+    `complete`, when supplied, is the study's own oracle (pipeline / seed-shaped / memory). Cap-
+    fitting callers that omit it keep the memory-chain compacting oracle via the task builder.
     """
+    from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller
+
     prompts: list[str] = []
     refused: list[str] = []
+    controller = complete if complete is not None else oracle_compacting_controller
 
     def recording(prompt: str) -> str:
         prompts.append(prompt)
-        return oracle_compacting_controller(prompt)
+        return controller(prompt)
 
     episode = run_episode(
         task,
@@ -156,31 +180,29 @@ def arm_comparison(
     held: dict[str, object],
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Replay one arm of one cell under both POLICIES and locate the first prompt that differs.
 
     `baseline` and `candidate` are whole settings maps, so a change that moves several constants is
     audited as the single change it is: one arm plays the configuration the published number was
-    measured under, the other plays the configuration the new build ships.
+    measured under, the other plays the configuration the new build ships. `pinned`, when supplied
+    (the pin gate always does), feeds every field the change does not move so a `restated` pin on a
+    held field cannot leave the design's stale value on the baseline arm.
     """
-    tasks = [
-        AgenticTask.from_record(record)
-        for record in build_memory_dependent_tasks(
-            n_tasks=int(cast(int, held["n_tasks"])),
-            depth=int(cast(int, cell["depth"])),
-            pad_chars=int(cast(int, held["pad_chars"])),
-        )
-    ]
-    max_steps = int(cast(int, cell["depth"])) + int(cast(int, held["max_steps_margin"]))
+    tasks = build_replay_tasks(cell, held)
+    max_steps = _max_steps(cell, held)
     guard = int(cast(int, cell["max_prompt_chars"]))
 
     def episodes(settings: Mapping[str, Any]) -> list[ReplayedEpisode]:
         return [
             replay_episode(
-                _policy(policy_name, cell, held, settings),
+                _policy(policy_name, cell, held, settings, pinned=pinned),
                 task=task,
                 max_prompt_chars=guard,
                 max_steps=max_steps,
+                complete=replay_controller_for(task, held),
             )
             for task in tasks
         ]
@@ -252,19 +274,36 @@ def _policy(
     cell: dict[str, object],
     held: dict[str, object],
     settings: Mapping[str, Any],
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> ContextPolicy:
     """The cell's own policy with every audited field overridden -- the overrides always win.
 
     Fields the change does not touch keep the cell's declared geometry where a design states it, and
-    the shipped dataclass default otherwise -- which is the same value on both sides of the audit,
-    so it can never be the thing that moves a prompt.
+    the shipped dataclass default otherwise. When the caller supplies `pinned` (the pin gate always
+    does), those untouched fields come from the pins instead -- so a `restated` pin on a held field
+    cannot silently put the design's stale value on the baseline arm. A hand-run CLI audit that has
+    no pins keeps the design / default fallback. The cell's own `compact_share` stays the cell's
+    geometry even when a pin names the held share: a collapse sweep must not flatten to one value.
     """
-    return ContextPolicy(
-        name=policy_name,
-        **{
-            "observation_cap_chars": int(cast(int, held["observation_cap_chars"])),
-            "observation_head_share": float(cast(float, held["observation_head_share"])),
-            "compact_share": float(cast(float, cell["compact_share"])),
-            **settings,
-        },
-    )
+    share = cell.get("compact_share", held.get("compact_share", DEFAULT_COMPACT_SHARE))
+    values: dict[str, Any] = {
+        "compact_share": float(cast(float, share)),
+    }
+    for name in HELD_POLICY_FIELDS:
+        if name in held:
+            values[name] = held[name]
+    if pinned is not None:
+        for name, value in pinned.items():
+            if name in settings or name == "compact_share":
+                continue
+            values[name] = value
+    values.update(settings)
+    return ContextPolicy(name=policy_name, **values)
+
+
+def _max_steps(cell: dict[str, object], held: dict[str, object]) -> int:
+    """Step budget for one cell: an explicit held max_steps, else depth plus the study's margin."""
+    if "max_steps" in held:
+        return int(cast(int, held["max_steps"]))
+    return int(cast(int, cell["depth"])) + int(cast(int, held["max_steps_margin"]))

@@ -11,11 +11,13 @@ artifact, so a host that never ran the study resolves it with nothing taken on f
 that still HAS the run root the copy is falsified against the run before any value is read. The
 committed copy, its pin, and the growth policy that bounds them live in
 `llb.bench.agentic_published_value_fixture`; the field pointer that addresses a value inside an
-aggregate lives in `llb.bench.agentic_published_value_pointer`.
+aggregate lives in `llb.bench.agentic_published_value_pointer`; and the per-pointer re-derivation
+from the aggregate's own cells lives in `llb.bench.agentic_published_aggregate_consistency`.
 """
 
 from pathlib import Path
 
+from llb.bench.agentic_published_aggregate_consistency import validate_aggregate_field
 from llb.bench.agentic_published_value_fixture import (
     REGENERATE,
     CommittedAggregate,
@@ -46,9 +48,11 @@ class PublishedValueResolver:
         artifact, field = provenance_pair(provenance, where=where)
         committed = self._committed(artifact, where=where)
         self._confirm_run_root(artifact, committed, where=where)
-        return _number(
+        resolved = _number(
             read_field(committed.payload, field, where=f"{where}: {artifact}"), where=where
         )
+        validate_aggregate_field(committed.payload, field, resolved, where=f"{where}: {artifact}")
+        return resolved
 
     def _committed(self, artifact: str, *, where: str) -> CommittedAggregate:
         committed = self._fixture.get(artifact)

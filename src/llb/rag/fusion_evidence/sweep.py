@@ -6,7 +6,7 @@ slice, bootstrap interval, and paired delta is computed from those cached per-it
 adding a graph weight to the sweep costs one retrieval pass, not one per metric.
 """
 
-from llb.rag.compare import CompareItem  # the one (question, spans) pair shape, re-used
+from llb.rag.compare_models import CompareItem  # the one (question, spans) pair shape, re-used
 from llb.rag.fusion_evidence.models import (
     FOCUS_SLICE,
     AgreementReport,

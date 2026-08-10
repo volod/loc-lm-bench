@@ -14,7 +14,7 @@ re-measuring it would spend a GPU to reproduce a number that cannot have changed
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_WINDOW
 from llb.bench.agentic_memory_cap_audit import VERDICT_SENSITIVE, audit_design, audit_summary
 from llb.bench.agentic_policy_change_audit import KIND_SURFACE
 from llb.bench.agentic_memory_crossover_restatement_design import (
@@ -111,7 +111,10 @@ def analyze_restatement(
         crossover_row(row, designs, audit, surfaces) for row in published_crossovers(design)
     ]
     reading, reason = restatement_reading(
-        eligible, crossovers, int(cast(int, summary["n_bound_sensitive"]))
+        eligible,
+        crossovers,
+        int(cast(int, summary["n_bound_sensitive"])),
+        cap_peaks,
     )
     shipped = cast(str, design["shipped_summary_input_cap"])
     return {

@@ -2,14 +2,14 @@
 
 import itertools
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context import trim_observation
+from llb.bench.agentic.context_policy import (
     DEFAULT_KEEP_LAST_N,
     DEFAULT_OBSERVATION_CAP_CHARS,
     OBSERVATION_HEAD_SHARE,
     POLICY_KEEP_LAST_N,
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
-    trim_observation,
 )
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask

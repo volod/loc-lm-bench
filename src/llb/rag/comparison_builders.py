@@ -3,7 +3,7 @@
 from typing import Any
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.filters import metadata_filter
-from llb.rag.compare import (
+from llb.rag.compare_models import (
     CompareItem,
     ROW_DENSE,
     ROW_HYBRID,

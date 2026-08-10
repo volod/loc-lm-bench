@@ -26,15 +26,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.bench.agentic_design_fields import as_mapping, as_rows
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
 from llb.bench.agentic_policy_change_audit import (
     KIND_INTERACTION,
     PolicyChange,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic_policy_change_interaction_terms import FIELD_BOUND, FIELD_SHARE
 
 INTERACTION_DESIGN_PATH = "samples/benchmarks/agentic_policy_change_interaction_design.json"
@@ -153,11 +152,11 @@ def probe_cell_geometry(
     return {
         # None when the two shares fold at DIFFERENT steps, which is a different geometry entirely.
         "fold_step": folds[0] if len(set(folds)) == 1 else None,
-        "summary_input_chars": baseline["summary_input_chars"],
+        "summary_input_chars": int(cast(int, baseline["summary_input_chars"])),
         "trigger_chars_at_baseline_share": compaction_trigger_chars(guard, shares[0]),
         "trigger_chars_at_candidate_share": compaction_trigger_chars(guard, shares[1]),
-        "elided_chars_at_baseline_share": baseline["summary_input_elided_chars"],
-        "elided_chars_at_candidate_share": candidate["summary_input_elided_chars"],
+        "elided_chars_at_baseline_share": int(cast(int, baseline["summary_input_elided_chars"])),
+        "elided_chars_at_candidate_share": int(cast(int, candidate["summary_input_elided_chars"])),
     }
 
 

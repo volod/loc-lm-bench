@@ -18,8 +18,6 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     BAR_RECALL,
     BARS,
     DEFAULT_BARS,
-    METRIC_MRR,
-    METRIC_RECALL,
     BakeoffVerdict,
     PairedRow,
     bar_stability,
@@ -28,13 +26,16 @@ from llb.rag.fusion_evidence.stability import (
     borderline_note,
     unsettled,
 )
-from llb.rag.fusion_evidence.stats import (
-    DEFAULT_CONFIDENCE,
-    format_interval,
-)
+from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
 from llb.rag.fusion_evidence.paired import (
-    evidence_gate_clause,
     separates,
+)
+from llb.rag.embedding_bakeoff_reason import (
+    adopt_reason,
+    build_verdict,
+    gate_note,
+    near_miss_note,
+    rank_key,
 )
 from llb.rag.embedding_bakeoff_selection import hypothesis_key, selection_note
 from llb.rag.fusion_evidence.selection import (
@@ -164,7 +165,7 @@ def decide_verdict(
     by a mile no longer prints identically to one where a candidate sat on the cut.
     """
     if baseline is None or not paired:
-        return _verdict(
+        return build_verdict(
             DECISION_UNDECIDED,
             None,
             baseline,
@@ -182,7 +183,7 @@ def decide_verdict(
         paired, baseline, bars, confidence, adjustment
     )
     if not cleared:
-        return _verdict(
+        return build_verdict(
             DECISION_RETAIN,
             baseline,
             baseline,
@@ -191,13 +192,13 @@ def decide_verdict(
             per_row_cleared=per_row_cleared,
             adjustment=adjustment,
             reason=_retain_reason(per_row_cleared, baseline, bars)
-            + _near_miss_note(paired, borderline)
-            + _gate_note(paired, baseline, bars, confidence)
+            + near_miss_note(paired, borderline)
+            + gate_note(paired, baseline, bars, confidence)
             + selection_note(adjustment),
         )
-    separated = sorted(cleared, key=lambda model: _rank_key(paired[model], cleared[model]))
+    separated = sorted(cleared, key=lambda model: rank_key(paired[model], cleared[model]))
     winner = separated[0]
-    return _verdict(
+    return build_verdict(
         DECISION_ADOPT,
         winner,
         baseline,
@@ -207,98 +208,9 @@ def decide_verdict(
         borderline=borderline,
         per_row_cleared=per_row_cleared,
         adjustment=adjustment,
-        reason=_adopt_reason(winner, baseline, paired[winner], cleared[winner])
+        reason=adopt_reason(winner, baseline, paired[winner], cleared[winner])
         + borderline_note(
             [(f"{winner} {bar}", bar_stability(paired[winner], bar)) for bar in cleared[winner]]
         )
         + selection_note(adjustment),
     )
-
-
-def _gate_note(
-    paired: dict[str, PairedRow],
-    baseline: str,
-    bars: Sequence[str],
-    confidence: float = DEFAULT_CONFIDENCE,
-) -> str:
-    """The clause that tells a `retain` reached on thin evidence from one reached on wide evidence.
-
-    Without it a candidate that leads on two of forty questions and a candidate that is genuinely
-    level with the incumbent produce the same sentence.
-    """
-    return evidence_gate_clause(
-        [
-            (f"{model} {bar}", row["metrics"][bar])
-            for model, row in sorted(paired.items())
-            if model != baseline
-            for bar in BARS
-            if bar in bars
-        ],
-        confidence,
-    )
-
-
-def _near_miss_note(paired: dict[str, PairedRow], borderline: dict[str, list[str]]) -> str:
-    """The clause that tells a settled `retain` apart from one a looser convention would overturn."""
-    return borderline_note(
-        [
-            (f"{model} {bar}", bar_stability(paired[model], bar))
-            for model, marked in borderline.items()
-            for bar in marked
-        ]
-    )
-
-
-def _rank_key(paired: PairedRow, cleared: Sequence[str]) -> tuple[int, float, float]:
-    """Most bars cleared wins; then the larger recall gain, then the larger first-hit gain.
-
-    Bar COUNT leads because clearing both bars is strictly more evidence than clearing either, and
-    recall@k breaks the tie because it is the bar that holds in every configuration.
-    """
-    return (
-        -len(cleared),
-        -paired["metrics"][METRIC_RECALL]["delta"]["mean"],
-        -paired["metrics"][METRIC_MRR]["delta"]["mean"],
-    )
-
-
-def _adopt_reason(winner: str, baseline: str, paired: PairedRow, cleared: Sequence[str]) -> str:
-    """Name the bar(s) the winner cleared and quote each one's interval and ledger."""
-    detail = "; ".join(
-        f"{bar} delta {format_interval(paired['metrics'][bar]['delta'])}, "
-        f"{paired['metrics'][bar]['wins']}/{paired['metrics'][bar]['losses']}/"
-        f"{paired['metrics'][bar]['ties']} win/loss/tie, "
-        f"sign-test p={paired['metrics'][bar]['sign_test_p']:.3f}"
-        for bar in cleared
-    )
-    return f"`{winner}` clears {', '.join(cleared)} against `{baseline}`: {detail}"
-
-
-def _verdict(
-    decision: str,
-    model: str | None,
-    baseline: str | None,
-    bars: Sequence[str],
-    *,
-    separated: list[str] | None = None,
-    cleared: dict[str, list[str]] | None = None,
-    borderline: dict[str, list[str]] | None = None,
-    per_row_cleared: dict[str, list[str]] | None = None,
-    adjustment: SelectionAdjustment | None = None,
-    reason: str,
-) -> BakeoffVerdict:
-    verdict: BakeoffVerdict = {
-        "decision": decision,
-        "model": model,
-        "baseline": baseline,
-        "separated": list(separated or []),
-        "bars": list(bars),
-        "cleared": dict(cleared or {}),
-        "borderline": dict(borderline or {}),
-        "reason": reason,
-    }
-    if per_row_cleared is not None:
-        verdict["per_row_cleared"] = per_row_cleared
-    if adjustment is not None:
-        verdict["selection_adjustment"] = adjustment
-    return verdict

@@ -10,6 +10,11 @@ published cell under both values of the changed field with an ORACLE controller,
 each replay sends, and compare the sequences byte for byte. Identical sequences mean the published
 cost cannot have moved; the first differing step says where the change bites.
 
+The registry covers the three cap-fitting memory studies plus the constant-sweep, keep-long, and
+harness-comparison lanes that rest on the same constants -- each with its own geometry reader and
+task builder -- so an "invalidates nothing" verdict is a statement about the whole agentic evidence
+base, not one family of studies.
+
 Two properties make the replay legitimate as a statement about a REAL run:
 
   - the summarize call is answered with a FIXED summary, so the replay is deterministic. That only
@@ -17,8 +22,8 @@ Two properties make the replay legitimate as a statement about a REAL run:
     a temperature-0 model returns the same summary, so the later controller prompts are identical
     too. "All prompts identical under the replay" therefore implies "all prompts identical under the
     served model" -- the direction the invariance claim needs.
-  - both arms of a published cell are replayed (`observation_cap` and `compact`), because a cell's
-    published number is a compact-minus-cap delta and a change that moves either arm moves it.
+  - both arms of a published cell are replayed when the cell's number is a compact-minus-cap delta;
+    other lanes declare the policy arm(s) they were measured under.
 
 A change is a set of FIELDS, not one field. A commit that re-pins two constants moves them together,
 so auditing each on its own would replay two configurations that never shipped and report two re-run
@@ -30,7 +35,6 @@ This module owns the geometry extraction shared with the summarize-bound audit
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, cast
 
 from llb.bench.agentic_policy_change_replay import AUDITED_POLICIES, arm_comparison
@@ -39,7 +43,19 @@ from llb.bench.agentic_policy_change_replay import AUDITED_POLICIES, arm_compari
 KIND_SURFACE = "compact_memory_boundary_surface"
 KIND_COLLAPSE = "compact_trigger_guard_collapse"
 KIND_FOLD_STEP = "compact_fold_step_crossover"
-AUDITED_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+# Non-cap-fitting lanes that rest on the same ContextPolicy constants: the constant sweep, the
+# keep-long transcript lane, and the harness-comparison rows. Each needs its own geometry reader
+# and a task builder other than the memory-chain one (see `agentic_policy_change_tasks`).
+KIND_CONSTANT_SWEEP = "context_policy_constant_sweep"
+KIND_KEEP_LONG = "context_policy_keep_long"
+KIND_HARNESS = "agentic_harness_comparison"
+CAP_FITTING_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+AUDITED_KINDS = (
+    *CAP_FITTING_KINDS,
+    KIND_CONSTANT_SWEEP,
+    KIND_KEEP_LONG,
+    KIND_HARNESS,
+)
 # A FIXTURE kind, not a published study: the interaction geometry that separates the compound
 # verdict from the per-field one (`agentic_policy_change_interaction`). It states its cells flat at
 # the design root and publishes no number, so it is readable as geometry but is deliberately absent
@@ -53,6 +69,9 @@ AUDITED_DESIGN_PATHS: dict[str, str] = {
     KIND_SURFACE: "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
     KIND_COLLAPSE: "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
     KIND_FOLD_STEP: "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
+    KIND_CONSTANT_SWEEP: "samples/benchmarks/agentic_context_policy_constant_sweep_design.json",
+    KIND_KEEP_LONG: "samples/benchmarks/agentic_context_policy_keep_long_design.json",
+    KIND_HARNESS: "samples/benchmarks/agentic_harness_comparison_design.json",
 }
 
 VERDICT_INVARIANT = "prompt_invariant"
@@ -151,12 +170,22 @@ class PolicyChange:
 
 
 def audit_policy_change(
-    designs: dict[str, dict[str, object]], change: PolicyChange
+    designs: dict[str, dict[str, object]],
+    change: PolicyChange,
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    """Replay every published cell of every design under both policies and compare its prompts."""
+    """Replay every published cell of every design under both policies and compare its prompts.
+
+    `pinned`, when supplied, is the full pinned policy the published numbers stand under. The pin
+    gate always passes it so untouched fields replay the pinned values rather than a design's
+    possibly-stale `held_fixed`; a hand-run CLI audit that omits it keeps the design fallback.
+    """
+    from llb.bench.agentic_policy_change_geometry import declared_geometry, held_fixed
+
     return {
         kind: [
-            audit_cell_prompts(cell, _held_fixed(design, kind), change)
+            audit_cell_prompts(cell, held_fixed(design, kind), change, pinned=pinned)
             for cell in declared_geometry(design, kind)
         ]
         for kind, design in designs.items()
@@ -167,6 +196,8 @@ def audit_cell_prompts(
     cell: dict[str, object],
     held: dict[str, object],
     change: PolicyChange,
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """One cell's verdict: do both arms send the identical prompts under both policies?
 
@@ -174,14 +205,16 @@ def audit_cell_prompts(
     audited on the rest of the change; a cell that declares ALL of them is not described by the
     change at all.
     """
-    pinned = [field for field in change.fields if field in cast(list[str], cell["pinned_fields"])]
-    described = change.without(pinned)
+    cell_pins = [
+        field for field in change.fields if field in cast(list[str], cell["pinned_fields"])
+    ]
+    described = change.without(cell_pins)
     row = {
         **cell,
         "policy_fields": list(change.fields),
         "baseline": dict(change.baseline),
         "candidate": dict(change.candidate),
-        "not_applicable_fields": pinned,
+        "not_applicable_fields": cell_pins,
     }
     if described is None:
         return {
@@ -194,9 +227,12 @@ def audit_cell_prompts(
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
         }
+    policies = cast(list[str], cell.get("policies", list(AUDITED_POLICIES)))
     arms = {
-        name: arm_comparison(name, cell, held, described.baseline, described.candidate)
-        for name in AUDITED_POLICIES
+        name: arm_comparison(
+            name, cell, held, described.baseline, described.candidate, pinned=pinned
+        )
+        for name in policies
     }
     changed = sorted(name for name, arm in arms.items() if not arm["identical"])
     return {
@@ -230,74 +266,3 @@ def audit_cell_prompts(
         ),
         "verdict": VERDICT_CHANGED if changed else VERDICT_INVARIANT,
     }
-
-
-def declared_geometry(design: dict[str, object], study_kind: str) -> list[dict[str, object]]:
-    """Every declared cell's `(cell_id, depth, compact_share, max_prompt_chars)`, in design order.
-
-    The three studies nest cells differently -- a flat grid, families, and per-depth step ladders --
-    so the shape is read per kind rather than guessed at.
-    """
-    held = _held_fixed(design, study_kind)
-    # The collapse study SWEEPS the share, so it states one per cell and holds none fixed.
-    default_share = held.get("compact_share")
-    # `(depth, group)`: the surface states depth per cell, the others state it on the group.
-    groups: list[tuple[int | None, dict[str, object]]]
-    if study_kind == KIND_SURFACE:
-        groups = [(None, cast(dict[str, object], design["surface"]))]
-    elif study_kind == KIND_INTERACTION:
-        groups = [(None, design)]
-    elif study_kind == KIND_COLLAPSE:
-        groups = [
-            (int(cast(int, family["depth"])), family)
-            for family in cast(list[dict[str, object]], design["families"])
-        ]
-    else:
-        groups = [
-            (int(cast(int, ladder["depth"])), step)
-            for ladder in cast(list[dict[str, object]], design["ladders"])
-            for step in cast(list[dict[str, object]], ladder["steps"])
-        ]
-    return [
-        {
-            "cell_id": cast(str, cell["cell_id"]),
-            "depth": int(cast(int, cell.get("depth", depth))),
-            "compact_share": _share(cell, default_share),
-            "max_prompt_chars": int(cast(int, cell["max_prompt_chars"])),
-            "pinned_fields": [name for name in POLICY_FIELD_TYPES if name in cell],
-        }
-        for depth, group in groups
-        for cell in cast(list[dict[str, object]], group["cells"])
-    ]
-
-
-def load_audited_design(path: Path | str) -> dict[str, object]:
-    """Load one committed study design for auditing (the studies' own strict JSON loader)."""
-    from llb.bench.agentic_memory_transfer import load_transfer_design
-
-    return load_transfer_design(path)
-
-
-def load_audited_designs() -> dict[str, dict[str, object]]:
-    """Every committed study the audit walks, keyed by its study kind."""
-    from llb.core.paths import PROJECT_ROOT
-
-    return {
-        kind: load_audited_design(PROJECT_ROOT / path)
-        for kind, path in AUDITED_DESIGN_PATHS.items()
-    }
-
-
-def _share(cell: dict[str, object], default: object) -> float:
-    share = cell.get("compact_share", default)
-    if share is None:
-        raise ValueError(f"cell {cell.get('cell_id')!r} states no compact_share and none is held")
-    return float(cast(float, share))
-
-
-def _held_fixed(design: dict[str, object], study_kind: str) -> dict[str, object]:
-    if study_kind not in GEOMETRY_KINDS:
-        raise ValueError(
-            f"{study_kind!r} is not a readable geometry kind; choose from {GEOMETRY_KINDS}"
-        )
-    return cast(dict[str, object], design["held_fixed"])

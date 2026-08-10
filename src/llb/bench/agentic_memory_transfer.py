@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic.context import POLICY_OBSERVATION_CAP, ContextPolicy
+from llb.bench.agentic.context_policy import POLICY_OBSERVATION_CAP, ContextPolicy
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_compact_vs_cap_report import (

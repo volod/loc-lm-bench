@@ -64,6 +64,7 @@ def _operation(
     source_forms: tuple[str, ...] = (FORM,),
     stated_fields: tuple[str, ...] = (),
     reads_own_measurement: bool = False,
+    policy_fields: tuple[str, ...] = (),
     name: str = "an_operation",
     at: tuple[float, ...] = (SOURCE_VALUE,),
 ) -> DerivationOperation:
@@ -77,6 +78,7 @@ def _operation(
         source_forms=source_forms,
         stated_fields=stated_fields,
         reads_own_measurement=reads_own_measurement,
+        policy_fields=policy_fields,
         compute=compute,
         probes=tuple(
             DerivationInputs(
@@ -187,6 +189,42 @@ def test_an_operation_whose_body_matches_its_declaration_raises_nothing():
     )
 
 
+def _uses_the_shipped_share(inputs: DerivationInputs) -> DerivedValue:
+    """Read one ordinary source and one shipped policy field."""
+    return DerivedValue(value=float(inputs.sources[0]) * inputs.policy.compact_share)
+
+
+def test_a_policy_field_the_body_uses_but_does_not_declare_is_refused():
+    """Perturbation sees a dependency that cannot be observed through the design operands."""
+    (refusal,) = operation_refusals(_operation(_uses_the_shipped_share))
+
+    assert "changes when the shipped `compact_share` policy field is perturbed" in refusal
+    assert "does not declare it" in refusal
+
+
+def test_a_declared_policy_field_must_move_the_answer_at_some_probe_point():
+    """Over-declaring a policy dependency would make the pin gate name unrelated values."""
+
+    def ignores_policy(inputs: DerivationInputs) -> DerivedValue:
+        return DerivedValue(value=float(inputs.sources[0]))
+
+    (refusal,) = operation_refusals(_operation(ignores_policy, policy_fields=("compact_share",)))
+    assert "does not change at any of its 1 probe point(s)" in refusal
+    assert "dependency is not exercised" in refusal
+
+
+def test_a_policy_declaration_matching_the_body_is_accepted():
+    operation = _operation(_uses_the_shipped_share, policy_fields=("compact_share",))
+    assert operation_refusals(operation) == ()
+
+
+def test_an_unknown_or_repeated_policy_field_is_refused_at_registration():
+    with pytest.raises(ValueError, match="unknown shipped policy field"):
+        _operation(_uses_the_shipped_share, policy_fields=("not_a_policy_field",))
+    with pytest.raises(ValueError, match="repeats a shipped policy field"):
+        _operation(_uses_the_shipped_share, policy_fields=("compact_share", "compact_share"))
+
+
 # --- a read that happens on one branch only ------------------------------------------------------
 
 
@@ -204,6 +242,14 @@ def _reads_an_undeclared_field_when_large(inputs: DerivationInputs) -> DerivedVa
     if source < BRANCH_THRESHOLD:
         return DerivedValue(value=source)
     return DerivedValue(value=source * inputs.stated[OTHER_STATED])
+
+
+def _doubles_when_large(inputs: DerivationInputs) -> DerivedValue:
+    """Takes two paths while reading the same declared input on both."""
+    source = float(inputs.sources[0])
+    if source < BRANCH_THRESHOLD:
+        return DerivedValue(value=source)
+    return DerivedValue(value=source * 2.0)
 
 
 def test_a_declared_input_read_only_on_a_branch_no_point_takes_is_refused_as_over_declared():
@@ -349,6 +395,42 @@ def _registered(monkeypatch, values: list[dict[str, object]]) -> Path:
     return PROJECT_ROOT
 
 
+def _report_for_operation(monkeypatch, operation: DerivationOperation):
+    """Make one operation both the complete arithmetic registry and the design's named arithmetic."""
+    monkeypatch.setattr(
+        "llb.bench.agentic_published_value_operation_audit.DERIVATION_OPERATIONS",
+        {operation.name: operation},
+    )
+    design_root = _registered(monkeypatch, [{OPERATION: operation.name}])
+    return report_operation_registry(design_root=design_root)
+
+
+def test_the_report_names_a_branch_no_probe_point_reaches(monkeypatch):
+    """The silent residual becomes a count and its source line, without becoming a refusal."""
+    operation = _operation(_doubles_when_large)
+    report = _report_for_operation(monkeypatch, operation)
+
+    (branches,) = report.unreached_branches
+    assert branches.operation == operation.name
+    assert branches.count == 1
+    assert branches.source_lines == (_doubles_when_large.__code__.co_firstlineno + 3,)
+    assert report.refusals == ()
+
+
+def test_points_taking_both_outcomes_leave_no_unreached_branch(monkeypatch):
+    """Branch events union across the declared set just as input reads do."""
+    operation = _operation(
+        _doubles_when_large,
+        at=(SOURCE_VALUE, OTHER_SOURCE_VALUE),
+    )
+    report = _report_for_operation(monkeypatch, operation)
+
+    (branches,) = report.unreached_branches
+    assert branches.count == 0
+    assert branches.source_lines == ()
+    assert report.refusals == ()
+
+
 def test_a_registered_operation_no_design_names_is_refused(monkeypatch):
     """Arithmetic nobody exercises is where a wrong quotient sits until the first study adopts it."""
     design_root = _registered(monkeypatch, [{"form": "a_measured_form"}])
@@ -383,6 +465,10 @@ def test_the_self_check_names_what_it_exercised_rather_than_only_passing():
     report = report_operation_registry(design_root=PROJECT_ROOT)
 
     assert report.checked == tuple(sorted(DERIVATION_OPERATIONS))
+    (branches,) = report.unreached_branches
+    assert branches.operation == OPERATION_TRIGGER_OVER_OWN_CAP_PEAK
+    assert branches.count == 2
+    assert len(branches.source_lines) == branches.count
     assert report.refusals == ()
 
 

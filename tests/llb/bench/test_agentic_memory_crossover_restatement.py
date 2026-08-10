@@ -23,13 +23,12 @@ from llb.bench.agentic_memory_cap_audit import (
     sensitive_cell_ids,
 )
 from llb.bench.agentic_policy_change_audit import (
-    AUDITED_KINDS,
+    CAP_FITTING_KINDS,
     KIND_COLLAPSE,
     KIND_FOLD_STEP,
     KIND_SURFACE,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic_memory_crossover_restatement import (
     analyze_restatement,
     audit_published_cells,
@@ -51,6 +50,7 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     PEAK_INVARIANT,
     PEAK_MOVED,
     PEAK_UNPUBLISHED,
+    READING_HOLD_MOVED_PEAK,
     READING_INELIGIBLE,
     READING_MOVED,
     READING_UNCHANGED,
@@ -140,7 +140,7 @@ def test_the_audit_reads_cell_geometry_out_of_every_committed_study_shape():
         / "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
         KIND_FOLD_STEP: ROOT / "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
     }
-    assert set(paths) == set(AUDITED_KINDS)
+    assert set(paths) == set(CAP_FITTING_KINDS)
     for kind, path in paths.items():
         cells = declared_geometry(load_audited_design(path), kind)
         assert cells and all(
@@ -419,9 +419,11 @@ def test_a_moved_task_world_is_named_as_a_moved_peak_not_a_rescaled_ratio(tmp_pa
     """A peak the geometry retired must not silently rescale a freshly interpolated guard.
 
     The fold-step check cannot see this: the drift here leaves the step ladder alone, so every
-    published crossover still names its own fold step and the restatement reads UNCHANGED. That is
-    exactly why the peak needs a row of its own -- dividing the new guard by the old peak would have
-    published a rescaled ratio with nothing in the run saying the two came from different worlds.
+    published crossover still names its own fold step. Dividing the new guard by the old peak would
+    have published a rescaled ratio with nothing in the run saying the two came from different
+    worlds. The peak therefore has a row of its own, and the hold reading is QUALIFIED so the
+    headline names the depth whose ratio rests on the retired peak -- without withdrawing the
+    fold-step cost (objective_score stays 1.0).
     """
     design = load_restatement_design(DESIGN_PATH)
     audit = audit_published_cells(design, root=ROOT)
@@ -447,12 +449,30 @@ def test_a_moved_task_world_is_named_as_a_moved_peak_not_a_rescaled_ratio(tmp_pa
         PEAK_INVARIANT
     )
 
-    assert analysis["restatement_reading"] == READING_UNCHANGED
+    assert analysis["restatement_reading"] == READING_HOLD_MOVED_PEAK
+    assert "depth 10" in cast(str, analysis["reason"])
+    assert "no longer measures" in cast(str, analysis["reason"])
     assert any(
         "the cap peak moved 9000 -> 11926 chars (+2926)" in line
         for line in analysis["operator_lines"]
     )
+    assert any(
+        "rests on a retired cap peak" in line and "depth 10" in line
+        for line in analysis["operator_lines"]
+    )
     assert "cap peak" in format_restatement_table(analysis)
+
+    paths = persist_restatement(
+        design,
+        analysis,
+        data_dir=tmp_path,
+        table=format_restatement_table(analysis),
+        tokens_per_s=0.0,
+        mirror=lambda *_: None,
+    )
+    manifest = json.loads(Path(paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["objective_score"] == 1.0
+    assert manifest["config"]["analysis"]["restatement_reading"] == READING_HOLD_MOVED_PEAK
 
 
 def test_a_depth_the_published_surface_states_no_peak_for_is_named_rather_than_missing(

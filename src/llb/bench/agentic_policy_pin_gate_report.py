@@ -1,10 +1,11 @@
 """The failure message the context-policy pin gate fails a build with.
 
 A gate is only as useful as what it says when it fires. This one has to answer, in the terminal
-output of a build somebody did not expect to break: which constant moved, which published numbers
-that retires, where those numbers are quoted, and what the two ways out are (re-measure the cells, or
-restate the pin because nothing moved). The re-run scope itself is rendered by the audit's own
-reporter, so the operator reads the same lines whether they asked the question or CI asked it.
+output of a build somebody did not expect to break: which constant moved, which cell measurements
+and derived statements that retires, which exact published figures those cells stand under, where
+those numbers are quoted, and what the ways out are. The cell scope itself is rendered by the
+audit's own reporter, so the operator reads the same lines whether they asked the question or CI
+asked it.
 """
 
 from typing import cast
@@ -18,7 +19,7 @@ from llb.bench.agentic_policy_pin_gate import PINS_PATH, PinCheck, PinClaim, Pin
 
 
 def format_pin_gate_report(check: PinCheck) -> str:
-    """The failure message: which constants moved, which published cells they retire, what to do."""
+    """Name moved constants, retired cells and derived values, and the required repair."""
     n_pins = len(check.pins.pins)
     if check.ok:
         return (
@@ -58,24 +59,46 @@ def _drift_lines(drift: PinDrift, pins: PolicyPins) -> list[str]:
         for move in drift.moves
     ]
     if not drift.n_invalidated:
-        return [
+        cell_reading = (
+            "bit-identical prompts; the registered-arithmetic scope follows."
+            if drift.affected_published_values
+            else "bit-identical prompts, so restating the pin is free."
+        )
+        lines = [
             *_head_lines(drift),
-            f"  no published cell is invalidated ({applicable} applicable): {label} "
-            "bit-identical prompts, so restating the pin is free.",
+            f"  no published cell is invalidated ({applicable} applicable): {label} {cell_reading}",
             *tail,
-            *notes,
         ]
-    studies = cast(list[str], summary["studies_invalidated"])
-    return [
-        *_head_lines(drift),
-        f"  {drift.n_invalidated} of {applicable} applicable published cells are invalidated across "
-        f"{len(studies)} study/studies ({', '.join(studies)}):",
-        *format_invalidated_cells(summary, indent="  "),
-        "  re-measure those cells and restate their published numbers, then move the pin -- or "
-        "revert the constant.",
-        *tail,
-        *notes,
-    ]
+    else:
+        studies = cast(list[str], summary["studies_invalidated"])
+        lines = [
+            *_head_lines(drift),
+            f"  {drift.n_invalidated} of {applicable} applicable published cells are invalidated "
+            f"across {len(studies)} study/studies ({', '.join(studies)}):",
+            *format_invalidated_cells(summary, indent="  "),
+            "  re-measure those cells and restate their published numbers, then move the pin -- "
+            "or revert the constant.",
+            *tail,
+        ]
+    if drift.retired_figures:
+        lines.extend(
+            [
+                "  those cells retire these published figures:",
+                *(f"  - {figure.named()}" for figure in drift.retired_figures),
+                "  restate those figures in the docs when moving the pin -- or revert the "
+                "constant.",
+            ]
+        )
+    if drift.affected_published_values:
+        lines.extend(
+            [
+                "  registered arithmetic also moves these published values:",
+                *(f"  - {value.named()}" for value in drift.affected_published_values),
+                "  re-derive and restate those values when moving the pin -- or revert the "
+                "constant.",
+            ]
+        )
+    return [*lines, *notes]
 
 
 def _head_lines(drift: PinDrift) -> list[str]:

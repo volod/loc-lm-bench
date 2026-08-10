@@ -14,9 +14,11 @@ So the design names its arithmetic too:
 and every reader calls the SAME registered function over the SAME declared inputs. The registry is a
 table of pure functions, in the shape of `PUBLISHED_VALUE_DESIGNS`: an operation states how many
 sources of which FORM it is computed over, which of the value's own stated fields it reads, and
-whether it also reads the figure the value's own aggregate measured. Those are checked against the
-declaration before a number is read, and an operation the registry does not carry is refused -- a
-design that named arithmetic nothing implements publishes a number no reader can reproduce.
+whether it also reads the figure the value's own aggregate measured. It also names any shipped
+context-policy fields its arithmetic reads. Those are supplied from `ContextPolicy`, not copied out
+of a design row, so a policy-pin drift can name the published values whose arithmetic moves. All are
+checked against the function, and an operation the registry does not carry is refused -- a design
+that named arithmetic nothing implements publishes a number no reader can reproduce.
 
 The declaration is checked in BOTH directions. Against the design it is `_check_operands` next door;
 against the FUNCTION beside it, it is the registry self-check in
@@ -35,14 +37,15 @@ reader would have to evaluate the same way.
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic_memory_crossover_restatement_reading import FORM_INTERPOLATED
 from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars
 
 # The field a published value names its arithmetic in, beside the sources that arithmetic is over.
 OPERATION = "operation"
 
-# What a value's own design row states for an operation to read, beside its declared sources.
-STATED_COMPACT_SHARE = "compact_share"
+# The shipped policy field the trigger arithmetic reads.
+POLICY_COMPACT_SHARE = "compact_share"
 
 # Intermediates an operation names so a reader can report them without recomputing them.
 TERM_TRIGGER_CHARS = "trigger_chars"
@@ -63,15 +66,16 @@ PROBE_WIDE_CAP_PEAK_CHARS = 2048.0
 class DerivationInputs:
     """Everything one re-derivation is computed over, gathered by the caller that has it.
 
-    Three kinds, because a derived value rests on three different things: the values of the sources
-    it DECLARES (in declared order, so an operation over two of one form is still unambiguous), the
-    fields its own design row states, and -- for a value whose own aggregate measured something, like
-    a ratio published against the cap peak its own study measured -- that measurement.
+    Four kinds, because a derived value can rest on the values of its declared sources, fields its
+    own design row states, the figure its own aggregate measured, and shipped context-policy fields.
+    The last are a separate input so a policy change can invalidate arithmetic even when no measured
+    row changes.
     """
 
     sources: tuple[float, ...]
     stated: Mapping[str, float]
     measured: float | None = None
+    policy: ContextPolicy = field(default_factory=ContextPolicy)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +103,7 @@ class DerivationOperation:
     source_forms: tuple[str, ...]
     stated_fields: tuple[str, ...] = ()
     reads_own_measurement: bool = False
+    policy_fields: tuple[str, ...] = ()
     compute: Callable[[DerivationInputs], DerivedValue]
     probes: tuple[DerivationInputs, ...]
 
@@ -114,6 +119,21 @@ class DerivationOperation:
             raise ValueError(
                 f"the `{self.name}` operation declares no probe point, so nothing can call it "
                 "through its own declaration and nothing checks what it is computed over"
+            )
+        if len(set(self.policy_fields)) != len(self.policy_fields):
+            raise ValueError(
+                f"the `{self.name}` operation repeats a shipped policy field in "
+                f"{self.policy_fields!r}; a dependency is declared once"
+            )
+        unknown_policy_fields = tuple(
+            name
+            for name in self.policy_fields
+            if name == "name" or name not in ContextPolicy.__dataclass_fields__
+        )
+        if unknown_policy_fields:
+            raise ValueError(
+                f"the `{self.name}` operation declares unknown shipped policy field(s) "
+                f"{unknown_policy_fields!r}"
             )
         for position, probe in enumerate(self.probes):
             self._check_probe_answers_declaration(position, probe)
@@ -140,6 +160,7 @@ class DerivationOperation:
             probe.sources,
             tuple(probe.stated[name] for name in self.stated_fields),
             probe.measured if self.reads_own_measurement else None,
+            tuple(getattr(probe.policy, name) for name in self.policy_fields),
         )
 
     def _check_probes_differ(self) -> None:
@@ -168,6 +189,7 @@ class DerivationOperation:
         stated: Mapping[str, float],
         *,
         measured: float | None = None,
+        policy: ContextPolicy | None = None,
         where: str,
     ) -> DerivedValue:
         """Run the operation, refusing inputs that are not the ones it declared it takes.
@@ -191,7 +213,14 @@ class DerivationOperation:
                 f"{where}: the `{self.name}` operation is computed against the figure this value's "
                 "own aggregate measured, and none was supplied to it"
             )
-        return self.compute(DerivationInputs(sources=sources, stated=stated, measured=measured))
+        return self.compute(
+            DerivationInputs(
+                sources=sources,
+                stated=stated,
+                measured=measured,
+                policy=policy if policy is not None else ContextPolicy(),
+            )
+        )
 
 
 def _trigger_over_own_cap_peak(inputs: DerivationInputs) -> DerivedValue:
@@ -202,7 +231,7 @@ def _trigger_over_own_cap_peak(inputs: DerivationInputs) -> DerivedValue:
     computing one quotient.
     """
     (guard,) = inputs.sources
-    trigger = compaction_trigger_chars(int(guard), inputs.stated[STATED_COMPACT_SHARE])
+    trigger = compaction_trigger_chars(int(guard), inputs.policy.compact_share)
     peak = float(inputs.measured if inputs.measured is not None else 0.0)
     if peak <= 0.0:
         raise ValueError(
@@ -220,19 +249,21 @@ DERIVATION_OPERATIONS: dict[str, DerivationOperation] = {
     OPERATION_TRIGGER_OVER_OWN_CAP_PEAK: DerivationOperation(
         name=OPERATION_TRIGGER_OVER_OWN_CAP_PEAK,
         source_forms=(FORM_INTERPOLATED,),
-        stated_fields=(STATED_COMPACT_SHARE,),
         reads_own_measurement=True,
+        policy_fields=(POLICY_COMPACT_SHARE,),
         compute=_trigger_over_own_cap_peak,
         probes=(
             DerivationInputs(
                 sources=(PROBE_GUARD_CHARS,),
-                stated={STATED_COMPACT_SHARE: PROBE_COMPACT_SHARE},
+                stated={},
                 measured=PROBE_CAP_PEAK_CHARS,
+                policy=ContextPolicy(compact_share=PROBE_COMPACT_SHARE),
             ),
             DerivationInputs(
                 sources=(PROBE_WIDE_GUARD_CHARS,),
-                stated={STATED_COMPACT_SHARE: PROBE_PARTIAL_COMPACT_SHARE},
+                stated={},
                 measured=PROBE_WIDE_CAP_PEAK_CHARS,
+                policy=ContextPolicy(compact_share=PROBE_PARTIAL_COMPACT_SHARE),
             ),
         ),
     ),

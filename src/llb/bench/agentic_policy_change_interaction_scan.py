@@ -9,10 +9,12 @@ actually disagree. The arithmetic and the scan must agree -- inside a solved ban
 The scan is deterministic and modelless (an oracle controller and a fixed summary reply), so its
 answer is a fact about the shipped loop rather than a sample of it. It is also the expensive
 direction: one cell costs three audits (the compound plus one per field), so a wide grid belongs in
-a `slow` test or a one-off run, and `make ci` scans a few guards per pair.
+a `slow` test or a one-off run, and `make ci` scans a few guards per pair. The value sweep asks the
+same grid at every candidate in `FIELD_CANDIDATE_GRID`, so a silent pair is silent across the values
+a commit could ship rather than only the neighbour `FIELD_MOVES` names.
 """
 
-from typing import Any, Mapping, cast
+from typing import Any, Mapping, Sequence, cast
 
 from llb.bench.agentic_policy_change_audit import PolicyChange
 from llb.bench.agentic_policy_change_interaction import (
@@ -20,6 +22,7 @@ from llb.bench.agentic_policy_change_interaction import (
     READING_PER_FIELD,
     audit_interaction_cell,
 )
+from llb.bench.agentic_policy_change_interaction_couplings import Coupling, held_baseline
 from llb.bench.agentic_policy_change_interaction_terms import (
     FIELD_CAP,
     FIELD_HEAD,
@@ -63,6 +66,43 @@ def scan_separating_cells(
     ]
 
 
+def scan_couplings_across_candidate_values(
+    couplings: Sequence[Coupling],
+    *,
+    depths: list[int],
+    guards: list[int],
+    held: Mapping[str, Any],
+) -> dict[str, object]:
+    """Replay every coupling at every candidate-value change; record which pairs stay silent.
+
+    A pair is silent across the grid when no (candidate combo, depth, guard) separates. Hits name
+    the candidate values that did separate, so a band pair that opens at one share and vanishes at
+    another is visible as a hit list rather than as a false "always separates".
+    """
+    silent_pairs: list[tuple[str, ...]] = []
+    hits: list[dict[str, object]] = []
+    for coupling in couplings:
+        geometry = held_baseline(coupling, held)
+        pair_hit = False
+        for change in coupling.candidate_changes():
+            rows = scan_separating_cells(change, depths=depths, guards=guards, held=geometry)
+            if not rows:
+                continue
+            pair_hit = True
+            hits.append(
+                {
+                    "fields": coupling.fields,
+                    "label": coupling.label,
+                    "candidate": dict(change.candidate),
+                    "change": change,
+                    "rows": rows,
+                }
+            )
+        if not pair_hit:
+            silent_pairs.append(coupling.fields)
+    return {"silent_pairs": silent_pairs, "hits": hits}
+
+
 def check_baseline_is_the_replayed_one(change: PolicyChange, held: Mapping[str, Any]) -> None:
     """Refuse a scan whose per-field arm would replay a policy the change does not name.
 
@@ -96,6 +136,27 @@ def format_scan_report(change: PolicyChange, rows: list[dict[str, object]]) -> s
             ),
         ]
     )
+
+
+def format_value_sweep_report(result: Mapping[str, object]) -> str:
+    """Silent pairs and every candidate that separated, for a failing value-sweep assertion."""
+    silent = cast(list[tuple[str, ...]], result["silent_pairs"])
+    hits = cast(list[dict[str, object]], result["hits"])
+    lines = [
+        f"[value-sweep] {len(silent)} pair(s) silent across the candidate grid",
+        *(f"  silent: {' x '.join(fields)}" for fields in silent),
+    ]
+    if not hits:
+        lines.append("  no separating candidate in the grid")
+        return "\n".join(lines)
+    lines.append(f"  {len(hits)} separating candidate(s):")
+    for hit in hits:
+        candidate = cast(dict[str, object], hit["candidate"])
+        named = ", ".join(f"{field}={value!r}" for field, value in candidate.items())
+        rows = cast(list[dict[str, object]], hit["rows"])
+        lines.append(f"  {hit['label']} @ {named}: {len(rows)} cell(s)")
+        lines.extend(f"    {row['cell_id']}: separates on {row['separates_on']}" for row in rows)
+    return "\n".join(lines)
 
 
 def _verdict(row: dict[str, object], reading: str) -> str:

@@ -9,8 +9,8 @@ the arithmetic cannot answer.
 
 import pytest
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import (
     MIN_LIVE_ENTRIES_TO_FOLD,
     foldable_fold_steps,
@@ -239,3 +239,69 @@ def test_a_change_the_band_arithmetic_cannot_answer_is_refused(design: dict[str,
         separating_guard_bands(reversed_bound, depth=depth, held=held)
     with pytest.raises(ValueError, match="only defined for"):
         separating_guard_bands(PolicyChange.of("compact_share", 0.5, 0.48), depth=depth, held=held)
+
+
+def test_the_probe_keeps_per_fold_offered_spans(design: dict[str, object]):
+    """A multi-fold episode must not collapse every offered transcript into one sum.
+
+    The elision inequality is about ONE fold. The probe therefore records each fold's offered span
+    beside the summed total, so the band solver can name the fold it uses.
+    """
+    held = design["held_fixed"]
+    geometry = geometry_kwargs(10, held)
+    # Guard inside fold step 3's both-shares interval: the shipped geometry folds twice there.
+    probe = compact_fold_input_probe(
+        max_prompt_chars=8134,
+        compact_share=float(held[FIELD_SHARE]),
+        summary_input_cap=SUMMARY_INPUT_CAP_WINDOW,
+        **geometry,
+    )
+    folds = probe["summary_fold_input_chars"]
+    assert probe["n_compactions"] > 1
+    assert isinstance(folds, list) and len(folds) == probe["n_compactions"]
+    assert sum(folds) == probe["summary_input_chars"]
+
+
+def test_a_known_single_fold_band_is_unchanged_by_the_multi_fold_generalization(
+    design: dict[str, object],
+):
+    """The committed depth-10 bands were always single-fold; the per-fold read must not move them."""
+    change, held = interaction_change(design), design["held_fixed"]
+    bands = separating_guard_bands(change, depth=10, held=held)
+    assert [(band.fold_step, band.low, band.high) for band in bands] == [
+        (10, 21084, 21863),
+        (11, 23604, 23852),
+    ], format_band_report(change, 10, bands)
+    for band in bands:
+        assert "later fold" not in band.detail
+
+
+def test_a_multi_fold_step_answers_with_the_first_fold_and_names_the_rest(
+    design: dict[str, object],
+):
+    """No band at an early step means no band exists, not that the solver could not see past fold 1.
+
+    Depth 10's fold steps 3 and 4 compact more than once under the both-shares guard. The solver
+    states the elision inequality against the first fold (the one at that step) and records that the
+    later folds never open a band of their own -- the previous "folds exactly once" refusal is gone.
+    """
+    change, held = interaction_change(design), design["held_fixed"]
+    bands = separating_guard_bands(change, depth=10, held=held, include_empty=True)
+    multi = {band.fold_step: band for band in bands if band.fold_step in (3, 4)}
+    assert set(multi) == {3, 4}
+    for band in multi.values():
+        assert band.is_empty, band.describe()
+        assert "later fold(s) never separate" in band.detail, band.describe()
+        assert not any(
+            condition.name == "the_episode_folds_exactly_once_here" for condition in band.conditions
+        ), band.describe()
+    # Mid-guards inside the both-shares intervals that used to be refused as unreadable.
+    for guard in (8500, 10500):
+        cell = {
+            "cell_id": f"multi-d10-g{guard}",
+            "depth": 10,
+            "compact_share": held[FIELD_SHARE],
+            "max_prompt_chars": guard,
+            "pinned_fields": [],
+        }
+        assert audit_interaction_cell(cell, held, change)["separates"] is False

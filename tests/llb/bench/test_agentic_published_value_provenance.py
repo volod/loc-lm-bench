@@ -30,7 +30,33 @@ from llb.bench.agentic_published_value_fixture import (
 from llb.bench.agentic_published_value_provenance import PublishedValueResolver, provenance_pair
 
 ARTIFACT = "study/run/analysis.json"
+
+
+def _surface_cell(depth: int, guard: int, delta: float, side: str) -> dict[str, object]:
+    """The minimum scored cell the production interpolation reads."""
+    return {
+        "depth": depth,
+        "valid": True,
+        "max_prompt_chars": guard,
+        "measured_side": side,
+        "cost_evidence": {"compact_minus_cap_total_model_input_tokens": {"mean": delta}},
+    }
+
+
 AGGREGATE: dict[str, object] = {
+    "held_fixed": {
+        "n_tasks": 7,
+        "pad_chars": 1200,
+        "max_steps_margin": 4,
+        "observation_cap_chars": 800,
+        "observation_head_share": 0.6,
+    },
+    "cells": [
+        _surface_cell(6, 14000, -125.85714285714286, "compact_cheaper"),
+        _surface_cell(6, 15500, 1054.5714285714287, "cap_cheaper"),
+        _surface_cell(10, 20000, -2633.4285714285716, "compact_cheaper"),
+        _surface_cell(10, 23000, 1524.857142857143, "cap_cheaper"),
+    ],
     "depth_surface": [
         {"depth": 6, "crossover_max_prompt_chars": 14159.929807575942, "bracket": [14000, 15500]},
         {"depth": 10, "crossover_max_prompt_chars": 21899.890064587056, "bracket": [20000, 23000]},

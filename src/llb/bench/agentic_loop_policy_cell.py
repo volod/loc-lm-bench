@@ -3,9 +3,9 @@
 import logging
 import time
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
-from llb.bench.agentic.episode import Clock
+from llb.bench.agentic.episode_state import Clock
 from llb.bench.agentic.model import HARNESS_LOOP, AgenticTask, Episode
 from llb.bench.agentic.run import run_agentic
 from llb.bench.agentic_loop_policy_report import (

@@ -39,25 +39,19 @@ llb_markdown_scan() {
   fi
 }
 
-llb_largest_tracked_files() {
+llb_largest_visible_files() {
   local label="$1"
   local python_filter="$2"
   local output
   output="$(
     set +o pipefail
-    git -C "$PROJECT_ROOT" ls-tree -r --long -z HEAD \
-      | awk -v RS='\0' -v python_filter="$python_filter" '
-          {
-            split($0, parts, "\t")
-            split(parts[1], meta, " ")
-            size = meta[4]
-            path = parts[2]
-            is_python = path ~ /\.py$/
-            if ((python_filter == "yes" && is_python) || (python_filter == "no" && !is_python)) {
-              printf "%s\t%s\n", size, path
-            }
-          }
-        ' \
+    git -C "$PROJECT_ROOT" ls-files --cached --others --exclude-standard -z \
+      | while IFS= read -r -d '' path; do
+          if { [ "$python_filter" = yes ] && [[ "$path" == *.py ]]; } || \
+             { [ "$python_filter" = no ] && [[ "$path" != *.py ]]; }; then
+            printf '%s\t%s\n' "$(wc -c < "$PROJECT_ROOT/$path")" "$path"
+          fi
+        done \
       | sort -k 1 -n -r \
       | sed -n "1,${TOP_K}p" \
       | awk -F '\t' '{printf "%-10s %s\n", $1, $2}'
@@ -66,14 +60,33 @@ llb_largest_tracked_files() {
 }
 
 llb_files_over_line_limit() {
-  # Soft limit: tracked .py/.sh files should stay at or under $LINE_SOFT_LIMIT lines (AGENTS.md).
+  # Soft limit: repository-visible .py/.sh files should stay under $LINE_SOFT_LIMIT (AGENTS.md).
   # Reports offenders largest-first; informational only (never fails the run).
   local label="$1"
   local limit="${LINE_SOFT_LIMIT:-250}"
   local output
   output="$(
     set +o pipefail
-    git -C "$PROJECT_ROOT" ls-files -z '*.py' '*.sh' \
+    git -C "$PROJECT_ROOT" ls-files --cached --others --exclude-standard -z '*.py' '*.sh' \
+      | (cd "$PROJECT_ROOT" && xargs -0 wc -l 2>/dev/null) \
+      | awk -v limit="$limit" '$2 != "total" && $1 > limit {printf "%-8s %s\n", $1, $2}' \
+      | sort -k 1 -n -r
+  )"
+  if [ -n "$output" ]; then
+    llb_print_block "$label" "$output"
+  fi
+}
+
+llb_source_files_over_line_limit() {
+  # Keep production refactoring work distinct from long scenario-ledger tests. Shell is included
+  # explicitly even when no shell entry currently crosses the limit.
+  local label="$1"
+  local limit="${LINE_SOFT_LIMIT:-250}"
+  local output
+  output="$(
+    set +o pipefail
+    git -C "$PROJECT_ROOT" ls-files --cached --others --exclude-standard -z \
+      'src/**/*.py' 'scripts/*.sh' 'scripts/**/*.sh' \
       | (cd "$PROJECT_ROOT" && xargs -0 wc -l 2>/dev/null) \
       | awk -v limit="$limit" '$2 != "total" && $1 > limit {printf "%-8s %s\n", $1, $2}' \
       | sort -k 1 -n -r
@@ -91,7 +104,8 @@ llb_longest_code_files() {
   local output
   output="$(
     set +o pipefail
-    git -C "$PROJECT_ROOT" ls-files -z '*.py' '*.sh' '*.mk' '*.awk' 'Makefile' \
+    git -C "$PROJECT_ROOT" ls-files --cached --others --exclude-standard -z \
+      '*.py' '*.sh' '*.mk' '*.awk' 'Makefile' \
       | (cd "$PROJECT_ROOT" && xargs -0 wc -l 2>/dev/null) \
       | awk '$2 != "total" {printf "%-8s %s\n", $1, $2}' \
       | sort -k 1 -n -r \
@@ -112,12 +126,16 @@ llb_check_root_files() {
     ' _ "$PROJECT_ROOT" "$PYTHON"
 }
 
-llb_largest_tracked_files "top ${TOP_K} largest tracked Python files (bytes, path)" yes
-llb_largest_tracked_files "top ${TOP_K} largest tracked non-Python files (bytes, path)" no
+llb_largest_visible_files "top ${TOP_K} largest repository-visible Python files (bytes, path)" yes
+llb_largest_visible_files "top ${TOP_K} largest repository-visible non-Python files (bytes, path)" no
 
-llb_longest_code_files "top ${LONGEST_TOP_K} longest tracked code files (lines, path; py/sh/mk/awk/Makefile)"
+llb_longest_code_files \
+  "top ${LONGEST_TOP_K} longest repository-visible code files (lines, path; py/sh/mk/awk/Makefile)"
 
-llb_files_over_line_limit "tracked .py/.sh files over the ${LINE_SOFT_LIMIT:-250}-line soft limit"
+llb_source_files_over_line_limit \
+  "production .py/.sh files over the ${LINE_SOFT_LIMIT:-250}-line soft limit"
+llb_files_over_line_limit \
+  "all repository-visible .py/.sh files over the ${LINE_SOFT_LIMIT:-250}-line soft limit (including tests)"
 
 if [ ! -x "$PYMARKDOWN" ] || [ ! -x "$PYTHON" ]; then
   echo "ERROR: dev tools missing in .venv -- run 'make venv EXTRAS=dev' first" >&2
@@ -131,8 +149,7 @@ llb_report_if_output "experiment acceptance-gate inventory" \
 llb_markdown_scan "project root markdown" "${ROOT_MARKDOWN[@]}"
 llb_markdown_scan "docs markdown (recursive)" -r docs
 
-llb_report_if_output "maintainability index grade C only (repo root; hidden dirs skipped)" \
-  bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$LLB_RADON"
+llb_maintainability_report
 
 # From here down the sweep runs the same hard gates `make ci-checks` runs
 # (scripts/shell_lint_gate.sh, scripts/complexity_gate.sh), so a finding fails this run too.

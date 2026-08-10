@@ -12,15 +12,15 @@ Pure replay over the deterministic tool world: no backend, no GPU, and it runs i
 
 from typing import cast
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
 from llb.bench.agentic_memory_boundary_probe import compact_fold_input_probe
 from llb.bench.agentic_policy_change_audit import (
     VERDICT_CHANGED,
     VERDICT_INVARIANT as PROMPT_INVARIANT,
     PolicyChange,
     audit_cell_prompts,
-    declared_geometry,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry
 
 SUMMARY_INPUT_CAP_FIELD = "summary_input_cap"
 

@@ -18,16 +18,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask
 from llb.bench.agentic_context import run_policy, task_set_digest
 from llb.bench.agentic_context_report import (
     METRIC_PROMPT_TOKENS,
     PolicyReport,
-    policy_config,
-    policy_metrics,
 )
+from llb.bench.agentic_context_report_persist import policy_config, policy_metrics
 from llb.bench.agentic_context_sweep_model import (
     AXES,
     METHOD,

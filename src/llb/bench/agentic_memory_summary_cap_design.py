@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic_design_fields import as_int, as_rows
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAPS
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAPS
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import measured_cap_peak
 from llb.bench.agentic_memory_fold_step_placement import (

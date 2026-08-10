@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     ContextPolicy,
 )

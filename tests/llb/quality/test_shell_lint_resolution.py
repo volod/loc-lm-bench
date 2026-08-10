@@ -160,13 +160,3 @@ def test_the_optional_escape_hatch_still_refuses_to_claim_a_clean_tree(tmp_path)
 
     assert "step_status=0" in result.stdout
     assert "shellcheck NOT run" in result.stdout
-
-
-def test_the_shipped_dev_apt_profile_no_longer_carries_shellcheck():
-    """The apt row existed only to feed the dropped fallback."""
-    packages = (PROJECT_ROOT / "scripts" / "apt" / "dev.packages").read_text(encoding="utf-8")
-    listed = [
-        stripped for line in packages.splitlines() if (stripped := line.split("#", 1)[0].strip())
-    ]
-
-    assert listed == []

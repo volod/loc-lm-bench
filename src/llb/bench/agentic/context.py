@@ -27,82 +27,15 @@ observation bytes, trims, compactions) is what makes the overflow observable aft
 import json
 import re
 from dataclasses import dataclass, field
-from functools import cache
-from typing import Any, Callable
+from typing import Any
 
-from llb.bench.agentic.context_aggregate import (
-    extract_aggregate_facts,
-    format_aggregate_header,
-    with_aggregate_header,
-)
+from llb.bench.agentic import context_policy
+from llb.bench.agentic.context_aggregate import format_aggregate_header
 from llb.bench.agentic.controller_channel import ControllerChannel, ControllerFeedback
-from llb.prompts.registry import render_text
 
 # --- policy names (the ranked row labels) --------------------------------------------------
 
-POLICY_FULL = "full"
-POLICY_OBSERVATION_CAP = "observation_cap"
-POLICY_KEEP_LAST_N = "keep_last_n"
-POLICY_COMPACT = "compact"
-CONTEXT_POLICIES: tuple[str, ...] = (
-    POLICY_FULL,
-    POLICY_OBSERVATION_CAP,
-    POLICY_KEEP_LAST_N,
-    POLICY_COMPACT,
-)
-
-# --- policy constants ----------------------------------------------------------------------
-
-# `observation_cap`: chars kept per observation. Sized so a normal tool result (a db value, a
-# calculator answer, a search hit list) is untouched and only a dumped file/corpus blob is trimmed.
-# PINNED at 800 by the 2026-07-30 constant sweep (cap=400 separates worse on completion; cap=1600
-# is flat) -- see extended-workflows.md#agent-context-policy-constants.
-DEFAULT_OBSERVATION_CAP_CHARS = 800
-# Split of the kept budget between the head and the tail of a trimmed observation. A tool result
-# usually leads with its shape and ends with its payload, so both ends carry signal. PINNED at 0.6
-# by the same sweep (0.5 / 0.7 flat on completion); exposed as `--observation-head-share`.
-OBSERVATION_HEAD_SHARE = 0.6
-# `keep_last_n`: how many most-recent steps survive in the prompt. Shipped at 3; the constant sweep
-# EXPOSES the knob because keep=1 is flat on completion but separates cheaper on prompt tokens on
-# both the short fat-observation set and the longer medium-search set (mean_steps ~8-9) -- do not
-# silently rewrite the default from a cost-only reading.
-DEFAULT_KEEP_LAST_N = 3
-# `compact`: the share of the usable prompt budget that triggers a compaction, and how many recent
-# steps stay verbatim behind the summary (the model still needs its immediate working state).
-# One recent step is the minimum that keeps a compacting loop from repeating its last tool call,
-# and it is also the largest keep that still lets compaction fire on a TWO-step transcript -- a
-# larger keep means a prompt blown by one oversized observation has nothing left to compact.
-DEFAULT_COMPACT_SHARE = 0.5
-DEFAULT_COMPACT_KEEP_RECENT = 1
-
-# `compact`: what bounds the summarize call's INPUT. The call is a model call like any other, so its
-# input must fit the window -- but WHICH bound is chosen decides whether the compact cost is a step
-# function of the fold step or slides continuously with the prompt guard.
-#   - `window` -- the whole usable prompt budget minus the summary template's own overhead, so the
-#     folded transcript is summarized at its OWN size whenever it fits. The fold step then fixes the
-#     summarize input exactly the way it fixes the controller prompts, and the transcript is elided
-#     only when it genuinely cannot fit the window.
-#   - `trigger` -- the compaction trigger (`compact_share * guard`). Two guards inside ONE fold step
-#     fold the identical transcript but feed the summarizer different amounts of it, so the cost
-#     slides inside the step, and a folded transcript that would have fit the window is elided
-#     head-and-tail anyway. Kept selectable because the published fold-step and trigger-collapse
-#     evidence was measured under it.
-SUMMARY_INPUT_CAP_WINDOW = "window"
-SUMMARY_INPUT_CAP_TRIGGER = "trigger"
-SUMMARY_INPUT_CAPS: tuple[str, ...] = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
-DEFAULT_SUMMARY_INPUT_CAP = SUMMARY_INPUT_CAP_WINDOW
-
-# Prompt-system template ids owned by this lane.
-COMPACT_SUMMARY_TEMPLATE = "bench.agentic.compact_summary"
-# How many leading chars of the rendered summarize template identify it. Long enough that no step
-# prompt can collide with it, short enough to survive a wording edit inside the instruction body.
-_SUMMARY_PROMPT_PREFIX_CHARS = 40
-
 _ELISION = "[...обрізано {dropped} символів...]"
-# `trim_observation` writes its elision marker on TOP of the cap it was given, so a budget that must
-# CONTAIN the trimmed text has to reserve the marker as well. Twelve digits covers any transcript a
-# process can hold, which keeps the reservation a constant instead of a per-call measurement.
-_ELISION_DROPPED_DIGITS = 12
 # A step missing from the prompt is announced, never silently absent: `keep_last_n` says how many
 # steps went away with nothing standing in for them, `compact` says how many the summary covers.
 _DROPPED_MARKER = "- [опущено попередніх кроків: {dropped}]"
@@ -122,40 +55,9 @@ _MEMORY_FINISH_CUE = (
 )
 
 # Policies that trim live observations (and stamp `n_trimmed_observations`).
-_TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
-
 # One transcript entry: the tool name, its arguments, and the observation it returned.
 TranscriptEntry = tuple[str, dict[str, Any], str]
-Summarize = Callable[[list[TranscriptEntry]], str]
 LOOP_FEEDBACK = "__loop_feedback__"
-
-
-@dataclass(frozen=True, slots=True)
-class ContextPolicy:
-    """One context-management policy plus the constants it is parameterized by."""
-
-    name: str = POLICY_FULL
-    observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS
-    observation_head_share: float = OBSERVATION_HEAD_SHARE
-    keep_last_n: int = DEFAULT_KEEP_LAST_N
-    compact_share: float = DEFAULT_COMPACT_SHARE
-    compact_keep_recent: int = DEFAULT_COMPACT_KEEP_RECENT
-    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP
-
-    def __post_init__(self) -> None:
-        if self.name not in CONTEXT_POLICIES:
-            raise ValueError(
-                f"unknown context policy: {self.name!r}; choose from {CONTEXT_POLICIES}"
-            )
-        if not 0.0 < self.observation_head_share < 1.0:
-            raise ValueError(
-                f"observation_head_share must be in (0, 1), got {self.observation_head_share}"
-            )
-        if self.summary_input_cap not in SUMMARY_INPUT_CAPS:
-            raise ValueError(
-                f"unknown summary input cap: {self.summary_input_cap!r}; "
-                f"choose from {SUMMARY_INPUT_CAPS}"
-            )
 
 
 @dataclass(slots=True)
@@ -171,10 +73,13 @@ class ContextTelemetry:
     n_repair_prompts: int = 0
     # What the summarizer was OFFERED versus what its input cap let through. The elided span is the
     # evidence the summary was never shown, so a completion drop under a tighter cap is readable
-    # rather than inferred.
+    # rather than inferred. `summary_fold_input_chars` is the per-fold breakdown of
+    # `summary_input_chars`: each compaction appends the transcript it offered, so a multi-fold
+    # episode keeps the elision inequality about ONE fold rather than about their sum.
     summary_input_chars: int = 0
     summary_input_elided_chars: int = 0
     n_trimmed_summary_inputs: int = 0
+    summary_fold_input_chars: list[int] = field(default_factory=list)
 
     @property
     def max_prompt_chars(self) -> int:
@@ -203,7 +108,11 @@ class ContextState:
     telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
 
     def record(
-        self, policy: "ContextPolicy", name: str, arguments: dict[str, Any], observation: str
+        self,
+        policy: context_policy.ContextPolicy,
+        name: str,
+        arguments: dict[str, Any],
+        observation: str,
     ) -> None:
         """Append one executed tool call.
 
@@ -214,7 +123,7 @@ class ContextState:
         self.entries.append(entry)
         self.executed.append(entry)
         self.telemetry.observation_bytes += len(observation.encode("utf-8"))
-        if policy.name in _TRIMMING_POLICIES:
+        if policy.name in context_policy.TRIMMING_POLICIES:
             _, trimmed = trim_observation(
                 observation,
                 policy.observation_cap_chars,
@@ -228,7 +137,7 @@ class ContextState:
 
     def record_channel_feedback(
         self,
-        _policy: "ContextPolicy",
+        _policy: context_policy.ContextPolicy,
         name: str,
         arguments: dict[str, Any],
         message: str,
@@ -248,7 +157,7 @@ def trim_observation(
     observation: str,
     cap_chars: int,
     *,
-    head_share: float = OBSERVATION_HEAD_SHARE,
+    head_share: float = context_policy.OBSERVATION_HEAD_SHARE,
     aggregate_safe: bool = True,
 ) -> tuple[str, bool]:
     """Trim to `cap_chars`, keeping the head and the tail around an explicit elision marker.
@@ -292,7 +201,7 @@ def summary_hit_count(summary: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str]:
+def policy_history_lines(policy: context_policy.ContextPolicy, state: ContextState) -> list[str]:
     """The history lines this policy puts in the next prompt, markers included.
 
     `full` renders every entry verbatim -- byte-identical to the pre-policy loop, which is what
@@ -303,10 +212,10 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
     """
     entries = state.entries
     dropped = state.n_dropped
-    if policy.name == POLICY_KEEP_LAST_N and len(entries) > policy.keep_last_n:
+    if policy.name == context_policy.POLICY_KEEP_LAST_N and len(entries) > policy.keep_last_n:
         dropped += len(entries) - policy.keep_last_n
         entries = entries[-policy.keep_last_n :] if policy.keep_last_n > 0 else []
-    if policy.name in _TRIMMING_POLICIES:
+    if policy.name in context_policy.TRIMMING_POLICIES:
         entries = [
             (
                 name,
@@ -334,154 +243,3 @@ def policy_history_lines(policy: ContextPolicy, state: ContextState) -> list[str
             out.append(_MEMORY_FINISH_CUE.format(code=code.group(1)))
         return out + lines
     return ([_DROPPED_MARKER.format(dropped=dropped)] if dropped else []) + lines
-
-
-# --- compaction ----------------------------------------------------------------------------
-
-
-def summarize_entries(
-    complete: Any,
-    entries: list[TranscriptEntry],
-    transcript_cap_chars: int = 0,
-    *,
-    prior_summary: str = "",
-    telemetry: ContextTelemetry | None = None,
-) -> str:
-    """Ask the model for a running summary of the older steps (the `compact` policy's memory).
-
-    The summarize call is a MODEL CALL like any other, so it is subject to the same window. Its
-    input is the transcript that just blew the step prompt, which means an unbounded summarizer is
-    the one call in the loop guaranteed to overflow -- and it would overflow into a silently
-    truncated summary that the policy then trusts for the rest of the episode. `transcript_cap_chars`
-    trims that input the same head-and-tail way an observation is trimmed (0 = no cap, for an
-    unresolvable window where nothing is refused anyway).
-
-    Each entry's observation is enriched with an aggregate header BEFORE the joined transcript is
-    trimmed, so a free-text summary is still asked to preserve hit counts / doc ids that a
-    positional middle-of-list elision would otherwise destroy.
-    """
-    enriched = [
-        (name, arguments, with_aggregate_header(observation))
-        for name, arguments, observation in entries
-    ]
-    transcript_parts = (
-        [f"- [попередній підсумок: {prior_summary}]"] if prior_summary.strip() else []
-    )
-    transcript_parts.extend(format_entry(entry) for entry in enriched)
-    offered = "\n".join(transcript_parts)
-    # Outer trim is not aggregate-safe: the per-entry headers already carry the facts.
-    transcript, elided = trim_observation(offered, transcript_cap_chars, aggregate_safe=False)
-    prompt = render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": transcript})
-    if telemetry is not None:
-        telemetry.compaction_prompt_chars += len(prompt)
-        telemetry.model_input_prompt_chars += len(prompt)
-        telemetry.summary_input_chars += len(offered)
-        telemetry.summary_input_elided_chars += len(offered) - transcript_cap_chars if elided else 0
-        telemetry.n_trimmed_summary_inputs += 1 if elided else 0
-    return (complete(prompt) or "").strip()
-
-
-def is_summary_prompt(prompt: str) -> bool:
-    """Whether a rendered prompt is the compact policy's summarize call rather than a step prompt.
-
-    The seam a deterministic compact walk needs: an injected `complete` has to answer the summarize
-    call with a summary and every other prompt with a tool call, and the template's own opening is
-    the only thing that separates them.
-    """
-    return prompt.startswith(_empty_summary_prompt()[:_SUMMARY_PROMPT_PREFIX_CHARS])
-
-
-def summary_prompt_overhead_chars() -> int:
-    """What the summarize prompt costs AROUND its transcript.
-
-    The template with an empty body PLUS the elision marker, which `trim_observation` writes on top
-    of the cap rather than inside it. A cap that ignores the marker produces a summarize prompt a
-    few chars over the window -- exactly the silent truncation the cap exists to prevent.
-    """
-    return len(_empty_summary_prompt()) + len(
-        _ELISION.format(dropped=10**_ELISION_DROPPED_DIGITS - 1)
-    )
-
-
-@cache
-def _empty_summary_prompt() -> str:
-    """The summarize template rendered with no transcript -- a constant of the loaded registry.
-
-    Both callers are per-step hot paths and a render re-reads the template file, so the one value
-    they both derive from is resolved once per process (the prompt registry is a process singleton).
-    """
-    return render_text(COMPACT_SUMMARY_TEMPLATE, {"transcript": ""})
-
-
-def fold_aggregate_headers(
-    entries: list[TranscriptEntry],
-    *,
-    prior_summary: str = "",
-) -> str:
-    """Machine aggregate headers for search observations being folded into a summary.
-
-    The compaction prompt already carries these headers, but a free-text summary still drops
-    hit counts. Prepending the same machine facts to the summary text makes count survival
-    independent of the summarizer.
-    """
-    headers = re.findall(r"\[агрегат: [^\]]+\]", prior_summary)
-    for _name, _arguments, observation in entries:
-        facts = extract_aggregate_facts(observation)
-        if facts["is_search_hits"]:
-            headers.append(format_aggregate_header(observation))
-    # De-dupe while preserving order (repeated identical searches collapse to one fact line).
-    seen: set[str] = set()
-    unique: list[str] = []
-    for header in headers:
-        if header not in seen:
-            seen.add(header)
-            unique.append(header)
-    return " | ".join(unique)
-
-
-def fold_memory_markers(
-    entries: list[TranscriptEntry],
-    *,
-    prior_summary: str = "",
-) -> str:
-    """Preserve typed semantic-memory facts independently of free-text summarization."""
-    markers = _MEMORY_MARKER.findall(prior_summary)
-    for _name, _arguments, observation in entries:
-        markers.extend(_MEMORY_MARKER.findall(observation))
-    return " | ".join(dict.fromkeys(markers))
-
-
-def compact_state(policy: ContextPolicy, state: ContextState, summarize: Summarize) -> bool:
-    """Fold the older entries into the running summary in place; True when anything was folded.
-
-    The most recent `compact_keep_recent` steps stay verbatim: they are the agent's working state,
-    and summarizing them away is how a compacting loop starts repeating its last tool call. When
-    the prompt was blown by that most recent observation there ARE no older steps to fold, and
-    keeping it verbatim degenerates the policy into `full`; summarizing the whole transcript is
-    then the only thing compaction can do, and it beats sending a prompt the guard will refuse.
-    """
-    older = state.entries[: max(0, len(state.entries) - policy.compact_keep_recent)]
-    if not older:
-        older = list(state.entries)
-    if not older:
-        return False
-    summary = (summarize(older) or "").strip()
-    facts = " | ".join(
-        fact
-        for fact in (
-            fold_aggregate_headers(older, prior_summary=state.summary),
-            fold_memory_markers(older, prior_summary=state.summary),
-        )
-        if fact
-    )
-    if facts:
-        summary = f"{facts}. {summary}".strip() if summary else facts
-    if not summary:
-        # An empty summary would DROP those steps with nothing standing in for them, which is a
-        # silent context loss rather than a compaction. Leave the transcript alone instead.
-        return False
-    state.summary = summary
-    state.entries = state.entries[len(older) :]
-    state.n_dropped += len(older)
-    state.telemetry.n_compactions += 1
-    return True
