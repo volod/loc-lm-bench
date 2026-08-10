@@ -152,11 +152,11 @@ def probe_cell_geometry(
     return {
         # None when the two shares fold at DIFFERENT steps, which is a different geometry entirely.
         "fold_step": folds[0] if len(set(folds)) == 1 else None,
-        "summary_input_chars": baseline["summary_input_chars"],
+        "summary_input_chars": int(cast(int, baseline["summary_input_chars"])),
         "trigger_chars_at_baseline_share": compaction_trigger_chars(guard, shares[0]),
         "trigger_chars_at_candidate_share": compaction_trigger_chars(guard, shares[1]),
-        "elided_chars_at_baseline_share": baseline["summary_input_elided_chars"],
-        "elided_chars_at_candidate_share": candidate["summary_input_elided_chars"],
+        "elided_chars_at_baseline_share": int(cast(int, baseline["summary_input_elided_chars"])),
+        "elided_chars_at_candidate_share": int(cast(int, candidate["summary_input_elided_chars"])),
     }
 
 

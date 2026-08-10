@@ -74,14 +74,15 @@ def compact_fold_input_probe(
     max_steps_margin: int = 4,
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
-) -> dict[str, int]:
+) -> dict[str, object]:
     """What ONE guard offers the summarizer under perfect play, and how much its cap elides.
 
     The elided span is the transcript the running summary is never shown, and it is decided with no
     model at all: the tool world is deterministic, so an oracle controller folding at the same step
     a real controller folds at offers the summarizer the same bytes. This is what lets a design
     predeclare that its reference arm actually HAS an elision to price, and that the step-aligned
-    arm has none.
+    arm has none. `summary_fold_input_chars` is the per-fold breakdown of the summed
+    `summary_input_chars`, so a multi-fold episode keeps each offered transcript addressable.
     """
     policy = ContextPolicy(
         name=POLICY_COMPACT,
@@ -102,12 +103,30 @@ def compact_fold_input_probe(
             n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
         )
     ]
+    fold_inputs = _max_fold_inputs([item.summary_fold_input_chars for item in telemetries])
     return {
         "n_compactions": max(item.n_compactions for item in telemetries),
         "summary_input_chars": max(item.summary_input_chars for item in telemetries),
         "summary_input_elided_chars": max(item.summary_input_elided_chars for item in telemetries),
         "n_trimmed_summary_inputs": max(item.n_trimmed_summary_inputs for item in telemetries),
+        "summary_fold_input_chars": fold_inputs,
     }
+
+
+def _max_fold_inputs(per_task: list[list[int]]) -> list[int]:
+    """Per-fold offered spans, taking the max length at each fold ordinal across tasks.
+
+    The probe's other fields already take a max across tasks so a single worst-case episode names
+    the geometry; the per-fold list does the same ordinal-wise so a multi-fold answer stays about
+    one offered transcript per fold rather than a mix of tasks.
+    """
+    if not per_task:
+        return []
+    n_folds = max((len(folds) for folds in per_task), default=0)
+    return [
+        max((folds[index] for folds in per_task if index < len(folds)), default=0)
+        for index in range(n_folds)
+    ]
 
 
 def cap_prompt_sequence(

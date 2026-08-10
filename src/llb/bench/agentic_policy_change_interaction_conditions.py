@@ -57,6 +57,12 @@ def share_bound_conditions(step: StepGeometry) -> StepConditions:
     answer for is a `StepGeometry` nobody solved -- a fabricated one -- and the ladder's own message
     is the accurate one. The reachable version of that fault is a geometry with no foldable step at
     all, and `agentic_policy_change_interaction_band` refuses it before any condition is stated.
+
+    The elision inequality is about ONE offered transcript. A multi-fold episode used to make that
+    unreadable because `summary_input_chars` summed every fold; the probe now keeps the per-fold
+    breakdown, and the inequality is stated against the first fold whose candidate share would flip
+    elision relative to the baseline (the fold at this step when the guard selects it). Later folds
+    are checked and named when they never open a band of their own.
     """
     baseline_share, candidate_share = _separating_shares(step.change)
     trigger = fold_step_trigger_interval(step.sequence, step.step)
@@ -73,21 +79,31 @@ def share_bound_conditions(step: StepGeometry) -> StepConditions:
     triggers = f"folds at triggers [{trigger[0]}, {trigger[1]})"
     if both.is_empty:
         return StepConditions(detail=triggers, conditions=(both,))
-    offered = _offered_at_one_fold(cast(int, both.low), step)
+    offered, fold_note = _offered_for_elision(
+        cast(int, both.low),
+        step,
+        baseline_share=baseline_share,
+        candidate_share=candidate_share,
+        both_low=cast(int, both.low),
+        both_high=cast(int, both.high),
+    )
     if offered is None:
         return StepConditions(
             detail=triggers,
             conditions=(
                 both,
                 BandCondition.impossible(
-                    "the_episode_folds_exactly_once_here",
-                    "`summary_input_chars` is a sum over folds, and the elision inequality is a "
-                    "statement about ONE offered transcript",
+                    "the_episode_offers_a_transcript_here",
+                    fold_note
+                    or "the probe measured no summarize call at a guard that folds at this step",
                 ),
             ),
         )
+    detail = f"offered {offered}, {triggers}"
+    if fold_note:
+        detail = f"{detail}; {fold_note}"
     return StepConditions(
-        detail=f"offered {offered}, {triggers}",
+        detail=detail,
         conditions=(
             both,
             BandCondition(
@@ -187,13 +203,22 @@ def inert_field_conditions(step: StepGeometry) -> StepConditions:
     )
 
 
-def _offered_at_one_fold(guard_chars: int, step: StepGeometry) -> int | None:
-    """The transcript ONE fold hands the summarizer, or None when the episode folds more than once.
+def _offered_for_elision(
+    guard_chars: int,
+    step: StepGeometry,
+    *,
+    baseline_share: float,
+    candidate_share: float,
+    both_low: int,
+    both_high: int,
+) -> tuple[int | None, str]:
+    """The offered transcript the elision inequality is about, plus a note on later folds.
 
-    Probed under the window bound so nothing is elided, and at a guard that folds at the wanted step
-    by construction. A second compaction would make `summary_input_chars` a sum over folds, and the
-    elision inequality is a statement about ONE offered transcript -- so that step is reported as no
-    band rather than as a wrong one.
+    Probed under the window bound so nothing is elided. The guard folds at this step by construction,
+    so the first compaction is the fold this step names. When the episode folds again later, each
+    later offered span is checked against the same both-shares interval: if none of them opens a
+    band, the note records that the extra folds never separate; if one did, its offered span would
+    widen the answer (the first fold that flips still names the inequality).
     """
     probe = compact_fold_input_probe(
         max_prompt_chars=guard_chars,
@@ -201,9 +226,73 @@ def _offered_at_one_fold(guard_chars: int, step: StepGeometry) -> int | None:
         summary_input_cap=SUMMARY_INPUT_CAP_WINDOW,
         **step.geometry,
     )
-    if probe["n_compactions"] != 1 or probe["summary_input_elided_chars"] != 0:
-        return None
-    return probe["summary_input_chars"]
+    if int(cast(int, probe["summary_input_elided_chars"])) != 0:
+        return (
+            None,
+            "the window-bound probe elided a summarize input, so the offered transcript is not the "
+            "full fold",
+        )
+    fold_inputs = [int(chars) for chars in cast(list[int], probe["summary_fold_input_chars"])]
+    if not fold_inputs:
+        return None, "the probe measured no summarize call at a guard that folds at this step"
+    chosen_index, offered = _first_fold_that_flips_elision(
+        fold_inputs,
+        baseline_share=baseline_share,
+        candidate_share=candidate_share,
+        both_low=both_low,
+        both_high=both_high,
+    )
+    later = fold_inputs[chosen_index + 1 :]
+    if not later:
+        return offered, ""
+    later_bands = [
+        _elision_band(chars, baseline_share, candidate_share, both_low, both_high)
+        for chars in later
+    ]
+    if any(low < high for low, high in later_bands):
+        # A later fold opens a band of its own: keep the first flipping fold for the inequality and
+        # name the widening so the report is not a silent subset of the multi-fold geometry.
+        widened = ", ".join(
+            f"fold {chosen_index + 1 + offset} offered {chars} -> [{low}, {high})"
+            for offset, (chars, (low, high)) in enumerate(zip(later, later_bands, strict=True))
+            if low < high
+        )
+        return offered, f"later folds also separate ({widened})"
+    return offered, f"{len(later)} later fold(s) never separate"
+
+
+def _first_fold_that_flips_elision(
+    fold_inputs: list[int],
+    *,
+    baseline_share: float,
+    candidate_share: float,
+    both_low: int,
+    both_high: int,
+) -> tuple[int, int]:
+    """The earliest fold whose elision inequalities leave a guard inside the both-shares interval.
+
+    When every fold leaves that interval empty, the first fold still names the (empty) inequality --
+    the multi-fold refusal is gone, and the empty band is the arithmetic answer rather than a blind
+    spot.
+    """
+    for index, offered in enumerate(fold_inputs):
+        low, high = _elision_band(offered, baseline_share, candidate_share, both_low, both_high)
+        if low < high:
+            return index, offered
+    return 0, fold_inputs[0]
+
+
+def _elision_band(
+    offered: int,
+    baseline_share: float,
+    candidate_share: float,
+    both_low: int,
+    both_high: int,
+) -> tuple[int, int]:
+    """Guards inside the both-shares interval where baseline clears the offered and candidate does not."""
+    low = max(both_low, smallest_guard_reaching(offered, baseline_share))
+    high = min(both_high, smallest_guard_reaching(offered, candidate_share))
+    return low, high
 
 
 def _separating_shares(change: PolicyChange) -> tuple[float, float]:

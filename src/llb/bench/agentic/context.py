@@ -73,10 +73,13 @@ class ContextTelemetry:
     n_repair_prompts: int = 0
     # What the summarizer was OFFERED versus what its input cap let through. The elided span is the
     # evidence the summary was never shown, so a completion drop under a tighter cap is readable
-    # rather than inferred.
+    # rather than inferred. `summary_fold_input_chars` is the per-fold breakdown of
+    # `summary_input_chars`: each compaction appends the transcript it offered, so a multi-fold
+    # episode keeps the elision inequality about ONE fold rather than about their sum.
     summary_input_chars: int = 0
     summary_input_elided_chars: int = 0
     n_trimmed_summary_inputs: int = 0
+    summary_fold_input_chars: list[int] = field(default_factory=list)
 
     @property
     def max_prompt_chars(self) -> int:

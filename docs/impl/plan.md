@@ -43,32 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-band-past-the-first-fold (optional)
-
-The band solver reports a fold step only when the episode compacts exactly ONCE there, because
-`summary_input_chars` is a sum over folds and the elision inequality is a statement about one
-offered transcript
-([extended workflows](current/extended-workflows/policy-constant-audit.md#the-compound-guarantee-has-a-geometry-that-tests-it)).
-Every multi-fold geometry -- a deep episode under a small guard, which is the ordinary case away
-from the cap-fitting band -- is therefore reported as "no band" whether or not one exists, so the
-solver's negative answer is weaker than it reads. Give the probe a per-fold breakdown (the telemetry
-already counts `n_compactions`; the offered spans want recording per fold rather than summed), state
-the inequality against the FIRST fold whose elision the candidate share flips, and either widen the
-solved bands or record that the extra folds never separate.
-
-- Agent status: CLEAR
-- Dependencies: the summed telemetry is `summary_input_chars` in `ContextTelemetry`
-  (`src/llb/bench/agentic/context.py`), surfaced by `compact_fold_input_probe` in
-  `src/llb/bench/agentic_memory_boundary_probe.py`; the refusal is `_offered_at_fold_step` in
-  `src/llb/bench/agentic_policy_change_interaction_band.py`.
-- User-visible outcome: "no separating band at this depth" means no band exists rather than none
-  the solver can see.
-- Scope boundary: in scope -- per-fold offered spans, the multi-fold band arithmetic, and the test
-  that a known single-fold band is unchanged by the generalization. Out of scope -- changing any
-  shipped constant and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-compound-guarantee-has-a-geometry-that-tests-it).
-
 ### agent-policy-change-replay-untouched-fields-from-the-pins (optional)
 
 The replay builds each arm from three sources: two fields out of the design's `held_fixed`, one out

@@ -214,6 +214,16 @@ geometry mismatch:
   fold step 11: guards [23604, 23852) separate (offered 11802, folds at triggers [11008, 11926))
 ```
 
+The elision inequality is about ONE offered transcript. The probe therefore keeps a per-fold
+breakdown (`summary_fold_input_chars` on `ContextTelemetry`, surfaced by `compact_fold_input_probe`)
+beside the summed `summary_input_chars`, and the solver states the inequality against the first fold
+whose candidate share would flip elision relative to the baseline -- the compaction at the fold step
+being solved. A deep episode under a small guard still folds more than once; those later folds are
+checked against the same both-shares interval and, on the shipped geometry, never open a band of
+their own, which the empty-band detail records (`N later fold(s) never separate`). The committed
+single-fold bands above are unchanged by that generalization: "no separating band at this depth"
+now means no band exists rather than none the solver could read past the first fold.
+
 Only the VERDICT direction separates for this pair. A scan of depths 6 / 10 / 14 across guards 6000
 to 34000 found no geometry where both readings report an invalidated cell but name different
 first-divergent steps, so the committed cells are the whole separating set the pair offers. The
@@ -225,11 +235,13 @@ contract, and the no-model probe of the predeclared geometry),
 `src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
 `src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
 `src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in), `..._conditions.py` (what each pair demands of a guard) and `..._cap.py` (the
+stated in), `..._conditions.py` (what each pair demands of a guard, including the per-fold elision
+read) and `..._cap.py` (the
 observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
 prompt the loop merely builds), and the four test modules that ARE the CI assertion --
 `tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
-the band, `..._couplings.py` for the enumeration below, and `..._cap.py` for the discarded-prompt
+the band (including that a multi-fold step answers rather than refusing), `..._couplings.py` for the
+enumeration below, and `..._cap.py` for the discarded-prompt
 arithmetic. All run inside `make ci`, together in about two seconds, with no target of their own.
 
 ```bash

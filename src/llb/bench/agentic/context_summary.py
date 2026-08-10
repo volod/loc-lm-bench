@@ -52,6 +52,7 @@ def summarize_entries(
         telemetry.compaction_prompt_chars += len(prompt)
         telemetry.model_input_prompt_chars += len(prompt)
         telemetry.summary_input_chars += len(offered)
+        telemetry.summary_fold_input_chars.append(len(offered))
         telemetry.summary_input_elided_chars += len(offered) - transcript_cap_chars if elided else 0
         telemetry.n_trimmed_summary_inputs += 1 if elided else 0
     return (complete(prompt) or "").strip()
