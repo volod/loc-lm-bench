@@ -22,7 +22,9 @@ Constants that drift TOGETHER are audited together, as the one change the commit
 baseline arm replays the full pinned policy and the candidate arm the full shipped policy. Auditing
 each drifted field on its own would replay "pinned cap + shipped keep" against "shipped cap + shipped
 keep" -- two configurations the published cells were never measured under, which can name a first
-divergent step neither build ever reaches.
+divergent step neither build ever reaches. The gate passes the full pinned map into the replay so
+fields the change does NOT move also come from the pins: a `restated` pin on a held field would
+otherwise leave the design's stale `held_fixed` value on the baseline arm.
 
 The fixture also declares, per field, how it relates to the committed study designs (`agree`,
 `restated`, `unstated`), and the gate verifies that claim against each design's `held_fixed`. A pin
@@ -32,6 +34,7 @@ that quietly disagrees with the studies it claims to match would defeat the whol
 """
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -197,19 +200,31 @@ def check_policy_pins(
     return PinCheck(
         pins=pins,
         shipped=values,
-        drift=_drift(moves, designs, design_root) if moves else None,
+        drift=(
+            _drift(
+                moves,
+                designs,
+                design_root,
+                pinned={field: pin.value for field, pin in pins.pins.items()},
+            )
+            if moves
+            else None
+        ),
         stale_claims=tuple(filter(None, (_claim(pin, designs) for pin in pins.pins.values()))),
     )
 
 
 def _drift(
-    moves: tuple[PinMove, ...], designs: dict[str, dict[str, object]], design_root: Path
+    moves: tuple[PinMove, ...],
+    designs: dict[str, dict[str, object]],
+    design_root: Path,
+    pinned: Mapping[str, Any],
 ) -> PinDrift:
     change = PolicyChange(
         baseline={move.field: move.pinned for move in moves},
         candidate={move.field: move.shipped for move in moves},
     )
-    audits = audit_policy_change(designs, change)
+    audits = audit_policy_change(designs, change, pinned=pinned)
     return PinDrift(
         moves=moves,
         summary=policy_change_summary(audits, change),

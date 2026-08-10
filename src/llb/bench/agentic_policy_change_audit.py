@@ -150,14 +150,22 @@ class PolicyChange:
 
 
 def audit_policy_change(
-    designs: dict[str, dict[str, object]], change: PolicyChange
+    designs: dict[str, dict[str, object]],
+    change: PolicyChange,
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    """Replay every published cell of every design under both policies and compare its prompts."""
+    """Replay every published cell of every design under both policies and compare its prompts.
+
+    `pinned`, when supplied, is the full pinned policy the published numbers stand under. The pin
+    gate always passes it so untouched fields replay the pinned values rather than a design's
+    possibly-stale `held_fixed`; a hand-run CLI audit that omits it keeps the design fallback.
+    """
     from llb.bench.agentic_policy_change_geometry import declared_geometry, held_fixed
 
     return {
         kind: [
-            audit_cell_prompts(cell, held_fixed(design, kind), change)
+            audit_cell_prompts(cell, held_fixed(design, kind), change, pinned=pinned)
             for cell in declared_geometry(design, kind)
         ]
         for kind, design in designs.items()
@@ -168,6 +176,8 @@ def audit_cell_prompts(
     cell: dict[str, object],
     held: dict[str, object],
     change: PolicyChange,
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """One cell's verdict: do both arms send the identical prompts under both policies?
 
@@ -175,14 +185,16 @@ def audit_cell_prompts(
     audited on the rest of the change; a cell that declares ALL of them is not described by the
     change at all.
     """
-    pinned = [field for field in change.fields if field in cast(list[str], cell["pinned_fields"])]
-    described = change.without(pinned)
+    cell_pins = [
+        field for field in change.fields if field in cast(list[str], cell["pinned_fields"])
+    ]
+    described = change.without(cell_pins)
     row = {
         **cell,
         "policy_fields": list(change.fields),
         "baseline": dict(change.baseline),
         "candidate": dict(change.candidate),
-        "not_applicable_fields": pinned,
+        "not_applicable_fields": cell_pins,
     }
     if described is None:
         return {
@@ -196,7 +208,9 @@ def audit_cell_prompts(
             "verdict": VERDICT_NOT_APPLICABLE,
         }
     arms = {
-        name: arm_comparison(name, cell, held, described.baseline, described.candidate)
+        name: arm_comparison(
+            name, cell, held, described.baseline, described.candidate, pinned=pinned
+        )
         for name in AUDITED_POLICIES
     }
     changed = sorted(name for name, arm in arms.items() if not arm["identical"])

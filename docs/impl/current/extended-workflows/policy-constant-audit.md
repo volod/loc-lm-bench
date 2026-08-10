@@ -416,7 +416,12 @@ message carries one scope under a `2 constants moved together and are audited as
 that lists every move (`- observation_cap_chars: pinned 800 -> shipped 1600`) plus each constant's
 own `pinned because` note. Auditing each drifted constant separately would have compared "pinned cap
 + shipped keep" against "shipped cap + shipped keep": two configurations no published cell was
-measured under, reported as two re-run scopes for one act.
+measured under, reported as two re-run scopes for one act. The gate also feeds the full pinned map
+into the replay for fields the change does NOT move: without that, a `restated` pin on a held field
+(`observation_cap_chars` or `observation_head_share`) would leave the design's stale `held_fixed`
+value on the baseline arm -- the same class of bug the compound audit closed, one level down. A
+hand-run CLI audit that has no pins keeps the design / dataclass-default fallback; CI always has the
+pins, so the baseline arm is the policy the published numbers were measured under for every field.
 
 The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
 evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
@@ -436,14 +441,17 @@ asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shi
 pinned here or the build is red, and that every doc anchor the fixture names still resolves.
 
 Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
-check), `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
+check, which passes the full pinned policy into the replay for untouched fields),
+`src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
 re-run scope through the audit's own reporter),
 `src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
 scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
 makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in
 `src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
-walk different evidence), and `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate
-itself -- it runs inside `make ci`, with no target of its own.
+walk different evidence), `src/llb/bench/agentic_policy_change_replay.py` (`_policy`, which prefers
+pins over design `held_fixed` for fields the change does not move), and
+`tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate itself -- it runs inside
+`make ci`, with no target of its own.
 
 ```bash
 make ci                       # the gate; a drifted constant fails here with the re-run scope

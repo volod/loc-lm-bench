@@ -231,6 +231,22 @@ def test_a_pin_matching_its_shipped_value_costs_no_replay(monkeypatch: pytest.Mo
     assert check.ok and check.drift is None
 
 
+def test_a_drift_feeds_the_full_pinned_policy_into_the_replay(monkeypatch: pytest.MonkeyPatch):
+    """Untouched fields come from the pins, so a restated held field cannot leave a stale baseline."""
+    seen: dict[str, Any] = {}
+
+    def capture(designs, change, *, pinned=None):
+        seen["pinned"] = pinned
+        from llb.bench.agentic_policy_change_audit import audit_policy_change as real
+
+        return real(designs, change, pinned=pinned)
+
+    monkeypatch.setattr("llb.bench.agentic_policy_pin_gate.audit_policy_change", capture)
+    check = check_policy_pins(_pins(), _surface(), shipped=_drifted("compact_keep_recent", 2))
+    assert check.drift is not None
+    assert seen["pinned"] == {field: pin.value for field, pin in _pins().pins.items()}
+
+
 # --- the pin's own claim about the committed designs -------------------------------------------
 
 

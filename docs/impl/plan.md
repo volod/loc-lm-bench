@@ -43,34 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-replay-untouched-fields-from-the-pins (optional)
-
-The replay builds each arm from three sources: two fields out of the design's `held_fixed`, one out
-of the cell, and the remaining three out of the shipped dataclass defaults (`_policy` in
-`src/llb/bench/agentic_policy_change_replay.py`). For a field the change moves that is irrelevant --
-the override wins -- but for a field it does NOT move the baseline arm is only the pinned policy
-because every design happens to `agree` with its pin today. A pin marked `restated` for
-`observation_cap_chars` or `observation_head_share` would silently make the baseline arm replay the
-design's stale value instead of the pinned one, which is the same class of bug the compound audit
-just closed, one level down
-([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
-Feed the untouched fields from the PINS when the caller has them (the gate always does), keep the
-design values as the fallback for a hand-run CLI audit, and add the fixture case that proves a
-`restated` pin on a held field moves the baseline arm.
-
-- Agent status: CLEAR
-- Dependencies: the pins already carry the full pinned policy and their `designs` claim
-  (`samples/benchmarks/agentic_context_policy_pins.json`, checked by
-  `src/llb/bench/agentic_policy_pin_gate.py`); the seam is `_policy` in
-  `src/llb/bench/agentic_policy_change_replay.py`.
-- User-visible outcome: the baseline arm is the policy the published numbers were measured under for
-  every field, not only for the fields the designs happen to agree on.
-- Scope boundary: in scope -- the pinned-policy source for untouched fields, the CLI fallback, and
-  the `restated`-pin fixture case. Out of scope -- changing any shipped constant or any pin value,
-  and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
-
 ### agent-published-number-provenance-pins (optional)
 
 The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the

@@ -391,6 +391,73 @@ def test_a_compound_arm_replays_a_whole_policy_rather_than_one_overridden_field(
     assert single["candidate_digest"] != compound["candidate_digest"]
 
 
+def test_a_restated_pin_on_a_held_field_feeds_the_baseline_arm():
+    """A restated pin on observation_cap_chars beats the design's stale held value on untouched fields.
+
+    The change moves only compact_keep_recent, so the cap is untouched. Without pins the baseline
+    arm would replay the design's stale 400; with pins it replays the pinned 800 -- the same class
+    of bug the compound audit closed, one level down.
+    """
+    cell, held = _surface_cell()
+    stale = {**cast(dict[str, object], held), "observation_cap_chars": 400}
+    pins = {
+        "observation_cap_chars": 800,
+        "observation_head_share": held["observation_head_share"],
+        "keep_last_n": 3,
+        "compact_share": 0.5,
+        "compact_keep_recent": 1,
+        "summary_input_cap": "window",
+    }
+    baseline, candidate = {"compact_keep_recent": 1}, {"compact_keep_recent": 2}
+    from_design = arm_comparison(POLICY_COMPACT, cell, stale, baseline, candidate)
+    from_pins = arm_comparison(POLICY_COMPACT, cell, stale, baseline, candidate, pinned=pins)
+    assert from_design["baseline_digest"] != from_pins["baseline_digest"]
+    # The pin-fed baseline is exactly the episode under the pinned cap, not the stale held one.
+    tasks = [
+        AgenticTask.from_record(record)
+        for record in build_memory_dependent_tasks(
+            n_tasks=held["n_tasks"], depth=cell["depth"], pad_chars=held["pad_chars"]
+        )
+    ]
+    expected = replay_sequence_digest(
+        [
+            replay_episode(
+                ContextPolicy(
+                    name=POLICY_COMPACT,
+                    observation_cap_chars=800,
+                    compact_keep_recent=1,
+                    observation_head_share=held["observation_head_share"],
+                    compact_share=cell["compact_share"],
+                ),
+                task=task,
+                max_prompt_chars=cell["max_prompt_chars"],
+                max_steps=cell["depth"] + held["max_steps_margin"],
+            )
+            for task in tasks
+        ]
+    )
+    assert from_pins["baseline_digest"] == expected
+    # A moved field still beats a conflicting pin: settings win over the restated map.
+    moved = arm_comparison(
+        POLICY_COMPACT,
+        cell,
+        held,
+        {"observation_cap_chars": 800},
+        {"observation_cap_chars": 1600},
+        pinned={**pins, "observation_cap_chars": 400},
+    )
+    assert (
+        moved["baseline_digest"]
+        == arm_comparison(
+            POLICY_COMPACT,
+            cell,
+            held,
+            {"observation_cap_chars": 800},
+            {"observation_cap_chars": 1600},
+        )["baseline_digest"]
+    )
+
+
 def test_two_constants_that_move_together_get_one_verdict_and_one_re_run_scope():
     change = PolicyChange(
         baseline={"observation_cap_chars": 800, "keep_last_n": 3},

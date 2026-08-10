@@ -160,12 +160,16 @@ def arm_comparison(
     held: dict[str, object],
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Replay one arm of one cell under both POLICIES and locate the first prompt that differs.
 
     `baseline` and `candidate` are whole settings maps, so a change that moves several constants is
     audited as the single change it is: one arm plays the configuration the published number was
-    measured under, the other plays the configuration the new build ships.
+    measured under, the other plays the configuration the new build ships. `pinned`, when supplied
+    (the pin gate always does), feeds every field the change does not move so a `restated` pin on a
+    held field cannot leave the design's stale value on the baseline arm.
     """
     tasks = [
         AgenticTask.from_record(record)
@@ -181,7 +185,7 @@ def arm_comparison(
     def episodes(settings: Mapping[str, Any]) -> list[ReplayedEpisode]:
         return [
             replay_episode(
-                _policy(policy_name, cell, held, settings),
+                _policy(policy_name, cell, held, settings, pinned=pinned),
                 task=task,
                 max_prompt_chars=guard,
                 max_steps=max_steps,
@@ -256,19 +260,27 @@ def _policy(
     cell: dict[str, object],
     held: dict[str, object],
     settings: Mapping[str, Any],
+    *,
+    pinned: Mapping[str, Any] | None = None,
 ) -> ContextPolicy:
     """The cell's own policy with every audited field overridden -- the overrides always win.
 
     Fields the change does not touch keep the cell's declared geometry where a design states it, and
-    the shipped dataclass default otherwise -- which is the same value on both sides of the audit,
-    so it can never be the thing that moves a prompt.
+    the shipped dataclass default otherwise. When the caller supplies `pinned` (the pin gate always
+    does), those untouched fields come from the pins instead -- so a `restated` pin on a held field
+    cannot silently put the design's stale value on the baseline arm. A hand-run CLI audit that has
+    no pins keeps the design / default fallback. The cell's own `compact_share` stays the cell's
+    geometry even when a pin names the held share: a collapse sweep must not flatten to one value.
     """
-    return ContextPolicy(
-        name=policy_name,
-        **{
-            "observation_cap_chars": int(cast(int, held["observation_cap_chars"])),
-            "observation_head_share": float(cast(float, held["observation_head_share"])),
-            "compact_share": float(cast(float, cell["compact_share"])),
-            **settings,
-        },
-    )
+    values: dict[str, Any] = {
+        "observation_cap_chars": int(cast(int, held["observation_cap_chars"])),
+        "observation_head_share": float(cast(float, held["observation_head_share"])),
+        "compact_share": float(cast(float, cell["compact_share"])),
+    }
+    if pinned is not None:
+        for field, value in pinned.items():
+            if field in settings or field == "compact_share":
+                continue
+            values[field] = value
+    values.update(settings)
+    return ContextPolicy(name=policy_name, **values)
