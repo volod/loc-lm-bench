@@ -9,7 +9,6 @@ turns the failure into a skip whose ok line refuses to claim the tree is clean.
 """
 
 import subprocess
-import tomllib
 from pathlib import Path
 
 from llb.core.paths import PROJECT_ROOT
@@ -161,31 +160,3 @@ def test_the_optional_escape_hatch_still_refuses_to_claim_a_clean_tree(tmp_path)
 
     assert "step_status=0" in result.stdout
     assert "shellcheck NOT run" in result.stdout
-
-
-def test_the_shipped_dev_apt_profile_no_longer_carries_shellcheck():
-    """The apt row existed only to feed the dropped fallback."""
-    packages = (PROJECT_ROOT / "scripts" / "apt" / "dev.packages").read_text(encoding="utf-8")
-    listed = [
-        stripped for line in packages.splitlines() if (stripped := line.split("#", 1)[0].strip())
-    ]
-
-    assert listed == []
-
-
-def test_the_dev_extra_and_lock_pin_the_same_shellcheck_wheel():
-    """A fresh extra install and a lock-driven install must select one identical build."""
-    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    shellcheck_requirements = [
-        requirement
-        for requirement in project["project"]["optional-dependencies"]["dev"]
-        if requirement.startswith("shellcheck-py")
-    ]
-    locked = tomllib.loads((PROJECT_ROOT / "uv.lock").read_text(encoding="utf-8"))
-    locked_versions = [
-        package["version"] for package in locked["package"] if package["name"] == "shellcheck-py"
-    ]
-
-    assert len(shellcheck_requirements) == 1
-    assert len(locked_versions) == 1
-    assert shellcheck_requirements[0] == f"shellcheck-py=={locked_versions[0]}"

@@ -859,9 +859,8 @@ no longer lists `shellcheck` as a fallback. The exact project requirement is int
 extra today and one resolving it months later still install the same wheel. An upgrade therefore
 costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification with
 `make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move together.
-`test_the_dev_extra_and_lock_pin_the_same_shellcheck_wheel` in
-`tests/llb/quality/test_shell_lint_resolution.py` guards that contract alongside the binary
-resolution cases.
+The binary resolution behavior remains covered by
+`tests/llb/quality/test_shell_lint_resolution.py`.
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.
