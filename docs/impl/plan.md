@@ -43,31 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-restatement-reading-is-blind-to-a-moved-cap-peak (optional)
-
-`restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py` decides on
-fold steps alone, so a run whose re-measured cap peak DISAGREES with the published one still reads
-`published_crossovers_hold_under_the_shipped_cap` and still persists `objective_score=1.0`
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-The disagreement is reported -- a peak row names it and an operator line says which ratio to apply --
-but only a reader who reaches those lines learns that the published guard RATIOS were stated against
-a geometry this run no longer measures, while the headline verdict says everything holds. Decide what
-a moved peak should do to the verdict: either a reading of its own beside the fold-step one, or a
-qualifier on `..._hold_under_the_shipped_cap` that names the depths whose ratios were restated
-against a different peak. The fold-step criterion itself stays as it is -- a moved peak withdraws no
-COST, only the ratio's basis.
-
-- Agent status: CLEAR
-- Dependencies: the rows are `restated_cap_peaks` from `cap_peak_rows` in
-  `src/llb/bench/agentic_memory_crossover_restatement_rows.py`; the verdict and the persisted
-  `objective_score` are `restatement_reading` and `persist_restatement`.
-- User-visible outcome: the headline verdict of a restatement run cannot say "everything holds" while
-  a ratio it published rests on a retired geometry.
-- Scope boundary: in scope -- the reading, the persisted metric, and their tests. Out of scope --
-  the fold-step invariance criterion, the interpolation rule, and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
-
 ### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
 
 The replay scan asks each pair about ONE concrete move per field (`FIELD_MOVES`, plus a second

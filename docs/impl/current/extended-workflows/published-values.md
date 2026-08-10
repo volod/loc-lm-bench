@@ -379,7 +379,14 @@ re-measured geometry supports), reading
 `..._has_a_different_cap_peak`, or `the_published_surface_states_no_cap_peak_at_this_depth`. So a
 moved task world surfaces as a named moved peak with an operator line telling the reader which ratio
 to apply, instead of as a rescaled number nothing in the run mentions. The fold-step invariance
-criterion is unchanged by this: a moved peak is reported, not treated as a withdrawn crossover.
+criterion is unchanged by this: a moved peak withdraws no COST, only the ratio's basis. When every
+published crossover still holds its fold-step or band statement but at least one re-measured peak
+disagrees with the published one, the aggregate reading is
+`published_crossovers_hold_under_the_shipped_cap_against_a_moved_peak` rather than the bare hold --
+the reason and an operator line name the depths whose ratios were restated against the retired peak,
+and `persist_restatement` still writes `objective_score=1.0` because the cost criterion held. A
+reader of the headline therefore cannot take "everything holds" as permission to apply a ratio that
+rests on a geometry this run no longer measures.
 
 The FORM decides what restates a number; a derived value's declared READING decides what it is
 checked against.

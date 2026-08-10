@@ -52,16 +52,33 @@ PEAK_UNPUBLISHED = "the_published_surface_states_no_cap_peak_at_this_depth"
 
 READING_ALL_INVARIANT = "every_published_cell_is_bound_invariant"
 READING_UNCHANGED = "published_crossovers_hold_under_the_shipped_cap"
+# Fold steps hold, but at least one published ratio was restated against a peak this run no longer
+# measures. The cost criterion is unchanged -- a moved peak withdraws no fold-step COST -- yet the
+# headline must not say the bare hold while the ratio's basis is a retired geometry.
+READING_HOLD_MOVED_PEAK = "published_crossovers_hold_under_the_shipped_cap_against_a_moved_peak"
 READING_MOVED = "a_published_crossover_moves_under_the_shipped_cap"
 READING_INCOMPLETE = "a_bound_sensitive_cell_could_not_be_re_measured"
 READING_DERIVED_UNRESTATED = "derived_crossovers_were_not_restated"
 READING_INELIGIBLE = "pinned_family_control_ineligible"
 
+# Readings that mean every published crossover still holds its fold-step / band statement. A moved
+# peak qualifies the hold rather than withdrawing it, so it stays in this set for the persisted
+# objective score.
+HOLD_READINGS = (READING_UNCHANGED, READING_ALL_INVARIANT, READING_HOLD_MOVED_PEAK)
+
 
 def restatement_reading(
-    eligible: bool, crossovers: list[dict[str, object]], n_sensitive: int
+    eligible: bool,
+    crossovers: list[dict[str, object]],
+    n_sensitive: int,
+    cap_peaks: list[dict[str, object]] | None = None,
 ) -> tuple[str, str]:
-    """Every published crossover must either be bound-invariant or survive its restatement."""
+    """Every published crossover must either be bound-invariant or survive its restatement.
+
+    Cap-peak rows are not a second invariance criterion: a moved peak withdraws no COST. When fold
+    steps (and bands) still hold, a peak that disagrees with the published one qualifies the hold
+    reading so the headline names the depths whose ratios rest on a retired geometry.
+    """
     if not eligible:
         return (
             READING_INELIGIBLE,
@@ -74,16 +91,27 @@ def restatement_reading(
     if moved:
         named = "; ".join(_moved_phrase(row) for row in moved)
         return READING_MOVED, f"a restated crossover left the range it was published in: {named}"
+    peaks = list(cap_peaks or ())
+    moved_depths = _moved_peak_depths(peaks)
     if n_sensitive == 0:
-        return (
+        hold, reason = (
             READING_ALL_INVARIANT,
             "no published cell's summarize input changes under the shipped cap, so every published "
             "crossover stands as measured with no run at all",
         )
+    else:
+        hold, reason = (
+            READING_UNCHANGED,
+            f"{n_sensitive} bound-sensitive cell(s) were re-measured under the shipped cap and every "
+            f"published crossover still holds the statement it was published in",
+        )
+    if not moved_depths:
+        return hold, reason
+    named = ", ".join(f"depth {depth}" for depth in moved_depths)
     return (
-        READING_UNCHANGED,
-        f"{n_sensitive} bound-sensitive cell(s) were re-measured under the shipped cap and every "
-        f"published crossover still holds the statement it was published in",
+        READING_HOLD_MOVED_PEAK,
+        f"{reason}; the published ratio at {named} was restated against a peak the published "
+        f"surface no longer measures",
     )
 
 
@@ -134,12 +162,23 @@ def operator_lines(
             "at least one crossover moved across a fold-step boundary -- re-derive the routing rule "
             "from the restated numbers, not the published ones"
         )
+    if reading == READING_HOLD_MOVED_PEAK:
+        named = ", ".join(f"depth {depth}" for depth in _moved_peak_depths(cap_peaks))
+        lines.append(
+            f"fold steps still hold, but the published ratio at {named} rests on a retired cap "
+            f"peak -- apply the restated ratio over the re-measured peak, not the published one"
+        )
     if reading == READING_DERIVED_UNRESTATED:
         lines.append(
             "at least one derived crossover was not restated -- do not read its invariant "
             "contributing cells as evidence that the derived figure holds"
         )
     return lines
+
+
+def _moved_peak_depths(cap_peaks: list[dict[str, object]]) -> list[int]:
+    """Depths whose re-measured cap peak disagrees with the published one."""
+    return sorted(int(cast(int, row["depth"])) for row in cap_peaks if row["reading"] == PEAK_MOVED)
 
 
 def _crossover_line(row: dict[str, object]) -> str:

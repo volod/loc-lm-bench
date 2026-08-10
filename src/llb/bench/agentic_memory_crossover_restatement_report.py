@@ -6,9 +6,8 @@ from typing import cast
 
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     FORM_PORTABLE_RATIO,
+    HOLD_READINGS,
     METHOD,
-    READING_ALL_INVARIANT,
-    READING_UNCHANGED,
     STUDY_KIND,
 )
 from llb.bench.common import Mirror, persist_category_run
@@ -191,11 +190,7 @@ def persist_restatement(
             "analysis": analysis,
         },
         metrics={
-            "objective_score": (
-                1.0
-                if analysis["restatement_reading"] in (READING_UNCHANGED, READING_ALL_INVARIANT)
-                else 0.0
-            ),
+            "objective_score": (1.0 if analysis["restatement_reading"] in HOLD_READINGS else 0.0),
             "reliability": (
                 sum(bool(row["invariance_holds"]) for row in crossovers) / len(crossovers)
                 if crossovers

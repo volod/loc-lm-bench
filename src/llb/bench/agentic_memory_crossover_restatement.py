@@ -111,7 +111,10 @@ def analyze_restatement(
         crossover_row(row, designs, audit, surfaces) for row in published_crossovers(design)
     ]
     reading, reason = restatement_reading(
-        eligible, crossovers, int(cast(int, summary["n_bound_sensitive"]))
+        eligible,
+        crossovers,
+        int(cast(int, summary["n_bound_sensitive"])),
+        cap_peaks,
     )
     shipped = cast(str, design["shipped_summary_input_cap"])
     return {
