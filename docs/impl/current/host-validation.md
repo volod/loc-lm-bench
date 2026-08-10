@@ -832,10 +832,10 @@ A MISSING shellcheck fails the gate rather than skipping it -- a linter that rep
 when it never ran is worse than no linter, and the old sweep did exactly that on a host without the
 apt package. `LLB_SHELLCHECK_OPTIONAL=1` downgrades that to a printed skip for a lean venv, and the
 pass line then says `shellcheck NOT run` rather than claiming the tree is clean. That escape hatch
-is rarely needed: shellcheck now ships in the `dev` extra as the pinned `shellcheck-py` wheel
-(the real binary, upper-bounded like ruff so a new release cannot redden CI on unchanged scripts),
-so `.venv/bin/shellcheck` exists wherever `make ci` runs, GitHub CI included -- no apt step in the
-workflow. Scans, severity, and the missing-binary policy live once in
+is rarely needed: shellcheck now ships in the `dev` extra as the exactly pinned
+`shellcheck-py==0.11.0.1` wheel (the real 0.11.0 binary), so `.venv/bin/shellcheck` exists wherever
+`make ci` runs, GitHub CI included -- no apt step in the workflow. Scans, severity, and the
+missing-binary policy live once in
 `scripts/shared/shell_lint.sh`, sourced by both the gate and the sweep; every scan runs before any
 of them fails.
 
@@ -854,10 +854,14 @@ puzzling on a host that has `shellcheck` on `PATH`. `LLB_SHELLCHECK` still overr
 venv living elsewhere. Consequently the `dev` apt profile is now **empty**
 (`scripts/apt/dev.packages` keeps the file and the comment; the profile stays for a future dev-only
 OS package) and [dev setup](../../guides/development/dev-setup.md#apt-dependencies-debianubuntu)
-no longer lists `shellcheck` as a fallback. Residual: the pin is a RANGE (`>=0.10,<0.12`), so two
-hosts resolving the extra months apart can still land on different wheels; `uv.lock` pins
-0.11.0.1 for anyone installing through the lock, and tightening the range itself is a separate
-call. Resolution behavior is covered by `tests/llb/quality/test_shell_lint_resolution.py`.
+no longer lists `shellcheck` as a fallback. The exact project requirement is intentional because
+`make venv` uses `uv pip install -e ".[dev]"`, which does not consume `uv.lock`: a host resolving the
+extra today and one resolving it months later still install the same wheel. An upgrade therefore
+costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification with
+`make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move together.
+`test_the_dev_extra_and_lock_pin_the_same_shellcheck_wheel` in
+`tests/llb/quality/test_shell_lint_resolution.py` guards that contract alongside the binary
+resolution cases.
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.

@@ -84,9 +84,10 @@ dev = [
   "radon>=6.0",
   "complexipy>=5.0",
   # ShellCheck as a wheel (it bundles the real binary), so the shell-lint gate runs on every host
-  # that can run `make ci` -- including GitHub CI, which installs no apt packages. Upper bound for
-  # the same reason as ruff's: a new ShellCheck adds checks and would redden CI on unchanged code.
-  "shellcheck-py>=0.10,<0.12",
+  # that can run `make ci` -- including GitHub CI, which installs no apt packages. Keep this exact:
+  # `make venv` installs the extra without uv.lock, and a new ShellCheck can redden unchanged code.
+  # To upgrade, change this pin, refresh uv.lock, then run the shell-lint gate and CI.
+  "shellcheck-py==0.11.0.1",
   "pymarkdownlnt>=0.9.32",
   "optuna>=3.6",
 ]

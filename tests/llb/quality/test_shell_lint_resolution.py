@@ -9,6 +9,7 @@ turns the failure into a skip whose ok line refuses to claim the tree is clean.
 """
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 from llb.core.paths import PROJECT_ROOT
@@ -170,3 +171,21 @@ def test_the_shipped_dev_apt_profile_no_longer_carries_shellcheck():
     ]
 
     assert listed == []
+
+
+def test_the_dev_extra_and_lock_pin_the_same_shellcheck_wheel():
+    """A fresh extra install and a lock-driven install must select one identical build."""
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    shellcheck_requirements = [
+        requirement
+        for requirement in project["project"]["optional-dependencies"]["dev"]
+        if requirement.startswith("shellcheck-py")
+    ]
+    locked = tomllib.loads((PROJECT_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    locked_versions = [
+        package["version"] for package in locked["package"] if package["name"] == "shellcheck-py"
+    ]
+
+    assert len(shellcheck_requirements) == 1
+    assert len(locked_versions) == 1
+    assert shellcheck_requirements[0] == f"shellcheck-py=={locked_versions[0]}"

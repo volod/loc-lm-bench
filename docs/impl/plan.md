@@ -43,30 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-shellcheck-pin-is-a-range-so-two-hosts-can-still-differ (optional)
-
-The shell-lint gate now runs exactly one binary, `.venv/bin/shellcheck` from the `dev` extra
-([host validation](current/host-validation.md#code-quality-checks)), which removed the distro-vs-pin
-split. What remains is one level up: the extra declares `shellcheck-py>=0.10,<0.12`, a RANGE, so a
-host that resolves the extra today and one that resolved it months ago can hold 0.10.x and 0.11.x
-and still disagree about a commit -- the same failure, smaller. `uv.lock` names an exact version,
-but `make venv` installs with `uv pip install -e ".[...]"`, which does not read the lock, so the
-lock protects nobody here. Two ways to close it, and the task is to pick one: pin the extra to an
-exact version (a bump becomes a deliberate commit, like a ruff bump) or have `make venv` install
-from the lock so the declared range stays a compatibility statement while the installed version is
-pinned by the lock. Say what a shellcheck upgrade then costs the person doing it.
-
-- Agent status: CLEAR
-- Dependencies: the pin is `shellcheck-py` in the `dev` extra of `pyproject.toml`; the installer is
-  the `venv` target in `make/dev.mk`; the consumer is `llb_shellcheck_step` in
-  `scripts/shared/shell_lint.sh`.
-- User-visible outcome: two hosts that both pass `make shell-lint-gate` ran the same shellcheck
-  build, not merely the same major.
-- Scope boundary: in scope -- the pinning mechanism for this one tool, the upgrade path it implies,
-  and any `make venv` change it needs. Out of scope -- locking every other dependency the same way,
-  the severity floor, and the `LLB_SHELLCHECK_OPTIONAL` escape hatch.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-the-maintainability-index-scan-is-still-only-a-report (optional)
 
 The two complexity scans are gates now; the third scan beside them is not. `scripts/code_quality.sh`
