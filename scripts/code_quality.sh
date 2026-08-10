@@ -131,8 +131,7 @@ llb_report_if_output "experiment acceptance-gate inventory" \
 llb_markdown_scan "project root markdown" "${ROOT_MARKDOWN[@]}"
 llb_markdown_scan "docs markdown (recursive)" -r docs
 
-llb_report_if_output "maintainability index grade C only (repo root; hidden dirs skipped)" \
-  bash -c 'cd "$1" && "$2" mi . -s -n C -x C' _ "$PROJECT_ROOT" "$LLB_RADON"
+llb_maintainability_report
 
 # From here down the sweep runs the same hard gates `make ci-checks` runs
 # (scripts/shell_lint_gate.sh, scripts/complexity_gate.sh), so a finding fails this run too.

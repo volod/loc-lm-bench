@@ -699,8 +699,9 @@ reader cases also prove that the parent remains unresolved, an existing choice a
 child/order mismatch is refused, and two reads start the child only once. The standard `make ci`
 gate runs the focused proof; all 3,041 non-slow tests pass, including all 22 cases in that suite.
 
-**Both complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh` runs the
-Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and `tests`, and
+**Both function-complexity thresholds are enforced, not reported.** `scripts/complexity_gate.sh`
+runs the Radon D-or-worse scan and the Complexipy scan at `COGNITIVE_MAX=15` over `src` and
+`tests`, and
 exits non-zero as soon as either prints a row -- so a function that crosses a threshold turns the
 build red on its own commit instead of surfacing in a later sweep. `ci-checks` runs it beside
 `llb.quality.acceptance_gates --check` (so it runs in `make ci`, `make ci-github`, and GitHub CI);
@@ -713,7 +714,8 @@ accommodated by raising the maximum.
 The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
 gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
 identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`
-in `scripts/shared/common.sh`).
+in `scripts/shared/common.sh`). The same shared module owns the informational maintainability-index
+scan so its scope cannot drift from the two gates.
 
 **Shell scripts are gated the same way.** `scripts/shell_lint_gate.sh` (`make shell-lint-gate`,
 also inside `ci-checks`) runs three scans over every tracked-or-new `*.sh` in the repo
@@ -864,7 +866,16 @@ The binary resolution behavior remains covered by
 
 Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
 report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.
-The maintainability-index section (Radon MI grade C) is also still a report.
+The maintainability-index section is deliberately a report too. It now scans only `src` and
+`tests`, at grade C by default (`LLB_MI_MIN_GRADE=C`), rather than sweeping the repository root. The
+decision not to add it to `llb_complexity_gate` is evidence-based: the C-only scan is empty, while
+the next band contains one file, `tests/llb/bench/test_agentic_context.py`, at B (10.66). That file
+is large (728 lines, 563 source lines) but regular: Radon finds 48 blocks with average cyclomatic
+complexity A (4.15), and its two highest blocks are only B (10). It is already the kind of volume
+case covered by the soft line target, so making the nearby MI boundary hard would turn that soft
+policy into an indirect gate rather than add an independent complexity signal. Focused coverage in
+`tests/llb/quality/test_maintainability_report.py` pins both the `src tests` arguments and the
+informational exit behavior when Radon prints a C row.
 
 The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
 accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and

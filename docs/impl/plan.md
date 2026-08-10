@@ -43,29 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-maintainability-index-scan-is-still-only-a-report (optional)
-
-The two complexity scans are gates now; the third scan beside them is not. `scripts/code_quality.sh`
-still runs the Radon maintainability-index section (grade C only, repo root) through
-`llb_report_if_output`, so it prints and passes
-([host validation](current/host-validation.md#code-quality-checks)). It is silent today, which is
-the cheap moment to enforce it -- but unlike the other two it scans the whole repo root rather than
-`src`/`tests`, and MI mixes volume with complexity, so a large-but-regular lookup family can score C
-without being the kind of file the limit exists to catch. Decide it on evidence: scope the scan to
-`src`/`tests`, record what a C-grade module in this tree actually looks like, and either move the
-section into `llb_complexity_gate` or record the decision that MI stays a report because the soft
-line target already owns the volume axis.
-
-- Agent status: CLEAR
-- Dependencies: the section is the `radon mi . -s -n C -x C` call in `scripts/code_quality.sh`; the
-  gate to join is `llb_complexity_gate` in `scripts/shared/complexity.sh`.
-- User-visible outcome: the last complexity-family scan is either enforced like its neighbours or
-  documented as deliberately informational, instead of being neither by default.
-- Scope boundary: in scope -- the scan scope, the evidence for the threshold, and the gate-or-record
-  decision. Out of scope -- raising either enforced threshold, gating the line-count report, and
-  refactoring to reach a grade the evidence does not justify.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-two-source-files-remain-over-the-soft-line-target (optional)
 
 `bench/agentic_context_report.py` (500 lines) and `bench/agentic/context.py` (487) are the two
