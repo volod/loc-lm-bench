@@ -38,6 +38,7 @@ from llb.bench.agentic_published_value_derivation import (
     required_derivation,
 )
 from llb.bench.agentic_published_value_derivation_graph import derivation_graph
+from llb.bench.agentic_published_value_figures import validate_published_cell_ids
 from llb.bench.agentic_published_value_operations import DerivedValue
 from llb.bench.agentic_published_value_provenance import PublishedValueResolver, provenance_pair
 
@@ -61,6 +62,9 @@ def validate_published_provenance(
 ) -> None:
     """Refuse, once, every published crossover whose value the aggregate it cites does not state."""
     _refuse_malformed(crossovers)
+    # Cell ids are checked before value resolution: a figure that cannot name its cells is not yet
+    # a figure the pin gate can retire by cell, and that refusal should not hide under a number miss.
+    validate_published_cell_ids(crossovers, root=root)
     collected = CollectedRefusals(derivations=derivation_graph(crossovers))
     resolver = PublishedValueResolver(root=root, data_dir=data_dir)
     stated = _resolve_stated_values(crossovers, resolver, collected)

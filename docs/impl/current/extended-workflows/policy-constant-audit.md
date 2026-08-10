@@ -423,6 +423,14 @@ value on the baseline arm -- the same class of bug the compound audit closed, on
 hand-run CLI audit that has no pins keeps the design / dataclass-default fallback; CI always has the
 pins, so the baseline arm is the policy the published numbers were measured under for every field.
 
+When the audit invalidates cells, the gate also lists the exact published figures those cells stand
+under. Each registered crossover carries `cell_ids` -- the cells its cited aggregate measured at that
+depth, checked against the committed copy through the same pointer walk that resolves
+`(artifact, field)` -- and a drift that hits any of those cells retires the figure, plus every
+derived figure that declares it as a source. The failure therefore names `published value
+21899.89...` (and the portable band that rests on it) rather than leaving an operator to grep the
+docs for what a cell id retired.
+
 The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
 evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
 only when no registered arithmetic depends on it; the message says `restating the pin is free` in
@@ -441,9 +449,12 @@ asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shi
 pinned here or the build is red, and that every doc anchor the fixture names still resolves.
 
 Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
-check, which passes the full pinned policy into the replay for untouched fields),
+check, which passes the full pinned policy into the replay for untouched fields and joins
+invalidated cells to published figures),
 `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
-re-run scope through the audit's own reporter),
+re-run scope through the audit's own reporter and lists retired figures),
+`src/llb/bench/agentic_published_value_figures.py` (the study/cell join over registered published
+values, including derived consequences),
 `src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
 scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
 makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in

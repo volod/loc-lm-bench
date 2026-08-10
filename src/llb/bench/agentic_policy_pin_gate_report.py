@@ -2,9 +2,10 @@
 
 A gate is only as useful as what it says when it fires. This one has to answer, in the terminal
 output of a build somebody did not expect to break: which constant moved, which cell measurements
-and derived statements that retires, where those numbers are quoted, and what the ways out are. The
-cell scope itself is rendered by the audit's own reporter, so the operator reads the same lines
-whether they asked the question or CI asked it.
+and derived statements that retires, which exact published figures those cells stand under, where
+those numbers are quoted, and what the ways out are. The cell scope itself is rendered by the
+audit's own reporter, so the operator reads the same lines whether they asked the question or CI
+asked it.
 """
 
 from typing import cast
@@ -79,6 +80,15 @@ def _drift_lines(drift: PinDrift, pins: PolicyPins) -> list[str]:
             "or revert the constant.",
             *tail,
         ]
+    if drift.retired_figures:
+        lines.extend(
+            [
+                "  those cells retire these published figures:",
+                *(f"  - {figure.named()}" for figure in drift.retired_figures),
+                "  restate those figures in the docs when moving the pin -- or revert the "
+                "constant.",
+            ]
+        )
     if drift.affected_published_values:
         lines.extend(
             [

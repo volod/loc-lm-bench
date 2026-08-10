@@ -40,9 +40,12 @@ The annotation check bounds how wrong a published VALUE can be, and the bound is
 dropped from `14159.929807575942` still lands inside step 6's `[13136, 14912)`, so every rule above
 passes and the restatement re-checks a number no run produced. Each published crossover therefore
 also names the run artifact and the field it came from (`provenance: {artifact, field}`, the artifact
-DATA_DIR-relative), and design validation reads the number back out instead of trusting it. The
-comparison is EXACT -- the aggregate writes the full float and JSON round-trips it, so any tolerance
-at all would license precisely the slip that stays inside the published step.
+DATA_DIR-relative), and the cells that aggregate measured at that depth (`cell_ids`), and design
+validation reads the number back out instead of trusting it. The comparison is EXACT -- the aggregate
+writes the full float and JSON round-trips it, so any tolerance at all would license precisely the
+slip that stays inside the published step. The cell list is checked against the committed copy
+through the same pointer walk (`cells[cell_id=...]`), so a pin-gate failure that invalidates those
+cells can name the exact figures the docs publish rather than only the cell ids to re-measure.
 
 ## Committed aggregates, content pins, and the growth budget
 

@@ -120,6 +120,26 @@ def test_a_drift_that_retires_published_cells_names_every_one_of_them():
     assert "extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface" in report
 
 
+def test_a_drift_that_retires_cells_lists_the_published_figures_those_cells_stand_under():
+    """The operator gets the exact figures to restate, not only cell ids to re-measure."""
+    check = check_policy_pins(
+        _only("observation_cap_chars"),
+        load_audited_designs(),
+        shipped=_drifted("observation_cap_chars", 1600),
+    )
+
+    drift = check.drift
+    assert drift is not None and drift.retired_figures
+    forms = {(figure.study, figure.depth, figure.form) for figure in drift.retired_figures}
+    assert ("compact_memory_boundary_surface", 10, "interpolated_guard") in forms
+    assert ("compact_fold_step_crossover", 10, "fold_step_boundary") in forms
+    assert ("compact_trigger_guard_collapse", 10, "portable_trigger_ratio") in forms
+    report = format_pin_gate_report(check)
+    assert "those cells retire these published figures:" in report
+    assert "published value 21899.890064587056" in report
+    assert "restate those figures in the docs" in report
+
+
 def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free():
     """`keep_last_n` steers a policy no cap-fitting cell runs -- the cheap half of the verdict."""
     check = check_policy_pins(_only("keep_last_n"), _surface(), shipped=_drifted("keep_last_n", 1))

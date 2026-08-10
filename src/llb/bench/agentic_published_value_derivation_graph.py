@@ -58,6 +58,19 @@ class DerivationGraph:
                 queue.extend(self.sources_of(source))
         return tuple(sorted(roots, key=ValueKey.label))
 
+    def consequences_of(self, key: ValueKey) -> tuple[ValueKey, ...]:
+        """Every published value that transitively rests on `key` -- the figures a moved root retires."""
+        return tuple(
+            sorted(
+                (
+                    candidate
+                    for candidate in self.sources
+                    if key in self.unresolved_roots(candidate, {key})
+                ),
+                key=ValueKey.label,
+            )
+        )
+
 
 def derivation_graph(values: list[dict[str, object]]) -> DerivationGraph:
     """Read every declaration in one design, refusing any the design itself cannot support.

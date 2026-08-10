@@ -9,12 +9,14 @@ and crossover-restatement workflow. Read
 Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
 both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
 `src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
-read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
+read alike, including string `cell_id` row selectors), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
 manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
 `src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
 refresh, the collecting and refusing walks over it, and the refresh that reports on what it just
 wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
 `(artifact, field)` pair and the two-source read),
+`src/llb/bench/agentic_published_value_figures.py` (the study/cell join that turns invalidated cells
+into the published figures the pin gate must name),
 `src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
 not resolve, keep what that leaves unjudged apart from it, and refuse once naming both),
 `src/llb/bench/agentic_published_value_derivation.py` (one value's `derived_from` + `operation` +
@@ -57,7 +59,11 @@ source guard was not restated, with its operator reading and persisted failing m
 `tests/llb/bench/test_agentic_memory_crossover_restatement_placement.py` (every committed annotation
 placed on its own ladder, plus each way one can be wrong),
 `tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates
-so a failure names the pointer rather than the study that used it),
+so a failure names the pointer rather than the study that used it, including cell_id selectors whose
+values embed dots),
+`tests/llb/bench/test_agentic_published_value_figures.py` (cell_ids checked against the committed
+aggregate, an absent artifact refused, and invalidated cells retiring their figures plus derived
+consequences),
 `tests/llb/bench/test_agentic_published_value_derivation.py` (one value's declaration, on synthetic
 published values for the same reason: the form as part of the identity, a malformed entry, and every
 way the declaration can fail to agree -- an unregistered operation, sources with no operation, an

@@ -24,7 +24,10 @@ each drifted field on its own would replay "pinned cap + shipped keep" against "
 keep" -- two configurations the published cells were never measured under, which can name a first
 divergent step neither build ever reaches. The gate passes the full pinned map into the replay so
 fields the change does NOT move also come from the pins: a `restated` pin on a held field would
-otherwise leave the design's stale `held_fixed` value on the baseline arm.
+otherwise leave the design's stale `held_fixed` value on the baseline arm. When cells are
+invalidated, the gate also lists every published figure those cells stand under -- keyed by study
+kind and cell id against the same `(artifact, field)` resolution the crossover design already
+carries -- so the failure names the exact numbers to restate, not only the cells to re-measure.
 
 The fixture also declares, per field, how it relates to the committed study designs (`agree`,
 `restated`, `unstated`), and the gate verifies that claim against each design's `held_fixed`. A pin
@@ -47,6 +50,10 @@ from llb.bench.agentic_policy_change_audit import (
     audit_policy_change,
 )
 from llb.bench.agentic_policy_change_audit_report import policy_change_summary
+from llb.bench.agentic_published_value_figures import (
+    PublishedFigure,
+    published_figures_for_cells,
+)
 from llb.bench.agentic_published_value_operation_scope import (
     PolicyAffectedPublishedValue,
     policy_affected_published_values,
@@ -108,6 +115,7 @@ class PinDrift:
     moves: tuple[PinMove, ...]
     summary: dict[str, object]
     affected_published_values: tuple[PolicyAffectedPublishedValue, ...]
+    retired_figures: tuple[PublishedFigure, ...] = ()
 
     @property
     def n_invalidated(self) -> int:
@@ -225,10 +233,15 @@ def _drift(
         candidate={move.field: move.shipped for move in moves},
     )
     audits = audit_policy_change(designs, change, pinned=pinned)
+    summary = policy_change_summary(audits, change)
     return PinDrift(
         moves=moves,
-        summary=policy_change_summary(audits, change),
+        summary=summary,
         affected_published_values=policy_affected_published_values(design_root, change.fields),
+        retired_figures=published_figures_for_cells(
+            cast(list[dict[str, object]], summary["invalidated"]),
+            design_root=design_root,
+        ),
     )
 
 

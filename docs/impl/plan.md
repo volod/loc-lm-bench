@@ -43,35 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-number-provenance-pins (optional)
-
-The pin gate names the invalidated CELLS and the doc sections that publish their numbers, but the
-numbers themselves are prose: nothing ties `21862` in the restatement table or `+1610.3` in the
-fold-step table to the cell and the run artifact it came from, so a failure still leaves a human to
-find every affected figure by reading. Extend the resolution the crossover design already carries --
-`(artifact, field)` per published value, resolved against the run aggregate the repo commits
-([extended
-workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap))
--- from the six design values to the figures the DOCS publish, keyed additionally by study kind and
-cell id, and have the gate print the exact figures a drifted constant retires, not only the cells.
-Reuse the existing pointer walk and committed evidence rather than adding a second mapping.
-
-- Agent status: CLEAR
-- Dependencies: the cell ids and re-run scope come from
-  `src/llb/bench/agentic_policy_pin_gate.py`; the resolution seam is
-  `src/llb/bench/agentic_published_value_provenance.py` with the committed aggregates in
-  `src/llb/bench/agentic_published_value_fixture.py` (field pointers, pinned copies, and the
-  refusal for an artifact the evidence does not carry); the artifact paths are the run roots
-  already recorded in the evidence sections of
-  [extended workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface).
-- User-visible outcome: a drifted constant fails CI with the LIST OF FIGURES to restate, so nobody
-  greps the docs to find what a change retired.
-- Scope boundary: in scope -- the provenance fixture, the figure list in the gate message, and the
-  artifact-path resolution check. Out of scope -- rewriting any published figure automatically,
-  re-running cells, and provenance for non-agentic evidence.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
-
 ### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
 
 The audit walks the three cap-fitting memory studies (22 cells) and nothing else, so "this change
