@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-keep-long",
+  "study_kind": "context_policy_keep_long",
+  "purpose": "The shipped keep_last_n=3 baseline of the long-transcript keep lane: medium observations, max_steps past the shipped keep, so older steps are actually dropped. The audit that walks only cap-fitting cells cannot see a keep re-pin threaten this evidence.",
+  "reference": {
+    "evidence": "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts",
+    "host_run": "20260730T1855"
+  },
+  "held_fixed": {
+    "task_builder": "long_transcript_pipeline",
+    "n_tasks": 2,
+    "depth": 4,
+    "pad_chars": 160,
+    "max_steps": 12,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "keep_last_n": 3,
+    "compact_share": 0.5,
+    "summary_input_cap": "window"
+  },
+  "cells": [
+    {
+      "cell_id": "keep-long-shipped",
+      "policies": ["keep_last_n"],
+      "max_prompt_chars": 50000,
+      "why": "The keep=3 baseline the long-transcript expose of keep=1 was measured against. Mean steps clear the shipped keep, so re-pinning keep changes every prompt after the first dropped step."
+    }
+  ]
+}

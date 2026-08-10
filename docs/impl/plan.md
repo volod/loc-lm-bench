@@ -43,35 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-audit-coverage-beyond-cap-fitting (optional)
-
-The audit walks the three cap-fitting memory studies (22 cells) and nothing else, so "this change
-invalidates NO published number" is only true of that slice
-([extended workflows](current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates)).
-The context-policy constant sweep, the keep-long lane, and the harness-comparison rows rest on the
-same constants and are not walked, and the `keep_last_n` result advertises the gap: the audit calls
-keep=1 free precisely because no cap-fitting cell runs that policy, while the sweep that EXPOSED
-keep=1 is built on cells that do. Extend the audit's study registry to those lanes -- each needs its
-own cell-geometry reader and a task builder other than the memory-chain one -- so the invariance
-answer covers the evidence a `keep_last_n` or observation-cap change actually threatens. The CI pin
-gate now fails a build on that same registry
-([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)),
-so widening it widens the gate's re-run scope at no extra wiring: both read
-`AUDITED_DESIGN_PATHS` in `src/llb/bench/agentic_policy_change_audit.py`.
-
-- Agent status: CLEAR
-- Dependencies: the audit's per-kind geometry extraction
-  (`declared_geometry` in `src/llb/bench/agentic_policy_change_audit.py`), which currently hardcodes
-  the memory-chain task builder in its replay.
-- User-visible outcome: the "invalidates nothing" verdict means the whole agentic evidence base
-  rather than one family of studies, so an operator can trust it without knowing which studies were
-  walked.
-- Scope boundary: in scope -- a task-builder seam per registered study, geometry readers for the
-  sweep and keep-long lanes, and their cells in the audit. Out of scope -- re-running anything the
-  wider audit invalidates, and changing any shipped constant.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates).
-
 ### agent-context-policy-imperfect-play-guard-margin (optional)
 
 The deterministic cap-peak probe

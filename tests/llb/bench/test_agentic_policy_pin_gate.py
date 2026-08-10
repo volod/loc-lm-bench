@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -140,8 +140,8 @@ def test_a_drift_that_retires_cells_lists_the_published_figures_those_cells_stan
     assert "restate those figures in the docs" in report
 
 
-def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free():
-    """`keep_last_n` steers a policy no cap-fitting cell runs -- the cheap half of the verdict."""
+def test_a_drift_the_audit_clears_on_cap_fitting_cells_still_fails_but_says_restating_is_free():
+    """On the surface alone, `keep_last_n` still clears -- that study never runs the keep policy."""
     check = check_policy_pins(_only("keep_last_n"), _surface(), shipped=_drifted("keep_last_n", 1))
 
     assert not check.ok and check.drift is not None and check.drift.n_invalidated == 0
@@ -149,6 +149,26 @@ def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free
     report = format_pin_gate_report(check)
     assert "no published cell is invalidated" in report and "restating the pin is free" in report
     assert "re-measure those cells" not in report
+
+
+def test_a_keep_last_n_drift_over_the_full_registry_names_the_keep_lanes():
+    """Widening the audit registry widens the gate: keep is no longer a free restatement."""
+    from llb.bench.agentic_policy_change_audit import KIND_CONSTANT_SWEEP, KIND_KEEP_LONG
+
+    check = check_policy_pins(
+        _only("keep_last_n"), load_audited_designs(), shipped=_drifted("keep_last_n", 1)
+    )
+
+    drift = check.drift
+    assert drift is not None and drift.n_invalidated == 2
+    assert set(cast(list[str], drift.summary["studies_invalidated"])) == {
+        KIND_CONSTANT_SWEEP,
+        KIND_KEEP_LONG,
+    }
+    report = format_pin_gate_report(check)
+    assert "sweep-keep-shipped" in report and "keep-long-shipped" in report
+    assert "re-measure those cells" in report
+    assert "restating the pin is free" not in report
 
 
 def test_a_cell_that_pins_the_drifted_field_itself_is_counted_out_of_the_scope():
@@ -161,7 +181,7 @@ def test_a_cell_that_pins_the_drifted_field_itself_is_counted_out_of_the_scope()
     assert drift is not None
     assert drift.summary["n_not_applicable"] == 8 and drift.n_invalidated == 12
     report = format_pin_gate_report(check)
-    assert "12 of 14 applicable published cells are invalidated" in report
+    assert "12 of 19 applicable published cells are invalidated" in report
     assert "8 further cell(s) pin compact_share as their own study axis" in report
 
 
@@ -232,7 +252,7 @@ def test_a_compound_drift_a_cell_partly_owns_is_audited_on_the_rest_of_the_chang
     drift = check.drift
     assert drift is not None
     assert drift.summary["n_not_applicable"] == 0
-    assert drift.summary["n_partially_applicable"] == 8 and drift.n_invalidated == 22
+    assert drift.summary["n_partially_applicable"] == 8 and drift.n_invalidated == 23
     report = format_pin_gate_report(check)
     assert "8 cell(s) declare part of this change as their own study axis" in report
 
@@ -275,6 +295,7 @@ def test_the_pin_that_supersedes_a_design_must_say_so():
     pins = _pins()
     assert pins.pins["summary_input_cap"].designs == DESIGNS_RESTATED
     assert pins.pins["observation_cap_chars"].designs == DESIGNS_AGREE
+    assert pins.pins["keep_last_n"].designs == DESIGNS_AGREE
     assert check_policy_pins(pins, load_audited_designs()).stale_claims == ()
 
 

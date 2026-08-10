@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-harness-comparison",
+  "study_kind": "agentic_harness_comparison",
+  "purpose": "The harness-comparison rows measured under full and observation_cap on the seed-shaped task set. Seed observations sit under the shipped 800-char cap, so a cap re-pin is a no-op on these cells -- the registry still walks them so the invariance answer covers the whole agentic evidence base.",
+  "reference": {
+    "evidence": "docs/impl/current/extended-workflows/agentic-harness.md#cuda-host-evidence-2026-07-29",
+    "host_run": "20260729T12"
+  },
+  "held_fixed": {
+    "task_builder": "seed_shaped",
+    "n_tasks": 2,
+    "depth": 2,
+    "pad_chars": 0,
+    "max_steps": 6,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "keep_last_n": 3,
+    "compact_share": 0.5,
+    "summary_input_cap": "window"
+  },
+  "cells": [
+    {
+      "cell_id": "harness-full",
+      "policies": ["full"],
+      "max_prompt_chars": 50000,
+      "why": "Harness comparison under the full transcript policy. Context-policy constants do not reshape this arm's prompts."
+    },
+    {
+      "cell_id": "harness-observation_cap",
+      "policies": ["observation_cap"],
+      "max_prompt_chars": 50000,
+      "why": "Harness comparison under observation_cap on seed-sized observations. Trim is a no-op at the shipped cap, matching the CUDA evidence that loop and langgraph matched item-for-item."
+    }
+  ]
+}

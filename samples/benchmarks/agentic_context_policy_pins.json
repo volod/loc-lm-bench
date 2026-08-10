@@ -7,7 +7,9 @@
     "docs/impl/current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis",
     "docs/impl/current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned",
     "docs/impl/current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap",
-    "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates"
+    "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates",
+    "docs/impl/current/extended-workflows/context-policy-constants.md#agent-context-policy-constants",
+    "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts"
   ],
   "pins": {
     "observation_cap_chars": {
@@ -22,8 +24,8 @@
     },
     "keep_last_n": {
       "value": 3,
-      "designs": "unstated",
-      "note": "Shipped at 3 and EXPOSED rather than pinned by the constant sweep (keep=1 is flat on completion and cheaper on prompt tokens). No cap-fitting cell runs the keep_last_n policy, so no published cap-fitting number rests on it."
+      "designs": "agree",
+      "note": "Shipped at 3 and EXPOSED rather than rewritten by the constant sweep (keep=1 is flat on completion and cheaper on prompt tokens). The constant-sweep and keep-long designs hold it fixed at 3 under the keep_last_n policy, so a re-pin invalidates those shipped baselines even though no cap-fitting cell runs that policy."
     },
     "compact_share": {
       "value": 0.5,

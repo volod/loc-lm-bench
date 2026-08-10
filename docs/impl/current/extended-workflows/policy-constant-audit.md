@@ -88,7 +88,9 @@ over sent prompts plus the refused one, and the per-arm comparison, which takes 
 maps), the `on_refused_prompt` observer in `src/llb/bench/agentic/episode.py`,
 `src/llb/bench/agentic_policy_change_audit.py`
 (`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
-`src/llb/bench/agentic_policy_change_audit_report.py`,
+`src/llb/bench/agentic_policy_change_geometry.py` (geometry readers for cap-fitting and the
+flat-cell lanes), `src/llb/bench/agentic_policy_change_tasks.py` (the per-study task-builder
+seam), `src/llb/bench/agentic_policy_change_audit_report.py`,
 `src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
 `tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
 (`src/llb/bench/agentic_memory_cap_audit.py`) is now ONE use of this mechanism rather than a second
@@ -104,34 +106,49 @@ make bench-agentic-policy-change-audit \
   POLICY_BASELINE="800 1" POLICY_CANDIDATE="1600 2"
 ```
 
-Every auditable field against the 22 published cells of the three cap-fitting studies (2026-08-05,
-no GPU, about 0.7 s per field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
+Every auditable field against the 27 published cells of the audited registry -- the three
+cap-fitting memory studies (22) plus the constant-sweep shipped baselines, the keep-long shipped
+baseline, and the harness-comparison rows (5 more) -- (2026-08-10, no GPU, about a second per
+field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
 
 | field(s) | change | invariant | invalidated | not applicable |
 | --- | --- | ---: | ---: | ---: |
-| `observation_cap_chars` | 800 -> 400 | 0 | **22** | 0 |
-| `observation_cap_chars` | 800 -> 1600 | 0 | **22** | 0 |
-| `observation_head_share` | 0.6 -> 0.5 | 0 | **22** | 0 |
-| `keep_last_n` | 3 -> 1 | **22** | **0** | 0 |
-| `compact_share` | 0.5 -> 0.45 | 2 | 12 | 8 |
-| `compact_keep_recent` | 1 -> 2 | 0 | **22** | 0 |
-| `summary_input_cap` | trigger -> window | **18** | 4 | 0 |
-| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 0 | **22** | 0 |
-| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 10 | 12 | 0 (8 partial) |
+| `observation_cap_chars` | 800 -> 400 | 4 | **23** | 0 |
+| `observation_cap_chars` | 800 -> 1600 | 4 | **23** | 0 |
+| `observation_head_share` | 0.6 -> 0.5 | 4 | **23** | 0 |
+| `keep_last_n` | 3 -> 1 | 25 | **2** | 0 |
+| `compact_share` | 0.5 -> 0.45 | 7 | 12 | 8 |
+| `compact_keep_recent` | 1 -> 2 | 5 | **22** | 0 |
+| `summary_input_cap` | trigger -> window | 23 | 4 | 0 |
+| `observation_cap_chars` + `compact_keep_recent` | 800 -> 1600, 1 -> 2 | 4 | **23** | 0 |
+| `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 15 | 12 | 0 (8 partial) |
 
-Two readings an operator can act on. **`keep_last_n` is free**: the constant sweep EXPOSES keep=1 as
-cheaper on prompt tokens, and this says taking that up costs no published compact evidence at all,
-because no cap-fitting cell runs the `keep_last_n` policy. **The observation-trim constants are
-not**: `observation_cap_chars` and `observation_head_share` change both arms of every cell from
-model call 2 -- the first prompt that carries a trimmed observation -- so re-pinning either one
-retires all three studies at once.
+The registry is one list (`AUDITED_DESIGN_PATHS` in
+`src/llb/bench/agentic_policy_change_audit.py`), so the CLI audit and the CI pin gate never walk
+different evidence. Cap-fitting cells still replay both `observation_cap` and `compact` arms over
+the memory-dependent chain; the added lanes each declare their own policy arm(s) and a task builder
+other than the memory-chain one (`src/llb/bench/agentic_policy_change_tasks.py`): fat-observation
+pipelines for the constant sweep, medium long-transcript pipelines for keep-long, and seed-shaped
+file/db tasks for the harness rows.
+
+Two readings an operator can act on. **`keep_last_n` is no longer free**: on the 22 cap-fitting
+cells alone it still invalidates nothing (no memory-chain cell runs that policy), but the wider
+registry names the two shipped keep baselines the constant sweep and the keep-long lane measured
+against (`sweep-keep-shipped`, `keep-long-shipped`), so taking keep=1 up costs a re-measure of those
+lanes. **The observation-trim constants are not free either**: `observation_cap_chars` and
+`observation_head_share` change both arms of every cap-fitting cell from model call 2 -- the first
+prompt that carries a trimmed observation -- and the sweep's shipped `observation_cap` baseline as
+well, so re-pinning either one retires the three cap-fitting studies plus that sweep cell. The four
+invariant cells under a trim change are the keep-long / harness rows, whose policies or seed-sized
+observations never read the trim constants.
 
 The `compact_share` row also reproduces the fold-step mechanism from a direction that owes it
-nothing. Of the 14 applicable cells, the two that survive 0.5 -> 0.45 are `fold-d6-step6-hi` and
-`fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share still lands the trigger
-inside the same step's interval and folds the identical transcript. At the low guards the trigger
-drops into the previous step and everything downstream changes. A byte-level prompt comparison that
-knows nothing about fold steps rediscovers exactly where they are.
+nothing. Of the 14 applicable cap-fitting cells, the two that survive 0.5 -> 0.45 are
+`fold-d6-step6-hi` and `fold-d6-step7-hi` -- the HIGH guard in each fold step, where a smaller share
+still lands the trigger inside the same step's interval and folds the identical transcript. At the
+low guards the trigger drops into the previous step and everything downstream changes. A byte-level
+prompt comparison that knows nothing about fold steps rediscovers exactly where they are. The five
+non-cap-fitting cells stay invariant because none of them runs the compact policy.
 
 The two compound rows are the mechanism's own check on itself. `compact_share` + `summary_input_cap`
 is the interesting one: read field by field it reports 12 invalidated plus 8 cells the share half
@@ -443,10 +460,12 @@ Each pin also declares how it relates to the committed designs -- `agree` (every
 `held_fixed` states the pinned value), `restated` (a design states another value and the pin
 supersedes it, which is where `summary_input_cap` sits: the designs record the retired `trigger`
 bound and the crossover restatement moved the published numbers to `window`), or `unstated` (no
-design states the field, as for `keep_last_n` and `compact_keep_recent`) -- and CI verifies that claim
-against the designs themselves, so a pin cannot quietly disagree with the studies it names. CI also
-asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped constant is
-pinned here or the build is red, and that every doc anchor the fixture names still resolves.
+design states the field, as for `compact_keep_recent`) -- and CI verifies that claim against the
+designs themselves, so a pin cannot quietly disagree with the studies it names. `keep_last_n` is
+`agree`: the constant-sweep and keep-long designs hold it fixed at 3 under the `keep_last_n`
+policy. CI also asserts that the pinned set is exactly `ContextPolicy`'s constants, so a NEW shipped
+constant is pinned here or the build is red, and that every doc anchor the fixture names still
+resolves.
 
 Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
 check, which passes the full pinned policy into the replay for untouched fields and joins
@@ -458,9 +477,12 @@ values, including derived consequences),
 `src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
 scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
 makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in
-`src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
-walk different evidence), `src/llb/bench/agentic_policy_change_replay.py` (`_policy`, which prefers
-pins over design `held_fixed` for fields the change does not move), and
+`src/llb/bench/agentic_policy_change_audit.py` (one registry spanning the three cap-fitting studies,
+the constant sweep, the keep-long lane, and the harness-comparison rows, so the CLI audit and the
+gate can never walk different evidence), `src/llb/bench/agentic_policy_change_tasks.py` (the
+per-study task-builder seam the wider registry needs),
+`src/llb/bench/agentic_policy_change_replay.py` (`_policy`, which prefers pins over design
+`held_fixed` for fields the change does not move), and
 `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate itself -- it runs inside
 `make ci`, with no target of its own.
 

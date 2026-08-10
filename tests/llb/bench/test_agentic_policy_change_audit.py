@@ -309,13 +309,34 @@ def test_both_arms_of_a_cell_are_replayed():
 # --- the verdicts ---------------------------------------------------------------------------
 
 
-def test_a_field_no_audited_arm_reads_invalidates_nothing():
+def test_a_field_no_audited_arm_reads_invalidates_nothing_on_cap_fitting_cells():
     """`keep_last_n` only steers its own policy, which no cap-fitting cell runs."""
     audits = audit_policy_change(_designs(), KEEP_CHANGE)
     rows = [row for study in audits.values() for row in study]
     assert rows and all(row["verdict"] == VERDICT_INVARIANT for row in rows)
     summary = policy_change_summary(audits, KEEP_CHANGE)
     assert summary["n_invalidated"] == 0 and summary["studies_invalidated"] == []
+
+
+def test_keep_last_n_invalidates_the_lanes_that_actually_run_that_policy():
+    """The gap the wider registry closes: keep=1 looked free only while the audit skipped keep cells."""
+    from llb.bench.agentic_policy_change_audit import KIND_CONSTANT_SWEEP, KIND_KEEP_LONG
+    from llb.bench.agentic_policy_change_geometry import load_audited_designs
+
+    audits = audit_policy_change(load_audited_designs(), KEEP_CHANGE)
+    summary = policy_change_summary(audits, KEEP_CHANGE)
+    assert summary["n_cells"] == 27 and summary["n_invalidated"] == 2
+    assert summary["studies_invalidated"] == [KIND_CONSTANT_SWEEP, KIND_KEEP_LONG]
+    changed = {
+        (cast(str, row["study_kind"]), cast(str, row["cell_id"]))
+        for row in cast(list[dict[str, object]], summary["invalidated"])
+    }
+    assert changed == {
+        (KIND_CONSTANT_SWEEP, "sweep-keep-shipped"),
+        (KIND_KEEP_LONG, "keep-long-shipped"),
+    }
+    # Cap-fitting and harness seed rows stay invariant -- they never apply keep_last_n.
+    assert summary["n_prompt_invariant"] == 25
 
 
 def test_a_field_every_trimming_policy_reads_invalidates_every_cell():

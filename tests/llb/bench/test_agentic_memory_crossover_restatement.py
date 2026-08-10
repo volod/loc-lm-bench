@@ -23,7 +23,7 @@ from llb.bench.agentic_memory_cap_audit import (
     sensitive_cell_ids,
 )
 from llb.bench.agentic_policy_change_audit import (
-    AUDITED_KINDS,
+    CAP_FITTING_KINDS,
     KIND_COLLAPSE,
     KIND_FOLD_STEP,
     KIND_SURFACE,
@@ -140,7 +140,7 @@ def test_the_audit_reads_cell_geometry_out_of_every_committed_study_shape():
         / "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
         KIND_FOLD_STEP: ROOT / "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
     }
-    assert set(paths) == set(AUDITED_KINDS)
+    assert set(paths) == set(CAP_FITTING_KINDS)
     for kind, path in paths.items():
         cells = declared_geometry(load_audited_design(path), kind)
         assert cells and all(

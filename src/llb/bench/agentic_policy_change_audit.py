@@ -10,6 +10,11 @@ published cell under both values of the changed field with an ORACLE controller,
 each replay sends, and compare the sequences byte for byte. Identical sequences mean the published
 cost cannot have moved; the first differing step says where the change bites.
 
+The registry covers the three cap-fitting memory studies plus the constant-sweep, keep-long, and
+harness-comparison lanes that rest on the same constants -- each with its own geometry reader and
+task builder -- so an "invalidates nothing" verdict is a statement about the whole agentic evidence
+base, not one family of studies.
+
 Two properties make the replay legitimate as a statement about a REAL run:
 
   - the summarize call is answered with a FIXED summary, so the replay is deterministic. That only
@@ -17,8 +22,8 @@ Two properties make the replay legitimate as a statement about a REAL run:
     a temperature-0 model returns the same summary, so the later controller prompts are identical
     too. "All prompts identical under the replay" therefore implies "all prompts identical under the
     served model" -- the direction the invariance claim needs.
-  - both arms of a published cell are replayed (`observation_cap` and `compact`), because a cell's
-    published number is a compact-minus-cap delta and a change that moves either arm moves it.
+  - both arms of a published cell are replayed when the cell's number is a compact-minus-cap delta;
+    other lanes declare the policy arm(s) they were measured under.
 
 A change is a set of FIELDS, not one field. A commit that re-pins two constants moves them together,
 so auditing each on its own would replay two configurations that never shipped and report two re-run
@@ -38,7 +43,19 @@ from llb.bench.agentic_policy_change_replay import AUDITED_POLICIES, arm_compari
 KIND_SURFACE = "compact_memory_boundary_surface"
 KIND_COLLAPSE = "compact_trigger_guard_collapse"
 KIND_FOLD_STEP = "compact_fold_step_crossover"
-AUDITED_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+# Non-cap-fitting lanes that rest on the same ContextPolicy constants: the constant sweep, the
+# keep-long transcript lane, and the harness-comparison rows. Each needs its own geometry reader
+# and a task builder other than the memory-chain one (see `agentic_policy_change_tasks`).
+KIND_CONSTANT_SWEEP = "context_policy_constant_sweep"
+KIND_KEEP_LONG = "context_policy_keep_long"
+KIND_HARNESS = "agentic_harness_comparison"
+CAP_FITTING_KINDS = (KIND_SURFACE, KIND_COLLAPSE, KIND_FOLD_STEP)
+AUDITED_KINDS = (
+    *CAP_FITTING_KINDS,
+    KIND_CONSTANT_SWEEP,
+    KIND_KEEP_LONG,
+    KIND_HARNESS,
+)
 # A FIXTURE kind, not a published study: the interaction geometry that separates the compound
 # verdict from the per-field one (`agentic_policy_change_interaction`). It states its cells flat at
 # the design root and publishes no number, so it is readable as geometry but is deliberately absent
@@ -52,6 +69,9 @@ AUDITED_DESIGN_PATHS: dict[str, str] = {
     KIND_SURFACE: "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json",
     KIND_COLLAPSE: "samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json",
     KIND_FOLD_STEP: "samples/benchmarks/agentic_compact_fold_step_crossover_design.json",
+    KIND_CONSTANT_SWEEP: "samples/benchmarks/agentic_context_policy_constant_sweep_design.json",
+    KIND_KEEP_LONG: "samples/benchmarks/agentic_context_policy_keep_long_design.json",
+    KIND_HARNESS: "samples/benchmarks/agentic_harness_comparison_design.json",
 }
 
 VERDICT_INVARIANT = "prompt_invariant"
@@ -207,11 +227,12 @@ def audit_cell_prompts(
             "first_divergent_step": None,
             "verdict": VERDICT_NOT_APPLICABLE,
         }
+    policies = cast(list[str], cell.get("policies", list(AUDITED_POLICIES)))
     arms = {
         name: arm_comparison(
             name, cell, held, described.baseline, described.candidate, pinned=pinned
         )
-        for name in AUDITED_POLICIES
+        for name in policies
     }
     changed = sorted(name for name, arm in arms.items() if not arm["identical"])
     return {

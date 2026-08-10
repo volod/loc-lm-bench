@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-constant-sweep",
+  "study_kind": "context_policy_constant_sweep",
+  "purpose": "The shipped baseline cells of the 2026-07-30 context-policy constant sweep: observation_cap under the pinned trim constants, and keep_last_n under the shipped keep. A keep_last_n or observation-cap re-pin that the cap-fitting studies call free must still answer these cells.",
+  "reference": {
+    "evidence": "docs/impl/current/extended-workflows/context-policy-constants.md#agent-context-policy-constants",
+    "host_run": "20260730T125612"
+  },
+  "held_fixed": {
+    "task_builder": "fat_observation_pipeline",
+    "n_tasks": 2,
+    "depth": 4,
+    "pad_chars": 2000,
+    "max_steps": 10,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "keep_last_n": 3,
+    "compact_share": 0.5,
+    "summary_input_cap": "window"
+  },
+  "cells": [
+    {
+      "cell_id": "sweep-cap-shipped",
+      "policies": ["observation_cap"],
+      "max_prompt_chars": 50000,
+      "why": "The shipped observation_cap baseline of the constant sweep (cap=800, head=0.6). Fat observations make the trim reach the prompt, so a cap or head-share re-pin moves this cell."
+    },
+    {
+      "cell_id": "sweep-keep-shipped",
+      "policies": ["keep_last_n"],
+      "max_prompt_chars": 50000,
+      "why": "The shipped keep_last_n baseline the sweep EXPOSED keep=1 against. Depth 4 clear the shipped keep, so a keep re-pin changes the kept window from the first dropped step."
+    }
+  ]
+}
