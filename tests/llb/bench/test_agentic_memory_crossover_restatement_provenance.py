@@ -174,7 +174,7 @@ def test_a_fold_step_boundary_is_resolved_against_its_own_study_s_ladder_artifac
     validate_published_provenance(published_crossovers(design), root=ROOT)
 
     with pytest.raises(ValueError, match="transcribed rather than resolved"):
-        _validate_against(design, _re_run(ladder={6: 14913}), tmp_path)
+        _validate_against(design, _re_run(ladder={6: 14914}), tmp_path)
 
 
 @pytest.mark.parametrize("band", [[0.84, 0.92], [0.85, 0.93], [0.80, 0.99]])
@@ -244,7 +244,7 @@ def test_a_re_run_that_moved_several_published_values_names_every_one_of_them(tm
     them rather than in the order the resolution happens to reach them.
     """
     design = load_restatement_design(DESIGN_PATH)
-    moved = _re_run(surface={10: 21525.5}, ladder={6: 14913, 10: 22017})
+    moved = _re_run(surface={10: 21525.5}, ladder={6: 14914, 10: 22018})
 
     with pytest.raises(ValueError) as excinfo:
         _validate_against(design, moved, tmp_path)
@@ -289,7 +289,7 @@ def test_a_malformed_crossover_is_refused_before_any_published_value_is_read(tmp
     design = _drop_provenance(KIND_SURFACE, 10)
 
     with pytest.raises(ValueError) as excinfo:
-        _validate_against(design, _re_run(ladder={6: 14913}), tmp_path)
+        _validate_against(design, _re_run(ladder={6: 14914}), tmp_path)
 
     message = str(excinfo.value)
     assert "must carry a `provenance` object" in message
@@ -401,32 +401,81 @@ def _re_run(
     """
     moved = _committed_bytes()
     if surface:
-        moved[_cited(FORM_INTERPOLATED)] = _moved_rows(
-            moved[_cited(FORM_INTERPOLATED)],
-            "depth_surface",
-            {depth: {"crossover_max_prompt_chars": guard} for depth, guard in surface.items()},
+        moved[_cited(FORM_INTERPOLATED)] = _moved_surfaces(
+            moved[_cited(FORM_INTERPOLATED)], surface
         )
     if ladder:
-        moved[_cited(FORM_FOLD_STEP)] = _moved_rows(
-            moved[_cited(FORM_FOLD_STEP)],
-            "depth_ladders",
-            {depth: {"boundary": {"guard_boundary_chars": edge}} for depth, edge in ladder.items()},
-        )
+        moved[_cited(FORM_FOLD_STEP)] = _moved_ladders(moved[_cited(FORM_FOLD_STEP)], ladder)
     return moved
 
 
-def _moved_rows(payload: bytes, rows_key: str, moved: dict[int, dict[str, object]]) -> bytes:
-    """One aggregate's per-depth rows, with the named depths' fields replaced."""
+def _moved_surfaces(payload: bytes, moved: dict[int, float]) -> bytes:
+    """Move source-cell deltas and the surface rows together, as a self-consistent re-run does."""
     analysis = json.loads(payload)
-    for row in cast(list[dict[str, object]], analysis[rows_key]):
-        fields = moved.get(int(cast(int, row["depth"])))
-        if fields is None:
+    cells = cast(list[dict[str, object]], analysis["cells"])
+    for row in cast(list[dict[str, object]], analysis["depth_surface"]):
+        depth = int(cast(int, row["depth"]))
+        target = moved.get(depth)
+        if target is None:
             continue
-        for name, value in fields.items():
-            if isinstance(value, dict):
-                cast(dict[str, object], row[name]).update(cast(dict[str, object], value))
-            else:
-                row[name] = value
+        low_guard, high_guard = cast(list[int], row["bracket"])
+        low = next(
+            cell
+            for cell in cells
+            if cell["depth"] == depth and cell["max_prompt_chars"] == low_guard
+        )
+        high = next(
+            cell
+            for cell in cells
+            if cell["depth"] == depth and cell["max_prompt_chars"] == high_guard
+        )
+        low_delta = cast(
+            dict[str, float],
+            cast(dict[str, object], low["cost_evidence"])[
+                "compact_minus_cap_total_model_input_tokens"
+            ],
+        )["mean"]
+        high_delta = low_delta + (high_guard - low_guard) * (-low_delta) / (target - low_guard)
+        cast(
+            dict[str, float],
+            cast(dict[str, object], high["cost_evidence"])[
+                "compact_minus_cap_total_model_input_tokens"
+            ],
+        )["mean"] = high_delta
+        row["crossover_max_prompt_chars"] = target
+    return json.dumps(analysis).encode("utf-8")
+
+
+def _moved_ladders(payload: bytes, moved: dict[int, int]) -> bytes:
+    """Move the measured sequence, straddling cell, and derived ladder boundary together."""
+    analysis = json.loads(payload)
+    cells = cast(list[dict[str, object]], analysis["cells"])
+    top_sequences = cast(dict[str, list[int]], analysis["cap_prompt_sequence"])
+    for ladder in cast(list[dict[str, object]], analysis["depth_ladders"]):
+        depth = int(cast(int, ladder["depth"]))
+        target = moved.get(depth)
+        if target is None:
+            continue
+        share = float(cast(float, ladder["compact_share"]))
+        trigger = int(target * share)
+        if target != int(trigger / share):
+            raise ValueError(f"test boundary {target} is not reachable at share {share}")
+        step = int(cast(int, ladder["last_compact_cheaper_fold_step"]))
+        sequence = cast(list[int], ladder["cap_prompt_sequence"])
+        sequence[step - 1] = trigger
+        top_sequences[str(depth)] = sequence
+        next_step = step + 1
+        first_next = min(
+            (
+                cell
+                for cell in cells
+                if cell["depth"] == depth and cell["predicted_fold_step"] == next_step
+            ),
+            key=lambda cell: cast(int, cell["max_prompt_chars"]),
+        )
+        first_next["max_prompt_chars"] = target
+        first_next["compaction_trigger_chars"] = trigger
+        cast(dict[str, object], ladder["boundary"])["guard_boundary_chars"] = target
     return json.dumps(analysis).encode("utf-8")
 
 

@@ -63,14 +63,24 @@ stands for a file nobody present can read, so evidence and pin fabricated togeth
 there and the resolution proved "agrees with itself, plus a hash of something absent". With the file
 carried, the pin is verified on EVERY host against the copy that holds those bytes, so a manifest
 entry that pins nothing, pins a malformed digest, pins bytes the repo does not carry, or pins a
-digest the committed copy does not have is refused before any value is read. What this does not
-claim is to stop a determined fabricator -- a hand-written aggregate re-pinned to its own digest
-passes where no run root can contradict it -- but fabricating a published number now means
-fabricating a whole analysis file in the open, reviewable as an ordinary diff, rather than a hash of
-an absent one. A signed manifest was the alternative and was rejected: a key committed beside the
-manifest signs whatever the fabricator wants, and a key held outside the repo authenticates the
-operator who ran the regeneration rather than the run, while adding key distribution to a check that
-must work in a fresh clone with nothing configured.
+digest the committed copy does not have is refused before any value is read. A signed manifest was
+the alternative and was rejected: a key committed beside the manifest signs whatever the fabricator
+wants, and a key held outside the repo authenticates the operator who ran the regeneration rather
+than the run, while adding key distribution to a check that must work in a fresh clone with nothing
+configured.
+
+The bytes must also hold together INTERNALLY. `agentic_published_aggregate_consistency.py` binds
+each supported field pointer to the production arithmetic that created it: an interpolated guard is
+re-run through `depth_surface_row` over the aggregate's scored cells; a fold-step boundary is rebuilt
+through `step_rows` and `depth_fold_row` from its cells, compact share, measured prompt sequence, and
+step rule; and a cap peak is re-measured from the prompt sequence produced by the aggregate's held
+geometry. Comparison is exact, a missing source row is a refusal, and an unregistered numeric field
+is not resolvable by default. `PublishedValueResolver` applies this check after reading the cited
+field, so editing a derived number and re-pinning the aggregate fails on a host with no run root.
+The focused fixture cases in `test_agentic_published_aggregate_consistency.py` exercise all three
+forms plus missing-source and unknown-field refusals. This still makes no signature claim: a
+determined fabricator can rewrite and re-pin a whole SELF-CONSISTENT study, but can no longer invent
+one cited number while leaving the evidence beside it unchanged.
 
 The `DATA_DIR` artifact stays as the third source and the strongest one, on the hosts that have it:
 the committed copy IS the run's file, so the check is byte-for-byte, and a copy taken from another

@@ -43,34 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-published-aggregate-is-unchecked-against-its-own-cells (optional)
-
-The repo now carries each cited run aggregate verbatim, so a published value is resolved against
-bytes every host can read
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-What no check reads is whether those bytes are INTERNALLY consistent: the aggregate states an
-interpolated crossover, a fold-step ladder, and a cap peak beside the per-cell rows they were
-computed from, and nothing re-derives the former from the latter. A hand-written aggregate re-pinned
-to its own digest therefore passes on every host without the run root -- the residual the committed
-copy deliberately does not close. Narrow it without a signature: re-derive each resolved field from
-the aggregate's own recorded cells (the interpolation from the bracketing rows, the ladder from the
-geometry, the peak from the prompt sequence) and refuse a field the aggregate's own data does not
-produce, so fabricating one number means fabricating a self-consistent study.
-
-- Agent status: CLEAR
-- Dependencies: the committed aggregates and the resolution seam are
-  `src/llb/bench/agentic_published_value_fixture.py` and
-  `src/llb/bench/agentic_published_value_provenance.py`; the interpolation and ladder arithmetic
-  already exist in `src/llb/bench/agentic_memory_crossover_restatement_rows.py` and
-  `src/llb/bench/agentic_memory_fold_step_ladder.py`.
-- User-visible outcome: a published number rests on evidence that has to hold together as a study,
-  not only on bytes the repo happens to carry.
-- Scope boundary: in scope -- the per-form re-derivation from the aggregate's own cells, its
-  refusals, and the fixture cases. Out of scope -- a repo-side signature (already weighed and
-  rejected), committing the per-episode bundles, and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
-
 ### agent-restatement-a-derived-form-whose-source-is-unrestated-reads-as-invariant (optional)
 
 The portable ratio is derived from the surface's interpolated guard, so it is restated only when
