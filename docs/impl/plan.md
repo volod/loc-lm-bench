@@ -43,28 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-policy-change-interaction-scan-sweeps-the-moved-values (optional)
-
-The replay scan asks each pair about ONE concrete move per field (`FIELD_MOVES`, plus a second
-alternative set run by hand), so "no geometry separates this pair" is backed at two points of a
-value space the audit accepts continuously
-([extended workflows](current/extended-workflows/policy-constant-audit.md#one-pair-separates-and-the-other-fourteen-are-answered)).
-The separating pair shows why that matters: the band exists for `compact_share` 0.5 -> 0.48 and
-vanishes for 0.5 -> 0.55, because the direction of the move decides whether the candidate elides. Let
-the scan sweep the moved VALUES as well as the guards -- a small grid per field, sized so the whole
-sweep still fits a `slow` test -- and record which pairs stay silent across it.
-
-- Agent status: CLEAR
-- Dependencies: the per-field moves are `FIELD_MOVES` in
-  `src/llb/bench/agentic_policy_change_interaction_couplings.py`; the scan is
-  `scan_separating_cells` in `src/llb/bench/agentic_policy_change_interaction_scan.py`.
-- User-visible outcome: the enumeration's negative answers hold across the values a commit could
-  plausibly ship, not only the neighbour the fixture happens to name.
-- Scope boundary: in scope -- the value grid, the scan runtime budget, and the recorded result. Out
-  of scope -- changing any shipped constant and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#one-pair-separates-and-the-other-fourteen-are-answered).
-
 ### agent-policy-change-interaction-band-past-the-first-fold (optional)
 
 The band solver reports a fold step only when the episode compacts exactly ONCE there, because

@@ -21,6 +21,7 @@ replays a grid of geometries as the independent check on them.
 """
 
 from dataclasses import dataclass
+from itertools import product
 from typing import Any, Mapping
 
 from llb.bench.agentic_policy_change_audit import AUDITABLE_FIELDS, PolicyChange
@@ -57,6 +58,20 @@ FIELD_MOVES: dict[str, tuple[Any, Any]] = {
     FIELD_SHARE: (0.5, 0.48),
     FIELD_KEEP_RECENT: (1, 2),
     FIELD_BOUND: ("window", "trigger"),
+}
+
+# Candidates the value sweep asks about, per field. The first entry IS the FIELD_MOVES neighbour so
+# the single-move fixture and the grid stay one table; further entries cover the other direction (or
+# another plausible ship) so a silent pair is silent across a value space, not one neighbour. Share
+# 0.55 is the instructive second point: the band that opens for 0.5 -> 0.48 vanishes for 0.5 -> 0.55
+# because only a lower share can elide where the baseline did not.
+FIELD_CANDIDATE_GRID: dict[str, tuple[Any, ...]] = {
+    FIELD_CAP: (1600, 400),
+    FIELD_HEAD: (0.5, 0.7),
+    FIELD_KEEP_LAST: (1, 5),
+    FIELD_SHARE: (0.48, 0.55),
+    FIELD_KEEP_RECENT: (2, 3),
+    FIELD_BOUND: ("trigger",),
 }
 
 _MECHANISM_SHARE_BOUND = (
@@ -120,6 +135,23 @@ class Coupling:
             baseline={field: FIELD_MOVES[field][0] for field in self.fields},
             candidate={field: FIELD_MOVES[field][1] for field in self.fields},
         )
+
+    def candidate_changes(self) -> list[PolicyChange]:
+        """Every baseline-to-candidate change the value sweep asks about for this pair.
+
+        Baselines stay the shipped values in `FIELD_MOVES`; candidates are the cartesian product of
+        `FIELD_CANDIDATE_GRID` for the two fields. A one-field no-op (candidate equals baseline) is
+        dropped so the scan never asks about a change that does not move both fields.
+        """
+        baselines = {field: FIELD_MOVES[field][0] for field in self.fields}
+        grids = [FIELD_CANDIDATE_GRID[field] for field in self.fields]
+        changes: list[PolicyChange] = []
+        for combo in product(*grids):
+            candidate = dict(zip(self.fields, combo, strict=True))
+            if any(candidate[field] == baselines[field] for field in self.fields):
+                continue
+            changes.append(PolicyChange(baseline=baselines, candidate=candidate))
+        return changes
 
 
 def _index(couplings: list[Coupling]) -> dict[tuple[str, ...], Coupling]:

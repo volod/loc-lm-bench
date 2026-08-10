@@ -297,14 +297,21 @@ placement rules are placed against the same one
 An inequality can be wrong about the loop it describes, so the same question is asked by REPLAY too:
 `agentic_policy_change_interaction_scan` walks a grid of geometries, reads every cell both ways, and
 reports where they actually disagree. Arithmetic and replay agree -- inside a solved band and
-nowhere else. Evidence (2026-08-06, no GPU, ~3 min): 9630 cells at depth 10 over guards 2000 to
-34000 in steps of 100, every pair scanned twice (the shipped value against a plausible neighbour,
-then against a second alternative so an answer cannot be a property of one chosen value). Exactly 10
-cells separate, all of them `compact_share` x `summary_input_cap` at guards 21100-21800 and
-23700-23800 -- the two solved bands. The `slow`-marked test replays the compact form of that grid
-(depths 6 / 10 / 14, guards 2000 to 34000 in steps of 1000 plus the two committed guards, ~30 s) and
-asserts both halves: no other pair separates anywhere, and every hit for the separating pair falls
-inside a solved band.
+nowhere else. The scan also sweeps the moved VALUES (`FIELD_CANDIDATE_GRID` per field, with the
+`FIELD_MOVES` neighbour as the first entry): every pair is asked at every candidate combo, not only
+at one neighbour, and the result records which pairs stay silent across that grid. The share
+direction is why that matters -- the band that opens for `compact_share` 0.5 -> 0.48 vanishes for
+0.5 -> 0.55, because only a lower share can elide where the baseline did not -- so a silent answer
+backed only at 0.48 would be a property of one chosen value. Evidence (2026-08-06, no GPU, ~3 min):
+9630 cells at depth 10 over guards 2000 to 34000 in steps of 100, every pair scanned twice (the
+shipped value against a plausible neighbour, then against a second alternative so an answer cannot
+be a property of one chosen value). Exactly 10 cells separate, all of them `compact_share` x
+`summary_input_cap` at guards 21100-21800 and 23700-23800 -- the two solved bands. The `slow`-marked
+test replays the compact form of that grid (depths 6 / 10 / 14, guards 2000 to 34000 in steps of
+1000 plus the two committed guards) across the candidate-value grid and asserts both halves: the
+other fourteen pairs stay silent at every candidate combo, and every hit for the separating pair
+falls inside a solved band for the change that produced it (share 0.48 only; 0.55 contributes none).
+`make ci` runs the same value sweep at the fixture depth and the two committed guards.
 
 ## The cap's silence is about the prompts the loop builds
 
@@ -356,14 +363,16 @@ fold step 2: nothing separates (caps 800 -> 1600 move step 2's prompt (3904 vs 4
 ```
 
 Core locations are `src/llb/bench/agentic_policy_change_interaction_couplings.py` (the enumeration,
-its mechanisms, and the one concrete move per field the scan asks with),
+its mechanisms, the one concrete move per field, and the per-field candidate grid the value sweep
+asks with),
 `src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions) and
 `..._cap.py` (the cap's three cases and the per-entry arithmetic),
-`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan and its refusal to scan a
-baseline the per-field arm would not replay), and
+`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan, the candidate-value
+sweep, and its refusal to scan a baseline the per-field arm would not replay), and
 `tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`, which is the assertion: every
-pair enumerated, one pair separating, and the two independence claims (`keep_last_n` inert, the head
-share length-preserving) measured on real prompts rather than asserted.
+pair enumerated, one pair separating, the two independence claims (`keep_last_n` inert, the head
+share length-preserving) measured on real prompts rather than asserted, and the fourteen other pairs
+silent across the candidate-value grid.
 `tests/llb/bench/test_agentic_policy_change_interaction_cap.py` holds the cap's three cases: the
 shipped geometry's blocked steps stay blocked for the stated reason, the corner's branch is read on
 stated sequences, and the fold-everything count is measured against `compact_state`.

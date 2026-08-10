@@ -7,7 +7,9 @@ answered by the band arithmetic, and the answers are checked BOTH ways -- the co
 intersects, and a replay scan that asks the loop itself.
 
 The wide scan is `slow`; `make ci` scans the two guards where the one separating pair actually
-separates, which is where another pair would have to separate too if the arithmetic were wrong.
+separates, which is where another pair would have to separate too if the arithmetic were wrong. Both
+the fixture scan and the wide one sweep `FIELD_CANDIDATE_GRID`, so a silent answer is across the
+values a commit could ship rather than only the neighbour `FIELD_MOVES` names.
 """
 
 import itertools
@@ -29,6 +31,7 @@ from llb.bench.agentic_policy_change_interaction_band import (
     separating_guard_bands,
 )
 from llb.bench.agentic_policy_change_interaction_terms import (
+    FIELD_BOUND,
     FIELD_CAP,
     FIELD_HEAD,
     FIELD_KEEP_LAST,
@@ -38,6 +41,8 @@ from llb.bench.agentic_policy_change_interaction_terms import (
 from llb.bench.agentic_policy_change_interaction_couplings import (
     ANSWER_BAND,
     COUPLINGS,
+    FIELD_CANDIDATE_GRID,
+    FIELD_MOVES,
     Coupling,
     coupling_for,
     held_baseline,
@@ -51,6 +56,8 @@ from llb.bench.agentic_policy_change_interaction_fixture import (
 from llb.bench.agentic_policy_change_interaction_scan import (
     check_baseline_is_the_replayed_one,
     format_scan_report,
+    format_value_sweep_report,
+    scan_couplings_across_candidate_values,
     scan_separating_cells,
 )
 from llb.bench.agentic_policy_change_replay import prompt_sequence_digest, replay_episode
@@ -81,6 +88,22 @@ def _other_couplings() -> list[Coupling]:
     return [coupling for coupling in COUPLINGS.values() if not coupling.separates]
 
 
+def _assert_hits_lie_inside_solved_bands(
+    hits: list[dict[str, object]], held: dict[str, object]
+) -> None:
+    """Every separating cell a value-sweep hit reports must sit inside a band for THAT change."""
+    for hit in hits:
+        change = hit["change"]
+        assert isinstance(change, PolicyChange)
+        geometry = held_baseline(coupling_for(hit["fields"]), held)
+        for row in hit["rows"]:
+            bands = separating_guard_bands(change, depth=row["depth"], held=geometry)
+            assert any(band.contains(row["max_prompt_chars"]) for band in bands), (
+                f"{hit['label']} @ {hit['candidate']}: {row['cell_id']}\n"
+                f"{format_band_report(change, row['depth'], bands)}"
+            )
+
+
 def test_every_pair_of_auditable_fields_is_answered(design: dict[str, object]):
     """An unenumerated pair is an unasked question, so a NEW policy constant fails here."""
     pairs = {pair for pair in itertools.combinations(AUDITABLE_FIELDS, 2)}
@@ -90,6 +113,16 @@ def test_every_pair_of_auditable_fields_is_answered(design: dict[str, object]):
         assert coupling_for(pair) is coupling
 
 
+def test_the_candidate_grid_extends_the_fixture_moves():
+    """The sweep's first candidate is the FIELD_MOVES neighbour; further entries are extras."""
+    assert set(FIELD_CANDIDATE_GRID) == set(FIELD_MOVES) == set(AUDITABLE_FIELDS)
+    for field, (baseline, neighbour) in FIELD_MOVES.items():
+        grid = FIELD_CANDIDATE_GRID[field]
+        assert grid[0] == neighbour, field
+        assert baseline not in grid, field
+        assert len(grid) == len(set(grid)), field
+
+
 def test_the_committed_fixture_is_the_one_pair_that_separates(design: dict[str, object]):
     """The compound guarantee rests on exactly the pair the fixture commits a geometry for."""
     separating = separating_couplings()
@@ -97,6 +130,8 @@ def test_the_committed_fixture_is_the_one_pair_that_separates(design: dict[str, 
     assert separating[0].answer == ANSWER_BAND
     # The enumeration's example change IS the fixture's change, so the two cannot drift apart.
     assert separating[0].example_change() == interaction_change(design)
+    # And that change is the first candidate combo the value sweep asks about.
+    assert separating[0].example_change() == separating[0].candidate_changes()[0]
 
 
 @pytest.mark.parametrize("coupling", _other_couplings(), ids=lambda coupling: coupling.label)
@@ -127,6 +162,32 @@ def test_no_other_pair_separates_where_the_one_that_does_separates(
         held=held_baseline(coupling, held),
     )
     assert rows == [], format_scan_report(change, rows)
+
+
+def test_a_candidate_value_sweep_at_the_fixture_keeps_every_other_pair_silent(
+    held: dict[str, object],
+):
+    """Negative answers hold across the candidate grid, not only the FIELD_MOVES neighbour.
+
+    The share direction is the instructive case: 0.5 -> 0.48 opens the band at the fixture guards,
+    and 0.5 -> 0.55 opens none, so a sweep that only asked 0.48 would never see that the separation
+    is directional. The other fourteen pairs must stay silent at every candidate combo.
+    """
+    result = scan_couplings_across_candidate_values(
+        list(COUPLINGS.values()),
+        depths=[FIXTURE_DEPTH],
+        guards=FIXTURE_GUARDS,
+        held=held,
+    )
+    report = format_value_sweep_report(result)
+    silent = set(result["silent_pairs"])
+    assert silent == {coupling.fields for coupling in _other_couplings()}, report
+    hits = result["hits"]
+    assert hits, report
+    assert {hit["fields"] for hit in hits} == {INTERACTING_FIELDS}, report
+    by_share = {hit["candidate"][FIELD_SHARE]: hit for hit in hits}
+    assert 0.48 in by_share and 0.55 not in by_share, report
+    _assert_hits_lie_inside_solved_bands(hits, held)
 
 
 def test_the_scan_refuses_a_baseline_the_per_field_arm_would_not_replay(held: dict[str, object]):
@@ -225,24 +286,28 @@ def test_the_head_share_moves_bytes_and_never_a_prompt_length(held: dict[str, ob
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("coupling", list(COUPLINGS.values()), ids=lambda coupling: coupling.label)
-def test_a_wide_replay_scan_finds_a_separating_geometry_only_where_the_band_says(
-    coupling: Coupling, held: dict[str, object]
+def test_a_wide_value_sweep_finds_a_separating_geometry_only_where_the_band_says(
+    held: dict[str, object],
 ):
-    """The recorded proof: three depths, guards 2000 to 34000, and only one pair disagrees anywhere.
+    """The recorded proof: depths, guards, AND candidate values -- only one pair disagrees.
 
-    For the separating pair every hit must sit inside a solved band; for every other pair there must
-    be no hit at all. This is the check the arithmetic cannot do for itself -- it replays the loop.
+    For every other pair there must be no hit at any candidate combo. For the separating pair every
+    hit must sit inside a solved band for the change that produced it, and the share direction that
+    cannot elide (0.55) must contribute no hit of its own.
     """
-    change = coupling.example_change()
-    geometry = held_baseline(coupling, held)
-    rows = scan_separating_cells(change, depths=SCAN_DEPTHS, guards=SCAN_GUARDS, held=geometry)
-    if not coupling.separates:
-        assert rows == [], format_scan_report(change, rows)
-        return
-    assert rows, format_scan_report(change, rows)
-    for row in rows:
-        bands = separating_guard_bands(change, depth=row["depth"], held=geometry)
-        assert any(band.contains(row["max_prompt_chars"]) for band in bands), (
-            f"{row['cell_id']}\n{format_band_report(change, row['depth'], bands)}"
-        )
+    result = scan_couplings_across_candidate_values(
+        list(COUPLINGS.values()),
+        depths=SCAN_DEPTHS,
+        guards=SCAN_GUARDS,
+        held=held,
+    )
+    report = format_value_sweep_report(result)
+    assert set(result["silent_pairs"]) == {coupling.fields for coupling in _other_couplings()}, (
+        report
+    )
+    hits = result["hits"]
+    assert hits, report
+    assert {hit["fields"] for hit in hits} == {INTERACTING_FIELDS}, report
+    assert all(hit["candidate"][FIELD_SHARE] == 0.48 for hit in hits), report
+    assert all(hit["candidate"][FIELD_BOUND] == "trigger" for hit in hits), report
+    _assert_hits_lie_inside_solved_bands(hits, held)
