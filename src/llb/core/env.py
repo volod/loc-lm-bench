@@ -23,6 +23,10 @@ GITHUB_TOKEN = "GITHUB_TOKEN"
 # finding visible without failing the build; `off` disables the check (llb.quality.gpu_guard).
 GPU_GUARD = "LLB_GPU_GUARD"
 
+# Pytest no-download guard for the non-slow tier: refuse (default) | report | off. The guard
+# blocks non-loopback socket connections while leaving local fake servers available.
+DOWNLOAD_GUARD = "LLB_DOWNLOAD_GUARD"
+
 # Candidate inference endpoints (RunConfig + backends)
 OLLAMA_HOST = "OLLAMA_HOST"
 VLLM_HOST = "VLLM_HOST"

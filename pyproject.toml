@@ -202,9 +202,12 @@ filterwarnings = [
 # Mark a test `@pytest.mark.gpu_env` when it must touch the device (CUDA context, flashinfer JIT)
 # and cannot be marked `slow`; both markers exempt it from the no-GPU guard that `tests/conftest.py`
 # runs over every other test (llb.quality.gpu_guard).
+# Mark a test `@pytest.mark.network_env` when it must connect beyond loopback and cannot be marked
+# `slow`; both markers exempt it from the no-download guard (llb.quality.download_guard).
 markers = [
   "slow: long-running test, excluded from the lightweight `make ci` suite (run via `make test`)",
   "heavy_env: needs optional extras beyond the base [dev] install; deselected by `make ci-github` (GitHub CI), runs in local `make ci` / `make test`",
   "opt_in_env: needs an explicitly installed dependency omitted from regular local and GitHub CI; deselected by both CI suites",
   "gpu_env: legitimately initializes a CUDA context or imports flashinfer; exempt from the no-GPU guard on the non-slow tier",
+  "network_env: legitimately connects beyond loopback; exempt from the no-download guard on the non-slow tier",
 ]

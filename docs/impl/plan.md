@@ -43,30 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-the-light-tier-has-a-no-gpu-check-and-no-no-download-check (optional)
-
-The non-slow suite is the no-GPU, no-download tier, and only the first half is checked: the autouse
-device guard fails an unmarked test that initializes a CUDA context or imports `flashinfer`
-([host validation](current/host-validation.md#code-quality-checks)), while a test that reaches the
-network -- a `from_pretrained` with no local snapshot, an `hf_hub_download`, any socket to a host
-that is not localhost -- is caught by nothing, and lands as a suite that passes on the box with a
-warm HF cache and hangs or fails in GitHub CI. Give the tier the same treatment along the other
-axis: watch the effects rather than patching every client (`HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE`
-around unmarked tests, or a `socket.socket` connect hook that allows loopback and refuses the rest),
-name the same escape-hatch markers, and decide on the evidence whether it refuses or reports --
-the localhost backends the fake-server tests bind are the case a naive gate would break.
-
-- Agent status: CLEAR
-- Dependencies: the guard to extend is `llb.quality.gpu_guard` plus the autouse fixture in
-  `tests/conftest.py`; the marker vocabulary is `[tool.pytest.ini_options] markers` in
-  `pyproject.toml`.
-- User-visible outcome: a test that only passes because this host already downloaded the model fails
-  on the commit that adds it, instead of in CI on a cold cache.
-- Scope boundary: in scope -- the network/download guard, its escape hatch, and the refuse-or-report
-  decision. Out of scope -- the device guard itself, marking existing tests differently, and any new
-  dependency for the GitHub CI env.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-a-sourced-fragments-declared-scope-is-wider-than-the-call-it-covers (optional)
 
 `# llb-requires:` names a whole sibling FILE, so a fragment that needs one helper from

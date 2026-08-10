@@ -235,6 +235,24 @@ anyway. `LLB_GPU_GUARD=report` downgrades a finding to a warning and `off` disab
 unrecognized value is refused rather than read as off, so a typo'd knob cannot quietly disable the
 check it was aimed at.
 
+**The tier's no-download promise is enforced along the same axis.** The second root autouse fixture
+wraps every unmarked test in `llb.quality.download_guard`, which replaces
+`socket.socket.connect` and `connect_ex` for the test's lifetime. A connection to a non-loopback
+destination raises `DownloadGuardError` before the original connector runs, naming the test,
+destination, and remedies. This effect-level seam catches a cold-cache `from_pretrained`,
+`hf_hub_download`, or ordinary HTTP client without importing or patching any of them. Loopback IPv4
+and IPv6, `localhost`, IPv4-mapped loopback, and Unix-domain sockets remain available, so local fake
+servers do not need an exemption. `slow` declares integration work; `network_env` is the narrow
+escape hatch for a quick test that legitimately connects elsewhere. `LLB_DOWNLOAD_GUARD=report`
+warns and allows the connector, `off` disables the guard, and an unknown mode is refused.
+
+Refusal is again the evidence-backed default: the complete `make ci` run is clean with the guard
+live (3068 passed, 64 deselected), without changing any existing marker. The focused contract in
+`tests/llb/quality/test_download_guard.py` proves that refusal happens before a connector runs,
+report mode passes through, the root fixture honors `network_env`, and a real TCP client can reach a
+fake server bound to `127.0.0.1`. The implementation adds no dependency to the base GitHub CI
+environment.
+
 **A CHILD process is denied the device rather than observed**, because there is nothing in this
 process to observe it by. For the duration of an unmarked test, every spawn entry point is swapped
 for one that starts the child with an empty `CUDA_VISIBLE_DEVICES` -- whatever environment the
