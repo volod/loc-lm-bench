@@ -43,38 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-registered-operation-may-close-over-a-shipped-constant-undeclared (optional)
-
-The self-check observes what an operation reaches for THROUGH the inputs it was handed, which is
-every input the design supplies and nothing else
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-An operation is free to read a module global as well, and the shipped one does: the trigger ratio
-runs the runtime's own `compaction_trigger_chars`, so a published band depends on context-budget
-arithmetic no design row names. That dependency is correct -- it is why the number is the runtime's
-rather than a restated formula -- but it is invisible to the pin gate, which names what a moved
-policy constant retires by reading the DESIGNS
-([extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem)).
-Let an operation declare the shipped constants its arithmetic rests on, check that declaration by
-re-running its probe set with each named constant perturbed (a constant it declared must move the
-answer at some point of the set, one it did not must move it at none), and feed the declared set into
-the gate's re-run scope so a constant change names the published bands it retires as well as the
-cells.
-
-- Agent status: CLEAR
-- Dependencies: the arithmetic that closes over the runtime is `_trigger_over_own_cap_peak` in
-  `src/llb/bench/agentic_published_value_operations.py` via `compaction_trigger_chars`
-  (`src/llb/bench/agentic_memory_fold_step_ladder.py`); the points to re-run are the operation's
-  `probes`, called through `probe_inputs` in
-  `src/llb/bench/agentic_published_value_operation_probe.py`; the gate that would consume the
-  declaration is `src/llb/bench/agentic_policy_pin_gate.py`.
-- User-visible outcome: a policy-constant change names the published values whose ARITHMETIC it
-  moves, not only the cells whose geometry it moves.
-- Scope boundary: in scope -- the constant declaration, the perturbation check, and the gate's use of
-  it. Out of scope -- an expression language in the design file, tracing reads the perturbation
-  cannot reach, and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/policy-constant-audit.md#the-audit-runs-in-ci-on-the-act-that-creates-the-problem).
-
 ### agent-a-derived-value-states-its-arithmetic-but-not-its-reading (optional)
 
 The arithmetic over a derived value's declared sources is the design's statement now, and both

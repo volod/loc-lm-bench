@@ -8,9 +8,10 @@ precisely the person who does not know the question exists.
 
 So this module asks for them. A committed fixture PINS each shipped constant to the value the
 published evidence stands on; the gate compares the pins with the live `ContextPolicy` defaults and,
-for every field that drifted, runs the audit and names the cells the drift invalidates. The audit is
-a model-free replay, so a clean build pays nothing (no drift, no replay) and a drifted one pays under
-a second per field.
+for every field that drifted, runs the audit and names both the cells the drift invalidates and the
+registered published values whose arithmetic declares that field. The audit is a model-free replay,
+so a clean build pays nothing (no drift, no replay or registry walk) and a drifted one pays under a
+second per field.
 
 Failing on ANY drift is the point, including a drift the audit clears: the pin is the record of what
 the evidence was measured under, and a change that invalidates nothing costs one fixture line to
@@ -43,6 +44,11 @@ from llb.bench.agentic_policy_change_audit import (
     audit_policy_change,
 )
 from llb.bench.agentic_policy_change_audit_report import policy_change_summary
+from llb.bench.agentic_published_value_operation_scope import (
+    PolicyAffectedPublishedValue,
+    policy_affected_published_values,
+)
+from llb.core.paths import PROJECT_ROOT
 
 # The committed pins, relative to the project root.
 PINS_PATH = "samples/benchmarks/agentic_context_policy_pins.json"
@@ -89,7 +95,7 @@ class PinMove:
 
 @dataclass(frozen=True, slots=True)
 class PinDrift:
-    """Everything that moved in this build, audited as ONE change, plus what it costs.
+    """Everything that moved, audited as ONE change, plus its cell and arithmetic scopes.
 
     Several constants moving in one commit is one change, not several: the published cells were
     measured under ALL the pinned values and the new build ships ALL the shipped ones, so those two
@@ -98,6 +104,7 @@ class PinDrift:
 
     moves: tuple[PinMove, ...]
     summary: dict[str, object]
+    affected_published_values: tuple[PolicyAffectedPublishedValue, ...]
 
     @property
     def n_invalidated(self) -> int:
@@ -178,6 +185,7 @@ def check_policy_pins(
     designs: dict[str, dict[str, object]],
     *,
     shipped: dict[str, Any] | None = None,
+    design_root: Path = PROJECT_ROOT,
 ) -> PinCheck:
     """Compare the pins with the shipped constants and audit whatever moved, as one change."""
     values = shipped_policy_values() if shipped is None else shipped
@@ -189,18 +197,24 @@ def check_policy_pins(
     return PinCheck(
         pins=pins,
         shipped=values,
-        drift=_drift(moves, designs) if moves else None,
+        drift=_drift(moves, designs, design_root) if moves else None,
         stale_claims=tuple(filter(None, (_claim(pin, designs) for pin in pins.pins.values()))),
     )
 
 
-def _drift(moves: tuple[PinMove, ...], designs: dict[str, dict[str, object]]) -> PinDrift:
+def _drift(
+    moves: tuple[PinMove, ...], designs: dict[str, dict[str, object]], design_root: Path
+) -> PinDrift:
     change = PolicyChange(
         baseline={move.field: move.pinned for move in moves},
         candidate={move.field: move.shipped for move in moves},
     )
     audits = audit_policy_change(designs, change)
-    return PinDrift(moves=moves, summary=policy_change_summary(audits, change))
+    return PinDrift(
+        moves=moves,
+        summary=policy_change_summary(audits, change),
+        affected_published_values=policy_affected_published_values(design_root, change.fields),
+    )
 
 
 def _claim(pin: PolicyPin, designs: dict[str, dict[str, object]]) -> PinClaim | None:

@@ -14,6 +14,7 @@ from typing import cast
 
 import pytest
 
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED
 from llb.bench.agentic_memory_crossover_restatement_design import (
     load_restatement_design,
@@ -30,6 +31,7 @@ from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE
 from llb.bench.agentic_published_value_operations import (
     DERIVATION_OPERATIONS,
     OPERATION_TRIGGER_OVER_OWN_CAP_PEAK,
+    POLICY_COMPACT_SHARE,
     TERM_TRIGGER_CHARS,
     DerivationInputs,
     DerivationOperation,
@@ -74,6 +76,19 @@ def test_the_trigger_ratio_is_the_runtimes_own_arithmetic_over_the_declared_guar
     assert derived.terms[TERM_TRIGGER_CHARS] == float(trigger)
 
 
+def test_the_trigger_ratio_declares_and_reads_the_shipped_compact_share():
+    """The row measured at a share and the policy field its arithmetic reads are distinct inputs."""
+    operation = _trigger()
+    policy = ContextPolicy(compact_share=0.25)
+    derived = operation.apply(
+        (GUARD,), {}, measured=PEAK, policy=policy, where="a published trigger ratio"
+    )
+
+    assert operation.stated_fields == ()
+    assert operation.policy_fields == (POLICY_COMPACT_SHARE,)
+    assert derived.value == pytest.approx(compaction_trigger_chars(int(GUARD), 0.25) / PEAK)
+
+
 def test_the_operation_names_its_intermediate_so_a_row_reports_it_without_recomputing_it():
     """A reported trigger that a reader re-derived is a second arithmetic waiting to disagree."""
     assert TERM_TRIGGER_CHARS in _trigger().compute(_inputs()).terms
@@ -99,7 +114,6 @@ def test_an_operation_the_registry_does_not_carry_is_refused(named):
     ("call", "match"),
     [
         ({"sources": (GUARD, GUARD)}, "is computed over 1 declared source"),
-        ({"stated": {}}, "reads this value's own compact_share"),
         ({"measured": None}, "computed against the figure this value's own aggregate measured"),
     ],
 )
@@ -131,6 +145,7 @@ def swapped_trigger(monkeypatch: pytest.MonkeyPatch) -> None:
             source_forms=operation.source_forms,
             stated_fields=operation.stated_fields,
             reads_own_measurement=operation.reads_own_measurement,
+            policy_fields=operation.policy_fields,
             compute=_swapped,
             probes=operation.probes,
         ),

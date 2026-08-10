@@ -278,6 +278,18 @@ measurement fallback and its non-positive peak raise -- so refusing on a nonzero
 an operation whose successful probes cannot take those paths. Generating covering points is also out
 of scope: that is a solver, while the probe set remains the readable declaration.
 
+Shipped policy fields are a fourth operation input, separate from sources, stated row fields, and a
+value's own measurement. `DerivationOperation.policy_fields` names the `ContextPolicy` attributes
+the arithmetic reads, and production `apply` supplies the live policy. The registry self-check in
+`agentic_published_value_operation_policy.py` re-runs every probe after perturbing each of the six
+auditable fields with the same plausible neighbour the policy interaction audit uses. A field the
+operation declares must change its `DerivedValue` at some point; a field it does not declare must
+change it at none. Both a missing dependency and an unused one are refusals, so the pin gate can use
+the declaration without widening or narrowing the re-derivation scope silently. The shipped
+`trigger_over_own_cap_peak` declares `compact_share` and reads it from the supplied policy while the
+design row remains the statement of the measured crossover. Arbitrary globals outside the shipped
+policy are still out of scope; the check makes no general purity claim.
+
 The third defect is a walk of the registered DESIGNS rather than of the operations, so a
 `PublishedValueDesign` entry now carries a reader for its published values beside its citations and
 its validation: which registered arithmetic anything actually names is a question no per-design
@@ -376,6 +388,7 @@ number can adopt them),
 `src/llb/bench/agentic_published_value_operation_probe.py` (the declared-input read recorder),
 `src/llb/bench/agentic_published_value_operation_branches.py` (operation-local `sys.monitoring`
 branch arcs and the per-operation missed-branch record),
+`src/llb/bench/agentic_published_value_operation_policy.py` (the shipped-policy perturbation check),
 `src/llb/bench/agentic_published_value_operation_audit.py` (the registry report and refusing
 wrapper),
 `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
@@ -417,9 +430,10 @@ input the body never reads, an operation that does not compute at its own probe 
 membership-is-not-a-read distinction the over-declaration refusal rests on, a read that happens on
 ONE branch driven in each direction -- at a probe set that misses the branch and at one that takes
 it -- a report-only missed branch with its count and source line, the zero-count result when the set
-takes both outcomes, the probe-set refusals for no point at all, for two points that cannot differ,
-and for a point that does not answer the declaration, plus arithmetic no registered design names and
-the CI gate over the shipped registry),
+takes both outcomes, the missing and unused shipped-policy dependency refusals, the probe-set
+refusals for no point at all, for two points that cannot differ, and for a point that does not answer
+the declaration, plus arithmetic no registered design names and the CI gate over the shipped
+registry),
 `tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
 refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
 with no run at all -- the prune and the size caps, and the two-source read including an artifact

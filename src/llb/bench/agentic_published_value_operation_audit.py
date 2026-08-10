@@ -23,11 +23,12 @@ the registry uses everywhere else -- arithmetic exercised by no design is arithm
 exercise is a published number.
 
 What deliberately stays out is any claim that an operation is PURE or deterministic beyond its
-declared inputs. The probe records reaches through the inputs it was handed; an operation that reads
-a module global is out of reach of anything short of an expression language, which is exactly what
-the design file does not have. Branch COVERAGE is reported rather than refused: ``sys.monitoring``
-records the arcs each probe call takes through the operation's own code, making a missed path visible
-without rejecting a legal domain guard that no successful probe may take.
+declared inputs. The probe records reaches through design inputs directly and checks shipped policy
+fields by perturbing the `ContextPolicy` supplied to every point. An unrelated module global remains
+out of reach of anything short of an expression language, which is exactly what the design file does
+not have. Branch COVERAGE is reported rather than refused: ``sys.monitoring`` records the arcs each
+probe call takes through the operation's own code, making a missed path visible without rejecting a
+legal domain guard that no successful probe may take.
 """
 
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ from llb.bench.agentic_published_value_operation_probe import (
     declared_reads,
     probe_inputs,
 )
+from llb.bench.agentic_published_value_operation_policy import policy_declaration_refusals
 from llb.bench.agentic_published_value_operations import (
     DERIVATION_OPERATIONS,
     OPERATION,
@@ -127,7 +129,11 @@ def _audit_operation(
         reached = _reach_refusals(operation, position, probe, reads, branches)
         if reached:
             return reached, branches.report()
-    return _over_declaration_refusals(operation, reads), branches.report()
+    refusals = (
+        *_over_declaration_refusals(operation, reads),
+        *policy_declaration_refusals(operation),
+    )
+    return refusals, branches.report()
 
 
 def operation_refusals(operation: DerivationOperation) -> tuple[str, ...]:

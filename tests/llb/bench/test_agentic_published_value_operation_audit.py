@@ -64,6 +64,7 @@ def _operation(
     source_forms: tuple[str, ...] = (FORM,),
     stated_fields: tuple[str, ...] = (),
     reads_own_measurement: bool = False,
+    policy_fields: tuple[str, ...] = (),
     name: str = "an_operation",
     at: tuple[float, ...] = (SOURCE_VALUE,),
 ) -> DerivationOperation:
@@ -77,6 +78,7 @@ def _operation(
         source_forms=source_forms,
         stated_fields=stated_fields,
         reads_own_measurement=reads_own_measurement,
+        policy_fields=policy_fields,
         compute=compute,
         probes=tuple(
             DerivationInputs(
@@ -185,6 +187,42 @@ def test_an_operation_whose_body_matches_its_declaration_raises_nothing():
         f"the value's own stated `{STATED}`",
         MEASURED_READ,
     )
+
+
+def _uses_the_shipped_share(inputs: DerivationInputs) -> DerivedValue:
+    """Read one ordinary source and one shipped policy field."""
+    return DerivedValue(value=float(inputs.sources[0]) * inputs.policy.compact_share)
+
+
+def test_a_policy_field_the_body_uses_but_does_not_declare_is_refused():
+    """Perturbation sees a dependency that cannot be observed through the design operands."""
+    (refusal,) = operation_refusals(_operation(_uses_the_shipped_share))
+
+    assert "changes when the shipped `compact_share` policy field is perturbed" in refusal
+    assert "does not declare it" in refusal
+
+
+def test_a_declared_policy_field_must_move_the_answer_at_some_probe_point():
+    """Over-declaring a policy dependency would make the pin gate name unrelated values."""
+
+    def ignores_policy(inputs: DerivationInputs) -> DerivedValue:
+        return DerivedValue(value=float(inputs.sources[0]))
+
+    (refusal,) = operation_refusals(_operation(ignores_policy, policy_fields=("compact_share",)))
+    assert "does not change at any of its 1 probe point(s)" in refusal
+    assert "dependency is not exercised" in refusal
+
+
+def test_a_policy_declaration_matching_the_body_is_accepted():
+    operation = _operation(_uses_the_shipped_share, policy_fields=("compact_share",))
+    assert operation_refusals(operation) == ()
+
+
+def test_an_unknown_or_repeated_policy_field_is_refused_at_registration():
+    with pytest.raises(ValueError, match="unknown shipped policy field"):
+        _operation(_uses_the_shipped_share, policy_fields=("not_a_policy_field",))
+    with pytest.raises(ValueError, match="repeats a shipped policy field"):
+        _operation(_uses_the_shipped_share, policy_fields=("compact_share", "compact_share"))
 
 
 # --- a read that happens on one branch only ------------------------------------------------------

@@ -125,6 +125,7 @@ def test_a_drift_the_audit_clears_still_fails_but_says_restating_the_pin_is_free
     check = check_policy_pins(_only("keep_last_n"), _surface(), shipped=_drifted("keep_last_n", 1))
 
     assert not check.ok and check.drift is not None and check.drift.n_invalidated == 0
+    assert check.drift.affected_published_values == ()
     report = format_pin_gate_report(check)
     assert "no published cell is invalidated" in report and "restating the pin is free" in report
     assert "re-measure those cells" not in report
@@ -142,6 +143,38 @@ def test_a_cell_that_pins_the_drifted_field_itself_is_counted_out_of_the_scope()
     report = format_pin_gate_report(check)
     assert "12 of 14 applicable published cells are invalidated" in report
     assert "8 further cell(s) pin compact_share as their own study axis" in report
+
+
+def test_a_drift_names_published_bands_whose_registered_arithmetic_reads_the_field():
+    """The cell replay and the registered-operation scope are two consumers of one pin move."""
+    check = check_policy_pins(
+        _only("compact_share"), load_audited_designs(), shipped=_drifted("compact_share", 0.45)
+    )
+
+    drift = check.drift
+    assert drift is not None
+    assert [value.depth for value in drift.affected_published_values] == [6, 10]
+    assert {value.fields for value in drift.affected_published_values} == {("compact_share",)}
+    assert {value.statement for value in drift.affected_published_values} == {
+        "published band [0.85, 0.92]"
+    }
+    report = format_pin_gate_report(check)
+    assert "registered arithmetic also moves these published values" in report
+    assert "compact_trigger_guard_collapse depth 6 portable_trigger_ratio" in report
+    assert "compact_trigger_guard_collapse depth 10 portable_trigger_ratio" in report
+    assert "re-derive and restate those values" in report
+
+
+def test_an_arithmetic_scope_means_a_cell_free_drift_is_not_free_to_repin():
+    """No replayed cell moving does not clear a separately derived published value."""
+    check = check_policy_pins(_only("compact_share"), {}, shipped=_drifted("compact_share", 0.45))
+
+    drift = check.drift
+    assert drift is not None and drift.n_invalidated == 0
+    assert len(drift.affected_published_values) == 2
+    report = format_pin_gate_report(check)
+    assert "the registered-arithmetic scope follows" in report
+    assert "restating the pin is free" not in report
 
 
 def test_two_constants_that_drift_together_are_audited_as_one_change():
@@ -185,10 +218,14 @@ def test_a_compound_drift_a_cell_partly_owns_is_audited_on_the_rest_of_the_chang
 
 
 def test_a_pin_matching_its_shipped_value_costs_no_replay(monkeypatch: pytest.MonkeyPatch):
-    """A clean build replays nothing, which is what makes the gate free per CI run."""
+    """A clean build replays and walks nothing, which is what makes the gate free per CI run."""
     monkeypatch.setattr(
         "llb.bench.agentic_policy_pin_gate.audit_policy_change",
         lambda *args, **kwargs: pytest.fail("an undrifted pin must not replay any cell"),
+    )
+    monkeypatch.setattr(
+        "llb.bench.agentic_policy_pin_gate.policy_affected_published_values",
+        lambda *args, **kwargs: pytest.fail("an undrifted pin must not walk published arithmetic"),
     )
     check = check_policy_pins(_pins(), load_audited_designs())
     assert check.ok and check.drift is None

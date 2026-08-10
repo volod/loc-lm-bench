@@ -195,4 +195,5 @@ def probe_inputs(
             reads=reads,
             declared=operation.reads_own_measurement,
         ),
+        policy=probe.policy,
     )

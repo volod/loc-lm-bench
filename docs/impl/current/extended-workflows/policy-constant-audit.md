@@ -377,12 +377,17 @@ make ci                       # the enumeration; a new policy constant fails her
 ## The audit runs in CI, on the act that creates the problem
 
 The audit above answers the question only when someone asks it, and the person editing a constant in
-`src/llb/bench/agentic/context.py` is precisely the person who does not know the question exists.
+`src/llb/bench/agentic/context_policy.py` is precisely the person who does not know the question
+exists.
 `samples/benchmarks/agentic_context_policy_pins.json` closes that loop: it PINS each shipped
 `ContextPolicy` constant to the value the published evidence stands on, and CI compares the pins with
 the live dataclass defaults on every run. A drifted field is audited on the spot and the failure
 message is the re-run scope -- every invalidated cell by id, depth, guard, changed arms, and the model
-call where the change first bites -- plus the doc sections that publish those numbers.
+call where the change first bites -- plus the doc sections that publish those numbers. The scope also
+walks every registered published value whose operation declares the moved field. A
+`compact_share` drift therefore names both portable trigger-ratio bands (depths 6 and 10) through
+their `trigger_over_own_cap_peak` operation, even though the trigger-collapse cells themselves pin
+share as their study axis and are excluded from the cell replay.
 
 Constants that drift TOGETHER are audited together, as the one change the commit made: the baseline
 arm replays the full pinned policy, the candidate arm the full shipped policy, and the failure
@@ -394,9 +399,11 @@ measured under, reported as two re-run scopes for one act.
 
 The gate fails on ANY drift, including a drift the audit clears. The pin is the record of what the
 evidence was measured under, so a change that invalidates nothing costs one fixture line to restate
-and the message says so (`no published cell is invalidated ... restating the pin is free`). What is
-refused is the silent case: a constant moving while the docs keep quoting numbers measured under its
-old value. A clean build replays nothing, and a drifted one costs under a second per field.
+only when no registered arithmetic depends on it; the message says `restating the pin is free` in
+that case. A cell-free change with affected arithmetic instead lists each published statement, its
+operation, and the moved dependency, then requires those values to be re-derived and restated. What
+is refused is the silent case: a constant moving while the docs keep quoting numbers measured under
+its old value. A clean build replays nothing, and a drifted one costs under a second per field.
 
 Each pin also declares how it relates to the committed designs -- `agree` (every design's
 `held_fixed` states the pinned value), `restated` (a design states another value and the pin
@@ -409,7 +416,10 @@ pinned here or the build is red, and that every doc anchor the fixture names sti
 
 Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
 check), `src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
-re-run scope through the audit's own reporter), the shared study registry `AUDITED_DESIGN_PATHS` in
+re-run scope through the audit's own reporter),
+`src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
+scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
+makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in
 `src/llb/bench/agentic_policy_change_audit.py` (one registry, so the CLI audit and the gate can never
 walk different evidence), and `tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate
 itself -- it runs inside `make ci`, with no target of its own.
