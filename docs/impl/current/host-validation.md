@@ -770,6 +770,21 @@ what a caller DECLARES, never what happens to be loaded at run time:
   call `llb_fail_if_output` and never source it themselves, which is a contract their headers
   stated in prose and now state in a line the check reads.
 
+`llb-requires` scope is also minimal at the file boundary. `unused_requirements` reports the
+declaration line when the declaring caller names none of the `llb_*` functions its sibling defines,
+and the command exits non-zero so `make shell-lint-gate` refuses the stale declaration. One direct
+reference justifies the whole sibling; this remains a file-level contract rather than a per-symbol
+import list. Real `source` directives are not subject to this rule because a sourced file can supply
+variables or intentional side effects without a function call.
+
+The gate decision came from the shipped tree rather than an exception policy: all 19 current
+`llb-requires` declarations support direct calls, including the four declarations in `track_c.sh`.
+No declaration exists only to document load order. A downstream fragment owns its own sibling
+requirements, and transitive scope already follows them, so adding a load-order-only declaration to
+an otherwise unrelated caller would widen the symbol contract without resolving one of that
+caller's names. The shipped-tree assertion and synthetic stale/used declaration cases live in
+`tests/llb/quality/test_shell_symbols.py`.
+
 What counts as a call is a name in command or argument position -- including one handed to a runner
 (`llb_fail_if_output "$LABEL" llb_cyclomatic_scan`), which breaks identically when the definition
 goes. Prose in a comment, an expansion operand (`${name#llb_prefix}`), a `$llb_var`, and a path

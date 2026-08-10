@@ -9,9 +9,10 @@
 #     and only that one, so every host that can run `make ci` reaches the same verdict, GitHub CI
 #     included.
 #   * every `# shellcheck source=` directive resolves, so the pass above is a CROSS-FILE result.
-#   * every shell function carries the `llb_` prefix and every `llb_*` call has a definition in its
-#     caller's declared scope (llb.quality.shell_symbols) -- the one cross-file mistake shellcheck
-#     does not model. The prefix is what tells a call from a word, so it is required, not advisory.
+#   * every shell function carries the `llb_` prefix, every `llb_*` call has a definition in its
+#     caller's declared scope, and every `llb-requires` declaration supports a direct call
+#     (llb.quality.shell_symbols). The prefix is what tells a call from a word, so it is required,
+#     not advisory.
 #
 # A MISSING shellcheck is a failure, not a skip: a linter that reports itself as fine when it never
 # ran is worse than no linter. LLB_SHELLCHECK_OPTIONAL=1 downgrades that to a printed skip, for a
@@ -25,7 +26,7 @@ LLB_SHELLCHECK_SEVERITY="${LLB_SHELLCHECK_SEVERITY:-warning}"
 LLB_SHELL_SYNTAX_LABEL="shell syntax (bash -n) over tracked/new *.sh"
 LLB_SHELLCHECK_LABEL="shell lint (shellcheck -x -S ${LLB_SHELLCHECK_SEVERITY}) over tracked/new *.sh"
 LLB_SHELLCHECK_SOURCES_LABEL="shellcheck source directives that do not resolve (SC1090/SC1091)"
-LLB_SHELL_SYMBOLS_LABEL="shell functions without the llb_ prefix, and llb_* calls with no definition in the caller's declared scope"
+LLB_SHELL_SYMBOLS_LABEL="shell functions without the llb_ prefix, unresolved llb_* calls, or unused llb-requires declarations"
 
 # Tracked plus new-but-not-ignored *.sh, anywhere in the repo: a script is linted before its first
 # commit, and nothing under a gitignored tree (.venv, $DATA_DIR) is ever scanned. Index entries
@@ -87,8 +88,10 @@ llb_shellcheck_sources_scan() {
 # The linter resolves VARIABLES across a followed source, not FUNCTIONS, so a call to a helper that
 # no longer exists passes every scan above; llb.quality.shell_symbols is that check. It also refuses
 # a function defined without the `llb_` prefix, because the prefix is what the call scan keys on --
-# an unprefixed helper is simply outside the check. It carries its own summary line, which is worth
-# reading from a terminal but not from a clean gate, so only a failure is passed on.
+# an unprefixed helper is simply outside the check. A `llb-requires` declaration must also support
+# at least one direct call into that sibling, so stale file-level scope cannot accumulate. It carries
+# its own summary line, which is worth reading from a terminal but not from a clean gate, so only a
+# failure is passed on.
 #
 # (A comment must not OPEN with the linter's own name: that reads as a directive, and an unparsable
 # one fails this very gate.)
@@ -138,7 +141,7 @@ llb_shell_lint_ok_line() {
   if [ "${LLB_SHELLCHECK_SKIPPED:-0}" = "1" ]; then
     echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses (shellcheck NOT run)"
   else
-    echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses, prefixes its functions, resolves its sources and llb_* calls, and is clean at severity ${LLB_SHELLCHECK_SEVERITY}"
+    echo "[${LLB_REPORT_PREFIX}] ok -- every tracked/new *.sh parses, prefixes its functions, resolves its sources and llb_* calls, uses its llb-requires declarations, and is clean at severity ${LLB_SHELLCHECK_SEVERITY}"
   fi
 }
 

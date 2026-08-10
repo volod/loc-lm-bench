@@ -17,6 +17,7 @@ from llb.quality.shell_symbols import (
     strip_comment,
     unprefixed_definitions,
     unresolved_calls,
+    unused_requirements,
 )
 
 _COMMON = """#!/usr/bin/env bash
@@ -43,6 +44,11 @@ def test_the_shipped_shell_layer_resolves_every_call():
 def test_the_shipped_shell_layer_prefixes_every_function():
     """The rule that keeps the assertion above meaningful: no helper sits outside the scan."""
     assert unprefixed_definitions(PROJECT_ROOT) == []
+
+
+def test_the_shipped_shell_layer_uses_every_declared_sibling():
+    """The gate proof: every file-level contract supports a direct call in its declaring fragment."""
+    assert unused_requirements(PROJECT_ROOT) == []
 
 
 def test_a_definition_without_the_prefix_is_named_with_its_line(tmp_path):
@@ -152,6 +158,38 @@ def test_a_shared_module_declares_the_sibling_its_functions_assume(tmp_path):
         "#!/usr/bin/env bash\n# llb-requires: common.sh\nllb_gate() {\n  llb_load_env\n}\n"
     )
     assert unresolved_calls(_repo(tmp_path / "declared", declared)) == []
+
+
+def test_a_requirement_left_after_its_last_call_is_named_with_its_line(tmp_path):
+    """A whole-file declaration is stale when the caller names none of that sibling's functions."""
+    root = _repo(
+        tmp_path,
+        {
+            "scripts/shared/common.sh": _COMMON,
+            "scripts/shared/gate.sh": (
+                "#!/usr/bin/env bash\n# llb-requires: common.sh\nllb_gate() {\n  echo gate\n}\n"
+            ),
+        },
+    )
+
+    assert unused_requirements(root) == [
+        "scripts/shared/gate.sh:2: unused llb-requires declaration -> common.sh"
+    ]
+
+
+def test_one_direct_reference_justifies_a_whole_file_requirement(tmp_path):
+    """Minimality is file-level: callers need not reference every function in the sibling."""
+    root = _repo(
+        tmp_path,
+        {
+            "scripts/shared/common.sh": (_COMMON + "llb_other_helper() {\n  echo other\n}\n"),
+            "scripts/shared/gate.sh": (
+                "#!/usr/bin/env bash\n# llb-requires: common.sh\nllb_gate() {\n  llb_load_env\n}\n"
+            ),
+        },
+    )
+
+    assert unused_requirements(root) == []
 
 
 def test_a_make_recipe_is_checked_against_what_it_sources(tmp_path):

@@ -43,31 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-sourced-fragments-declared-scope-is-wider-than-the-call-it-covers (optional)
-
-`# llb-requires:` names a whole sibling FILE, so a fragment that needs one helper from
-`model_select.sh` declares every function that file defines
-([host validation](current/host-validation.md#code-quality-checks)). The declaration is therefore an
-over-approximation of the real contract: `track_c.sh` declares four siblings to reach a handful of
-names, and if `track_b.sh` later stops sourcing `pdf_draft.sh` in a run where `track_c.sh` runs
-first, the check still resolves the call because the DECLARATION says it is in scope. Nothing
-verifies that the declared set is minimal either, so a `llb-requires:` line left behind by a deleted
-call is invisible. Narrow it: report a declared sibling whose definitions the caller never names
-(an unused declaration, the shell analogue of an unused import), and decide on the evidence whether
-an over-wide declaration should be a finding or stay a report -- a fragment that declares a sibling
-purely to document a load-order contract is the case that would fail a naive gate.
-
-- Agent status: CLEAR
-- Dependencies: the declaration is `_REQUIRES` / `declared_sources` in
-  `src/llb/quality/shell_symbols.py`; the declarations to read are the `# llb-requires:` headers in
-  `scripts/quickstart/*.sh`.
-- User-visible outcome: a fragment's declared scope stays the set of siblings it actually calls into,
-  so the declaration keeps naming a real contract instead of accumulating.
-- Scope boundary: in scope -- the unused-declaration report and the gate-or-record decision. Out of
-  scope -- per-symbol declarations (`# llb-requires: helpers.sh:llb_rel_path`), run-time load-order
-  checking, and any change to the quickstart flow.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-the-shellcheck-pin-is-a-range-so-two-hosts-can-still-differ (optional)
 
 The shell-lint gate now runs exactly one binary, `.venv/bin/shellcheck` from the `dev` extra
