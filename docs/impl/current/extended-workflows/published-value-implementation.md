@@ -52,7 +52,8 @@ and apply its declared published-value reading),
 `src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`,
 `tests/llb/bench/test_agentic_memory_crossover_restatement.py`,
 `tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py` (each form's row rule at its
-edges, including a ratio driven out of its published band), and
+edges, including a ratio driven out of its published band and an unresolved ratio whose declared
+source guard was not restated, with its operator reading and persisted failing metric), and
 `tests/llb/bench/test_agentic_memory_crossover_restatement_placement.py` (every committed annotation
 placed on its own ladder, plus each way one can be wrong),
 `tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates

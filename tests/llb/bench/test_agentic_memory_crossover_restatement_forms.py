@@ -8,12 +8,16 @@ committed design lives in `test_agentic_memory_crossover_restatement.py`.
 """
 
 from copy import deepcopy
+import json
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from llb.bench.agentic_memory_boundary_crossover import READING_BRACKETED
+from llb.bench.agentic_memory_boundary_crossover import (
+    READING_BRACKETED,
+    READING_COMPACT_ACROSS_GRID,
+)
 from llb.bench.agentic_memory_crossover_restatement import audit_published_cells
 from llb.bench.agentic_memory_crossover_restatement_design import (
     audited_designs,
@@ -23,9 +27,14 @@ from llb.bench.agentic_memory_crossover_restatement_design import (
 from llb.bench.agentic_memory_crossover_restatement_forms import crossover_row
 from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_RESTATED,
+    BASIS_UNRESTATED_DERIVATION,
+    FORM_INTERPOLATED,
+    READING_DERIVED_UNRESTATED,
     READING_MOVED,
+    operator_lines,
     restatement_reading,
 )
+from llb.bench.agentic_memory_crossover_restatement_report import persist_restatement
 from llb.bench.agentic_policy_change_audit import KIND_COLLAPSE, KIND_SURFACE
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -83,11 +92,41 @@ def test_a_portable_ratio_that_leaves_its_published_band_withdraws_the_number():
     assert edge["invariance_holds"] is True
 
 
-def test_a_ratio_with_no_bracketed_surface_at_its_depth_is_not_derived():
-    """Nothing to divide: the row falls back to what its own bound-invariant cells support."""
+def test_a_ratio_with_an_unrestated_source_is_unresolved_and_fails_the_persisted_metric(
+    tmp_path: Path,
+):
+    """The ratio's invariant cells cannot silently substitute for its declared source guard."""
     designs, audit = _restatement_inputs()
-    row = crossover_row(_published(KIND_COLLAPSE, 10), designs, audit, [])
-    assert row["restated_value"] is None and row["invariance_holds"] is True
+    surfaces = [{"depth": 10, "reading": READING_COMPACT_ACROSS_GRID}]
+    row = crossover_row(_published(KIND_COLLAPSE, 10), designs, audit, surfaces)
+
+    assert row["restated_value"] is None
+    assert row["invariance_holds"] is None
+    assert row["basis"] == BASIS_UNRESTATED_DERIVATION
+    assert row["derived_from_study_kind"] == KIND_SURFACE
+    assert row["derived_from_depth"] == 10
+    assert row["derived_from_form"] == FORM_INTERPOLATED
+
+    reading, reason = restatement_reading(True, [row], 0)
+    assert reading == READING_DERIVED_UNRESTATED
+    assert "compact_trigger_guard_collapse depth 10 portable_trigger_ratio" in reason
+    assert "compact_memory_boundary_surface depth 10 interpolated_guard" in reason
+    lines = operator_lines([row], [], reading, "window")
+    assert any("portable trigger ratio was not restated" in line for line in lines)
+    assert any("do not read its invariant contributing cells" in line for line in lines)
+
+    analysis = {"crossovers": [row], "restatement_reading": reading}
+    paths = persist_restatement(
+        load_restatement_design(DESIGN_PATH),
+        analysis,
+        data_dir=tmp_path,
+        table="synthetic unresolved derivation",
+        tokens_per_s=0.0,
+        mirror=lambda *_: None,
+    )
+    manifest = json.loads(Path(paths["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["metrics"]["objective_score"] == 0.0
+    assert manifest["metrics"]["reliability"] == 0.0
 
 
 def test_a_published_fold_step_the_moved_geometry_no_longer_has_names_the_published_row():

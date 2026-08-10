@@ -43,30 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-restatement-a-derived-form-whose-source-is-unrestated-reads-as-invariant (optional)
-
-The portable ratio is derived from the surface's interpolated guard, so it is restated only when
-that depth's surface row is BRACKETED. When it is not -- a grid that reads
-`compact_cheaper_across_grid`, a depth the surface never tested, or an audit-only run -- the row
-falls back to `every_contributing_cell_is_bound_invariant` on the strength of the collapse's own
-eight cells, which is exactly the weaker statement the derived ratio replaced: those cells are not
-what the ratio rests on
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-Give a derived form its own unresolved state -- a basis naming the source that was not restated, and
-a reading beside `..._hold_under_the_shipped_cap` that says which derived figures went un-restated --
-so a silent fallback cannot present itself as an invariance result.
-
-- Agent status: CLEAR
-- Dependencies: the fallback is the `_restated_surface(...) is None` path in `crossover_row`
-  (`src/llb/bench/agentic_memory_crossover_restatement_forms.py`); the reading is
-  `restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py`.
-- User-visible outcome: an operator can tell a ratio that was re-derived and held from one that was
-  never re-derived at all.
-- Scope boundary: in scope -- the unresolved basis, the reading, the persisted metric, and their
-  tests. Out of scope -- the band criterion itself and re-running a published cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
-
 ### agent-restatement-reading-is-blind-to-a-moved-cap-peak (optional)
 
 `restatement_reading` in `src/llb/bench/agentic_memory_crossover_restatement_reading.py` decides on

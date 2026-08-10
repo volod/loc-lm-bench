@@ -30,11 +30,12 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_DERIVED,
     BASIS_INVARIANT,
     BASIS_RESTATED,
+    BASIS_UNRESTATED_DERIVATION,
     CRITERION_FOLD_STEP,
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
 )
-from llb.bench.agentic_published_value_derivation import required_derivation
+from llb.bench.agentic_published_value_derivation import ValueKey, required_derivation
 from llb.bench.agentic_published_value_operations import TERM_TRIGGER_CHARS
 
 
@@ -64,11 +65,15 @@ def crossover_row(
         "invariance_holds": True,
         "basis": BASIS_INVARIANT if not sensitive else None,
     }
-    restated = _restated_surface(surfaces, depth)
     if published["form"] == FORM_PORTABLE_RATIO:
         # The one form whose contributing cells are not the ones that restate it: the collapse's own
         # cells fix the ratio's PORTABILITY, the surface's guard fixes its VALUE.
-        return row if restated is None else _portable_ratio_row(row, published, restated)
+        source = required_derivation(published).source_of_form(FORM_INTERPOLATED)
+        restated = _restated_surface(surfaces, source.depth)
+        if restated is None:
+            return _unrestated_derived_row(row, source)
+        return _portable_ratio_row(row, published, restated)
+    restated = _restated_surface(surfaces, depth)
     if not sensitive:
         return row
     if published["form"] != FORM_INTERPOLATED:
@@ -100,6 +105,20 @@ def _restated_surface(surfaces: list[dict[str, object]], depth: int) -> dict[str
     )
 
 
+def _unrestated_derived_row(row: dict[str, object], source: ValueKey) -> dict[str, object]:
+    """Name the declared source that left a derived figure with nothing to re-derive it from."""
+    row.update(
+        {
+            "basis": BASIS_UNRESTATED_DERIVATION,
+            "invariance_holds": None,
+            "derived_from_study_kind": source.study_kind,
+            "derived_from_depth": source.depth,
+            "derived_from_form": source.form,
+        }
+    )
+    return row
+
+
 def _portable_ratio_row(
     row: dict[str, object], published: dict[str, object], restated: dict[str, object]
 ) -> dict[str, object]:
@@ -118,6 +137,7 @@ def _portable_ratio_row(
     guard = float(cast(float, restated["crossover_max_prompt_chars"]))
     peak = int(cast(int, restated["cap_peak_prompt_chars"]))
     derivation = required_derivation(published)
+    source = derivation.source_of_form(FORM_INTERPOLATED)
     derived = derivation.compute((guard,), measured=float(peak))
     ratio = derived.value
     result = derivation.reading.read(ratio)
@@ -128,7 +148,9 @@ def _portable_ratio_row(
             "restated_cap_peak_prompt_chars": peak,
             # The design's own declaration, so a restated row names the study it was actually
             # derived from rather than the one this module was written against.
-            "derived_from_study_kind": derivation.source_of_form(FORM_INTERPOLATED).study_kind,
+            "derived_from_study_kind": source.study_kind,
+            "derived_from_depth": source.depth,
+            "derived_from_form": source.form,
             "derived_from_guard_chars": guard,
             "published_reading": derivation.reading.name,
             "reading_phrase": result.phrase,

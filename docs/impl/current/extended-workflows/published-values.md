@@ -397,6 +397,19 @@ For the committed rule that statement is the band and its quoted precision (`pub
 `band_decimals`): a restated ratio a hair under the raw lower edge is inside when it rounds to the
 published edge, and the same registry function makes that choice in validation and restatement.
 
+A portable ratio now has an explicit unresolved result when that declared source has no BRACKETED
+restated surface row. Its crossover row uses the
+`source_interpolated_guard_was_not_restated` basis, records the source study, depth, and form, and
+sets `invariance_holds` to null; it never falls back to the collapse's
+`every_contributing_cell_is_bound_invariant` basis. The aggregate reading is then
+`derived_crossovers_were_not_restated`, whose reason and operator line name both the derived ratio
+and the exact declared source that was absent. That reading persists `objective_score=0.0`, and the
+unresolved row contributes no successful reliability result, so a grid with no bracketed crossing
+cannot present an uncomputed quotient as an invariance result. The form, reading, operator, and
+manifest regression is in
+`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py`; run the standard validation
+with `make test`.
+
 ## Implementation map
 
 The module and test inventory moved to

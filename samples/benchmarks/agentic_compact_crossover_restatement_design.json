@@ -75,6 +75,7 @@
     "every_published_cell_is_bound_invariant": "no published cell's summarize input changes under the shipped cap, so every published crossover stands with no run",
     "published_crossovers_hold_under_the_shipped_cap": "the bound-sensitive cells were re-measured and every crossover still names the fold step it named before",
     "a_published_crossover_moves_under_the_shipped_cap": "a restated crossover crosses a fold-step boundary, so the published routing rule must be re-derived",
-    "a_bound_sensitive_cell_could_not_be_re_measured": "a re-measured cell failed the surface's own preconditions, so its crossover is not restated"
+    "a_bound_sensitive_cell_could_not_be_re_measured": "a re-measured cell failed the surface's own preconditions, so its crossover is not restated",
+    "derived_crossovers_were_not_restated": "a derived figure's declared source was not restated, so the derived figure has no invariance result"
   }
 }
