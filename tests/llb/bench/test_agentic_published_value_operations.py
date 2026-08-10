@@ -38,6 +38,7 @@ from llb.bench.agentic_published_value_operations import (
     DerivedValue,
     registered_operation,
 )
+from llb.bench.agentic_published_value_readings import READING, READING_POINT_TOLERANCE
 
 ROOT = Path(__file__).resolve().parents[3]
 DESIGN_PATH = ROOT / "samples/benchmarks/agentic_compact_crossover_restatement_design.json"
@@ -168,6 +169,34 @@ def test_the_restated_row_re_derives_its_ratio_through_the_same_registered_opera
     assert row["basis"] == BASIS_DERIVED
     assert row["restated_value"] == SWAPPED_VALUE
     assert row["restated_trigger_chars"] == int(SWAPPED_TRIGGER)
+
+
+def test_a_non_band_reading_serves_both_readers_without_a_comparison_edit():
+    """Change only the design declaration: validation and the restated verdict inherit the rule."""
+    design = load_restatement_design(DESIGN_PATH)
+    for row in published_crossovers(design):
+        if row["form"] == FORM_PORTABLE_RATIO:
+            row.update(
+                {
+                    READING: READING_POINT_TOLERANCE,
+                    "published_value": 0.88,
+                    "absolute_tolerance": 0.04,
+                }
+            )
+    validate_restatement_design(design, root=ROOT)
+
+    published = _published_ratio()
+    published.update(
+        {
+            READING: READING_POINT_TOLERANCE,
+            "published_value": 0.88,
+            "absolute_tolerance": 0.04,
+        }
+    )
+    row = crossover_row(published, {}, _audit(), _restated_surface())
+    assert row["published_reading"] == READING_POINT_TOLERANCE
+    assert row["invariance_holds"] is False
+    assert "outside the published 0.88 +/- 0.04" in row["reading_phrase"]
 
 
 def _published_ratio() -> dict[str, object]:

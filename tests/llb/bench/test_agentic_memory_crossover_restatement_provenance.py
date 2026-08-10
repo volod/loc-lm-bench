@@ -45,6 +45,7 @@ from llb.bench.agentic_published_value_operations import (
     OPERATION,
     OPERATION_TRIGGER_OVER_OWN_CAP_PEAK,
 )
+from llb.bench.agentic_published_value_readings import READING_ROUNDED_BAND
 from llb.bench.agentic_published_value_provenance import provenance_pair
 from llb.bench.agentic_published_value_registry import (
     published_citations,
@@ -118,8 +119,12 @@ def test_every_committed_derived_value_declares_the_edge_and_the_arithmetic_over
             study_kind=KIND_SURFACE, depth=int(cast(int, row["depth"])), form=FORM_INTERPOLATED
         )
         assert derivation.operation.name == OPERATION_TRIGGER_OVER_OWN_CAP_PEAK
+        assert derivation.reading.name == READING_ROUNDED_BAND
     measured = [row for row in rows if row["form"] != FORM_PORTABLE_RATIO]
-    assert all(row.get(DERIVED_FROM) is None and row.get(OPERATION) is None for row in measured)
+    assert all(
+        row.get(DERIVED_FROM) is None and row.get(OPERATION) is None and row.get("reading") is None
+        for row in measured
+    )
 
 
 def test_the_committed_evidence_is_the_union_over_every_registered_design():

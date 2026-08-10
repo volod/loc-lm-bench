@@ -43,40 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-a-derived-value-states-its-arithmetic-but-not-its-reading (optional)
-
-The arithmetic over a derived value's declared sources is the design's statement now, and both
-readers call it
-([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)).
-Its READING is not: the precision the value is quoted to and the rule that decides whether a
-re-derived number still supports what was published are applied twice, by hand. Design validation
-rounds each quotient to `band_decimals` and asks whether the smallest and largest are the published
-edges; the restated row rounds the restated ratio to the same field and asks whether it falls inside
-those edges. They agree today because both were written against a value published as a BAND -- a
-second design publishing a point with a tolerance, a one-sided bound, or an interval on a log scale
-gets neither rule and lands in two reader edits, and the two can disagree about the same number
-(round-then-compare versus compare-then-round) with nothing in CI to notice. Declare the reading
-beside the operation: a named, registered comparison over the design's published statement and the
-re-derived value, returning whether it holds and the phrase an operator reads, so a design states
-how its number is judged once and both readers apply it.
-
-- Agent status: CLEAR
-- Dependencies: the two hand-applied readings are `_check_published_band` in
-  `src/llb/bench/agentic_memory_crossover_restatement_provenance.py` and the band comparison at the
-  end of `_portable_ratio_row` in `src/llb/bench/agentic_memory_crossover_restatement_forms.py`; the
-  criterion names they would replace are `CRITERION_BAND` and `CRITERION_FOLD_STEP` in
-  `src/llb/bench/agentic_memory_crossover_restatement_reading.py`; the registry pattern to follow is
-  `DERIVATION_OPERATIONS` in `src/llb/bench/agentic_published_value_operations.py`.
-- User-visible outcome: a study publishing a value as a band, a point with a tolerance, or a bound
-  states which in its design file and inherits both the validation and the invariance verdict.
-- Scope boundary: in scope -- the reading declaration, its registry and refusals, moving the band
-  comparison behind it, and fixture cases for a reading the registry does not carry and a
-  non-band reading. Out of scope -- the fold-step criterion for measured guards (a property of the
-  ladder, not of a published statement), restating a value automatically, and re-running a published
-  cell.
-- Documentation target:
-  [extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap).
-
 ### agent-published-aggregate-is-unchecked-against-its-own-cells (optional)
 
 The repo now carries each cited run aggregate verbatim, so a published value is resolved against

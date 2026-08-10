@@ -65,8 +65,8 @@ def validate_published_provenance(
     resolver = PublishedValueResolver(root=root, data_dir=data_dir)
     stated = _resolve_stated_values(crossovers, resolver, collected)
     consequences = _mark_derived_consequences(crossovers, collected)
-    ratios = _derived_ratios(crossovers, stated, collected, consequences)
-    _check_published_band(crossovers, ratios, collected)
+    derived = _derived_values(crossovers, stated, collected, consequences)
+    _check_published_statements(crossovers, derived, collected)
     collected.refuse(total=len(crossovers))
 
 
@@ -142,12 +142,12 @@ def _stated_cap_peak(crossover: dict[str, object], resolver: PublishedValueResol
     return peak
 
 
-def _derived_ratios(
+def _derived_values(
     crossovers: list[dict[str, object]],
     stated: _Stated,
     collected: CollectedRefusals,
     consequences: set[ValueKey],
-) -> dict[int, float]:
+) -> dict[ValueKey, float]:
     """Re-derive each published depth's trigger ratio from the two aggregates that produced it.
 
     The ratio's own study measured no ratio -- it measured the cap PEAK the trigger is read against
@@ -161,7 +161,7 @@ def _derived_ratios(
     cap peak did not resolve is marked so here, because the moved number is the one already named and
     this is its consequence.
     """
-    ratios: dict[int, float] = {}
+    values: dict[ValueKey, float] = {}
     for crossover in crossovers:
         key = published_key(crossover)
         if key.form != FORM_PORTABLE_RATIO or key in consequences:
@@ -175,8 +175,8 @@ def _derived_ratios(
         derived = collected.collect(lambda: _re_derived(crossover, stated), key=key)
         if derived is None:
             continue
-        ratios[key.depth] = round(derived.value, int(_stated_number(crossover, "band_decimals")))
-    return ratios
+        values[key] = derived.value
+    return values
 
 
 def _re_derived(crossover: dict[str, object], stated: _Stated) -> DerivedValue:
@@ -192,44 +192,41 @@ def _re_derived(crossover: dict[str, object], stated: _Stated) -> DerivedValue:
     return derivation.compute(sources, measured=stated.peaks[published_key(crossover).depth])
 
 
-def _check_published_band(
-    crossovers: list[dict[str, object]], ratios: dict[int, float], collected: CollectedRefusals
+def _check_published_statements(
+    crossovers: list[dict[str, object]],
+    values: dict[ValueKey, float],
+    collected: CollectedRefusals,
 ) -> None:
-    """The band's EDGES are the rounded ratios of the depths it was published across.
+    """Apply each derived value's declared reading to the statement its rows publish together.
 
-    Grouped by the band each row publishes, so one band published across several depths is one line
-    naming the rows that publish it rather than the same sentence once per depth.
+    Grouped by the bound reading's identity, so a band published across several depths is read once
+    over all of them while a point or one-sided bound needs no comparison branch in this reader.
     """
-    published: dict[tuple[float, ...], list[dict[str, object]]] = {}
+    published: dict[tuple[object, ...], list[dict[str, object]]] = {}
     for crossover in crossovers:
         if crossover["form"] == FORM_PORTABLE_RATIO:
-            published.setdefault(tuple(_band_edges(crossover)), []).append(crossover)
-    if not published:
-        return
-    depths = {_depth(row) for rows in published.values() for row in rows}
-    if len(ratios) != len(depths):
-        # Stated even though every missing quotient is named above, because the band is a claim of
-        # its own: without this line, a band nothing could re-derive reads exactly like one that was
-        # re-derived and held.
-        collected.not_judged(
-            "the published band itself: its edges are the smallest and largest of the per-depth "
-            f"quotients, and {len(depths) - len(ratios)} of the {len(depths)} published depths did "
-            "not resolve above, so the band is not re-derived at all here"
-        )
-        return
-    resolved = [min(ratios.values()), max(ratios.values())]
-    for edges, rows in published.items():
-        if list(edges) == resolved:
+            reading = required_derivation(crossover).reading
+            published.setdefault(reading.identity, []).append(crossover)
+    for rows in published.values():
+        reading = required_derivation(rows[0]).reading
+        keys = [published_key(row) for row in rows]
+        resolved = [values[key] for key in keys if key in values]
+        if len(resolved) != len(keys):
+            # Stated even though every missing value is named above, because the statement is a
+            # claim of its own and silence would make an unread statement look like one that held.
+            collected.not_judged(
+                f"the published `{reading.name}` statement itself: {len(keys) - len(resolved)} of "
+                f"its {len(keys)} re-derived value(s) did not resolve above, so the statement is "
+                "not read at all here"
+            )
             continue
-        decimals = int(_stated_number(rows[0], "band_decimals"))
-        named = ", ".join(
-            f"depth {depth} {ratios[depth]:.{decimals}f}x" for depth in sorted(ratios)
-        )
+        result = reading.resolves(resolved)
+        if result.holds:
+            continue
+        named = ", ".join(f"depth {key.depth} {values[key]:.3f}x" for key in keys)
         collected.unresolvable(
-            f"{', '.join(_label(row) for row in rows)}: the design publishes the "
-            f"{edges[0]}-{edges[1]}x band while the aggregates it cites derive "
-            f"{resolved[0]}-{resolved[1]}x from the published depths ({named}) -- the band was "
-            "transcribed rather than resolved"
+            f"{', '.join(_label(row) for row in rows)}: {result.phrase} from the published depths "
+            f"({named}) -- the {reading.statement_kind} was transcribed rather than resolved"
         )
 
 
@@ -244,22 +241,10 @@ def _refuse_malformed(crossovers: list[dict[str, object]]) -> None:
         provenance_pair(crossover.get("provenance"), where=_label(crossover))
         _stated_number(crossover, "depth")
         if str(crossover.get("form")) == FORM_PORTABLE_RATIO:
-            _band_edges(crossover)
             _stated_number(crossover, "compact_share")
-            _stated_number(crossover, "band_decimals")
+            required_derivation(crossover)
         else:
             _stated_number(crossover, "value")
-
-
-def _band_edges(crossover: dict[str, object]) -> list[float]:
-    """The two edges a derived band is published as, which the re-derived quotients are read against."""
-    band = crossover.get("published_band")
-    if not isinstance(band, list) or len(band) != 2 or any(_not_a_number(edge) for edge in band):
-        raise ValueError(
-            f"{_label(crossover)}: a {FORM_PORTABLE_RATIO} crossover must carry the two numeric "
-            "`published_band` edges its re-derived quotients are read against"
-        )
-    return [float(cast(float, edge)) for edge in band]
 
 
 def _stated_number(crossover: dict[str, object], name: str) -> float:

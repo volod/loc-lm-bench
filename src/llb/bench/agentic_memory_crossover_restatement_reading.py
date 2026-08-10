@@ -13,6 +13,8 @@ actually changes. A restated crossover matters only when it crosses a step bound
 
 from typing import cast
 
+from llb.bench.agentic_published_value_readings import CRITERION_ROUNDED_BAND
+
 STUDY_KIND = "compact_published_crossover_restatement"
 METHOD = "agentic-compact-crossover-restatement"
 REPORTING_CONFIDENCE = 0.975
@@ -38,7 +40,7 @@ BASIS_DERIVED = "derived_from_the_restated_surface_guard"
 # interpolated guard and published as a BAND across the tested depths -- so it holds while the
 # restated ratio still falls inside that band at the precision the band is quoted to.
 CRITERION_FOLD_STEP = INVARIANCE_RULE
-CRITERION_BAND = "restated_ratio_stays_inside_the_published_band"
+CRITERION_BAND = CRITERION_ROUNDED_BAND
 
 # Whether the geometry that measured the restated guard is the geometry the published peak came
 # from. A guard ratio is a guard OVER a cap peak, so the two must be read off one prompt sequence;
@@ -87,10 +89,8 @@ def restatement_reading(
 def _moved_phrase(row: dict[str, object]) -> str:
     """Name what a withdrawn crossover left, in the terms its own FORM was published in."""
     label = f"{row['study_kind']} depth {row['depth']}"
-    if row["invariance_criterion"] == CRITERION_BAND:
-        low, high = cast(list[float], row["published_band"])
-        ratio = cast(float, row["restated_value"])
-        return f"{label}: portable ratio {ratio:.3f}x outside the {low:.2f}-{high:.2f}x band"
+    if "reading_phrase" in row:
+        return f"{label}: {row['reading_phrase']}"
     return f"{label}: fold step {row['published_fold_step']} -> {row['restated_fold_step']}"
 
 
@@ -152,14 +152,12 @@ def _portable_ratio_line(label: str, row: dict[str, object]) -> str:
     restated = cast(float | None, row["restated_value"])
     if restated is None:
         return f"{label}: the portable trigger ratio is unchanged [{row['basis']}]"
-    low, high = cast(list[float], row["published_band"])
     return (
         f"{label}: the portable trigger ratio is {restated:.3f}x -- a "
         f"{cast(int, row['restated_trigger_chars'])}-char trigger, derived from the restated "
         f"{cast(float, row['derived_from_guard_chars']):.0f}-char guard, over the re-measured "
         f"{cast(int, row['restated_cap_peak_prompt_chars'])}-char cap peak -- "
-        f"{'inside' if row['invariance_holds'] else 'OUTSIDE'} the published "
-        f"{low:.2f}-{high:.2f}x band [{row['basis']}]"
+        f"{row['reading_phrase']} [{row['basis']}]"
     )
 
 

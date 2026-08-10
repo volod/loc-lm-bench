@@ -30,7 +30,6 @@ from llb.bench.agentic_memory_crossover_restatement_reading import (
     BASIS_DERIVED,
     BASIS_INVARIANT,
     BASIS_RESTATED,
-    CRITERION_BAND,
     CRITERION_FOLD_STEP,
     FORM_INTERPOLATED,
     FORM_PORTABLE_RATIO,
@@ -61,7 +60,7 @@ def crossover_row(
         "published_fold_step": published["fold_step"],
         "restated_value": None,
         "restated_fold_step": published["fold_step"],
-        "invariance_criterion": _criterion(cast(str, published["form"])),
+        "invariance_criterion": _criterion(published),
         "invariance_holds": True,
         "basis": BASIS_INVARIANT if not sensitive else None,
     }
@@ -83,8 +82,10 @@ def crossover_row(
     return _interpolated_row(row, published, restated, designs[kind], depth)
 
 
-def _criterion(form: str) -> str:
-    return CRITERION_BAND if form == FORM_PORTABLE_RATIO else CRITERION_FOLD_STEP
+def _criterion(published: dict[str, object]) -> str:
+    if published["form"] != FORM_PORTABLE_RATIO:
+        return CRITERION_FOLD_STEP
+    return required_derivation(published).reading.criterion
 
 
 def _restated_surface(surfaces: list[dict[str, object]], depth: int) -> dict[str, object] | None:
@@ -119,7 +120,7 @@ def _portable_ratio_row(
     derivation = required_derivation(published)
     derived = derivation.compute((guard,), measured=float(peak))
     ratio = derived.value
-    low, high = (float(edge) for edge in cast(list[float], published["published_band"]))
+    result = derivation.reading.read(ratio)
     row.update(
         {
             "restated_value": ratio,
@@ -129,11 +130,12 @@ def _portable_ratio_row(
             # derived from rather than the one this module was written against.
             "derived_from_study_kind": derivation.source_of_form(FORM_INTERPOLATED).study_kind,
             "derived_from_guard_chars": guard,
+            "published_reading": derivation.reading.name,
+            "reading_phrase": result.phrase,
             "basis": BASIS_DERIVED,
         }
     )
-    quoted = round(ratio, int(cast(int, published["band_decimals"])))
-    row["invariance_holds"] = low <= quoted <= high
+    row["invariance_holds"] = result.holds
     return row
 
 

@@ -18,9 +18,9 @@ bound-sensitive. The committed design is
 `samples/benchmarks/agentic_compact_crossover_restatement_design.json`; it names each audited study
 by its in-repo design path and every crossover that study published, and validation refuses a design
 whose path is missing, declares a different study kind, publishes a crossover at a depth the study
-does not test, omits the fold step a crossover lands in, publishes a derived ratio without the band
-and the precision that band is quoted to, or publishes a derived value that does not declare what it
-is computed out of.
+does not test, omits the fold step a crossover lands in, publishes a malformed statement, or
+publishes a derived value that does not declare what it is computed out of, how it is computed, and
+how the published statement is read.
 
 The fold-step ANNOTATION is validated too, against the ladder the study that published the number
 measured, because the annotation is what a restated guard is then checked against: a mis-transcribed
@@ -301,6 +301,32 @@ the probe deliberately does not claim is purity: it records reaches through the 
 and an operation reading a module global is out of reach of anything short of the expression language
 the design file does not have.
 
+## The registered reading beside the arithmetic
+
+The re-derived number and the rule for JUDGING it are now two declarations. Each portable ratio in
+the committed design names both:
+
+```json
+"operation": "trigger_over_own_cap_peak",
+"reading": "rounded_extent_and_membership"
+```
+
+`agentic_published_value_readings.py` registers the comparison over the design's published
+statement. A bound reading validates and normalizes the statement fields, gives equivalent rows a
+stable grouping identity, checks whether the original re-derived values resolve that statement,
+and checks whether one restated value still supports it. Both checks return `holds` plus the phrase
+the operator report reads. Design validation and `_portable_ratio_row` now call those two sides of
+the SAME bound reading; neither rounds or compares a ratio itself. The committed rounded-band rule
+therefore owns both semantics: its published edges must be the rounded minimum and maximum across
+the original depths, and a restated value holds when its rounded reading is within those edges.
+
+The registry also carries a point with an absolute tolerance and a one-sided upper bound. Fixture
+coverage changes the portable-ratio declaration to the point rule and exercises BOTH production
+readers without editing either, proving that the rule rather than the form supplies the verdict.
+A missing reading, an unregistered name, malformed statement fields, and arithmetic declared with
+no reading are refused before evidence is read. The fold-step criterion remains separate: it judges
+a measured guard on the deterministic ladder, not a derived value against a published statement.
+
 ## Field pointers, forms, and the restatement rule
 
 The field pointer is a dotted path plus a row selector, because these aggregates key their per-depth
@@ -315,13 +341,12 @@ RECORDED -- drift between the two is exactly what neither check sees alone. The 
 the interesting one: no aggregate anywhere states it. What the collapse measured is the cap PEAK the
 trigger is read against, so the published band is RE-DERIVED -- the design's named
 `trigger_over_own_cap_peak` operation (the runtime's own `compaction_trigger_chars`) on the resolved
-surface guard, over the collapse's resolved peak, rounded
-to the design's own `band_decimals`, per published depth -- and the band's two edges must be the
-smallest and largest of those quotients. That is literally the same function the restatement applies
-to the RESTATED guard, so a published edge and a restated ratio are never computed two different
-ways, and the committed `0.85-0.92x` is now the pair `(0.845x, 0.918x)` rounds to rather than a pair
-of hand-copied edges. A band stated wider, narrower, or at a precision the quotients do not reach is
-refused with the quotients named.
+surface guard, over the collapse's resolved peak. The declared `rounded_extent_and_membership`
+reading rounds those values to `band_decimals` and requires the band's two edges to be their minimum
+and maximum. The same bound reading judges the restated value, so a published edge and a restated
+ratio cannot differ on round-then-compare versus compare-then-round. The committed `0.85-0.92x` is
+the pair `(0.845x, 0.918x)` resolves to rather than a pair of hand-copied edges; a band stated wider,
+narrower, or at a precision the quotients do not reach is refused with the quotients named.
 
 The invariance criterion for a guard is the fold step, not a char tolerance. The fold-step study
 established that the cost changes only at a step boundary, so a restated guard that moves INSIDE one
@@ -346,7 +371,8 @@ moved task world surfaces as a named moved peak with an operator line telling th
 to apply, instead of as a rescaled number nothing in the run mentions. The fold-step invariance
 criterion is unchanged by this: a moved peak is reported, not treated as a withdrawn crossover.
 
-The FORM a number was published in decides both what restates it and what it is checked against.
+The FORM decides what restates a number; a derived value's declared READING decides what it is
+checked against.
 An interpolated guard is re-interpolated over the substituted cells and placed back on the step
 ladder. A fold-step boundary is a property of that ladder rather than of a measured cost, so the
 summarize-input-cap study's re-measurement of its cells confirms it directly. The collapse's
@@ -356,112 +382,16 @@ guard rather than measured on cells of its own, so its own eight bound-invariant
 about it -- the guard it divides is exactly the number the restatement moves. It is therefore
 restated from that restated guard (the runtime's own `compaction_trigger_chars` applied to it) over
 the same depth's re-measured cap peak, both read off ONE restated surface row, and checked against
-the BAND the collapse published rather than against a fold step the form does not name. The design
-carries the band and the precision it is quoted to (`published_band`, `band_decimals`) because the
-band's edges are the ROUNDED ratios of the tested depths: a restated ratio a hair under the lower
-edge is inside the band as published, and predeclaring the precision makes that a stated reading
-rather than a tolerance chosen after seeing the number.
+the statement its registered reading binds rather than against a fold step the form does not name.
+For the committed rule that statement is the band and its quoted precision (`published_band`,
+`band_decimals`): a restated ratio a hair under the raw lower edge is inside when it rounds to the
+published edge, and the same registry function makes that choice in validation and restatement.
 
-## Where it lives
+## Implementation map
 
-Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
-both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
-`src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
-read alike), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
-manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
-`src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
-refresh, the collecting and refusing walks over it, and the refresh that reports on what it just
-wrote), `src/llb/bench/agentic_published_value_provenance.py` (the
-`(artifact, field)` pair and the two-source read),
-`src/llb/bench/agentic_published_value_collection.py` (the per-value accumulator: collect what did
-not resolve, keep what that leaves unjudged apart from it, and refuse once naming both),
-`src/llb/bench/agentic_published_value_derivation.py` (one value's `derived_from` + `operation`
-declaration, read and validated against the arithmetic it names),
-`src/llb/bench/agentic_published_value_derivation_graph.py` (the design-wide walk over those
-declarations: the refusals for an unpublished source, a self-reference, a cycle, and a duplicated
-identity, plus the transitive walk from a value to the moved measurements at the root of what it
-rests on),
-`src/llb/bench/agentic_published_value_operations.py` (the registry of re-derivations: what each
-operation is computed over, the pure function that does it, the named intermediates it exposes, and
-the refusal of an operation nothing registered -- all eight study-agnostic, so any published agentic
-number can adopt them),
-`src/llb/bench/agentic_published_value_operation_probe.py` (the declared-input read recorder),
-`src/llb/bench/agentic_published_value_operation_branches.py` (operation-local `sys.monitoring`
-branch arcs and the per-operation missed-branch record),
-`src/llb/bench/agentic_published_value_operation_policy.py` (the shipped-policy perturbation check),
-`src/llb/bench/agentic_published_value_operation_audit.py` (the registry report and refusing
-wrapper),
-`src/llb/bench/agentic_memory_crossover_restatement_provenance.py` (what each published FORM
-resolves to, including the re-derived band, its four passes, and the cause-versus-consequence rule
-for a band whose declared source guard moved),
-`src/llb/bench/agentic_memory_crossover_restatement_placement.py` (the study's prompt sequence and
-the per-form annotation rules, shared by design validation and the restatement),
-`src/llb/bench/agentic_memory_crossover_restatement_reading.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_rows.py` (substitute the re-measured cells,
-re-interpolate against a re-measured cap peak, and compare that peak with the published one),
-`src/llb/bench/agentic_memory_crossover_restatement_forms.py` (one restated row per published form:
-place a restated guard on the step ladder, confirm a fold-step boundary, derive the portable ratio
-and read it against its band), `src/llb/bench/agentic_memory_crossover_restatement.py`,
-`src/llb/bench/agentic_memory_crossover_restatement_report.py`,
-`src/llb/cli/bench/category_agentic_memory_crossover_restatement.py`,
-`tests/llb/bench/test_agentic_memory_crossover_restatement.py`,
-`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py` (each form's row rule at its
-edges, including a ratio driven out of its published band), and
-`tests/llb/bench/test_agentic_memory_crossover_restatement_placement.py` (every committed annotation
-placed on its own ladder, plus each way one can be wrong),
-`tests/llb/bench/test_agentic_published_value_pointer.py` (the pointer walk, on synthetic aggregates
-so a failure names the pointer rather than the study that used it),
-`tests/llb/bench/test_agentic_published_value_derivation.py` (one value's declaration, on synthetic
-published values for the same reason: the form as part of the identity, a malformed entry, and every
-way the two halves can fail to agree -- an unregistered operation, sources with no operation, an
-operation with no sources, a declaration that is not the shape its operation takes, and a stated
-operand the design does not state),
-`tests/llb/bench/test_agentic_published_value_derivation_graph.py` (the design-wide walk and the
-consequence marking: a two-step chain naming only the measurement at its root, a figure derived from
-two moved measurements naming both, and each way a declaration can be unsupportable -- an unpublished
-source, a self-reference, a cycle, and a duplicated identity),
-`tests/llb/bench/test_agentic_published_value_operations.py` (the registered trigger arithmetic and
-its named intermediate, the refusals for an unregistered operation and for inputs an operation did
-not declare, and the proof that ONE registered function serves both readers -- swapping it moves the
-band design validation re-derives and the ratio the restated row reports),
-`tests/llb/bench/test_agentic_published_value_operation_audit.py` (the registry self-check: a body
-reading a stated field, a measurement, or a source it did not declare, a declaration listing an
-input the body never reads, an operation that does not compute at its own probe point, the
-membership-is-not-a-read distinction the over-declaration refusal rests on, a read that happens on
-ONE branch driven in each direction -- at a probe set that misses the branch and at one that takes
-it -- a report-only missed branch with its count and source line, the zero-count result when the set
-takes both outcomes, the missing and unused shipped-policy dependency refusals, the probe-set
-refusals for no point at all, for two points that cannot differ, and for a point that does not answer
-the declaration, plus arithmetic no registered design names and the CI gate over the shipped
-registry),
-`tests/llb/bench/test_agentic_published_value_provenance.py` (the committed copy and its pin, the
-refusals for a pin with no bytes behind it or bytes that digest to something else -- both on a host
-with no run at all -- the prune and the size caps, and the two-source read including an artifact
-that is not the pinned file even where the cited value agrees),
-`tests/llb/bench/test_agentic_published_value_registry.py` (the union over two registered designs,
-an aggregate both cite carried once, and each of the three refusals -- a partial host, an
-unreadable registered design, and a write that would drop a still-cited copy -- plus the prune that
-a design retired from the registry still gets, the validation walk over every registered design
-including what it is handed and what it returns, a registered design whose values do not resolve,
-an entry that registers no validation, and the CI assertion over the shipped registry),
-`tests/llb/bench/test_agentic_published_evidence_refresh.py` (the collecting walk beside the
-refusing one, the refresh that names what it committed and does not roll it back, the real design
-against a host whose boundary-surface run moved the depth-10 guard, and the command's exit code on
-both answers), and
-`tests/llb/bench/test_agentic_memory_crossover_restatement_provenance.py` (all six committed values
-resolved out of the committed aggregates, the committed design's own derivation declarations, a
-transcription slip in each form, the re-derived band,
-the committed bytes checked against this host's own run artifacts, the growth budget, the no-op
-regeneration on a host that still has the runs, and the collecting refusal -- a re-run that moved
-three values named in one refusal in design order, a moved guard named as the cause with its derived
-band left unjudged rather than named twice, and a malformed crossover refused ahead of any read even
-when the evidence moved too).
-
-```bash
-make bench-agentic-context-compact-crossover-restatement
-make bench-agentic-context-compact-crossover-restatement AGENT_CONTEXT_COMPACT_CROSSOVER_AUDIT_ONLY=1
-make bench-agentic-published-provenance
-```
+The module and test inventory moved to
+[Published-value implementation map](published-value-implementation.md) so this behavior page
+stays readable as the registries grow.
 
 ## The result: every published crossover holds
 

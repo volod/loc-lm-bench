@@ -22,6 +22,7 @@ from llb.bench.agentic_published_value_operations import (
     DerivationInputs,
     DerivationOperation,
 )
+from llb.bench.agentic_published_value_readings import READING
 from tests.llb.bench._published_value_fixtures import (
     BOUNDARY,
     DERIVED,
@@ -50,6 +51,12 @@ def test_a_value_that_declares_nothing_is_a_measurement():
     measured = value(STUDY, 6, MEASURED)
     assert declared_sources(measured) == ()
     assert declared_derivation(measured) is None
+
+
+def test_a_measured_value_cannot_name_a_derived_value_reading():
+    measured = {**value(STUDY, 6, MEASURED), READING: "within_absolute_tolerance"}
+    with pytest.raises(ValueError, match="a measured value declares none of the three"):
+        declared_derivation(measured)
 
 
 def test_the_form_is_part_of_the_identity_a_declaration_names():
@@ -118,6 +125,21 @@ def test_a_value_that_declares_sources_but_no_operation_is_refused():
     derived = value(OTHER, 6, DERIVED, key(STUDY, 6, MEASURED))
     del derived[OPERATION]
     with pytest.raises(ValueError, match=f"names no `{OPERATION}`"):
+        declared_derivation(derived)
+
+
+def test_a_derived_value_that_declares_arithmetic_but_no_reading_is_refused():
+    """The number is reproducible, but neither reader may invent how its statement is judged."""
+    derived = value(OTHER, 6, DERIVED, key(STUDY, 6, MEASURED))
+    del derived[READING]
+    with pytest.raises(ValueError, match=f"must name the `{READING}`"):
+        declared_derivation(derived)
+
+
+def test_a_derived_value_naming_an_unregistered_reading_is_refused():
+    derived = value(OTHER, 6, DERIVED, key(STUDY, 6, MEASURED))
+    derived[READING] = "compare_somehow"
+    with pytest.raises(ValueError, match="no registered published-value reading carries"):
         declared_derivation(derived)
 
 

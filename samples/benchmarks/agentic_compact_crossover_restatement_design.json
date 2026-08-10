@@ -49,10 +49,12 @@
       "published_crossovers": [
         {"depth": 6, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 6, "published_band": [0.85, 0.92], "band_decimals": 2,
          "operation": "trigger_over_own_cap_peak",
+         "reading": "rounded_extent_and_membership",
          "derived_from": [{"study_kind": "compact_memory_boundary_surface", "depth": 6, "form": "interpolated_guard"}],
          "provenance": {"artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json", "field": "cap_peak_prompt_chars.6"}},
         {"depth": 10, "compact_share": 0.5, "form": "portable_trigger_ratio", "fold_step": 10, "published_band": [0.85, 0.92], "band_decimals": 2,
          "operation": "trigger_over_own_cap_peak",
+         "reading": "rounded_extent_and_membership",
          "derived_from": [{"study_kind": "compact_memory_boundary_surface", "depth": 10, "form": "interpolated_guard"}],
          "provenance": {"artifact": "agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/trigger-collapse-analysis.json", "field": "cap_peak_prompt_chars.10"}}
       ]
