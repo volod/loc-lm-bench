@@ -157,8 +157,9 @@ make lint-md
 scripts/code_quality.sh
 ```
 
-`scripts/code_quality.sh` always prints the largest tracked Python files and largest tracked
-non-Python files. Root-file, markdown, shell, and complexity sections are quiet when clean and
+`scripts/code_quality.sh` always prints the largest repository-visible Python files and non-Python
+files, including new non-ignored files before they are staged. Root-file, markdown, shell, and
+complexity sections are quiet when clean and
 appear only when they have findings, missing optional tools, or failures; a shell-lint or
 complexity finding also exits the sweep non-zero (see
 [Code quality checks](#code-quality-checks)).
@@ -175,6 +176,42 @@ current-implementation tree cannot rot into unfindable pages. `scripts/code_qual
 wider sweep: it reports long source files and runs both gates, so maintainers can split code at
 functional seams. The ~250-line source-file target is soft; cohesive schemas and regular lookup
 families may remain whole.
+
+The source-size refactor separates the most frequently edited long modules at their functional
+boundaries:
+
+- agent context policy vocabulary, transcript state, and bounded summarization live in
+  `bench/agentic/context_policy.py`, `context.py`, and `context_summary.py`;
+- context comparison models/pairing, task-kind analysis, recommendation rendering, and persistence
+  live in `bench/agentic_context_report.py` plus the `_kind`, `_recommendation`, and `_persist`
+  modules;
+- the episode loop delegates prompt/compaction assembly, controller transport/repair, and mutable
+  tally state to `agentic/episode_prompt.py`, `episode_controller.py`, and `episode_state.py`;
+- retrieval comparison contracts, resolved settings, and optional output rows live in
+  `rag/compare_models.py`, `compare_settings.py`, and `compare_rows.py`;
+- controller-authority run contracts and snapshot-isolation proof live in
+  `agentic_controller_authority_model.py` and `agentic_controller_authority_snapshot.py`;
+- embedding adoption reason clauses live in `rag/embedding_bakeoff_reason.py`;
+- policy-change replay geometry and design loading live in
+  `bench/agentic_policy_change_geometry.py`;
+- embedding CLI validation/output persistence and persisted agentic comparison commands live in
+  `cli/rag/compare_embeddings_output.py` and `cli/bench/category_agentic_compare.py`.
+
+Callers and tests import each symbol from its owning module; the split adds no compatibility
+re-export layer. `scripts/code_quality.sh` now prints production `.py`/`.sh` soft-limit findings
+separately from the all-files list, whose longer scenario-ledger tests remain visible without being
+mistaken for production modules. No tracked shell file currently exceeds the 250-line soft target.
+The context, report, episode, retrieval, authority, and embedding verdict modules named above are
+all at or below 250 lines after the split. Focused regression suites, Ruff, and full-source mypy
+pass.
+
+The two production modules still above 300 lines are cohesive soft-limit exceptions:
+`quality/gpu_guard_spawn_surface.py` keeps one exhaustive declaration table beside the interpreter
+enumeration that audits it, while `quality/gpu_guard_spawn_reach_coverage.py` keeps the documented
+stdlib classification partition beside its coverage record and filesystem classifiers. Splitting
+either lookup/classifier family would add navigation without creating an independent functional
+owner. The remaining production findings are within 47 lines of the soft target and stay visible
+for future seam-driven cleanup.
 
 **Every check above only sees files the repo can see, so `.gitignore` is part of the gate.** The
 packaging rules are anchored to the repo root (`/build/`, `/dist/`, `/lib/`, `/var/`, `/target/`,

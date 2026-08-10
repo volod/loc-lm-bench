@@ -11,12 +11,14 @@ exercised on sequences the shipped task world does not produce.
 import pytest
 
 from llb.bench.agentic.context import (
+    ContextState,
+)
+from llb.bench.agentic.context_policy import (
     DEFAULT_COMPACT_KEEP_RECENT,
     POLICY_COMPACT,
     ContextPolicy,
-    ContextState,
-    compact_state,
 )
+from llb.bench.agentic.context_summary import compact_state
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_memory_fold_step_ladder import foldable_fold_steps, smallest_guard_reaching
 from llb.bench.agentic_policy_change_interaction_band import (

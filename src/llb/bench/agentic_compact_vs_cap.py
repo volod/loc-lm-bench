@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     DEFAULT_COMPACT_SHARE,
     DEFAULT_OBSERVATION_CAP_CHARS,
     DEFAULT_SUMMARY_INPUT_CAP,
@@ -22,11 +22,8 @@ from llb.bench.agentic.context import (
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask
 from llb.bench.agentic_context import run_policy, task_set_digest
-from llb.bench.agentic_context_report import (
-    PolicyReport,
-    policy_config,
-    policy_metrics,
-)
+from llb.bench.agentic_context_report import PolicyReport
+from llb.bench.agentic_context_report_persist import policy_config, policy_metrics
 from llb.bench.agentic_compact_vs_cap_report import (
     METHOD,
     PAIRED_METRICS,

@@ -22,7 +22,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from llb.bench.agentic.context import CONTEXT_POLICIES, ContextPolicy
+from llb.bench.agentic.context_policy import CONTEXT_POLICIES, ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.batch import _score_episodes
 from llb.bench.agentic.episode import run_episode
@@ -36,14 +36,17 @@ from llb.bench.agentic_context_report import (
     METHOD,
     AgenticContextRun,
     PolicyReport,
-    aggregate_safe_verdict,
-    build_recommendation,
-    format_kind_table,
-    format_policy_table,
-    known_policies,
     pair_against_baseline,
+)
+from llb.bench.agentic_context_report_kind import aggregate_safe_verdict, format_kind_table
+from llb.bench.agentic_context_report_persist import (
+    known_policies,
     policy_config,
     policy_metrics,
+)
+from llb.bench.agentic_context_report_recommendation import (
+    build_recommendation,
+    format_policy_table,
 )
 from llb.bench.common import (
     LLMComplete,

@@ -27,9 +27,8 @@ from llb.bench.agentic_policy_change_audit import (
     KIND_COLLAPSE,
     KIND_FOLD_STEP,
     KIND_SURFACE,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic_memory_crossover_restatement import (
     analyze_restatement,
     audit_published_cells,

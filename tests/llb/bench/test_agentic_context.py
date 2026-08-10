@@ -8,27 +8,29 @@ from pathlib import Path
 import pytest
 
 from llb.bench.agentic.context import (
+    ContextState,
+    policy_history_lines,
+    trim_observation,
+)
+from llb.bench.agentic.context_policy import (
     CONTEXT_POLICIES,
     POLICY_COMPACT,
     POLICY_FULL,
     POLICY_KEEP_LAST_N,
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
-    ContextState,
-    compact_state,
-    policy_history_lines,
-    trim_observation,
 )
+from llb.bench.agentic.context_summary import compact_state
 from llb.bench.agentic.context_budget import (
     ContextBudget,
     fixed_budget,
     prompt_tokens,
     unbounded_budget,
 )
-from llb.bench.agentic.episode import (
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.episode_prompt import (
     build_agent_prompt,
     build_agent_prompt_lines,
-    run_episode,
     step_prompt,
 )
 from llb.bench.agentic.model import (
@@ -306,7 +308,7 @@ def test_observation_cap_survives_a_budget_that_overflows_full():
 
 def test_the_summarize_call_is_itself_capped_so_it_cannot_overflow():
     """The summarizer's input IS the transcript that blew the step prompt -- it must be trimmed."""
-    from llb.bench.agentic.context import summarize_entries
+    from llb.bench.agentic.context_summary import summarize_entries
 
     seen: list[str] = []
     entries = [("search", {"query": "дані"}, BIG)]
@@ -320,7 +322,7 @@ def test_the_summarize_call_is_itself_capped_so_it_cannot_overflow():
 
 
 def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():
-    from llb.bench.agentic.context import summarize_entries
+    from llb.bench.agentic.context_summary import summarize_entries
 
     hits = "\n".join(f"[doc-{i}] text-{i}" for i in range(5))
     seen: list[str] = []
@@ -329,7 +331,7 @@ def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():
 
 
 def test_repeated_compaction_carries_the_prior_summary_and_aggregate_facts():
-    from llb.bench.agentic.context import summarize_entries
+    from llb.bench.agentic.context_summary import summarize_entries
 
     hits = "\n".join(f"[doc-{i}] text-{i}" for i in range(3))
     seen: list[str] = []
@@ -504,7 +506,7 @@ def test_run_agentic_context_runs_every_policy_on_the_identical_task_set():
 
 
 def test_kind_table_splits_count_vs_locate_and_scores_pre_header_delta():
-    from llb.bench.agentic_context_report import (
+    from llb.bench.agentic_context_report_kind import (
         aggregate_safe_verdict,
         format_kind_table,
         kind_completion,

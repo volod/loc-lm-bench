@@ -8,9 +8,10 @@ catalog, so the loop's results are unchanged by the agentic harness comparison r
 
 import time
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
-from llb.bench.agentic.episode import Clock, run_episode
+from llb.bench.agentic.episode import run_episode
+from llb.bench.agentic.episode_state import Clock
 from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask, Episode
 from llb.bench.common import LLMComplete

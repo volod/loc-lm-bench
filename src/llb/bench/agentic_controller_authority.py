@@ -1,14 +1,10 @@
 """Prospective observation-versus-controller channel authority comparison."""
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import cast
 
 from llb.bench.agentic.controller_channel import (
-    CHANNEL_CONTROLLER,
     CHANNEL_OBSERVATION,
-    CHANNEL_PREAMBLE,
 )
 from llb.bench.agentic_controller_authority_design import (
     CROSS_MODEL_HYPOTHESIS as CROSS_MODEL_HYPOTHESIS,
@@ -26,27 +22,10 @@ from llb.bench.agentic_loop_feedback_outcomes import (
     compact_family_outcomes,
     summarize_response_completion,
 )
-from llb.core.contracts.benchmarks import AgenticCaseRow
-from llb.core.contracts.common import ChatMessage
+from llb.bench.agentic_controller_authority_model import ChannelCell, ChannelSeedRun
+from llb.bench.agentic_controller_authority_snapshot import snapshot_proof
 from llb.rag.fusion_evidence.paired import paired_comparison, reading_of
 from llb.rag.fusion_evidence.stats import DEFAULT_RESAMPLES, DEFAULT_SEED, bootstrap_index_sets
-
-
-@dataclass(frozen=True, slots=True)
-class ChannelCell:
-    placement: str
-    rows: list[AgenticCaseRow]
-    snapshots: dict[str, list[ChatMessage]]
-    manifest: str | None = None
-    tokens_per_s: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
-class ChannelSeedRun:
-    seed: int
-    model: str
-    backend: str
-    cells: dict[str, ChannelCell]
 
 
 def _vector(cell: ChannelCell, metric: str) -> list[float]:
@@ -57,94 +36,6 @@ def _vector(cell: ChannelCell, metric: str) -> list[float]:
 
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
-
-
-def _serialization_name(backend: str) -> str:
-    """Which serializer a backend's transcript is rendered through."""
-    return "ollama" if backend == "ollama" else "openai_compatible"
-
-
-def _preamble_normalized(
-    baseline: list[ChatMessage],
-    candidate: list[ChatMessage],
-    task_id: str,
-    design: dict[str, object],
-    transforms: dict[str, list[dict[str, str]]],
-) -> object:
-    """Prove one preamble pair moved the SAME two messages, and return what both must digest to."""
-    if len(baseline) != 2 or len(candidate) != 2:
-        raise ValueError(f"preamble snapshot cardinality is invalid for task {task_id}")
-    if baseline[1]["content"] != design["authority_text"]:
-        raise ValueError(f"authority snapshot text is invalid for task {task_id}")
-    if candidate[0]["content"] != baseline[1]["content"]:
-        raise ValueError(f"authority snapshot content changed for task {task_id}")
-    if candidate[1]["content"] != baseline[0]["content"]:
-        raise ValueError(f"task snapshot content changed for task {task_id}")
-    expected_baseline = [
-        {"role": step["role"], "content": baseline[index]["content"]}
-        for index, step in enumerate(transforms[CHANNEL_OBSERVATION])
-    ]
-    expected_candidate = [
-        {"role": step["role"], "content": candidate[index]["content"]}
-        for index, step in enumerate(transforms[CHANNEL_PREAMBLE])
-    ]
-    if baseline != expected_baseline or candidate != expected_candidate:
-        raise ValueError(f"preamble snapshot structure is invalid for task {task_id}")
-    return {"prompt": baseline[0]["content"], "authority": baseline[1]["content"]}
-
-
-def _role_normalized(
-    baseline: list[ChatMessage],
-    candidate: list[ChatMessage],
-    task_id: str,
-    design: dict[str, object],
-    roles: dict[str, str],
-) -> object:
-    """Prove one role pair differs only in the authority message's ROLE, and return the content."""
-    if [item["content"] for item in baseline] != [item["content"] for item in candidate]:
-        raise ValueError(f"authority snapshot content changed for task {task_id}")
-    if baseline[-1]["content"] != design["authority_text"]:
-        raise ValueError(f"authority snapshot text is invalid for task {task_id}")
-    if baseline[:-1] != candidate[:-1] or baseline[-1]["role"] != roles[CHANNEL_OBSERVATION]:
-        raise ValueError(f"observation snapshot structure is invalid for task {task_id}")
-    if candidate[-1]["role"] != roles[CHANNEL_CONTROLLER]:
-        raise ValueError(f"controller snapshot structure is invalid for task {task_id}")
-    return [{**item, "role": "authority"} for item in baseline]
-
-
-def _content_digest(normalized: object) -> str:
-    """The digest both placements must produce, which is what "same text, other channel" means."""
-    return hashlib.sha256(
-        json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-
-
-def _snapshot_proof(
-    observation: ChannelCell,
-    controller: ChannelCell,
-    design: dict[str, object],
-    backend: str,
-) -> dict[str, object]:
-    """Pair every activated task's two snapshots and prove the placement was the only difference."""
-    task_ids = sorted(observation.snapshots)
-    if task_ids != sorted(controller.snapshots):
-        raise ValueError("authority activation snapshots differ between placements")
-    serialization = _serialization_name(backend)
-    is_preamble = design["study_kind"] == PREAMBLE_STUDY_KIND
-    pairs: list[dict[str, str]] = []
-    for task_id in task_ids:
-        baseline = observation.snapshots[task_id]
-        candidate = controller.snapshots[task_id]
-        if is_preamble:
-            transforms = cast(
-                dict[str, dict[str, list[dict[str, str]]]], design["serializer_transforms"]
-            )[serialization]
-            normalized = _preamble_normalized(baseline, candidate, task_id, design, transforms)
-        else:
-            roles = cast(dict[str, dict[str, str]], design["role_serialization"])[serialization]
-            normalized = _role_normalized(baseline, candidate, task_id, design, roles)
-        pairs.append({"task_id": task_id, "content_digest": _content_digest(normalized)})
-    return {"passed": True, "paired_tasks": len(pairs), "pairs": pairs}
 
 
 def _cost_gate(comparison: dict[str, object], baseline: float, limit: float) -> dict[str, object]:
@@ -265,7 +156,7 @@ def _channel_seed_row(
         raise ValueError("controller-channel run does not isolate the two placements")
     baseline = run.cells[CHANNEL_OBSERVATION]
     candidate = run.cells[gates.candidate_placement]
-    proof = _snapshot_proof(baseline, candidate, design, run.backend)
+    proof = snapshot_proof(baseline, candidate, design, run.backend)
     baseline_redirect = summarize_response_completion(baseline.rows)
     redirect = summarize_response_completion(candidate.rows)
     by_family = cast(dict[str, dict[str, object]], redirect["by_family"])

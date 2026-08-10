@@ -16,7 +16,8 @@ dependency / GPU (the same injectable discipline as the rest of category suite/e
 while the real CrewAI path is exercised only on a host that has the extra installed.
 """
 
-from llb.bench.agentic.context import ContextPolicy, ContextTelemetry
+from llb.bench.agentic.context import ContextTelemetry
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,

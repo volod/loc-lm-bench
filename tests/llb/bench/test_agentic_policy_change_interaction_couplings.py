@@ -14,12 +14,12 @@ import itertools
 
 import pytest
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
-    is_summary_prompt,
 )
+from llb.bench.agentic.context_summary import is_summary_prompt
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_memory_fold_step_ladder import live_entries_at_fold_step
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks

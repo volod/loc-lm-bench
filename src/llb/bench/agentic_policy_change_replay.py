@@ -44,7 +44,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from llb.bench.agentic.context import POLICY_COMPACT, POLICY_OBSERVATION_CAP, ContextPolicy
+from llb.bench.agentic.context_policy import (
+    POLICY_COMPACT,
+    POLICY_OBSERVATION_CAP,
+    ContextPolicy,
+)
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW, AgenticTask, Episode

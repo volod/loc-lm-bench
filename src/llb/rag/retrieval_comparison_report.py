@@ -1,6 +1,6 @@
 """ASCII report rendering for ``compare-retrieval``."""
 
-from llb.rag.compare import ComparisonReport
+from llb.rag.compare_models import ComparisonReport
 from llb.rag.fusion_evidence.paired import PairedComparison, reading_of
 from llb.rag.fusion_evidence.stats import format_interval
 

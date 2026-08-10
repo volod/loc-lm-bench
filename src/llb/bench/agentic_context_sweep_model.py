@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     DEFAULT_KEEP_LAST_N,
     DEFAULT_OBSERVATION_CAP_CHARS,
     OBSERVATION_HEAD_SHARE,

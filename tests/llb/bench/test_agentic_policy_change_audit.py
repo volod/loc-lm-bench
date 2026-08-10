@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
     SUMMARY_INPUT_CAP_TRIGGER,
@@ -32,9 +32,8 @@ from llb.bench.agentic_policy_change_audit import (
     audit_cell_prompts,
     audit_policy_change,
     coerce_policy_value,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic_memory_boundary_probe import oracle_compacting_controller

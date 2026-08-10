@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic_controller_authority import ChannelCell
+from llb.bench.agentic_controller_authority_model import ChannelCell
 from llb.bench.agentic.model import STATUS_COMPLETED
 from llb.bench.agentic_loop_policy_report import METHOD
 from llb.bench.common import Mirror, persist_category_run

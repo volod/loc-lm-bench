@@ -7,7 +7,8 @@ spread statistic is exercised with no FAISS, no GPU, and no embedder.
 import pytest
 
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
-from llb.rag.compare import compare_retrieval, format_comparison
+from llb.rag.compare import compare_retrieval
+from llb.rag.compare_rows import format_comparison
 from llb.rag.noise_floor import DEFAULT_SCORE_JITTER, measure_noise_floor
 from llb.rag.noise_floor_report import format_noise_floor
 

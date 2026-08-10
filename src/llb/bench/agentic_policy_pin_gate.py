@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic_policy_change_audit import (
     AUDITABLE_FIELDS,
     POLICY_FIELD_TYPES,

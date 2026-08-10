@@ -43,27 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-two-source-files-remain-over-the-soft-line-target (optional)
-
-`bench/agentic_context_report.py` (500 lines) and `bench/agentic/context.py` (487) are the two
-source files still meaningfully past the ~250-line soft target after the encoder-throughput and
-context-sweep splits ([host validation](current/host-validation.md#code-quality-checks)). Both have
-a visible seam: the report module is per-kind tables plus the aggregate-safe verdict plus the run
-manifest shape, and the context module is the policy vocabulary plus the transcript state machine
-plus summarization. Split each along that seam and repoint call sites at the real submodule (this
-repo keeps no re-export shim), or -- if the seam turns out to be one cohesive family -- record that
-decision instead, because AGENTS.md makes the limit soft on purpose.
-
-- Agent status: CLEAR
-- Dependencies: the two modules above; the split pattern to follow is
-  `rag/encoder_throughput{,_summary,_report,_profile}.py` and
-  `bench/agentic_context_sweep{,_model,_verdict}.py`.
-- User-visible outcome: the two files a reader is most often sent to stop being the two longest.
-- Scope boundary: in scope -- the split, the call-site repoint, and the import updates in tests.
-  Out of scope -- behavior changes, a re-export shim, and splitting a cohesive lookup family just
-  to reach a line count.
-- Documentation target: [host validation](current/host-validation.md#code-quality-checks).
-
 ### agent-a-probe-set-declares-branches-and-nothing-says-which-it-missed (optional)
 
 An operation's probe set says which paths its declaration is certified on, and points that cannot

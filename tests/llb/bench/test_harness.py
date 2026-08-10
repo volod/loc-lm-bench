@@ -65,7 +65,8 @@ def test_loop_harness_matches_run_episode():
 
 
 def test_agent_node_stages_tool_call():
-    from llb.bench.agentic.context import ContextPolicy, ContextState
+    from llb.bench.agentic.context import ContextState
+    from llb.bench.agentic.context_policy import ContextPolicy
     from llb.bench.agentic.context_budget import unbounded_budget
 
     node = lg.make_agent_node(
@@ -80,7 +81,8 @@ def test_agent_node_stages_tool_call():
 
 
 def test_agent_node_finish_and_prose():
-    from llb.bench.agentic.context import ContextPolicy, ContextState
+    from llb.bench.agentic.context import ContextState
+    from llb.bench.agentic.context_policy import ContextPolicy
     from llb.bench.agentic.context_budget import unbounded_budget
 
     finish = lg.make_agent_node(
@@ -99,7 +101,8 @@ def test_agent_node_finish_and_prose():
 
 
 def test_tool_node_executes_and_records():
-    from llb.bench.agentic.context import ContextPolicy, ContextState
+    from llb.bench.agentic.context import ContextState
+    from llb.bench.agentic.context_policy import ContextPolicy
 
     node = lg.make_tool_node(ContextPolicy())
     world = tw.ToolWorld.from_setup({})
@@ -162,7 +165,7 @@ def test_langgraph_nodes_reproduce_the_loop(script, task, max_steps):
 
 def fake_crew_runner(task, complete, catalog, world, max_steps, *, telemetry=None):
     """A fake crew: execute calc+write against the world, then answer (proves the adaptation)."""
-    from llb.bench.agentic.episode import build_agent_prompt
+    from llb.bench.agentic.episode_prompt import build_agent_prompt
 
     transcript = []
     if telemetry is not None:

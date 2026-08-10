@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from llb.bench.agentic.context import ContextPolicy, ContextTelemetry
+from llb.bench.agentic.context import ContextTelemetry
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic.context_budget import ContextBudget
 from llb.bench.common import JudgeScorer, LLMComplete, Mirror
 from llb.bench.tool_world import ToolWorld

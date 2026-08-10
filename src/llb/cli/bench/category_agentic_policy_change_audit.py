@@ -30,8 +30,8 @@ def bench_agentic_policy_change_audit_cmd(
         PolicyChange,
         audit_policy_change,
         coerce_policy_value,
-        load_audited_designs,
     )
+    from llb.bench.agentic_policy_change_geometry import load_audited_designs
     from llb.bench.agentic_policy_change_audit_report import (
         format_policy_change_table,
         persist_policy_change_audit,

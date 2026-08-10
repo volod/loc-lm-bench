@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
 from llb.bench.agentic.context import ContextTelemetry
-from llb.bench.agentic.episode import build_agent_prompt
+from llb.bench.agentic.episode_prompt import build_agent_prompt
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
     STATUS_INCOMPLETE,

@@ -16,7 +16,7 @@ that arithmetic is the substance of the answer rather than a detail of it.
 
 from typing import cast
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_WINDOW
 from llb.bench.agentic_memory_boundary_probe import compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import (
     fold_step_guard_interval,

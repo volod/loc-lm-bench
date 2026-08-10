@@ -9,7 +9,7 @@ the arithmetic cannot answer.
 
 import pytest
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER, SUMMARY_INPUT_CAP_WINDOW
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_memory_fold_step_ladder import (
     MIN_LIVE_ENTRIES_TO_FOLD,

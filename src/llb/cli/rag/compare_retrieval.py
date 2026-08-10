@@ -96,9 +96,9 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import (
+    from llb.rag.compare import compare_retrieval
+    from llb.rag.compare_rows import (
         add_rerank_rows,
-        compare_retrieval,
         duplicate_census,
         format_comparison,
     )
@@ -225,7 +225,7 @@ def _comparison_baseline(
 
 def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:
     """Return deployable rows only: oracle and lexical diagnostics cannot receive ADOPT."""
-    from llb.rag.compare import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
+    from llb.rag.compare_models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
 
     excluded = {ROW_ORACLE_DOC}
     if hybrid:

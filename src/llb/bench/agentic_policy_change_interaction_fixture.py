@@ -26,15 +26,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.bench.agentic_design_fields import as_mapping, as_rows
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_TRIGGER
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_TRIGGER
 from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence, compact_fold_input_probe
 from llb.bench.agentic_memory_fold_step_ladder import compaction_trigger_chars, first_fold_step
 from llb.bench.agentic_policy_change_audit import (
     KIND_INTERACTION,
     PolicyChange,
-    declared_geometry,
-    load_audited_design,
 )
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic_policy_change_interaction_terms import FIELD_BOUND, FIELD_SHARE
 
 INTERACTION_DESIGN_PATH = "samples/benchmarks/agentic_policy_change_interaction_design.json"

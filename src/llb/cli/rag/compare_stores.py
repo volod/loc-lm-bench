@@ -50,7 +50,8 @@ def compare_vector_stores_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval, format_comparison
+    from llb.rag.compare import compare_retrieval
+    from llb.rag.compare_rows import format_comparison
     from llb.rag.comparison_builders import build_vector_store_comparison
 
     cfg = load_config(

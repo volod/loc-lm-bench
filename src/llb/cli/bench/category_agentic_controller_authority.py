@@ -26,10 +26,10 @@ def bench_agentic_loop_controller_channel_authority_cmd(
     from llb.backends.ollama import OllamaLauncher, list_models
     from llb.bench.agentic.run import load_tasks_file
     from llb.bench.agentic_controller_authority import (
-        ChannelSeedRun,
         analyze_channel_authority,
         validate_channel_authority_design,
     )
+    from llb.bench.agentic_controller_authority_model import ChannelSeedRun
     from llb.bench.agentic_controller_authority_report import (
         format_channel_authority_table,
         persist_channel_authority,

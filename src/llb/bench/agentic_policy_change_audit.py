@@ -30,7 +30,6 @@ This module owns the geometry extraction shared with the summarize-bound audit
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, cast
 
 from llb.bench.agentic_policy_change_replay import AUDITED_POLICIES, arm_comparison
@@ -154,9 +153,11 @@ def audit_policy_change(
     designs: dict[str, dict[str, object]], change: PolicyChange
 ) -> dict[str, list[dict[str, object]]]:
     """Replay every published cell of every design under both policies and compare its prompts."""
+    from llb.bench.agentic_policy_change_geometry import declared_geometry, held_fixed
+
     return {
         kind: [
-            audit_cell_prompts(cell, _held_fixed(design, kind), change)
+            audit_cell_prompts(cell, held_fixed(design, kind), change)
             for cell in declared_geometry(design, kind)
         ]
         for kind, design in designs.items()
@@ -230,74 +231,3 @@ def audit_cell_prompts(
         ),
         "verdict": VERDICT_CHANGED if changed else VERDICT_INVARIANT,
     }
-
-
-def declared_geometry(design: dict[str, object], study_kind: str) -> list[dict[str, object]]:
-    """Every declared cell's `(cell_id, depth, compact_share, max_prompt_chars)`, in design order.
-
-    The three studies nest cells differently -- a flat grid, families, and per-depth step ladders --
-    so the shape is read per kind rather than guessed at.
-    """
-    held = _held_fixed(design, study_kind)
-    # The collapse study SWEEPS the share, so it states one per cell and holds none fixed.
-    default_share = held.get("compact_share")
-    # `(depth, group)`: the surface states depth per cell, the others state it on the group.
-    groups: list[tuple[int | None, dict[str, object]]]
-    if study_kind == KIND_SURFACE:
-        groups = [(None, cast(dict[str, object], design["surface"]))]
-    elif study_kind == KIND_INTERACTION:
-        groups = [(None, design)]
-    elif study_kind == KIND_COLLAPSE:
-        groups = [
-            (int(cast(int, family["depth"])), family)
-            for family in cast(list[dict[str, object]], design["families"])
-        ]
-    else:
-        groups = [
-            (int(cast(int, ladder["depth"])), step)
-            for ladder in cast(list[dict[str, object]], design["ladders"])
-            for step in cast(list[dict[str, object]], ladder["steps"])
-        ]
-    return [
-        {
-            "cell_id": cast(str, cell["cell_id"]),
-            "depth": int(cast(int, cell.get("depth", depth))),
-            "compact_share": _share(cell, default_share),
-            "max_prompt_chars": int(cast(int, cell["max_prompt_chars"])),
-            "pinned_fields": [name for name in POLICY_FIELD_TYPES if name in cell],
-        }
-        for depth, group in groups
-        for cell in cast(list[dict[str, object]], group["cells"])
-    ]
-
-
-def load_audited_design(path: Path | str) -> dict[str, object]:
-    """Load one committed study design for auditing (the studies' own strict JSON loader)."""
-    from llb.bench.agentic_memory_transfer import load_transfer_design
-
-    return load_transfer_design(path)
-
-
-def load_audited_designs() -> dict[str, dict[str, object]]:
-    """Every committed study the audit walks, keyed by its study kind."""
-    from llb.core.paths import PROJECT_ROOT
-
-    return {
-        kind: load_audited_design(PROJECT_ROOT / path)
-        for kind, path in AUDITED_DESIGN_PATHS.items()
-    }
-
-
-def _share(cell: dict[str, object], default: object) -> float:
-    share = cell.get("compact_share", default)
-    if share is None:
-        raise ValueError(f"cell {cell.get('cell_id')!r} states no compact_share and none is held")
-    return float(cast(float, share))
-
-
-def _held_fixed(design: dict[str, object], study_kind: str) -> dict[str, object]:
-    if study_kind not in GEOMETRY_KINDS:
-        raise ValueError(
-            f"{study_kind!r} is not a readable geometry kind; choose from {GEOMETRY_KINDS}"
-        )
-    return cast(dict[str, object], design["held_fixed"])

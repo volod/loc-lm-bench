@@ -15,15 +15,15 @@ band is cap-fitting -- is pure and lives in `agentic_memory_fold_step_ladder`.
 import json
 import re
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     DEFAULT_OBSERVATION_CAP_CHARS,
     DEFAULT_SUMMARY_INPUT_CAP,
     OBSERVATION_HEAD_SHARE,
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
-    is_summary_prompt,
 )
+from llb.bench.agentic.context_summary import is_summary_prompt
 from llb.bench.agentic.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import AgenticTask

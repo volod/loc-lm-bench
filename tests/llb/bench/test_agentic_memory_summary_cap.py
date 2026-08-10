@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic.context import (
+from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     SUMMARY_INPUT_CAP_TRIGGER,
     SUMMARY_INPUT_CAP_WINDOW,
     ContextPolicy,
-    summary_prompt_overhead_chars,
 )
+from llb.bench.agentic.context_summary import summary_prompt_overhead_chars
 from llb.bench.agentic.context_budget import fixed_budget
-from llb.bench.agentic.episode import summary_input_cap_chars
+from llb.bench.agentic.episode_prompt import summary_input_cap_chars
 from llb.bench.agentic_memory_boundary_probe import compact_fold_input_probe, oracle_controller
 from llb.bench.agentic_memory_summary_cap import analyze_summary_cap, run_summary_cap_arms
 from llb.bench.agentic_memory_summary_cap_design import (

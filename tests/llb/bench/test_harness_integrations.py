@@ -51,7 +51,7 @@ def test_crewai_harness_with_fake_crew():
 
 
 def test_crewai_harness_marks_policy_unsupported():
-    from llb.bench.agentic.context import ContextPolicy, POLICY_OBSERVATION_CAP
+    from llb.bench.agentic.context_policy import ContextPolicy, POLICY_OBSERVATION_CAP
 
     harness = crewai_harness.make_crewai_harness(fake_crew_runner)
     ep = harness(
@@ -97,7 +97,11 @@ def test_run_agentic_records_harness_in_manifest(tmp_path):
 
 
 def test_langgraph_applies_observation_cap_like_loop():
-    from llb.bench.agentic.context import ContextPolicy, POLICY_FULL, POLICY_OBSERVATION_CAP
+    from llb.bench.agentic.context_policy import (
+        POLICY_FULL,
+        POLICY_OBSERVATION_CAP,
+        ContextPolicy,
+    )
     from llb.bench.agentic.context_budget import unbounded_budget
 
     catalog = tw.tool_catalog()
@@ -172,7 +176,7 @@ def test_harness_comparison_ranks_one_model_across_harnesses(tmp_path):
 
 
 def test_harness_comparison_holds_context_policy_fixed(tmp_path):
-    from llb.bench.agentic.context import ContextPolicy, POLICY_OBSERVATION_CAP
+    from llb.bench.agentic.context_policy import ContextPolicy, POLICY_OBSERVATION_CAP
 
     run_agentic(
         two_tasks()[:1],

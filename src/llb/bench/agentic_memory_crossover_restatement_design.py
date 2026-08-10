@@ -10,12 +10,9 @@ cannot silently drift from the study it restates.
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic.context import SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAPS
-from llb.bench.agentic_policy_change_audit import (
-    AUDITED_KINDS,
-    declared_geometry,
-    load_audited_design,
-)
+from llb.bench.agentic.context_policy import SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAPS
+from llb.bench.agentic_policy_change_audit import AUDITED_KINDS
+from llb.bench.agentic_policy_change_geometry import declared_geometry, load_audited_design
 from llb.bench.agentic_memory_crossover_restatement_placement import (
     validate_derived_placements,
     validate_published_placement,

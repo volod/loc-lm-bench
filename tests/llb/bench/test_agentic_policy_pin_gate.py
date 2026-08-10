@@ -8,13 +8,12 @@ from typing import Any
 
 import pytest
 
-from llb.bench.agentic.context import ContextPolicy
+from llb.bench.agentic.context_policy import ContextPolicy
 from llb.bench.agentic_policy_change_audit import (
     AUDITABLE_FIELDS,
     KIND_SURFACE,
-    load_audited_design,
-    load_audited_designs,
 )
+from llb.bench.agentic_policy_change_geometry import load_audited_design, load_audited_designs
 from llb.bench.agentic_policy_pin_gate import (
     DESIGNS_AGREE,
     DESIGNS_RESTATED,
