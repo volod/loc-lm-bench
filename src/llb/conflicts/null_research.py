@@ -1,41 +1,25 @@
 """Execute and decide the independent-null research matrix."""
 
 from collections.abc import Callable
-import math
 from pathlib import Path
 
-from llb.conflicts.null_research_candidates import (
-    build_labelled_candidate,
-    build_null_candidate,
-)
 from llb.conflicts.null_research_evaluation import (
     DEFAULT_MAX_GOODS_CANDIDATES,
     DEFAULT_RESEARCH_FPR,
     DEFAULT_RESEARCH_RANK_BUDGET,
     DEFAULT_TRANSFER_THRESHOLD,
     FIXTURE_POSITIVE_DOC_PAIRS,
-    MIN_TAIL_OBSERVATIONS,
     rank_baseline,
 )
-from llb.conflicts.null_research_geometry import (
-    CorpusGeometry,
-    cross_corpus_null,
-    held_out_document_null,
-    permutation_null,
-    prepare_geometry,
+from llb.conflicts.null_research_geometry import CorpusGeometry, prepare_geometry
+from llb.conflicts.null_research_initial import (
+    RESEARCH_METHODS as RESEARCH_METHODS,
+    run_initial_candidates,
 )
 from llb.conflicts.store_access import StoreView
 from llb.core.contracts.common import JsonObject
 
 EmbedTexts = Callable[[list[str]], object]
-
-RESEARCH_METHODS = (
-    "cross_corpus",
-    "token_permutation",
-    "sentence_permutation",
-    "held_out_document",
-    "labelled_calibration",
-)
 
 
 def _geometry_payload(geometry: CorpusGeometry) -> JsonObject:
@@ -47,6 +31,9 @@ def _geometry_payload(geometry: CorpusGeometry) -> JsonObject:
         "dimensions": geometry.vectors.dim,
         "chunks": len(geometry.chunks),
         "comparable_chunks": len(geometry.allowed),
+        "unique_comparable_texts": len(
+            {geometry.chunks[index]["text"] for index in geometry.allowed}
+        ),
         "documents": len({geometry.chunks[index]["doc_id"] for index in geometry.allowed}),
         "comparable_chunk_pairs": len(geometry.observed_similarities),
         "document_pairs": len(geometry.document_maxima),
@@ -55,16 +42,106 @@ def _geometry_payload(geometry: CorpusGeometry) -> JsonObject:
     }
 
 
-def _resolved_permutations(
-    corpora: dict[str, CorpusGeometry], requested: int, fpr: float
-) -> dict[str, int]:
-    """Raise small-corpus repeats until the nominal tail has enough observations."""
+def _adopted_methods(methods: list[JsonObject]) -> list[str]:
+    return [str(method["method"]) for method in methods if method["gates"]["accepted"]]
+
+
+def _next_generation_summary(
+    corpora: dict[str, CorpusGeometry],
+    reference: CorpusGeometry,
+    domain_reference: tuple[Path, StoreView],
+    rank: JsonObject,
+    embed: EmbedTexts,
+    *,
+    fpr: float,
+    rank_budget: int,
+    transfer_threshold: float,
+    max_goods_candidates: int,
+    matches_per_reference: int,
+    seed: int,
+) -> JsonObject:
+    from llb.conflicts.null_research_nextgen import run_next_generation_candidates
+
+    domain_geometry = prepare_geometry("domain_reference", *domain_reference)
+    methods, traces = run_next_generation_candidates(
+        corpora,
+        {"general": reference, "domain": domain_geometry},
+        rank,
+        embed,
+        fpr=fpr,
+        transfer_threshold=transfer_threshold,
+        max_goods_candidates=max_goods_candidates,
+        matches_per_reference=matches_per_reference,
+        seed=seed,
+    )
+    adopted = _adopted_methods(methods)
     return {
-        name: max(
-            requested,
-            math.ceil(MIN_TAIL_OBSERVATIONS / (fpr * len(corpus.allowed))),
-        )
-        for name, corpus in corpora.items()
+        "research_generation": "next",
+        "verdict": "adopt" if adopted else "negative",
+        "adopted_methods": adopted,
+        "parameters": {
+            "fpr": fpr,
+            "rank_budget": rank_budget,
+            "transfer_threshold": transfer_threshold,
+            "max_goods_candidates": max_goods_candidates,
+            "matches_per_reference": matches_per_reference,
+            "seed": seed,
+        },
+        "datasets": {
+            **{name: _geometry_payload(corpus) for name, corpus in corpora.items()},
+            "general_reference": _geometry_payload(reference),
+            "domain_reference": _geometry_payload(domain_geometry),
+        },
+        "rank_baseline": rank,
+        "methods": methods,
+        "control_traces": traces,
+    }
+
+
+def _initial_summary(
+    corpora: dict[str, CorpusGeometry],
+    reference: CorpusGeometry,
+    rank: JsonObject,
+    embed: EmbedTexts,
+    *,
+    fpr: float,
+    rank_budget: int,
+    transfer_threshold: float,
+    max_goods_candidates: int,
+    permutations: int,
+    seed: int,
+) -> JsonObject:
+    methods, repeats = run_initial_candidates(
+        corpora,
+        reference,
+        rank,
+        embed,
+        fpr=fpr,
+        transfer_threshold=transfer_threshold,
+        max_goods_candidates=max_goods_candidates,
+        permutations=permutations,
+        seed=seed,
+    )
+    adopted = _adopted_methods(methods)
+    return {
+        "research_generation": "initial",
+        "verdict": "adopt" if adopted else "negative",
+        "adopted_methods": adopted,
+        "parameters": {
+            "fpr": fpr,
+            "rank_budget": rank_budget,
+            "transfer_threshold": transfer_threshold,
+            "max_goods_candidates": max_goods_candidates,
+            "minimum_permutations": permutations,
+            "resolved_permutations": repeats,
+            "seed": seed,
+        },
+        "datasets": {
+            **{name: _geometry_payload(corpus) for name, corpus in corpora.items()},
+            "reference": _geometry_payload(reference),
+        },
+        "rank_baseline": rank,
+        "methods": methods,
     }
 
 
@@ -75,11 +152,14 @@ def run_null_research(
     goods: tuple[Path, StoreView],
     reference: tuple[Path, StoreView],
     embed: EmbedTexts,
+    domain_reference: tuple[Path, StoreView] | None = None,
+    next_generation: bool = False,
     fpr: float = DEFAULT_RESEARCH_FPR,
     rank_budget: int = DEFAULT_RESEARCH_RANK_BUDGET,
     transfer_threshold: float = DEFAULT_TRANSFER_THRESHOLD,
     max_goods_candidates: int = DEFAULT_MAX_GOODS_CANDIDATES,
     permutations: int = 3,
+    matches_per_reference: int = 2,
     seed: int = 0,
 ) -> JsonObject:
     """Evaluate all proposed nulls and return a complete adopt-or-reject record."""
@@ -94,83 +174,31 @@ def run_null_research(
         FIXTURE_POSITIVE_DOC_PAIRS,
         rank_budget,
     )
-    cross_scores = {
-        name: cross_corpus_null(corpus, reference_geometry) for name, corpus in corpora.items()
-    }
-    methods = [
-        build_null_candidate(
-            "cross_corpus",
-            cross_scores,
+    if next_generation:
+        if domain_reference is None:
+            raise ValueError("next-generation research requires a domain reference corpus")
+        return _next_generation_summary(
             corpora,
+            reference_geometry,
+            domain_reference,
             rank,
+            embed,
             fpr=fpr,
+            rank_budget=rank_budget,
             transfer_threshold=transfer_threshold,
             max_goods_candidates=max_goods_candidates,
-            eligible_as_null=True,
+            matches_per_reference=matches_per_reference,
+            seed=seed,
         )
-    ]
-    permutation_repeats = _resolved_permutations(corpora, permutations, fpr)
-    for mode in ("token", "sentence"):
-        scores = {
-            name: permutation_null(
-                corpus,
-                embed,
-                mode=mode,
-                permutations=permutation_repeats[name],
-                seed=seed,
-            )
-            for name, corpus in corpora.items()
-        }
-        methods.append(
-            build_null_candidate(
-                f"{mode}_permutation",
-                scores,
-                corpora,
-                rank,
-                fpr=fpr,
-                transfer_threshold=transfer_threshold,
-                max_goods_candidates=max_goods_candidates,
-                eligible_as_null=True,
-            )
-        )
-    held_out = {name: held_out_document_null(corpus) for name, corpus in corpora.items()}
-    methods.append(
-        build_null_candidate(
-            "held_out_document",
-            held_out,
-            corpora,
-            rank,
-            fpr=fpr,
-            transfer_threshold=transfer_threshold,
-            max_goods_candidates=max_goods_candidates,
-            eligible_as_null=False,
-        )
+    return _initial_summary(
+        corpora,
+        reference_geometry,
+        rank,
+        embed,
+        fpr=fpr,
+        rank_budget=rank_budget,
+        transfer_threshold=transfer_threshold,
+        max_goods_candidates=max_goods_candidates,
+        permutations=permutations,
+        seed=seed,
     )
-    methods.append(
-        build_labelled_candidate(
-            corpora,
-            rank,
-            transfer_threshold=transfer_threshold,
-            max_goods_candidates=max_goods_candidates,
-        )
-    )
-    adopted = [str(method["method"]) for method in methods if method["gates"]["accepted"]]
-    return {
-        "verdict": "adopt" if adopted else "negative",
-        "adopted_methods": adopted,
-        "parameters": {
-            "fpr": fpr,
-            "rank_budget": rank_budget,
-            "transfer_threshold": transfer_threshold,
-            "max_goods_candidates": max_goods_candidates,
-            "minimum_permutations": permutations,
-            "resolved_permutations": permutation_repeats,
-            "seed": seed,
-        },
-        "datasets": {
-            **{name: _geometry_payload(corpus) for name, corpus in corpora.items()},
-            "reference": _geometry_payload(reference_geometry),
-        },
-        "rank_baseline": rank,
-        "methods": methods,
-    }

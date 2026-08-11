@@ -68,6 +68,13 @@ held-out document maxima, and labelled fixture calibration. None clears the fixt
 goods flood, independence, and resolved-tail gates together; the detailed matrix and artifact are
 in [data prep](data-prep/conflict-detection.md#independent-null-research-negative-result).
 
+The second-generation CUDA matrix adds surface/encoder-matched multi-reference controls, local
+residual similarity, source-cluster empirical FDR, and traced argument/quantity/modality edits. It
+also corrects tail accounting from repeated pair rows to unique source/reference units. None clears
+exchangeability, effective-tail, fixture, HR, and goods gates together; counterfactual edits are not
+eligible nulls without relation verification. The evidence and artifact are in [data
+prep](data-prep/conflict-detection.md#second-generation-conflict-null-research-negative-result).
+
 The product decision therefore remains unchanged while higher-effort research continues.
 Confidence in a corpus conflict comes from the **claim tier's adjudication**, not from a cosine or
 a threshold, so no autonomous gate should branch on the semantic tier's provisional `duplicate`

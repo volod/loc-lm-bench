@@ -8,6 +8,7 @@ from llb.core.contracts.common import JsonObject
 
 NULL_RESEARCH_SUMMARY = "summary.json"
 NULL_RESEARCH_REPORT = "report.md"
+NULL_RESEARCH_CONTROL_TRACES = "counterfactual_traces.jsonl"
 
 _METHOD_LIMITATIONS = {
     "cross_corpus": (
@@ -28,6 +29,23 @@ _METHOD_LIMITATIONS = {
     "labelled_calibration": (
         "This is a supervised operating point on the planted fixture, not a null distribution or "
         "a transferable FPR estimate."
+    ),
+    "surface_matched_reference": (
+        "Matching reduces measured surface shift but reuses source and reference chunks, so pair "
+        "rows are not independent tail observations."
+    ),
+    "surface_matched_residual": (
+        "Subtracting each chunk's matched-control median is a local geometry correction; it is "
+        "valid only when the matched controls pass exchangeability and clustered-tail gates."
+    ),
+    "surface_matched_cluster_fdr": (
+        "The FDR numerator uses a conservative source-cluster Wilson bound; a threshold is "
+        "unidentified when the effective control bank cannot bound the requested tail."
+    ),
+    "claim_counterfactual_control": (
+        "Traceable capitalized-argument, quantity, and modality edits preserve topic and form, "
+        "but may create a real conflict relation and lack independent semantic verification, so "
+        "they are not an independent null."
     ),
 }
 
@@ -59,6 +77,65 @@ def _method_rows(methods: list[dict[str, Any]]) -> list[str]:
     return rows
 
 
+def _dataset_rows(datasets: dict[str, Any]) -> list[str]:
+    rows: list[str] = []
+    for name, payload in datasets.items():
+        if isinstance(payload, dict):
+            rows.append(
+                f"| {name} | {payload['documents']} | {payload['chunks']} | "
+                f"{payload['comparable_chunks']} | {payload['comparable_chunk_pairs']} | "
+                f"{'yes' if payload['centered'] else 'no'} |"
+            )
+    return rows
+
+
+def _diagnostic_rows(method: dict[str, Any]) -> list[str]:
+    diagnostics = method.get("diagnostics")
+    tails = method.get("null_tails")
+    if not isinstance(diagnostics, dict) or not isinstance(tails, dict):
+        return []
+    rows = [
+        "| dataset | effective units | membership AUC | control valid |",
+        "| --- | --- | --- | --- |",
+    ]
+    for dataset, payload in diagnostics.items():
+        if not isinstance(payload, dict):
+            continue
+        tail = tails.get(dataset, {})
+        effective = tail.get("effective_independent_units", "n/a")
+        auc = payload.get("membership_auc", "n/a")
+        valid = payload.get("exchangeable", payload.get("independent_semantic_verification", False))
+        rows.append(f"| {dataset} | {effective} | {auc} | {'yes' if valid else 'no'} |")
+    return [*rows, ""]
+
+
+def _fdr_lines(method: dict[str, Any]) -> list[str]:
+    fdr_fits = method.get("fdr_fits")
+    if not isinstance(fdr_fits, dict):
+        return []
+    identified = ", ".join(
+        f"{dataset}={'yes' if payload.get('identified') else 'no'}"
+        for dataset, payload in fdr_fits.items()
+        if isinstance(payload, dict)
+    )
+    return [f"- nonempty FDR point identified: {identified}", ""]
+
+
+def _method_section(method: dict[str, Any]) -> list[str]:
+    gates = method["gates"]
+    failed = [name for name, passed in gates.items() if name != "accepted" and not passed]
+    return [
+        f"### {method['method']}",
+        "",
+        f"- resolved thresholds: {json.dumps(method['thresholds'], sort_keys=True)}",
+        f"- failed gates: {', '.join(failed) if failed else 'none'}",
+        f"- limitation: {_METHOD_LIMITATIONS[str(method['method'])]}",
+        "",
+        *_diagnostic_rows(method),
+        *_fdr_lines(method),
+    ]
+
+
 def render_null_research(summary: JsonObject) -> str:
     methods = summary["methods"]
     assert isinstance(methods, list)
@@ -82,28 +159,10 @@ def render_null_research(summary: JsonObject) -> str:
         "| dataset | docs | chunks | comparable chunks | comparable pairs | centered |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for name, payload in datasets.items():
-        if not isinstance(payload, dict):
-            continue
-        lines.append(
-            f"| {name} | {payload['documents']} | {payload['chunks']} | "
-            f"{payload['comparable_chunks']} | {payload['comparable_chunk_pairs']} | "
-            f"{'yes' if payload['centered'] else 'no'} |"
-        )
+    lines.extend(_dataset_rows(datasets))
     lines.extend(["", "## Acceptance matrix", "", *_method_rows(typed_methods), ""])
     for method in typed_methods:
-        gates = method["gates"]
-        failed = [name for name, passed in gates.items() if name != "accepted" and not passed]
-        lines.extend(
-            [
-                f"### {method['method']}",
-                "",
-                f"- resolved thresholds: {json.dumps(method['thresholds'], sort_keys=True)}",
-                f"- failed gates: {', '.join(failed) if failed else 'none'}",
-                f"- limitation: {_METHOD_LIMITATIONS[str(method['method'])]}",
-                "",
-            ]
-        )
+        lines.extend(_method_section(method))
     if summary["verdict"] == "negative":
         lines.extend(
             [
@@ -123,9 +182,23 @@ def write_null_research(out_dir: Path, summary: JsonObject) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_path = out_dir / NULL_RESEARCH_SUMMARY
     report_path = out_dir / NULL_RESEARCH_REPORT
+    persisted = dict(summary)
+    traces = persisted.pop("control_traces", None)
+    paths = {"summary": summary_path, "report": report_path}
+    if isinstance(traces, list):
+        trace_path = out_dir / NULL_RESEARCH_CONTROL_TRACES
+        trace_path.write_text(
+            "".join(
+                json.dumps(trace, sort_keys=True, ensure_ascii=True) + "\n" for trace in traces
+            ),
+            encoding="utf-8",
+        )
+        persisted["control_trace_artifact"] = NULL_RESEARCH_CONTROL_TRACES
+        persisted["control_trace_rows"] = len(traces)
+        paths["control_traces"] = trace_path
     summary_path.write_text(
-        json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+        json.dumps(persisted, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
     report_path.write_text(render_null_research(summary), encoding="utf-8")
-    return {"summary": summary_path, "report": report_path}
+    return paths

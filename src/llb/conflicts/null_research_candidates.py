@@ -2,6 +2,7 @@
 
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
+    MIN_TAIL_OBSERVATIONS,
     fit_labelled_threshold,
     fixture_metrics,
     null_tail_payload,
@@ -42,11 +43,23 @@ def build_null_candidate(
     transfer_threshold: float,
     max_goods_candidates: int,
     eligible_as_null: bool,
+    effective_units: dict[str, int],
 ) -> JsonObject:
     thresholds = {dataset: threshold_for_fpr(values, fpr) for dataset, values in scores.items()}
     tails = {
         dataset: null_tail_payload(scores[dataset], thresholds[dataset], fpr) for dataset in scores
     }
+    for dataset, tail in tails.items():
+        pair_row_resolved = bool(tail["tail_resolved"])
+        expected_independent = fpr * effective_units[dataset]
+        tail.update(
+            {
+                "pair_row_tail_resolved": pair_row_resolved,
+                "effective_independent_units": effective_units[dataset],
+                "expected_independent_tail_observations": round(expected_independent, 3),
+                "tail_resolved": expected_independent >= MIN_TAIL_OBSERVATIONS,
+            }
+        )
     fixture = fixture_metrics(
         corpora["fixture"].document_maxima,
         thresholds["fixture"],

@@ -24,6 +24,16 @@ def research_conflict_nulls_cmd(
     goods_store: Path = typer.Option(..., help="store for the goods quickstart corpus"),
     reference_corpus: Path = typer.Option(..., help="unrelated Ukrainian reference corpus"),
     reference_store: Path = typer.Option(..., help="store for the unrelated reference corpus"),
+    domain_reference_corpus: Optional[Path] = typer.Option(
+        None, help="second unrelated, domain-matched Ukrainian reference corpus"
+    ),
+    domain_reference_store: Optional[Path] = typer.Option(
+        None, help="store for the domain-matched reference corpus"
+    ),
+    next_generation: bool = typer.Option(
+        False,
+        help="run matched, residual, cluster-FDR, and counterfactual candidates only",
+    ),
     out: Optional[Path] = typer.Option(
         None,
         help="artifact directory (default: $DATA_DIR/corpus-conflicts/null-research/<run>)",
@@ -56,7 +66,12 @@ def research_conflict_nulls_cmd(
         help="minimum deterministic shuffles per chunk; small corpora repeat until the null "
         "tail is statistically resolved",
     ),
-    seed: int = typer.Option(0, help="deterministic permutation seed"),
+    matches_per_reference: int = typer.Option(
+        2,
+        min=1,
+        help="nearest surface/encoder-neighborhood controls selected from each reference",
+    ),
+    seed: int = typer.Option(0, help="deterministic research seed"),
     embedding_device: Optional[str] = typer.Option(
         None, help="sentence-transformers device for permutation embeddings (for example cuda)"
     ),
@@ -73,12 +88,21 @@ def research_conflict_nulls_cmd(
     hr_view = load_store_view(hr_store)
     goods_view = load_store_view(goods_store)
     reference_view = load_store_view(reference_store)
+    if (domain_reference_corpus is None) != (domain_reference_store is None):
+        raise typer.BadParameter("domain reference corpus and store must be supplied together")
+    if next_generation and domain_reference_corpus is None:
+        raise typer.BadParameter("--next-generation requires a domain reference corpus and store")
+    domain_reference_view = (
+        load_store_view(domain_reference_store) if domain_reference_store is not None else None
+    )
     models = {
         fixture_view.embedding_model,
         hr_view.embedding_model,
         goods_view.embedding_model,
         reference_view.embedding_model,
     }
+    if domain_reference_view is not None:
+        models.add(domain_reference_view.embedding_model)
     if len(models) != 1:
         raise typer.BadParameter(
             "all research stores must use the same embedding model; found "
@@ -93,11 +117,16 @@ def research_conflict_nulls_cmd(
             goods=(goods_corpus, goods_view),
             reference=(reference_corpus, reference_view),
             embed=embedder.encode_passages,
+            domain_reference=(domain_reference_corpus, domain_reference_view)
+            if domain_reference_corpus is not None and domain_reference_view is not None
+            else None,
+            next_generation=next_generation,
             fpr=fpr,
             rank_budget=rank_budget,
             transfer_threshold=transfer_threshold,
             max_goods_candidates=max_goods_candidates,
             permutations=permutations,
+            matches_per_reference=matches_per_reference,
             seed=seed,
         )
     finally:
@@ -112,3 +141,5 @@ def research_conflict_nulls_cmd(
             f"[conflict-null] method={method['method']} accepted={method['gates']['accepted']}"
         )
     typer.echo(f"[conflict-null] report: {paths['report']}")
+    if "control_traces" in paths:
+        typer.echo(f"[conflict-null] control traces: {paths['control_traces']}")

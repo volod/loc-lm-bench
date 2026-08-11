@@ -3,6 +3,8 @@
 from bisect import bisect_left
 import math
 
+import numpy as np
+
 from llb.conflicts.null_distribution import _quantile
 from llb.conflicts.null_research_geometry import DocPair
 from llb.core.contracts.common import JsonObject
@@ -13,6 +15,8 @@ DEFAULT_TRANSFER_THRESHOLD = 0.6
 DEFAULT_MAX_GOODS_CANDIDATES = 12
 MIN_TAIL_OBSERVATIONS = 20
 WILSON_Z_95 = 1.959963984540054
+COVERAGE_SIMULATIONS = 10_000
+MIN_COVERAGE_PROBABILITY = 0.93
 
 _EQUIVALENT_2021 = (
     "regulation-2021.md",
@@ -57,7 +61,7 @@ def count_at_or_above(sorted_scores: list[float], threshold: float) -> int:
     return len(sorted_scores) - bisect_left(sorted_scores, threshold)
 
 
-def _wilson_interval(successes: int, total: int) -> tuple[float, float]:
+def wilson_interval(successes: int, total: int) -> tuple[float, float]:
     if total <= 0:
         return 0.0, 1.0
     proportion = successes / total
@@ -72,9 +76,31 @@ def _wilson_interval(successes: int, total: int) -> tuple[float, float]:
     return max(0.0, center - margin), min(1.0, center + margin)
 
 
+def simulated_wilson_coverage(
+    total: int,
+    probability: float,
+    *,
+    seed: int,
+    simulations: int = COVERAGE_SIMULATIONS,
+) -> float:
+    """Deterministically check Wilson coverage for the declared independent-unit count."""
+    if total <= 0:
+        return 0.0
+    if not 0.0 < probability < 1.0:
+        raise ValueError("coverage probability must be between zero and one")
+    if simulations < 1:
+        raise ValueError("coverage simulations must be positive")
+    draws = np.random.default_rng(seed).binomial(total, probability, simulations)
+    covered = 0
+    for successes in draws.tolist():
+        lower, upper = wilson_interval(int(successes), total)
+        covered += lower <= probability <= upper
+    return covered / simulations
+
+
 def null_tail_payload(null_scores: list[float], threshold: float, nominal_fpr: float) -> JsonObject:
     exceedances = count_at_or_above(null_scores, threshold)
-    lower, upper = _wilson_interval(exceedances, len(null_scores))
+    lower, upper = wilson_interval(exceedances, len(null_scores))
     expected_tail = nominal_fpr * len(null_scores)
     return {
         "n": len(null_scores),

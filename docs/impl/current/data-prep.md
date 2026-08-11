@@ -23,5 +23,5 @@ in the order a corpus travels through them.
 
 | Page | What it answers |
 | --- | --- |
-| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, and the negative independent-null research matrix |
+| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, and two negative independent-null research matrices |
 | [Conflict resolution](data-prep/conflict-resolution.md) | The overlay and rollback contract, and the CUDA-host and large-corpus evidence behind it |

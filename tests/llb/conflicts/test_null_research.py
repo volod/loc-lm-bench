@@ -20,14 +20,15 @@ from llb.conflicts.null_research_geometry import (
     permutation_null,
     prepare_geometry,
 )
+from llb.conflicts.null_research_nextgen import ADVANCED_RESEARCH_METHODS
 from llb.conflicts.null_research_report import write_null_research
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vectorops import VectorSet
 
 
-def _reference_store() -> StoreView:
+def _reference_store(prefix: str = "reference") -> StoreView:
     store = fake_store_view()
-    chunks = [{**chunk, "doc_id": f"reference/{chunk['doc_id']}"} for chunk in store.chunks]
+    chunks = [{**chunk, "doc_id": f"{prefix}/{chunk['doc_id']}"} for chunk in store.chunks]
     return StoreView(
         index_dir=store.index_dir,
         chunks=chunks,
@@ -115,7 +116,59 @@ def test_full_matrix_is_deterministic_and_writes_machine_and_human_artifacts(tmp
     assert summary["verdict"] == "negative"
     assert [method["method"] for method in summary["methods"]] == list(RESEARCH_METHODS)
     assert summary["rank_baseline"]["labelled_positive_pairs"] == len(FIXTURE_POSITIVE_DOC_PAIRS)
+    token_tail = summary["methods"][1]["null_tails"]["fixture"]
+    assert token_tail["pair_row_tail_resolved"]
+    assert not token_tail["tail_resolved"]
     assert json.loads(paths["summary"].read_text(encoding="utf-8"))["verdict"] == "negative"
     report = paths["report"].read_text(encoding="utf-8")
     assert "No candidate satisfies all gates" in report
     assert "cross_corpus" in report
+
+
+def test_next_generation_matrix_tracks_dependence_and_counterfactual_provenance(tmp_path):
+    store = fake_store_view()
+    corpus = (FIXTURE_CORPUS, store)
+
+    summary = run_null_research(
+        fixture=corpus,
+        hr=corpus,
+        goods=corpus,
+        reference=(FIXTURE_CORPUS, _reference_store("general")),
+        domain_reference=(FIXTURE_CORPUS, _reference_store("domain")),
+        embed=lambda texts: [bow_vector(text) for text in texts],
+        next_generation=True,
+        fpr=0.1,
+        max_goods_candidates=0,
+        matches_per_reference=1,
+        seed=11,
+    )
+    paths = write_null_research(tmp_path / "next-generation", summary)
+
+    assert summary["research_generation"] == "next"
+    assert summary["verdict"] == "negative"
+    assert [method["method"] for method in summary["methods"]] == list(ADVANCED_RESEARCH_METHODS)
+    matched = summary["methods"][0]
+    assert matched["diagnostics"]["fixture"]["reference_domains"] == ["domain", "general"]
+    assert (
+        matched["null_tails"]["fixture"]["effective_independent_units"]
+        == matched["diagnostics"]["fixture"]["unique_source_texts"]
+    )
+    assert not matched["null_tails"]["fixture"]["tail_resolved"]
+    counterfactual = summary["methods"][-1]
+    assert (
+        counterfactual["null_tails"]["fixture"]["effective_independent_units"]
+        == (counterfactual["diagnostics"]["fixture"]["unique_source_texts"])
+    )
+    assert not counterfactual["gates"]["eligible_as_independent_null"]
+    assert summary["control_traces"]
+    assert all(trace["trace_verified"] for trace in summary["control_traces"])
+    for trace in summary["control_traces"]:
+        if trace["dataset"] != "fixture" or trace["edit_type"] != "quantity_or_date_swap":
+            continue
+        text = store.chunks[trace["source_ordinal"]]["text"]
+        if text.startswith("---"):
+            assert trace["char_start"] >= text.find("\n---", 3) + len("\n---")
+    persisted = json.loads(paths["summary"].read_text(encoding="utf-8"))
+    assert "control_traces" not in persisted
+    assert persisted["control_trace_rows"] == len(summary["control_traces"])
+    assert paths["control_traces"].read_text(encoding="utf-8")
