@@ -4,6 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from llb.conflicts.null_research_report_fourth import (
+    certification_section,
+    conformal_section,
+    synthesis_evidence,
+    synthesis_section,
+)
 from llb.conflicts.null_research_report_third import (
     decision_evidence,
     feasibility_section,
@@ -67,7 +73,22 @@ _METHOD_LIMITATIONS = {
         "Removing several leading directions removes more corpus shift than mean centering, and "
         "also removes whatever topical signal those directions carried."
     ),
+    "synthesized_in_support_control": (
+        "Generated controls live inside the target's covariate support and carry a verifier "
+        "verdict, but the bank is bounded by generation and verification cost, so its size -- not "
+        "its construction -- decides how fine a tail it can certify."
+    ),
+    "cross_encoder_relation": (
+        "The cross-encoder reads both passages together, yet it can only re-score the cosine "
+        "shortlist and the frozen controls, so its threshold inherits their unit count and its "
+        "recall is measured inside a list another scorer chose."
+    ),
 }
+
+
+# Whichever validity flag a lane's diagnostics carry: exchangeability for a control bank,
+# independent verification for a constructed one, calibration for a scorer.
+_CONTROL_VALIDITY_KEYS = ("exchangeable", "independent_semantic_verification", "calibrated")
 
 
 def _method_rows(methods: list[dict[str, Any]]) -> list[str]:
@@ -124,7 +145,10 @@ def _diagnostic_rows(method: dict[str, Any]) -> list[str]:
         tail = tails.get(dataset, {})
         effective = tail.get("effective_independent_units", "n/a")
         auc = payload.get("membership_auc", "n/a")
-        valid = payload.get("exchangeable", payload.get("independent_semantic_verification", False))
+        valid = next(
+            (payload[key] for key in _CONTROL_VALIDITY_KEYS if key in payload),
+            False,
+        )
         rows.append(f"| {dataset} | {effective} | {auc} | {'yes' if valid else 'no'} |")
     return [*rows, ""]
 
@@ -187,6 +211,9 @@ def render_null_research(summary: JsonObject) -> str:
     lines.extend(identifiability_section(summary))
     lines.extend(precision_section(summary))
     lines.extend(role_section(summary))
+    lines.extend(synthesis_section(summary))
+    lines.extend(certification_section(summary))
+    lines.extend(conformal_section(summary))
     if summary["verdict"] == "negative":
         lines.extend(
             [
@@ -198,6 +225,7 @@ def render_null_research(summary: JsonObject) -> str:
                 "considered.",
                 "",
                 *decision_evidence(summary),
+                *synthesis_evidence(summary),
             ]
         )
     return "\n".join(lines)

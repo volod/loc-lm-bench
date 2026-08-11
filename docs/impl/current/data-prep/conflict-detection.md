@@ -181,10 +181,11 @@ Consequences for reading a report:
   real duplication at every rank.
 
 Getting a real false-positive rate needs an independent null -- pairs known a priori to be
-unrelated -- which the corpus alone cannot supply. Three generations of research have tried to
-build one and all three are negative; the matrices, the measured reason each failed, and the
-measured claim-tier precision that replaces the missing rate live in [independent-null
-research](conflict-null-research.md).
+unrelated -- which the corpus alone cannot supply. Four generations of research have tried to build
+one and all four are negative; the matrices, the measured reason each failed, and the measured
+claim-tier precision that replaces the missing rate live in [independent-null
+research](conflict-null-research.md), and the arithmetic that closed the search is in [closing the
+independent-null question](conflict-null-closure.md).
 
 ## Semantic prefix tree
 

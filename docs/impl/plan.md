@@ -45,62 +45,6 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-null-model-research
-
-**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
-that must be recorded rather than worked around.
-
-Pursue the directions that the three negative independent-null generations do not foreclose.
-Current constraints: reference banks sit outside the target corpus's covariate support, cosine-only
-mixture calibration is unidentifiable at the resolution an operating point needs, and the affordable
-candidate tail demands an independent control bank orders of magnitude larger than any bank on this
-host ([evidence](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
-
-- **In-support control synthesis.** Balancing fails on positivity rather than on estimator choice --
-  no weight can correct a covariate region the reference banks never sample. Generate candidate
-  control claims from the target corpus's own structural distribution with the host-fit UA model,
-  prove each generated claim's role with the existing relation verifier (`null_research_roles.py`),
-  and re-run the balanced lane on controls that live inside the target's covariate support. Reject
-  the lane when held-out membership AUC still exceeds 0.60, and never count a generated claim the
-  verifier calls conflicting.
-- **Cross-encoder relation scoring.** The geometry lane compared only linear re-expressions of one
-  bi-encoder space. Score the same frozen controls and the same planted relations with a compact
-  UA-capable cross-encoder, and report calibration curves and clustered tail coverage alongside
-  relation recall; a fixture-F1 improvement alone still cannot select a scorer.
-- **Group-split conformal tail inference (optional).** The two-way block bootstrap is in place; the
-  conformal comparison is not. Compare group-split conformal p-values against it under simulated
-  duplicate-reference reuse, domain shift, and sparse tails, and keep whichever holds nominal
-  coverage with fewer independent units.
-- **Or record the stop.** If none of the above changes the feasibility arithmetic, close the
-  per-pair semantic FPR as unreachable at this corpus scale and let claim-tier precision carry the
-  operator-facing number.
-
-- Agent status: RUN NEEDED
-- Dependencies: extend the third-generation `research-conflict-nulls GENERATION=third` matrix rather
-  than the audit default; reuse its feasibility lane, propensity-balanced control bank, two-way
-  clustered resamplers, mixture probe, relation verifier, and claim-precision lane from [null
-  research](current/data-prep/conflict-null-research.md#third-generation-negative-result).
-- User-visible outcome: either a held-out-calibrated FPR whose exchangeability, operating-point
-  feasibility, and clustered coverage are all explicit, or a recorded decision that no such rate is
-  reachable at this corpus scale; a raw cosine or target-corpus rank must never be relabelled as
-  either quantity.
-- Scope boundary: in scope -- in-support control generation with verified roles, cross-encoder
-  relation scoring, conformal tail inference, and paired transfer evidence for each. Out of scope --
-  changing the relation vocabulary or tier order, and shipping any new default before an untouched
-  final split clears every gate.
-- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  generated controls require construction provenance, verifier verdicts, and frozen split ids.
-- Execution path: add one constructor and deterministic CI fixture per direction; freeze controls
-  and verify their roles before fitting any threshold; run the geometry, verifier, and adjudicator
-  on CUDA; then execute one untouched group-split transfer run.
-- Acceptance gates: a lane must pass held-out corpus-membership exchangeability, two-way-clustered
-  simulation coverage, and its own operating-point feasibility check; beat the budget-12 rank
-  baseline on the planted final split; recover the claim-bearing HR baseline; and stay within the
-  goods candidate cap. Record another negative result and keep this task when no lane clears its
-  applicable gates.
-- Documentation target: [null research](current/data-prep/conflict-null-research.md), and [product
-  decisions](current/scope-boundaries.md) for the adopt-or-reject verdict.
-
 ### conflict-audit-measured-precision
 
 Report what an operator can act on. `audit-corpus-conflicts --effort claim` already adjudicates
@@ -130,6 +74,38 @@ produced only by the research harness. Move it into the audit.
 - Acceptance gates: `make ci` green with the injected adjudicator; the printed bound equals the
   research harness's bound on the same rows; and the block is absent, with a stated reason, whenever
   the adjudicator misses its calibration bound.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+
+### conflict-claim-tier-cross-encoder-prefilter (optional)
+
+Spend the cross-encoder's ordering on adjudication COST instead of on a rate. Scoring a candidate
+pair with a cross-encoder orders the claim tier's own verdicts where cosine does not -- monotone
+score bins whose top bin is entirely conflicts on the planted fixture and the high-recall corpus
+([closure](current/data-prep/conflict-null-closure.md)) -- yet the claim tier still adjudicates the
+ranked list in cosine order, so it pays a model call for rows a 568M cross-encoder can already place
+at the bottom. Re-rank the candidate rows with the pinned cross-encoder before adjudication and
+measure what that buys: adjudicated rows needed to reach the same set of found conflicts, and the
+conflicts lost if any. The scorer must stay injectable, and a corpus where the ordering is flat
+(goods, four conflicts in fifty rows) must degrade to today's behavior rather than drop rows.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse `null_research_cross_encoder.py` (pair scoring batched by left passage,
+  calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
+  artifacts are current behavior in [conflict
+  detection](current/data-prep/conflict-detection.md#effort-tiers).
+- User-visible outcome: `audit-corpus-conflicts --effort claim` reaches the same conflicts for fewer
+  adjudication calls on corpora where the ordering is informative, with the saving recorded in the
+  run artifacts.
+- Scope boundary: in scope -- an optional pre-filter stage between candidate generation and
+  adjudication, its per-corpus flat-ordering fallback, and the cost/recall evidence. Out of scope --
+  quoting any cross-encoder score as a probability, rate, or confidence; changing the relation
+  vocabulary; and dropping a row the claim tier would have called a conflict without recording it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: add the pre-filter behind an injected scorer with a deterministic fixture test,
+  then one CUDA-host claim run per quickstart corpus paired against the same run without it.
+- Acceptance gates: `make ci` green with the injected scorer; no conflict found by the unfiltered
+  run is missing from the filtered run on either quickstart corpus; and the recorded saving is stated
+  per corpus, including the corpus where it is zero.
 - Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
 
 ### agent-context-policy-entry-aware-summary-fold-adoption (optional)
@@ -1491,3 +1467,9 @@ Each task entry must include:
 
 When a task surfaces new future work, add that as a new forward task. Put current behavior and
 durable decisions in current docs, never in this plan.
+
+A RESEARCH task whose answer comes back negative leaves this file too, but it is not simply deleted:
+move it to [future research](future-research.md) with what closed it and the conditions that would
+make it worth reopening. Its measurements belong in the current docs like every other finished piece
+of work; what future-research.md adds is the reasoning a later reader needs before spending the same
+effort again.

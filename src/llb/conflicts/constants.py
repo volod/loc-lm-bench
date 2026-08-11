@@ -102,15 +102,21 @@ TREE_BOUND_EPSILON = 1e-12
 RESEARCH_GENERATION_INITIAL = "initial"
 RESEARCH_GENERATION_NEXT = "next"
 RESEARCH_GENERATION_THIRD = "third"
+RESEARCH_GENERATION_FOURTH = "fourth"
 RESEARCH_GENERATIONS = (
     RESEARCH_GENERATION_INITIAL,
     RESEARCH_GENERATION_NEXT,
     RESEARCH_GENERATION_THIRD,
+    RESEARCH_GENERATION_FOURTH,
 )
 # Ranked candidate rows adjudicated per corpus when measuring claim-tier precision, and traced
 # control edits per corpus and edit type sent to the relation verifier. Both bound model cost.
 DEFAULT_ADJUDICATION_BUDGET = 50
 DEFAULT_ROLE_SAMPLES_PER_TYPE = 12
+# Fourth generation. Control claims GENERATED per source document (each one costs a generation call
+# plus a verification call), and how many top-cosine rows per corpus the cross-encoder re-scores.
+DEFAULT_SYNTHESIS_PER_DOCUMENT = 3
+DEFAULT_CROSS_ENCODER_ROWS = 50
 
 # --- artifact names ---------------------------------------------------------------------------
 

@@ -73,12 +73,13 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
 	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
 
-research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and REFERENCE stores (GENERATION=initial|next|third; next/third also need DOMAIN_REFERENCE_*, third needs CONFLICT_MODEL=; NULL_RESEARCH_OUT=, EMBED_DEVICE=cuda)
+research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and REFERENCE stores (GENERATION=initial|next|third|fourth; next/third also need DOMAIN_REFERENCE_*, third/fourth need CONFLICT_MODEL=; fourth adds SYNTHESIS_PER_DOCUMENT=, CROSS_ENCODER_ROWS=, CROSS_ENCODER=, CROSS_ENCODER_DEVICE=; NULL_RESEARCH_OUT=, EMBED_DEVICE=cuda)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--fixture-corpus "$(FIXTURE_CORPUS)" --fixture-store "$(FIXTURE_STORE)" \
 		--hr-corpus "$(HR_CORPUS)" --hr-store "$(HR_STORE)" \
-		--goods-corpus "$(GOODS_CORPUS)" --goods-store "$(GOODS_STORE)" \
-		--reference-corpus "$(REFERENCE_CORPUS)" --reference-store "$(REFERENCE_STORE)"); \
+		--goods-corpus "$(GOODS_CORPUS)" --goods-store "$(GOODS_STORE)"); \
+	if [ -n "$(REFERENCE_CORPUS)" ]; then args+=(--reference-corpus "$(REFERENCE_CORPUS)"); fi; \
+	if [ -n "$(REFERENCE_STORE)" ]; then args+=(--reference-store "$(REFERENCE_STORE)"); fi; \
 	if [ -n "$(DOMAIN_REFERENCE_CORPUS)" ]; then args+=(--domain-reference-corpus "$(DOMAIN_REFERENCE_CORPUS)"); fi; \
 	if [ -n "$(DOMAIN_REFERENCE_STORE)" ]; then args+=(--domain-reference-store "$(DOMAIN_REFERENCE_STORE)"); fi; \
 	if [ -n "$(GENERATION)" ]; then args+=(--generation "$(GENERATION)"); fi; \
@@ -87,6 +88,10 @@ research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and
 	if [ -n "$(CONFLICT_BASE_URL)" ]; then args+=(--conflict-base-url "$(CONFLICT_BASE_URL)"); fi; \
 	if [ -n "$(ADJUDICATION_BUDGET)" ]; then args+=(--adjudication-budget "$(ADJUDICATION_BUDGET)"); fi; \
 	if [ -n "$(ROLE_SAMPLES_PER_TYPE)" ]; then args+=(--role-samples-per-type "$(ROLE_SAMPLES_PER_TYPE)"); fi; \
+	if [ -n "$(SYNTHESIS_PER_DOCUMENT)" ]; then args+=(--synthesis-per-document "$(SYNTHESIS_PER_DOCUMENT)"); fi; \
+	if [ -n "$(CROSS_ENCODER_ROWS)" ]; then args+=(--cross-encoder-rows "$(CROSS_ENCODER_ROWS)"); fi; \
+	if [ -n "$(CROSS_ENCODER)" ]; then args+=(--cross-encoder "$(CROSS_ENCODER)"); fi; \
+	if [ -n "$(CROSS_ENCODER_DEVICE)" ]; then args+=(--cross-encoder-device "$(CROSS_ENCODER_DEVICE)"); fi; \
 	if [ -n "$(NULL_RESEARCH_OUT)" ]; then args+=(--out "$(NULL_RESEARCH_OUT)"); fi; \
 	if [ -n "$(NULL_FPR)" ]; then args+=(--fpr "$(NULL_FPR)"); fi; \
 	if [ -n "$(RANK_BUDGET)" ]; then args+=(--rank-budget "$(RANK_BUDGET)"); fi; \

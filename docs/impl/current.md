@@ -19,6 +19,10 @@ Three levels, so a search stops at the smallest page that answers the question:
 Evidence stays with the decision it supports rather than in an appendix, so a topic page ends in
 the runs behind it.
 
+Two neighbours sit outside this tree: [plan.md](plan.md) holds work that remains, and
+[future-research.md](future-research.md) holds questions investigated to a negative answer -- what
+closed each one and what would make it worth reopening.
+
 ## Areas
 
 | Area | Owns | Shape |

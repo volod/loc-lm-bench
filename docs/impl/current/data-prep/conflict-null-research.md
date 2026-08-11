@@ -19,6 +19,7 @@ meaningful against the evidence that produced the earlier verdict.
 | `initial` | cross-corpus, token/sentence permutation, held-out document, labelled calibration | negative |
 | `next` | surface-matched reference, matched residual, source-cluster FDR, traced counterfactual | negative |
 | `third` | operating-point feasibility, propensity-balanced control, cosine mixture identifiability, whitened and anisotropy-stripped geometries, verified control roles, claim-tier precision | negative |
+| `fourth` | in-support control synthesis, cross-encoder relation scoring, group-split conformal certification ([closure](conflict-null-closure.md)) | negative; search closed |
 
 ## First generation: negative result
 
@@ -387,5 +388,9 @@ claim-tier precision, which this run establishes with a calibrated adjudicator a
 Artifacts are under `$DATA_DIR/corpus-conflicts/null-research/20260811T145837Z/`: `summary.json`
 (every lane, every gate, all 150 adjudication verdicts and 93 verifier verdicts), `report.md`, and
 `counterfactual_traces.jsonl` (6,180 traced edits). The run reuses the initial and second-generation
-snapshots and stores, so the three generations are directly comparable. Remaining directions live
-under `conflict-null-model-research` in [plan.md](../../plan.md).
+snapshots and stores, so the three generations are directly comparable.
+
+The three directions this verdict left open -- generating controls inside the target's covariate
+support, scoring relations with a cross-encoder, and certifying the tail from units instead of rows
+-- were all run in a fourth generation, which closed the question. Its evidence and the decision to
+stop are in [closing the independent-null question](conflict-null-closure.md).

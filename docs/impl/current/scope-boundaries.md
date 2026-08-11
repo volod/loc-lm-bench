@@ -86,8 +86,20 @@ precision, by contrast, works and is corpus-specific: it is 1.000 with a cluster
 threshold serves both corpora", now with a number. Evidence: [null
 research](data-prep/conflict-null-research.md#third-generation-negative-result).
 
+The fourth-generation CUDA matrix removes the last excuse for reopening it. Control claims generated
+from the target corpus's own structure are nulls -- 43 of 44 cleared the relation verifier, against
+0 of 93 for the traced edits -- and they largely repair positivity: weighted membership AUC falls
+from 0.99998 to 0.676 on HR and from 0.99989 to 0.533 on goods. With construction solved, what
+remains is arithmetic. A group-split conformal threshold, the sharpest estimator available and
+distribution-free, certifies tail `alpha` at 95% confidence only from `log(0.05) / log(1 - alpha)`
+independent units: 607,303 for the HR corpus's affordable operating point, which this host produces
+at 230 verified claims per hour -- 110 days for one corpus at one candidate budget. Evidence:
+[closing the independent-null question](data-prep/conflict-null-closure.md).
+
 The product decision therefore stands, and one search is closed rather than paused: pursuing a
-per-pair semantic false-positive rate at this corpus scale is not the direction. Confidence in a
+per-pair semantic false-positive rate at this corpus scale is not the direction. What would change
+that answer, and which directions are proven dead, are recorded in [future
+research](../future-research.md). Confidence in a
 corpus conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so
 no autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. No
 report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,

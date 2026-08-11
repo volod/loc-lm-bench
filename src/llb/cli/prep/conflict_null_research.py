@@ -8,7 +8,10 @@ import typer
 from llb.cli.app import app
 from llb.conflicts.constants import (
     DEFAULT_ADJUDICATION_BUDGET,
+    DEFAULT_CROSS_ENCODER_ROWS,
     DEFAULT_ROLE_SAMPLES_PER_TYPE,
+    DEFAULT_SYNTHESIS_PER_DOCUMENT,
+    RESEARCH_GENERATION_FOURTH,
     RESEARCH_GENERATION_INITIAL,
     RESEARCH_GENERATION_THIRD,
     RESEARCH_GENERATIONS,
@@ -19,6 +22,7 @@ from llb.conflicts.null_research_evaluation import (
     DEFAULT_RESEARCH_RANK_BUDGET,
     DEFAULT_TRANSFER_THRESHOLD,
 )
+from llb.rag.rerank import DEFAULT_RERANKER
 
 if TYPE_CHECKING:
     from llb.conflicts.store_access import StoreView
@@ -33,8 +37,12 @@ def research_conflict_nulls_cmd(
     hr_store: Path = typer.Option(..., help="store for the high-recall quickstart corpus"),
     goods_corpus: Path = typer.Option(..., help="goods quickstart corpus"),
     goods_store: Path = typer.Option(..., help="store for the goods quickstart corpus"),
-    reference_corpus: Path = typer.Option(..., help="unrelated Ukrainian reference corpus"),
-    reference_store: Path = typer.Option(..., help="store for the unrelated reference corpus"),
+    reference_corpus: Optional[Path] = typer.Option(
+        None, help="unrelated Ukrainian reference corpus (every generation except fourth)"
+    ),
+    reference_store: Optional[Path] = typer.Option(
+        None, help="store for the unrelated reference corpus"
+    ),
     domain_reference_corpus: Optional[Path] = typer.Option(
         None, help="second unrelated, domain-matched Ukrainian reference corpus"
     ),
@@ -44,12 +52,15 @@ def research_conflict_nulls_cmd(
     generation: str = typer.Option(
         RESEARCH_GENERATION_INITIAL,
         help="which matrix to run: initial (cross-corpus/permutation/held-out/labelled), "
-        "next (matched, residual, cluster-FDR, counterfactual), or third (feasibility, "
+        "next (matched, residual, cluster-FDR, counterfactual), third (feasibility, "
         "propensity-balanced control, mixture identifiability, geometry variants, verified "
-        "control roles, claim-tier precision)",
+        "control roles, claim-tier precision), or fourth (in-support control synthesis, "
+        "cross-encoder relation scoring, group-split conformal tail inference)",
     ),
     conflict_model: Optional[str] = typer.Option(
-        None, help="local model adjudicating claim pairs and control roles (--generation third)"
+        None,
+        help="local model adjudicating claim pairs, control roles, and generated controls "
+        "(--generation third and fourth)",
     ),
     conflict_backend: str = typer.Option(
         "ollama", help="local backend for the adjudicator: ollama | vllm | openai"
@@ -104,6 +115,22 @@ def research_conflict_nulls_cmd(
         min=1,
         help="traced control edits per corpus and edit type sent to the relation verifier",
     ),
+    synthesis_per_document: int = typer.Option(
+        DEFAULT_SYNTHESIS_PER_DOCUMENT,
+        min=1,
+        help="in-support control claims generated per source document (--generation fourth)",
+    ),
+    cross_encoder_rows: int = typer.Option(
+        DEFAULT_CROSS_ENCODER_ROWS,
+        min=1,
+        help="top-cosine rows per corpus the cross-encoder re-scores (--generation fourth)",
+    ),
+    cross_encoder: str = typer.Option(
+        DEFAULT_RERANKER, help="cross-encoder scoring the relation lane (--generation fourth)"
+    ),
+    cross_encoder_device: Optional[str] = typer.Option(
+        None, help="sentence-transformers device for the cross-encoder (for example cuda)"
+    ),
     seed: int = typer.Option(0, help="deterministic research seed"),
     embedding_device: Optional[str] = typer.Option(
         None, help="sentence-transformers device for permutation embeddings (for example cuda)"
@@ -117,14 +144,20 @@ def research_conflict_nulls_cmd(
     from llb.core.paths import resolve_data_dir
     from llb.core.store_generations import generation_timestamp
     from llb.rag.embedding import Embedder
+    from llb.rag.rerank import CrossEncoderReranker
 
     _validate_generation(
-        generation, domain_reference_corpus, domain_reference_store, conflict_model
+        generation,
+        reference_corpus,
+        reference_store,
+        domain_reference_corpus,
+        domain_reference_store,
+        conflict_model,
     )
     fixture_view = load_store_view(fixture_store)
     hr_view = load_store_view(hr_store)
     goods_view = load_store_view(goods_store)
-    reference_view = load_store_view(reference_store)
+    reference_view = load_store_view(reference_store) if reference_store is not None else None
     domain_reference_view = (
         load_store_view(domain_reference_store) if domain_reference_store is not None else None
     )
@@ -139,18 +172,26 @@ def research_conflict_nulls_cmd(
         if generation == RESEARCH_GENERATION_THIRD
         else Embedder(model, device=embedding_device)
     )
+    scorer = (
+        CrossEncoderReranker(cross_encoder, device=cross_encoder_device)
+        if generation == RESEARCH_GENERATION_FOURTH
+        else None
+    )
     try:
         summary = run_null_research(
             fixture=(fixture_corpus, fixture_view),
             hr=(hr_corpus, hr_view),
             goods=(goods_corpus, goods_view),
-            reference=(reference_corpus, reference_view),
+            reference=(reference_corpus, reference_view)
+            if reference_corpus is not None and reference_view is not None
+            else None,
             embed=embedder.encode_passages if embedder is not None else None,
             domain_reference=(domain_reference_corpus, domain_reference_view)
             if domain_reference_corpus is not None and domain_reference_view is not None
             else None,
             generation=generation,
             complete=complete,
+            scorer=scorer,
             fpr=fpr,
             rank_budget=rank_budget,
             transfer_threshold=transfer_threshold,
@@ -159,7 +200,10 @@ def research_conflict_nulls_cmd(
             matches_per_reference=matches_per_reference,
             adjudication_budget=adjudication_budget,
             adjudicator_model=conflict_model or "",
+            cross_encoder_model=cross_encoder if scorer is not None else "",
             role_samples_per_type=role_samples_per_type,
+            synthesis_per_document=synthesis_per_document,
+            cross_encoder_rows=cross_encoder_rows,
             seed=seed,
         )
     finally:
@@ -174,6 +218,8 @@ def research_conflict_nulls_cmd(
 
 def _validate_generation(
     generation: str,
+    reference_corpus: Optional[Path],
+    reference_store: Optional[Path],
     domain_reference_corpus: Optional[Path],
     domain_reference_store: Optional[Path],
     conflict_model: Optional[str],
@@ -183,9 +229,16 @@ def _validate_generation(
         raise typer.BadParameter(
             f"unknown generation {generation!r}; choose one of {', '.join(RESEARCH_GENERATIONS)}"
         )
+    if (reference_corpus is None) != (reference_store is None):
+        raise typer.BadParameter("reference corpus and store must be supplied together")
+    if generation != RESEARCH_GENERATION_FOURTH and reference_corpus is None:
+        raise typer.BadParameter(f"--generation {generation} requires a reference corpus and store")
     if (domain_reference_corpus is None) != (domain_reference_store is None):
         raise typer.BadParameter("domain reference corpus and store must be supplied together")
-    if generation != RESEARCH_GENERATION_INITIAL and domain_reference_corpus is None:
+    if (
+        generation not in (RESEARCH_GENERATION_INITIAL, RESEARCH_GENERATION_FOURTH)
+        and domain_reference_corpus is None
+    ):
         raise typer.BadParameter(
             f"--generation {generation} requires a domain reference corpus and store"
         )
@@ -193,6 +246,11 @@ def _validate_generation(
         raise typer.BadParameter(
             "--generation third needs --conflict-model: the claim-tier precision and control-role "
             "lanes are model-adjudicated"
+        )
+    if generation == RESEARCH_GENERATION_FOURTH and not conflict_model:
+        raise typer.BadParameter(
+            "--generation fourth needs --conflict-model: the control bank is generated and "
+            "verified by the local model before any threshold is fitted"
         )
 
 
