@@ -19,6 +19,7 @@
 	bench-agentic-context-compact-fold-step \
 	bench-agentic-context-compact-repeated-fold \
 	bench-agentic-context-compact-summary-input-cap \
+	bench-agentic-context-compact-window-elision \
 	bench-agentic-context-compact-crossover-restatement \
 	bench-agentic-published-provenance \
 	bench-agentic-policy-change-audit \
@@ -239,6 +240,12 @@ bench-agentic-context-compact-summary-input-cap: ## Price the compact summarize 
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-summary-input-cap \
 		--design "$(AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN)"
+
+bench-agentic-context-compact-window-elision: ## Price unavoidable middle elision under the shipped window summary-input bound against a trigger-matched fitting control
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-window-elision \
+		--design "$(AGENT_CONTEXT_COMPACT_WINDOW_ELISION_DESIGN)"
 
 bench-agentic-context-compact-crossover-restatement: ## Restate every published compact crossover under the shipped summarize-input cap, re-measuring only the cells the model-free audit calls bound-sensitive
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -479,3 +479,48 @@ routing rule is read from. The `window` numbers are the undiscounted ones. Both 
 the predeclared sides at every guard, so the depth-10 fold-step crossover is unchanged; what that
 discount does to every OTHER published crossover is settled in
 [the restatement](published-values.md#published-crossovers-under-the-shipped-cap) below.
+
+### Unavoidable elision under the shipped window bound
+
+`make bench-agentic-context-compact-window-elision` enters the regime the cap-fitting ladder cannot:
+the folded transcript is larger than the resolved window after the summary template is paid. The
+committed design is `samples/benchmarks/agentic_compact_window_elision_design.json`. It raises the
+depth-10 memory payload to `pad_chars=1600` and pairs two `compact` cells over the identical four
+tasks. The cells hold the compaction trigger at exactly 11200 chars by changing `compact_share` with
+the guard, so both fold the same 15402-char transcript at the same step:
+
+| role | guard | `compact_share` | trigger | folded input | elided |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| transcript fits | 16200 | 0.691358 | 11200 | 15402 | 0 |
+| transcript elided | 14000 | 0.8 | 11200 | 15402 | 2134 |
+
+`compact_fold_input_probe` predeclares those values without a model. Design validation refuses a
+moved trigger, a different fold count or folded input, an elision in the control, or no elision in
+the treatment. The live eligibility gate is stricter still: every episode must reproduce the
+probe's input and elision char counts exactly, fold exactly once, avoid context overflow, and the
+fitting control must meet its completion floor before the treatment is interpreted. Completion is
+paired by task id and reported as an exact task-set outcome, not a population-level claim.
+
+CUDA host evidence (2026-08-11, RTX PRO 3000 Blackwell Laptop GPU, 12 GiB): `qwen3:14b` on Ollama,
+seed 727, an 8192-token served window, and 23.22 tok/s. The fitting control and unavoidable-elision
+arm both completed 4/4. Every episode folded once and reproduced 15402 chars offered with 0 or 2134
+chars elided, respectively. The paired result is 0 fitting-control wins, 0 elided-arm wins, and 4
+unchanged outcomes, for a completion delta of +0.000.
+
+Verdict: **the unavoidable 2134-char middle elision costs no completion on this measured shape**.
+There is no completion case for replacing the shipped head-and-tail fold on this geometry. The
+statement is deliberately narrow: these tasks keep the required final code in the early memory fact
+and preserve its typed marker, while the removed middle contains padding and workflow checkpoints.
+It does not claim that a middle-critical fact is safe to elide. The accepted aggregate is
+`$DATA_DIR/agentic-compact-window-elision/20260811T102009.512985Z-38ad58e7a0dd/manifest.json`.
+
+Core locations are `src/llb/bench/agentic_memory_window_elision_design.py` (probe-backed geometry),
+`src/llb/bench/agentic_memory_window_elision.py` (control-first runner and live eligibility),
+`src/llb/bench/agentic_memory_window_elision_reading.py` (exact paired reading),
+`src/llb/bench/agentic_memory_window_elision_report.py` (rendering and persistence),
+`src/llb/cli/bench/category_agentic_memory_window_elision.py` (command), and
+`tests/llb/bench/test_agentic_memory_window_elision.py` (deterministic contracts).
+
+```bash
+make bench-agentic-context-compact-window-elision
+```

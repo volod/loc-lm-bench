@@ -384,6 +384,7 @@ AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN ?= $(PROJECT_ROOT)/samples/benchma
 AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_fold_step_crossover_design.json
 AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_repeated_fold_completion_design.json
 AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_summary_input_cap_design.json
+AGENT_CONTEXT_COMPACT_WINDOW_ELISION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_window_elision_design.json
 AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_crossover_restatement_design.json
 AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE ?=
 KNOWLEDGE_CUTOFF_EVENTS ?=

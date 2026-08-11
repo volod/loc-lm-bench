@@ -24,7 +24,7 @@ to any of it invalidates.
 | --- | --- |
 | [Agent context policies](extended-workflows/agent-context-policies.md) | The policy set, its host evidence, and aggregate-safe observation trimming with compact-finish recovery |
 | [Compact versus cap](extended-workflows/compact-versus-cap.md) | Active compaction against an observation cap on long and memory-dependent transcripts, including summarizer cost and cross-family transfer |
-| [Cap-fitting boundary and crossover geometry](extended-workflows/crossover-geometry.md) | Where compact stops repaying its summary call: the boundary surface, the trigger axis the routing rule lives on, the crossover as a fold step, and the step-aligned summarize-input cap |
+| [Cap-fitting boundary and crossover geometry](extended-workflows/crossover-geometry.md) | Where compact stops repaying its summary call: the boundary surface, trigger and fold-step axes, the step-aligned summarize-input cap, and completion under unavoidable window elision |
 | [The imperfect-play safety margin](extended-workflows/imperfect-play-margin.md) | How far a real controller can grow a transcript past perfect play, the margin design validation spends on it, and the worst-case bound-invariance verdict |
 | [Published values under the shipped cap](extended-workflows/published-values.md) | Which published compact evidence a summarize-bound change can move, how a number resolves to its run, and the registered arithmetic and reading it declares |
 | [Published-value implementation map](extended-workflows/published-value-implementation.md) | The module and test inventory for provenance, derivation, arithmetic, readings, and crossover restatement |

@@ -43,34 +43,26 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-summary-elision-under-the-window-bound (optional)
+### agent-context-policy-middle-critical-window-elision-transfer (optional)
 
-The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
-fit the resolved window, which no cap-fitting ladder reaches: every cell measured so far folds a
-transcript comfortably under the guard, so the shipped bound's elision path is unexercised
-([extended
-workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned)).
-That is the regime where an elision is unavoidable rather than incidental, and it is the one where
-the completion cost of losing the middle of a folded transcript actually matters. Build a geometry
-whose folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a
-larger `pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound
-elides there, and read completion against a control whose transcript fits -- the answer says whether
-an unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
-head-and-tail trim.
+Test whether the head-and-tail summarize-input trim survives when required evidence, rather than
+padding and workflow checkpoints, occupies the elided middle. Build deterministic task variants
+whose independently checked answer facts land in the head, middle, and tail strata; reuse the
+trigger-matched fitting/elided geometry; and pair completion per stratum over two qualified model
+families. If middle-critical completion separates while head/tail controls do not, prototype an
+entry-aware or oldest-first fold and compare it under the same bytes and task set.
 
 - Agent status: RUN NEEDED
-- Dependencies: `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`
-  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed; it
-  also takes the imperfect-play controller now, so the search can start from a repeatedly folding
-  geometry where the shipped bound already elides
-  ([extended workflows](current/extended-workflows/imperfect-play-margin.md)).
-- User-visible outcome: an operator running a transcript too big to summarize whole learns what that
-  costs, instead of finding out through a wrong answer read from a middle-elided summary.
-- Scope boundary: in scope -- the over-window geometry, the probe-backed predeclaration, and the
-  completion reading. Out of scope -- implementing a new folding strategy (that is what the reading
-  would justify), and changing the shipped bound.
+- Dependencies: reuse the strict geometry, live eligibility, and exact task pairing documented in
+  [unavoidable window elision](current/extended-workflows/crossover-geometry.md#unavoidable-elision-under-the-shipped-window-bound).
+- User-visible outcome: an operator learns whether the current no-cost reading is specific to typed
+  early memory or whether head-and-tail trimming is safe when task-critical facts move through a
+  long session.
+- Scope boundary: in scope -- stratum-controlled tasks, two host-fit model families, and an
+  entry-aware prototype only if the predeclared middle stratum loses completion. Out of scope --
+  changing the shipped fold without a separated middle-specific result.
 - Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned).
+  [extended workflows](current/extended-workflows/crossover-geometry.md#unavoidable-elision-under-the-shipped-window-bound).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 
