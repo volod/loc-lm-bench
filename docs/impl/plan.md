@@ -43,44 +43,6 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-repeated-fold-completion-cost
-
-The repeatedly folding regime is now mapped byte for byte and NOT AT ALL by outcome: the committed
-two-fold fixture proves the prompts a real controller produces there differ from the oracle's, and
-says nothing about whether the agent still answers
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#the-regime-the-invariance-verdict-does-not-cover)).
-That gap matters most exactly there. The memory task's whole point is that one early fact must
-survive compaction, and a cell that folds three times re-summarizes a summary of a summary -- so the
-fact travels through three lossy hops instead of one, and a fixed-summary replay cannot see the
-loss because its summary is a constant. Run the committed fixture's two cells on a real model,
-score completion per fold count against the one-fold cap-fitting cells already measured, and record
-whether completion decays with the number of folds. If it does, the operator-facing routing rule
-needs a fold-count limit beside its trigger ratio; if it does not, compaction's fact-carrying is
-established on the regime it was never tested on. Read the `[memory: ...]` marker fold
-(`fold_memory_markers`) as the mechanism either way -- it is the one part of the summary that is
-NOT model-written, so a completion that survives may be surviving on the marker rather than on the
-summary.
-
-- Agent status: RUN NEEDED
-- Dependencies: the committed geometry, both walks, and the per-fold summarize inputs are current
-  behavior in `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` and
-  `src/llb/bench/agentic_memory_two_fold_reading.py`; reuse `run_compact_vs_cap` with the compact
-  arm alone, since these guards are below the cap peak and an `observation_cap` arm there measures
-  overflow rather than cost.
-- User-visible outcome: an operator running a long session that compacts repeatedly learns whether
-  the answer survives the third fold, instead of inferring it from a one-fold measurement.
-- Scope boundary: in scope -- the compact-arm run on the committed cells, completion per fold count,
-  and the marker-versus-summary reading. Out of scope -- a cost delta (there is no usable cap arm
-  below the cap peak), changing compaction hysteresis, and a new folding strategy.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout.
-- Execution path: the fixture's two cells plus the depth-10 one-fold control on the CUDA host; CI
-  already covers the geometry, both verdicts, and the margin scaling with no GPU.
-- Acceptance gates: `make ci` green; every cell reports completion beside its measured fold count on
-  the identical task set and seed; the reading states whether completion falls with fold count and
-  whether the surviving fact came through the typed memory marker or the model-written summary.
-- Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md).
-
 ### agent-context-policy-summary-elision-under-the-window-bound (optional)
 
 The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
@@ -145,6 +107,35 @@ growing prior summary is the other way the guard could re-enter.
   that legitimately use it.
 - Documentation target:
   [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
+
+### agent-context-policy-repeated-fold-completion-replication (optional)
+
+The current completion reading covers two deterministic memory cases on one qualified model through
+three measured folds
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds)).
+Strengthen the routing claim with a predeclared larger case set and a second model family: require
+both families to pass the one-fold eligibility gate, preserve identical cases and seed across fold
+cells and marker arms within each family, and report paired completion uncertainty at each measured
+fold count. This separates a robust fold-count rule from a ceiling result on two easy codes.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse the compact-only runner, eligibility gate, measured-fold grouping, and marker
+  ablation documented in the linked current page; pick the second family by the local-model host-fit
+  rules rather than weakening the task for a smaller model.
+- User-visible outcome: an operator learns whether the three-fold completion result transfers beyond
+  one model and two cases before treating it as a general session-routing bound.
+- Scope boundary: in scope -- a larger predeclared task set, one additional qualified family, paired
+  uncertainty, and a cross-family reading. Out of scope -- folds deeper than three, a new compaction
+  algorithm, and changing the shipped marker-preservation default.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout, with family
+  and task-set digests in every aggregate.
+- Execution path: extend `make bench-agentic-context-compact-repeated-fold` with a replication design
+  on the CUDA host; CI covers the multi-family aggregation and refusal paths with fakes.
+- Acceptance gates: `make ci` green; each family passes its control before repeated cells run; every
+  fold group reaches the predeclared paired-evidence floor; the report either extends the three-fold
+  rule across families or names the first family/fold where it fails.
+- Documentation target:
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
 
 ### agent-operating-profile-recommendation
 

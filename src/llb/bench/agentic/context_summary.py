@@ -117,7 +117,11 @@ def compact_state(
         fact
         for fact in (
             fold_aggregate_headers(older, prior_summary=state.summary),
-            fold_memory_markers(older, prior_summary=state.summary),
+            (
+                fold_memory_markers(older, prior_summary=state.summary)
+                if state.preserve_memory_markers
+                else ""
+            ),
         )
         if fact
     )

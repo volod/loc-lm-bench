@@ -71,6 +71,7 @@ def run_episode(
     feedback_serialization: dict[str, dict[str, list[dict[str, str]]]] | None = None,
     snapshot: Callable[[list[ChatMessage]], None] | None = None,
     on_refused_prompt: Callable[[str], None] | None = None,
+    preserve_memory_markers: bool = True,
     clock: Clock = time.monotonic,
 ) -> Episode:
     """Drive one task to completion or a typed prompt/step limit."""
@@ -88,7 +89,7 @@ def run_episode(
         snapshot=snapshot,
         on_refused_prompt=on_refused_prompt,
     )
-    state = ContextState()
+    state = ContextState(preserve_memory_markers=preserve_memory_markers)
     tally = EpisodeTally(started=clock(), clock=clock)
     for step in range(1, max_steps + 1):
         tally.steps = step

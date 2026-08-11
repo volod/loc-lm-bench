@@ -106,6 +106,9 @@ class ContextState:
     n_dropped: int = 0
     controller_feedback: list[ControllerFeedback] = field(default_factory=list)
     telemetry: ContextTelemetry = field(default_factory=ContextTelemetry)
+    # Evidence-only episode ablation, deliberately not a ContextPolicy field: the shipped compact
+    # policy always preserves markers, while a focused study can test the model summary unaided.
+    preserve_memory_markers: bool = True
 
     def record(
         self,

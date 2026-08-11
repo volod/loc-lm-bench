@@ -17,6 +17,7 @@
 	bench-agentic-context-compact-memory-boundary-surface \
 	bench-agentic-context-compact-trigger-collapse \
 	bench-agentic-context-compact-fold-step \
+	bench-agentic-context-compact-repeated-fold \
 	bench-agentic-context-compact-summary-input-cap \
 	bench-agentic-context-compact-crossover-restatement \
 	bench-agentic-published-provenance \
@@ -226,6 +227,12 @@ bench-agentic-context-compact-fold-step: ## Test whether the compact cost side f
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-fold-step \
 		--design "$(AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN)"
+
+bench-agentic-context-compact-repeated-fold: ## Measure compact-memory completion through repeated folds and attribute survival with a typed-marker ablation
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-repeated-fold \
+		--design "$(AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN)"
 
 bench-agentic-context-compact-summary-input-cap: ## Price the compact summarize call's input cap: does pinning it to a step-aligned quantity zero the within-step residual, and what did the elided span cost
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -16,6 +16,7 @@ from llb.cli.bench import (  # noqa: F401
     category_agentic_memory_crossover_restatement,
     category_agentic_memory_fold_step,
     category_agentic_memory_replication,
+    category_agentic_memory_repeated_fold,
     category_agentic_memory_summary_cap,
     category_agentic_memory_transfer,
     category_agentic_memory_trigger_collapse,
