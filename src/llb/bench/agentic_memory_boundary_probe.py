@@ -94,6 +94,36 @@ def compact_fold_input_probe(
     controller that spends the whole step budget, and the elision fields then describe the
     transcript a real controller can grow rather than the shortest one that finishes.
     """
+    tasks = [
+        AgenticTask.from_record(record)
+        for record in build_memory_dependent_tasks(
+            n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
+        )
+    ]
+    return compact_tasks_fold_input_probe(
+        tasks,
+        max_steps=depth + max_steps_margin,
+        max_prompt_chars=max_prompt_chars,
+        compact_share=compact_share,
+        summary_input_cap=summary_input_cap,
+        observation_cap_chars=observation_cap_chars,
+        observation_head_share=observation_head_share,
+        controller=controller,
+    )
+
+
+def compact_tasks_fold_input_probe(
+    tasks: list[AgenticTask],
+    *,
+    max_steps: int,
+    max_prompt_chars: int,
+    compact_share: float,
+    summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
+    observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
+    observation_head_share: float = OBSERVATION_HEAD_SHARE,
+    controller: Callable[[str], str] = oracle_compacting_controller,
+) -> dict[str, object]:
+    """Probe arbitrary deterministic agent tasks through the same compact episode seam."""
     policy = ContextPolicy(
         name=POLICY_COMPACT,
         observation_cap_chars=observation_cap_chars,
@@ -103,15 +133,13 @@ def compact_fold_input_probe(
     )
     telemetries = [
         run_episode(
-            AgenticTask.from_record(record),
+            task,
             controller,
-            max_steps=depth + max_steps_margin,
+            max_steps=max_steps,
             policy=policy,
             budget=fixed_budget(max_prompt_chars),
         ).telemetry
-        for record in build_memory_dependent_tasks(
-            n_tasks=n_tasks, depth=depth, pad_chars=pad_chars
-        )
+        for task in tasks
     ]
     fold_inputs = _max_fold_inputs([item.summary_fold_input_chars for item in telemetries])
     return {

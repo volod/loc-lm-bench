@@ -43,26 +43,26 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-middle-critical-window-elision-transfer (optional)
+### agent-context-policy-entry-aware-summary-fold-adoption (optional)
 
-Test whether the head-and-tail summarize-input trim survives when required evidence, rather than
-padding and workflow checkpoints, occupies the elided middle. Build deterministic task variants
-whose independently checked answer facts land in the head, middle, and tail strata; reuse the
-trigger-matched fitting/elided geometry; and pair completion per stratum over two qualified model
-families. If middle-critical completion separates while head/tail controls do not, prototype an
-entry-aware or oldest-first fold and compare it under the same bytes and task set.
+Promote the entry-aware summary-input prototype into an explicit context-policy choice and decide
+whether it should replace the shipped whole-transcript head-and-tail trim. Run it across the typed
+memory, aggregate-search, repeated-fold, and crossover workloads on two host-fit families; compare
+completion, total model-input cost, summary prompt bytes, and fold count against `head_tail`; and
+route the new strategy through policy-change audit and published-value provenance before any default
+change. Require no head/tail or aggregate regression and preserve the middle-critical recovery.
 
 - Agent status: RUN NEEDED
-- Dependencies: reuse the strict geometry, live eligibility, and exact task pairing documented in
-  [unavoidable window elision](current/extended-workflows/crossover-geometry.md#unavoidable-elision-under-the-shipped-window-bound).
-- User-visible outcome: an operator learns whether the current no-cost reading is specific to typed
-  early memory or whether head-and-tail trimming is safe when task-critical facts move through a
-  long session.
-- Scope boundary: in scope -- stratum-controlled tasks, two host-fit model families, and an
-  entry-aware prototype only if the predeclared middle stratum loses completion. Out of scope --
-  changing the shipped fold without a separated middle-specific result.
+- Dependencies: reuse the gated recovery and fixed-byte comparison in
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype),
+  plus the [policy-constant audit](current/extended-workflows/policy-constant-audit.md).
+- User-visible outcome: an operator gets a supported summary-fold strategy for sessions where
+  critical evidence can occupy any entry, rather than an evidence-only prototype.
+- Scope boundary: in scope -- public policy configuration, cross-workload regression, audit and
+  provenance integration, and a default decision. Out of scope -- increasing the resolved window
+  or changing compaction trigger/hysteresis.
 - Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#unavoidable-elision-under-the-shipped-window-bound).
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 

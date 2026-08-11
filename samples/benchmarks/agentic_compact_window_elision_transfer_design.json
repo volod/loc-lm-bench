@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-middle-critical-window-elision-transfer",
+  "study_kind": "compact_window_elision_transfer",
+  "seed": 727,
+  "required_qualified_families": 2,
+  "candidate_roster": [
+    {
+      "model_family": "qwen",
+      "model": "qwen3:14b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "gemma4",
+      "model": "gemma4:e4b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "mamay-gemma",
+      "model": "hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M",
+      "backend": "ollama"
+    }
+  ],
+  "held_fixed": {
+    "depth": 10,
+    "n_tasks": 6,
+    "n_tasks_per_stratum": 2,
+    "pad_chars": 1600,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "summary_input_cap": "window",
+    "preserve_memory_markers": true,
+    "minimum_control_completion": 1.0
+  },
+  "fact_stages": {
+    "head": 4,
+    "middle": 5,
+    "tail": 7
+  },
+  "cells": [
+    {
+      "cell_id": "strata-fit-d10-g16600",
+      "role": "transcript_fits",
+      "max_prompt_chars": 16600,
+      "compact_share": 0.674698795180723,
+      "expected": {
+        "compaction_trigger_chars": 11200,
+        "summary_input_chars": 15776,
+        "summary_input_elided_chars": 0,
+        "n_compactions": 1
+      }
+    },
+    {
+      "cell_id": "strata-elided-d10-g14000",
+      "role": "transcript_elided",
+      "max_prompt_chars": 14000,
+      "compact_share": 0.8,
+      "expected": {
+        "compaction_trigger_chars": 11200,
+        "summary_input_chars": 15776,
+        "summary_input_elided_chars": 2508,
+        "n_compactions": 1
+      }
+    }
+  ],
+  "prototype": {
+    "summary_trim_strategy": "per_entry_head",
+    "run_only_if": "every qualified family loses middle completion while head and tail outcomes stay unchanged",
+    "comparison": "entry-aware minus head-tail over the same elided guard, task bytes, and task ids",
+    "changes_shipped_default": false
+  }
+}

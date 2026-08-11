@@ -76,7 +76,7 @@ the crossover sits, what has been published from it, and what a constant change 
 | Where compact stops repaying its summary call: cap-fitting cost crossover over depth and prompt guard | [Crossover geometry](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface) |
 | Compact routing on one axis: trigger (`compact_share * guard`) and the fold step it selects | [Crossover geometry](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis) |
 | The compact crossover as a fold-step boundary ("fold no later than step k") rather than a char guard | [Crossover geometry](current/extended-workflows/crossover-geometry.md#the-crossover-is-a-fold-step-not-a-char-guard) |
-| The compact summarize call's input bound (`summary_input_cap`), the residual it removes, and what its elision costs | [Crossover geometry](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned) |
+| The compact summarize call's input bound (`summary_input_cap`), unavoidable elision cost, and entry-aware prototype | [Summary-input bounds and elision](current/extended-workflows/summary-input-elision.md) |
 | Agent context-policy constant sweep (cap / head-share / keep_last_n pin-or-expose) | [Constant sweeps](current/extended-workflows/context-policy-constants.md#agent-context-policy-constants) |
 | keep_last_n on longer transcripts (medium-search keep grid) | [Constant sweeps](current/extended-workflows/context-policy-constants.md#keep_last_n-on-longer-transcripts) |
 
