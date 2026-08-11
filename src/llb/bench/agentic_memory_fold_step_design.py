@@ -92,7 +92,7 @@ def fold_step_prompt_sequences(design: dict[str, object]) -> dict[int, list[int]
 def fold_step_cap_peaks(design: dict[str, object]) -> dict[int, int]:
     """The deterministic cap peak prompt behind every tested depth -- the sequence's own maximum."""
     return {
-        depth: measured_cap_peak(sequence, geometry=f"depth {depth}")
+        depth: measured_cap_peak(sequence, geometry=f"depth {depth} under perfect play")
         for depth, sequence in fold_step_prompt_sequences(design).items()
     }
 
@@ -139,7 +139,7 @@ def _validate_ladder(
     ladder: dict[str, object], held: dict[str, object], rule: dict[str, object], seen: set[str]
 ) -> None:
     depth = int(cast(int, ladder["depth"]))
-    label = f"depth {depth}"
+    label = f"depth {depth} under perfect play"
     share = float(cast(float, held["compact_share"]))
     sequence = _prompt_sequence(depth, held)
     peak = measured_cap_peak(sequence, geometry=label)

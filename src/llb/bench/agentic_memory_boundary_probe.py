@@ -10,10 +10,15 @@ workflow token reproduces the exact prompt sequence a perfect controller would s
 Every probe here RUNS episodes, so each call costs a full workflow walk per task. The interval
 arithmetic those walks feed -- which step a trigger folds at, which guards select it, and which
 band is cap-fitting -- is pure and lives in `agentic_memory_fold_step_ladder`.
+
+The CONTROLLER is a parameter rather than a constant, because perfect play is one walk of this
+world and not the only one a guard has to survive. `agentic_memory_worst_case_probe` passes the
+imperfect controller that spends the whole step budget, and reads the same fields back.
 """
 
 import json
 import re
+from collections.abc import Callable
 
 from llb.bench.agentic.context_policy import (
     DEFAULT_OBSERVATION_CAP_CHARS,
@@ -74,6 +79,7 @@ def compact_fold_input_probe(
     max_steps_margin: int = 4,
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
+    controller: Callable[[str], str] = oracle_compacting_controller,
 ) -> dict[str, object]:
     """What ONE guard offers the summarizer under perfect play, and how much its cap elides.
 
@@ -83,6 +89,10 @@ def compact_fold_input_probe(
     predeclare that its reference arm actually HAS an elision to price, and that the step-aligned
     arm has none. `summary_fold_input_chars` is the per-fold breakdown of the summed
     `summary_input_chars`, so a multi-fold episode keeps each offered transcript addressable.
+
+    `controller` swaps the walk without swapping the reading: the worst-case probe passes the
+    controller that spends the whole step budget, and the elision fields then describe the
+    transcript a real controller can grow rather than the shortest one that finishes.
     """
     policy = ContextPolicy(
         name=POLICY_COMPACT,
@@ -94,7 +104,7 @@ def compact_fold_input_probe(
     telemetries = [
         run_episode(
             AgenticTask.from_record(record),
-            oracle_compacting_controller,
+            controller,
             max_steps=depth + max_steps_margin,
             policy=policy,
             budget=fixed_budget(max_prompt_chars),
@@ -137,8 +147,15 @@ def cap_prompt_sequence(
     max_steps_margin: int = 4,
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
+    controller: Callable[[str], str] = oracle_controller,
 ) -> list[int]:
-    """The per-step `observation_cap` prompt sizes this geometry produces under perfect play."""
+    """The per-step `observation_cap` prompt sizes this geometry produces under one controller.
+
+    Defaulted to perfect play, which is the walk every cap-fitting band was placed against. A
+    caller that hands a different controller gets that controller's prompt sizes over the same
+    world, and the step-count agreement check below still applies -- the sequence is only a
+    geometry when every task walks it the same number of steps.
+    """
     policy = ContextPolicy(
         name=POLICY_OBSERVATION_CAP,
         observation_cap_chars=observation_cap_chars,
@@ -147,7 +164,7 @@ def cap_prompt_sequence(
     episodes = [
         run_episode(
             AgenticTask.from_record(record),
-            oracle_controller,
+            controller,
             max_steps=depth + max_steps_margin,
             policy=policy,
             budget=unbounded_budget(),
@@ -157,7 +174,7 @@ def cap_prompt_sequence(
         )
     ]
     if len({len(sizes) for sizes in episodes}) != 1:
-        raise ValueError("perfect play produced different step counts across the task set")
+        raise ValueError("the probed controller produced different step counts across the task set")
     return [max(step) for step in zip(*episodes, strict=True)]
 
 
@@ -180,5 +197,5 @@ def cap_peak_prompt_chars(
             observation_cap_chars=observation_cap_chars,
             observation_head_share=observation_head_share,
         ),
-        geometry=f"depth {depth}",
+        geometry=f"depth {depth} under perfect play",
     )

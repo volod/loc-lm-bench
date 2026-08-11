@@ -43,34 +43,35 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-imperfect-play-guard-margin (optional)
+### agent-context-policy-imperfect-play-margin-on-a-repeatedly-folding-cell (optional)
 
-The deterministic cap-peak probe
-(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
-the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
-token grows the transcript past that peak, and a guard chosen just above it can still overflow on
-the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
-budget allows (max steps rather than depth), record the measured extra steps per episode from the
-existing bundles, and turn the difference into a stated safety margin the design validation applies
-when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
-bound-invariant ([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)),
-which inherits the identical perfect-play limitation: a longer real transcript can reach a
-summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
-verdict too and state the invariance for the worst case the step budget allows.
+The imperfect-play safety margin is measured against a ONE-FOLD regime, and both of its readings
+inherit that limit ([extended workflows](current/extended-workflows/imperfect-play-margin.md)). The
+worst-case bound-invariance verdict agrees with the oracle verdict cell for cell because a
+cap-fitting guard puts the first compact trigger inside the prefix the two walks SHARE -- and every
+measured cap-fitting cell folds exactly once, so there is no second fold for the wasted steps to
+change. A cell that folds twice breaks that argument: the stalling walk carries extra entries into
+the SECOND summarize input, which is the first place a real transcript could reach a
+summarize-input cap the oracle transcript never touches. Build the two-fold geometry (it is the same
+one `agent-context-policy-hysteresis-second-fold` needs), re-run the worst-case audit over it, and
+record whether `worst_case_only_sensitive` is still empty there -- if it is not, the published
+invariance statement needs a stated one-fold validity limit. While in that geometry, also read the
+margin itself: the wasted-step entry is a fixed 151 chars today because the workflow-complete notice
+does not grow with depth, and a post-fold stall appends summary-bearing prompts instead, so the
++453-char margin may not be the constant it currently looks like.
 
 - Agent status: CLEAR
-- Dependencies: the probe, the band check in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
-  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
-  the compact-vs-cap bundles.
-- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
-  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
-  the transcripts a real controller produces.
-- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
-  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
-  interpolation rule, or relaxing the activation floor.
+- Dependencies: the worst-case probe and audit in
+  `src/llb/bench/agentic_memory_worst_case_probe.py` and `src/llb/bench/agentic_memory_cap_audit.py`
+  are current behavior; the two-fold geometry is shared with
+  `agent-context-policy-hysteresis-second-fold` below and should be built once.
+- User-visible outcome: the invariance and margin statements an operator applies either extend to
+  repeated compaction or carry an explicit one-fold boundary, instead of being silently over-applied.
+- Scope boundary: in scope -- the two-fold geometry as a CI fixture, the worst-case audit over it,
+  the per-fold margin reading, and the validity statement. Out of scope -- a GPU run, changing the
+  band rule, and shipped compaction hysteresis.
 - Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface).
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md).
 
 ### agent-context-policy-summary-elision-under-the-window-bound (optional)
 

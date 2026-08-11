@@ -24,6 +24,15 @@ band, a depth that does not predeclare cells on both sides of the crossover, a g
 replication's anchor geometry, and a declared window too narrow to carry the widest guard -- all in
 CI, with no GPU.
 
+The lower bound is not the perfect-play peak itself. A real controller that repeats a step or
+mis-reads a token grows the transcript past that peak, so the band is narrowed from below by a
+MEASURED safety margin -- the same geometry walked by a controller that spends its whole step budget
+(+453 chars at both depths) -- while the upper bound keeps the perfect-play peak so a cell whose
+compact arm only fires when the controller misbehaves is refused too. Every committed cell clears
+the narrowed band unchanged. See
+[the imperfect-play safety margin](imperfect-play-margin.md) for the probe, the band rule, the extra
+steps the served model actually spent, and the worst-case bound-invariance verdict.
+
 The interpolation rule is predeclared with the grid: read the compact-minus-cap total model-input
 delta on the guard axis, take the FIRST adjacent pair of cost-separated cells whose means have
 opposite signs, and interpolate linearly to the zero crossing. A cell whose cost sign is not

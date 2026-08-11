@@ -209,7 +209,7 @@ def test_a_depth_the_probe_measured_nothing_over_names_the_depth_in_both_peak_re
     unmeasured["held_fixed"]["max_steps_margin"] = -shallowest
     for read in (validate_fold_step_design, fold_step_cap_peaks):
         with pytest.raises(
-            ValueError, match=f"depth {shallowest} measured no prompt under perfect play"
+            ValueError, match=f"depth {shallowest} under perfect play measured no prompt"
         ):
             read(unmeasured)
 

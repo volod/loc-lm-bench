@@ -123,12 +123,16 @@ def measured_cap_peak(prompt_sequence: list[int], *, geometry: str) -> int:
     band around, but an empty walk never reaches it -- the builtin fails first as `max() iterable
     argument is empty`, naming neither the geometry nor what the peak was wanted for. Every caller
     reads the peak through here, so the same fact reads the same way wherever it surfaces.
+
+    `geometry` names the walk as well as the depth, because a sequence is measured under one
+    controller and the same depth has more than one -- the caller states which, since this module
+    is arithmetic over a sequence and never learns where it came from.
     """
     peak = max(prompt_sequence, default=0)
     if peak <= 0:
         raise ValueError(
-            f"{geometry} measured no prompt under perfect play ({len(prompt_sequence)} steps), so "
-            "it has no cap peak and no usable guard band to place cells in"
+            f"{geometry} measured no prompt ({len(prompt_sequence)} steps), so it has no cap peak "
+            "and no usable guard band to place cells in"
         )
     return peak
 
@@ -149,6 +153,45 @@ def usable_guard_band(peak_prompt_chars: int, compact_share: float) -> tuple[int
 def guard_is_cap_fitting(guard_chars: int, peak_prompt_chars: int, compact_share: float) -> bool:
     """Whether one predeclared guard lies strictly inside the usable band."""
     low, high = usable_guard_band(peak_prompt_chars, compact_share)
+    return low < guard_chars < high
+
+
+def imperfect_play_guard_band(
+    worst_case_peak_chars: int, perfect_play_peak_chars: int, compact_share: float
+) -> tuple[int, int]:
+    """The usable band with the imperfect-play safety margin applied -- the conservative one.
+
+    The two bounds take DIFFERENT peaks, because the conservative side of each is a different walk:
+
+      - cap must fit for the controller that actually runs, so the lower bound is the WORST-CASE
+        peak. A guard between the two peaks is cap-fitting for a perfect controller only, and the
+        cell it places measures overflow rescue the first time a real one wastes a step.
+      - compact must still fire, and it fires SOONER on a longer transcript, so the upper bound
+        keeps the PERFECT-PLAY peak. Raising it to the worst-case peak would admit a guard whose
+        trigger only the wasted steps reach, and a cell whose compact arm depends on the controller
+        misbehaving is not an activated cell -- it is a coin flip.
+
+    So the margin narrows the band from below and never widens it from above.
+    """
+    if perfect_play_peak_chars <= 0 or worst_case_peak_chars < perfect_play_peak_chars:
+        raise ValueError(
+            f"imperfect play must reach at least the perfect-play peak, got "
+            f"{worst_case_peak_chars} against {perfect_play_peak_chars}"
+        )
+    _low, high = usable_guard_band(perfect_play_peak_chars, compact_share)
+    return worst_case_peak_chars, high
+
+
+def guard_is_cap_fitting_under_imperfect_play(
+    guard_chars: int,
+    worst_case_peak_chars: int,
+    perfect_play_peak_chars: int,
+    compact_share: float,
+) -> bool:
+    """Whether one predeclared guard survives the safety margin as well as the usable band."""
+    low, high = imperfect_play_guard_band(
+        worst_case_peak_chars, perfect_play_peak_chars, compact_share
+    )
     return low < guard_chars < high
 
 

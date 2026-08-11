@@ -33,11 +33,17 @@ This module owns the geometry extraction shared with the summarize-bound audit
 (`agentic_memory_cap_audit`), which is one USE of this mechanism rather than a second one.
 """
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_policy_change_replay import AUDITED_POLICIES, arm_comparison
+from llb.bench.common import LLMComplete
+
+# How a caller names the walk a replay compares over: given one task and the study's held geometry,
+# return the controller that plays it. `replay_controller_for` is the default implementation.
+ReplayController = Callable[[AgenticTask, dict[str, object]], LLMComplete]
 
 # How each committed study nests its cells under its own design root.
 KIND_SURFACE = "compact_memory_boundary_surface"
@@ -198,12 +204,17 @@ def audit_cell_prompts(
     change: PolicyChange,
     *,
     pinned: Mapping[str, Any] | None = None,
+    controller: ReplayController | None = None,
 ) -> dict[str, object]:
     """One cell's verdict: do both arms send the identical prompts under both policies?
 
     A cell that declares one of the moved fields itself keeps its own value for that field and is
     audited on the rest of the change; a cell that declares ALL of them is not described by the
     change at all.
+
+    `controller` chooses the walk the two policies are compared over, defaulting to each study's
+    own oracle. The verdict is only ever as broad as that walk, which is why a caller can ask for
+    the same comparison on the longest transcript the step budget allows.
     """
     cell_pins = [
         field for field in change.fields if field in cast(list[str], cell["pinned_fields"])
@@ -230,7 +241,13 @@ def audit_cell_prompts(
     policies = cast(list[str], cell.get("policies", list(AUDITED_POLICIES)))
     arms = {
         name: arm_comparison(
-            name, cell, held, described.baseline, described.candidate, pinned=pinned
+            name,
+            cell,
+            held,
+            described.baseline,
+            described.candidate,
+            pinned=pinned,
+            controller=controller,
         )
         for name in policies
     }

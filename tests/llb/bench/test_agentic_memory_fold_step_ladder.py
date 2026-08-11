@@ -134,7 +134,7 @@ def test_the_peak_read_names_the_geometry_a_bare_max_would_only_call_an_empty_it
     assert measured_cap_peak(REPEATED, geometry="depth 6") == 4000
     for sequence in (EMPTY, [0, 0, 0]):
         with pytest.raises(
-            ValueError, match=rf"depth 6 measured no prompt .* \({len(sequence)} steps\)"
+            ValueError, match=rf"depth 6 measured no prompt \({len(sequence)} steps\)"
         ):
             measured_cap_peak(sequence, geometry="depth 6")
     # The geometry is the caller's own vocabulary, so an arm ladder and a surface depth read

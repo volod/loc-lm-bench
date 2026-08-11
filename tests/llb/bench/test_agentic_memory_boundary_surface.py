@@ -157,7 +157,7 @@ def test_a_depth_the_probe_measured_nothing_over_is_refused_at_the_surface_not_i
     unmeasured = deepcopy(design)
     unmeasured["held_fixed"]["max_steps_margin"] = -shallowest
     with pytest.raises(
-        ValueError, match=f"depth {shallowest} measured no prompt under perfect play"
+        ValueError, match=f"depth {shallowest} under perfect play measured no prompt"
     ):
         validate_surface_design(unmeasured)
 

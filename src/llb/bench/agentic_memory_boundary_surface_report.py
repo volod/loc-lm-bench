@@ -44,6 +44,7 @@ def format_surface_table(analysis: dict[str, object]) -> str:
                 f"{cast(str, cell['measured_side']):<16} "
                 f"{cast(str, cell['expected_side']):<16} {str(cell['valid']).lower()}"
             )
+    lines.extend(_margin_lines(analysis, cells))
     rows = cast(list[dict[str, object]], analysis["depth_surface"])
     if rows:
         lines.extend(["", "depth surface"])
@@ -73,6 +74,37 @@ def format_surface_table(analysis: dict[str, object]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _margin_lines(analysis: dict[str, object], cells: list[dict[str, object]]) -> list[str]:
+    """The imperfect-play safety margin per depth, and what the run's own episodes spent."""
+    margins = cast(dict[str, dict[str, object]], analysis.get("cap_peak_margin", {}))
+    if not margins:
+        return []
+    lines = ["", "imperfect-play safety margin"]
+    for depth in sorted(margins, key=int):
+        margin = margins[depth]
+        lines.append(
+            f"depth {int(depth):>2d}: perfect play={cast(int, margin['perfect_play_peak_chars'])} "
+            f"worst case={cast(int, margin['worst_case_peak_chars'])} chars "
+            f"(+{cast(int, margin['margin_chars'])}, "
+            f"{cast(float, margin['margin_ratio']):.3f}x) over "
+            f"{cast(int, margin['budgeted_extra_steps'])} budgeted extra step(s); "
+            f"observed={_observed_extra(cells, int(depth))}"
+        )
+    return lines
+
+
+def _observed_extra(cells: list[dict[str, object]], depth: int) -> str:
+    """The largest extra step count any readable bundle at this depth recorded."""
+    values = [
+        cast(int, arm["max_extra_steps"])
+        for cell in cells
+        if int(cast(int, cell["depth"])) == depth
+        for arm in cast(dict[str, dict[str, object]], cell.get("observed_extra_steps", {})).values()
+        if arm["read"]
+    ]
+    return f"{max(values)} extra step(s)" if values else "(bundles not on this host)"
 
 
 def persist_surface(
