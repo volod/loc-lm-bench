@@ -40,7 +40,7 @@ not show. The audit replays through `complete`, where they agree exactly.
 """
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -182,6 +182,7 @@ def arm_comparison(
     candidate: Mapping[str, Any],
     *,
     pinned: Mapping[str, Any] | None = None,
+    controller: Callable[[AgenticTask, dict[str, object]], LLMComplete] | None = None,
 ) -> dict[str, object]:
     """Replay one arm of one cell under both POLICIES and locate the first prompt that differs.
 
@@ -190,10 +191,16 @@ def arm_comparison(
     measured under, the other plays the configuration the new build ships. `pinned`, when supplied
     (the pin gate always does), feeds every field the change does not move so a `restated` pin on a
     held field cannot leave the design's stale value on the baseline arm.
+
+    `controller` selects WHICH walk of the world the two policies are compared over, defaulting to
+    the study's own oracle. An invariance verdict is only ever a statement about the transcript it
+    was read on, so a caller that needs the claim to cover imperfect play passes the controller
+    that produces one instead of re-deriving the comparison.
     """
     tasks = build_replay_tasks(cell, held)
     max_steps = _max_steps(cell, held)
     guard = int(cast(int, cell["max_prompt_chars"]))
+    build_controller = controller if controller is not None else replay_controller_for
 
     def episodes(settings: Mapping[str, Any]) -> list[ReplayedEpisode]:
         return [
@@ -202,7 +209,7 @@ def arm_comparison(
                 task=task,
                 max_prompt_chars=guard,
                 max_steps=max_steps,
-                complete=replay_controller_for(task, held),
+                complete=build_controller(task, held),
             )
             for task in tasks
         ]

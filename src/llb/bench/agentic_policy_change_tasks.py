@@ -15,6 +15,7 @@ from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic_long_transcript import pipeline_db_task
 from llb.bench.agentic_memory_boundary_probe import ORACLE_SUMMARY, oracle_controller
 from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
+from llb.bench.agentic_memory_worst_case_probe import stalling_compacting_controller
 from llb.bench.tool_world import DB_SET, FINISH, READ_FILE
 
 # Builders a design's held_fixed may name. Cap-fitting designs omit the field and get the memory one.
@@ -65,6 +66,27 @@ def replay_controller_for(task: AgenticTask, held: dict[str, object]) -> Callabl
     if builder == TASK_BUILDER_SEED_SHAPED:
         return _seed_shaped_oracle(task)
     return _pipeline_db_oracle(task)
+
+
+def worst_case_replay_controller(
+    task: AgenticTask, held: dict[str, object]
+) -> Callable[[str], str]:
+    """The controller that spends the WHOLE step budget, for a study built on the memory chain.
+
+    An invariance verdict read under the oracle covers the shortest transcript that finishes. This
+    is the longest one the budget allows, so a summarize-input cap the oracle never reaches is
+    reached here. Only the memory-chain builder has a defined worst case -- the pipeline shapes end
+    when their planted files run out, and stalling one is a different task rather than a longer
+    walk of the same one -- so any other builder is refused rather than silently audited under an
+    oracle the caller asked not to use.
+    """
+    builder = str(held.get("task_builder", TASK_BUILDER_MEMORY))
+    if builder != TASK_BUILDER_MEMORY:
+        raise ValueError(
+            f"worst-case replay is defined only for the {TASK_BUILDER_MEMORY!r} task builder, "
+            f"not {builder!r}"
+        )
+    return stalling_compacting_controller
 
 
 def _memory_controller(prompt: str) -> str:

@@ -38,65 +38,96 @@ Every task below carries an explicit `Agent status` line with one of four marker
 - **BLOCKED BY HUMAN** -- the acceptance gate consumes an artifact only a human step can produce.
 - **HUMAN-GATED** -- the deliverable itself is human judgment or authorization; supporting code and
   unit tests are agent-buildable.
+- **RESEARCH** -- in addition to Agent status. It marks the task implementation as unknown in
+advance, and a negative result is a valid outcome that must be recorded rather than worked around.
 
 ## Agent Implementation Tasks
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-imperfect-play-guard-margin (optional)
+### conflict-audit-measured-precision
 
-The deterministic cap-peak probe
-(`src/llb/bench/agentic_memory_boundary_probe.py`) walks the workflow with an ORACLE controller, so
-the band it certifies is the perfect-play band: a real controller that repeats a step or mis-reads a
-token grows the transcript past that peak, and a guard chosen just above it can still overflow on
-the run. Price that gap instead of leaving it implicit: extend the probe to the worst case the step
-budget allows (max steps rather than depth), record the measured extra steps per episode from the
-existing bundles, and turn the difference into a stated safety margin the design validation applies
-when it certifies a cell as cap-fitting. The same probe now also certifies published cells as
-bound-invariant ([extended workflows](current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap)),
-which inherits the identical perfect-play limitation: a longer real transcript can reach a
-summarize-input cap the oracle transcript never touched, so extend the worst-case probe to that
-verdict too and state the invariance for the worst case the step budget allows.
-
-- Agent status: CLEAR
-- Dependencies: the probe, the band check in
-  `src/llb/bench/agentic_memory_boundary_surface_cells.py`, and the invariance verdict in
-  `src/llb/bench/agentic_memory_cap_audit.py`; the per-episode step counts are already persisted in
-  the compact-vs-cap bundles.
-- User-visible outcome: a predeclared cap-fitting cell that is cap-fitting for the model that
-  actually runs it, not only for a perfect controller, and a bound-invariance verdict that holds for
-  the transcripts a real controller produces.
-- Scope boundary: in scope -- the worst-case probe, the margin constant, the validation change, and
-  the worst-case invariance verdict. Out of scope -- re-running the surface, changing the
-  interpolation rule, or relaxing the activation floor.
-- Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface).
-
-### agent-context-policy-summary-elision-under-the-window-bound (optional)
-
-The step-aligned summarize-input bound elides the folded transcript ONLY when that transcript cannot
-fit the resolved window, which no cap-fitting ladder reaches: every cell measured so far folds a
-transcript comfortably under the guard, so the shipped bound's elision path is unexercised
-([extended
-workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned)).
-That is the regime where an elision is unavoidable rather than incidental, and it is the one where
-the completion cost of losing the middle of a folded transcript actually matters. Build a geometry
-whose folded transcript EXCEEDS the window minus the summary template (deeper memory chains, or a
-larger `pad_chars` at a fixed window), verify with the deterministic probe that the shipped bound
-elides there, and read completion against a control whose transcript fits -- the answer says whether
-an unavoidable elision needs a smarter fold (per-entry budgets, oldest-first dropping) rather than a
-head-and-tail trim.
+Report what an operator can act on. `audit-corpus-conflicts --effort claim` already adjudicates
+every candidate row, yet its artifacts still describe the semantic tier by counts and a resolved
+cosine; the quantity operators need -- the share of the returned list that survives claim
+adjudication, with an interval that respects how few distinct claims those rows come from -- is
+produced only by the research harness. Move it into the audit.
 
 - Agent status: RUN NEEDED
-- Dependencies: `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`
-  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed.
-- User-visible outcome: an operator running a transcript too big to summarize whole learns what that
-  costs, instead of finding out through a wrong answer read from a middle-elided summary.
-- Scope boundary: in scope -- the over-window geometry, the probe-backed predeclaration, and the
-  completion reading. Out of scope -- implementing a new folding strategy (that is what the reading
-  would justify), and changing the shipped bound.
+- Dependencies: reuse the precision curve, the two-way clustered bound
+  (`null_research_clusters.py`), and the adjudicator-calibration gate from [null
+  research](current/data-prep/conflict-null-research.md#third-generation-negative-result); the claim
+  tier and its artifacts are current behavior in [conflict
+  detection](current/data-prep/conflict-detection.md#effort-tiers).
+- User-visible outcome: `summary.json` and `report.md` carry a measured claim-tier precision at the
+  returned candidate budget with its two-way clustered lower bound, so the audit stops leaving a
+  rank cutoff as its only summary statistic.
+- Scope boundary: in scope -- a precision block computed from the claim tier's own verdicts, its
+  clustered bound, the calibration gate that suppresses the block when the adjudicator is not
+  calibrated against frozen labels, and the report/summary rendering. Out of scope -- changing
+  candidate generation, the relation vocabulary, or any threshold default, and printing a precision
+  figure without its bound or without the calibration that earns it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: extend `src/llb/conflicts/claim_tier.py` and `report.py` with the shared precision
+  helpers, add a deterministic fixture test with an injected adjudicator, then one CUDA-host claim
+  run per quickstart corpus for the recorded evidence.
+- Acceptance gates: `make ci` green with the injected adjudicator; the printed bound equals the
+  research harness's bound on the same rows; and the block is absent, with a stated reason, whenever
+  the adjudicator misses its calibration bound.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+
+### conflict-claim-tier-cross-encoder-prefilter (optional)
+
+Spend the cross-encoder's ordering on adjudication COST instead of on a rate. Scoring a candidate
+pair with a cross-encoder orders the claim tier's own verdicts where cosine does not -- monotone
+score bins whose top bin is entirely conflicts on the planted fixture and the high-recall corpus
+([closure](current/data-prep/conflict-null-closure.md)) -- yet the claim tier still adjudicates the
+ranked list in cosine order, so it pays a model call for rows a 568M cross-encoder can already place
+at the bottom. Re-rank the candidate rows with the pinned cross-encoder before adjudication and
+measure what that buys: adjudicated rows needed to reach the same set of found conflicts, and the
+conflicts lost if any. The scorer must stay injectable, and a corpus where the ordering is flat
+(goods, four conflicts in fifty rows) must degrade to today's behavior rather than drop rows.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse `null_research_cross_encoder.py` (pair scoring batched by left passage,
+  calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
+  artifacts are current behavior in [conflict
+  detection](current/data-prep/conflict-detection.md#effort-tiers).
+- User-visible outcome: `audit-corpus-conflicts --effort claim` reaches the same conflicts for fewer
+  adjudication calls on corpora where the ordering is informative, with the saving recorded in the
+  run artifacts.
+- Scope boundary: in scope -- an optional pre-filter stage between candidate generation and
+  adjudication, its per-corpus flat-ordering fallback, and the cost/recall evidence. Out of scope --
+  quoting any cross-encoder score as a probability, rate, or confidence; changing the relation
+  vocabulary; and dropping a row the claim tier would have called a conflict without recording it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: add the pre-filter behind an injected scorer with a deterministic fixture test,
+  then one CUDA-host claim run per quickstart corpus paired against the same run without it.
+- Acceptance gates: `make ci` green with the injected scorer; no conflict found by the unfiltered
+  run is missing from the filtered run on either quickstart corpus; and the recorded saving is stated
+  per corpus, including the corpus where it is zero.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+
+### agent-context-policy-entry-aware-summary-fold-adoption (optional)
+
+Promote the entry-aware summary-input prototype into an explicit context-policy choice and decide
+whether it should replace the shipped whole-transcript head-and-tail trim. Run it across the typed
+memory, aggregate-search, repeated-fold, and crossover workloads on two host-fit families; compare
+completion, total model-input cost, summary prompt bytes, and fold count against `head_tail`; and
+route the new strategy through policy-change audit and published-value provenance before any default
+change. Require no head/tail or aggregate regression and preserve the middle-critical recovery.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse the gated recovery and fixed-byte comparison in
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype),
+  plus the [policy-constant audit](current/extended-workflows/policy-constant-audit.md).
+- User-visible outcome: an operator gets a supported summary-fold strategy for sessions where
+  critical evidence can occupy any entry, rather than an evidence-only prototype.
+- Scope boundary: in scope -- public policy configuration, cross-workload regression, audit and
+  provenance integration, and a default decision. Out of scope -- increasing the resolved window
+  or changing compaction trigger/hysteresis.
 - Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned).
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype).
 
 ### agent-context-policy-hysteresis-second-fold (optional)
 
@@ -105,25 +136,63 @@ out of the cost once the trigger is fixed: after the first summary, trigger hyst
 next trigger to the full guard, and no tested transcript grows back that far
 ([extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis)).
 The trigger-only rule is therefore established only in the one-fold regime, and the regime where
-compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
-(or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
-equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
-portable rule needs a stated validity limit. The second fold also carries the running summary into
-the summarize input, and the shipped `window` bound sizes that input from the budget rather than the
-trigger, so record the per-fold summarize input beside the deltas -- a growing prior summary is the
-other way the guard could re-enter.
+compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured.
+
+Do NOT look for that geometry inside the cap-fitting band: a cap-fitting cell cannot fold twice, for
+a structural reason rather than a lack of searching
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#why-a-cap-fitting-cell-folds-exactly-once)),
+so "shrink the guard toward the cap peak" cannot work and pushing depth alone does not either. The
+repeatedly folding cells live BELOW the cap peak, where the `observation_cap` arm overflows and
+there is no compact-minus-cap delta to compare -- which is the real obstacle this task has to solve
+first. Restate the equal-trigger claim on a comparison that survives without a cap arm (compact
+against compact at equal triggers, on total model-input tokens), run one equal-trigger family over
+the committed two-fold geometry, and state whether the deltas separate. The later folds also carry
+the running summary into the summarize input, and the shipped `window` bound sizes that input from
+the budget rather than the trigger, so record the per-fold summarize input beside the deltas -- a
+growing prior summary is the other way the guard could re-enter.
 
 - Agent status: RUN NEEDED
-- Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
-  crossing requires (`compact_fold_input_probe` reports the summarize input per fold); reuse the
-  collapse design, the cell gate, and the equivalence band unchanged.
+- Dependencies: the committed repeatedly folding geometry and its per-fold summarize inputs are
+  current behavior (`samples/benchmarks/agentic_compact_two_fold_geometry_design.json`); reuse the
+  collapse design's family contract and equivalence band, but not its cap-fitting cell gate, which
+  by construction refuses every cell in this regime.
 - User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
   explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
-- Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger
-  family inside it, and the validity statement. Out of scope -- new families, new task shapes, and
-  changing shipped compaction hysteresis.
+- Scope boundary: in scope -- the cap-arm-free restatement of the equal-trigger comparison, one
+  family over the committed two-fold geometry, and the validity statement. Out of scope -- new task
+  shapes, changing shipped compaction hysteresis, and relaxing the cap-fitting gate on the studies
+  that legitimately use it.
 - Documentation target:
   [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
+
+### agent-context-policy-repeated-fold-completion-replication (optional)
+
+The current completion reading covers two deterministic memory cases on one qualified model through
+three measured folds
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds)).
+Strengthen the routing claim with a predeclared larger case set and a second model family: require
+both families to pass the one-fold eligibility gate, preserve identical cases and seed across fold
+cells and marker arms within each family, and report paired completion uncertainty at each measured
+fold count. This separates a robust fold-count rule from a ceiling result on two easy codes.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse the compact-only runner, eligibility gate, measured-fold grouping, and marker
+  ablation documented in the linked current page; pick the second family by the local-model host-fit
+  rules rather than weakening the task for a smaller model.
+- User-visible outcome: an operator learns whether the three-fold completion result transfers beyond
+  one model and two cases before treating it as a general session-routing bound.
+- Scope boundary: in scope -- a larger predeclared task set, one additional qualified family, paired
+  uncertainty, and a cross-family reading. Out of scope -- folds deeper than three, a new compaction
+  algorithm, and changing the shipped marker-preservation default.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout, with family
+  and task-set digests in every aggregate.
+- Execution path: extend `make bench-agentic-context-compact-repeated-fold` with a replication design
+  on the CUDA host; CI covers the multi-family aggregation and refusal paths with fakes.
+- Acceptance gates: `make ci` green; each family passes its control before repeated cells run; every
+  fold group reaches the predeclared paired-evidence floor; the report either extends the three-fold
+  rule across families or names the first family/fold where it fails.
+- Documentation target:
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
 
 ### agent-operating-profile-recommendation
 
@@ -710,67 +779,6 @@ the edit-precision audit per setting, and pin each value with evidence or expose
   reading of the audit calls wrong, per setting, with an explicit verdict per constant.
 - Documentation target: [RAG core](current/rag-core.md) query-side processing.
 
-### conflict-null-model-research
-
-**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
-that must be recorded rather than worked around.
-
-Find a defensible independent null for corpus-conflict detection, so the semantic tier can report a
-real false-positive rate instead of a rank cutoff. The current calibration measures the similarity
-distribution of the corpus's own comparable cross-document pairs, which contains whatever genuine
-duplicates the corpus has; with the pair space enumerated exactly the null and the observed
-population are the same set, empirical FDR is identically 1.000 at every threshold, and a budget of
-`N` returns exactly `N` pairs by construction (measured; see [data
-prep](current/data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null)). Every
-downstream question an operator asks -- "is this pair worth reading?", "did tightening the threshold
-remove noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
-answer.
-
-Candidate approaches to evaluate, cheapest first; none is known to work:
-
-- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
-  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
-  shift makes the null too easy, understating the threshold.
-- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
-  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
-  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
-  lands too high.
-- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
-  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
-  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
-  problem already measured for chunk-pair sampling.
-- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
-  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
-  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
-  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
-
-- Agent status: RUN NEEDED
-- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
-  ([data prep](current/data-prep/conflict-detection.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
-  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
-  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
-  post-filter population in [data prep](current/data-prep/conflict-detection.md#what-the-semantic-tier-excludes-and-why).
-- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
-  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
-  would justify moving threshold selection to the claim tier's measured precision instead.
-- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
-  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
-  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
-  a null demonstrably beats the rank cutoff.
-- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  no new committed fixtures unless an approach earns one.
-- Execution path: a research harness invoked per null model over both quickstart stores plus the
-  fixture; CI covers each null constructor deterministically over committed vectors, with the
-  heavy corpus comparison run on the CUDA host.
-- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
-  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
-  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
-  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
-  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
-- Documentation target: the corpus-hygiene known-limitation section of
-  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
-  adopt-or-reject verdict.
-
 ### typed-rag-answer-envelope
 
 The RAG answer path emits FREE TEXT and every answer-side signal is recovered from that text after
@@ -1231,6 +1239,33 @@ say whether a shared-bridge question genuinely needs both facts.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
 
+### conflict-adjudicator-label-slice
+
+Produce frozen human labels for real candidate rows so a measured claim-tier precision can be
+trusted off the planted fixture. Adjudicator agreement is currently calibrated only against the
+seven-document planted corpus, whose relations are synthetic by construction; nothing measures
+whether the model agrees with a human on HR or goods rows ([null
+research](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
+
+- Agent status: HUMAN-GATED
+- Dependencies: `conflict-audit-measured-precision` consumes the resulting bound; candidate ranking
+  and claim adjudication are current behavior. Human step that gates completion: an authorized
+  reviewer assigns one relation from the claim vocabulary to every row of the frozen slice without
+  seeing the model's verdict.
+- User-visible outcome: a committed frozen slice plus a measured human-versus-adjudicator agreement
+  bound -- what lets a precision number transfer to corpora the planted fixture does not represent.
+- Scope boundary: in scope -- slice selection stratified by corpus and rank band, blind review,
+  agreement measurement, and the resulting calibration bound. Out of scope -- relabelling the planted
+  fixture, changing the relation vocabulary, and using the reviewed slice to fit any threshold.
+- Data and artifact paths: `$DATA_DIR/corpus-conflicts/<run>/` for the slice and agreement report;
+  the frozen labels are committed under `samples/`.
+- Execution path: generate the stratified slice from a claim-tier run, review it with
+  `make review-workbench REVIEW_PATH=<slice-jsonl>`, then re-measure agreement against it.
+- Acceptance gates: every slice row carries a human relation; agreement is reported with a clustered
+  interval; and the precision block stays suppressed on any corpus whose agreement bound is unmet.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md) and [review
+  workbench](current/review-workbench.md).
+
 ### corpus-conflict-resolution-review
 
 Review the unresolved semantic conflict candidates through the workbench, then feed the accepted
@@ -1432,3 +1467,9 @@ Each task entry must include:
 
 When a task surfaces new future work, add that as a new forward task. Put current behavior and
 durable decisions in current docs, never in this plan.
+
+A RESEARCH task whose answer comes back negative leaves this file too, but it is not simply deleted:
+move it to [future research](future-research.md) with what closed it and the conditions that would
+make it worth reopening. Its measurements belong in the current docs like every other finished piece
+of work; what future-research.md adds is the reasoning a later reader needs before spending the same
+effort again.

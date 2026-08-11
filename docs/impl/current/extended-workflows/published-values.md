@@ -22,6 +22,14 @@ does not test, omits the fold step a crossover lands in, publishes a malformed s
 publishes a derived value that does not declare what it is computed out of, how it is computed, and
 how the published statement is read.
 
+Every verdict is stated over TWO walks of that world, because the oracle walk is the shortest
+transcript that finishes and a longer real one can reach a summarize-input cap the oracle never
+touched. Each audit row therefore carries `worst_case_verdict` beside `verdict`, read on the longest
+transcript the cell's own step budget allows, and the summary rolls up
+`worst_case_only_sensitive` -- the cells the oracle calls invariant and imperfect play does not. On
+the committed studies the two agree cell for cell, and the mechanism is geometric rather than lucky:
+see [the imperfect-play safety margin](imperfect-play-margin.md#the-bound-invariance-verdict-stated-for-the-worst-case).
+
 The fold-step ANNOTATION is validated too, against the ladder the study that published the number
 measured, because the annotation is what a restated guard is then checked against: a mis-transcribed
 one reads as `a_published_crossover_moves_under_the_shipped_cap` the first time a cell at that depth

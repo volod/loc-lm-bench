@@ -81,11 +81,17 @@ dev = [
   # Upper bound: the formatter's output is version-sensitive, so a floating major would let a
   # release reformat the tree under CI. Lint rules are pinned by `[tool.ruff.lint].select`.
   "ruff>=0.6,<0.17",
-  "radon>=6.0",
-  "complexipy>=5.0",
+  # The complexity gate's two scanners decide a HARD verdict, so both are exact. complexipy in
+  # particular rescored this tree between 5.6.1 and 6.0.0 (`fetch_manifest` 11 -> 13,
+  # `persist_run` 18 -> 14): the same commit failed the gate under one and passed under the other,
+  # which is the split verdict a pinned linter exists to prevent. Upgrading either is a deliberate
+  # edit: change the pin, refresh uv.lock, then run `make complexity-gate` plus `make ci`.
+  "radon==6.0.1",
+  "complexipy==6.0.0",
   # ShellCheck as a wheel (it bundles the real binary), so the shell-lint gate runs on every host
-  # that can run `make ci` -- including GitHub CI, which installs no apt packages. Keep this exact:
-  # `make venv` installs the extra without uv.lock, and a new ShellCheck can redden unchanged code.
+  # that can run `make ci` -- including GitHub CI, which installs no apt packages. Keep this exact
+  # for the same reason as the scanners above; it also covers an install that bypasses uv.lock
+  # (a direct `uv pip install -e ".[dev]"`), where a new ShellCheck can redden unchanged code.
   # To upgrade, change this pin, refresh uv.lock, then run the shell-lint gate and CI.
   "shellcheck-py==0.11.0.1",
   "pymarkdownlnt>=0.9.32",

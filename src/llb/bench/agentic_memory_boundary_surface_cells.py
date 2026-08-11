@@ -15,12 +15,11 @@ from llb.bench.agentic_memory_boundary_gate import (
     SIDE_COMPACT_CHEAPER,
     boundary_cost_evidence,
 )
-from llb.bench.agentic_memory_boundary_probe import cap_prompt_sequence
 from llb.bench.agentic_memory_fold_step_ladder import (
-    guard_is_cap_fitting,
-    measured_cap_peak,
-    usable_guard_band,
+    guard_is_cap_fitting_under_imperfect_play,
+    imperfect_play_guard_band,
 )
+from llb.bench.agentic_memory_worst_case_probe import cap_peak_margin, margin_peaks
 
 EXPECTED_SIDES = (SIDE_COMPACT_CHEAPER, SIDE_CAP_CHEAPER)
 
@@ -132,25 +131,37 @@ def _invalid_reason(
 def _validate_band(
     depth: int, guards: list[int], held_fixed: dict[str, object], share: float
 ) -> None:
-    peak = _measured_cap_peak(depth, held_fixed)
-    low, high = usable_guard_band(peak, share)
-    outside = [guard for guard in guards if not guard_is_cap_fitting(guard, peak, share)]
+    """Certify every guard against the band the SAFETY MARGIN leaves, not the perfect-play one.
+
+    A guard above the perfect-play peak is cap-fitting for a controller that never wastes a step.
+    The cell it places is run by a model, so the certification is made against the worst case the
+    study's own step budget allows -- the margin is measured from the same held geometry the cells
+    declare, so raising `max_steps_margin` tightens this check by exactly what it loosens the run.
+    """
+    worst_peak, peak = margin_peaks(depth_cap_peak_margin(depth, held_fixed))
+    low, high = imperfect_play_guard_band(worst_peak, peak, share)
+    outside = [
+        guard
+        for guard in guards
+        if not guard_is_cap_fitting_under_imperfect_play(guard, worst_peak, peak, share)
+    ]
     if outside:
         raise ValueError(
-            f"depth {depth} guards {outside} fall outside the usable band ({low}, {high}) "
-            "where cap fits and compact still activates"
+            f"depth {depth} guards {outside} fall outside the usable band ({low}, {high}) where "
+            f"cap fits imperfect play ({worst_peak - peak} chars above the {peak}-char perfect-play "
+            "peak) and compact still activates"
         )
 
 
-def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
-    """This depth's largest perfect-play cap prompt, read through the ladder's checked peak.
+def depth_cap_peak_margin(depth: int, held_fixed: dict[str, object]) -> dict[str, object]:
+    """This depth's two cap peaks and the margin between them, over the study's held geometry.
 
-    The surface is where a depth the probe measured nothing over can be NAMED, so the walk and the
+    The surface is where a depth the probe measured nothing over can be NAMED, so the walks and the
     checked read are paired here rather than left to the band arithmetic two layers down. The share
     is NOT translated -- it is a `held_fixed` value the design states verbatim, and the ladder's own
     "compact share must be in (0, 1]" already names it.
     """
-    sequence = cap_prompt_sequence(
+    return cap_peak_margin(
         depth=depth,
         n_tasks=int(cast(int, held_fixed["n_tasks"])),
         pad_chars=int(cast(int, held_fixed["pad_chars"])),
@@ -158,7 +169,6 @@ def _measured_cap_peak(depth: int, held_fixed: dict[str, object]) -> int:
         observation_cap_chars=int(cast(int, held_fixed["observation_cap_chars"])),
         observation_head_share=float(cast(float, held_fixed["observation_head_share"])),
     )
-    return measured_cap_peak(sequence, geometry=f"depth {depth}")
 
 
 def _validate_window(held_fixed: dict[str, object], max_guard: int) -> None:

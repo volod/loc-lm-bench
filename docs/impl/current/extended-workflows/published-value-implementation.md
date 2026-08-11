@@ -7,9 +7,11 @@ and crossover-restatement workflow. Read
 ## Core and tests
 
 Core locations are `src/llb/bench/agentic_memory_cap_audit.py` (geometry extraction per study shape,
-both-bound probe, invariance verdict), `src/llb/bench/agentic_memory_crossover_restatement_design.py`,
+both-bound probe, oracle and worst-case invariance verdicts),
+`src/llb/bench/agentic_memory_crossover_restatement_design.py`,
 `src/llb/bench/agentic_published_value_pointer.py` (the field-pointer walk, one walk so both sources
-read alike, including string `cell_id` row selectors), `src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
+read alike, including string `cell_id` row selectors),
+`src/llb/bench/agentic_published_value_fixture.py` (the committed aggregates, their
 manifest pins, the growth policy, and the refusal to write a manifest that drops a cited copy),
 `src/llb/bench/agentic_published_value_registry.py` (the registry of publishing designs, the union
 refresh, the collecting and refusing walks over it, and the refresh that reports on what it just

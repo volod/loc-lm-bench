@@ -63,7 +63,7 @@ The four policies (each a fresh episode over the identical task set):
   summarized at its OWN size whenever it fits; the legacy `trigger` (`compact_share * guard`) is
   kept selectable because the published fold-step, trigger-collapse, and boundary-surface evidence
   was measured under it -- see [the summarize-input
-  cap](crossover-geometry.md#the-summarize-input-cap-is-step-aligned). An empty summary is treated
+  cap](summary-input-elision.md#the-summarize-input-cap-is-step-aligned). An empty summary is treated
   as a no-op rather than folding those steps away with nothing standing in for them.
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt

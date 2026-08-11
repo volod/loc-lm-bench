@@ -17,12 +17,13 @@ from llb.bench.agentic_memory_boundary_crossover import (
     depth_surface_row,
     routing_rule,
 )
-from llb.bench.agentic_memory_boundary_probe import cap_peak_prompt_chars
 from llb.bench.agentic_design_fields import as_mapping, as_rows
 from llb.bench.agentic_memory_boundary_surface_cells import (
+    depth_cap_peak_margin,
     surface_cell_row,
     validate_surface_cells,
 )
+from llb.bench.agentic_memory_extra_steps import cell_observed_extra_steps, margin_is_covered
 from llb.bench.agentic_memory_transfer import load_transfer_design
 from llb.bench.agentic_memory_transfer_cells import (
     held_summary_input_cap,
@@ -95,20 +96,21 @@ def validate_surface_design(design: dict[str, object]) -> None:
     )
 
 
-def surface_cap_peaks(design: dict[str, object]) -> dict[int, int]:
-    """The deterministic cap peak prompt behind every tested depth (no model, no GPU)."""
+def surface_cap_peak_margins(design: dict[str, object]) -> dict[int, dict[str, object]]:
+    """Both cap peaks and the imperfect-play margin behind every tested depth (no model, no GPU)."""
     held = cast(dict[str, object], design["held_fixed"])
     cells = cast(list[dict[str, object]], cast(dict[str, object], design["surface"])["cells"])
     return {
-        depth: cap_peak_prompt_chars(
-            depth=depth,
-            n_tasks=int(cast(int, held["n_tasks"])),
-            pad_chars=int(cast(int, held["pad_chars"])),
-            max_steps_margin=int(cast(int, held["max_steps_margin"])),
-            observation_cap_chars=int(cast(int, held["observation_cap_chars"])),
-            observation_head_share=float(cast(float, held["observation_head_share"])),
-        )
+        depth: depth_cap_peak_margin(depth, held)
         for depth in sorted({int(cast(int, cell["depth"])) for cell in cells})
+    }
+
+
+def surface_cap_peaks(design: dict[str, object]) -> dict[int, int]:
+    """The deterministic perfect-play cap peak prompt behind every tested depth."""
+    return {
+        depth: int(cast(int, margin["perfect_play_peak_chars"]))
+        for depth, margin in surface_cap_peak_margins(design).items()
     }
 
 
@@ -156,15 +158,45 @@ def _surface_cells(
     ]
 
 
+def _with_observed_steps(
+    cell: dict[str, object], margins: dict[int, dict[str, object]]
+) -> dict[str, object]:
+    """Attach what the served model actually spent beside what the step budget allowed.
+
+    The margin is a statement about the worst case; this is the run that happened. Reading the two
+    together is what turns "a real controller could grow the transcript" into "and here is how far
+    this one did" -- on a host that still holds the cell's bundles, which the audit never requires.
+    """
+    margin = margins[int(cast(int, cell["depth"]))]
+    arms = cell_observed_extra_steps(
+        cast(dict[str, object], cell.get("manifests", {}) or {}),
+        perfect_play_steps=int(cast(int, margin["perfect_play_steps"])),
+    )
+    return {
+        **cell,
+        "observed_extra_steps": arms,
+        "observed_within_budgeted_margin": margin_is_covered(
+            arms, budgeted_extra_steps=int(cast(int, margin["budgeted_extra_steps"]))
+        ),
+    }
+
+
 def analyze_surface(
     design: dict[str, object],
     control_row: dict[str, object] | None,
     grid_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     """Gate every cell, interpolate one crossover per depth, and state the routing surface."""
-    peaks = surface_cap_peaks(design)
+    margins = surface_cap_peak_margins(design)
+    peaks = {
+        depth: int(cast(int, row["perfect_play_peak_chars"])) for depth, row in margins.items()
+    }
     eligible = bool(control_row is not None and control_row["eligible"])
-    cells = _surface_cells(design, grid_rows) if eligible else []
+    cells = (
+        [_with_observed_steps(cell, margins) for cell in _surface_cells(design, grid_rows)]
+        if eligible
+        else []
+    )
     depth_rows = (
         [
             depth_surface_row(
@@ -182,6 +214,10 @@ def analyze_surface(
         "study_id": design["study_id"],
         "held_fixed": as_mapping(design, "held_fixed"),
         "cap_peak_prompt_chars": {str(depth): peak for depth, peak in peaks.items()},
+        # What perfect play cannot certify: the peak the same geometry reaches when the controller
+        # spends its whole step budget, and the head-room a guard must clear to be cap-fitting for
+        # the model that actually runs the cell.
+        "cap_peak_margin": {str(depth): margin for depth, margin in margins.items()},
         "control_recheck": control_row,
         "cells": cells,
         "depth_surface": depth_rows,

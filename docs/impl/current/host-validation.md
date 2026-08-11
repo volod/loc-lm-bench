@@ -748,6 +748,16 @@ in this configuration (radon always exits 0, complexipy is asked for a plain lis
 one pass shows every peak. The thresholds are the shipped numbers: a finding is split, not
 accommodated by raising the maximum.
 
+**Both scanners are pinned exactly** (`radon==6.0.1`, `complexipy==6.0.0`), for the reason the
+shell-lint gate pins its ShellCheck wheel: the tool version is half of the verdict. Complexipy
+rescored this unchanged tree across its 5.6.1 -> 6.0.0 boundary in both directions --
+`persist_run` 18 -> 14 and `research_conflict_nulls_cmd` 16 -> 15 (dropping to the maximum),
+`fetch_manifest` 11 -> 13 (climbing) -- so a floating requirement let the same commit fail the gate
+on the host that resolved 5.6.1 and pass on the host that resolved 6.0.0. The pin is what makes
+`COGNITIVE_MAX=15` mean one thing. Upgrading either scanner is a deliberate edit: change the pin in
+`pyproject.toml`, refresh `uv.lock`, then run `make complexity-gate` plus `make ci` and split
+whatever the new algorithm surfaces.
+
 The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
 gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
 identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`
@@ -893,11 +903,15 @@ puzzling on a host that has `shellcheck` on `PATH`. `LLB_SHELLCHECK` still overr
 venv living elsewhere. Consequently the `dev` apt profile is now **empty**
 (`scripts/apt/dev.packages` keeps the file and the comment; the profile stays for a future dev-only
 OS package) and [dev setup](../../guides/development/dev-setup.md#apt-dependencies-debianubuntu)
-no longer lists `shellcheck` as a fallback. The exact project requirement is intentional because
-`make venv` uses `uv pip install -e ".[dev]"`, which does not consume `uv.lock`: a host resolving the
-extra today and one resolving it months later still install the same wheel. An upgrade therefore
-costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification with
-`make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move together.
+no longer lists `shellcheck` as a fallback. The exact project requirement is intentional and is the
+outer of two guarantees. `make venv` and GitHub CI both install through `uv sync` (the local
+target with `--inexact`, the workflow with `--locked`), so `uv.lock` already pins the wheel for
+every venv either one builds; the `==` requirement in `pyproject.toml` extends the same pin to an
+install that bypasses the lock -- a direct `uv pip install -e ".[dev]"`, or plain pip. A host
+resolving the extra today and one resolving it months later still install the same wheel. An
+upgrade therefore costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification
+with `make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move
+together.
 The binary resolution behavior remains covered by
 `tests/llb/quality/test_shell_lint_resolution.py`.
 

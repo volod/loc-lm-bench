@@ -17,7 +17,10 @@
 	bench-agentic-context-compact-memory-boundary-surface \
 	bench-agentic-context-compact-trigger-collapse \
 	bench-agentic-context-compact-fold-step \
+	bench-agentic-context-compact-repeated-fold \
 	bench-agentic-context-compact-summary-input-cap \
+	bench-agentic-context-compact-window-elision \
+	bench-agentic-context-compact-window-elision-transfer \
 	bench-agentic-context-compact-crossover-restatement \
 	bench-agentic-published-provenance \
 	bench-agentic-policy-change-audit \
@@ -227,11 +230,29 @@ bench-agentic-context-compact-fold-step: ## Test whether the compact cost side f
 	$(PY) -m llb.main bench-agentic-context-compact-fold-step \
 		--design "$(AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN)"
 
+bench-agentic-context-compact-repeated-fold: ## Measure compact-memory completion through repeated folds and attribute survival with a typed-marker ablation
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-repeated-fold \
+		--design "$(AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN)"
+
 bench-agentic-context-compact-summary-input-cap: ## Price the compact summarize call's input cap: does pinning it to a step-aligned quantity zero the within-step residual, and what did the elided span cost
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-summary-input-cap \
 		--design "$(AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN)"
+
+bench-agentic-context-compact-window-elision: ## Price unavoidable middle elision under the shipped window summary-input bound against a trigger-matched fitting control
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-window-elision \
+		--design "$(AGENT_CONTEXT_COMPACT_WINDOW_ELISION_DESIGN)"
+
+bench-agentic-context-compact-window-elision-transfer: ## Transfer unavoidable elision across head/middle/tail facts and two model families, with a gated entry-aware prototype
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-window-elision-transfer \
+		--design "$(AGENT_CONTEXT_COMPACT_WINDOW_ELISION_TRANSFER_DESIGN)"
 
 bench-agentic-context-compact-crossover-restatement: ## Restate every published compact crossover under the shipped summarize-input cap, re-measuring only the cells the model-free audit calls bound-sensitive
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

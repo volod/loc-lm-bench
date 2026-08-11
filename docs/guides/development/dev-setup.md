@@ -13,6 +13,17 @@ needed).
 follow-up `uv pip install`. It is a larger one-time download; for a lean install trim it,
 e.g. `make venv EXTRAS=dev` (or `EXTRAS=rag,eval` for the RAG core path).
 
+Versions come from **`uv.lock`**, via `uv sync --inexact`. GitHub CI syncs the same lock
+(`--locked`), so `make ci` locally and the workflow run the same ruff, mypy, and library versions
+-- an unpinned install on either side is how a lint or type error lands in CI that no local run can
+reproduce. Two consequences:
+
+- Editing dependencies in `pyproject.toml` makes the next `make venv` refresh `uv.lock`.
+  **Commit the updated lock**: CI syncs `--locked` and fails on a stale one.
+  `make venv VENV_LOCKED=1` reproduces that failure locally instead of relocking.
+- `--inexact` leaves packages the lock does not name in place, so vLLM/torch (installed by
+  `scripts/build_vllm.sh`) and any hand-installed extra survive a re-run.
+
 `make venv` resolves uv's package link mode per host. If this checkout and uv's shared cache are on
 different devices, it sets `UV_LINK_MODE=copy` to avoid failed cross-device hardlinks; otherwise it
 uses uv's default. For one-off `uv` commands, load the same resolver first:

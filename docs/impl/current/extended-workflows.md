@@ -24,7 +24,9 @@ to any of it invalidates.
 | --- | --- |
 | [Agent context policies](extended-workflows/agent-context-policies.md) | The policy set, its host evidence, and aggregate-safe observation trimming with compact-finish recovery |
 | [Compact versus cap](extended-workflows/compact-versus-cap.md) | Active compaction against an observation cap on long and memory-dependent transcripts, including summarizer cost and cross-family transfer |
-| [Cap-fitting boundary and crossover geometry](extended-workflows/crossover-geometry.md) | Where compact stops repaying its summary call: the boundary surface, the trigger axis the routing rule lives on, the crossover as a fold step, and the step-aligned summarize-input cap |
+| [Cap-fitting boundary and crossover geometry](extended-workflows/crossover-geometry.md) | Where compact stops repaying its summary call: the boundary surface plus trigger and fold-step axes |
+| [Summary-input bounds and elision](extended-workflows/summary-input-elision.md) | The step-aligned bound, unavoidable window elision, middle-critical transfer, and entry-aware prototype |
+| [The imperfect-play safety margin](extended-workflows/imperfect-play-margin.md) | How far a real controller can grow a transcript past perfect play, the margin design validation spends on it, and the worst-case bound-invariance verdict |
 | [Published values under the shipped cap](extended-workflows/published-values.md) | Which published compact evidence a summarize-bound change can move, how a number resolves to its run, and the registered arithmetic and reading it declares |
 | [Published-value implementation map](extended-workflows/published-value-implementation.md) | The module and test inventory for provenance, derivation, arithmetic, readings, and crossover restatement |
 | [Policy-constant change audit](extended-workflows/policy-constant-audit.md) | Which published agentic numbers a context-policy constant change invalidates, the geometry that tests the compound guarantee, which constant pair separates the two readings, and the CI gate that pins the shipped constants |

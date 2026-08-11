@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-imperfect-play-margin-on-a-repeatedly-folding-cell",
+  "study_kind": "compact_two_fold_geometry",
+  "publishes_numbers": false,
+  "purpose": "Bound how far a bound-invariance verdict read under perfect play carries. Every cap-fitting cell folds exactly once, so the published verdicts were all read in the one-fold regime; these cells fold repeatedly, which is where a stalling controller can carry extra entries into a LATER summarize input and reach a cap the oracle transcript never touches.",
+  "why_not_cap_fitting": "A second fold needs the post-fold prompt to cross the FULL guard, because trigger hysteresis raises the trigger to 1.0 after the first summary. A fold replaces at least one transcript entry with a strictly shorter summary line, so the post-fold prompt is below the walk's own peak -- and a cap-fitting guard is ABOVE that peak by construction. A repeatedly folding cell therefore lives below the cap peak, where the observation_cap arm overflows, and the fixture declares the compact arm only.",
+  "change": {
+    "baseline": {
+      "summary_input_cap": "trigger"
+    },
+    "candidate": {
+      "summary_input_cap": "window"
+    }
+  },
+  "held_fixed": {
+    "n_tasks": 2,
+    "pad_chars": 1200,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "compact_share": 0.8
+  },
+  "margin_scaling": {
+    "depth": 10,
+    "max_steps_margins": [4, 6, 8],
+    "why": "The imperfect-play margin is budgeted extra steps times the size of one wasted-step entry, so it is a property of the STEP BUDGET and not the constant a single study's margin makes it look like. Reading it at three step budgets is what says which of the two it is."
+  },
+  "cells": [
+    {
+      "cell_id": "twofold-d10-g7000",
+      "depth": 10,
+      "max_prompt_chars": 7000,
+      "policies": ["compact"],
+      "why": "Perfect play folds twice and both bounds offer the summarizer the identical bytes, so the oracle walk calls the cell bound-invariant. The stalling walk spends its whole step budget, grows the post-fold transcript far enough for a THIRD fold, and that fold's offered transcript finally outgrows the trigger bound's cap while the window bound still clears it -- so the two bounds stop sending the same prompts on a transcript the oracle never produced.",
+      "predeclared": {
+        "cap_peak_prompt_chars": 11926,
+        "oracle_folds": 2,
+        "worst_case_folds": 3,
+        "oracle_fold_input_chars": [2646, 5327],
+        "worst_case_fold_input_chars": [2646, 5327, 5625],
+        "oracle_elided_chars_under_baseline": 0,
+        "worst_case_elided_chars_under_baseline": 25,
+        "worst_case_first_divergent_step": 15
+      },
+      "expected": {
+        "oracle_verdict": "bound_invariant",
+        "worst_case_verdict": "bound_sensitive",
+        "separates": true
+      }
+    },
+    {
+      "cell_id": "twofold-d10-g6500",
+      "depth": 10,
+      "max_prompt_chars": 6500,
+      "policies": ["compact"],
+      "why": "The control. It folds repeatedly under BOTH walks with the identical offered transcripts, so its verdict is invariant under both -- which is what keeps the separating cell above a finding about this geometry rather than a worst-case pass that reports every repeatedly folding cell as changed.",
+      "predeclared": {
+        "cap_peak_prompt_chars": 11926,
+        "oracle_folds": 3,
+        "worst_case_folds": 3,
+        "oracle_fold_input_chars": [2646, 4019, 4019],
+        "worst_case_fold_input_chars": [2646, 4019, 4019],
+        "oracle_elided_chars_under_baseline": 0,
+        "worst_case_elided_chars_under_baseline": 0,
+        "worst_case_first_divergent_step": null
+      },
+      "expected": {
+        "oracle_verdict": "bound_invariant",
+        "worst_case_verdict": "bound_invariant",
+        "separates": false
+      }
+    }
+  ]
+}

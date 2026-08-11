@@ -7,7 +7,7 @@
   "shipped_summary_input_cap": "window",
   "reference": {
     "study_id": "agent-context-policy-summary-input-cap",
-    "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned",
+    "evidence": "docs/impl/current/extended-workflows/summary-input-elision.md#the-summarize-input-cap-is-step-aligned",
     "why": "the retired trigger bound trimmed the summarize input wherever the folded transcript outgrew it, and a trimmed input is a smaller prompt, so every cell it trimmed carries a one-sided discount on compact's own measured cost"
   },
   "held_fixed": {

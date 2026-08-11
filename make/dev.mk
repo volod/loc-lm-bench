@@ -59,18 +59,22 @@ acceptance-gate-audit: ## Classify experiment counts and write $DATA_DIR/accepta
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.acceptance_gates
 
-venv: ## Create/update .venv + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 to skip
+# `uv sync --inexact` installs the uv.lock versions -- the same set GitHub CI syncs -- WITHOUT
+# pruning packages the lock does not name. The exclusion matters: vLLM/torch/flash-attn (added by
+# scripts/build_vllm.sh below) and hand-installed extras like `.[pdf-quality]` / `.[review]` live
+# in this venv too, and plain `uv sync` would uninstall them on every re-run.
+venv: ## Create/update .venv from uv.lock + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 to skip
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
 	@case ",$(EXTRAS)," in *,dev,*|*,dev) SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" dev ;; esac
 	@if [ -n "$(RECREATE_VENV)" ] && [ -d "$(VENV)" ]; then echo "[venv] RECREATE_VENV set -- removing $(VENV)"; rm -rf "$(VENV)"; fi
 	@if [ ! -x "$(PY)" ]; then \
-		echo "[venv] creating $(VENV) (py$(PYTHON_VERSION))"; uv venv --python $(PYTHON_VERSION) "$(VENV)"; \
+		echo "[venv] creating $(VENV) (py$(PYTHON_VERSION))"; \
 	else \
 		echo "[venv] reusing $(VENV) -- updating deps (RECREATE_VENV=1 to rebuild)"; \
 	fi
-	@UV_LINK_MODE="$(UV_LINK_MODE)" bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_export_uv_link_mode; echo "[venv] uv link mode: $${UV_LINK_MODE:-default (cache + checkout share a device)}"; uv pip install --python "$(PY)" -e ".[$(EXTRAS)]"'
-	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS))"
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_export_uv_link_mode; echo "[venv] uv link mode: $${UV_LINK_MODE:-default (cache + checkout share a device)}"; UV_PROJECT_ENVIRONMENT="$(VENV)" uv sync --inexact $(UV_SYNC_LOCK_FLAG) --python $(PYTHON_VERSION) $(UV_SYNC_EXTRAS)'
+	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS); versions pinned by uv.lock)"
 	@case "$(VENV_INSTALL_VLLM)" in \
 	  0|false|no) echo "[venv] vLLM install skipped (VENV_INSTALL_VLLM=$(VENV_INSTALL_VLLM))" ;; \
 	  1|true|yes) echo "[venv] installing vLLM binary wheels (forced)"; bash "$(PROJECT_ROOT)/scripts/build_vllm.sh" ;; \

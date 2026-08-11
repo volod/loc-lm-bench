@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-repeated-fold-completion-cost",
+  "study_kind": "compact_repeated_fold_completion",
+  "seed": 727,
+  "source_fixture": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json",
+  "policies": ["compact"],
+  "mechanism_arms": ["typed_marker", "model_summary_only"],
+  "held_fixed": {
+    "model_family": "qwen",
+    "model": "qwen3:14b",
+    "backend": "ollama",
+    "n_tasks": 2,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "compact_share": 0.8,
+    "summary_input_cap": "window",
+    "minimum_control_completion": 1.0
+  },
+  "cells": [
+    {
+      "cell_id": "onefold-d10-g14000",
+      "depth": 10,
+      "max_prompt_chars": 14000,
+      "expected_oracle_folds": 1,
+      "cap_fitting_control": true,
+      "source": "samples/benchmarks/agentic_compact_memory_boundary_surface_design.json#surface-d10-g14000"
+    },
+    {
+      "cell_id": "twofold-d10-g7000",
+      "depth": 10,
+      "max_prompt_chars": 7000,
+      "expected_oracle_folds": 2,
+      "cap_fitting_control": false,
+      "source": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json#twofold-d10-g7000"
+    },
+    {
+      "cell_id": "twofold-d10-g6500",
+      "depth": 10,
+      "max_prompt_chars": 6500,
+      "expected_oracle_folds": 3,
+      "cap_fitting_control": false,
+      "source": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json#twofold-d10-g6500"
+    }
+  ],
+  "reading": {
+    "completion_decay": "any measured higher-fold completion rate below the measured one-fold rate",
+    "fold_count_limit": "recommend the highest fold count whose completion matches the one-fold control",
+    "mechanism": "pair typed-marker preservation against a model-summary-only ablation on every identical case",
+    "changes_shipped_default": false
+  }
+}

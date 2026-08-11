@@ -7,6 +7,12 @@
 # sentence-transformers, torch/vLLM) and never runs an actual benchmark, model download, or GPU
 # work.
 #
+# Install is `uv sync --locked`, so CI gets exactly the versions in uv.lock -- the same ones a
+# local `make ci` runs against. The earlier `uv pip install -e ".[dev]"` re-resolved to whatever
+# was newest on PyPI, which let CI fail on lint/type errors that no local venv could reproduce
+# (e.g. a numpy minor bump changing an inferred dtype under mypy). `--locked` also fails fast if
+# uv.lock has drifted from pyproject.toml -- refresh it with `uv lock` and commit the result.
+#
 # `make ci-github` runs the pytest group `-m "not slow and not heavy_env"`: intrinsically
 # expensive tests carry `@pytest.mark.slow` (run only locally via `make test`), and quick tests
 # that need optional extras absent here (faiss/duckdb/adapter stores) carry
@@ -36,10 +42,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Create venv (matrix Python) + install base + dev only
-        run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv pip install --python .venv/bin/python -e ".[dev]"
+      - name: Create venv (matrix Python) + install base + dev only, from uv.lock
+        run: uv sync --locked --extra dev --python ${{ matrix.python-version }}
 
       - name: Format + lint + type checks + unit tests
         run: make ci-github

@@ -63,11 +63,49 @@ duplicates it is meant to detect; enumerated exactly, the null and the observed 
 so empirical FDR is 1.000 at every threshold and a budget of N returns exactly N pairs. Detail and
 measurements: [data prep](data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null).
 
-Two consequences hold until `conflict-null-model-research` says otherwise. Confidence in a corpus
-conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so no
-autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. And no
+The CUDA independent-null matrix tests cross-corpus controls, token and sentence permutation,
+held-out document maxima, and labelled fixture calibration. None clears the fixture, HR recovery,
+goods flood, independence, and resolved-tail gates together; the detailed matrix and artifact are
+in [null research](data-prep/conflict-null-research.md#first-generation-negative-result).
+
+The second-generation CUDA matrix adds surface/encoder-matched multi-reference controls, local
+residual similarity, source-cluster empirical FDR, and traced argument/quantity/modality edits. It
+also corrects tail accounting from repeated pair rows to unique source/reference units. None clears
+exchangeability, effective-tail, fixture, HR, and goods gates together; counterfactual edits are not
+eligible nulls without relation verification. The evidence and artifact are in [null
+research](data-prep/conflict-null-research.md#second-generation-negative-result).
+
+The third-generation CUDA matrix settles why, rather than adding candidates. The candidate list an
+operator can afford implies a per-pair tail whose certification would need an independent control
+bank about a thousand times larger than the corpus being audited; propensity balancing fails on
+positivity, not on estimator choice; cosine-only mixture calibration is unidentifiable at that
+resolution; whitening and anisotropy stripping move the shift without producing an operating point;
+and the traced counterfactual controls are proven planted positives, not nulls. Measured claim-tier
+precision, by contrast, works and is corpus-specific: it is 1.000 with a clustered lower bound of
+1.000 on the HR list and 0.000 on the goods list, which is the same statement as "no single
+threshold serves both corpora", now with a number. Evidence: [null
+research](data-prep/conflict-null-research.md#third-generation-negative-result).
+
+The fourth-generation CUDA matrix removes the last excuse for reopening it. Control claims generated
+from the target corpus's own structure are nulls -- 43 of 44 cleared the relation verifier, against
+0 of 93 for the traced edits -- and they largely repair positivity: weighted membership AUC falls
+from 0.99998 to 0.676 on HR and from 0.99989 to 0.533 on goods. With construction solved, what
+remains is arithmetic. A group-split conformal threshold, the sharpest estimator available and
+distribution-free, certifies tail `alpha` at 95% confidence only from `log(0.05) / log(1 - alpha)`
+independent units: 607,303 for the HR corpus's affordable operating point, which this host produces
+at 230 verified claims per hour -- 110 days for one corpus at one candidate budget. Evidence:
+[closing the independent-null question](data-prep/conflict-null-closure.md).
+
+The product decision therefore stands, and one search is closed rather than paused: pursuing a
+per-pair semantic false-positive rate at this corpus scale is not the direction. What would change
+that answer, and which directions are proven dead, are recorded in [future
+research](../future-research.md). Confidence in a
+corpus conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so
+no autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. No
 report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,
-significance level, or confidence -- name it a candidate budget or a rank cutoff.
+significance level, or confidence -- name it a candidate budget or a rank cutoff. A precision figure
+may be published only with its clustered bound and only from an adjudicator calibrated against
+frozen labels.
 
 ## Context-Ablation Lanes Stay Diagnostic
 

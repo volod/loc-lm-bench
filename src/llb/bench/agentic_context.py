@@ -78,6 +78,8 @@ def run_policy(
     complete: LLMComplete,
     max_steps: int = DEFAULT_MAX_STEPS,
     budget: ContextBudget | None = None,
+    preserve_memory_markers: bool = True,
+    summary_trim_strategy: str = "head_tail",
 ) -> PolicyReport:
     """Run one fresh episode per task under one context policy and score the batch."""
     budget = budget if budget is not None else unbounded_budget()
@@ -99,6 +101,8 @@ def run_policy(
                 max_steps=max_steps,
                 policy=policy,
                 budget=budget,
+                preserve_memory_markers=preserve_memory_markers,
+                summary_trim_strategy=summary_trim_strategy,
             )
         )
     scored = _score_episodes(tasks, episodes)

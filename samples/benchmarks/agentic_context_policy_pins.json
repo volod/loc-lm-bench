@@ -5,7 +5,7 @@
   "published_in": [
     "docs/impl/current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface",
     "docs/impl/current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis",
-    "docs/impl/current/extended-workflows/crossover-geometry.md#the-summarize-input-cap-is-step-aligned",
+    "docs/impl/current/extended-workflows/summary-input-elision.md#the-summarize-input-cap-is-step-aligned",
     "docs/impl/current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap",
     "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates",
     "docs/impl/current/extended-workflows/context-policy-constants.md#agent-context-policy-constants",
