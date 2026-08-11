@@ -128,6 +128,40 @@ class VectorSet:
             return [float(value) for value in (left * right).sum(axis=1)]
         return [dot(self._rows[left], self._rows[right]) for left, right in pairs]
 
+    def cross_similarities(
+        self,
+        other: "VectorSet",
+        left_indices: list[int],
+        right_indices: list[int],
+        *,
+        block: int = 512,
+    ) -> list[float]:
+        """Every left-by-right cosine, without concatenating two independent corpora.
+
+        Independent-null research compares a target corpus with a reference corpus embedded by
+        the same model. Keeping the sets separate avoids inventing document ids or rebuilding a
+        FAISS store merely to score their Cartesian product. Batching bounds the temporary matrix
+        for larger reference corpora.
+        """
+        if self.metric != METRIC_ANGULAR or other.metric != METRIC_ANGULAR:
+            raise ValueError("cross_similarities requires angular vectors")
+        if self.dim != other.dim:
+            raise ValueError("cross-similarity vector dimensions must match")
+        if not left_indices or not right_indices:
+            return []
+        if self._np is not None and self._matrix is not None and other._matrix is not None:
+            right = other._matrix[right_indices]
+            values: list[float] = []
+            for start in range(0, len(left_indices), block):
+                left = self._matrix[left_indices[start : start + block]]
+                values.extend(float(value) for value in (left @ right.T).ravel())
+            return values
+        return [
+            dot(self._rows[left], other._rows[right])
+            for left in left_indices
+            for right in right_indices
+        ]
+
     def pairs_above_candidates(
         self,
         pairs: list[tuple[int, int]],
@@ -171,7 +205,13 @@ class VectorSet:
             if groups[i] != groups[j]
         ]
 
-    def centered(self) -> "VectorSet":
+    def mean_vector(self) -> Vector:
+        """Arithmetic row mean in the stored coordinate system."""
+        if not self._rows:
+            return []
+        return [sum(column) / len(self._rows) for column in zip(*self._rows)]
+
+    def centered(self, mean: Vector | None = None) -> "VectorSet":
         """This set with the corpus mean direction removed, then renormalized.
 
         Sentence-encoder spaces are strongly anisotropic: on a real Ukrainian corpus every
@@ -182,8 +222,12 @@ class VectorSet:
         """
         if not self._rows:
             return VectorSet([], use_numpy=self._np is not None, metric=self.metric)
-        mean = [sum(column) / len(self._rows) for column in zip(*self._rows)]
-        shifted = [[value - offset for value, offset in zip(row, mean)] for row in self._rows]
+        resolved_mean = self.mean_vector() if mean is None else mean
+        if len(resolved_mean) != self.dim:
+            raise ValueError("centering mean dimension must match the vectors")
+        shifted = [
+            [value - offset for value, offset in zip(row, resolved_mean)] for row in self._rows
+        ]
         return VectorSet(shifted, use_numpy=self._np is not None, metric=self.metric)
 
     def pairs_above(self, threshold: float, *, block: int = 512) -> list[tuple[int, int, float]]:

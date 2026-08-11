@@ -2,7 +2,7 @@
 
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
 	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
-	resolve-corpus-conflicts
+	research-conflict-nulls resolve-corpus-conflicts
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -72,6 +72,22 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(PROJECT_DIMS)" ]; then args+=(--project-dims "$(PROJECT_DIMS)"); fi; \
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
 	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
+
+research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS corpora and an unrelated REFERENCE (each needs *_STORE; NULL_RESEARCH_OUT=, NULL_FPR=, EMBED_DEVICE=cuda)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(--fixture-corpus "$(FIXTURE_CORPUS)" --fixture-store "$(FIXTURE_STORE)" \
+		--hr-corpus "$(HR_CORPUS)" --hr-store "$(HR_STORE)" \
+		--goods-corpus "$(GOODS_CORPUS)" --goods-store "$(GOODS_STORE)" \
+		--reference-corpus "$(REFERENCE_CORPUS)" --reference-store "$(REFERENCE_STORE)"); \
+	if [ -n "$(NULL_RESEARCH_OUT)" ]; then args+=(--out "$(NULL_RESEARCH_OUT)"); fi; \
+	if [ -n "$(NULL_FPR)" ]; then args+=(--fpr "$(NULL_FPR)"); fi; \
+	if [ -n "$(RANK_BUDGET)" ]; then args+=(--rank-budget "$(RANK_BUDGET)"); fi; \
+	if [ -n "$(TRANSFER_THRESHOLD)" ]; then args+=(--transfer-threshold "$(TRANSFER_THRESHOLD)"); fi; \
+	if [ -n "$(MAX_GOODS_CANDIDATES)" ]; then args+=(--max-goods-candidates "$(MAX_GOODS_CANDIDATES)"); fi; \
+	if [ -n "$(PERMUTATIONS)" ]; then args+=(--permutations "$(PERMUTATIONS)"); fi; \
+	if [ -n "$(NULL_SEED)" ]; then args+=(--seed "$(NULL_SEED)"); fi; \
+	if [ -n "$(EMBED_DEVICE)" ]; then args+=(--embedding-device "$(EMBED_DEVICE)"); fi; \
+	$(PY) -m llb.main research-conflict-nulls "$${args[@]}"
 
 resolve-corpus-conflicts: ## Plan/apply reversible conflict overlay (FINDINGS= POLICY=conservative|prefer-newer APPLY=1 CORPUS= STORE= GOLDSET= REVIEWED= ROLLBACK=1)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -38,10 +38,91 @@ Every task below carries an explicit `Agent status` line with one of four marker
 - **BLOCKED BY HUMAN** -- the acceptance gate consumes an artifact only a human step can produce.
 - **HUMAN-GATED** -- the deliverable itself is human judgment or authorization; supporting code and
   unit tests are agent-buildable.
+- **RESEARCH** -- in addition to Agent status. It marks the task implementation as unknown in
+advance, and a negative result is a valid outcome that must be recorded rather than worked around.
 
 ## Agent Implementation Tasks
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
+
+### conflict-null-model-research
+
+**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
+that must be recorded rather than worked around.
+
+Find a defensible next-generation independent null for corpus-conflict detection, or establish that
+cosine-only semantic calibration is not identifiable and replace threshold selection with measured
+claim-tier precision. The current evidence baseline is negative: cross-corpus, token-permutation,
+sentence-permutation, held-out-document, and labelled-fixture thresholds each miss at least one
+fixture/transfer gate, so none can support an FPR claim. Use the construction details, uncertainty,
+and per-method failure modes in [independent-null research](current/data-prep/conflict-detection.md#independent-null-research-negative-result)
+as constraints on the next design rather than rerunning the same candidates.
+
+High-effort research directions, ordered by the information they add:
+
+- **Domain-matched multi-reference controls.** Assemble several unrelated Ukrainian reference
+  corpora spanning the target's register and subject matter. Match target/reference chunks on
+  length, numeric density, heading depth, lexical entropy, and encoder neighborhood before scoring;
+  run leave-one-domain-out transfer; and reject a reference lane when a two-sample classifier can
+  still identify corpus membership. This directly attacks the easy-null domain shift that floods a
+  target even when the nominal cross-corpus tail is well resolved.
+- **Claim-preserving hard negatives.** Generate topic- and syntax-matched counterfactual controls by
+  swapping entities, dates, quantities, modalities, and relation arguments while preserving chunk
+  length and discourse form. Verify each control from the transformation trace plus an independent
+  entailment/contradiction lane, stratify by edit type, and test whether a conditional null over
+  these controls transfers across corpora. Random word-order destruction is not a substitute: it
+  erases too much structure while preserving almost all encoder-visible vocabulary.
+- **Positive-unlabelled mixture identification.** Fit the target similarity tail as a hierarchical
+  null/related mixture with document-pair clusters, corpus covariates, and bootstrap uncertainty.
+  Anchor the related component with hash/lexical closures and planted claim pairs; anchor the null
+  with the matched controls above; run simulation-based coverage checks before interpreting the
+  estimated null proportion. Abandon this lane if materially different mixtures explain the same
+  observed tail, because that is evidence of non-identifiability rather than a tuning problem.
+- **Expanded relation fixture with frozen splits.** Build a parameterized multi-domain fixture with
+  enough duplicate, subsumption, contradiction, supersession, complementary, and hard-negative
+  claim pairs to create calibration, tuning, and untouched final splits. Vary lexical overlap,
+  chunk boundaries, length, numeric density, and edition aliases; preserve construction provenance
+  so labels follow from the planted transformation rather than a model's opinion. Freeze the final
+  split before selecting any threshold.
+- **Geometry alternatives.** Compare locally whitened cosine, removal of multiple anisotropy
+  directions, covariate-residual similarity, and a compact cross-encoder over the same controls.
+  Require calibration-curve and tail-coverage gains, not merely a better fixture F1, and retain the
+  current encoder/cosine lane as the paired baseline.
+- **Claim-tier precision fallback.** Stratify semantic candidates by corpus, rank, score, and
+  structural covariates; adjudicate them with the strongest host-fit UA model; calibrate that model
+  against existing reviewed/planted labels; and fit a lower-confidence-bound precision curve. If a
+  new human-labelled calibration set is required, move only that label-production gate to Human-
+  Assisted Tasks. Expose an operating point only when its held-out precision bound transfers; this
+  path can replace a semantic FPR with the quantity operators actually need: probability that a row
+  survives claim adjudication.
+
+- Agent status: RUN NEEDED
+- Dependencies: extend `research-conflict-nulls` and its current negative baseline rather than the
+  audit default; reuse the exact filtered geometry and Wilson-tail reporting in [data
+  prep](current/data-prep/conflict-detection.md#independent-null-research-negative-result). The
+  domain-matched control bank and expanded frozen-split fixture precede mixture fitting or a new
+  threshold decision.
+- User-visible outcome: either a held-out-calibrated FPR whose exchangeability and coverage are
+  explicit, or a claim-tier precision operating point with a lower confidence bound; a raw cosine
+  or target-corpus rank must never be relabelled as either quantity.
+- Scope boundary: in scope -- matched control construction, conditional/mixture nulls, expanded
+  planted labels, geometry alternatives, claim-tier precision calibration, uncertainty, and paired
+  transfer evidence. Out of scope -- changing the relation vocabulary or tier order, and shipping
+  any new default before an untouched final split clears every gate.
+- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
+  committed controls require construction provenance and frozen split ids.
+- Execution path: extend the research matrix with one constructor and deterministic CI fixture per
+  direction; run real multilingual-E5 and any geometry alternatives on CUDA; freeze all choices on
+  calibration/tuning data before one final transfer run.
+- Acceptance gates: an independent-null lane must pass corpus-membership exchangeability,
+  simulation coverage, and resolved-tail checks; beat the budget-12 rank baseline on the planted
+  final split; recover the claim-bearing HR baseline; and stay within the goods candidate cap. A
+  claim-tier fallback must instead clear its calibrated-adjudicator gate and a predeclared held-out
+  precision lower bound on both corpora. Record another negative result and keep this task when no
+  lane clears its applicable gates.
+- Documentation target: the corpus-hygiene known-limitation section of
+  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
+  adopt-or-reject verdict.
 
 ### agent-context-policy-entry-aware-summary-fold-adoption (optional)
 
@@ -713,67 +794,6 @@ the edit-precision audit per setting, and pin each value with evidence or expose
 - Acceptance gates: `make ci` green; the report states recall and the share of corrections a human
   reading of the audit calls wrong, per setting, with an explicit verdict per constant.
 - Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
-### conflict-null-model-research
-
-**Research task** -- the answer is not known in advance, and a negative result is a valid outcome
-that must be recorded rather than worked around.
-
-Find a defensible independent null for corpus-conflict detection, so the semantic tier can report a
-real false-positive rate instead of a rank cutoff. The current calibration measures the similarity
-distribution of the corpus's own comparable cross-document pairs, which contains whatever genuine
-duplicates the corpus has; with the pair space enumerated exactly the null and the observed
-population are the same set, empirical FDR is identically 1.000 at every threshold, and a budget of
-`N` returns exactly `N` pairs by construction (measured; see [data
-prep](current/data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null)). Every
-downstream question an operator asks -- "is this pair worth reading?", "did tightening the threshold
-remove noise or evidence?", "is this corpus dirtier than that one?" -- currently has no statistical
-answer.
-
-Candidate approaches to evaluate, cheapest first; none is known to work:
-
-- **Cross-corpus null.** Score chunks of the target corpus against chunks of an unrelated Ukrainian
-  corpus. Pairs across corpus boundaries are unrelated by construction. Risk: a domain/register
-  shift makes the null too easy, understating the threshold.
-- **Within-document permutation.** Destroy the semantic relationship while preserving the corpus's
-  marginal geometry -- shuffle tokens or sentences within a chunk before embedding. Risk: sentence
-  encoders are partly bag-of-words, so a shuffled chunk may stay close to its original and the null
-  lands too high.
-- **Held-out-document null.** Bootstrap over document pairs, using the fact that most DOCUMENT
-  pairs share no content, to estimate a per-document-pair rather than per-chunk-pair null. Risk:
-  document pairs are few, so the tail is unresolvable on a small corpus -- the same saturation
-  problem already measured for chunk-pair sampling.
-- **Labelled calibration set.** Use the committed `samples/corpora/conflicts_uk_v1/` planted
-  relations as ground truth to fit a threshold with a real measured precision/recall curve, then
-  test whether that transfers to the quickstart corpora. Risk: seven planted pairs is a very small
-  fit set, and the fixture uses a hashed-BoW fake embedder in CI.
-
-- Agent status: RUN NEEDED
-- Dependencies: the calibrated threshold and the enumerated distribution are current behavior
-  ([data prep](current/data-prep/conflict-detection.md#corpus-calibrated-cosine-threshold---max-candidate-pairs)).
-  Reuse `estimate_null_distribution`, `VectorSet.cross_group_similarities`, and the planted-relation
-  fixture. The comparable set excludes structurally repeated metadata blocks; use the measured
-  post-filter population in [data prep](current/data-prep/conflict-detection.md#what-the-semantic-tier-excludes-and-why).
-- User-visible outcome: either a null the audit can quote a real false-positive rate against, or a
-  recorded finding that cosine over sentence-encoder chunk vectors cannot support one -- which
-  would justify moving threshold selection to the claim tier's measured precision instead.
-- Scope boundary: in scope -- constructing and comparing candidate nulls, measuring each against
-  the planted fixture and both quickstart corpora, and a written verdict per approach. Out of
-  scope -- changing the relation vocabulary or the tier order, and shipping any new default before
-  a null demonstrably beats the rank cutoff.
-- Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  no new committed fixtures unless an approach earns one.
-- Execution path: a research harness invoked per null model over both quickstart stores plus the
-  fixture; CI covers each null constructor deterministically over committed vectors, with the
-  heavy corpus comparison run on the CUDA host.
-- Acceptance gates: each candidate null is measured on the planted fixture, where the true relation
-  labels are known, and reports precision/recall at its resolved threshold; an approach is adopted
-  only if it beats the current rank cutoff on the fixture AND its resolved threshold recovers the
-  claim-bearing HR swept baseline without flooding goods. If none does, the negative result is
-  [product decisions](current/scope-boundaries.md) and the rank-cutoff framing stays.
-- Documentation target: the corpus-hygiene known-limitation section of
-  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
-  adopt-or-reject verdict.
 
 ### typed-rag-answer-envelope
 

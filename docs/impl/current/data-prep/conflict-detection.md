@@ -181,8 +181,91 @@ Consequences for reading a report:
   real duplication at every rank.
 
 Getting a real false-positive rate needs an independent null -- pairs known a priori to be
-unrelated -- which the corpus alone cannot supply. That is open research, tracked as
-`conflict-null-model-research` in [plan.md](../../plan.md).
+unrelated -- which the corpus alone cannot supply. The first independent-null matrix below is
+negative; higher-effort follow-up remains under `conflict-null-model-research` in
+[plan.md](../../plan.md).
+
+## Independent-null research: negative result
+
+`llb research-conflict-nulls` and the `make research-conflict-nulls` target run one paired matrix
+over a real-embedder planted fixture, an eight-document high-recall corpus, a five-document goods
+corpus, and an unrelated Ukrainian reference corpus. The harness is deliberately separate from
+the audit default: a candidate cannot change user-visible threshold behavior until it clears every
+gate.
+
+The implementation is split by responsibility:
+
+- `null_research_geometry.py` reconstructs the semantic tier's exact content filter and centering
+  space, scores Cartesian cross-corpus controls, builds deterministic token/sentence permutations,
+  and reduces held-out document pairs to their maximum chunk cosine.
+- `null_research_evaluation.py` resolves null tails, reports Wilson 95% intervals, evaluates the
+  planted document-pair closure, fits the labelled comparison, and measures HR/goods transfer.
+  Small permutation corpora automatically receive enough shuffles for at least 20 expected tail
+  observations; this prevents sample size from deciding the fixture verdict.
+- `null_research_candidates.py`, `null_research.py`, and `null_research_report.py` apply the gates,
+  orchestrate all candidates, and write `summary.json` plus `report.md`. Typer wiring is in
+  `src/llb/cli/prep/conflict_null_research.py`; deterministic coverage is in
+  `tests/llb/conflicts/test_null_research.py`.
+- `VectorSet.cross_similarities` scores two separately stored corpora without inventing document
+  ids, while `VectorSet.centered(mean)` applies the target corpus's mean to both sides. That detail
+  matters: independently centering target and reference would compare vectors transformed in two
+  different nonlinear spaces.
+
+Run the maintained workflow with explicit stores:
+
+```bash
+make research-conflict-nulls \
+  FIXTURE_CORPUS=<fixture-corpus> FIXTURE_STORE=<fixture-store> \
+  HR_CORPUS=<hr-corpus> HR_STORE=<hr-store> \
+  GOODS_CORPUS=<goods-corpus> GOODS_STORE=<goods-store> \
+  REFERENCE_CORPUS=<unrelated-uk-corpus> REFERENCE_STORE=<reference-store> \
+  EMBED_DEVICE=cuda NULL_RESEARCH_OUT=<artifact-dir>
+```
+
+### CUDA evidence and verdict
+
+The CUDA run uses multilingual-E5-base vectors and a nominal 1% null tail. The planted fixture has
+8 positive and 13 negative document pairs after closing the three equivalent 2021 editions over
+their relations. The rank-budget baseline selects 12 chunk pairs and scores precision 1.000,
+recall 0.875, and F1 0.933 on that document-pair fixture.
+
+| candidate | fixture P / R / F1 | HR 0.6 pairs recovered | goods rows | verdict |
+| --- | --- | --- | --- | --- |
+| cross-corpus | 0.381 / 1.000 / 0.552 | 5810 / 5810 | 1619 | reject: easy reference null floods |
+| token permutation | 1.000 / 0.625 / 0.769 | 379 / 5810 | 0 | reject: threshold is too strict |
+| sentence permutation | 1.000 / 0.125 / 0.222 | 76 / 5810 | 0 | reject: local meaning survives |
+| held-out document | 1.000 / 0.125 / 0.222 | 1 / 5810 | 1 | reject: unresolved and not independent |
+| labelled calibration | 1.000 / 1.000 / 1.000 | 289 / 5810 | 0 | reject as null; fixture fit does not transfer |
+
+The cross-corpus lane is the only genuinely independent candidate with a resolved tail on every
+dataset. Its 1% thresholds are 0.7752 on the uncentered small fixture, 0.2106 on centered HR, and
+0.2127 on centered goods. It labels every fixture document pair positive (13 false positives) and
+selects 1619 goods rows against a cap of 12. The unrelated encyclopedia reference is too easy
+relative to the target corpora; a precisely measured shifted null is still the wrong null.
+
+Permutation tails are now adequately populated (fixture 182 shuffles; HR/goods 3). Their failure
+is substantive, not sampling noise. Token shuffling retains enough E5-visible vocabulary to put
+the 1% threshold around 0.91-0.97; sentence shuffling raises it to about 0.99. Both suppress most
+of the HR baseline. Held-out document maxima supply only 21 fixture, 28 HR, and 10 goods
+observations, cannot resolve a 1% tail, and reuse the contaminated observed population. The
+labelled threshold of 0.9323 perfectly separates the tiny fixture it was fit on but recovers only
+289 of 5810 HR baseline pairs; it estimates neither an independent FPR nor a transferable operating
+point.
+
+The reproducible HR input is a current-host composite: the three retained source conversions and
+the five retained goods conversions receive distinct document ids. It has 2189 chunks, compared
+with 2578 in the older swept evidence whose runtime store is no longer present. This makes the
+transfer count a conservative current-data stress test rather than a byte-for-byte replay of the
+older eight-pair report. The negative decision does not hinge on that drift: cross-corpus already
+loses to the fixture rank baseline and floods goods; every stricter candidate already loses to the
+fixture baseline or is not an independent null.
+
+Artifacts are under
+`$DATA_DIR/corpus-conflicts/null-research/20260811T115543Z/`; the directory includes the corrected
+five/eight-document input snapshots, their real E5 stores, `summary.json`, and `report.md`. The
+verdict is **negative**: keep `--max-candidate-pairs` framed as a rank cutoff, keep semantic output
+provisional, and pursue the domain-matched/control-mixture or claim-tier precision directions in
+the forward plan before considering another default.
 
 ## Semantic prefix tree
 

@@ -63,11 +63,17 @@ duplicates it is meant to detect; enumerated exactly, the null and the observed 
 so empirical FDR is 1.000 at every threshold and a budget of N returns exactly N pairs. Detail and
 measurements: [data prep](data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null).
 
-Two consequences hold until `conflict-null-model-research` says otherwise. Confidence in a corpus
-conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so no
-autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. And no
-report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,
-significance level, or confidence -- name it a candidate budget or a rank cutoff.
+The CUDA independent-null matrix tests cross-corpus controls, token and sentence permutation,
+held-out document maxima, and labelled fixture calibration. None clears the fixture, HR recovery,
+goods flood, independence, and resolved-tail gates together; the detailed matrix and artifact are
+in [data prep](data-prep/conflict-detection.md#independent-null-research-negative-result).
+
+The product decision therefore remains unchanged while higher-effort research continues.
+Confidence in a corpus conflict comes from the **claim tier's adjudication**, not from a cosine or
+a threshold, so no autonomous gate should branch on the semantic tier's provisional `duplicate`
+verdict alone. No report, doc, or CLI string may describe a semantic-tier cutoff as a
+false-positive rate, significance level, or confidence -- name it a candidate budget or a rank
+cutoff.
 
 ## Context-Ablation Lanes Stay Diagnostic
 

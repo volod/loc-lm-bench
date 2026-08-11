@@ -19,7 +19,7 @@ build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CO
 # store. Without CONFIG the default corpus is the documented behavior and is always forwarded.
 BUILD_INDEX_CORPUS = $(if $(CONFIG),$(if $(filter-out file default,$(origin CORPUS)),--corpus-root "$(CORPUS)"),--corpus-root "$(CORPUS)")
 
-build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 DUPLICATE_TIER=exact|normalized|masked to override; needs ".[rag]")
+build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHUNK_STRATEGY= CHUNK_SIZE= CHUNK_OVERLAP= EMBEDDING_MODEL= RETRIEVAL_MODE=hybrid LEMMATIZE=1 KEEP_DUPLICATE_CHUNKS=1 DUPLICATE_TIER=exact|normalized|masked; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main build-index $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(BUILD_INDEX_CORPUS) \
@@ -28,6 +28,7 @@ build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHU
 		$(if $(CHUNK_OVERLAP),--overlap "$(CHUNK_OVERLAP)",) \
 		$(if $(EMBEDDING_MODEL),--embedding-model "$(EMBEDDING_MODEL)",) \
 		$(if $(RETRIEVAL_MODE),--retrieval-mode "$(RETRIEVAL_MODE)",) \
+		$(if $(KEEP_DUPLICATE_CHUNKS),--keep-duplicate-chunks,) \
 		$(if $(DUPLICATE_TIER),--duplicate-tier "$(DUPLICATE_TIER)",) \
 		$(if $(LEMMATIZE),--lemmatize,)
 
