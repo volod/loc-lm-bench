@@ -2,8 +2,8 @@
 
 from llb.conflicts.null_research_advanced import (
     ADVANCED_RESEARCH_METHODS,
-    _fpr_candidate,
-    _residual_space,
+    fpr_candidate,
+    residual_space,
 )
 from llb.conflicts.null_research_controls import MatchedControls, build_matched_controls
 from llb.conflicts.null_research_counterfactuals import (
@@ -29,7 +29,7 @@ def _matched_candidates(
 ) -> list[JsonObject]:
     diagnostics = {dataset: control.diagnostics for dataset, control in matched.items()}
     effective_units = {dataset: control.effective_units for dataset, control in matched.items()}
-    raw = _fpr_candidate(
+    raw = fpr_candidate(
         "surface_matched_reference",
         {dataset: control.scores for dataset, control in matched.items()},
         {dataset: control.cluster_maxima() for dataset, control in matched.items()},
@@ -45,9 +45,9 @@ def _matched_candidates(
         control_key="exchangeable",
     )
     residual_spaces = {
-        dataset: _residual_space(corpus, matched[dataset]) for dataset, corpus in corpora.items()
+        dataset: residual_space(corpus, matched[dataset]) for dataset, corpus in corpora.items()
     }
-    residual = _fpr_candidate(
+    residual = fpr_candidate(
         "surface_matched_residual",
         {dataset: control.residual_scores() for dataset, control in matched.items()},
         {dataset: control.cluster_maxima(residual=True) for dataset, control in matched.items()},
@@ -85,7 +85,7 @@ def _counterfactual_candidate(
     max_goods_candidates: int,
     seed: int,
 ) -> JsonObject:
-    return _fpr_candidate(
+    return fpr_candidate(
         "claim_counterfactual_control",
         {dataset: control.scores for dataset, control in counterfactuals.items()},
         {dataset: control.cluster_maxima() for dataset, control in counterfactuals.items()},

@@ -6,6 +6,13 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
+from llb.conflicts.constants import (
+    DEFAULT_ADJUDICATION_BUDGET,
+    DEFAULT_ROLE_SAMPLES_PER_TYPE,
+    RESEARCH_GENERATION_INITIAL,
+    RESEARCH_GENERATION_THIRD,
+    RESEARCH_GENERATIONS,
+)
 from llb.conflicts.null_research_evaluation import (
     DEFAULT_MAX_GOODS_CANDIDATES,
     DEFAULT_RESEARCH_FPR,
@@ -30,9 +37,21 @@ def research_conflict_nulls_cmd(
     domain_reference_store: Optional[Path] = typer.Option(
         None, help="store for the domain-matched reference corpus"
     ),
-    next_generation: bool = typer.Option(
-        False,
-        help="run matched, residual, cluster-FDR, and counterfactual candidates only",
+    generation: str = typer.Option(
+        RESEARCH_GENERATION_INITIAL,
+        help="which matrix to run: initial (cross-corpus/permutation/held-out/labelled), "
+        "next (matched, residual, cluster-FDR, counterfactual), or third (feasibility, "
+        "propensity-balanced control, mixture identifiability, geometry variants, verified "
+        "control roles, claim-tier precision)",
+    ),
+    conflict_model: Optional[str] = typer.Option(
+        None, help="local model adjudicating claim pairs and control roles (--generation third)"
+    ),
+    conflict_backend: str = typer.Option(
+        "ollama", help="local backend for the adjudicator: ollama | vllm | openai"
+    ),
+    conflict_base_url: Optional[str] = typer.Option(
+        None, help="OpenAI-compatible base URL for the adjudicator"
     ),
     out: Optional[Path] = typer.Option(
         None,
@@ -71,12 +90,23 @@ def research_conflict_nulls_cmd(
         min=1,
         help="nearest surface/encoder-neighborhood controls selected from each reference",
     ),
+    adjudication_budget: int = typer.Option(
+        DEFAULT_ADJUDICATION_BUDGET,
+        min=1,
+        help="ranked candidate rows adjudicated per corpus for the claim-tier precision curve",
+    ),
+    role_samples_per_type: int = typer.Option(
+        DEFAULT_ROLE_SAMPLES_PER_TYPE,
+        min=1,
+        help="traced control edits per corpus and edit type sent to the relation verifier",
+    ),
     seed: int = typer.Option(0, help="deterministic research seed"),
     embedding_device: Optional[str] = typer.Option(
         None, help="sentence-transformers device for permutation embeddings (for example cuda)"
     ),
 ) -> None:
     """Compare independent-null candidates against fixture and cross-corpus transfer gates."""
+    from llb.conflicts.adjudicator import build_adjudicator
     from llb.conflicts.null_research import run_null_research
     from llb.conflicts.null_research_report import write_null_research
     from llb.conflicts.store_access import load_store_view
@@ -84,14 +114,25 @@ def research_conflict_nulls_cmd(
     from llb.core.store_generations import generation_timestamp
     from llb.rag.embedding import Embedder
 
+    if generation not in RESEARCH_GENERATIONS:
+        raise typer.BadParameter(
+            f"unknown generation {generation!r}; choose one of {', '.join(RESEARCH_GENERATIONS)}"
+        )
     fixture_view = load_store_view(fixture_store)
     hr_view = load_store_view(hr_store)
     goods_view = load_store_view(goods_store)
     reference_view = load_store_view(reference_store)
     if (domain_reference_corpus is None) != (domain_reference_store is None):
         raise typer.BadParameter("domain reference corpus and store must be supplied together")
-    if next_generation and domain_reference_corpus is None:
-        raise typer.BadParameter("--next-generation requires a domain reference corpus and store")
+    if generation != RESEARCH_GENERATION_INITIAL and domain_reference_corpus is None:
+        raise typer.BadParameter(
+            f"--generation {generation} requires a domain reference corpus and store"
+        )
+    if generation == RESEARCH_GENERATION_THIRD and not conflict_model:
+        raise typer.BadParameter(
+            "--generation third needs --conflict-model: the claim-tier precision and control-role "
+            "lanes are model-adjudicated"
+        )
     domain_reference_view = (
         load_store_view(domain_reference_store) if domain_reference_store is not None else None
     )
@@ -109,36 +150,54 @@ def research_conflict_nulls_cmd(
             + ", ".join(sorted(models))
         )
     model = next(iter(models))
-    embedder = Embedder(model, device=embedding_device)
+    complete = build_adjudicator(conflict_model, conflict_backend, conflict_base_url)
+    # The third generation scores stored vectors and constructed edits only, so it never loads an
+    # encoder -- which also leaves the GPU to the adjudicating model.
+    embedder = (
+        None
+        if generation == RESEARCH_GENERATION_THIRD
+        else Embedder(model, device=embedding_device)
+    )
     try:
         summary = run_null_research(
             fixture=(fixture_corpus, fixture_view),
             hr=(hr_corpus, hr_view),
             goods=(goods_corpus, goods_view),
             reference=(reference_corpus, reference_view),
-            embed=embedder.encode_passages,
+            embed=embedder.encode_passages if embedder is not None else None,
             domain_reference=(domain_reference_corpus, domain_reference_view)
             if domain_reference_corpus is not None and domain_reference_view is not None
             else None,
-            next_generation=next_generation,
+            generation=generation,
+            complete=complete,
             fpr=fpr,
             rank_budget=rank_budget,
             transfer_threshold=transfer_threshold,
             max_goods_candidates=max_goods_candidates,
             permutations=permutations,
             matches_per_reference=matches_per_reference,
+            adjudication_budget=adjudication_budget,
+            adjudicator_model=conflict_model or "",
+            role_samples_per_type=role_samples_per_type,
             seed=seed,
         )
     finally:
-        embedder.release()
+        if embedder is not None:
+            embedder.release()
     out_dir = out or (
         resolve_data_dir() / "corpus-conflicts" / "null-research" / generation_timestamp()
     )
     paths = write_null_research(out_dir, summary)
-    typer.echo(f"[conflict-null] verdict={summary['verdict']}")
+    typer.echo(f"[conflict-null] generation={generation} verdict={summary['verdict']}")
     for method in summary["methods"]:
         typer.echo(
             f"[conflict-null] method={method['method']} accepted={method['gates']['accepted']}"
+        )
+    precision = summary.get("claim_precision")
+    if isinstance(precision, dict):
+        typer.echo(
+            f"[conflict-null] method={precision['method']} "
+            f"accepted={precision['gates']['accepted']}"
         )
     typer.echo(f"[conflict-null] report: {paths['report']}")
     if "control_traces" in paths:

@@ -47,7 +47,8 @@ class _MatchingSpace:
     normalized_references: dict[str, np.ndarray]
 
 
-def _surface_features(chunk: ChunkRecord, vector: Vector, mean_vector: Vector) -> list[float]:
+def surface_features(chunk: ChunkRecord, vector: Vector, mean_vector: Vector) -> list[float]:
+    """Structural covariates a control must match before its cosine can stand in for a null."""
     tokens = _TOKEN.findall(chunk["text"])
     total = max(1, len(tokens))
     counts: dict[str, int] = {}
@@ -127,7 +128,7 @@ def membership_diagnostics(target: np.ndarray, reference: np.ndarray) -> JsonObj
 def _feature_matrix(geometry: CorpusGeometry, mean_vector: Vector) -> np.ndarray:
     return np.asarray(
         [
-            _surface_features(geometry.chunks[index], geometry.raw_vectors.row(index), mean_vector)
+            surface_features(geometry.chunks[index], geometry.raw_vectors.row(index), mean_vector)
             for index in geometry.allowed
         ],
         dtype="float64",

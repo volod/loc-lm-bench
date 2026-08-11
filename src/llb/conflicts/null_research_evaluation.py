@@ -1,6 +1,7 @@
 """Metrics and threshold decisions for corpus-conflict null research."""
 
 from bisect import bisect_left
+from collections.abc import Sequence
 import math
 
 import numpy as np
@@ -181,6 +182,33 @@ def fit_labelled_threshold(
         ),
     )
     return threshold, metrics
+
+
+def paired_transfer_payload(
+    baseline_scores: Sequence[float] | np.ndarray,
+    mapped_scores: Sequence[float] | np.ndarray,
+    threshold: float,
+    baseline_threshold: float,
+) -> JsonObject:
+    """Transfer for a candidate scored in a different space than the swept baseline.
+
+    Both lists must enumerate the SAME pairs in the same order: the baseline set is decided in the
+    audit's centered space and recovery is then a per-pair question, not a count comparison.
+    """
+    if len(baseline_scores) != len(mapped_scores):
+        raise AssertionError("paired transfer needs one mapped score per baseline score")
+    kept = np.asarray(mapped_scores, dtype="float64") >= threshold
+    baseline_kept = np.asarray(baseline_scores, dtype="float64") >= baseline_threshold
+    baseline = int(baseline_kept.sum())
+    recovered = int((baseline_kept & kept).sum())
+    return {
+        "threshold": round(threshold, 6),
+        "selected_chunk_pairs": int(kept.sum()),
+        "baseline_threshold": baseline_threshold,
+        "baseline_chunk_pairs": baseline,
+        "baseline_recovered": recovered,
+        "baseline_recall": round(recovered / baseline, 6) if baseline else 1.0,
+    }
 
 
 def transfer_payload(

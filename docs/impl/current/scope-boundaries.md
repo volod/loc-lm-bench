@@ -66,21 +66,34 @@ measurements: [data prep](data-prep/conflict-detection.md#known-limitation-there
 The CUDA independent-null matrix tests cross-corpus controls, token and sentence permutation,
 held-out document maxima, and labelled fixture calibration. None clears the fixture, HR recovery,
 goods flood, independence, and resolved-tail gates together; the detailed matrix and artifact are
-in [data prep](data-prep/conflict-detection.md#independent-null-research-negative-result).
+in [null research](data-prep/conflict-null-research.md#first-generation-negative-result).
 
 The second-generation CUDA matrix adds surface/encoder-matched multi-reference controls, local
 residual similarity, source-cluster empirical FDR, and traced argument/quantity/modality edits. It
 also corrects tail accounting from repeated pair rows to unique source/reference units. None clears
 exchangeability, effective-tail, fixture, HR, and goods gates together; counterfactual edits are not
-eligible nulls without relation verification. The evidence and artifact are in [data
-prep](data-prep/conflict-detection.md#second-generation-conflict-null-research-negative-result).
+eligible nulls without relation verification. The evidence and artifact are in [null
+research](data-prep/conflict-null-research.md#second-generation-negative-result).
 
-The product decision therefore remains unchanged while higher-effort research continues.
-Confidence in a corpus conflict comes from the **claim tier's adjudication**, not from a cosine or
-a threshold, so no autonomous gate should branch on the semantic tier's provisional `duplicate`
-verdict alone. No report, doc, or CLI string may describe a semantic-tier cutoff as a
-false-positive rate, significance level, or confidence -- name it a candidate budget or a rank
-cutoff.
+The third-generation CUDA matrix settles why, rather than adding candidates. The candidate list an
+operator can afford implies a per-pair tail whose certification would need an independent control
+bank about a thousand times larger than the corpus being audited; propensity balancing fails on
+positivity, not on estimator choice; cosine-only mixture calibration is unidentifiable at that
+resolution; whitening and anisotropy stripping move the shift without producing an operating point;
+and the traced counterfactual controls are proven planted positives, not nulls. Measured claim-tier
+precision, by contrast, works and is corpus-specific: it is 1.000 with a clustered lower bound of
+1.000 on the HR list and 0.000 on the goods list, which is the same statement as "no single
+threshold serves both corpora", now with a number. Evidence: [null
+research](data-prep/conflict-null-research.md#third-generation-negative-result).
+
+The product decision therefore stands, and one search is closed rather than paused: pursuing a
+per-pair semantic false-positive rate at this corpus scale is not the direction. Confidence in a
+corpus conflict comes from the **claim tier's adjudication**, not from a cosine or a threshold, so
+no autonomous gate should branch on the semantic tier's provisional `duplicate` verdict alone. No
+report, doc, or CLI string may describe a semantic-tier cutoff as a false-positive rate,
+significance level, or confidence -- name it a candidate budget or a rank cutoff. A precision figure
+may be published only with its clustered bound and only from an adjudicator calibrated against
+frozen labels.
 
 ## Context-Ablation Lanes Stay Diagnostic
 

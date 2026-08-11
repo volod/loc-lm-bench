@@ -50,81 +50,87 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 **Research task** -- the answer is not known in advance, and a negative result is a valid outcome
 that must be recorded rather than worked around.
 
-Find a defensible next-generation independent null for corpus-conflict detection, or establish that
-cosine-only semantic calibration is not identifiable and replace threshold selection with measured
-claim-tier precision. Current constraints: matched controls remain separable and dependent, while
-traced edits lack null labels ([evidence](current/data-prep/conflict-detection.md#second-generation-conflict-null-research-negative-result)).
+Pursue the directions that the three negative independent-null generations do not foreclose.
+Current constraints: reference banks sit outside the target corpus's covariate support, cosine-only
+mixture calibration is unidentifiable at the resolution an operating point needs, and the affordable
+candidate tail demands an independent control bank orders of magnitude larger than any bank on this
+host ([evidence](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
 
-High-effort research directions, ordered by the information they add:
-
-- **Relation-aware frozen control suite.** Build separate, provenance-carrying families for proven
-  unrelated pairs and for planted duplicate, subsumption, contradiction, supersession, and
-  complementary relations. Extend the transformation grammar to relation-argument and
-  entity-link substitutions; verify every role with exact construction checks plus the strongest
-  host-fit UA entailment/contradiction model, and route ambiguous roles to a frozen human-reviewed
-  slice. Never put a quantity, modality, or entity edit in the null merely because it changes text:
-  that edit can be the positive conflict the detector should retain.
-- **Independent-unit control bank and final split.** Build enough deduplicated Ukrainian control
-  claims to supply at least 20 expected independent observations at the requested tail in every
-  final corpus stratum. Cluster exact, near-duplicate, edition, source, and template families before
-  splitting; cap target and reference reuse; record the effective two-way cluster count; and keep
-  every calibration/tuning domain disjoint from the untouched final domains. Pair multiplication
-  must not count as new evidence.
-- **Cross-fitted conditional exchangeability.** Replace nearest-neighbor surface matching with
-  group-split optimal transport, propensity weighting, or an adversarially balanced representation
-  over structural features and encoder neighborhoods. Fit balancing only on calibration domains,
-  run leave-one-domain-out transfer, and predeclare membership-AUC and standardized-difference
-  confidence bounds. Reject the lane when corpus membership remains predictable on a held-out
-  domain, even if the similarity histogram looks plausible.
-- **Two-way clustered or conformal tail inference.** Estimate uncertainty over source chunks,
-  unique reference claims, documents, and domains rather than over Cartesian pair rows. Compare a
-  two-way block bootstrap with group-split conformal p-values; simulate duplicate-reference reuse,
-  domain shift, contaminated controls, and sparse tails; and require nominal coverage before FPR or
-  FDR language is allowed. Cross-fit threshold choice so the same tail is not both selected and
-  certified.
-- **Positive-unlabelled identifiability stress test.** Fit a hierarchical null/related mixture with
-  document-pair clusters and corpus covariates, anchoring related mass with hash/lexical closures
-  and frozen planted relations and null mass with the verified controls. Construct materially
-  different mixtures that reproduce the observed cosine tail; abandon cosine-only mixture
-  calibration if those alternatives remain observationally equivalent.
-- **Higher-capacity geometry and relation scoring.** Compare locally whitened cosine, removal of
-  multiple anisotropy directions, cross-fitted covariate residuals, and a compact cross-encoder on
-  exactly the same frozen controls. Report calibration curves and clustered tail coverage alongside
-  relation recall; a fixture-F1 improvement alone cannot select a geometry.
-- **Claim-tier precision fallback.** Stratify semantic candidates by corpus, rank, score, and
-  structural covariates; adjudicate them with the strongest host-fit UA model; calibrate that model
-  against the frozen reviewed/planted labels; and fit a two-way-clustered lower-confidence-bound
-  precision curve. Move only new label production to Human-Assisted Tasks. Expose an operating
-  point only when its bound transfers across untouched HR/goods domains; this can replace semantic
-  FPR with the quantity operators need: probability that a row survives claim adjudication.
+- **In-support control synthesis.** Balancing fails on positivity rather than on estimator choice --
+  no weight can correct a covariate region the reference banks never sample. Generate candidate
+  control claims from the target corpus's own structural distribution with the host-fit UA model,
+  prove each generated claim's role with the existing relation verifier (`null_research_roles.py`),
+  and re-run the balanced lane on controls that live inside the target's covariate support. Reject
+  the lane when held-out membership AUC still exceeds 0.60, and never count a generated claim the
+  verifier calls conflicting.
+- **Cross-encoder relation scoring.** The geometry lane compared only linear re-expressions of one
+  bi-encoder space. Score the same frozen controls and the same planted relations with a compact
+  UA-capable cross-encoder, and report calibration curves and clustered tail coverage alongside
+  relation recall; a fixture-F1 improvement alone still cannot select a scorer.
+- **Group-split conformal tail inference (optional).** The two-way block bootstrap is in place; the
+  conformal comparison is not. Compare group-split conformal p-values against it under simulated
+  duplicate-reference reuse, domain shift, and sparse tails, and keep whichever holds nominal
+  coverage with fewer independent units.
+- **Or record the stop.** If none of the above changes the feasibility arithmetic, close the
+  per-pair semantic FPR as unreachable at this corpus scale and let claim-tier precision carry the
+  operator-facing number.
 
 - Agent status: RUN NEEDED
-- Dependencies: extend the next-generation `research-conflict-nulls` matrix rather than the audit
-  default; reuse its exact filtered geometry, matched-control diagnostics, residual lane, clustered
-  FDR fit, and counterfactual trace artifact from [data
-  prep](current/data-prep/conflict-detection.md#second-generation-conflict-null-research-negative-result).
-  The verified control roles, independent-unit bank, and frozen split precede any new threshold.
-- User-visible outcome: either a held-out-calibrated FPR whose exchangeability and coverage are
-  explicit, or a claim-tier precision operating point with a lower confidence bound; a raw cosine
-  or target-corpus rank must never be relabelled as either quantity.
-- Scope boundary: in scope -- verified control construction, conditional/mixture nulls, expanded
-  planted labels, geometry alternatives, claim-tier precision calibration, clustered uncertainty,
-  and paired transfer evidence. Out of scope -- changing the relation vocabulary or tier order,
-  and shipping any new default before an untouched final split clears every gate.
+- Dependencies: extend the third-generation `research-conflict-nulls GENERATION=third` matrix rather
+  than the audit default; reuse its feasibility lane, propensity-balanced control bank, two-way
+  clustered resamplers, mixture probe, relation verifier, and claim-precision lane from [null
+  research](current/data-prep/conflict-null-research.md#third-generation-negative-result).
+- User-visible outcome: either a held-out-calibrated FPR whose exchangeability, operating-point
+  feasibility, and clustered coverage are all explicit, or a recorded decision that no such rate is
+  reachable at this corpus scale; a raw cosine or target-corpus rank must never be relabelled as
+  either quantity.
+- Scope boundary: in scope -- in-support control generation with verified roles, cross-encoder
+  relation scoring, conformal tail inference, and paired transfer evidence for each. Out of scope --
+  changing the relation vocabulary or tier order, and shipping any new default before an untouched
+  final split clears every gate.
 - Data and artifact paths: comparison under `$DATA_DIR/corpus-conflicts/null-research/<run>/`;
-  committed controls require construction provenance and frozen split ids.
-- Execution path: add one constructor and deterministic CI fixture per direction; generate/freeze
-  controls before fitting; run multilingual-E5, geometry alternatives, and the host-fit UA verifier
+  generated controls require construction provenance, verifier verdicts, and frozen split ids.
+- Execution path: add one constructor and deterministic CI fixture per direction; freeze controls
+  and verify their roles before fitting any threshold; run the geometry, verifier, and adjudicator
   on CUDA; then execute one untouched group-split transfer run.
-- Acceptance gates: an independent-null lane must pass held-out corpus-membership exchangeability,
-  two-way-cluster simulation coverage, and at least 20 expected independent tail observations;
-  beat the budget-12 rank baseline on the planted final split; recover the claim-bearing HR
-  baseline; and stay within the goods candidate cap. A claim-tier fallback must instead clear its
-  calibrated-adjudicator gate and a predeclared held-out precision lower bound on both corpora.
-  Record another negative result and keep this task when no lane clears its applicable gates.
-- Documentation target: the corpus-hygiene known-limitation section of
-  [data prep](current/data-prep.md), and [product decisions](current/scope-boundaries.md) for the
-  adopt-or-reject verdict.
+- Acceptance gates: a lane must pass held-out corpus-membership exchangeability, two-way-clustered
+  simulation coverage, and its own operating-point feasibility check; beat the budget-12 rank
+  baseline on the planted final split; recover the claim-bearing HR baseline; and stay within the
+  goods candidate cap. Record another negative result and keep this task when no lane clears its
+  applicable gates.
+- Documentation target: [null research](current/data-prep/conflict-null-research.md), and [product
+  decisions](current/scope-boundaries.md) for the adopt-or-reject verdict.
+
+### conflict-audit-measured-precision
+
+Report what an operator can act on. `audit-corpus-conflicts --effort claim` already adjudicates
+every candidate row, yet its artifacts still describe the semantic tier by counts and a resolved
+cosine; the quantity operators need -- the share of the returned list that survives claim
+adjudication, with an interval that respects how few distinct claims those rows come from -- is
+produced only by the research harness. Move it into the audit.
+
+- Agent status: RUN NEEDED
+- Dependencies: reuse the precision curve, the two-way clustered bound
+  (`null_research_clusters.py`), and the adjudicator-calibration gate from [null
+  research](current/data-prep/conflict-null-research.md#third-generation-negative-result); the claim
+  tier and its artifacts are current behavior in [conflict
+  detection](current/data-prep/conflict-detection.md#effort-tiers).
+- User-visible outcome: `summary.json` and `report.md` carry a measured claim-tier precision at the
+  returned candidate budget with its two-way clustered lower bound, so the audit stops leaving a
+  rank cutoff as its only summary statistic.
+- Scope boundary: in scope -- a precision block computed from the claim tier's own verdicts, its
+  clustered bound, the calibration gate that suppresses the block when the adjudicator is not
+  calibrated against frozen labels, and the report/summary rendering. Out of scope -- changing
+  candidate generation, the relation vocabulary, or any threshold default, and printing a precision
+  figure without its bound or without the calibration that earns it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: extend `src/llb/conflicts/claim_tier.py` and `report.py` with the shared precision
+  helpers, add a deterministic fixture test with an injected adjudicator, then one CUDA-host claim
+  run per quickstart corpus for the recorded evidence.
+- Acceptance gates: `make ci` green with the injected adjudicator; the printed bound equals the
+  research harness's bound on the same rows; and the block is absent, with a stated reason, whenever
+  the adjudicator misses its calibration bound.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
 
 ### agent-context-policy-entry-aware-summary-fold-adoption (optional)
 
@@ -1256,6 +1262,33 @@ say whether a shared-bridge question genuinely needs both facts.
   reviewed ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
+
+### conflict-adjudicator-label-slice
+
+Produce frozen human labels for real candidate rows so a measured claim-tier precision can be
+trusted off the planted fixture. Adjudicator agreement is currently calibrated only against the
+seven-document planted corpus, whose relations are synthetic by construction; nothing measures
+whether the model agrees with a human on HR or goods rows ([null
+research](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
+
+- Agent status: HUMAN-GATED
+- Dependencies: `conflict-audit-measured-precision` consumes the resulting bound; candidate ranking
+  and claim adjudication are current behavior. Human step that gates completion: an authorized
+  reviewer assigns one relation from the claim vocabulary to every row of the frozen slice without
+  seeing the model's verdict.
+- User-visible outcome: a committed frozen slice plus a measured human-versus-adjudicator agreement
+  bound -- what lets a precision number transfer to corpora the planted fixture does not represent.
+- Scope boundary: in scope -- slice selection stratified by corpus and rank band, blind review,
+  agreement measurement, and the resulting calibration bound. Out of scope -- relabelling the planted
+  fixture, changing the relation vocabulary, and using the reviewed slice to fit any threshold.
+- Data and artifact paths: `$DATA_DIR/corpus-conflicts/<run>/` for the slice and agreement report;
+  the frozen labels are committed under `samples/`.
+- Execution path: generate the stratified slice from a claim-tier run, review it with
+  `make review-workbench REVIEW_PATH=<slice-jsonl>`, then re-measure agreement against it.
+- Acceptance gates: every slice row carries a human relation; agreement is reported with a clustered
+  interval; and the precision block stays suppressed on any corpus whose agreement bound is unmet.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md) and [review
+  workbench](current/review-workbench.md).
 
 ### corpus-conflict-resolution-review
 

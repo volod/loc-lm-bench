@@ -94,6 +94,24 @@ SPLIT_ITERATIONS = 8
 # Floating-point slack on exact metric-tree pruning bounds.
 TREE_BOUND_EPSILON = 1e-12
 
+# --- independent-null research ------------------------------------------------------------------
+
+# Which candidate matrix `research-conflict-nulls` runs. Each generation is motivated by the
+# failure modes of the one before it, and every generation stays runnable so a later claim can be
+# compared against the evidence that produced the earlier verdict.
+RESEARCH_GENERATION_INITIAL = "initial"
+RESEARCH_GENERATION_NEXT = "next"
+RESEARCH_GENERATION_THIRD = "third"
+RESEARCH_GENERATIONS = (
+    RESEARCH_GENERATION_INITIAL,
+    RESEARCH_GENERATION_NEXT,
+    RESEARCH_GENERATION_THIRD,
+)
+# Ranked candidate rows adjudicated per corpus when measuring claim-tier precision, and traced
+# control edits per corpus and edit type sent to the relation verifier. Both bound model cost.
+DEFAULT_ADJUDICATION_BUDGET = 50
+DEFAULT_ROLE_SAMPLES_PER_TYPE = 12
+
 # --- artifact names ---------------------------------------------------------------------------
 
 CONFLICTS_METHOD = "corpus-conflicts"

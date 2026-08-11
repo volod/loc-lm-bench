@@ -165,6 +165,31 @@ def _transformations(target: CorpusGeometry) -> list[_Transformation]:
     return out
 
 
+def _trace(target: CorpusGeometry, item: _Transformation) -> JsonObject:
+    chunk = target.chunks[item.source]
+    reconstructed = chunk["text"][: item.start] + item.after + chunk["text"][item.end :]
+    return {
+        "dataset": target.name,
+        "source_ordinal": item.source,
+        "doc_id": chunk["doc_id"],
+        "chunk_id": chunk.get("chunk_id", ""),
+        "edit_type": item.edit_type,
+        "char_start": item.start,
+        "char_end": item.end,
+        "before": item.before,
+        "after": item.after,
+        "source_sha256": sha256(chunk["text"].encode()).hexdigest(),
+        "transformed_sha256": sha256(item.transformed.encode()).hexdigest(),
+        "trace_verified": reconstructed == item.transformed
+        and chunk["text"][item.start : item.end] == item.before,
+    }
+
+
+def counterfactual_traces(target: CorpusGeometry) -> list[JsonObject]:
+    """Construction provenance for every deterministic edit, without embedding any of them."""
+    return [_trace(target, item) for item in _transformations(target)]
+
+
 def build_counterfactual_controls(
     target: CorpusGeometry, embed: EmbedTexts
 ) -> CounterfactualControls:
@@ -183,28 +208,8 @@ def build_counterfactual_controls(
     for position, item in enumerate(transformations):
         score = dot(target.vectors.row(item.source), transformed.row(position))
         source_scores.setdefault(item.source, []).append(score)
-        chunk = target.chunks[item.source]
-        reconstructed = chunk["text"][: item.start] + item.after + chunk["text"][item.end :]
-        trace_verified = reconstructed == item.transformed and (
-            chunk["text"][item.start : item.end] == item.before
-        )
         edit_counts[item.edit_type] = edit_counts.get(item.edit_type, 0) + 1
-        traces.append(
-            {
-                "dataset": target.name,
-                "source_ordinal": item.source,
-                "doc_id": chunk["doc_id"],
-                "chunk_id": chunk.get("chunk_id", ""),
-                "edit_type": item.edit_type,
-                "char_start": item.start,
-                "char_end": item.end,
-                "before": item.before,
-                "after": item.after,
-                "source_sha256": sha256(chunk["text"].encode()).hexdigest(),
-                "transformed_sha256": sha256(item.transformed.encode()).hexdigest(),
-                "trace_verified": trace_verified,
-            }
-        )
+        traces.append(_trace(target, item))
     unique_source_texts = len({target.chunks[source]["text"] for source in source_scores})
     return CounterfactualControls(
         scores=sorted(score for values in source_scores.values() for score in values),

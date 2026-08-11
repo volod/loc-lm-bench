@@ -5,6 +5,12 @@ import json
 import pytest
 
 from conflict_helpers import FIXTURE_CORPUS, bow_vector, fake_store_view
+from llb.conflicts.constants import (
+    REL_COMPLEMENTARY,
+    REL_CONTRADICTS,
+    RESEARCH_GENERATION_NEXT,
+    RESEARCH_GENERATION_THIRD,
+)
 from llb.conflicts.null_research import RESEARCH_METHODS, run_null_research
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
@@ -22,6 +28,7 @@ from llb.conflicts.null_research_geometry import (
 )
 from llb.conflicts.null_research_nextgen import ADVANCED_RESEARCH_METHODS
 from llb.conflicts.null_research_report import write_null_research
+from llb.conflicts.null_research_third import THIRD_RESEARCH_METHODS
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vectorops import VectorSet
 
@@ -136,7 +143,7 @@ def test_next_generation_matrix_tracks_dependence_and_counterfactual_provenance(
         reference=(FIXTURE_CORPUS, _reference_store("general")),
         domain_reference=(FIXTURE_CORPUS, _reference_store("domain")),
         embed=lambda texts: [bow_vector(text) for text in texts],
-        next_generation=True,
+        generation=RESEARCH_GENERATION_NEXT,
         fpr=0.1,
         max_goods_candidates=0,
         matches_per_reference=1,
@@ -172,3 +179,101 @@ def test_next_generation_matrix_tracks_dependence_and_counterfactual_provenance(
     assert "control_traces" not in persisted
     assert persisted["control_trace_rows"] == len(summary["control_traces"])
     assert paths["control_traces"].read_text(encoding="utf-8")
+
+
+def _scripted_adjudicator(relation_by_position: dict[int, str]):
+    """A deterministic stand-in for the local model: nth call -> nth scripted relation."""
+    calls = {"n": 0}
+
+    def complete(prompt: str) -> str:
+        position = calls["n"]
+        calls["n"] += 1
+        relation = relation_by_position.get(position % 2, REL_COMPLEMENTARY)
+        return json.dumps(
+            {
+                "relation": relation,
+                "confidence": 0.9,
+                "claim_a": "",
+                "claim_b": "",
+                "rationale": "scripted",
+            }
+        )
+
+    return complete
+
+
+@pytest.fixture(scope="module")
+def third_generation(tmp_path_factory):
+    """One deterministic third-generation run, shared by the assertions below."""
+    store = fake_store_view()
+    corpus = (FIXTURE_CORPUS, store)
+    summary = run_null_research(
+        fixture=corpus,
+        hr=corpus,
+        goods=corpus,
+        reference=(FIXTURE_CORPUS, _reference_store("general")),
+        domain_reference=(FIXTURE_CORPUS, _reference_store("domain")),
+        embed=lambda texts: [bow_vector(text) for text in texts],
+        complete=_scripted_adjudicator({0: REL_CONTRADICTS, 1: REL_COMPLEMENTARY}),
+        generation=RESEARCH_GENERATION_THIRD,
+        adjudicator_model="scripted-fake",
+        fpr=0.1,
+        max_goods_candidates=6,
+        adjudication_budget=6,
+        role_samples_per_type=1,
+        seed=5,
+    )
+    paths = write_null_research(tmp_path_factory.mktemp("third-generation"), summary)
+    return summary, paths
+
+
+def test_third_generation_bounds_the_control_bank_a_usable_tail_would_need(third_generation):
+    summary, _ = third_generation
+
+    assert summary["research_generation"] == "third"
+    assert summary["parameters"]["adjudicator_model"] == "scripted-fake"
+    assert [method["method"] for method in summary["methods"]] == list(THIRD_RESEARCH_METHODS)
+
+    feasibility = summary["feasibility"]["datasets"]["hr"]
+    assert feasibility["required_independent_units"] > feasibility["available_independent_units"]
+    assert not summary["feasibility"]["feasible"]
+
+    comparable = len(prepare_geometry("reference", FIXTURE_CORPUS, _reference_store()).allowed)
+    balanced = summary["methods"][0]
+    diagnostics = balanced["diagnostics"]["hr"]
+    assert diagnostics["unique_reference_claims"] == comparable * 2
+    assert "held_out_domain_membership_auc" in diagnostics
+    assert not balanced["gates"]["operating_point_feasible"]
+    tail = balanced["null_tails"]["hr"]
+    lower, upper = tail["tail_rate_two_way_95"]
+    assert lower <= tail["weighted_tail_rate"] <= upper
+
+    identifiability = summary["identifiability"]["hr"]
+    assert identifiability["observationally_equivalent_mixtures"] >= 1
+    low, high = identifiability["implied_selected_rows_range"]
+    assert low <= high
+
+
+def test_third_generation_measures_claim_precision_and_verifies_control_roles(third_generation):
+    summary, paths = third_generation
+
+    precision = summary["claim_precision"]
+    curve = precision["datasets"]["hr"]["precision_curve"]
+    assert [point["budget"] for point in curve] == [6]
+    assert curve[0]["precision"] == pytest.approx(0.5)
+    assert curve[0]["two_way_clustered_lcb"] <= curve[0]["precision"]
+    assert precision["gates"]["rows_adjudicated"]
+
+    roles = summary["control_role_verification"]
+    assert roles["verified_rows"] > 0
+    assert set(roles["by_edit_type"]) <= {
+        "capitalized_argument_swap",
+        "quantity_or_date_swap",
+        "modality_flip",
+    }
+
+    report = paths["report"].read_text(encoding="utf-8")
+    assert "Operating-point feasibility" in report
+    assert "Cosine-only identifiability" in report
+    assert "Claim-tier precision" in report
+    assert "Verified control roles" in report

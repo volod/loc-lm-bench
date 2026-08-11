@@ -27,7 +27,6 @@ from llb.conflicts.null_distribution import (
 
 if TYPE_CHECKING:
     from llb.conflicts.models import AuditResult
-    from llb.prep.frontier_telemetry import LLMComplete
 
 
 @app.command("audit-corpus-conflicts")
@@ -115,6 +114,7 @@ def audit_corpus_conflicts_cmd(
     ),
 ) -> None:
     """Report duplicated, stale, and contradictory knowledge in a corpus. Never edits the corpus."""
+    from llb.conflicts.adjudicator import build_adjudicator
     from llb.conflicts.audit import AuditParams, run_audit
     from llb.conflicts.report import write_audit
     from llb.conflicts.store_access import load_store_view
@@ -136,7 +136,7 @@ def audit_corpus_conflicts_cmd(
             raise typer.BadParameter(
                 "--effort claim needs --conflict-model (the local model adjudicating claim pairs)"
             )
-        complete = _build_completer(conflict_model, conflict_backend, conflict_base_url)
+        complete = build_adjudicator(conflict_model, conflict_backend, conflict_base_url)
 
     items = None
     if goldset is not None:
@@ -171,25 +171,6 @@ def audit_corpus_conflicts_cmd(
     )
     paths = write_audit(out_dir, result)
     _echo_summary(result, paths)
-
-
-def _build_completer(model: str, backend: str, base_url: Optional[str]) -> "LLMComplete":
-    """The injectable prompt -> text callable for the claim tier (local endpoint by default)."""
-    from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.prep.ontology.endpoint import build_complete
-    from llb.prep.ontology.endpoint_config import (
-        DEFAULT_LOCAL_BASE_URL,
-        ENDPOINT_LOCAL,
-        EndpointConfig,
-    )
-
-    config = EndpointConfig(
-        kind=ENDPOINT_LOCAL,
-        model=model,
-        backend=backend,
-        base_url=base_url or DEFAULT_LOCAL_BASE_URL,
-    )
-    return build_complete(config, ProvenanceLog())
 
 
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:

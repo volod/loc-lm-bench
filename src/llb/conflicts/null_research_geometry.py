@@ -13,6 +13,7 @@ from llb.conflicts.semantic_filter import select_content_chunks
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vector_math import Vector, dot
 from llb.conflicts.vectorops import VectorSet
+from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
 
 EmbedTexts = Callable[[list[str]], object]
@@ -182,3 +183,23 @@ def permutation_null(
 def held_out_document_null(target: CorpusGeometry) -> list[float]:
     """The maximum chunk cosine for each held-out unordered document pair."""
     return sorted(target.document_maxima.values())
+
+
+def geometry_payload(geometry: CorpusGeometry) -> JsonObject:
+    return {
+        "corpus_root": geometry.corpus_root,
+        "store_dir": str(geometry.store_dir),
+        "embedding_model": geometry.embedding_model,
+        "corpus_fingerprint": geometry.corpus_fingerprint,
+        "dimensions": geometry.vectors.dim,
+        "chunks": len(geometry.chunks),
+        "comparable_chunks": len(geometry.allowed),
+        "unique_comparable_texts": len(
+            {geometry.chunks[index]["text"] for index in geometry.allowed}
+        ),
+        "documents": len({geometry.chunks[index]["doc_id"] for index in geometry.allowed}),
+        "comparable_chunk_pairs": len(geometry.observed_similarities),
+        "document_pairs": len(geometry.document_maxima),
+        "centered": geometry.centered,
+        **geometry.excluded,
+    }

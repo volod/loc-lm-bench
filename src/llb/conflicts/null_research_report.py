@@ -4,6 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from llb.conflicts.null_research_report_third import (
+    decision_evidence,
+    feasibility_section,
+    identifiability_section,
+    precision_section,
+    role_section,
+)
 from llb.core.contracts.common import JsonObject
 
 NULL_RESEARCH_SUMMARY = "summary.json"
@@ -46,6 +53,19 @@ _METHOD_LIMITATIONS = {
         "Traceable capitalized-argument, quantity, and modality edits preserve topic and form, "
         "but may create a real conflict relation and lack independent semantic verification, so "
         "they are not an independent null."
+    ),
+    "balanced_transport_control": (
+        "Cross-fitted propensity weighting uses every reference claim once, but a balanced "
+        "covariate distribution does not make the cosine scale exchangeable, and the bank still "
+        "bounds how fine a tail can be certified."
+    ),
+    "whitened_cosine": (
+        "Whitening equalizes encoder axis variance; it rescales every pair, so its absolute "
+        "cosines are not comparable to the shipped threshold and recovery must be read per pair."
+    ),
+    "anisotropy_stripped_cosine": (
+        "Removing several leading directions removes more corpus shift than mean centering, and "
+        "also removes whatever topical signal those directions carried."
     ),
 }
 
@@ -160,9 +180,13 @@ def render_null_research(summary: JsonObject) -> str:
         "| --- | --- | --- | --- | --- | --- |",
     ]
     lines.extend(_dataset_rows(datasets))
-    lines.extend(["", "## Acceptance matrix", "", *_method_rows(typed_methods), ""])
+    lines.extend(["", *feasibility_section(summary)])
+    lines.extend(["## Acceptance matrix", "", *_method_rows(typed_methods), ""])
     for method in typed_methods:
         lines.extend(_method_section(method))
+    lines.extend(identifiability_section(summary))
+    lines.extend(precision_section(summary))
+    lines.extend(role_section(summary))
     if summary["verdict"] == "negative":
         lines.extend(
             [
@@ -173,6 +197,7 @@ def render_null_research(summary: JsonObject) -> str:
                 "move toward claim-tier measured precision before another semantic default is "
                 "considered.",
                 "",
+                *decision_evidence(summary),
             ]
         )
     return "\n".join(lines)

@@ -2,7 +2,7 @@
 
 import math
 
-from llb.conflicts.null_research_advanced import _gates, _tail_payload
+from llb.conflicts.null_research_advanced import candidate_gates, clustered_tail_payload
 from llb.conflicts.null_research_controls import MatchedControls
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
@@ -87,7 +87,7 @@ def build_cluster_fdr_candidate(
     thresholds = {dataset: result[0] for dataset, result in fitted.items()}
     diagnostics = {dataset: control.diagnostics for dataset, control in controls.items()}
     tails = {
-        dataset: _tail_payload(
+        dataset: clustered_tail_payload(
             control.scores,
             control.cluster_maxima(),
             thresholds[dataset],
@@ -108,7 +108,7 @@ def build_cluster_fdr_candidate(
         thresholds["goods"],
         transfer_threshold,
     )
-    gates = _gates(
+    gates = candidate_gates(
         fixture,
         rank,
         hr,

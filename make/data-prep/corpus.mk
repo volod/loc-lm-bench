@@ -73,7 +73,7 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
 	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
 
-research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and REFERENCE stores (NEXT_GENERATION=1 also needs DOMAIN_REFERENCE_*; NULL_RESEARCH_OUT=, EMBED_DEVICE=cuda)
+research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and REFERENCE stores (GENERATION=initial|next|third; next/third also need DOMAIN_REFERENCE_*, third needs CONFLICT_MODEL=; NULL_RESEARCH_OUT=, EMBED_DEVICE=cuda)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--fixture-corpus "$(FIXTURE_CORPUS)" --fixture-store "$(FIXTURE_STORE)" \
 		--hr-corpus "$(HR_CORPUS)" --hr-store "$(HR_STORE)" \
@@ -81,7 +81,12 @@ research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and
 		--reference-corpus "$(REFERENCE_CORPUS)" --reference-store "$(REFERENCE_STORE)"); \
 	if [ -n "$(DOMAIN_REFERENCE_CORPUS)" ]; then args+=(--domain-reference-corpus "$(DOMAIN_REFERENCE_CORPUS)"); fi; \
 	if [ -n "$(DOMAIN_REFERENCE_STORE)" ]; then args+=(--domain-reference-store "$(DOMAIN_REFERENCE_STORE)"); fi; \
-	if [ -n "$(NEXT_GENERATION)" ]; then args+=(--next-generation); fi; \
+	if [ -n "$(GENERATION)" ]; then args+=(--generation "$(GENERATION)"); fi; \
+	if [ -n "$(CONFLICT_MODEL)" ]; then args+=(--conflict-model "$(CONFLICT_MODEL)"); fi; \
+	if [ -n "$(CONFLICT_BACKEND)" ]; then args+=(--conflict-backend "$(CONFLICT_BACKEND)"); fi; \
+	if [ -n "$(CONFLICT_BASE_URL)" ]; then args+=(--conflict-base-url "$(CONFLICT_BASE_URL)"); fi; \
+	if [ -n "$(ADJUDICATION_BUDGET)" ]; then args+=(--adjudication-budget "$(ADJUDICATION_BUDGET)"); fi; \
+	if [ -n "$(ROLE_SAMPLES_PER_TYPE)" ]; then args+=(--role-samples-per-type "$(ROLE_SAMPLES_PER_TYPE)"); fi; \
 	if [ -n "$(NULL_RESEARCH_OUT)" ]; then args+=(--out "$(NULL_RESEARCH_OUT)"); fi; \
 	if [ -n "$(NULL_FPR)" ]; then args+=(--fpr "$(NULL_FPR)"); fi; \
 	if [ -n "$(RANK_BUDGET)" ]; then args+=(--rank-budget "$(RANK_BUDGET)"); fi; \

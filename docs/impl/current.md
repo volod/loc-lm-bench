@@ -24,7 +24,7 @@ the runs behind it.
 | Area | Owns | Shape |
 | --- | --- | --- |
 | [Overview](current/overview.md) | System shape, setup, repo layout, artifact roots | page |
-| [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 9 pages |
+| [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 10 pages |
 | [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 13 pages |
 | [GraphRAG](current/graphrag-backend.md) | Knowledge-graph retrieval and graph-vs-vector evidence | 4 pages |
 | [Extended workflows](current/extended-workflows.md) | Agentic harnesses, agent context policies, prompt systems, fine-tuning | 14 pages |

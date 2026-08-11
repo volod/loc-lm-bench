@@ -11,6 +11,7 @@ from llb.conflicts.null_research_evaluation import (
     count_at_or_above,
     fixture_metrics,
     null_tail_payload,
+    paired_transfer_payload,
     simulated_wilson_coverage,
     threshold_for_fpr,
     transfer_payload,
@@ -28,8 +29,7 @@ ADVANCED_RESEARCH_METHODS = (
 
 
 @dataclass(frozen=True)
-class _ResidualSpace:
-    sorted_scores: list[float]
+class ResidualSpace:
     raw_scores: list[float]
     scores: list[float]
     document_maxima: dict[DocPair, float]
@@ -80,10 +80,9 @@ def _residual_document_maxima(
     return maxima
 
 
-def _residual_space(corpus: CorpusGeometry, controls: MatchedControls) -> _ResidualSpace:
+def residual_space(corpus: CorpusGeometry, controls: MatchedControls) -> ResidualSpace:
     raw_scores, scores = _residual_pair_scores(corpus, controls)
-    return _ResidualSpace(
-        sorted(scores),
+    return ResidualSpace(
         raw_scores,
         scores,
         _residual_document_maxima(corpus, controls),
@@ -91,25 +90,12 @@ def _residual_space(corpus: CorpusGeometry, controls: MatchedControls) -> _Resid
 
 
 def _residual_transfer(
-    space: _ResidualSpace, threshold: float, baseline_threshold: float
+    space: ResidualSpace, threshold: float, baseline_threshold: float
 ) -> JsonObject:
-    selected = count_at_or_above(space.sorted_scores, threshold)
-    baseline = sum(score >= baseline_threshold for score in space.raw_scores)
-    recovered = sum(
-        raw >= baseline_threshold and residual >= threshold
-        for raw, residual in zip(space.raw_scores, space.scores)
-    )
-    return {
-        "threshold": round(threshold, 6),
-        "selected_chunk_pairs": selected,
-        "baseline_threshold": baseline_threshold,
-        "baseline_chunk_pairs": baseline,
-        "baseline_recovered": recovered,
-        "baseline_recall": round(recovered / baseline, 6) if baseline else 1.0,
-    }
+    return paired_transfer_payload(space.raw_scores, space.scores, threshold, baseline_threshold)
 
 
-def _tail_payload(
+def clustered_tail_payload(
     scores: list[float],
     cluster_maxima: list[float],
     threshold: float,
@@ -139,7 +125,7 @@ def _tail_payload(
     return payload
 
 
-def _gates(
+def candidate_gates(
     fixture: JsonObject,
     rank: JsonObject,
     hr: JsonObject,
@@ -150,6 +136,7 @@ def _gates(
     max_goods_candidates: int,
     eligible: bool,
     control_key: str,
+    extra: dict[str, bool] | None = None,
 ) -> JsonObject:
     gates = {
         "beats_rank_fixture_f1": float(fixture["f1"]) > float(rank["f1"]),
@@ -159,11 +146,12 @@ def _gates(
         "simulation_coverage": all(bool(tail["coverage_valid"]) for tail in tails.values()),
         "controls_valid": all(bool(payload[control_key]) for payload in diagnostics.values()),
         "eligible_as_independent_null": eligible,
+        **(extra or {}),
     }
     return {**gates, "accepted": all(gates.values())}
 
 
-def _fpr_candidate(
+def fpr_candidate(
     name: str,
     control_scores: dict[str, list[float]],
     cluster_maxima: dict[str, list[float]],
@@ -178,13 +166,13 @@ def _fpr_candidate(
     seed: int,
     eligible: bool,
     control_key: str,
-    residual_spaces: dict[str, _ResidualSpace] | None = None,
+    residual_spaces: dict[str, ResidualSpace] | None = None,
 ) -> JsonObject:
     thresholds = {
         dataset: threshold_for_fpr(scores, fpr) for dataset, scores in control_scores.items()
     }
     tails = {
-        dataset: _tail_payload(
+        dataset: clustered_tail_payload(
             control_scores[dataset],
             cluster_maxima[dataset],
             thresholds[dataset],
@@ -216,7 +204,7 @@ def _fpr_candidate(
         goods = _residual_transfer(
             residual_spaces["goods"], thresholds["goods"], transfer_threshold
         )
-    gates = _gates(
+    gates = candidate_gates(
         fixture,
         rank,
         hr,
