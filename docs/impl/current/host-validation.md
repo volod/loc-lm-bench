@@ -748,6 +748,16 @@ in this configuration (radon always exits 0, complexipy is asked for a plain lis
 one pass shows every peak. The thresholds are the shipped numbers: a finding is split, not
 accommodated by raising the maximum.
 
+**Both scanners are pinned exactly** (`radon==6.0.1`, `complexipy==6.0.0`), for the reason the
+shell-lint gate pins its ShellCheck wheel: the tool version is half of the verdict. Complexipy
+rescored this unchanged tree across its 5.6.1 -> 6.0.0 boundary in both directions --
+`persist_run` 18 -> 14 and `research_conflict_nulls_cmd` 16 -> 15 (dropping to the maximum),
+`fetch_manifest` 11 -> 13 (climbing) -- so a floating requirement let the same commit fail the gate
+on the host that resolved 5.6.1 and pass on the host that resolved 6.0.0. The pin is what makes
+`COGNITIVE_MAX=15` mean one thing. Upgrading either scanner is a deliberate edit: change the pin in
+`pyproject.toml`, refresh `uv.lock`, then run `make complexity-gate` plus `make ci` and split
+whatever the new algorithm surfaces.
+
 The scans, thresholds, and labels live once in `scripts/shared/complexity.sh`, sourced by both the
 gate and `scripts/code_quality.sh`, so the sweep fails on exactly what CI fails on and prints it
 identically (block reporting is `llb_print_block` / `llb_report_if_output` / `llb_fail_if_output`

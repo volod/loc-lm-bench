@@ -1,7 +1,7 @@
 """CLI for the corpus-conflict independent-null research matrix."""
 
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import typer
 
@@ -19,6 +19,10 @@ from llb.conflicts.null_research_evaluation import (
     DEFAULT_RESEARCH_RANK_BUDGET,
     DEFAULT_TRANSFER_THRESHOLD,
 )
+
+if TYPE_CHECKING:
+    from llb.conflicts.store_access import StoreView
+    from llb.core.contracts.common import JsonObject
 
 
 @app.command("research-conflict-nulls")
@@ -114,42 +118,19 @@ def research_conflict_nulls_cmd(
     from llb.core.store_generations import generation_timestamp
     from llb.rag.embedding import Embedder
 
-    if generation not in RESEARCH_GENERATIONS:
-        raise typer.BadParameter(
-            f"unknown generation {generation!r}; choose one of {', '.join(RESEARCH_GENERATIONS)}"
-        )
+    _validate_generation(
+        generation, domain_reference_corpus, domain_reference_store, conflict_model
+    )
     fixture_view = load_store_view(fixture_store)
     hr_view = load_store_view(hr_store)
     goods_view = load_store_view(goods_store)
     reference_view = load_store_view(reference_store)
-    if (domain_reference_corpus is None) != (domain_reference_store is None):
-        raise typer.BadParameter("domain reference corpus and store must be supplied together")
-    if generation != RESEARCH_GENERATION_INITIAL and domain_reference_corpus is None:
-        raise typer.BadParameter(
-            f"--generation {generation} requires a domain reference corpus and store"
-        )
-    if generation == RESEARCH_GENERATION_THIRD and not conflict_model:
-        raise typer.BadParameter(
-            "--generation third needs --conflict-model: the claim-tier precision and control-role "
-            "lanes are model-adjudicated"
-        )
     domain_reference_view = (
         load_store_view(domain_reference_store) if domain_reference_store is not None else None
     )
-    models = {
-        fixture_view.embedding_model,
-        hr_view.embedding_model,
-        goods_view.embedding_model,
-        reference_view.embedding_model,
-    }
-    if domain_reference_view is not None:
-        models.add(domain_reference_view.embedding_model)
-    if len(models) != 1:
-        raise typer.BadParameter(
-            "all research stores must use the same embedding model; found "
-            + ", ".join(sorted(models))
-        )
-    model = next(iter(models))
+    model = _shared_embedding_model(
+        [fixture_view, hr_view, goods_view, reference_view, domain_reference_view]
+    )
     complete = build_adjudicator(conflict_model, conflict_backend, conflict_base_url)
     # The third generation scores stored vectors and constructed edits only, so it never loads an
     # encoder -- which also leaves the GPU to the adjudicating model.
@@ -188,6 +169,45 @@ def research_conflict_nulls_cmd(
         resolve_data_dir() / "corpus-conflicts" / "null-research" / generation_timestamp()
     )
     paths = write_null_research(out_dir, summary)
+    _echo_summary(generation, summary, paths)
+
+
+def _validate_generation(
+    generation: str,
+    domain_reference_corpus: Optional[Path],
+    domain_reference_store: Optional[Path],
+    conflict_model: Optional[str],
+) -> None:
+    """Reject option combinations no generation can run, before any store is opened."""
+    if generation not in RESEARCH_GENERATIONS:
+        raise typer.BadParameter(
+            f"unknown generation {generation!r}; choose one of {', '.join(RESEARCH_GENERATIONS)}"
+        )
+    if (domain_reference_corpus is None) != (domain_reference_store is None):
+        raise typer.BadParameter("domain reference corpus and store must be supplied together")
+    if generation != RESEARCH_GENERATION_INITIAL and domain_reference_corpus is None:
+        raise typer.BadParameter(
+            f"--generation {generation} requires a domain reference corpus and store"
+        )
+    if generation == RESEARCH_GENERATION_THIRD and not conflict_model:
+        raise typer.BadParameter(
+            "--generation third needs --conflict-model: the claim-tier precision and control-role "
+            "lanes are model-adjudicated"
+        )
+
+
+def _shared_embedding_model(views: list[Optional["StoreView"]]) -> str:
+    """Return the one encoder every supplied store was built with (None entries are skipped)."""
+    models = {view.embedding_model for view in views if view is not None}
+    if len(models) != 1:
+        raise typer.BadParameter(
+            "all research stores must use the same embedding model; found "
+            + ", ".join(sorted(models))
+        )
+    return next(iter(models))
+
+
+def _echo_summary(generation: str, summary: "JsonObject", paths: dict[str, Path]) -> None:
     typer.echo(f"[conflict-null] generation={generation} verdict={summary['verdict']}")
     for method in summary["methods"]:
         typer.echo(
