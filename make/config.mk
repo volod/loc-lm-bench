@@ -21,6 +21,16 @@ PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
 EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,track,board,viz,prep,telemetry,goldset,cutoff,dev
 VENV_INSTALL_VLLM ?= auto
+# `make venv` installs with `uv sync`, so the local venv holds exactly the uv.lock versions GitHub
+# CI installs (.github/workflows/ci.yml) -- an unpinned `uv pip install` on either side is how a
+# lint/type error reaches CI that no local `make ci` can reproduce. uv.lock is refreshed
+# automatically when pyproject.toml dependencies change; COMMIT the result, since CI syncs
+# `--locked` and fails on a stale lock. VENV_LOCKED=1 makes `make venv` fail the same way instead
+# of relocking.
+VENV_LOCKED ?=
+# EXTRAS is a comma list (pip syntax); uv sync takes one --extra per group.
+UV_SYNC_EXTRAS = $(foreach extra,$(subst $(comma), ,$(EXTRAS)),--extra $(extra))
+UV_SYNC_LOCK_FLAG = $(if $(filter 1 true yes,$(VENV_LOCKED)),--locked,)
 
 # Stable human-reviewed development fixture. Runtime imports adopt matching reviewed ids.
 PUBLISHED_GOLDSET_ROOT := $(PROJECT_ROOT)/samples/goldsets/ua_squad_postedited_v1

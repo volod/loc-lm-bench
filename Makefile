@@ -4,6 +4,7 @@ PROJECT_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 VENV := $(PROJECT_ROOT)/.venv
 PY := $(VENV)/bin/python
 PYTHON_VERSION := 3.13
+comma := ,
 DATA_DIR ?= $(shell bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_load_env; printf "%s" "$$DATA_DIR"')
 
 .DEFAULT_GOAL := help

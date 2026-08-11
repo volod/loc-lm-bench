@@ -95,7 +95,7 @@ def membership_diagnostics(target: np.ndarray, reference: np.ndarray) -> JsonObj
     negative_scores: list[float] = []
     if rows >= 4:
         for fold in (0, 1):
-            train = np.asarray([index % 2 != fold for index in range(rows)])
+            train = np.asarray([index % 2 != fold for index in range(rows)], dtype=np.bool_)
             test = ~train
             pooled = np.concatenate((target[train], reference[train]))
             variance = pooled.var(axis=0)

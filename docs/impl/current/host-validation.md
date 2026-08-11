@@ -893,11 +893,15 @@ puzzling on a host that has `shellcheck` on `PATH`. `LLB_SHELLCHECK` still overr
 venv living elsewhere. Consequently the `dev` apt profile is now **empty**
 (`scripts/apt/dev.packages` keeps the file and the comment; the profile stays for a future dev-only
 OS package) and [dev setup](../../guides/development/dev-setup.md#apt-dependencies-debianubuntu)
-no longer lists `shellcheck` as a fallback. The exact project requirement is intentional because
-`make venv` uses `uv pip install -e ".[dev]"`, which does not consume `uv.lock`: a host resolving the
-extra today and one resolving it months later still install the same wheel. An upgrade therefore
-costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification with
-`make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move together.
+no longer lists `shellcheck` as a fallback. The exact project requirement is intentional and is the
+outer of two guarantees. `make venv` and GitHub CI both install through `uv sync` (the local
+target with `--inexact`, the workflow with `--locked`), so `uv.lock` already pins the wheel for
+every venv either one builds; the `==` requirement in `pyproject.toml` extends the same pin to an
+install that bypasses the lock -- a direct `uv pip install -e ".[dev]"`, or plain pip. A host
+resolving the extra today and one resolving it months later still install the same wheel. An
+upgrade therefore costs one deliberate pin edit in `pyproject.toml`, `uv lock`, and verification
+with `make shell-lint-gate` plus `make ci`; the lock and the fresh-install requirement move
+together.
 The binary resolution behavior remains covered by
 `tests/llb/quality/test_shell_lint_resolution.py`.
 
