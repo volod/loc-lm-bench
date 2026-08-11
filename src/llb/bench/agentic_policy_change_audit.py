@@ -67,7 +67,12 @@ AUDITED_KINDS = (
 # the design root and publishes no number, so it is readable as geometry but is deliberately absent
 # from `AUDITED_DESIGN_PATHS` -- nothing it declares is evidence a constant change can invalidate.
 KIND_INTERACTION = "policy_change_interaction"
-GEOMETRY_KINDS = (*AUDITED_KINDS, KIND_INTERACTION)
+# The other FIXTURE kind: the repeatedly folding geometry that bounds how far an invariance verdict
+# read under perfect play carries (`agentic_memory_two_fold_fixture`). Its cells are deliberately
+# NOT cap-fitting -- a cap-fitting guard cannot fold twice -- so it publishes no number either and
+# is likewise absent from `AUDITED_DESIGN_PATHS`.
+KIND_TWO_FOLD = "compact_two_fold_geometry"
+GEOMETRY_KINDS = (*AUDITED_KINDS, KIND_INTERACTION, KIND_TWO_FOLD)
 
 # The committed studies whose published numbers an agent policy change can invalidate. One registry,
 # because the CLI audit and the CI pin gate must never walk different evidence.

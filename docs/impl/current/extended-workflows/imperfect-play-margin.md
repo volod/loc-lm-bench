@@ -53,6 +53,21 @@ geometry whose budget leaves no room for a wasted step is refused (`MIN_BUDGETED
 rather than publishing a zero margin as a margin: there the worst case IS perfect play, and
 certifying a guard against it would state a safety property the run cannot have.
 
+**+453 is a rate, not a constant.** It looks like a constant only because every cap-fitting study
+holds `max_steps_margin` at 4. Read at three step budgets on the same depth-10 geometry, the margin
+is one price per wasted step and nothing else:
+
+| `max_steps_margin` | budgeted extra steps | margin | chars per extra step |
+| ---: | ---: | ---: | ---: |
+| 4 | 3 | +453 | 151 |
+| 6 | 5 | +755 | 151 |
+| 8 | 7 | +1057 | 151 |
+
+So a study that widens its step budget to give a slow controller more room widens the head-room its
+guards must carry by exactly the same arithmetic; `margin_scaling` in
+`src/llb/bench/agentic_memory_two_fold_reading.py` re-reads it per design rather than quoting the
+number, and CI asserts the rate is one value across the read budgets.
+
 ## What design validation does with it
 
 `validate_surface_cells` certifies every predeclared guard against the margin-narrowed band
@@ -111,15 +126,64 @@ count is what says how far the invariance CLAIM reaches.
 On the committed surface the two verdicts agree cell for cell: five cells bit-identical under both
 bounds and `surface-d10-g23000` bound-sensitive at 302 elided chars, under perfect play and under
 imperfect play alike, with `worst_case_only_sensitive` empty. The mechanism is visible in the
-geometry rather than lucky: a cap-fitting guard puts the compact trigger inside the prefix the two
-walks SHARE, so the first fold offers the summarizer the same bytes under both, and every measured
-cap-fitting cell folds exactly once. The published invariance is therefore a statement about the
-transcripts a real controller produces, and the check is what would catch a future cell -- a
-repeatedly folding one, say -- where that stops holding.
+geometry rather than lucky, and the next section is why: a cap-fitting guard puts the compact
+trigger inside the prefix the two walks SHARE, and a cap-fitting cell folds exactly once, so the
+one fold offers the summarizer the same bytes under both walks.
 
 Worst-case replay is defined only for the memory-chain task builder and refuses any other
 (`worst_case_replay_controller`): the pipeline shapes end when their planted files run out, so
 stalling one is a different task rather than a longer walk of the same one.
+
+## Why a cap-fitting cell folds exactly once
+
+Every cap-fitting cell ever measured here folds ONCE per episode, and that is a property of the band
+rather than of the cells that happened to be picked. Trigger hysteresis raises the trigger to the
+FULL guard after the first summary (`episode_prompt.step_prompt`), so a second fold needs the
+post-fold prompt to cross the whole guard. A fold replaces at least one transcript entry with a
+strictly shorter summary line, so the post-fold prompt sits BELOW the walk's own peak -- and a
+cap-fitting guard sits above that peak by construction, imperfect-play margin included. The
+inequality has no room in it, and spending the whole step budget does not change it: the stalling
+walk raises the peak, but the guard is above the raised peak too.
+
+So the agreement above is structural. It is also a LIMIT: the published verdicts are all statements
+about one-fold transcripts, and a repeatedly folding cell is necessarily outside the cap-fitting
+band, below the cap peak, where the `observation_cap` arm overflows and no cost delta exists to
+publish. CI asserts both halves -- every committed surface cell folds exactly once under both walks,
+and the fixture below is refused if any of its cells clears its own cap peak.
+
+## The regime the invariance verdict does NOT cover
+
+`samples/benchmarks/agentic_compact_two_fold_geometry_design.json` is the committed fixture for the
+repeatedly folding regime. Like the interaction fixture it publishes no number and is deliberately
+absent from `AUDITED_DESIGN_PATHS`; what it carries is the validity limit on a statement made
+elsewhere. Two depth-10 cells at `compact_share=0.8`, both far below the 11,926-char cap peak:
+
+| cell | guard | guard / cap peak | oracle folds | worst-case folds | oracle verdict | worst-case verdict |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `twofold-d10-g7000` | 7000 | 0.59x | 2 | 3 | `bound_invariant` | **`bound_sensitive`** |
+| `twofold-d10-g6500` | 6500 | 0.55x | 3 | 3 | `bound_invariant` | `bound_invariant` |
+
+Verdict: **the invariance holds for one fold only**. On `twofold-d10-g7000` perfect play folds twice
+and offers the summarizer 2646 then 5327 chars, which both bounds clear, so the oracle walk calls
+the cell bit-identical under the retired and the shipped bound. The stalling walk spends its whole
+step budget, grows the post-fold transcript far enough for a THIRD fold, and that fold offers 5625
+chars -- 25 of which the `trigger` bound elides and the `window` bound does not. The two bounds stop
+sending the same prompts at model call 15, on a transcript the oracle never produces.
+
+The mechanism is sharper than "a longer transcript elides more": the per-fold margin
+(`fold_input_margin_chars`) is **zero at every fold the two walks share**. Imperfect play does not
+grow the folds the oracle already made -- it adds a later one, and that extra fold is where the
+bounds separate. The control cell is what keeps this a finding about the geometry rather than about
+the worst-case pass: it folds three times under both walks with byte-identical offered transcripts
+and comes out invariant under both.
+
+What this does NOT do is move any published number. Every published cell is cap-fitting, therefore
+one-fold, therefore covered by the agreement above; the fixture states where a FUTURE verdict would
+need re-reading -- a study that measures compact below the cap peak, or any change to compaction
+hysteresis that lets a cap-fitting cell fold twice. The fixture's own declarations are predeclared
+and checked (`declaration_drift`), so a runtime change that moves the regime reads as
+`the_declared_geometry_no_longer_measures_what_it_declares` rather than quietly becoming the new
+expectation.
 
 ## Implementation map
 
@@ -134,7 +198,9 @@ stalling one is a different task rather than a longer walk of the same one.
 | Observed extra steps read out of the run bundles | `src/llb/bench/agentic_memory_extra_steps.py` |
 | Worst-case bound-invariance verdict and its roll-up | `src/llb/bench/agentic_memory_cap_audit.py` |
 | Controller seam on the audit replay | `src/llb/bench/agentic_policy_change_replay.py`, `src/llb/bench/agentic_policy_change_audit.py`, `src/llb/bench/agentic_policy_change_tasks.py` |
-| Tests | `tests/llb/bench/test_agentic_memory_worst_case_probe.py` |
+| Two-fold fixture contract and geometry probe | `src/llb/bench/agentic_memory_two_fold_fixture.py`, `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` |
+| Two-fold audit rows, margin scaling, and the validity reading | `src/llb/bench/agentic_memory_two_fold_reading.py` |
+| Tests | `tests/llb/bench/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/test_agentic_memory_two_fold_geometry.py` |
 
 Everything above is deterministic replay over the tool world, so it runs in `make ci` with no
 backend and no GPU.

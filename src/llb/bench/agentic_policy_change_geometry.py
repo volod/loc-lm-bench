@@ -19,12 +19,15 @@ from llb.bench.agentic_policy_change_audit import (
     KIND_INTERACTION,
     KIND_KEEP_LONG,
     KIND_SURFACE,
+    KIND_TWO_FOLD,
 )
 
 # Cap-fitting cells publish a compact-minus-cap delta, so both arms are always replayed.
 CAP_FITTING_POLICIES = (POLICY_OBSERVATION_CAP, POLICY_COMPACT)
 # Studies whose cells sit flat at the design root (no surface / families / ladders nesting).
-FLAT_CELL_KINDS = frozenset({KIND_INTERACTION, KIND_CONSTANT_SWEEP, KIND_KEEP_LONG, KIND_HARNESS})
+FLAT_CELL_KINDS = frozenset(
+    {KIND_INTERACTION, KIND_CONSTANT_SWEEP, KIND_KEEP_LONG, KIND_HARNESS, KIND_TWO_FOLD}
+)
 
 
 def declared_geometry(design: dict[str, object], study_kind: str) -> list[dict[str, object]]:

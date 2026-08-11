@@ -43,33 +43,41 @@ Every task below carries an explicit `Agent status` line with one of four marker
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### agent-context-policy-imperfect-play-margin-on-a-repeatedly-folding-cell (optional)
+### agent-context-policy-repeated-fold-completion-cost
 
-The imperfect-play safety margin is measured against a ONE-FOLD regime, and both of its readings
-inherit that limit ([extended workflows](current/extended-workflows/imperfect-play-margin.md)). The
-worst-case bound-invariance verdict agrees with the oracle verdict cell for cell because a
-cap-fitting guard puts the first compact trigger inside the prefix the two walks SHARE -- and every
-measured cap-fitting cell folds exactly once, so there is no second fold for the wasted steps to
-change. A cell that folds twice breaks that argument: the stalling walk carries extra entries into
-the SECOND summarize input, which is the first place a real transcript could reach a
-summarize-input cap the oracle transcript never touches. Build the two-fold geometry (it is the same
-one `agent-context-policy-hysteresis-second-fold` needs), re-run the worst-case audit over it, and
-record whether `worst_case_only_sensitive` is still empty there -- if it is not, the published
-invariance statement needs a stated one-fold validity limit. While in that geometry, also read the
-margin itself: the wasted-step entry is a fixed 151 chars today because the workflow-complete notice
-does not grow with depth, and a post-fold stall appends summary-bearing prompts instead, so the
-+453-char margin may not be the constant it currently looks like.
+The repeatedly folding regime is now mapped byte for byte and NOT AT ALL by outcome: the committed
+two-fold fixture proves the prompts a real controller produces there differ from the oracle's, and
+says nothing about whether the agent still answers
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#the-regime-the-invariance-verdict-does-not-cover)).
+That gap matters most exactly there. The memory task's whole point is that one early fact must
+survive compaction, and a cell that folds three times re-summarizes a summary of a summary -- so the
+fact travels through three lossy hops instead of one, and a fixed-summary replay cannot see the
+loss because its summary is a constant. Run the committed fixture's two cells on a real model,
+score completion per fold count against the one-fold cap-fitting cells already measured, and record
+whether completion decays with the number of folds. If it does, the operator-facing routing rule
+needs a fold-count limit beside its trigger ratio; if it does not, compaction's fact-carrying is
+established on the regime it was never tested on. Read the `[memory: ...]` marker fold
+(`fold_memory_markers`) as the mechanism either way -- it is the one part of the summary that is
+NOT model-written, so a completion that survives may be surviving on the marker rather than on the
+summary.
 
-- Agent status: CLEAR
-- Dependencies: the worst-case probe and audit in
-  `src/llb/bench/agentic_memory_worst_case_probe.py` and `src/llb/bench/agentic_memory_cap_audit.py`
-  are current behavior; the two-fold geometry is shared with
-  `agent-context-policy-hysteresis-second-fold` below and should be built once.
-- User-visible outcome: the invariance and margin statements an operator applies either extend to
-  repeated compaction or carry an explicit one-fold boundary, instead of being silently over-applied.
-- Scope boundary: in scope -- the two-fold geometry as a CI fixture, the worst-case audit over it,
-  the per-fold margin reading, and the validity statement. Out of scope -- a GPU run, changing the
-  band rule, and shipped compaction hysteresis.
+- Agent status: RUN NEEDED
+- Dependencies: the committed geometry, both walks, and the per-fold summarize inputs are current
+  behavior in `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` and
+  `src/llb/bench/agentic_memory_two_fold_reading.py`; reuse `run_compact_vs_cap` with the compact
+  arm alone, since these guards are below the cap peak and an `observation_cap` arm there measures
+  overflow rather than cost.
+- User-visible outcome: an operator running a long session that compacts repeatedly learns whether
+  the answer survives the third fold, instead of inferring it from a one-fold measurement.
+- Scope boundary: in scope -- the compact-arm run on the committed cells, completion per fold count,
+  and the marker-versus-summary reading. Out of scope -- a cost delta (there is no usable cap arm
+  below the cap peak), changing compaction hysteresis, and a new folding strategy.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout.
+- Execution path: the fixture's two cells plus the depth-10 one-fold control on the CUDA host; CI
+  already covers the geometry, both verdicts, and the margin scaling with no GPU.
+- Acceptance gates: `make ci` green; every cell reports completion beside its measured fold count on
+  the identical task set and seed; the reading states whether completion falls with fold count and
+  whether the surviving fact came through the typed memory marker or the model-written summary.
 - Documentation target:
   [extended workflows](current/extended-workflows/imperfect-play-margin.md).
 
@@ -90,7 +98,10 @@ head-and-tail trim.
 
 - Agent status: RUN NEEDED
 - Dependencies: `compact_fold_input_probe` in `src/llb/bench/agentic_memory_boundary_probe.py`
-  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed.
+  predicts the elided span with no model, so the geometry is checkable before a GPU is warmed; it
+  also takes the imperfect-play controller now, so the search can start from a repeatedly folding
+  geometry where the shipped bound already elides
+  ([extended workflows](current/extended-workflows/imperfect-play-margin.md)).
 - User-visible outcome: an operator running a transcript too big to summarize whole learns what that
   costs, instead of finding out through a wrong answer read from a middle-elided summary.
 - Scope boundary: in scope -- the over-window geometry, the probe-backed predeclaration, and the
@@ -106,23 +117,32 @@ out of the cost once the trigger is fixed: after the first summary, trigger hyst
 next trigger to the full guard, and no tested transcript grows back that far
 ([extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis)).
 The trigger-only rule is therefore established only in the one-fold regime, and the regime where
-compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured. Push depth
-(or shrink the guard toward the cap peak) until at least two folds fire per episode, then re-run one
-equal-trigger family: if the deltas separate there, the guard re-enters through hysteresis and the
-portable rule needs a stated validity limit. The second fold also carries the running summary into
-the summarize input, and the shipped `window` bound sizes that input from the budget rather than the
-trigger, so record the per-fold summarize input beside the deltas -- a growing prior summary is the
-other way the guard could re-enter.
+compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured.
+
+Do NOT look for that geometry inside the cap-fitting band: a cap-fitting cell cannot fold twice, for
+a structural reason rather than a lack of searching
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#why-a-cap-fitting-cell-folds-exactly-once)),
+so "shrink the guard toward the cap peak" cannot work and pushing depth alone does not either. The
+repeatedly folding cells live BELOW the cap peak, where the `observation_cap` arm overflows and
+there is no compact-minus-cap delta to compare -- which is the real obstacle this task has to solve
+first. Restate the equal-trigger claim on a comparison that survives without a cap arm (compact
+against compact at equal triggers, on total model-input tokens), run one equal-trigger family over
+the committed two-fold geometry, and state whether the deltas separate. The later folds also carry
+the running summary into the summarize input, and the shipped `window` bound sizes that input from
+the budget rather than the trigger, so record the per-fold summarize input beside the deltas -- a
+growing prior summary is the other way the guard could re-enter.
 
 - Agent status: RUN NEEDED
-- Dependencies: the deterministic probe predicts the post-fold prompt growth that a second trigger
-  crossing requires (`compact_fold_input_probe` reports the summarize input per fold); reuse the
-  collapse design, the cell gate, and the equivalence band unchanged.
+- Dependencies: the committed repeatedly folding geometry and its per-fold summarize inputs are
+  current behavior (`samples/benchmarks/agentic_compact_two_fold_geometry_design.json`); reuse the
+  collapse design's family contract and equivalence band, but not its cap-fitting cell gate, which
+  by construction refuses every cell in this regime.
 - User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
   explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
-- Scope boundary: in scope -- a depth/guard geometry that forces two or more folds, one equal-trigger
-  family inside it, and the validity statement. Out of scope -- new families, new task shapes, and
-  changing shipped compaction hysteresis.
+- Scope boundary: in scope -- the cap-arm-free restatement of the equal-trigger comparison, one
+  family over the committed two-fold geometry, and the validity statement. Out of scope -- new task
+  shapes, changing shipped compaction hysteresis, and relaxing the cap-fitting gate on the studies
+  that legitimately use it.
 - Documentation target:
   [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
 
