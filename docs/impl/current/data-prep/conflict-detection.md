@@ -364,7 +364,7 @@ A decision group carries TWO counts of its work, and they are not the same numbe
 | count | what it counts | where it is computed | who prints it |
 | --- | --- | --- | --- |
 | **to decide** (`decide_rows`) | rows whose RELATION is not `complementary` (`is_actionable`) | detection, from the relation alone | `report.md` headline, decision table, precision block; `plan.json` decisions |
-| **to review** (`review_rows`) | rows whose POLICY outcome is `review_required` | resolution, from `(relation, tier, governance, policy)` | `plan.json` decisions, the CLI summary, `resolution_review.jsonl` |
+| **to review** (`review_rows`) | rows whose POLICY outcome is `review_required` | resolution, from `(relation, tier, governance, policy)` | `plan.json` decisions, the CLI summary, `resolution_review.jsonl`; the audit only when [asked to project it](#projecting-the-review-count-one-command-earlier) |
 
 Neither can serve both roles, and the reason is structural rather than an implementation gap: the
 review count is a property of a resolution POLICY, and the audit runs before an operator has chosen
@@ -395,6 +395,73 @@ reviewer meets the biggest open decision first; a group's records stay one conti
 way. `tests/llb/conflicts/test_two_counts.py` pins the divergence on a mixed fixture (one claim-tier
 duplicate the policy accepts plus one semantic-tier duplicate it escalates: 2 to decide, 1 to
 review), the naming in both artifacts, and the ledger ranking.
+
+### Projecting the review count one command earlier
+
+The audit can name **to review** but cannot measure it, so an operator sizing a review budget off
+`report.md` alone has to run the resolver to learn what their corpus costs. `resolve_finding` is a
+pure function of `(relation, tier, governance, policy)` and `findings.jsonl` already carries all
+four, so the audit can PROJECT that count under a policy the operator names -- one command before
+the resolver runs, with no second model call and no second implementation of the number.
+
+```bash
+make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
+  PROJECT_POLICY=conservative      # or: llb audit-corpus-conflicts --project-policy conservative
+```
+
+- **Opt-in, and off by default.** Without the flag nothing about the report changes. Measured: a
+  control run of the goods semantic bundle re-rendered with this code is byte-identical to the
+  bundle rendered before it existed, apart from the corpus path and one tier's `seconds` column
+  (`.data/corpus-conflicts/20260812T-projection-control-goods-semantic/report.md` against
+  `20260812T-two-counts-goods-semantic/report.md`).
+- **What it adds.** A headline line, a `to review (projected)` column in the decision-groups table,
+  and `policy_projection` in `summary.json` (`schema_version`, `kind: projection`, `policy`,
+  `basis`, `review_rows`, `review_groups`, and the per-group counts keyed by the same group ids
+  `groups.json` and `plan.json` use). The CLI echoes the same number. `findings.jsonl` and
+  `groups.json` are untouched: the projection depends on a policy, and those two artifacts must
+  stay readable by a consumer that has not chosen one.
+- **A projection, never a measurement**, said at every appearance -- the flag, the headline, the
+  column paragraph, the CLI line, and the artifact's own `kind`/`basis` fields. It is only true of
+  the policy it names, and a reviewer's decisions can still move it.
+- **Equal to what the resolver measures.** The projection replays the shipped `resolve_finding`
+  over the audit's own rows and counts `review_required` per group, so it must equal `plan.json`'s
+  `review_rows` group for group under the same policy -- a second READING of one implementation,
+  not a second implementation. `tests/llb/conflicts/test_policy_projection.py` pins that equality
+  on the mixed fixture (one claim-tier duplicate the policy accepts plus one semantic-tier
+  duplicate it escalates: 2 to decide, 1 to review) and across both policies on rows that separate
+  them. The ranking does not change: the decision table still ranks on `to decide`, the only count
+  that exists without a policy.
+
+**The layering decision.** The projection needs the resolution vocabulary and the report must not
+have it, so it is composed ABOVE both layers: `src/llb/conflicts/policy_projection.py` imports
+`resolution_policy`, the CLI calls it and puts the plain JSON result on
+`AuditResult.policy_projection`, and `report.py` / `report_findings.py` render data they never
+derive. `conflicts.report*` therefore still imports nothing from `conflicts.resolution_*`, which
+`test_policy_projection.py` asserts by reading the report modules' own import lines rather than by
+convention. The cheaper alternative -- the report simply pointing at the resolver -- was kept as
+well rather than replaced: every mention of the projection names `resolve-corpus-conflicts` and
+where the measured count lives, because the resolver without `--apply` already plans without
+touching a corpus byte and remains the only thing that MEASURES the count.
+
+Measured on the two goods bundles, which are the two ends of the divergence:
+
+- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-projected-review-goods-semantic/`,
+  100 rows, 6 groups): projected `{G1: 51, G2: 14, G3: 29, G4: 3, G5: 1, G6: 2}` = 100 rows in 6
+  groups, equal group for group to the `review_rows` the resolver then wrote into `plan.json` in
+  the same directory, and equal to `decide_rows` as well -- every semantic-tier duplicate is to
+  review under every policy. Here the projection confirms the headline instead of correcting it --
+  and this is the bundle an operator meets first, which is exactly why the coincidence is easy to
+  mistake for a rule that the claim bundle below breaks.
+- **Goods budget-100 claim bundle**
+  (`.data/corpus-conflicts/20260812T-projected-review-goods-budget100/`, CUDA host, RTX PRO 3000
+  Blackwell, 954-chunk store at resolved cosine 0.3604, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M
+  agreeing with all 24 frozen probe pairs, 8 min 52 s of adjudication): the divergent end. The
+  report reads `to decide: 1 of 100 rows` and `to review (PROJECTED under policy conservative): 0
+  rows in 0 decision groups` -- the corpus's one actionable row is a `subsumed_by` the conservative
+  policy settles as `keep_both`, so it costs a human nothing. The resolver run on the same rows
+  then measured `review_rows` 0 in every one of the six groups. An operator funding one review off
+  the audit report alone would have funded a review that does not exist; the projection says so one
+  command earlier, and says under which policy.
 
 ### One actionable set
 
@@ -504,7 +571,8 @@ whatever the census says), `report.md` ([actionable rows first](#one-actionable-
 decisions with [the unit census beside every count](#the-count-and-the-units-behind-it)),
 [`groups.json`](#the-groupsjson-sidecar) (the decision groups, addressed by the same finding ids the
 resolution plan uses), `summary.json` (per-tier counts, timings, parameters, `finding_census` /
-`relation_census`, and the
+`relation_census`, the optional
+[`policy_projection`](#projecting-the-review-count-one-command-earlier) block, and the
 `claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
 only meaningful in the space that produced them). With projected blocking, the resolved store

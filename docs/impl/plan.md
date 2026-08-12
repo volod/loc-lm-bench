@@ -45,67 +45,39 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-audit-projects-the-policy-review-count (optional)
+### conflict-audit-projects-what-the-policy-choice-costs (optional)
 
-The audit report can name the review count but cannot print it: `to review` needs a resolution
-policy, and the audit runs before one is chosen, so an operator sizing a review budget off
-`report.md` alone still has to run the resolver to learn what it costs ([conflict
-detection](current/data-prep/conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one)).
-The gap is bridgeable without inverting the layering: `resolve_finding` is a pure function of
-`(relation, tier, governance, policy)`, all of which `findings.jsonl` already carries. Add an
-audit-side PROJECTION -- `audit-corpus-conflicts --project-policy conservative` emitting a
-`projected_review_rows` per group, labelled as a projection under a named policy and never as a
-measurement -- so the headline count an operator funds is available one command earlier. Decide
-first whether the projection belongs in the detector at all: it makes `report.md` depend on the
-resolution vocabulary, and the alternative (the report simply points at `resolve-corpus-conflicts
---dry-run`) may be the cheaper answer.
+`--project-policy` projects the review count under ONE policy per run, which answers "what does my
+corpus cost?" but not the question an operator asks immediately afterwards: "what would the other
+policy cost?" ([conflict
+detection](current/data-prep/conflict-detection.md#projecting-the-review-count-one-command-earlier)).
+The projection is a pure replay of `resolve_finding` over rows the audit already holds, so
+projecting every policy at once costs one more pass over the rows and no model call. Emit a column
+per named policy (`--project-policy conservative,prefer-newer`) plus the per-group DELTA between
+them, so the operator sees which groups the policy choice actually moves. Motivation from the
+measured bundles: both goods bundles are degenerate for this purpose -- the semantic one projects
+100 of 100 under every policy because the tier has no deletion authority, and the claim one projects
+0 of 1 -- so the multi-policy column also needs a corpus where the choice is not free (dated
+supersessions at the claim tier), and finding or planting one is part of the task.
 
 - Agent status: CLEAR
-- Dependencies: none. `resolve_finding` (`src/llb/conflicts/resolution_policy.py`) is the projection
-  and is already row-based; `decide_count` and the two labels live in
-  `src/llb/conflicts/constants.py`. The import direction is the whole design question -- today
-  `conflicts.report*` does not import `resolution_*`, and that is deliberate.
-- User-visible outcome: an operator reads the number of human decisions their corpus costs from the
-  audit itself, or learns in one line why they must run the resolver to get it.
-- Scope boundary: in scope -- the opt-in projection, its per-group field, the "projection, not
-  measurement" labelling, and the layering decision. Out of scope -- making the projection the
-  default, changing the resolution policy, and any change to `findings.jsonl`.
+- Dependencies: none. Reuse `project_review_rows` in `src/llb/conflicts/policy_projection.py`
+  unchanged (it already takes the policy as an argument) and the report's injected-projection seam;
+  the layering rule holds -- `conflicts.report*` must still not import `resolution_*`, which
+  `tests/llb/conflicts/test_policy_projection.py` asserts.
+- User-visible outcome: an operator picks a resolution policy knowing what the choice costs in human
+  decisions, instead of running the resolver twice to find out.
+- Scope boundary: in scope -- multiple projected columns, the per-group delta, the corpus that makes
+  the delta non-zero, and the labelling that keeps every column a projection. Out of scope -- adding
+  a policy to the vocabulary, ranking on a projected count, and making any projection the default.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; on a fixture whose group mixes an accepted duplicate with an
-  escalated candidate the projected count equals the plan's `review_rows` under the same policy;
-  without the flag the report is byte-identical to today's; the layering decision is recorded.
+- Execution path: rendering change with fixture tests; one claim-tier run on the CUDA host only if a
+  planted dated-supersession corpus is needed to make the delta non-zero.
+- Acceptance gates: `make ci` green; each column equals the `plan.json` `review_rows` the same
+  policy writes on the same rows; a corpus where the policies differ reports a non-zero delta and
+  names the groups it falls in; a single `--project-policy` value renders exactly today's column.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one).
-
-### conflict-review-ledger-cost-model (optional)
-
-The review ledger now ranks its blocks by `to review`, on the assumption that N open rows cost a
-reviewer N times one row ([conflict
-resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
-That is almost certainly wrong in the direction that matters: the goods semantic bundle's 51-row
-group is 51 rows against ONE shared chunk, so a reviewer who reads that chunk once decides the rest
-by comparison, while 51 single-row groups are 51 unrelated reads. Ranking on raw open rows therefore
-over-states the concentrated group exactly where grouping was introduced to stop over-stating it.
-Measure it: time a reviewer (or a scripted proxy over the review TUI) on a concentrated block versus
-the same number of scattered rows, fit a per-group cost of the form `a + b * open_rows`, and rank on
-the fitted cost -- or record that the linear rank is within the measurement's own noise.
-
-- Agent status: HUMAN-GATED
-- Dependencies: reuse the ledger, its group blocks, and the review TUI's group titles; the two
-  goods bundles under `$DATA_DIR/corpus-conflicts/` already supply one concentrated and one
-  scattered shape.
-- User-visible outcome: the first decision the ledger shows a reviewer is the one that actually
-  costs the most of their time, not the one with the most rows.
-- Scope boundary: in scope -- the timing protocol, the fitted cost, and the ranking key it implies.
-  Out of scope -- changing what a review record is, group identity, and the audit-side ranking,
-  which has no policy to rank on.
-- Human step: a reviewer works both shapes under measurement; the fit cannot be produced from
-  artifacts alone.
-- Acceptance gates: `make ci` green; the report states the fitted per-group and per-row costs with
-  their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
-- Documentation target: [conflict
-  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
+  detection](current/data-prep/conflict-detection.md#projecting-the-review-count-one-command-earlier).
 
 ### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 
@@ -1192,6 +1164,35 @@ the entry on Ollama so the roster is served by one backend end to end.
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### conflict-review-ledger-cost-model (optional)
+
+The review ledger now ranks its blocks by `to review`, on the assumption that N open rows cost a
+reviewer N times one row ([conflict
+resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
+That is almost certainly wrong in the direction that matters: the goods semantic bundle's 51-row
+group is 51 rows against ONE shared chunk, so a reviewer who reads that chunk once decides the rest
+by comparison, while 51 single-row groups are 51 unrelated reads. Ranking on raw open rows therefore
+over-states the concentrated group exactly where grouping was introduced to stop over-stating it.
+Measure it: time a reviewer (or a scripted proxy over the review TUI) on a concentrated block versus
+the same number of scattered rows, fit a per-group cost of the form `a + b * open_rows`, and rank on
+the fitted cost -- or record that the linear rank is within the measurement's own noise.
+
+- Agent status: HUMAN-GATED
+- Dependencies: reuse the ledger, its group blocks, and the review TUI's group titles; the two
+  goods bundles under `$DATA_DIR/corpus-conflicts/` already supply one concentrated and one
+  scattered shape.
+- User-visible outcome: the first decision the ledger shows a reviewer is the one that actually
+  costs the most of their time, not the one with the most rows.
+- Scope boundary: in scope -- the timing protocol, the fitted cost, and the ranking key it implies.
+  Out of scope -- changing what a review record is, group identity, and the audit-side ranking,
+  which has no policy to rank on.
+- Human step: a reviewer works both shapes under measurement; the fit cannot be produced from
+  artifacts alone.
+- Acceptance gates: `make ci` green; the report states the fitted per-group and per-row costs with
+  their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
 
 ### embedding-clustered chunk merging (optional)
 

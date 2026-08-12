@@ -17,7 +17,6 @@ from llb.conflicts.census import (
     census_units,
     counted,
     finding_census,
-    finding_sort_key,
     relation_census,
 )
 from llb.conflicts.constants import (
@@ -52,6 +51,7 @@ def render_report(result: AuditResult) -> str:
         f"- documents: {result.n_docs}",
         findings,
         *_decide_line(result),
+        *_projected_review_line(result),
         "",
     ]
     lines += _relations_section(result)
@@ -77,6 +77,30 @@ def _decide_line(result: AuditResult) -> list[str]:
         "(every relation but `complementary`). This is NOT the number of human reviews the corpus "
         f"costs: that count is **{REVIEW_LABEL}** (`review_rows` in the resolution `plan.json`), "
         "it depends on the resolution policy, and it can be larger or smaller than this one."
+    ]
+
+
+def _projected_review_line(result: AuditResult) -> list[str]:
+    """The opt-in TO REVIEW projection, printed only when an operator named a policy.
+
+    Without `--project-policy` this is nothing at all and the report is byte-identical to a report
+    that never heard of the resolution vocabulary. With it, the headline count an operator funds is
+    available one command earlier -- labelled as a projection under a NAMED policy every time it
+    appears, because the number is only true of that policy and a reviewer can still move it.
+    """
+    projection = result.policy_projection
+    if not projection or not result.findings:
+        return []
+    policy = str(projection.get("policy", ""))
+    rows = int(projection.get("review_rows", 0))
+    groups = int(projection.get("review_groups", 0))
+    return [
+        f"- {REVIEW_LABEL} (PROJECTED under policy `{policy}`): "
+        f"{counted(rows, 'row')} in {counted(groups, 'decision group')}. A projection, not a "
+        f"measurement: it replays `resolve-corpus-conflicts --policy {policy}` over these rows and "
+        "counts the ones that policy leaves at `review_required`. Another policy gives another "
+        "number, and a reviewer's own decisions can still move it; the measured count is "
+        "`review_rows` in that command's `plan.json`."
     ]
 
 
@@ -201,7 +225,7 @@ def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
     # The rows are written once and grouped from the SAME list, so the sidecar's group ids address
     # exactly the rows on disk -- and the resolution lane, grouping those rows in file order,
     # reproduces the ids without needing the sidecar at all.
-    rows = [finding.payload() for finding in sorted(result.findings, key=finding_sort_key)]
+    rows = result.rows()
     findings_text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
     findings_path = out / FINDINGS_FILE
     findings_path.write_text(findings_text, encoding="utf-8")

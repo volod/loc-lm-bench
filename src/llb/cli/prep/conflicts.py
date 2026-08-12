@@ -25,6 +25,7 @@ from llb.conflicts.null_distribution import (
     DEFAULT_NULL_SAMPLE_PAIRS,
     DEFAULT_NULL_SEED,
 )
+from llb.conflicts.resolution_policy import POLICIES
 
 if TYPE_CHECKING:
     from llb.conflicts.models import AuditResult
@@ -126,6 +127,13 @@ def audit_corpus_conflicts_cmd(
         min=0,
         help="PCA dimensions for exact Euclidean tree blocking (0 = blocked all-pairs scan)",
     ),
+    project_policy: Optional[str] = typer.Option(
+        None,
+        help="also PROJECT the `to review` count under this resolution policy "
+        f"({' | '.join(POLICIES)}): the rows `resolve-corpus-conflicts --policy <p>` would leave "
+        "at `review_required`, printed per decision group. A projection under a named policy, "
+        "never a measurement -- off by default, and off leaves the report unchanged",
+    ),
 ) -> None:
     """Report duplicated, stale, and contradictory knowledge in a corpus. Never edits the corpus."""
     from llb.conflicts.adjudicator import build_adjudicator
@@ -137,6 +145,10 @@ def audit_corpus_conflicts_cmd(
 
     if effort not in TIERS:
         raise typer.BadParameter(f"unknown effort {effort!r}; choose one of {', '.join(TIERS)}")
+    if project_policy is not None and project_policy not in POLICIES:
+        raise typer.BadParameter(
+            f"unknown resolution policy {project_policy!r}; choose one of {', '.join(POLICIES)}"
+        )
     tiers = tiers_up_to(effort)
 
     view = None
@@ -182,6 +194,13 @@ def audit_corpus_conflicts_cmd(
         complete=complete,
     )
 
+    # The projection is composed HERE, above both layers: it needs the resolution vocabulary, and
+    # the report must not. `write_audit` renders whatever plain data it is handed.
+    if project_policy is not None:
+        from llb.conflicts.policy_projection import project_review_rows
+
+        result.policy_projection = project_review_rows(result.rows(), project_policy)
+
     out_dir = (
         out if out is not None else resolve_data_dir() / CONFLICTS_METHOD / generation_timestamp()
     )
@@ -190,7 +209,7 @@ def audit_corpus_conflicts_cmd(
 
 
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
-    from llb.conflicts.census import census_units, finding_census, relation_census
+    from llb.conflicts.census import census_units, counted, finding_census, relation_census
 
     census = finding_census(result.findings)
     typer.echo(
@@ -210,6 +229,14 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(line)
     for relation, row in relation_census(result.findings).items():
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
+    projection = result.policy_projection
+    if projection:
+        typer.echo(
+            f"[conflicts] to review PROJECTED under policy {projection['policy']}: "
+            f"{counted(int(projection['review_rows']), 'row')} in "
+            f"{counted(int(projection['review_groups']), 'decision group')} "
+            "(a projection, not a measurement; resolve-corpus-conflicts measures it)"
+        )
     precision = result.claim_precision
     if precision.get("reported"):
         point = precision["returned_budget"]

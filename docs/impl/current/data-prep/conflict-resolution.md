@@ -82,6 +82,11 @@ The same two lines on the budget-100 claim bundle read `to decide (relation): 1 
 (policy conservative): none` -- the divergence in the other direction, with the audit's one
 actionable row costing zero human decisions.
 
+`review_rows` here is the MEASURED count. The audit can be asked to project the same number one
+command earlier under a named policy (`--project-policy`), and the projection is required to equal
+this plan's `review_rows` group for group -- see [projecting the review
+count](conflict-detection.md#projecting-the-review-count-one-command-earlier).
+
 ## Overlay and rollback contract
 
 Applying a plan validates every document, offset, and exact quote against the current corpus, then

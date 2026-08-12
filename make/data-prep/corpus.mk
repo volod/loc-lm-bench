@@ -53,7 +53,7 @@ audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLD
 	if [ -n "$(REPEAT_RECOVER)" ]; then args+=(--recover-straddle); fi; \
 	$(PY) -m llb.main audit-repeat-yield "$${args[@]}"
 
-audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CALIBRATION_PROBE=, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block); never edits the corpus
+audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CALIBRATION_PROBE=, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block, PROJECT_POLICY=conservative|prefer-newer projects the `to review` count under that policy); never edits the corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--corpus "$(CORPUS)" --effort "$(or $(EFFORT),hash)"); \
 	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
@@ -73,6 +73,7 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
 	if [ -n "$(CALIBRATION_PROBE)" ]; then args+=(--calibration-probe "$(CALIBRATION_PROBE)"); fi; \
 	if [ -n "$(NO_CALIBRATE_ADJUDICATOR)" ]; then args+=(--no-calibrate-adjudicator); fi; \
+	if [ -n "$(PROJECT_POLICY)" ]; then args+=(--project-policy "$(PROJECT_POLICY)"); fi; \
 	$(PY) -m llb.main audit-corpus-conflicts "$${args[@]}"
 
 research-conflict-nulls: ## Compare conflict-null models on FIXTURE/HR/GOODS and REFERENCE stores (GENERATION=initial|next|third|fourth; next/third also need DOMAIN_REFERENCE_*, third/fourth need CONFLICT_MODEL=; fourth adds SYNTHESIS_PER_DOCUMENT=, CROSS_ENCODER_ROWS=, CROSS_ENCODER=, CROSS_ENCODER_DEVICE=; NULL_RESEARCH_OUT=, EMBED_DEVICE=cuda)

@@ -16,10 +16,15 @@ so ranking is a way of reading the table, not a renaming of what is in it.
 from llb.conflicts.census import FindingGroup, census_phrase, finding_census, group_findings
 from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
 from llb.conflicts.models import AuditResult, Finding
+from llb.core.contracts.common import JsonObject
 
 _EXCERPT = 160
 # Shared units beyond this many are summarised rather than listed, to keep the cell readable.
 _MAX_LISTED_UNITS = 2
+# The opt-in projection's column, named so the word an operator funds is never printed bare: this
+# module renders a projection it is HANDED and never computes one, which is what keeps the
+# resolution vocabulary out of the report layer (see `policy_projection.py`).
+_PROJECTED_LABEL = f"{REVIEW_LABEL} (projected)"
 
 
 def _excerpt(text: str) -> str:
@@ -69,16 +74,33 @@ def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
     return (-group.decide_rows, -len(group.findings), -group.top_score, group.index)
 
 
-def _groups_table(groups: list[FindingGroup]) -> list[str]:
+def _projected_cell(projection: JsonObject, group: FindingGroup) -> str:
+    """One group's projected review count, read out of data this module did not compute.
+
+    Empty when no policy was named, which is how the table keeps exactly the columns it had before
+    the flag existed instead of printing a zero that would read as a measured "nothing to review".
+    """
+    if not projection:
+        return ""
+    groups = projection.get("groups")
+    value = groups.get(group.label) if isinstance(groups, dict) else None
+    return f" {int(value) if isinstance(value, int) else 0} |"
+
+
+def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[str]:
+    projected_header = f" {_PROJECTED_LABEL} |" if projection else ""
+    projected_divider = " --- |" if projection else ""
     lines = [
-        f"| group | rows | {DECIDE_LABEL} | relations | shared unit | documents | top score |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        f"| group | rows | {DECIDE_LABEL} |{projected_header} relations | shared unit "
+        "| documents | top score |",
+        f"| --- | --- | --- |{projected_divider} --- | --- | --- | --- |",
     ]
     for group in sorted(groups, key=stake_key):
         documents = ", ".join(f"`{doc}`" for doc in group.documents)
         lines.append(
-            f"| {group.label} | {len(group.findings)} | {group.decide_rows} "
-            f"| {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
+            f"| {group.label} | {len(group.findings)} | {group.decide_rows} |"
+            f"{_projected_cell(projection, group)}"
+            f" {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
             f"| {group.top_score:.3f} |"
         )
     lines.append("")
@@ -101,12 +123,55 @@ def _rows_table(groups: list[FindingGroup]) -> list[str]:
     return lines
 
 
+def _two_counts_paragraphs(projection: JsonObject) -> list[str]:
+    """Why the audit prints one count, and -- when asked -- what the projected second one is.
+
+    The claim never weakens: the audit still cannot MEASURE the review count, because measuring it
+    means running the policy over the corpus an operator chose. What `--project-policy` adds is one
+    named policy replayed over these same rows, which is a projection and says so wherever it
+    appears.
+    """
+    measured = "an audit cannot measure it" if projection else "an audit cannot print it"
+    paragraphs = [
+        f"`{DECIDE_LABEL}` is NOT the count of human reviews this corpus costs. That second "
+        f"count, **{REVIEW_LABEL}**, is a property of the resolution POLICY -- the rows "
+        "`resolve-corpus-conflicts` leaves at `review_required` -- so it does not exist until "
+        f"a policy is chosen and {measured}. The two diverge in both directions: "
+        "an accepted `drop_duplicate` is to decide and not to review, while every semantic-tier "
+        "duplicate is to review under every policy because that tier has no deletion authority. "
+        f"`plan.json` prints both per group (`decide_rows`, `review_rows`) and ranks the review "
+        "ledger on the second, which is the one an operator funds.",
+        "",
+    ]
+    if not projection:
+        return paragraphs
+    policy = str(projection.get("policy", ""))
+    return paragraphs + [
+        f"The **{_PROJECTED_LABEL}** column is that second count PROJECTED under policy "
+        f"`{policy}`, because `--project-policy {policy}` was passed: each group's rows replayed "
+        f"through `resolve-corpus-conflicts --policy {policy}` and counted where that policy "
+        "leaves `review_required`. It is a projection under a named policy, never a measurement --"
+        " a different policy gives a different column, a reviewer's decisions can still move it, "
+        "and the ranking below is unchanged (it still ranks on "
+        f"`{DECIDE_LABEL}`, the only count that exists without a policy). The measured count is "
+        "`review_rows` in the `plan.json` that command writes, and it equals this column group for "
+        "group under the same policy.",
+        "",
+    ]
+
+
 def findings_section(result: AuditResult) -> list[str]:
-    """Groups first (what an operator decides), then every row (what a resolution lane consumes)."""
+    """Groups first (what an operator decides), then every row (what a resolution lane consumes).
+
+    The optional TO REVIEW projection arrives as plain data on the result (`policy_projection`),
+    computed by `policy_projection.py` above this layer. This module renders it and never derives
+    it, which is what keeps the report free of the resolution vocabulary.
+    """
     if not result.findings:
         return []
     groups = group_findings(result.findings)
     census = finding_census(result.findings)
+    projection = result.policy_projection
     return (
         [
             "## Findings",
@@ -123,17 +188,9 @@ def findings_section(result: AuditResult) -> list[str]:
             "Group ids are assigned in file order, so `G3` leading this table is a ranking, not a "
             "renumbering -- the row table below and `findings.jsonl` keep the file's own order.",
             "",
-            f"`{DECIDE_LABEL}` is NOT the count of human reviews this corpus costs. That second "
-            f"count, **{REVIEW_LABEL}**, is a property of the resolution POLICY -- the rows "
-            "`resolve-corpus-conflicts` leaves at `review_required` -- so it does not exist until "
-            "a policy is chosen and an audit cannot print it. The two diverge in both directions: "
-            "an accepted `drop_duplicate` is to decide and not to review, while every semantic-tier "
-            "duplicate is to review under every policy because that tier has no deletion authority. "
-            f"`plan.json` prints both per group (`decide_rows`, `review_rows`) and ranks the review "
-            "ledger on the second, which is the one an operator funds.",
-            "",
         ]
-        + _groups_table(groups)
+        + _two_counts_paragraphs(projection)
+        + _groups_table(groups, projection)
         + [
             "### Rows",
             "",

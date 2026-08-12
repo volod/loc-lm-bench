@@ -120,6 +120,21 @@ class AuditResult:
     claim_precision: JsonObject = field(default_factory=dict)
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
+    # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
+    # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole
+    # point: the detector runs without a resolution policy, and the renderer reads this dict
+    # without importing the resolution vocabulary that produced it.
+    policy_projection: JsonObject = field(default_factory=dict)
+
+    def rows(self) -> list["JsonObject"]:
+        """The findings as `findings.jsonl` rows, in the order that file is written in.
+
+        One implementation, because the sidecar's group ids, the projection's group ids, and the
+        rows on disk must all be derived from the SAME ordering or they address different groups.
+        """
+        from llb.conflicts.census import finding_sort_key
+
+        return [finding.payload() for finding in sorted(self.findings, key=finding_sort_key)]
 
     def relation_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -149,4 +164,6 @@ class AuditResult:
             payload["claim_precision"] = dict(self.claim_precision)
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
+        if self.policy_projection:
+            payload["policy_projection"] = dict(self.policy_projection)
         return payload
