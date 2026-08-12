@@ -202,13 +202,20 @@ def test_the_report_layer_does_not_import_the_resolution_vocabulary():
 
     The projection needs `resolution_policy`; the report must not. It is composed above both (the
     CLI) and handed down as plain JSON, so the detector keeps rendering without a policy and no
-    import runs from `conflicts.report*` into `conflicts.resolution_*`.
+    import runs from `conflicts.report*` into `conflicts.resolution_*`. Every `report*` module is
+    discovered rather than listed, so a renderer added later is held to the rule by default.
     """
-    for module in (report_module, report_findings_module, report_precision_module):
-        source = Path(module.__file__).read_text(encoding="utf-8")
+    package = Path(report_module.__file__).parent
+    renderers = sorted(package.glob("report*.py"))
+    assert {path for path in renderers} >= {
+        Path(module.__file__)
+        for module in (report_module, report_findings_module, report_precision_module)
+    }, "the discovery must find at least the renderers this test was written against"
+    for path in renderers:
+        source = path.read_text(encoding="utf-8")
         imports = [line for line in source.splitlines() if line.startswith(("import ", "from "))]
         assert not [line for line in imports if "resolution" in line], (
-            f"{module.__name__} imports the resolution vocabulary; the projection must be "
+            f"{path.name} imports the resolution vocabulary; the projection must be "
             "injected as data instead"
         )
     assert "resolution_policy" in Path(projection_module.__file__).read_text(encoding="utf-8"), (

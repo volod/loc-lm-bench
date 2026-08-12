@@ -15,7 +15,9 @@ so ranking is a way of reading the table, not a renaming of what is in it.
 
 from llb.conflicts.census import FindingGroup, census_phrase, finding_census, group_findings
 from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
+from llb.conflicts.granularity import finding_granularity
 from llb.conflicts.models import AuditResult, Finding
+from llb.conflicts.report_granularity import granularity_section
 from llb.core.contracts.common import JsonObject
 
 _EXCERPT = 160
@@ -191,6 +193,7 @@ def findings_section(result: AuditResult) -> list[str]:
         ]
         + _two_counts_paragraphs(projection)
         + _groups_table(groups, projection)
+        + granularity_section(finding_granularity(result.findings))
         + [
             "### Rows",
             "",

@@ -2,7 +2,7 @@
 
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
 	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
-	research-conflict-nulls resolve-corpus-conflicts
+	research-conflict-nulls resolve-corpus-conflicts compare-conflict-granularity
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -123,6 +123,16 @@ resolve-corpus-conflicts: ## Plan/apply reversible conflict overlay (FINDINGS= P
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main resolve-corpus-conflicts "$${args[@]}"
+
+compare-conflict-granularity: ## Recompute both decision-grouping rules (transitive closure vs shared unit) over audited runs (GRANULARITY_RUNS="<run-dir> <run-dir>", GRANULARITY_OUT=); reads findings.jsonl only -- no model, no store
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(GRANULARITY_RUNS)" || { echo "ERROR: set GRANULARITY_RUNS=\"<audit-run-dir> ...\""; exit 1; }
+	@args=(); \
+	for dir in $(GRANULARITY_RUNS); do args+=(--run "$$dir"); done; \
+	if [ -n "$(GRANULARITY_OUT)" ]; then args+=(--out "$(GRANULARITY_OUT)"); fi; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-conflict-granularity "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

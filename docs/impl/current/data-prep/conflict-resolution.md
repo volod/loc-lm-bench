@@ -33,7 +33,7 @@ both units.
 - **`items`** is unchanged -- one per finding row, and still the only thing the overlay and its
   rollback are built from. Each item now names its `group_id`.
 - **`decisions`** is one entry per [decision
-  group](conflict-detection.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
+  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
   `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `decide_rows`,
   `review_rows`, and a `status`. `action` is the action every member agreed on and is **null** when
   they did not, so a mixed group reads as mixed. A decision never authorizes what no member row
@@ -42,7 +42,7 @@ both units.
   relation-based count restated here; `review_rows` is this policy's count of rows still needing a
   human. They differ in both directions, so the plan is where they are reconciled rather than
   compared across two terminals -- see [to decide and to
-  review](conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one). Schema 3 is
+  review](conflict-decision-groups.md#to-decide-and-to-review-are-two-counts-never-one). Schema 3 is
   exactly that addition; schema 2 added `decisions` beside `items`.
 - **`resolution_review.jsonl`** keeps one record per open row -- a drop applies to one span, so the
   row stays the unit a reviewer decides on -- but every record carries `group_id`, `group_rows`,
@@ -85,7 +85,7 @@ actionable row costing zero human decisions.
 `review_rows` here is the MEASURED count. The audit can be asked to project the same number one
 command earlier under a named policy (`--project-policy`), and the projection is required to equal
 this plan's `review_rows` group for group -- see [projecting the review
-count](conflict-detection.md#projecting-the-review-count-one-command-earlier).
+count](conflict-decision-groups.md#projecting-the-review-count-one-command-earlier).
 
 ## Overlay and rollback contract
 

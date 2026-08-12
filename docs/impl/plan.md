@@ -50,7 +50,7 @@ Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks
 `--project-policy` projects the review count under ONE policy per run, which answers "what does my
 corpus cost?" but not the question an operator asks immediately afterwards: "what would the other
 policy cost?" ([conflict
-detection](current/data-prep/conflict-detection.md#projecting-the-review-count-one-command-earlier)).
+detection](current/data-prep/conflict-decision-groups.md#projecting-the-review-count-one-command-earlier)).
 The projection is a pure replay of `resolve_finding` over rows the audit already holds, so
 projecting every policy at once costs one more pass over the rows and no model call. Emit a column
 per named policy (`--project-policy conservative,prefer-newer`) plus the per-group DELTA between
@@ -77,15 +77,15 @@ supersessions at the claim tier), and finding or planting one is part of the tas
   policy writes on the same rows; a corpus where the policies differ reports a non-zero delta and
   names the groups it falls in; a single `--project-policy` value renders exactly today's column.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#projecting-the-review-count-one-command-earlier).
+  detection](current/data-prep/conflict-decision-groups.md#projecting-the-review-count-one-command-earlier).
 
 ### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 
 The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
 computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
 same order must re-derive the to-decide count from the relation map and re-implement `stake_key`
-([conflict detection](current/data-prep/conflict-detection.md#the-groupsjson-sidecar)). That is the
-same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
+([decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar)). That is
+the same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
 and the rendered `rank` to each group summary, and the same `rank` to the plan's `decisions`, so a
 dashboard, a runtime, or a second report reads the audit's own ordering rather than an
 approximation of it.
@@ -104,36 +104,71 @@ approximation of it.
 - Acceptance gates: `make ci` green; the sidecar's rank order equals the report's decision table
   order on a fixture whose stake ranking differs from its file order; group ids stay in file order.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#the-groupsjson-sidecar).
+  detection](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
 
-### conflict-decision-group-granularity (optional)
+### conflict-decision-chain-length-in-the-stake-ranking (optional)
 
-Decision groups join findings TRANSITIVELY through a shared chunk, and on a real corpus that closure
-runs long: the goods budget-100 run collapses 99 rows into 6 groups, but its largest group chains 51
-rows across three documents through 23 shared chunks, which is not one decision either ([conflict
-detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). A row count
-over-states the work and a fully transitive group count under-states it, so the audit currently
-quotes a range without saying where inside it the truth sits. Measure the alternative -- group per
-SHARED UNIT (a row joins every group whose unit it carries, so a row can appear twice) -- on both
-quickstart corpora, report the group-size distribution under both rules, and adopt one or state the
-rule for which corpus shape gets which.
+The decision table ranks a group on `to decide` then rows, and both treat a group as flat -- but the
+audit now measures how many distinct pieces of shared evidence each group's chain runs through
+(`quoted_group_split` in
+[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)),
+and on the measured bundles the spread inside one row count is large: a 6-row fan resting on ONE
+chunk is one decision, while goods G1's 51 rows run through 23. Two groups with the same row count
+therefore cost an operator very different amounts, and the ranking cannot see the difference. Fold
+the chain length into `stake_key` (or add it as a decision-table column and state why it is not
+ranked on), and measure how often the order actually changes on the committed bundles -- a signal
+that never reorders anything is not worth a column.
 
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `group_findings` and the census in `src/llb/conflicts/census.py`; the
-  rows come from the existing budget-100 runs and need no re-adjudication.
-- User-visible outcome: the group count an operator funds review against is a decision count rather
-  than the size of whichever connected component the chunker happened to produce.
-- Scope boundary: in scope -- the second grouping rule, the size distribution under both, and an
-  adoption decision. Out of scope -- changing detection, changing `findings.jsonl`, and any change
-  to the precision estimator.
+- Agent status: CLEAR
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking and
+  `shared_unit_indices` in `src/llb/conflicts/granularity.py` is the chain length; the ranking must
+  stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
+- User-visible outcome: the first decision the report offers is the one that actually costs the most,
+  not the one with the most rows.
+- Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
+  and the keep-or-drop verdict. Out of scope -- changing group identity, changing either grouping
+  rule, and ranking on a projected count.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: recompute both groupings over committed run artifacts on the CUDA host (no model
-  calls); CI covers both rules over fixture rows.
-- Acceptance gates: `make ci` green; both corpora report the group-size distribution under both
-  rules; the report states which rule the audit quotes and why, and a fixture whose rows all share
-  one chunk still reports one group under both.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+- Execution path: rendering change with fixture tests; recompute the order over committed bundles,
+  no GPU.
+- Acceptance gates: `make ci` green; group ids never move; the report states on how many of the
+  measured bundles the order changed, including the bundles where it did not.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+
+### conflict-decision-group-partition-refinement (optional)
+
+The audit now quotes a RANGE because neither measured rule is a decision count: the transitive
+closure is a partition but too coarse, and the shared-unit rule is finer but a COVER -- 65 to 80
+percent of rows join two of its groups on every corpus measured, so its count cannot be funded one
+review each
+([decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)).
+A single number needs a third rule that is BOTH a partition and finer than the closure. Measure one:
+cut the closure's chain at its weakest joins (a shared unit carrying only low-score pairs, or only
+`complementary` relations, is a chunk two decisions merely pass through) and check whether the
+resulting partition lands inside the measured range rather than collapsing back to one of its ends.
+A negative result -- no cut rule lands inside without splitting a genuine decision -- is a valid
+outcome and closes the question.
+
+- Agent status: RUN NEEDED, RESEARCH
+- Dependencies: none. Reuse `granularity.py`'s two rules as the bracket the third must sit inside and
+  `compare-conflict-granularity` to read the result over committed runs.
+- User-visible outcome: either one decision count an operator can fund directly, or a recorded reason
+  the audit will keep quoting a range.
+- Scope boundary: in scope -- the cut rule, its partition proof, and the comparison against both
+  measured ends. Out of scope -- changing detection, changing `findings.jsonl` or the group ids
+  `plan.json` joins on, and adopting a third rule as the quoted one before it lands inside the range.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` and
+  `$DATA_DIR/corpus-conflict-granularity/<run>/` layouts.
+- Execution path: recompute over committed run artifacts on the CUDA host; the measured bundles are
+  all narrower than the 8-document HR corpus (which is operator data and absent from this host), so
+  the run needs at least one bundle from a corpus that supplies a genuinely long chain. CI covers the
+  cut rule and the partition invariant over fixture rows.
+- Acceptance gates: `make ci` green; the third rule is asserted to be a partition on every fixture;
+  every measured bundle reports its count under all three rules; the reading states whether the
+  partition lands strictly inside the range, or records that it does not and why.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
 
 ### conflict-claim-yield-across-store-generations (optional)
 
@@ -141,7 +176,7 @@ The claim tier's candidate list at a fixed budget is a RANK cutoff into the stor
 ordering, so it is a property of the store as much as of the corpus -- and the two measured goods
 budget-100 runs disagree sharply about how much the corpus contains: 8 actionable rows on the
 1,139-chunk store at resolved cosine 0.3648, 1 actionable row on the 954-chunk store at 0.3604
-([conflict detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). The
+([conflict detection](current/data-prep/conflict-decision-groups.md#measured-on-the-goods-corpus)). The
 two runs differ in chunk count, duplicate collapse, and resolved threshold at once, so nothing
 establishes which factor moved the yield, and an operator cannot tell whether a low actionable count
 means a clean corpus or an unlucky store. Vary one factor at a time (duplicate collapse on/off,

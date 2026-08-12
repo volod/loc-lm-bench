@@ -312,218 +312,11 @@ is stuck at 1 through budget 25 and reaches only 3 at budget 100. The pair-row W
 budget 100 is `[0.041, 0.150]`, a non-zero floor it has not earned; the clustered bound refuses it.
 That contrast is the whole reason the audit quotes the clustered bound.
 
-## The count and the units behind it
+## What the counts mean
 
-A finding COUNT is the first number an operator reads, and it is the number they size a review
-budget against -- so on a corpus whose conflicts concentrate it is the number most able to mislead.
-The clustered precision bound already refuses to certify a floor when the conflicts sit on a handful
-of chunks, but that refusal lived inside the precision section while the headline count, the
-relation table, and the findings list still read as N independent results.
-
-Every count the audit prints now carries the distinct units it rests on:
-`report.md`'s headline line, every row of its relation table, the findings section, the CLI summary,
-and `summary.json` (`finding_census`, plus `relation_census` beside the unchanged `relations`
-counts). `src/llb/conflicts/census.py` computes the census and the grouping;
-`src/llb/conflicts/report_findings.py` renders the grouped findings section.
-
-- **Unit.** The CHUNK each side of a finding rests on, falling back to its document for the `hash`
-  and `lexical` tiers, which compare whole documents and carry no chunk.
-- **Census.** `documents`, `document_pairs`, `chunk_units`, `groups`, `largest_group` -- rendered as
-  one line beside the count: `8 findings on 4 documents / 3 document pairs / 9 chunk units, in 2
-  groups (largest 6)`.
-- **Group.** Findings joined **transitively** by a shared unit, the same closure the `hash` tier
-  applies to duplicate groups. A chunk that conflicts with six neighbours is ONE group, and so are
-  three copies of one document: a shared unit is what makes two rows the same piece of evidence.
-  The report leads the findings section with a **Decision groups** table (rows, `to decide`,
-  relations, shared unit, documents, top score) and prints every row below it under its group label.
-  `groups` is what an operator triages; `findings` is what a resolution lane consumes.
-- **Ranked by stake, named by file order.** The two are deliberately separate. A group's ID comes
-  from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` share, so it
-  never moves. The decision TABLE is ordered by `stake_key`
-  (`src/llb/conflicts/report_findings.py`): `to decide` rows first, then rows, then top score, then
-  the id. `G3` leading the table is therefore a ranking, not a renumbering, and the row table below
-  it stays in the file's order -- the order a resolution lane consumes.
-- **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
-  as before -- the resolution lane reads rows, and nothing here suppresses, merges, or deduplicates
-  one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
-  transitive closure, the document-tier fallback, and the census beside each printed count;
-  `test_group_ranking.py` asserts the ranking never renumbers a group.
-
-Why the table is not ranked on score: a score is the model's confidence in ONE pair and says nothing
-about how much the group holding it is worth. Measured on the goods semantic bundle (100 rows, 6
-groups) a 0.002 score difference put the 14-row decision ahead of the 29-row one; on the goods
-budget-100 claim bundle four groups tie at 1.000, so three of them were ordered by the claim-identity
-tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves above the 14-row
-one and the 3-row decision above the 2-row one, while the group holding the only actionable row
-still leads the claim bundle.
-
-### To decide and to review are two counts, never one
-
-A decision group carries TWO counts of its work, and they are not the same number:
-
-| count | what it counts | where it is computed | who prints it |
-| --- | --- | --- | --- |
-| **to decide** (`decide_rows`) | rows whose RELATION is not `complementary` (`is_actionable`) | detection, from the relation alone | `report.md` headline, decision table, precision block; `plan.json` decisions |
-| **to review** (`review_rows`) | rows whose POLICY outcome is `review_required` | resolution, from `(relation, tier, governance, policy)` | `plan.json` decisions, the CLI summary, `resolution_review.jsonl`; the audit only when [asked to project it](#projecting-the-review-count-one-command-earlier) |
-
-Neither can serve both roles, and the reason is structural rather than an implementation gap: the
-review count is a property of a resolution POLICY, and the audit runs before an operator has chosen
-one. That is why the audit prints only `to decide`, names `to review` in the same breath, and says
-where it lives; and why `plan.json` -- the only artifact that holds both -- prints them side by side
-per group. The vocabulary is defined once in `src/llb/conflicts/constants.py` (`DECIDE_LABEL`,
-`REVIEW_LABEL`, `decide_count`); `FindingGroup.decide_rows` and `group_decisions` are its two
-consumers.
-
-They diverge in BOTH directions, measured on the two goods bundles:
-
-- **Goods budget-100 claim bundle** (`.data/corpus-conflicts/20260812T-two-counts-census-goods-budget100/`):
-  **1 to decide, 0 to review.** The single `subsumed_by` row is work by the relation vocabulary --
-  it is what the precision block measures and what leads `findings.jsonl` -- but the conservative
-  policy resolves subsumption as `keep_both` plus an annotation, so it costs a human nothing. An
-  operator funding one review off the audit report would have funded a review that does not exist.
-- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-two-counts-goods-semantic/`):
-  **100 to decide, 100 to review**, group for group (51/51, 29/29, 14/14, 3/3, 2/2, 1/1). Every
-  semantic-tier duplicate needs review under every policy because that tier has no deletion
-  authority, so the two counts coincide exactly -- and this is the bundle an operator meets first,
-  which is precisely why one name for both was survivable long enough to become misleading.
-
-**Which count each ranking uses is stated where the ranking is.** The audit's decision table ranks
-on `to decide` because it has nothing else; the review ledger ranks on `to review`, the count an
-operator actually funds, because by then the policy has run. On the goods semantic bundle that moves
-the ledger from id order (51, 14, 29, 3, 1, 2 rows) to review stake (51, 29, 14, 3, 2, 1), so the
-reviewer meets the biggest open decision first; a group's records stay one contiguous block either
-way. `tests/llb/conflicts/test_two_counts.py` pins the divergence on a mixed fixture (one claim-tier
-duplicate the policy accepts plus one semantic-tier duplicate it escalates: 2 to decide, 1 to
-review), the naming in both artifacts, and the ledger ranking.
-
-### Projecting the review count one command earlier
-
-The audit can name **to review** but cannot measure it, so an operator sizing a review budget off
-`report.md` alone has to run the resolver to learn what their corpus costs. `resolve_finding` is a
-pure function of `(relation, tier, governance, policy)` and `findings.jsonl` already carries all
-four, so the audit can PROJECT that count under a policy the operator names -- one command before
-the resolver runs, with no second model call and no second implementation of the number.
-
-```bash
-make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
-  PROJECT_POLICY=conservative      # or: llb audit-corpus-conflicts --project-policy conservative
-```
-
-- **Opt-in, and off by default.** Without the flag nothing about the report changes. Measured: a
-  control run of the goods semantic bundle re-rendered with this code is byte-identical to the
-  bundle rendered before it existed, apart from the corpus path and one tier's `seconds` column
-  (`.data/corpus-conflicts/20260812T-projection-control-goods-semantic/report.md` against
-  `20260812T-two-counts-goods-semantic/report.md`).
-- **What it adds.** A headline line, a `to review (projected)` column in the decision-groups table,
-  and `policy_projection` in `summary.json` (`schema_version`, `kind: projection`, `policy`,
-  `basis`, `review_rows`, `review_groups`, and the per-group counts keyed by the same group ids
-  `groups.json` and `plan.json` use). The CLI echoes the same number. `findings.jsonl` and
-  `groups.json` are untouched: the projection depends on a policy, and those two artifacts must
-  stay readable by a consumer that has not chosen one.
-- **A projection, never a measurement**, said at every appearance -- the flag, the headline, the
-  column paragraph, the CLI line, and the artifact's own `kind`/`basis` fields. It is only true of
-  the policy it names, and a reviewer's decisions can still move it.
-- **Equal to what the resolver measures.** The projection replays the shipped `resolve_finding`
-  over the audit's own rows and counts `review_required` per group, so it must equal `plan.json`'s
-  `review_rows` group for group under the same policy -- a second READING of one implementation,
-  not a second implementation. `tests/llb/conflicts/test_policy_projection.py` pins that equality
-  on the mixed fixture (one claim-tier duplicate the policy accepts plus one semantic-tier
-  duplicate it escalates: 2 to decide, 1 to review) and across both policies on rows that separate
-  them. The ranking does not change: the decision table still ranks on `to decide`, the only count
-  that exists without a policy.
-
-**The layering decision.** The projection needs the resolution vocabulary and the report must not
-have it, so it is composed ABOVE both layers: `src/llb/conflicts/policy_projection.py` imports
-`resolution_policy`, the CLI calls it and puts the plain JSON result on
-`AuditResult.policy_projection`, and `report.py` / `report_findings.py` render data they never
-derive. `conflicts.report*` therefore still imports nothing from `conflicts.resolution_*`, which
-`test_policy_projection.py` asserts by reading the report modules' own import lines rather than by
-convention. The cheaper alternative -- the report simply pointing at the resolver -- was kept as
-well rather than replaced: every mention of the projection names `resolve-corpus-conflicts` and
-where the measured count lives, because the resolver without `--apply` already plans without
-touching a corpus byte and remains the only thing that MEASURES the count.
-
-Measured on the two goods bundles, which are the two ends of the divergence:
-
-- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-projected-review-goods-semantic/`,
-  100 rows, 6 groups): projected `{G1: 51, G2: 14, G3: 29, G4: 3, G5: 1, G6: 2}` = 100 rows in 6
-  groups, equal group for group to the `review_rows` the resolver then wrote into `plan.json` in
-  the same directory, and equal to `decide_rows` as well -- every semantic-tier duplicate is to
-  review under every policy. Here the projection confirms the headline instead of correcting it --
-  and this is the bundle an operator meets first, which is exactly why the coincidence is easy to
-  mistake for a rule that the claim bundle below breaks.
-- **Goods budget-100 claim bundle**
-  (`.data/corpus-conflicts/20260812T-projected-review-goods-budget100/`, CUDA host, RTX PRO 3000
-  Blackwell, 954-chunk store at resolved cosine 0.3604, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M
-  agreeing with all 24 frozen probe pairs, 8 min 52 s of adjudication): the divergent end. The
-  report reads `to decide: 1 of 100 rows` and `to review (PROJECTED under policy conservative): 0
-  rows in 0 decision groups` -- the corpus's one actionable row is a `subsumed_by` the conservative
-  policy settles as `keep_both`, so it costs a human nothing. The resolver run on the same rows
-  then measured `review_rows` 0 in every one of the six groups. An operator funding one review off
-  the audit report alone would have funded a review that does not exist; the projection says so one
-  command earlier, and says under which policy.
-
-### One actionable set
-
-"Actionable" -- the predicate behind the **to decide** count -- has ONE definition, `is_actionable`
-in `src/llb/conflicts/constants.py`: every relation but `complementary`, plus anything the
-vocabulary does not recognize. `decide_count` is the same predicate over a relation census, so the
-group table, the plan's `decide_rows`, and the CLI all count one set. The claim-tier
-precision block counts that set (`AdjudicatedRow.actionable`) and the report's ordering promotes
-that set (`finding_sort_key`), so a row the audit counts as work can never sort below a row it
-counts as none. Within each of the two buckets the order is descending score, then claim identity.
-
-That ordering writes `findings.jsonl` as well as `report.md`, and both are read top-down, so the
-two artifacts lead with the same row. Measured on the goods budget-100 bundle: its single
-`subsumed_by` row -- the only row an operator has to decide -- sat at position **23 of 99**, below
-22 `complementary` rows the model scored higher, and now leads the file and the report. The
-resolution lane is unaffected by the reordering: planning the same 99 rows in either order yields
-byte-identical overlays (only `source_findings_sha256`, which pins the file, differs), the same six
-decision groups with the same ids, and an apply/rollback that leaves every corpus byte untouched.
-`overlay_from_plan` sorts each document's annotations and suppress-spans by their own identity to
-guarantee that, so a re-sorted audit cannot republish a store generation that changes nothing.
-
-### The `groups.json` sidecar
-
-The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
-`findings.jsonl` (`src/llb/conflicts/group_artifact.py`). Each group carries `group_id`, `rows`,
-`finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and `top_score`; the
-document also carries the census and `source_findings_sha256`, which pins it to the exact rows on
-disk and equals the `source_findings_sha256` the resolution plan records.
-
-The `finding_ids` are the SAME ids `plan.json` uses (`finding_id` in `hashing.py`), so a group id
-joins the audit, the plan, and the review ledger without any consumer re-deriving anything. Both
-sides nonetheless compute the grouping from `findings.jsonl` ROWS through one function, and the
-audit writes the rows and the sidecar from one list, so a consumer that never reads the sidecar --
-including an audit run from before it existed -- derives identical groups by grouping the file in
-its own order. [Conflict resolution](conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
-is the first consumer.
-
-### Measured on the goods corpus
-
-CUDA host (RTX PRO 3000 Blackwell, 12 GiB), goods corpus (5 markdown documents, 954-chunk
-`multilingual-e5-base` `recursive@800/120` store), MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating,
-`MAX_CANDIDATE_PAIRS=100`, resolved cosine 0.3604 over 55,865 exhaustive comparable pairs. The
-adjudicator agreed with all 24 frozen probe pairs (Wilson 95% lower bound 0.862) in 1 min 34 s and
-adjudicated the 100 rows in 9 min 23 s, with 1 unparsable verdict inside the 5-row allowance.
-
-**99 findings on 5 documents / 6 document pairs / 79 chunk units, in 6 groups (largest 51).** The
-row count over-states the independent evidence by a factor of sixteen: a triage list of 99 rows is
-six decisions, on a corpus of five documents that can only supply ten document pairs and used six.
-Only 1 row was actionable (`subsumed_by`), resting on one left and one right chunk, so no measured
-budget clears a precision floor -- the clustered bound and the census agree, and now the headline
-count agrees with both instead of reading as 99 results.
-
-The largest group is also the reading's sharp edge: G2 chains 51 rows across three documents through
-23 shared chunks, so transitive closure can UNDER-state the work as much as a raw row count
-over-states it. Read the pair, not either number alone -- the row count bounds the decisions from
-above, the group count from below.
-
-Artifacts: `$DATA_DIR/corpus-conflicts/20260812T-census-goods-budget100/`. This is a different store
-generation from the [budget-100 precision runs](#measured-both-quickstart-corpora) (954 chunks at
-cosine 0.3604 against 1,139 at 0.3648), and it returned 1 actionable row where that run returned 8;
-the candidate list at a fixed budget is a rank cutoff into the store's own similarity ordering, so
-the two lists are not the same rows.
+The census behind every printed count, the two decision-grouping rules and the range between them,
+the `to decide` / `to review` split, the policy projection, and the `groups.json` sidecar live on
+their own page: [decision groups and their counts](conflict-decision-groups.md).
 
 ## Semantic prefix tree
 
@@ -567,17 +360,24 @@ measurement.
 
 `$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
 sides with exact offsets -- the machine-readable input a resolution lane consumes, one line per row
-whatever the census says), `report.md` ([actionable rows first](#one-actionable-set), grouped into
-decisions with [the unit census beside every count](#the-count-and-the-units-behind-it)),
-[`groups.json`](#the-groupsjson-sidecar) (the decision groups, addressed by the same finding ids the
-resolution plan uses), `summary.json` (per-tier counts, timings, parameters, `finding_census` /
-`relation_census`, the optional
-[`policy_projection`](#projecting-the-review-count-one-command-earlier) block, and the
-`claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
+whatever the census says), `report.md`
+([actionable rows first](conflict-decision-groups.md#one-actionable-set), grouped into decisions
+with [the unit census beside every count](conflict-decision-groups.md#the-count-and-the-units-behind-it)),
+[`groups.json`](conflict-decision-groups.md#the-groupsjson-sidecar) (the decision groups, addressed
+by the same finding ids the resolution plan uses), `summary.json` (per-tier counts, timings,
+parameters, `finding_census` /
+`relation_census`, [`group_granularity`](conflict-decision-groups.md#how-many-decisions-the-row-count-is)
+(both grouping rules and the decision range), the optional
+[`policy_projection`](conflict-decision-groups.md#projecting-the-review-count-one-command-earlier)
+block, and the `claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
 only meaningful in the space that produced them). With projected blocking, the resolved store
 generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
 `semantic_tree/tree_meta.json`. The projection JSON carries its own SHA-256 fingerprint.
+
+`make compare-conflict-granularity` writes
+`$DATA_DIR/corpus-conflict-granularity/<run>/{granularity.md,granularity.json}` -- a re-reading of
+audit runs already on disk, so it produces no findings of its own.
 
 ## Evidence run
 

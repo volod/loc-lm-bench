@@ -146,6 +146,7 @@ class AuditResult:
         # Imported here rather than at module scope: the census reads these models, so the
         # dependency runs one way and this file stays the leaf every conflicts module can import.
         from llb.conflicts.census import finding_census, relation_census
+        from llb.conflicts.granularity import finding_granularity
 
         payload: dict[str, Any] = {
             "effort": self.effort,
@@ -153,6 +154,9 @@ class AuditResult:
             "n_docs": self.n_docs,
             "n_findings": len(self.findings),
             "finding_census": finding_census(self.findings),
+            # Both grouping rules, so a consumer reads the decision RANGE rather than the quoted
+            # group count alone; `granularity.QUOTED_RULE` names which end the audit is built on.
+            "group_granularity": finding_granularity(self.findings),
             "relations": self.relation_counts(),
             "relation_census": relation_census(self.findings),
             "tiers": [stat.payload() for stat in self.tiers],
