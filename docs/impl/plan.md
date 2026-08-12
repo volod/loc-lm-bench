@@ -45,34 +45,63 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-precision-budget-that-clears-its-own-bound (optional)
+### conflict-finding-count-over-states-independent-evidence (optional)
 
-The measured claim-tier precision is reported with a two-way clustered lower bound of **0.0** on
-both quickstart corpora, because twelve rows resting on about nine distinct left and nine distinct
-right chunks cannot support a non-zero 95% floor at any point estimate
-([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)). The
-point estimate is therefore the only part of the block an operator can currently read, which is the
-failure mode the bound exists to prevent. Find the budget that buys a non-zero floor: sweep the
-candidate budget (12 / 25 / 50 / 100) on both corpora, record distinct left/right chunks and the
-clustered LCB per budget, and state the smallest budget whose bound clears zero -- or record that
-the corpus's chunk reuse puts it out of reach at any affordable budget, which is itself the answer
-an operator needs before trusting a precision figure.
+`report.md` and `summary.json` head every audit with a finding COUNT, and on a corpus whose
+conflicts concentrate that count is a multiple of the evidence behind it. Measured: the goods
+corpus's 8 actionable rows at budget 100 all share the same right document, and 6 of the 8 share a
+single left chunk, so "8 findings" is one chunk against one document
+([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
+The precision block already computes the clustered census that exposes this, but only inside its own
+section -- the headline count, the relation table, and the findings list still read as N independent
+results. Report the distinct-unit census beside the count everywhere a count appears ("8 rows on 3
+left / 1 right documents"), and collapse the findings table's repeated-unit rows into a group so an
+operator triaging the list sees one decision rather than six.
+
+- Agent status: CLEAR
+- Dependencies: none. Reuse the cluster census in `src/llb/conflicts/claim_precision.py` and the
+  finding identity in `models.py`; the grouping is a rendering change, not a detection change.
+- User-visible outcome: an operator cannot read a concentrated corpus as having more independent
+  conflicts than it has, at the point where they decide how much review to fund.
+- Scope boundary: in scope -- the unit census beside every count, grouped rendering of rows sharing
+  a chunk or a document pair, and the same census in `summary.json`. Out of scope -- suppressing or
+  deduplicating findings in `findings.jsonl` (a resolution lane consumes every row), changing
+  candidate generation, and changing the precision estimator.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: rendering plus summary changes with fixture tests over a committed concentrated
+  block; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose rows all share one chunk reports one group and
+  states its unit counts beside the row count; `findings.jsonl` keeps every row byte-identical.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#artifacts).
+
+### conflict-precision-bound-at-document-clustering (optional)
+
+The clustered bound treats a CHUNK as the independent unit, and on a concentrated corpus that is
+still too generous. Measured: every one of the goods corpus's 8 actionable rows at budget 100 points
+at the same right document, so at the document level the corpus supplies one observation, not eight
+-- yet the chunk-level bound resamples 42 left and 51 right chunks
+([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
+The bound refused a floor there anyway, which is why this is a sharpening rather than a correction,
+but nothing establishes which unit the audit should quote when the two disagree. Compute the bound
+at both clusterings on the same rows, report them side by side on both quickstart corpora, and state
+the rule: quote the document-level bound always, quote the chunk-level bound when the corpus spreads
+its conflicts, or quote both.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the precision block and its clustered bound as shipped
-  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision));
-  cost per budget is one model call per row plus the 24-call calibration probe.
-- User-visible outcome: the audit's suggested candidate budget becomes a budget whose precision
-  block says something, instead of one whose lower bound is structurally zero.
-- Scope boundary: in scope -- the budget sweep, the per-budget unit census, and a recommended
-  budget per corpus. Out of scope -- changing the bound's estimator, the calibration gate, and the
-  shipped `--max-candidate-pairs` default before the sweep supports a change.
+- Dependencies: none. `two_way_proportion_bound` already takes arbitrary cluster keys, so the
+  document-level bound is the same estimator over `doc_id` keys; the rows and their verdicts come
+  from the existing budget-100 runs and need no re-adjudication.
+- User-visible outcome: the precision floor an operator reads is clustered on the unit their corpus
+  actually repeats, instead of on whichever unit the chunker happened to produce.
+- Scope boundary: in scope -- the second clustering, the side-by-side report, and a stated rule for
+  which bound the audit quotes. Out of scope -- a third clustering level, changing the estimator,
+  and changing the calibration gate.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: `make audit-corpus-conflicts EFFORT=claim MAX_CANDIDATE_PAIRS=<n>` per budget per
-  quickstart corpus on the CUDA host; CI covers the sweep aggregation over fixture blocks.
-- Acceptance gates: `make ci` green; the report states the clustered LCB and the distinct-chunk
-  counts per budget on both corpora, and names the smallest budget clearing zero or records that
-  none does.
+- Execution path: recompute both bounds over the committed budget-100 per-row ledgers on the CUDA
+  host (no model calls needed); CI covers both clusterings over fixture rows.
+- Acceptance gates: `make ci` green; both corpora report both bounds at every measured budget; the
+  report names which bound the audit quotes and why, and the chunk-level bound never reads lower
+  than the document-level one on the same rows.
 - Documentation target: [conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
 
 ### conflict-adjudicator-probe-difficulty (optional)

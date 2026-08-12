@@ -18,53 +18,21 @@ from llb.conflicts.claim_calibration import (
     calibrate_adjudicator,
     load_calibration_probe,
 )
-from llb.conflicts.claim_precision import (
-    AdjudicatedRow,
-    precision_block,
-    unparsed_allowance,
-)
-from llb.conflicts.constants import REL_COMPLEMENTARY, REL_DUPLICATE, TIER_CLAIM
+from llb.conflicts.claim_precision import precision_block, unparsed_allowance
+from llb.conflicts.constants import TIER_CLAIM
 from llb.conflicts.null_research_precision import CandidateRow, precision_curve
 from llb.conflicts.report import render_report, write_audit
 from tests.llb.conflicts.conflict_helpers import (
     FAKE_COS_THRESHOLD,
     FIXTURE_CORPUS,
+    adjudicated_rows,
+    calibrated_stub,
     fake_store_view,
     probe_aware,
 )
 from tests.llb.conflicts.test_audit import scripted
 
 SEED = 20260812
-
-
-def _rows(flags, *, left_keys=None, right_keys=None, parsed=None):
-    """Adjudicated rows carrying the given actionable flags, ranked highest cosine first."""
-    left_keys = left_keys or [f"left#{index}" for index in range(len(flags))]
-    right_keys = right_keys or [f"right#{index}" for index in range(len(flags))]
-    parsed = [True] * len(flags) if parsed is None else parsed
-    return [
-        AdjudicatedRow(
-            rank=index + 1,
-            left_key=left_keys[index],
-            right_key=right_keys[index],
-            score=1.0 - index / 100,
-            relation=(REL_DUPLICATE if flag else REL_COMPLEMENTARY) if ok else None,
-            parsed=ok,
-        )
-        for index, (flag, ok) in enumerate(zip(flags, parsed))
-    ]
-
-
-def _calibrated(accuracy_lcb: float = 0.9) -> dict:
-    return {
-        "probe_id": "test",
-        "parsed_pairs": 24,
-        "agreements": 23,
-        "accuracy": 0.958333,
-        "accuracy_wilson_95": [accuracy_lcb, 1.0],
-        "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
-        "calibrated": True,
-    }
 
 
 # --- the frozen probe -------------------------------------------------------------------------
@@ -115,9 +83,9 @@ def test_the_printed_bound_equals_the_research_harness_bound_on_the_same_rows():
     flags = [True, True, False, True, False, True, True, False, True, True, False, True]
     left_keys = [f"L{index // 2}" for index in range(len(flags))]
     right_keys = [f"R{index % 5}" for index in range(len(flags))]
-    rows = _rows(flags, left_keys=left_keys, right_keys=right_keys)
+    rows = adjudicated_rows(flags, left_keys=left_keys, right_keys=right_keys)
 
-    block = precision_block(rows, _calibrated(), seed=SEED)
+    block = precision_block(rows, calibrated_stub(), seed=SEED)
 
     corpus = SimpleNamespace(
         chunks=[{"chunk_id": key, "doc_id": "d"} for key in left_keys + right_keys]
@@ -131,8 +99,8 @@ def test_the_printed_bound_equals_the_research_harness_bound_on_the_same_rows():
 
 
 def test_the_returned_budget_point_is_the_whole_adjudicated_list():
-    rows = _rows([True] * 8 + [False] * 4)
-    point = precision_block(rows, _calibrated(), seed=SEED)["returned_budget"]
+    rows = adjudicated_rows([True] * 8 + [False] * 4)
+    point = precision_block(rows, calibrated_stub(), seed=SEED)["returned_budget"]
     assert (point["budget"], point["actionable_rows"]) == (12, 8)
     assert point["precision"] == pytest.approx(8 / 12)
     assert 0.0 <= point["two_way_clustered_lcb"] <= point["precision"]
@@ -141,14 +109,16 @@ def test_the_returned_budget_point_is_the_whole_adjudicated_list():
 def test_repeating_the_same_chunks_buys_pair_row_confidence_but_not_clustered_confidence():
     """Restating six units as twenty-four rows adds no evidence, and only Wilson is fooled."""
     flags = [True] * 5 + [False]
-    units = precision_block(_rows(flags), _calibrated(), seed=SEED)["returned_budget"]
+    units = precision_block(adjudicated_rows(flags), calibrated_stub(), seed=SEED)[
+        "returned_budget"
+    ]
     repeated = precision_block(
-        _rows(
+        adjudicated_rows(
             flags * 4,
             left_keys=[f"L{index % 6}" for index in range(24)],
             right_keys=[f"R{index % 6}" for index in range(24)],
         ),
-        _calibrated(),
+        calibrated_stub(),
         seed=SEED,
     )["returned_budget"]
     assert units["precision"] == repeated["precision"]
@@ -159,8 +129,8 @@ def test_repeating_the_same_chunks_buys_pair_row_confidence_but_not_clustered_co
 
 
 def test_an_unparsed_verdict_counts_against_precision_rather_than_vanishing():
-    rows = _rows([True] * 19 + [False], parsed=[True] * 19 + [False])
-    block = precision_block(rows, _calibrated(), seed=SEED)
+    rows = adjudicated_rows([True] * 19 + [False], parsed=[True] * 19 + [False])
+    block = precision_block(rows, calibrated_stub(), seed=SEED)
     assert block["unparsed_rows"] == 1
     assert block["returned_budget"]["actionable_rows"] == 19
     assert block["returned_budget"]["budget"] == 20
@@ -168,8 +138,8 @@ def test_an_unparsed_verdict_counts_against_precision_rather_than_vanishing():
 
 def test_one_unparsable_verdict_does_not_erase_a_twelve_row_measurement():
     """The bias is downward, so the figure stays a lower bound rather than disappearing."""
-    rows = _rows([True] * 11 + [False], parsed=[True] * 11 + [False])
-    block = precision_block(rows, _calibrated(), seed=SEED)
+    rows = adjudicated_rows([True] * 11 + [False], parsed=[True] * 11 + [False])
+    block = precision_block(rows, calibrated_stub(), seed=SEED)
     assert unparsed_allowance(12) == 1
     assert block["reported"], block.get("reason")
     assert block["returned_budget"]["actionable_rows"] == 11
@@ -179,27 +149,27 @@ def test_one_unparsable_verdict_does_not_erase_a_twelve_row_measurement():
 
 
 def test_precision_is_suppressed_without_calibration():
-    block = precision_block(_rows([True] * 6), None, seed=SEED)
+    block = precision_block(adjudicated_rows([True] * 6), None, seed=SEED)
     assert not block["reported"] and "returned_budget" not in block
     assert "calibration was not run" in block["reason"]
 
 
 def test_precision_is_suppressed_when_the_adjudicator_misses_its_bound():
-    calibration = {**_calibrated(), "calibrated": False, "accuracy_wilson_95": [0.41, 0.72]}
-    block = precision_block(_rows([True] * 6), calibration, seed=SEED)
+    calibration = {**calibrated_stub(), "calibrated": False, "accuracy_wilson_95": [0.41, 0.72]}
+    block = precision_block(adjudicated_rows([True] * 6), calibration, seed=SEED)
     assert not block["reported"] and "returned_budget" not in block
     assert "missed its calibration bound" in block["reason"] and "0.41" in block["reason"]
 
 
 def test_precision_is_suppressed_when_too_many_verdicts_are_unparsable():
-    rows = _rows([True] * 10, parsed=[True] * 8 + [False, False])
-    block = precision_block(rows, _calibrated(), seed=SEED)
+    rows = adjudicated_rows([True] * 10, parsed=[True] * 8 + [False, False])
+    block = precision_block(rows, calibrated_stub(), seed=SEED)
     assert not block["reported"]
     assert "unparsable verdict" in block["reason"]
 
 
 def test_precision_is_suppressed_when_no_row_was_adjudicated():
-    block = precision_block([], _calibrated(), seed=SEED)
+    block = precision_block([], calibrated_stub(), seed=SEED)
     assert not block["reported"] and "no candidate rows" in block["reason"]
 
 

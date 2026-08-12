@@ -26,8 +26,11 @@ from llb.conflicts.null_research_clusters import two_way_proportion_bound
 from llb.core.contracts.common import JsonObject
 
 # Budgets the precision curve is reported at: small enough to read the head of the list, large
-# enough to show where a corpus's real relations run out.
-PRECISION_BUDGETS = (6, 12, 25, 50)
+# enough to show where a corpus's real relations run out AND large enough for the clustered bound
+# to have a chance of clearing zero. Because candidates come out in rank order, the top-N list is a
+# PREFIX of the top-M list for N < M, so one run at the largest budget measures every smaller
+# budget on exactly the same rows -- the curve IS the budget sweep, with no re-adjudication.
+PRECISION_BUDGETS = (6, 12, 25, 50, 100)
 # A row whose verdict could not be parsed is counted as not actionable; above this share of the
 # list the precision estimate is measuring the parser, not the corpus.
 MAX_UNPARSED_FRACTION = 0.05
@@ -73,10 +76,18 @@ class AdjudicatedRow:
 def precision_point(
     flags: list[bool], left_keys: list[str], right_keys: list[str], *, budget: int, seed: int
 ) -> JsonObject:
-    """Precision over the first `budget` rows with its Wilson and two-way clustered bounds."""
+    """Precision over the first `budget` rows with its Wilson and two-way clustered bounds.
+
+    The two cluster censuses answer different questions. `left_clusters` / `right_clusters` size
+    the evidence overall; `actionable_left_clusters` / `actionable_right_clusters` are what decide
+    whether the clustered bound can clear zero at all -- a resampled draw returns zero whenever it
+    misses every chunk that carries an actionable row, so the bound is pinned to 0.0 while the
+    conflicts sit on a handful of chunks, however high the point estimate reads.
+    """
     head, left, right = flags[:budget], left_keys[:budget], right_keys[:budget]
     successes = sum(head)
     lower, upper = wilson_interval(successes, budget)
+    hits = [index for index, flag in enumerate(head) if flag]
     return {
         "budget": budget,
         "actionable_rows": successes,
@@ -87,6 +98,8 @@ def precision_point(
         ),
         "left_clusters": len(set(left)),
         "right_clusters": len(set(right)),
+        "actionable_left_clusters": len({left[index] for index in hits}),
+        "actionable_right_clusters": len({right[index] for index in hits}),
     }
 
 
@@ -106,15 +119,56 @@ def precision_curve_points(
     ]
 
 
+def budget_resolution(curve: list[JsonObject]) -> JsonObject:
+    """The smallest measured budget whose clustered bound clears zero, and what to read from it.
+
+    A point estimate with a 0.0 floor tells an operator nothing about how much of the list is real,
+    so the budget that first buys a non-zero floor is the one worth spending adjudication on. When
+    no measured budget clears it, that is the answer -- and the census says which of the two causes
+    is responsible: too few distinct chunks carrying conflicts, or too few conflicts at all.
+    """
+    resolving = next(
+        (point for point in curve if float(point["two_way_clustered_lcb"]) > 0.0), None
+    )
+    widest = curve[-1] if curve else None
+    payload: JsonObject = {
+        "budgets_measured": [int(point["budget"]) for point in curve],
+        "resolving_budget": int(resolving["budget"]) if resolving else None,
+        "resolving_lcb": float(resolving["two_way_clustered_lcb"]) if resolving else None,
+    }
+    if resolving is not None:
+        payload["reading"] = (
+            f"the clustered lower bound first clears zero at budget {resolving['budget']} "
+            f"({resolving['two_way_clustered_lcb']}), where the actionable rows rest on "
+            f"{resolving['actionable_left_clusters']} left and "
+            f"{resolving['actionable_right_clusters']} right chunks; a smaller budget concentrates "
+            "them on too few chunks for any floor to survive resampling"
+        )
+        return payload
+    if widest is None:
+        payload["reading"] = "no budget was measured, so no floor can be quoted"
+        return payload
+    payload["reading"] = (
+        f"no measured budget up to {widest['budget']} clears zero: at the widest one the "
+        f"{widest['actionable_rows']} actionable rows rest on "
+        f"{widest['actionable_left_clusters']} left and {widest['actionable_right_clusters']} "
+        "right chunks, few enough that a resampled draw can miss all of them, so this corpus "
+        "cannot certify a precision floor at an affordable adjudication budget"
+    )
+    return payload
+
+
 def rows_precision(rows: list[AdjudicatedRow], *, seed: int) -> JsonObject:
     """Precision at the returned candidate budget plus the curve, from adjudicated rows."""
     flags = [row.actionable for row in rows]
     left = [row.left_key for row in rows]
     right = [row.right_key for row in rows]
+    curve = precision_curve_points(flags, left, right, seed=seed)
     return {
         "cosine_range": [round(rows[-1].score, 6), round(rows[0].score, 6)] if rows else None,
         "returned_budget": precision_point(flags, left, right, budget=len(rows), seed=seed),
-        "precision_curve": precision_curve_points(flags, left, right, seed=seed),
+        "precision_curve": curve,
+        "budget_resolution": budget_resolution(curve),
     }
 
 

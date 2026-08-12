@@ -200,7 +200,7 @@ sample size equal to the adjudication budget rather than to the pair space. `sum
 it as `claim_precision` and `report.md` renders a **Claim-tier precision** section. It is still not
 a false-positive rate over the corpus -- it is the precision of the list the operator was handed.
 
-Three properties are what make the number publishable, and each is enforced rather than assumed:
+Four properties are what make the number publishable, and each is enforced rather than assumed:
 
 - **Rank order.** `detect_semantic_pairs` returns candidates sorted by descending cosine (ties on
   chunk ordinals), so a prefix of the list is the TOP of the corpus's own similarity ordering.
@@ -213,6 +213,9 @@ Three properties are what make the number publishable, and each is enforced rath
   equals the research lane's curve on the same rows. The shared helpers live in
   `src/llb/conflicts/claim_precision.py`; `interval_stats.py` holds the Wilson interval both sides
   use.
+- **A budget sweep for free.** Rank order also makes the precision curve a genuine
+  candidate-budget sweep over one adjudicated list, so `budget_resolution` can name the smallest
+  budget whose clustered bound clears zero without paying for a run per budget.
 - **A calibration gate.** Before measuring, the audit adjudicates a COMMITTED frozen-label probe
   with the same prompt and the same endpoint, and suppresses the whole block -- with the reason
   printed -- when the model does not clear it. A precision figure computed from a model's own
@@ -221,8 +224,8 @@ Three properties are what make the number publishable, and each is enforced rath
 An unparsable verdict is kept as a row and counted as NOT actionable, so it biases the figure
 downward; the printed precision is therefore a lower bound whenever `unparsed_rows` is non-zero.
 The block is suppressed only when unparsed rows exceed `unparsed_allowance` (5% of the list, floor
-1), because at the suggested 12-row budget a single malformed completion would otherwise erase a
-usable conservative measurement.
+1), because at a 12-row budget a single malformed completion would otherwise erase a usable
+conservative measurement.
 
 ### The frozen calibration probe
 
@@ -246,28 +249,68 @@ agreement at `MIN_ADJUDICATOR_ACCURACY_LCB` (0.60) -- the same bound the researc
 suppresses the block rather than printing it uncalibrated; `--calibration-probe` points at a
 different probe.
 
+### The budget that buys a non-zero floor
+
+A precision figure whose lower bound is 0.0 tells an operator nothing about how much of the list is
+real, so the question the block has to answer is which candidate budget first buys a floor above
+zero. That sweep is **free**: because candidates come out in rank order, the top-N list is a PREFIX
+of the top-M list, so ONE adjudicated run at the widest budget measures every smaller budget on
+exactly the same rows. `precision_curve` is the sweep and `budget_resolution` names the answer --
+no run per budget, and no re-adjudication noise between points.
+
+What the curve is really reading is the census beside it. `actionable_left_clusters` /
+`actionable_right_clusters` count the distinct chunks the ACTIONABLE rows sit on, and that is what
+decides whether the bound can clear zero at all: a two-way resampled draw returns zero whenever it
+misses every chunk carrying a conflict, so the floor stays pinned at 0.0 while the conflicts are
+concentrated, however high the point estimate reads.
+
 ### Measured, both quickstart corpora
 
 CUDA host, RTX 4060 Ti, multilingual-E5 stores, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating,
-`MAX_CANDIDATE_PAIRS=12`. The adjudicator agreed with all 24 frozen probe pairs on both runs
-(accuracy 1.000, Wilson 95% lower bound 0.862, recall 1.000, specificity 1.000), so the block was
-reported on both.
+`MAX_CANDIDATE_PAIRS=100` (HR: 1 min 50 s for the probe, 10 min 54 s for 100 rows). The adjudicator
+agreed with all 24 frozen probe pairs on both runs (accuracy 1.000, Wilson 95% lower bound 0.862,
+recall 1.000, specificity 1.000), so the block was reported on both.
 
-| corpus | comparable pairs | resolved cosine | cosine range of the 12 rows | budget 6 | budget 12 | two-way clustered LCB | left / right chunks | relations at budget 12 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| HR (8 docs) | 2,432,676 | 0.5790 | 0.580 - 0.801 | 0.667 | **0.417** | 0.000 | 9 / 9 | 1 duplicate, 3 subsumed_by, 1 subsumes, 7 complementary |
-| goods (5 docs) | 71,736 | 0.4548 | 0.460 - 0.539 | 0.500 | **0.333** | 0.000 | 7 / 12 | 2 subsumed_by, 2 subsumes, 7 complementary, 1 unparsed |
+**HR** (8 docs, 2,432,676 comparable pairs, resolved cosine 0.5087, rows spanning 0.509 - 0.801,
+1 unparsable verdict inside the 5-row allowance):
 
-The goods run's one unparsable completion is counted as a non-actionable row, so its 0.333 is a
-lower bound on that list's precision (11 parsed rows, 4 actionable).
+| budget | actionable | precision | Wilson 95% | two-way clustered LCB | left / right chunks | actionable left / right |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 | 4 | 0.667 | [0.300, 0.903] | 0.000 | 5 / 5 | 3 / 3 |
+| 12 | 5 | 0.417 | [0.193, 0.680] | 0.000 | 9 / 9 | 4 / 3 |
+| 25 | 6 | 0.240 | [0.114, 0.436] | 0.000 | 17 / 19 | 5 / 3 |
+| 50 | 8 | 0.160 | [0.083, 0.285] | **0.022** | 37 / 33 | 7 / 5 |
+| 100 | 13 | 0.130 | [0.078, 0.210] | **0.042** | 69 / 56 | 11 / 10 |
 
-Two readings an operator can act on. The precision falls as the budget grows on both corpora, which
-is what a rank cutoff into a real similarity ordering should do -- the head of the list is where
-the conflicts are. And the clustered lower bound is **0.0** everywhere: twelve rows resting on
-about nine distinct left and nine distinct right chunks cannot support a non-zero 95% floor, no
-matter how the point estimate reads. That is the measurement doing its job. The pair-row Wilson
-interval on the same HR rows is `[0.193, 0.680]`, which would have suggested the evidence was
-several times stronger than the units justify.
+**goods** (5 docs, 71,736 comparable pairs, resolved cosine 0.3648, rows spanning 0.365 - 0.539,
+no unparsable verdicts):
+
+| budget | actionable | precision | Wilson 95% | two-way clustered LCB | left / right chunks | actionable left / right |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 | 3 | 0.500 | [0.188, 0.812] | 0.000 | 3 / 6 | 1 / 3 |
+| 12 | 4 | 0.333 | [0.138, 0.609] | 0.000 | 7 / 12 | 1 / 4 |
+| 25 | 4 | 0.160 | [0.064, 0.347] | 0.000 | 14 / 22 | 1 / 4 |
+| 50 | 6 | 0.120 | [0.056, 0.238] | 0.000 | 28 / 34 | 3 / 6 |
+| 100 | 8 | 0.080 | [0.041, 0.150] | 0.000 | 42 / 51 | 3 / 8 |
+
+**HR resolves at budget 50, which is already `SUGGESTED_MAX_CANDIDATE_PAIRS`.** The shipped
+suggestion is therefore measured rather than assumed, and no default changes. Budget 12 -- the
+value the earlier evidence in this page used -- is now known to sit below the resolving budget on
+both corpora.
+
+**Precision and the floor move in OPPOSITE directions.** HR's point estimate falls 0.667 -> 0.130
+while its bound rises 0.000 -> 0.042. That is not a contradiction: precision is a point estimate
+over a list whose tail is mostly `complementary`, while the floor is limited by how many distinct
+chunks carry conflicts. Spending more adjudication buys certainty about a smaller share, and an
+operator choosing a budget is choosing between those two, not maximizing one number.
+
+**goods never resolves, and the census says why it is not a budget problem.** All 8 of its
+actionable rows share the SAME right document, and 6 of the 8 share ONE left chunk
+(`pdf-6c325abf4b92.md#recursive#0003`). Eight rows is one chunk against one document, so widening
+the budget adds complementary rows without adding independent evidence -- `actionable_left_clusters`
+is stuck at 1 through budget 25 and reaches only 3 at budget 100. The pair-row Wilson interval at
+budget 100 is `[0.041, 0.150]`, a non-zero floor it has not earned; the clustered bound refuses it.
+That contrast is the whole reason the audit quotes the clustered bound.
 
 ## Semantic prefix tree
 
@@ -344,5 +387,6 @@ Post-filter CUDA-host evidence (RTX 4060 Ti, multilingual-E5 stores) is under
 `$DATA_DIR/corpus-conflicts/20260720T-semantic-metadata-filter-*`. The HR swept, budget-12, and
 budget-50 runs and the goods budget-12 and budget-50 runs are the source for the measurements
 above. The [claim-tier precision](#measured-claim-tier-precision) runs are under
-`$DATA_DIR/corpus-conflicts/20260812T-claim-precision-{hr,goods}-budget12/`, each carrying its
-per-row ledger and all 24 calibration verdicts in `summary.json`.
+`$DATA_DIR/corpus-conflicts/20260812T-claim-precision-{hr,goods}-budget{12,100}/`, each carrying
+its per-row ledger and all 24 calibration verdicts in `summary.json`; the budget-100 pair is the
+source for the sweep tables above and the budget-12 pair reproduces their first two rows.

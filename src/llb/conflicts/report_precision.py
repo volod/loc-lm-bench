@@ -55,16 +55,34 @@ def precision_section(result: AuditResult) -> list[str]:
         ),
         _calibration_line(block.get("adjudicator_calibration")),
         "",
-        "| budget | actionable | precision | Wilson 95% | two-way clustered LCB | left | right |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "### Precision against the candidate budget",
+        "",
+        "Candidates come out in rank order, so the rows at each budget are a prefix of the same "
+        "adjudicated list -- this is a sweep, not a re-measurement. `actionable left/right` counts "
+        "the distinct chunks the ACTIONABLE rows sit on, which is what decides whether the "
+        "clustered bound can clear zero: a resampled draw that misses all of them returns nothing.",
+        "",
+        "| budget | actionable | precision | Wilson 95% | two-way clustered LCB "
+        "| left | right | actionable left | actionable right |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in block["precision_curve"]:
         lines.append(
             f"| {row['budget']} | {row['actionable_rows']} | {row['precision']} "
             f"| {row['wilson_95']} | {row['two_way_clustered_lcb']} "
-            f"| {row['left_clusters']} | {row['right_clusters']} |"
+            f"| {row['left_clusters']} | {row['right_clusters']} "
+            f"| {row['actionable_left_clusters']} | {row['actionable_right_clusters']} |"
         )
+    resolution = block["budget_resolution"]
     lines += [
+        "",
+        "- budget that first buys a non-zero floor: "
+        + (
+            f"**{resolution['resolving_budget']}** (bound {resolution['resolving_lcb']})"
+            if resolution["resolving_budget"] is not None
+            else "**none of the measured budgets**"
+        ),
+        f"- {resolution['reading']}.",
         "",
         "This is the share of the RETURNED list that survived claim adjudication, not a "
         "false-positive rate over the corpus's pair space -- the semantic tier's cutoff is still "

@@ -130,6 +130,42 @@ def probe_aware(base, *, correct: bool = True):
     return complete
 
 
+def adjudicated_rows(flags, *, left_keys=None, right_keys=None, parsed=None):
+    """Claim-tier rows carrying the given actionable flags, ranked highest cosine first."""
+    from llb.conflicts.claim_precision import AdjudicatedRow
+    from llb.conflicts.constants import REL_COMPLEMENTARY, REL_DUPLICATE
+
+    left_keys = left_keys or [f"left#{index}" for index in range(len(flags))]
+    right_keys = right_keys or [f"right#{index}" for index in range(len(flags))]
+    parsed = [True] * len(flags) if parsed is None else parsed
+    return [
+        AdjudicatedRow(
+            rank=index + 1,
+            left_key=left_keys[index],
+            right_key=right_keys[index],
+            score=1.0 - index / 1000,
+            relation=(REL_DUPLICATE if flag else REL_COMPLEMENTARY) if ok else None,
+            parsed=ok,
+        )
+        for index, (flag, ok) in enumerate(zip(flags, parsed))
+    ]
+
+
+def calibrated_stub(accuracy_lcb: float = 0.9) -> dict:
+    """A calibration payload that clears the gate, so precision tests isolate the precision."""
+    from llb.conflicts.claim_calibration import MIN_ADJUDICATOR_ACCURACY_LCB
+
+    return {
+        "probe_id": "test",
+        "parsed_pairs": 24,
+        "agreements": 23,
+        "accuracy": 0.958333,
+        "accuracy_wilson_95": [accuracy_lcb, 1.0],
+        "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
+        "calibrated": True,
+    }
+
+
 @pytest.fixture
 def fixture_corpus() -> Path:
     return FIXTURE_CORPUS
