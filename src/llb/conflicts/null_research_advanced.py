@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from llb.conflicts.null_research_controls import MatchedControls
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
     MIN_COVERAGE_PROBABILITY,
@@ -15,7 +16,6 @@ from llb.conflicts.null_research_evaluation import (
     simulated_wilson_coverage,
     threshold_for_fpr,
     transfer_payload,
-    wilson_interval,
 )
 from llb.conflicts.null_research_geometry import CorpusGeometry, DocPair
 from llb.core.contracts.common import JsonObject

@@ -91,6 +91,17 @@ def test_semantic_effort_pairs_the_revision_but_does_not_label_the_disagreement(
     assert semantic.extra["cross_document_pairs"] > 0
 
 
+def test_semantic_candidates_come_out_in_rank_order():
+    """A prefix of the list must be the TOP of the similarity ordering, not the traversal order.
+
+    `--max-claim-pairs` and the claim-tier precision curve both read a prefix, and the threshold
+    is documented as a rank cutoff -- an unsorted list would make both of them arbitrary subsets.
+    """
+    result = audit(TIER_SEMANTIC)
+    scores = [finding.score for finding in result.findings if finding.tier == TIER_SEMANTIC]
+    assert scores == sorted(scores, reverse=True)
+
+
 def test_claim_effort_recovers_partial_supersession():
     """The 2024 revision supersedes the deadline it changed and duplicates what it restated."""
     result = audit(TIER_CLAIM)

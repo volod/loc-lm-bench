@@ -36,6 +36,16 @@ Governance front matter (`version`, `effective_date`, `source_system`, `language
 staleness ordering resolve, and is deliberately excluded from content hashing: two byte-identical
 documents carrying different `effective_date` values must still read as duplicates.
 
+**The adjudicator-calibration probe.** `adjudicator_probe.json` beside this file pairs 24 sections
+of these documents with frozen actionable/complementary labels, half each way. Every claim-tier
+audit adjudicates it before quoting a precision figure, so the corpus doubles as the calibration
+set for the model that judges other corpora ([conflict
+detection](../../../docs/impl/current/data-prep/conflict-detection.md#the-frozen-calibration-probe)).
+The probe addresses passages by `doc_id` + heading line, never by copied text: editing a section
+below fails the probe loudly instead of leaving a frozen label on text that moved. Two sections
+that carry byte-identical text (the copy and its original) must not both appear as probe pairs
+against the same third section -- that is one prompt counted twice, not two observations.
+
 **Repeated metadata is not a claim.** `archive-policy.md` and `deadline-note.md` each carry one
 number-heavy `Reiestr vydannia` publication record under the same structural heading. The semantic
 filter must exclude both blocks without a vocabulary-specific label, while preserving the ordinary

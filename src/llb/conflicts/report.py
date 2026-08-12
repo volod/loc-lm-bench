@@ -18,6 +18,7 @@ from llb.conflicts.constants import (
     TREE_META_FILE,
 )
 from llb.conflicts.models import AuditResult, Finding
+from llb.conflicts.report_precision import precision_section
 
 # Findings whose relation means "someone must decide", listed first in the report.
 ACTIONABLE = (REL_CONTRADICTS, REL_SUPERSEDED_BY)
@@ -51,6 +52,7 @@ def render_report(result: AuditResult) -> str:
     ]
     lines += _relations_section(result)
     lines += _tiers_section(result)
+    lines += precision_section(result)
     lines += _needles_section(result)
     lines += _findings_section(result)
     return "\n".join(lines)

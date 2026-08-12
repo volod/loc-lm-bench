@@ -98,6 +98,38 @@ def scripted_completer(script):
     return complete
 
 
+def probe_aware(base, *, correct: bool = True):
+    """Wrap an adjudicator so the frozen calibration probe is answered from its own labels.
+
+    `correct=True` is an adjudicator that is calibrated by construction; `correct=False` calls
+    every complementary probe pair a duplicate, which is the failure mode the gate exists to
+    catch -- it inflates precision on a corpus with nothing to find.
+    """
+    from llb.conflicts.claim_calibration import load_calibration_probe
+
+    labels = {
+        (pair.left_text, pair.right_text): pair.relation
+        if correct or pair.actionable
+        else "duplicate"
+        for pair in load_calibration_probe().pairs
+    }
+
+    def complete(prompt: str) -> str:
+        # The fixture documents restate each other verbatim, so the two passages must be read out
+        # of the prompt's own delimiters rather than searched for -- a substring probe binds the
+        # wrong pair whenever two sections carry identical text.
+        quoted = prompt.split('"""')
+        passages = (quoted[1].strip(), quoted[3].strip()) if len(quoted) > 4 else ("", "")
+        if passages not in labels:
+            return base(prompt)
+        return (
+            f'{{"relation": "{labels[passages]}", "confidence": 0.9,'
+            ' "claim_a": "", "claim_b": "", "rationale": "probe"}'
+        )
+
+    return complete
+
+
 @pytest.fixture
 def fixture_corpus() -> Path:
     return FIXTURE_CORPUS

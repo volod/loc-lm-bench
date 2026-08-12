@@ -19,7 +19,9 @@ import logging
 import time
 from collections.abc import Iterable
 from dataclasses import replace
+from functools import partial
 
+from llb.conflicts.claim_precision import AdjudicatedRow
 from llb.conflicts.claim_prompt import AdjudicationError, adjudication_prompt, parse_adjudication
 from llb.conflicts.constants import REL_CONTRADICTS, REL_SUPERSEDED_BY, TIER_CLAIM
 from llb.conflicts.governance import SIDE_A, compare_editions
@@ -73,28 +75,46 @@ def apply_supersession(
     return REL_SUPERSEDED_BY, a, b, staleness
 
 
+def _chunk_key(chunk: ChunkRecord, ordinal: int) -> str:
+    """The clustering unit of a candidate row: the chunk it reuses across rows."""
+    return str(chunk.get("chunk_id") or f"{chunk['doc_id']}#{ordinal}")
+
+
 def adjudicate_pairs(
     pairs: Iterable[tuple[int, int, float]],
     chunks: list[ChunkRecord],
     governance_by_doc: dict[str, JsonObject],
     complete: LLMComplete,
-) -> tuple[list[Finding], TierStats]:
-    """Ask the model for a relation per candidate pair and build the claim-level findings."""
+) -> tuple[list[Finding], TierStats, list[AdjudicatedRow]]:
+    """Ask the model for a relation per candidate pair and build the claim-level findings.
+
+    The third return value is the per-row ledger the precision block is measured on: it keeps the
+    rows the findings drop -- an unparsable verdict is still a row the operator was handed.
+    """
     started = time.monotonic()
     stats = TierStats(tier=TIER_CLAIM)
     findings: list[Finding] = []
+    rows: list[AdjudicatedRow] = []
     failures = 0
     calls = 0
 
     for left, right, similarity in pairs:
         left_chunk, right_chunk = chunks[left], chunks[right]
         calls += 1
+        row = partial(
+            AdjudicatedRow,
+            rank=calls,
+            left_key=_chunk_key(left_chunk, left),
+            right_key=_chunk_key(right_chunk, right),
+            score=similarity,
+        )
         try:
             verdict = parse_adjudication(
                 complete(adjudication_prompt(left_chunk["text"], right_chunk["text"]))
             )
         except (AdjudicationError, RuntimeError) as exc:
             failures += 1
+            rows.append(row(relation=None, parsed=False))
             _LOG.warning(
                 "[conflicts] claim adjudication failed for %s vs %s: %s",
                 left_chunk.get("chunk_id"),
@@ -109,6 +129,7 @@ def adjudicate_pairs(
             right_chunk, verdict["claim_b"], governance_by_doc.get(right_chunk["doc_id"], {})
         )
         relation, a, b, staleness = apply_supersession(verdict["relation"], a, b)
+        rows.append(row(relation=relation, parsed=True))
         findings.append(
             Finding(
                 relation=relation,
@@ -126,4 +147,4 @@ def adjudicate_pairs(
     stats.findings = len(findings)
     stats.seconds = time.monotonic() - started
     stats.extra = {"model_calls": calls, "unparsed_verdicts": failures}
-    return findings, stats
+    return findings, stats, rows

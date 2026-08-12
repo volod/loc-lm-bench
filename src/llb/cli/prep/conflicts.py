@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 import typer
 
 from llb.cli.app import app
+from llb.conflicts.claim_calibration import DEFAULT_CALIBRATION_PROBE
 from llb.conflicts.constants import (
     CONFLICTS_METHOD,
     DEFAULT_CONTAINMENT_THRESHOLD,
@@ -88,13 +89,26 @@ def audit_corpus_conflicts_cmd(
         help="pairs sampled to estimate the null distribution (--cos-quantile only)",
     ),
     null_seed: int = typer.Option(
-        DEFAULT_NULL_SEED, help="seed for null-distribution sampling; fixed for reproducibility"
+        DEFAULT_NULL_SEED,
+        help="seed for null-distribution sampling and the clustered precision bootstrap; "
+        "fixed for reproducibility",
     ),
     leaf_size: int = typer.Option(
         DEFAULT_LEAF_SIZE, min=1, help="semantic prefix tree leaf capacity"
     ),
     max_claim_pairs: int = typer.Option(
         0, min=0, help="cap adjudicated pairs (0 = every candidate pair)"
+    ),
+    calibrate_adjudicator: bool = typer.Option(
+        True,
+        "--calibrate-adjudicator/--no-calibrate-adjudicator",
+        help="adjudicate the frozen calibration probe before measuring claim-tier precision; "
+        "without it the precision block is suppressed rather than printed uncalibrated",
+    ),
+    calibration_probe: Optional[Path] = typer.Option(
+        None,
+        help="frozen-label probe for adjudicator calibration "
+        f"(default {DEFAULT_CALIBRATION_PROBE})",
     ),
     min_claim_tokens: int = typer.Option(
         MIN_CLAIM_TOKENS,
@@ -160,6 +174,8 @@ def audit_corpus_conflicts_cmd(
             min_claim_tokens=min_claim_tokens,
             center_vectors=center_vectors,
             project_dims=project_dims,
+            calibrate_adjudicator=calibrate_adjudicator,
+            calibration_probe=calibration_probe,
         ),
         store=view,
         goldset=items,
@@ -189,6 +205,15 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(line)
     for relation, count in result.relation_counts().items():
         typer.echo(f"[conflicts]   {relation}: {count}")
+    precision = result.claim_precision
+    if precision.get("reported"):
+        point = precision["returned_budget"]
+        typer.echo(
+            f"[conflicts] claim-tier precision {point['precision']} at budget {point['budget']} "
+            f"(two-way clustered 95% LCB {point['two_way_clustered_lcb']})"
+        )
+    elif precision:
+        typer.echo(f"[conflicts] claim-tier precision not reported: {precision['reason']}")
     if result.needles:
         typer.echo(
             f"[conflicts] needles: {result.needles.get('ambiguous_items')}/"

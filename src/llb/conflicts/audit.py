@@ -56,6 +56,8 @@ class AuditParams:
     min_claim_tokens: int = MIN_CLAIM_TOKENS
     center_vectors: bool = True
     project_dims: int = 0
+    calibrate_adjudicator: bool = True
+    calibration_probe: Path | str | None = None
 
     def payload(self) -> JsonObject:
         return {
@@ -72,6 +74,10 @@ class AuditParams:
             "min_claim_tokens": self.min_claim_tokens,
             "center_vectors": self.center_vectors,
             "project_dims": self.project_dims,
+            "calibrate_adjudicator": self.calibrate_adjudicator,
+            "calibration_probe": str(self.calibration_probe)
+            if self.calibration_probe is not None
+            else None,
         }
 
 

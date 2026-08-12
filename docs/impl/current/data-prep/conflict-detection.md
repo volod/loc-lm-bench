@@ -26,6 +26,11 @@ Four cumulative `--effort` tiers; each settles what it can so the next has less 
 | `semantic` | chunk-vector pair search over a built store | a store | 1.5 s |
 | `claim` | local-model adjudication of surviving pairs | a store + a model | 77 s / 11 pairs |
 
+The `claim` tier costs one model call per surviving candidate plus 24 calls for the frozen
+adjudicator-calibration probe that earns the [measured precision
+block](#measured-claim-tier-precision) (about 105 s on the CUDA host; skip it with
+`--no-calibrate-adjudicator`).
+
 `hash` splits duplicates into `raw` (byte-identical) and `normalized` (identical after casefold,
 whitespace, punctuation, apostrophe unification, and front-matter removal) -- the second is the
 re-ingested-edition case. Content hashing is deliberately **not** `corpus_doc_fingerprints`, which
@@ -187,6 +192,83 @@ claim-tier precision that replaces the missing rate live in [independent-null
 research](conflict-null-research.md), and the arithmetic that closed the search is in [closing the
 independent-null question](conflict-null-closure.md).
 
+## Measured claim-tier precision
+
+What the rank cutoff cannot say, the claim tier can: `--effort claim` adjudicates every returned
+candidate row anyway, so the share of THAT list which survives adjudication is measurable at a
+sample size equal to the adjudication budget rather than to the pair space. `summary.json` carries
+it as `claim_precision` and `report.md` renders a **Claim-tier precision** section. It is still not
+a false-positive rate over the corpus -- it is the precision of the list the operator was handed.
+
+Three properties are what make the number publishable, and each is enforced rather than assumed:
+
+- **Rank order.** `detect_semantic_pairs` returns candidates sorted by descending cosine (ties on
+  chunk ordinals), so a prefix of the list is the TOP of the corpus's own similarity ordering.
+  Both `--max-claim-pairs` and the precision curve's budgets read a prefix; before this they read
+  whatever order the tree traversal produced.
+- **A two-way clustered bound.** Rows that share a left or a right chunk are not independent
+  evidence, so the lower bound is `two_way_proportion_bound` (`null_research_clusters.py`) --
+  literally the estimator the independent-null research established, imported rather than
+  reimplemented, with `tests/llb/conflicts/test_claim_precision.py` asserting the audit's curve
+  equals the research lane's curve on the same rows. The shared helpers live in
+  `src/llb/conflicts/claim_precision.py`; `interval_stats.py` holds the Wilson interval both sides
+  use.
+- **A calibration gate.** Before measuring, the audit adjudicates a COMMITTED frozen-label probe
+  with the same prompt and the same endpoint, and suppresses the whole block -- with the reason
+  printed -- when the model does not clear it. A precision figure computed from a model's own
+  verdicts is otherwise only as good as the model.
+
+An unparsable verdict is kept as a row and counted as NOT actionable, so it biases the figure
+downward; the printed precision is therefore a lower bound whenever `unparsed_rows` is non-zero.
+The block is suppressed only when unparsed rows exceed `unparsed_allowance` (5% of the list, floor
+1), because at the suggested 12-row budget a single malformed completion would otherwise erase a
+usable conservative measurement.
+
+### The frozen calibration probe
+
+`samples/corpora/conflicts_uk_v1/adjudicator_probe.json` holds 24 section pairs of the planted
+fixture -- 12 actionable (the changed deadline, the restated sections, the byte-identical
+re-upload, the reformatted reissue, the absorbed note, the vague restatement) and 12 complementary
+(the unrelated archive control, and cross-section pairs that state different compatible facts).
+Every prompt is distinct: the fixture documents restate each other verbatim, so pairs that would
+present byte-identical passages were replaced rather than counted twice.
+
+The probe stores `doc_id` + heading line, never passage text, and
+`src/llb/conflicts/claim_calibration.py` resolves each side to the exact corpus bytes at run time.
+A fixture edit that moves the text fails the run instead of silently leaving a frozen label
+attached to a passage that no longer exists.
+
+Agreement is scored on the **actionable binary**, not on the exact relation: a duplicate reported
+as `subsumes` sends the operator to the same decision, while a conflict reported as `complementary`
+is exactly the error a precision figure would hide. The gate is the Wilson 95% lower bound on that
+agreement at `MIN_ADJUDICATOR_ACCURACY_LCB` (0.60) -- the same bound the research lane applies.
+`--no-calibrate-adjudicator` (Make: `NO_CALIBRATE_ADJUDICATOR=1`) skips the 24 probe calls and
+suppresses the block rather than printing it uncalibrated; `--calibration-probe` points at a
+different probe.
+
+### Measured, both quickstart corpora
+
+CUDA host, RTX 4060 Ti, multilingual-E5 stores, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating,
+`MAX_CANDIDATE_PAIRS=12`. The adjudicator agreed with all 24 frozen probe pairs on both runs
+(accuracy 1.000, Wilson 95% lower bound 0.862, recall 1.000, specificity 1.000), so the block was
+reported on both.
+
+| corpus | comparable pairs | resolved cosine | cosine range of the 12 rows | budget 6 | budget 12 | two-way clustered LCB | left / right chunks | relations at budget 12 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HR (8 docs) | 2,432,676 | 0.5790 | 0.580 - 0.801 | 0.667 | **0.417** | 0.000 | 9 / 9 | 1 duplicate, 3 subsumed_by, 1 subsumes, 7 complementary |
+| goods (5 docs) | 71,736 | 0.4548 | 0.460 - 0.539 | 0.500 | **0.333** | 0.000 | 7 / 12 | 2 subsumed_by, 2 subsumes, 7 complementary, 1 unparsed |
+
+The goods run's one unparsable completion is counted as a non-actionable row, so its 0.333 is a
+lower bound on that list's precision (11 parsed rows, 4 actionable).
+
+Two readings an operator can act on. The precision falls as the budget grows on both corpora, which
+is what a rank cutoff into a real similarity ordering should do -- the head of the list is where
+the conflicts are. And the clustered lower bound is **0.0** everywhere: twelve rows resting on
+about nine distinct left and nine distinct right chunks cannot support a non-zero 95% floor, no
+matter how the point estimate reads. That is the measurement doing its job. The pair-row Wilson
+interval on the same HR rows is `[0.193, 0.680]`, which would have suggested the evidence was
+several times stronger than the units justify.
+
 ## Semantic prefix tree
 
 `src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
@@ -229,7 +311,8 @@ measurement.
 
 `$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
 sides with exact offsets -- the machine-readable input a resolution lane consumes), `report.md`
-(actionable relations first), `summary.json` (per-tier counts, timings, and parameters), and
+(actionable relations first), `summary.json` (per-tier counts, timings, parameters, and the
+`claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
 only meaningful in the space that produced them). With projected blocking, the resolved store
 generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
@@ -260,4 +343,6 @@ control, so each tier and semantic exclusion reason is asserted against a known 
 Post-filter CUDA-host evidence (RTX 4060 Ti, multilingual-E5 stores) is under
 `$DATA_DIR/corpus-conflicts/20260720T-semantic-metadata-filter-*`. The HR swept, budget-12, and
 budget-50 runs and the goods budget-12 and budget-50 runs are the source for the measurements
-above.
+above. The [claim-tier precision](#measured-claim-tier-precision) runs are under
+`$DATA_DIR/corpus-conflicts/20260812T-claim-precision-{hr,goods}-budget12/`, each carrying its
+per-row ledger and all 24 calibration verdicts in `summary.json`.

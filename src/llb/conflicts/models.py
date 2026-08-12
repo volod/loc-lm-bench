@@ -117,6 +117,7 @@ class AuditResult:
     findings: list[Finding] = field(default_factory=list)
     tiers: list[TierStats] = field(default_factory=list)
     needles: JsonObject = field(default_factory=dict)
+    claim_precision: JsonObject = field(default_factory=dict)
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
 
@@ -138,6 +139,8 @@ class AuditResult:
         }
         if self.needles:
             payload["needles"] = dict(self.needles)
+        if self.claim_precision:
+            payload["claim_precision"] = dict(self.claim_precision)
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
         return payload

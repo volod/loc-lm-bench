@@ -12,21 +12,21 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from llb.conflicts.claim_calibration import MIN_ADJUDICATOR_ACCURACY_LCB
+from llb.conflicts.claim_precision import (
+    MAX_UNPARSED_FRACTION,
+    PRECISION_BUDGETS,
+    precision_curve_points,
+)
 from llb.conflicts.claim_prompt import AdjudicationError, adjudication_prompt, parse_adjudication
 from llb.conflicts.constants import REL_COMPLEMENTARY
-from llb.conflicts.null_research_clusters import two_way_proportion_bound
-from llb.conflicts.null_research_evaluation import (
-    FIXTURE_POSITIVE_DOC_PAIRS,
-    wilson_interval,
-)
+from llb.conflicts.interval_stats import wilson_interval
+from llb.conflicts.null_research_evaluation import FIXTURE_POSITIVE_DOC_PAIRS
 from llb.conflicts.null_research_geometry import CorpusGeometry
 from llb.core.contracts.common import JsonObject
 from llb.prep.frontier_telemetry import LLMComplete
 
-PRECISION_BUDGETS = (6, 12, 25, 50)
-MIN_ADJUDICATOR_ACCURACY_LCB = 0.60
 MIN_PRECISION_LCB = 0.50
-MAX_UNPARSED_FRACTION = 0.05
 
 
 @dataclass(frozen=True)
@@ -122,33 +122,13 @@ def precision_curve(
 ) -> list[JsonObject]:
     """Precision at each candidate budget with its two-way clustered lower bound."""
     keys = [row.key(corpus) for row in rows]
-    curve: list[JsonObject] = []
-    for budget in PRECISION_BUDGETS:
-        if budget > len(rows):
-            continue
-        flags = [bool(verdict["actionable"]) for verdict in verdicts[:budget]]
-        successes = sum(flags)
-        lower, upper = wilson_interval(successes, budget)
-        curve.append(
-            {
-                "budget": budget,
-                "actionable_rows": successes,
-                "precision": round(successes / budget, 6),
-                "wilson_95": [round(lower, 6), round(upper, 6)],
-                "two_way_clustered_lcb": round(
-                    two_way_proportion_bound(
-                        flags,
-                        [key[0] for key in keys[:budget]],
-                        [key[1] for key in keys[:budget]],
-                        seed=seed + budget,
-                    ),
-                    6,
-                ),
-                "left_clusters": len({key[0] for key in keys[:budget]}),
-                "right_clusters": len({key[1] for key in keys[:budget]}),
-            }
-        )
-    return curve
+    return precision_curve_points(
+        [bool(verdict["actionable"]) for verdict in verdicts],
+        [key[0] for key in keys],
+        [key[1] for key in keys],
+        seed=seed,
+        budgets=PRECISION_BUDGETS,
+    )
 
 
 def adjudicator_calibration(

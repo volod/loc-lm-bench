@@ -371,8 +371,11 @@ unrelated control.
 That is why the predeclared gate fails: the lane requires a precision lower bound above 0.50 on BOTH
 untouched corpora, and goods has no operating point at any budget because it has no conflicts to
 find. The failure is not a defect of the estimator; it is the estimator reporting that one number
-cannot serve two corpora. The forward consequence is in the plan: expose the measured precision and
-its bound per corpus in the audit, rather than keep searching for a universal cutoff.
+cannot serve two corpora. The consequence was to stop looking for a universal cutoff and expose the
+measured precision and its bound PER CORPUS in the audit itself; `audit-corpus-conflicts --effort
+claim` now reports it from its own verdicts, behind a frozen-label calibration gate, reusing this
+lane's curve and clustered bound ([conflict
+detection](conflict-detection.md#measured-claim-tier-precision)).
 
 ### Verdict
 

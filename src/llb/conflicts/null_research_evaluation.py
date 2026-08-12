@@ -2,10 +2,10 @@
 
 from bisect import bisect_left
 from collections.abc import Sequence
-import math
 
 import numpy as np
 
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_distribution import _quantile
 from llb.conflicts.null_research_geometry import DocPair
 from llb.core.contracts.common import JsonObject
@@ -15,7 +15,6 @@ DEFAULT_RESEARCH_RANK_BUDGET = 12
 DEFAULT_TRANSFER_THRESHOLD = 0.6
 DEFAULT_MAX_GOODS_CANDIDATES = 12
 MIN_TAIL_OBSERVATIONS = 20
-WILSON_Z_95 = 1.959963984540054
 COVERAGE_SIMULATIONS = 10_000
 MIN_COVERAGE_PROBABILITY = 0.93
 
@@ -60,21 +59,6 @@ def threshold_for_fpr(null_scores: list[float], fpr: float) -> float:
 
 def count_at_or_above(sorted_scores: list[float], threshold: float) -> int:
     return len(sorted_scores) - bisect_left(sorted_scores, threshold)
-
-
-def wilson_interval(successes: int, total: int) -> tuple[float, float]:
-    if total <= 0:
-        return 0.0, 1.0
-    proportion = successes / total
-    z2 = WILSON_Z_95 * WILSON_Z_95
-    denominator = 1.0 + z2 / total
-    center = (proportion + z2 / (2.0 * total)) / denominator
-    margin = (
-        WILSON_Z_95
-        * math.sqrt(proportion * (1.0 - proportion) / total + z2 / (4.0 * total * total))
-        / denominator
-    )
-    return max(0.0, center - margin), min(1.0, center + margin)
 
 
 def simulated_wilson_coverage(

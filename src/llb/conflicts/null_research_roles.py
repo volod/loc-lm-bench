@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from llb.conflicts.claim_prompt import AdjudicationError, adjudication_prompt, parse_adjudication
 from llb.conflicts.constants import REL_COMPLEMENTARY
-from llb.conflicts.null_research_evaluation import wilson_interval
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_geometry import CorpusGeometry
 from llb.core.contracts.common import JsonObject
 from llb.prep.frontier_telemetry import LLMComplete

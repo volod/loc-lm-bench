@@ -45,36 +45,66 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-audit-measured-precision
+### conflict-precision-budget-that-clears-its-own-bound (optional)
 
-Report what an operator can act on. `audit-corpus-conflicts --effort claim` already adjudicates
-every candidate row, yet its artifacts still describe the semantic tier by counts and a resolved
-cosine; the quantity operators need -- the share of the returned list that survives claim
-adjudication, with an interval that respects how few distinct claims those rows come from -- is
-produced only by the research harness. Move it into the audit.
+The measured claim-tier precision is reported with a two-way clustered lower bound of **0.0** on
+both quickstart corpora, because twelve rows resting on about nine distinct left and nine distinct
+right chunks cannot support a non-zero 95% floor at any point estimate
+([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)). The
+point estimate is therefore the only part of the block an operator can currently read, which is the
+failure mode the bound exists to prevent. Find the budget that buys a non-zero floor: sweep the
+candidate budget (12 / 25 / 50 / 100) on both corpora, record distinct left/right chunks and the
+clustered LCB per budget, and state the smallest budget whose bound clears zero -- or record that
+the corpus's chunk reuse puts it out of reach at any affordable budget, which is itself the answer
+an operator needs before trusting a precision figure.
 
 - Agent status: RUN NEEDED
-- Dependencies: reuse the precision curve, the two-way clustered bound
-  (`null_research_clusters.py`), and the adjudicator-calibration gate from [null
-  research](current/data-prep/conflict-null-research.md#third-generation-negative-result); the claim
-  tier and its artifacts are current behavior in [conflict
-  detection](current/data-prep/conflict-detection.md#effort-tiers).
-- User-visible outcome: `summary.json` and `report.md` carry a measured claim-tier precision at the
-  returned candidate budget with its two-way clustered lower bound, so the audit stops leaving a
-  rank cutoff as its only summary statistic.
-- Scope boundary: in scope -- a precision block computed from the claim tier's own verdicts, its
-  clustered bound, the calibration gate that suppresses the block when the adjudicator is not
-  calibrated against frozen labels, and the report/summary rendering. Out of scope -- changing
-  candidate generation, the relation vocabulary, or any threshold default, and printing a precision
-  figure without its bound or without the calibration that earns it.
+- Dependencies: none. Reuse the precision block and its clustered bound as shipped
+  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision));
+  cost per budget is one model call per row plus the 24-call calibration probe.
+- User-visible outcome: the audit's suggested candidate budget becomes a budget whose precision
+  block says something, instead of one whose lower bound is structurally zero.
+- Scope boundary: in scope -- the budget sweep, the per-budget unit census, and a recommended
+  budget per corpus. Out of scope -- changing the bound's estimator, the calibration gate, and the
+  shipped `--max-candidate-pairs` default before the sweep supports a change.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: extend `src/llb/conflicts/claim_tier.py` and `report.py` with the shared precision
-  helpers, add a deterministic fixture test with an injected adjudicator, then one CUDA-host claim
-  run per quickstart corpus for the recorded evidence.
-- Acceptance gates: `make ci` green with the injected adjudicator; the printed bound equals the
-  research harness's bound on the same rows; and the block is absent, with a stated reason, whenever
-  the adjudicator misses its calibration bound.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+- Execution path: `make audit-corpus-conflicts EFFORT=claim MAX_CANDIDATE_PAIRS=<n>` per budget per
+  quickstart corpus on the CUDA host; CI covers the sweep aggregation over fixture blocks.
+- Acceptance gates: `make ci` green; the report states the clustered LCB and the distinct-chunk
+  counts per budget on both corpora, and names the smallest budget clearing zero or records that
+  none does.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+
+### conflict-adjudicator-probe-difficulty (optional)
+
+The frozen calibration probe is passed **24/24** by MamayLM-Gemma-3-12B, which means the gate is
+currently proving only that an adjudicator is not badly broken -- a probe nobody fails cannot
+separate a good adjudicator from an adequate one, and the audit will happily quote a precision
+figure from either
+([conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)). Add a
+harder frozen tier: pairs whose actionable/complementary split is genuinely arguable (a restated
+fact under a different heading, two numeric claims about different quantities in the same
+sentence shape, a partial supersession where only one clause changed), score two host-fit model
+families against both tiers, and either raise `MIN_ADJUDICATOR_ACCURACY_LCB` on the evidence or
+record that the gate's job is a floor rather than a ranking.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `src/llb/conflicts/claim_calibration.py`, its heading-addressed probe
+  format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
+  offset-exact and pass the existing corpus-unchanged assertion.
+- User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
+  choose between, instead of only rejecting a broken one.
+- Scope boundary: in scope -- the harder probe tier, its frozen labels and rationale, a two-family
+  comparison, and a gate-threshold decision. Out of scope -- changing the adjudication prompt, the
+  relation vocabulary, and scoring agreement on anything but the actionable binary before the
+  comparison supports it.
+- Data and artifact paths: `samples/corpora/conflicts_uk_v1/adjudicator_probe.json` and the
+  existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts.
+- Execution path: one calibration-only run per model family on the CUDA host; CI covers the new
+  tier's passage resolution and label balance.
+- Acceptance gates: `make ci` green; both families score both tiers; the report states whether the
+  hard tier separates them and either raises the gate or records why it stays a floor.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe).
 
 ### conflict-claim-tier-cross-encoder-prefilter (optional)
 
@@ -1241,17 +1271,19 @@ say whether a shared-bridge question genuinely needs both facts.
 
 ### conflict-adjudicator-label-slice
 
-Produce frozen human labels for real candidate rows so a measured claim-tier precision can be
-trusted off the planted fixture. Adjudicator agreement is currently calibrated only against the
-seven-document planted corpus, whose relations are synthetic by construction; nothing measures
-whether the model agrees with a human on HR or goods rows ([null
-research](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
+Produce frozen human labels for real candidate rows so the audit's measured claim-tier precision can
+be trusted off the planted fixture. The shipped calibration gate scores the adjudicator only against
+the seven-document planted probe, whose relations are synthetic by construction and which the
+current host model passes 24/24 ([conflict
+detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)); nothing measures
+whether the model agrees with a human on HR or goods rows.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `conflict-audit-measured-precision` consumes the resulting bound; candidate ranking
-  and claim adjudication are current behavior. Human step that gates completion: an authorized
-  reviewer assigns one relation from the claim vocabulary to every row of the frozen slice without
-  seeing the model's verdict.
+- Dependencies: the audit's precision block and its calibration gate are current behavior
+  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)) and
+  consume the resulting bound; candidate ranking and claim adjudication are current behavior too.
+  Human step that gates completion: an authorized reviewer assigns one relation from the claim
+  vocabulary to every row of the frozen slice without seeing the model's verdict.
 - User-visible outcome: a committed frozen slice plus a measured human-versus-adjudicator agreement
   bound -- what lets a precision number transfer to corpora the planted fixture does not represent.
 - Scope boundary: in scope -- slice selection stratified by corpus and rank band, blind review,
