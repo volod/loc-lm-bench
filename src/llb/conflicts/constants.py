@@ -122,6 +122,7 @@ DEFAULT_CROSS_ENCODER_ROWS = 50
 
 CONFLICTS_METHOD = "corpus-conflicts"
 FINDINGS_FILE = "findings.jsonl"
+GROUPS_FILE = "groups.json"
 REPORT_FILE = "report.md"
 TREE_META_FILE = "tree_meta.json"
 SUMMARY_FILE = "summary.json"

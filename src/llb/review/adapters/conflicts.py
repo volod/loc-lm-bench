@@ -45,9 +45,9 @@ class ConflictResolutionAdapter(ReviewAdapter):
         key = _value(row.get("finding_id")) or str(index + 1)
         return ReviewRecord(
             key=key,
-            title=f"corpus conflict: {key}",
+            title=f"corpus conflict: {key}{_decision_group(row)}",
             sections=(
-                fields_section("Finding", row, ("relation", "rationale"), "data"),
+                fields_section("Finding", row, ("relation", "rationale", "group_id"), "data"),
                 json_section("Side A", row.get("a"), "evidence"),
                 json_section("Side B", row.get("b"), "evidence"),
                 json_section("Governance", row.get("staleness"), "metadata"),
@@ -65,6 +65,14 @@ class ConflictResolutionAdapter(ReviewAdapter):
             raise ValueError(f"unsupported {self.kind} action: {action}")
         content = "".join(json.dumps(row, ensure_ascii=True) + "\n" for row in self.records)
         atomic_write_text(self.path, content)
+
+
+def _decision_group(row: Any) -> str:
+    """How many rows this record shares its decision with, so it is not read as one of N."""
+    group_id, rows = _value(row.get("group_id")), row.get("group_rows")
+    if not group_id or not isinstance(rows, int) or rows < 2:
+        return ""
+    return f" ({group_id}, 1 of {rows} rows sharing this decision)"
 
 
 def _value(value: Any) -> str:

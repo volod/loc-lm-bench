@@ -5,6 +5,19 @@ Everything here is stable across processes and platforms: `hashlib` rather than 
 """
 
 import hashlib
+import json
+
+from llb.core.contracts.common import JsonObject
+
+
+def finding_id(finding: JsonObject) -> str:
+    """Stable identity for one finding, independent of JSON object key order.
+
+    It lives here rather than beside the resolution policy because the audit's decision-group
+    sidecar and the resolution plan must address the same row by the same id.
+    """
+    encoded = json.dumps(finding, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def sha256_text(text: str) -> str:

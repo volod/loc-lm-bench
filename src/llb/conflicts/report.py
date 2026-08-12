@@ -16,11 +16,14 @@ from pathlib import Path
 from llb.conflicts.census import census_units, finding_census, finding_sort_key, relation_census
 from llb.conflicts.constants import (
     FINDINGS_FILE,
+    GROUPS_FILE,
     REPORT_FILE,
     SUMMARY_FILE,
     TIER_SEMANTIC,
     TREE_META_FILE,
 )
+from llb.conflicts.group_artifact import groups_document
+from llb.conflicts.hashing import sha256_text
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report_findings import findings_section
 from llb.conflicts.report_precision import precision_section
@@ -164,20 +167,37 @@ def _needles_section(result: AuditResult) -> list[str]:
 
 
 def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
-    """Persist the three artifacts; returns their paths by name."""
+    """Persist the audit artifacts; returns their paths by name."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    # The rows are written once and grouped from the SAME list, so the sidecar's group ids address
+    # exactly the rows on disk -- and the resolution lane, grouping those rows in file order,
+    # reproduces the ids without needing the sidecar at all.
+    rows = [finding.payload() for finding in sorted(result.findings, key=finding_sort_key)]
+    findings_text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
     findings_path = out / FINDINGS_FILE
-    with findings_path.open("w", encoding="utf-8") as handle:
-        for finding in sorted(result.findings, key=finding_sort_key):
-            handle.write(json.dumps(finding.payload(), ensure_ascii=False) + "\n")
+    findings_path.write_text(findings_text, encoding="utf-8")
     report_path = out / REPORT_FILE
     report_path.write_text(render_report(result), encoding="utf-8")
     summary_path = out / SUMMARY_FILE
     summary_path.write_text(
         json.dumps(result.summary(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    paths = {"findings": findings_path, "report": report_path, "summary": summary_path}
+    groups_path = out / GROUPS_FILE
+    groups_path.write_text(
+        json.dumps(
+            groups_document(rows, findings_sha256=sha256_text(findings_text)),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    paths = {
+        "findings": findings_path,
+        "report": report_path,
+        "summary": summary_path,
+        "groups": groups_path,
+    }
     if result.tree_meta:
         tree_path = out / TREE_META_FILE
         tree_path.write_text(

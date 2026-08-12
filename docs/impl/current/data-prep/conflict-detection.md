@@ -342,6 +342,22 @@ counts). `src/llb/conflicts/census.py` computes the census and the grouping;
   one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
   transitive closure, the document-tier fallback, and the census beside each printed count.
 
+### The `groups.json` sidecar
+
+The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
+`findings.jsonl` (`src/llb/conflicts/group_artifact.py`). Each group carries `group_id`, `rows`,
+`finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and `top_score`; the
+document also carries the census and `source_findings_sha256`, which pins it to the exact rows on
+disk and equals the `source_findings_sha256` the resolution plan records.
+
+The `finding_ids` are the SAME ids `plan.json` uses (`finding_id` in `hashing.py`), so a group id
+joins the audit, the plan, and the review ledger without any consumer re-deriving anything. Both
+sides nonetheless compute the grouping from `findings.jsonl` ROWS through one function, and the
+audit writes the rows and the sidecar from one list, so a consumer that never reads the sidecar --
+including an audit run from before it existed -- derives identical groups by grouping the file in
+its own order. [Conflict resolution](conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
+is the first consumer.
+
 ### Measured on the goods corpus
 
 CUDA host (RTX PRO 3000 Blackwell, 12 GiB), goods corpus (5 markdown documents, 954-chunk
@@ -411,8 +427,10 @@ measurement.
 `$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
 sides with exact offsets -- the machine-readable input a resolution lane consumes, one line per row
 whatever the census says), `report.md` (actionable relations first, grouped into decisions with
-[the unit census beside every count](#the-count-and-the-units-behind-it)), `summary.json` (per-tier
-counts, timings, parameters, `finding_census` / `relation_census`, and the
+[the unit census beside every count](#the-count-and-the-units-behind-it)),
+[`groups.json`](#the-groupsjson-sidecar) (the decision groups, addressed by the same finding ids the
+resolution plan uses), `summary.json` (per-tier counts, timings, parameters, `finding_census` /
+`relation_census`, and the
 `claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
 only meaningful in the space that produced them). With projected blocking, the resolved store

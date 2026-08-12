@@ -45,35 +45,6 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-decision-groups-in-the-machine-artifacts (optional)
-
-The audit's report now collapses rows that share a chunk into ONE decision group, but
-`findings.jsonl` carries no group identity, so `resolve-corpus-conflicts` still plans one overlay
-edit per ROW -- on a concentrated corpus that is one edit planned six times, and a reviewer
-approving the plan sees the inflation the report was changed to remove ([conflict
-detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it)). Emit the
-grouping as machine-readable output -- a `groups.json` sidecar keyed by group id, listing each
-group's row keys, shared units, relations, and documents -- and have the resolution planner group
-its actions by it, so one decision produces one planned action carrying its member rows.
-
-- Agent status: CLEAR
-- Dependencies: none. Reuse `group_findings` in `src/llb/conflicts/census.py` and the plan builder
-  in `src/llb/conflicts/resolution_policy.py`; `findings.jsonl` itself must stay one line per row
-  (the resolution lane reads rows), so the group id rides a sidecar rather than the row.
-- User-visible outcome: a resolution plan an operator reviews decision by decision instead of row
-  by row, with the rows behind each decision still listed.
-- Scope boundary: in scope -- the sidecar, its schema, the planner's grouping, and the reviewer
-  view. Out of scope -- changing `findings.jsonl`, changing which rows are found, and any new
-  resolution policy.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts plus the new
-  sidecar beside them.
-- Execution path: rendering and planner change with fixture tests over a concentrated block; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose rows all share one chunk plans ONE action
-  naming its member rows; `findings.jsonl` stays byte-identical; a rollback still restores every row.
-- Documentation target: [conflict
-  resolution](current/data-prep/conflict-resolution.md) and [conflict
-  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
-
 ### conflict-report-actionable-set-matches-the-precision-block (optional)
 
 Two parts of the same audit disagree about what "actionable" means. The precision block counts every
@@ -1387,6 +1358,38 @@ say whether a shared-bridge question genuinely needs both facts.
   reviewed ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
+
+### conflict-group-review-throughput (optional)
+
+Whole-group review is now possible but unmeasured: a reviewer can settle a decision group with one
+`keep_both` row, and on the goods semantic bundle six such rows settle all 100 escalations
+([conflict resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger))
+-- but nothing establishes that a human reading ONE group record decides as accurately as one
+reading its rows, which is the assumption the whole collapse rests on. Measure it: have a reviewer
+settle one corpus's escalations row by row and another's group by group, record wall-clock time per
+decision and the disagreement rate between the two passes on the same rows, and state whether group
+review is safe for `keep_both` at the group sizes this repo actually produces (largest 51 rows).
+
+- Agent status: HUMAN-GATED -- the deliverable is the reviewer's measured throughput and agreement;
+  the ledger, the timing capture, and the disagreement report are agent-buildable.
+- Dependencies: reuse the grouped review ledger and the group-wide keep in
+  [conflict resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
+  and the review TUI adapter in `src/llb/review/adapters/conflicts.py`.
+- User-visible outcome: an operator learns whether reviewing by decision costs accuracy before
+  adopting it as the default review mode.
+- Scope boundary: in scope -- the paired review passes, per-decision timing, the disagreement
+  report, and a recommendation on group size limits. Out of scope -- extending group decisions to
+  destructive actions before the measurement supports it, and any change to the grouping rule.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts plus a
+  timing ledger beside them.
+- Execution path: two review passes over the committed goods bundle; CI covers the timing capture
+  and the disagreement report over fixture ledgers.
+- Acceptance gates: `make ci` green; both passes cover the identical rows; the report states time
+  per decision and the disagreement rate, and either recommends group review or names the group
+  size above which it stops being safe.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
+  and the [verification gate](current/data-prep/verification-gate.md).
 
 ### conflict-adjudicator-label-slice
 

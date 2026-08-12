@@ -81,11 +81,7 @@ def resolve_corpus_conflicts_cmd(
     plan, overlay, paths = create_resolution_artifacts(
         findings, out_dir, policy=policy, corpus_root=corpus_root, reviewed=reviewed
     )
-    typer.echo(f"[resolve-conflicts] plan: {paths['plan']}")
-    typer.echo(f"[resolve-conflicts] overlay: {paths['overlay']}")
-    review_count = sum(item.get("status") == "review_required" for item in plan.get("items", []))
-    if review_count:
-        typer.echo(f"[resolve-conflicts] review required: {review_count} -> {paths['review']}")
+    review_count = _echo_plan(plan, paths)
     applied_path = None
     if apply:
         applied_path = install_overlay(corpus_root, overlay, plan)
@@ -102,6 +98,26 @@ def resolve_corpus_conflicts_cmd(
         review_count,
         _effect_key(overlay),
     )
+
+
+def _echo_plan(plan: dict[str, Any], paths: dict[str, Path]) -> int:
+    """Report the plan as decisions first; returns the number of rows still needing review."""
+    items = plan.get("items") or []
+    decisions = plan.get("decisions") or []
+    typer.echo(f"[resolve-conflicts] plan: {paths['plan']}")
+    typer.echo(f"[resolve-conflicts] overlay: {paths['overlay']}")
+    typer.echo(
+        f"[resolve-conflicts] {len(items)} rows in {len(decisions)} decision groups "
+        f"(largest {max((int(d['rows']) for d in decisions), default=0)} rows)"
+    )
+    review_count = sum(1 for item in items if item.get("status") == "review_required")
+    if review_count:
+        open_groups = sum(1 for d in decisions if d.get("status") == "review_required")
+        typer.echo(
+            f"[resolve-conflicts] review required: {review_count} rows in {open_groups} "
+            f"decision groups -> {paths['review']}"
+        )
+    return review_count
 
 
 def _refresh_and_report(
