@@ -190,8 +190,13 @@ def audit_corpus_conflicts_cmd(
 
 
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
+    from llb.conflicts.census import census_units, finding_census, relation_census
+
+    census = finding_census(result.findings)
     typer.echo(
-        f"[conflicts] effort={result.effort} docs={result.n_docs} findings={len(result.findings)}"
+        f"[conflicts] effort={result.effort} docs={result.n_docs} findings={census['findings']} "
+        f"groups={census['groups']} docs_touched={census['documents']} "
+        f"doc_pairs={census['document_pairs']} chunk_units={census['chunk_units']}"
     )
     semantic = next((t for t in result.tiers if t.tier == TIER_SEMANTIC), None)
     if semantic is not None and "cos_threshold" in semantic.extra:
@@ -203,8 +208,8 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
                 f" q={null.get('resolved_quantile')} over {null['total_pairs']} comparable pairs"
             )
         typer.echo(line)
-    for relation, count in result.relation_counts().items():
-        typer.echo(f"[conflicts]   {relation}: {count}")
+    for relation, row in relation_census(result.findings).items():
+        typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
     precision = result.claim_precision
     if precision.get("reported"):
         point = precision["returned_budget"]

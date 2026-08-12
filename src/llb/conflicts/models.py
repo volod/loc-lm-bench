@@ -128,12 +128,18 @@ class AuditResult:
         return dict(sorted(counts.items()))
 
     def summary(self) -> JsonObject:
+        # Imported here rather than at module scope: the census reads these models, so the
+        # dependency runs one way and this file stays the leaf every conflicts module can import.
+        from llb.conflicts.census import finding_census, relation_census
+
         payload: dict[str, Any] = {
             "effort": self.effort,
             "corpus_root": self.corpus_root,
             "n_docs": self.n_docs,
             "n_findings": len(self.findings),
+            "finding_census": finding_census(self.findings),
             "relations": self.relation_counts(),
+            "relation_census": relation_census(self.findings),
             "tiers": [stat.payload() for stat in self.tiers],
             "params": dict(self.params),
         }

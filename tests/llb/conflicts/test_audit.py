@@ -213,8 +213,8 @@ def test_report_leads_with_actionable_relations():
     result = audit(TIER_CLAIM)
     report = render_report(result)
     assert "# Corpus conflict audit" in report
-    body = report.split("## Findings", 1)[1]
-    first_row = next(line for line in body.splitlines() if line.startswith("| `"))
+    body = report.split("### Rows", 1)[1]
+    first_row = next(line for line in body.splitlines() if line.startswith("| G"))
     assert REL_SUPERSEDED_BY in first_row or "contradicts" in first_row
 
 

@@ -45,34 +45,124 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-finding-count-over-states-independent-evidence (optional)
+### conflict-decision-groups-in-the-machine-artifacts (optional)
 
-`report.md` and `summary.json` head every audit with a finding COUNT, and on a corpus whose
-conflicts concentrate that count is a multiple of the evidence behind it. Measured: the goods
-corpus's 8 actionable rows at budget 100 all share the same right document, and 6 of the 8 share a
-single left chunk, so "8 findings" is one chunk against one document
-([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
-The precision block already computes the clustered census that exposes this, but only inside its own
-section -- the headline count, the relation table, and the findings list still read as N independent
-results. Report the distinct-unit census beside the count everywhere a count appears ("8 rows on 3
-left / 1 right documents"), and collapse the findings table's repeated-unit rows into a group so an
-operator triaging the list sees one decision rather than six.
+The audit's report now collapses rows that share a chunk into ONE decision group, but
+`findings.jsonl` carries no group identity, so `resolve-corpus-conflicts` still plans one overlay
+edit per ROW -- on a concentrated corpus that is one edit planned six times, and a reviewer
+approving the plan sees the inflation the report was changed to remove ([conflict
+detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it)). Emit the
+grouping as machine-readable output -- a `groups.json` sidecar keyed by group id, listing each
+group's row keys, shared units, relations, and documents -- and have the resolution planner group
+its actions by it, so one decision produces one planned action carrying its member rows.
 
 - Agent status: CLEAR
-- Dependencies: none. Reuse the cluster census in `src/llb/conflicts/claim_precision.py` and the
-  finding identity in `models.py`; the grouping is a rendering change, not a detection change.
-- User-visible outcome: an operator cannot read a concentrated corpus as having more independent
-  conflicts than it has, at the point where they decide how much review to fund.
-- Scope boundary: in scope -- the unit census beside every count, grouped rendering of rows sharing
-  a chunk or a document pair, and the same census in `summary.json`. Out of scope -- suppressing or
-  deduplicating findings in `findings.jsonl` (a resolution lane consumes every row), changing
-  candidate generation, and changing the precision estimator.
+- Dependencies: none. Reuse `group_findings` in `src/llb/conflicts/census.py` and the plan builder
+  in `src/llb/conflicts/resolution_policy.py`; `findings.jsonl` itself must stay one line per row
+  (the resolution lane reads rows), so the group id rides a sidecar rather than the row.
+- User-visible outcome: a resolution plan an operator reviews decision by decision instead of row
+  by row, with the rows behind each decision still listed.
+- Scope boundary: in scope -- the sidecar, its schema, the planner's grouping, and the reviewer
+  view. Out of scope -- changing `findings.jsonl`, changing which rows are found, and any new
+  resolution policy.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts plus the new
+  sidecar beside them.
+- Execution path: rendering and planner change with fixture tests over a concentrated block; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose rows all share one chunk plans ONE action
+  naming its member rows; `findings.jsonl` stays byte-identical; a rollback still restores every row.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md) and [conflict
+  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+
+### conflict-report-actionable-set-matches-the-precision-block (optional)
+
+Two parts of the same audit disagree about what "actionable" means. The precision block counts every
+non-`complementary` verdict as a row an operator must decide about, while the report's ordering
+promotes only `contradicts` and `superseded_by` (`ACTIONABLE` in `src/llb/conflicts/census.py`), so
+a `subsumed_by` row sorts below any complementary row with a higher score. Measured: on the goods
+budget-100 run the single decision-worthy row sits third in its group, under two complementary rows
+scored 1.000 ([conflict
+detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). Make the two
+agree -- promote every non-`complementary` relation in the report's ordering and the group ordering
+it drives, or record why the reading set is narrower than the counting set -- and note that changing
+the sort key also changes the ORDER of `findings.jsonl`, so the resolution lane's round-trip and its
+reviewed-plan fixtures must be re-checked in the same change.
+
+- Agent status: CLEAR
+- Dependencies: none. `finding_sort_key` is shared by the report, the grouping, and
+  `findings.jsonl`; the precision definition lives in `AdjudicatedRow.actionable`
+  (`src/llb/conflicts/claim_precision.py`).
+- User-visible outcome: the row an operator must act on leads the list, instead of sorting below
+  coexisting facts that happened to score higher.
+- Scope boundary: in scope -- one shared actionable definition, the ordering it drives, and the
+  resolution-lane re-check. Out of scope -- the relation vocabulary itself and any change to which
+  rows are found.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering plus summary changes with fixture tests over a committed concentrated
-  block; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose rows all share one chunk reports one group and
-  states its unit counts beside the row count; `findings.jsonl` keeps every row byte-identical.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#artifacts).
+- Execution path: ordering change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture mixing `subsumed_by` with a higher-scored
+  `complementary` row leads with the `subsumed_by` row in both the report and `findings.jsonl`; the
+  resolution lane plans and rolls back unchanged over the reordered file.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+
+### conflict-decision-group-granularity (optional)
+
+Decision groups join findings TRANSITIVELY through a shared chunk, and on a real corpus that closure
+runs long: the goods budget-100 run collapses 99 rows into 6 groups, but its largest group chains 51
+rows across three documents through 23 shared chunks, which is not one decision either ([conflict
+detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). A row count
+over-states the work and a fully transitive group count under-states it, so the audit currently
+quotes a range without saying where inside it the truth sits. Measure the alternative -- group per
+SHARED UNIT (a row joins every group whose unit it carries, so a row can appear twice) -- on both
+quickstart corpora, report the group-size distribution under both rules, and adopt one or state the
+rule for which corpus shape gets which.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `group_findings` and the census in `src/llb/conflicts/census.py`; the
+  rows come from the existing budget-100 runs and need no re-adjudication.
+- User-visible outcome: the group count an operator funds review against is a decision count rather
+  than the size of whichever connected component the chunker happened to produce.
+- Scope boundary: in scope -- the second grouping rule, the size distribution under both, and an
+  adoption decision. Out of scope -- changing detection, changing `findings.jsonl`, and any change
+  to the precision estimator.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: recompute both groupings over committed run artifacts on the CUDA host (no model
+  calls); CI covers both rules over fixture rows.
+- Acceptance gates: `make ci` green; both corpora report the group-size distribution under both
+  rules; the report states which rule the audit quotes and why, and a fixture whose rows all share
+  one chunk still reports one group under both.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+
+### conflict-claim-yield-across-store-generations (optional)
+
+The claim tier's candidate list at a fixed budget is a RANK cutoff into the store's own similarity
+ordering, so it is a property of the store as much as of the corpus -- and the two measured goods
+budget-100 runs disagree sharply about how much the corpus contains: 8 actionable rows on the
+1,139-chunk store at resolved cosine 0.3648, 1 actionable row on the 954-chunk store at 0.3604
+([conflict detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). The
+two runs differ in chunk count, duplicate collapse, and resolved threshold at once, so nothing
+establishes which factor moved the yield, and an operator cannot tell whether a low actionable count
+means a clean corpus or an unlucky store. Vary one factor at a time (duplicate collapse on/off,
+chunk size, budget) on the same corpus and record which one the yield tracks.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `make build-index` per store variant and `make audit-corpus-conflicts
+  EFFORT=claim MAX_CANDIDATE_PAIRS=100`; the calibration probe and precision block are current
+  behavior.
+- User-visible outcome: an operator reading a low actionable count learns whether it is evidence
+  about their corpus or about the store they happened to build.
+- Scope boundary: in scope -- the one-factor-at-a-time store sweep, the per-variant actionable
+  yield and overlap of the returned rows, and a stated reading. Out of scope -- changing the
+  chunker, the threshold calibration, and the candidate budget defaults before the sweep supports it.
+- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per variant.
+- Execution path: one claim run per store variant on the CUDA host; no new CI coverage beyond the
+  existing fixtures.
+- Acceptance gates: `make ci` green; every variant reports its actionable yield and its row overlap
+  with the baseline variant; the reading names the factor the yield tracks, or records that the
+  variants do not separate.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
 
 ### conflict-precision-bound-at-document-clustering (optional)
 

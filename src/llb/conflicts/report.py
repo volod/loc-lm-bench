@@ -1,69 +1,73 @@
 """Render an audit as `findings.jsonl` + `report.md` + `summary.json`.
 
 The Markdown is the operator's read: what the corpus looks like, what each tier cost, and the
-worst offenders first. `findings.jsonl` is the machine read and the input a resolution lane
-consumes -- one JSON object per claim pair, with both sides' exact offsets.
+worst offenders first. Every count it prints carries the distinct-unit census behind it
+(`census.py`), because a row count on a corpus whose conflicts concentrate is a multiple of the
+evidence -- and an operator reads that count to decide how much review to fund.
+
+`findings.jsonl` is the machine read and the input a resolution lane consumes -- one JSON object
+per claim pair, with both sides' exact offsets. It stays one line per row: the census and the
+grouping are rendering, never a filter over the rows.
 """
 
 import json
 from pathlib import Path
 
+from llb.conflicts.census import census_units, finding_census, finding_sort_key, relation_census
 from llb.conflicts.constants import (
     FINDINGS_FILE,
-    REL_CONTRADICTS,
-    REL_SUPERSEDED_BY,
     REPORT_FILE,
     SUMMARY_FILE,
     TIER_SEMANTIC,
     TREE_META_FILE,
 )
-from llb.conflicts.models import AuditResult, Finding
+from llb.conflicts.models import AuditResult
+from llb.conflicts.report_findings import findings_section
 from llb.conflicts.report_precision import precision_section
-
-# Findings whose relation means "someone must decide", listed first in the report.
-ACTIONABLE = (REL_CONTRADICTS, REL_SUPERSEDED_BY)
-_EXCERPT = 160
-
-
-def _excerpt(text: str) -> str:
-    """One-line excerpt safe to drop into a Markdown table cell."""
-    flat = " ".join(text.split())
-    if len(flat) > _EXCERPT:
-        flat = flat[: _EXCERPT - 1].rstrip() + "…"
-    return flat.replace("|", "\\|")
-
-
-def _sort_key(finding: Finding) -> tuple[int, float, str]:
-    """Actionable relations first, then by descending score, then stably by claim identity."""
-    priority = 0 if finding.relation in ACTIONABLE else 1
-    return (priority, -finding.score, str(finding.key()))
 
 
 def render_report(result: AuditResult) -> str:
     """The operator-facing Markdown report."""
+    findings = f"- findings: {len(result.findings)}"
+    if result.findings:
+        # A count alone reads as N independent conflicts; the units say what it is evidence of.
+        findings += f" {census_units(finding_census(result.findings))}"
     lines = [
         "# Corpus conflict audit",
         "",
         f"- corpus: `{result.corpus_root}`",
         f"- effort: `{result.effort}`",
         f"- documents: {result.n_docs}",
-        f"- findings: {len(result.findings)}",
+        findings,
         "",
     ]
     lines += _relations_section(result)
     lines += _tiers_section(result)
     lines += precision_section(result)
     lines += _needles_section(result)
-    lines += _findings_section(result)
+    lines += findings_section(result)
     return "\n".join(lines)
 
 
 def _relations_section(result: AuditResult) -> list[str]:
-    counts = result.relation_counts()
-    if not counts:
+    """Per relation, the count AND the distinct units it rests on -- never the count alone."""
+    census = relation_census(result.findings)
+    if not census:
         return ["No conflicting, duplicated, or subsumed claims were found.", ""]
-    lines = ["## Relations", "", "| relation | findings |", "| --- | --- |"]
-    lines += [f"| `{relation}` | {count} |" for relation, count in counts.items()]
+    lines = [
+        "## Relations",
+        "",
+        "`findings` counts rows; the remaining columns count the evidence those rows rest on. A "
+        "relation whose rows collapse into one group is one decision, not N.",
+        "",
+        "| relation | findings | documents | document pairs | chunk units | groups |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    lines += [
+        f"| `{relation}` | {row['findings']} | {row['documents']} | {row['document_pairs']} "
+        f"| {row['chunk_units']} | {row['groups']} |"
+        for relation, row in census.items()
+    ]
     lines.append("")
     return lines
 
@@ -159,42 +163,13 @@ def _needles_section(result: AuditResult) -> list[str]:
     return lines
 
 
-def _findings_section(result: AuditResult) -> list[str]:
-    if not result.findings:
-        return []
-    lines = [
-        "## Findings",
-        "",
-        "Actionable relations first. Offsets are exact character positions in the source "
-        "document; `~` marks a claim whose quote could not be located, where the span falls back "
-        "to the enclosing chunk.",
-        "",
-        "| relation | tier | score | newer | A | B |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ]
-    for finding in sorted(result.findings, key=_sort_key):
-        newer = finding.staleness.newer_side or "-"
-        lines.append(
-            f"| `{finding.relation}` | `{finding.tier}` | {finding.score:.3f} | {newer} "
-            f"| {_side(finding, 'a')} | {_side(finding, 'b')} |"
-        )
-    lines.append("")
-    return lines
-
-
-def _side(finding: Finding, side: str) -> str:
-    ref = finding.a if side == "a" else finding.b
-    mark = "" if ref.offsets_exact else "~"
-    return f"`{ref.doc_id}`{mark} [{ref.char_start}:{ref.char_end}]<br>{_excerpt(ref.text)}"
-
-
 def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
     """Persist the three artifacts; returns their paths by name."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     findings_path = out / FINDINGS_FILE
     with findings_path.open("w", encoding="utf-8") as handle:
-        for finding in sorted(result.findings, key=_sort_key):
+        for finding in sorted(result.findings, key=finding_sort_key):
             handle.write(json.dumps(finding.payload(), ensure_ascii=False) + "\n")
     report_path = out / REPORT_FILE
     report_path.write_text(render_report(result), encoding="utf-8")

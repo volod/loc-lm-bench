@@ -312,6 +312,62 @@ is stuck at 1 through budget 25 and reaches only 3 at budget 100. The pair-row W
 budget 100 is `[0.041, 0.150]`, a non-zero floor it has not earned; the clustered bound refuses it.
 That contrast is the whole reason the audit quotes the clustered bound.
 
+## The count and the units behind it
+
+A finding COUNT is the first number an operator reads, and it is the number they size a review
+budget against -- so on a corpus whose conflicts concentrate it is the number most able to mislead.
+The clustered precision bound already refuses to certify a floor when the conflicts sit on a handful
+of chunks, but that refusal lived inside the precision section while the headline count, the
+relation table, and the findings list still read as N independent results.
+
+Every count the audit prints now carries the distinct units it rests on:
+`report.md`'s headline line, every row of its relation table, the findings section, the CLI summary,
+and `summary.json` (`finding_census`, plus `relation_census` beside the unchanged `relations`
+counts). `src/llb/conflicts/census.py` computes the census and the grouping;
+`src/llb/conflicts/report_findings.py` renders the grouped findings section.
+
+- **Unit.** The CHUNK each side of a finding rests on, falling back to its document for the `hash`
+  and `lexical` tiers, which compare whole documents and carry no chunk.
+- **Census.** `documents`, `document_pairs`, `chunk_units`, `groups`, `largest_group` -- rendered as
+  one line beside the count: `8 findings on 4 documents / 3 document pairs / 9 chunk units, in 2
+  groups (largest 6)`.
+- **Group.** Findings joined **transitively** by a shared unit, the same closure the `hash` tier
+  applies to duplicate groups. A chunk that conflicts with six neighbours is ONE group, and so are
+  three copies of one document: a shared unit is what makes two rows the same piece of evidence.
+  The report leads the findings section with a **Decision groups** table (rows, relations, shared
+  unit, documents, top score) and prints every row below it under its group label. `groups` is what
+  an operator triages; `findings` is what a resolution lane consumes.
+- **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
+  as before -- the resolution lane reads rows, and nothing here suppresses, merges, or deduplicates
+  one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
+  transitive closure, the document-tier fallback, and the census beside each printed count.
+
+### Measured on the goods corpus
+
+CUDA host (RTX PRO 3000 Blackwell, 12 GiB), goods corpus (5 markdown documents, 954-chunk
+`multilingual-e5-base` `recursive@800/120` store), MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating,
+`MAX_CANDIDATE_PAIRS=100`, resolved cosine 0.3604 over 55,865 exhaustive comparable pairs. The
+adjudicator agreed with all 24 frozen probe pairs (Wilson 95% lower bound 0.862) in 1 min 34 s and
+adjudicated the 100 rows in 9 min 23 s, with 1 unparsable verdict inside the 5-row allowance.
+
+**99 findings on 5 documents / 6 document pairs / 79 chunk units, in 6 groups (largest 51).** The
+row count over-states the independent evidence by a factor of sixteen: a triage list of 99 rows is
+six decisions, on a corpus of five documents that can only supply ten document pairs and used six.
+Only 1 row was actionable (`subsumed_by`), resting on one left and one right chunk, so no measured
+budget clears a precision floor -- the clustered bound and the census agree, and now the headline
+count agrees with both instead of reading as 99 results.
+
+The largest group is also the reading's sharp edge: G2 chains 51 rows across three documents through
+23 shared chunks, so transitive closure can UNDER-state the work as much as a raw row count
+over-states it. Read the pair, not either number alone -- the row count bounds the decisions from
+above, the group count from below.
+
+Artifacts: `$DATA_DIR/corpus-conflicts/20260812T-census-goods-budget100/`. This is a different store
+generation from the [budget-100 precision runs](#measured-both-quickstart-corpora) (954 chunks at
+cosine 0.3604 against 1,139 at 0.3648), and it returned 1 actionable row where that run returned 8;
+the candidate list at a fixed budget is a rank cutoff into the store's own similarity ordering, so
+the two lists are not the same rows.
+
 ## Semantic prefix tree
 
 `src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
@@ -353,8 +409,10 @@ measurement.
 ## Artifacts
 
 `$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
-sides with exact offsets -- the machine-readable input a resolution lane consumes), `report.md`
-(actionable relations first), `summary.json` (per-tier counts, timings, parameters, and the
+sides with exact offsets -- the machine-readable input a resolution lane consumes, one line per row
+whatever the census says), `report.md` (actionable relations first, grouped into decisions with
+[the unit census beside every count](#the-count-and-the-units-behind-it)), `summary.json` (per-tier
+counts, timings, parameters, `finding_census` / `relation_census`, and the
 `claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
 `tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
 only meaningful in the space that produced them). With projected blocking, the resolved store
