@@ -98,8 +98,25 @@ def overlay_from_plan(plan: JsonObject) -> JsonObject:
         "schema_version": 1,
         "policy": plan.get("policy"),
         "source_findings_sha256": plan.get("source_findings_sha256"),
-        "documents": dict(sorted(documents.items())),
+        "documents": {doc: _ordered(directive) for doc, directive in sorted(documents.items())},
     }
+
+
+def _ordered(directive: JsonObject) -> JsonObject:
+    """Sort a document's entries by their own identity, never by the order the rows arrived in.
+
+    The overlay is folded into each document's fingerprint, so a plan built from the same findings
+    in a different order must produce the same bytes -- otherwise re-reading an audit whose rows
+    were merely re-sorted republishes a store generation that changes nothing.
+    """
+    directive["annotations"] = sorted(
+        directive["annotations"], key=lambda entry: str(entry.get("finding_id"))
+    )
+    directive["suppress_spans"] = sorted(
+        directive["suppress_spans"],
+        key=lambda span: (int(span["char_start"]), int(span["char_end"]), str(span["finding_id"])),
+    )
+    return directive
 
 
 def _add_item(documents: dict[str, JsonObject], item: JsonObject) -> None:

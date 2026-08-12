@@ -65,6 +65,12 @@ Applying a plan validates every document, offset, and exact quote against the cu
 atomically installs `.llb/conflict_overlay.json` below the corpus root. A stale audit is rejected
 before any directive is installed. Source `.md` and `.txt` bytes are never edited.
 
+The overlay is a function of the finding SET, not of the order the rows were read in: each
+document's annotations and suppress-spans are sorted by their own identity, so re-reading an audit
+whose rows were merely re-sorted produces the same bytes and cannot republish a store generation
+that changes nothing (the fingerprint folds the directive into the document). Only
+`source_findings_sha256` differs, which is what it is for.
+
 `chunk_corpus` consumes the control file. Whole-document duplicate directives omit that document;
 claim-level directives omit chunks overlapping the accepted span; keep/escalate records add
 `conflict_resolutions` metadata. `corpus_doc_fingerprints` folds each document's directive into

@@ -47,6 +47,20 @@ RELATIONS = (
     REL_COMPLEMENTARY,
 )
 
+
+def is_actionable(relation: str | None) -> bool:
+    """Whether a relation means someone must DECIDE, rather than two facts coexisting.
+
+    One definition, because the audit counts and reads the same rows: the claim-tier precision
+    block measures the share of the list that is actionable, and the report promotes actionable
+    rows to the head of the list. When those two sets differ, the row an operator must act on can
+    sort below the rows they can ignore -- which is exactly what a precision figure is quoted to
+    prevent. Anything the vocabulary does not know is actionable too: an unrecognized verdict is
+    someone's problem, not a coexisting fact.
+    """
+    return relation is not None and relation != REL_COMPLEMENTARY
+
+
 # Relations the model may return; `superseded_by` is derived, never asked for, because it needs
 # the governance dates the model does not see.
 MODEL_RELATIONS = (

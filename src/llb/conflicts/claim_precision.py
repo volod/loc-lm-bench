@@ -20,7 +20,7 @@ equal the research harness's bound on the same rows.
 
 from dataclasses import dataclass
 
-from llb.conflicts.constants import REL_COMPLEMENTARY
+from llb.conflicts.constants import is_actionable
 from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_clusters import two_way_proportion_bound
 from llb.core.contracts.common import JsonObject
@@ -58,8 +58,12 @@ class AdjudicatedRow:
 
     @property
     def actionable(self) -> bool:
-        """Whether the row is something an operator must decide about, not a coexisting fact."""
-        return self.parsed and self.relation is not None and self.relation != REL_COMPLEMENTARY
+        """Whether the row is something an operator must decide about, not a coexisting fact.
+
+        The predicate is shared with the report's ordering (`constants.is_actionable`), so the set
+        this block MEASURES is the set the report READS first.
+        """
+        return self.parsed and is_actionable(self.relation)
 
     def payload(self) -> JsonObject:
         return {

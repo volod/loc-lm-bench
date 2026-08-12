@@ -20,19 +20,21 @@ document -- because a shared unit is exactly what makes two rows the same piece 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from llb.conflicts.constants import REL_CONTRADICTS, REL_SUPERSEDED_BY
+from llb.conflicts.constants import is_actionable
 from llb.core.contracts.common import JsonObject
 
 if TYPE_CHECKING:  # `models` renders its own census, so the dependency only runs one way
     from llb.conflicts.models import ClaimRef, Finding
 
-# Findings whose relation means "someone must decide", listed first in the report.
-ACTIONABLE = (REL_CONTRADICTS, REL_SUPERSEDED_BY)
-
 
 def finding_sort_key(finding: "Finding") -> tuple[int, float, str]:
-    """Actionable relations first, then by descending score, then stably by claim identity."""
-    priority = 0 if finding.relation in ACTIONABLE else 1
+    """Actionable relations first, then by descending score, then stably by claim identity.
+
+    "Actionable" is `constants.is_actionable`, the same predicate the claim-tier precision block
+    counts on, so a row the audit counts as work to do can never sort below a row it counts as
+    none.
+    """
+    priority = 0 if is_actionable(finding.relation) else 1
     return (priority, -finding.score, str(finding.key()))
 
 

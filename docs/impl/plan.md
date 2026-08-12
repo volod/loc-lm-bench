@@ -45,34 +45,32 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-report-actionable-set-matches-the-precision-block (optional)
+### conflict-group-ordering-by-what-is-at-stake (optional)
 
-Two parts of the same audit disagree about what "actionable" means. The precision block counts every
-non-`complementary` verdict as a row an operator must decide about, while the report's ordering
-promotes only `contradicts` and `superseded_by` (`ACTIONABLE` in `src/llb/conflicts/census.py`), so
-a `subsumed_by` row sorts below any complementary row with a higher score. Measured: on the goods
-budget-100 run the single decision-worthy row sits third in its group, under two complementary rows
-scored 1.000 ([conflict
-detection](current/data-prep/conflict-detection.md#measured-on-the-goods-corpus)). Make the two
-agree -- promote every non-`complementary` relation in the report's ordering and the group ordering
-it drives, or record why the reading set is narrower than the counting set -- and note that changing
-the sort key also changes the ORDER of `findings.jsonl`, so the resolution lane's round-trip and its
-reviewed-plan fixtures must be re-checked in the same change.
+Decision groups are ordered by their single best ROW, so the group an operator reads first is the
+one holding the top-scored row rather than the one holding the most work: a group carrying one
+actionable row leads a group carrying twenty whenever its top row scores higher, and among groups
+with no actionable row at all the order is score then claim identity -- which is document id.
+Measured on the goods budget-100 bundle: four groups tie at top score 1.000, so a 51-row group, a
+13-row group, and a 2-row group are ordered by a tiebreak that carries no relevance at all
+([conflict detection](current/data-prep/conflict-detection.md#one-actionable-set)). Rank the
+**Decision groups** table on what the group actually costs -- actionable rows first, then rows, then
+top score -- while leaving the row ordering and `findings.jsonl` exactly as they are, since those
+are read row-wise and a resolution lane consumes them in file order.
 
 - Agent status: CLEAR
-- Dependencies: none. `finding_sort_key` is shared by the report, the grouping, and
-  `findings.jsonl`; the precision definition lives in `AdjudicatedRow.actionable`
-  (`src/llb/conflicts/claim_precision.py`).
-- User-visible outcome: the row an operator must act on leads the list, instead of sorting below
-  coexisting facts that happened to score higher.
-- Scope boundary: in scope -- one shared actionable definition, the ordering it drives, and the
-  resolution-lane re-check. Out of scope -- the relation vocabulary itself and any change to which
-  rows are found.
+- Dependencies: none. `group_findings` in `src/llb/conflicts/census.py` assigns group ids in row
+  order; the group id must stay derivable from `findings.jsonl` alone, so the RANKING has to be a
+  rendering concern in `report_findings.py` rather than a re-numbering.
+- User-visible outcome: the first decision an operator reads is the one with the most at stake,
+  instead of the one that happens to contain the top-scored row.
+- Scope boundary: in scope -- the group table's ranking and the reading that explains it. Out of
+  scope -- renumbering group ids, changing row order, and changing `findings.jsonl`.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: ordering change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture mixing `subsumed_by` with a higher-scored
-  `complementary` row leads with the `subsumed_by` row in both the report and `findings.jsonl`; the
-  resolution lane plans and rolls back unchanged over the reordered file.
+- Execution path: rendering change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture where the largest group holds no top-scoring row
+  still lists it first; group ids stay equal to the ids derived from `findings.jsonl` in file order,
+  asserted against the `groups.json` sidecar.
 - Documentation target: [conflict
   detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
 

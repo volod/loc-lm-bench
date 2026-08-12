@@ -100,9 +100,11 @@ def findings_section(result: AuditResult) -> list[str]:
         + [
             "### Rows",
             "",
-            "Every row `findings.jsonl` carries, grouped and with actionable relations first. "
-            "Offsets are exact character positions in the source document; `~` marks a claim whose "
-            "quote could not be located, where the span falls back to the enclosing chunk.",
+            "Every row `findings.jsonl` carries, grouped and with the rows an operator must act "
+            "on first -- every relation but `complementary`, the same set the claim-tier precision "
+            "block counts. Offsets are exact character positions in the source document; `~` marks "
+            "a claim whose quote could not be located, where the span falls back to the enclosing "
+            "chunk.",
             "",
         ]
         + _rows_table(groups)

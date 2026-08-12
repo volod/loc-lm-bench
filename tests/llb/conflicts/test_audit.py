@@ -12,6 +12,7 @@ import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import (
+    REL_COMPLEMENTARY,
     REL_DUPLICATE,
     REL_SUBSUMED_BY,
     REL_SUPERSEDED_BY,
@@ -210,12 +211,18 @@ def test_write_audit_persists_findings_report_and_summary(tmp_path):
 
 
 def test_report_leads_with_actionable_relations():
+    """Every relation the precision block counts as work leads the list; only coexistence sinks."""
     result = audit(TIER_CLAIM)
     report = render_report(result)
     assert "# Corpus conflict audit" in report
     body = report.split("### Rows", 1)[1]
-    first_row = next(line for line in body.splitlines() if line.startswith("| G"))
-    assert REL_SUPERSEDED_BY in first_row or "contradicts" in first_row
+    rows = [line for line in body.splitlines() if line.startswith("| G")]
+    assert REL_SUPERSEDED_BY in rows[0] or "contradicts" in rows[0] or REL_DUPLICATE in rows[0]
+    coexisting = [index for index, row in enumerate(rows) if f"`{REL_COMPLEMENTARY}`" in row]
+    actionable = [index for index, row in enumerate(rows) if f"`{REL_COMPLEMENTARY}`" not in row]
+    assert not coexisting or not actionable or min(coexisting) > max(actionable), (
+        "a row an operator must act on never sorts below one they can ignore"
+    )
 
 
 def test_report_renders_for_a_clean_corpus(tmp_path):

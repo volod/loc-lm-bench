@@ -342,6 +342,24 @@ counts). `src/llb/conflicts/census.py` computes the census and the grouping;
   one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
   transitive closure, the document-tier fallback, and the census beside each printed count.
 
+### One actionable set
+
+"Actionable" has ONE definition, `is_actionable` in `src/llb/conflicts/constants.py`: every
+relation but `complementary`, plus anything the vocabulary does not recognize. The claim-tier
+precision block counts that set (`AdjudicatedRow.actionable`) and the report's ordering promotes
+that set (`finding_sort_key`), so a row the audit counts as work can never sort below a row it
+counts as none. Within each of the two buckets the order is descending score, then claim identity.
+
+That ordering writes `findings.jsonl` as well as `report.md`, and both are read top-down, so the
+two artifacts lead with the same row. Measured on the goods budget-100 bundle: its single
+`subsumed_by` row -- the only row an operator has to decide -- sat at position **23 of 99**, below
+22 `complementary` rows the model scored higher, and now leads the file and the report. The
+resolution lane is unaffected by the reordering: planning the same 99 rows in either order yields
+byte-identical overlays (only `source_findings_sha256`, which pins the file, differs), the same six
+decision groups with the same ids, and an apply/rollback that leaves every corpus byte untouched.
+`overlay_from_plan` sorts each document's annotations and suppress-spans by their own identity to
+guarantee that, so a re-sorted audit cannot republish a store generation that changes nothing.
+
 ### The `groups.json` sidecar
 
 The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
@@ -426,8 +444,8 @@ measurement.
 
 `$DATA_DIR/corpus-conflicts/<run>/` holds `findings.jsonl` (one JSON object per claim pair, both
 sides with exact offsets -- the machine-readable input a resolution lane consumes, one line per row
-whatever the census says), `report.md` (actionable relations first, grouped into decisions with
-[the unit census beside every count](#the-count-and-the-units-behind-it)),
+whatever the census says), `report.md` ([actionable rows first](#one-actionable-set), grouped into
+decisions with [the unit census beside every count](#the-count-and-the-units-behind-it)),
 [`groups.json`](#the-groupsjson-sidecar) (the decision groups, addressed by the same finding ids the
 resolution plan uses), `summary.json` (per-tier counts, timings, parameters, `finding_census` /
 `relation_census`, and the
