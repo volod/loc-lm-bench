@@ -35,7 +35,11 @@ from llb.conflicts.constants import (
     TIER_SEMANTIC,
 )
 from llb.conflicts.models import AuditResult, ClaimRef, Finding, Staleness
-from llb.conflicts.policy_projection import PROJECTION_KIND, project_review_rows
+from llb.conflicts.policy_projection import (
+    PROJECTION_KIND,
+    project_policies,
+    project_review_rows,
+)
 from llb.conflicts.report import render_report, write_audit
 from llb.conflicts.resolution_io import create_resolution_artifacts
 from llb.conflicts.resolution_policy import (
@@ -85,6 +89,39 @@ def _result(findings: list[Finding], policy: str | None = None) -> AuditResult:
     return result
 
 
+def _separating() -> list[Finding]:
+    """The mixed group plus the rows the two policies actually disagree about.
+
+    Only a DATED supersession separates them: conservative escalates it, prefer-newer suppresses
+    the older side. The undated contradiction is the control -- it stays review work under both,
+    so a non-zero delta cannot be an artifact of simply having more rows.
+    """
+    return _mixed() + [
+        _row(3, tier=TIER_CLAIM, relation=REL_SUPERSEDED_BY, newer_side="a", left="other.md"),
+        _row(4, tier=TIER_CLAIM, relation=REL_CONTRADICTS, left="third.md"),
+    ]
+
+
+def _projected(findings: list[Finding], *policies: str) -> AuditResult:
+    """The same result `_result` builds, projected under several policies instead of one."""
+    result = _result(findings)
+    result.policy_projection = project_policies(result.rows(), list(policies))
+    return result
+
+
+def _group_header(report: str) -> str:
+    table = report.split("### Decision groups", 1)[1]
+    return next(line for line in table.splitlines() if line.startswith("| group"))
+
+
+def _measured(rows: list[dict], policy: str) -> dict[str, int]:
+    """`plan.json`'s own `review_rows` per group -- what every projected column must equal."""
+    return {
+        str(d["group_id"]): int(d["review_rows"])
+        for d in build_plan(rows, policy, "corpus")["decisions"]
+    }
+
+
 def test_the_projection_equals_the_plan_the_same_policy_would_write():
     """The acceptance gate: mixed group, projected count == `plan.json`'s measured `review_rows`."""
     result = _result(_mixed(), POLICY_CONSERVATIVE)
@@ -102,22 +139,14 @@ def test_the_projection_equals_the_plan_the_same_policy_would_write():
 
 def test_the_projection_equals_the_measured_plan_on_every_policy_and_shape():
     """A policy the projection names is a policy it must agree with -- on rows that separate them."""
-    findings = _mixed() + [
-        _row(3, tier=TIER_CLAIM, relation=REL_SUPERSEDED_BY, newer_side="a", left="other.md"),
-        _row(4, tier=TIER_CLAIM, relation=REL_CONTRADICTS, left="third.md"),
-    ]
-    rows = _result(findings).rows()
+    rows = _result(_separating()).rows()
 
     projected = {
         policy: project_review_rows(rows, policy)["groups"]
         for policy in (POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
     }
     measured = {
-        policy: {
-            str(d["group_id"]): int(d["review_rows"])
-            for d in build_plan(rows, policy, "corpus")["decisions"]
-        }
-        for policy in (POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
+        policy: _measured(rows, policy) for policy in (POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
     }
 
     assert projected == measured
@@ -195,6 +224,146 @@ def test_an_empty_projection_is_not_a_projection_of_zero():
 def test_the_projection_refuses_a_policy_it_does_not_know():
     with pytest.raises(ValueError, match="unknown resolution policy"):
         project_review_rows(_result(_mixed()).rows(), "whatever-the-operator-typed")
+
+
+# --- several policies at once, and the delta between them ----------------------------------------
+
+
+def test_every_projected_column_equals_the_plan_its_own_policy_would_write():
+    """The acceptance gate, one column at a time: N columns are N readings of one implementation."""
+    result = _projected(_separating(), POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
+    rows = result.rows()
+    projection = result.policy_projection
+
+    assert projection["policies"] == [POLICY_CONSERVATIVE, POLICY_PREFER_NEWER]
+    for policy in projection["policies"]:
+        assert projection["by_policy"][policy]["groups"] == _measured(rows, policy), policy
+
+
+def test_the_delta_is_the_difference_and_names_the_groups_it_falls_in():
+    result = _projected(_separating(), POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
+    projection = result.policy_projection
+    (delta,) = projection["deltas"]
+    by_policy = projection["by_policy"]
+
+    assert (delta["baseline"], delta["policy"]) == (POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
+    assert delta["groups"] == {
+        group: by_policy[POLICY_PREFER_NEWER]["groups"][group] - count
+        for group, count in by_policy[POLICY_CONSERVATIVE]["groups"].items()
+    }
+    assert delta["review_rows"] == -1, "the dated supersession is the one row the switch settles"
+    assert (
+        delta["moved_groups"] == [group for group, count in delta["groups"].items() if count] != []
+    ), "a corpus-wide total hides which decision the choice actually moves"
+
+
+def test_the_baseline_policy_stays_where_a_single_policy_consumer_reads_it():
+    """One document shape: the first policy's own fields are the top level, whatever N is."""
+    findings = _separating()
+    one = _projected(findings, POLICY_CONSERVATIVE).policy_projection
+    both = _projected(findings, POLICY_CONSERVATIVE, POLICY_PREFER_NEWER).policy_projection
+
+    flat = ("kind", "policy", "basis", "review_rows", "review_groups", "groups")
+    assert {key: one[key] for key in flat} == {key: both[key] for key in flat}
+    assert one["schema_version"] == both["schema_version"]
+    assert one["deltas"] == [], "one policy is no choice, so there is nothing to compare"
+    assert set(both) == set(one), "the multi-policy payload adds values, never keys"
+
+
+def test_naming_the_policies_the_other_way_round_swaps_the_baseline_and_the_sign():
+    findings = _separating()
+    forward = _projected(findings, POLICY_CONSERVATIVE, POLICY_PREFER_NEWER).policy_projection
+    backward = _projected(findings, POLICY_PREFER_NEWER, POLICY_CONSERVATIVE).policy_projection
+
+    assert forward["by_policy"] == backward["by_policy"], "the columns do not depend on the order"
+    assert backward["policy"] == POLICY_PREFER_NEWER, "the first named is the baseline"
+    assert backward["deltas"][0]["review_rows"] == -forward["deltas"][0]["review_rows"]
+
+
+def test_a_single_policy_renders_exactly_the_column_it_always_did():
+    single = render_report(_projected(_separating(), POLICY_CONSERVATIVE))
+    header = _group_header(single)
+
+    assert f"| {REVIEW_LABEL} (projected) |" in header
+    assert "delta" not in header and "policy choice" not in single
+    assert single == render_report(_result(_separating(), POLICY_CONSERVATIVE)), (
+        "the multi-policy path with one policy is byte-identical to the single-policy path"
+    )
+
+
+def test_two_policies_render_one_labelled_column_each_plus_the_delta():
+    report = render_report(_projected(_separating(), POLICY_CONSERVATIVE, POLICY_PREFER_NEWER))
+    table = report.split("### Decision groups", 1)[1].split("### How many", 1)[0]
+    header = [cell.strip() for cell in _group_header(report).split("|")]
+    row = next(line for line in table.splitlines() if line.startswith("| G2 |"))
+
+    assert header[4:7] == [
+        f"{REVIEW_LABEL} (projected, `{POLICY_CONSERVATIVE}`)",
+        f"{REVIEW_LABEL} (projected, `{POLICY_PREFER_NEWER}`)",
+        f"delta (`{POLICY_CONSERVATIVE}` -> `{POLICY_PREFER_NEWER}`)",
+    ]
+    assert [cell.strip() for cell in row.split("|")][4:7] == ["1", "0", "-1"], (
+        "the dated supersession costs a review under one policy and nothing under the other"
+    )
+    assert f"policy choice `{POLICY_CONSERVATIVE}` -> `{POLICY_PREFER_NEWER}`: **-1 row**" in report
+    assert "(G2)" in report, "the headline names the group the choice moves"
+    assert "never a measurement" in table and POLICY_PREFER_NEWER in table
+
+
+def test_a_corpus_the_choice_is_free_on_reports_a_zero_delta_and_says_so():
+    """The degenerate case is the common one, so it must read as an answer, not as a blank."""
+    report = render_report(_projected(_mixed(), POLICY_CONSERVATIVE, POLICY_PREFER_NEWER))
+    projection = _projected(_mixed(), POLICY_CONSERVATIVE, POLICY_PREFER_NEWER).policy_projection
+
+    assert projection["deltas"][0]["moved_groups"] == []
+    assert projection["deltas"][0]["review_rows"] == 0
+    assert "**no difference on this corpus**" in report
+    assert "the policies part on dated supersessions" in report
+
+
+def test_a_delta_column_never_reads_as_a_count():
+    """`+2` is a change and `2` is a count; a table that renders both must not confuse them."""
+    swapped = render_report(_projected(_separating(), POLICY_PREFER_NEWER, POLICY_CONSERVATIVE))
+    row = next(line for line in swapped.splitlines() if line.startswith("| G2 |"))
+    assert [cell.strip() for cell in row.split("|")][4:7] == ["0", "1", "+1"]
+
+
+def test_the_projection_refuses_a_repeated_policy():
+    rows = _result(_mixed()).rows()
+    with pytest.raises(ValueError, match="duplicate resolution policy"):
+        project_policies(rows, [POLICY_CONSERVATIVE, POLICY_CONSERVATIVE])
+    with pytest.raises(ValueError, match="at least one resolution policy"):
+        project_policies(rows, [])
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("conservative", [POLICY_CONSERVATIVE]),
+        ("conservative,prefer-newer", [POLICY_CONSERVATIVE, POLICY_PREFER_NEWER]),
+        (" prefer-newer , conservative ", [POLICY_PREFER_NEWER, POLICY_CONSERVATIVE]),
+        (None, []),
+    ],
+)
+def test_the_flag_parses_an_ordered_policy_list(value, expected):
+    from llb.cli.prep.conflicts import _projected_policies
+
+    assert _projected_policies(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value", ["nonsense", "conservative,nonsense", "a,a", ",", "conservative,"]
+)
+def test_the_flag_refuses_what_it_cannot_project(value):
+    import click
+
+    from llb.cli.prep.conflicts import _projected_policies
+
+    if value == "conservative,":
+        assert _projected_policies(value) == [POLICY_CONSERVATIVE], "a trailing comma is a typo,"
+        return
+    with pytest.raises(click.exceptions.BadParameter):
+        _projected_policies(value)
 
 
 def test_the_report_layer_does_not_import_the_resolution_vocabulary():

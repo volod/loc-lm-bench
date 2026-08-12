@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 import typer
 
 from llb.cli.app import app
+from llb.core.contracts.common import JsonObject
 from llb.conflicts.claim_calibration import DEFAULT_CALIBRATION_PROBE
 from llb.conflicts.constants import (
     CONFLICTS_METHOD,
@@ -129,10 +130,11 @@ def audit_corpus_conflicts_cmd(
     ),
     project_policy: Optional[str] = typer.Option(
         None,
-        help="also PROJECT the `to review` count under this resolution policy "
+        help="also PROJECT the `to review` count under these resolution policies, comma-separated "
         f"({' | '.join(POLICIES)}): the rows `resolve-corpus-conflicts --policy <p>` would leave "
-        "at `review_required`, printed per decision group. A projection under a named policy, "
-        "never a measurement -- off by default, and off leaves the report unchanged",
+        "at `review_required`, one column per policy per decision group, plus the DELTA between "
+        "them so the cost of the policy CHOICE is visible. Projections under named policies, "
+        "never measurements -- off by default, and off leaves the report unchanged",
     ),
 ) -> None:
     """Report duplicated, stale, and contradictory knowledge in a corpus. Never edits the corpus."""
@@ -145,10 +147,7 @@ def audit_corpus_conflicts_cmd(
 
     if effort not in TIERS:
         raise typer.BadParameter(f"unknown effort {effort!r}; choose one of {', '.join(TIERS)}")
-    if project_policy is not None and project_policy not in POLICIES:
-        raise typer.BadParameter(
-            f"unknown resolution policy {project_policy!r}; choose one of {', '.join(POLICIES)}"
-        )
+    projected_policies = _projected_policies(project_policy)
     tiers = tiers_up_to(effort)
 
     view = None
@@ -196,10 +195,10 @@ def audit_corpus_conflicts_cmd(
 
     # The projection is composed HERE, above both layers: it needs the resolution vocabulary, and
     # the report must not. `write_audit` renders whatever plain data it is handed.
-    if project_policy is not None:
-        from llb.conflicts.policy_projection import project_review_rows
+    if projected_policies:
+        from llb.conflicts.policy_projection import project_policies
 
-        result.policy_projection = project_review_rows(result.rows(), project_policy)
+        result.policy_projection = project_policies(result.rows(), projected_policies)
 
     out_dir = (
         out if out is not None else resolve_data_dir() / CONFLICTS_METHOD / generation_timestamp()
@@ -208,8 +207,58 @@ def audit_corpus_conflicts_cmd(
     _echo_summary(result, paths)
 
 
+def _projected_policies(value: Optional[str]) -> list[str]:
+    """Parse `--project-policy a,b` into an ordered, de-duplicated, validated policy list.
+
+    The first policy named is the delta's baseline and stays the one whose counts sit at the top
+    level of the artifact, so the order an operator types is the order the report reads in.
+    """
+    if value is None:
+        return []
+    named = [item.strip() for item in value.split(",") if item.strip()]
+    if not named:
+        raise typer.BadParameter(
+            f"--project-policy needs at least one policy; choose from {', '.join(POLICIES)}"
+        )
+    unknown = [policy for policy in named if policy not in POLICIES]
+    if unknown:
+        raise typer.BadParameter(
+            f"unknown resolution policy {', '.join(repr(p) for p in unknown)}; "
+            f"choose from {', '.join(POLICIES)}"
+        )
+    if len(set(named)) != len(named):
+        raise typer.BadParameter(
+            f"--project-policy repeats a policy ({value!r}); each column must be a distinct policy"
+        )
+    return named
+
+
+def _echo_projection(projection: JsonObject) -> None:
+    """One line per projected policy, then the delta -- the same reading the report prints."""
+    if not projection:
+        return
+    from llb.conflicts.census import counted
+    from llb.conflicts.report_projection import policies_of, signed_delta
+
+    for policy in policies_of(projection):
+        counts = projection.get("by_policy", {}).get(policy, projection)
+        typer.echo(
+            f"[conflicts] to review PROJECTED under policy {policy}: "
+            f"{counted(int(counts['review_rows']), 'row')} in "
+            f"{counted(int(counts['review_groups']), 'decision group')} "
+            "(a projection, not a measurement; resolve-corpus-conflicts measures it)"
+        )
+    for delta in projection.get("deltas") or []:
+        moved = delta["moved_groups"]
+        where = f" in {', '.join(moved)}" if moved else " -- the choice is free on this corpus"
+        typer.echo(
+            f"[conflicts] policy choice {delta['baseline']} -> {delta['policy']}: "
+            f"{signed_delta(int(delta['review_rows']))} rows to review{where}"
+        )
+
+
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
-    from llb.conflicts.census import census_units, counted, finding_census, relation_census
+    from llb.conflicts.census import census_units, finding_census, relation_census
 
     census = finding_census(result.findings)
     typer.echo(
@@ -229,14 +278,7 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(line)
     for relation, row in relation_census(result.findings).items():
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
-    projection = result.policy_projection
-    if projection:
-        typer.echo(
-            f"[conflicts] to review PROJECTED under policy {projection['policy']}: "
-            f"{counted(int(projection['review_rows']), 'row')} in "
-            f"{counted(int(projection['review_groups']), 'decision group')} "
-            "(a projection, not a measurement; resolve-corpus-conflicts measures it)"
-        )
+    _echo_projection(result.policy_projection)
     precision = result.claim_precision
     if precision.get("reported"):
         point = precision["returned_budget"]

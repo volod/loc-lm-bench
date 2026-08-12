@@ -35,6 +35,7 @@ from llb.conflicts.hashing import sha256_text
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report_findings import findings_section
 from llb.conflicts.report_precision import precision_section
+from llb.conflicts.report_projection import projected_review_lines
 
 
 def render_report(result: AuditResult) -> str:
@@ -86,22 +87,11 @@ def _projected_review_line(result: AuditResult) -> list[str]:
     Without `--project-policy` this is nothing at all and the report is byte-identical to a report
     that never heard of the resolution vocabulary. With it, the headline count an operator funds is
     available one command earlier -- labelled as a projection under a NAMED policy every time it
-    appears, because the number is only true of that policy and a reviewer can still move it.
+    appears -- and with several named, the delta that says whether the choice costs anything here.
     """
-    projection = result.policy_projection
-    if not projection or not result.findings:
+    if not result.findings:
         return []
-    policy = str(projection.get("policy", ""))
-    rows = int(projection.get("review_rows", 0))
-    groups = int(projection.get("review_groups", 0))
-    return [
-        f"- {REVIEW_LABEL} (PROJECTED under policy `{policy}`): "
-        f"{counted(rows, 'row')} in {counted(groups, 'decision group')}. A projection, not a "
-        f"measurement: it replays `resolve-corpus-conflicts --policy {policy}` over these rows and "
-        "counts the ones that policy leaves at `review_required`. Another policy gives another "
-        "number, and a reviewer's own decisions can still move it; the measured count is "
-        "`review_rows` in that command's `plan.json`."
-    ]
+    return projected_review_lines(result.policy_projection)
 
 
 def _relations_section(result: AuditResult) -> list[str]:

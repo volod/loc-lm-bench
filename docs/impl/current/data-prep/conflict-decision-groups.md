@@ -98,12 +98,17 @@ review), the naming in both artifacts, and the ledger ranking.
 The audit can name **to review** but cannot measure it, so an operator sizing a review budget off
 `report.md` alone has to run the resolver to learn what their corpus costs. `resolve_finding` is a
 pure function of `(relation, tier, governance, policy)` and `findings.jsonl` already carries all
-four, so the audit can PROJECT that count under a policy the operator names -- one command before
-the resolver runs, with no second model call and no second implementation of the number.
+four, so the audit can PROJECT that count under the policies the operator names -- one command
+before the resolver runs, with no second model call and no second implementation of the number.
+
+Naming ONE policy answers "what does my corpus cost?". Naming several also answers the question an
+operator asks immediately afterwards -- "what would the other policy cost?" -- because each extra
+policy is one more pass over rows the audit already holds and no model call at all.
 
 ```bash
 make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
-  PROJECT_POLICY=conservative      # or: llb audit-corpus-conflicts --project-policy conservative
+  PROJECT_POLICY=conservative,prefer-newer
+# or: llb audit-corpus-conflicts --project-policy conservative,prefer-newer
 ```
 
 - **Opt-in, and off by default.** Without the flag nothing about the report changes. Measured: a
@@ -114,31 +119,56 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
   [granularity section](#how-many-decisions-the-row-count-is), which every report now carries; the
   claim is about the projection, so re-checking it means comparing two reports rendered by the same
   code with and without the flag.
-- **What it adds.** A headline line, a `to review (projected)` column in the decision-groups table,
-  and `policy_projection` in `summary.json` (`schema_version`, `kind: projection`, `policy`,
-  `basis`, `review_rows`, `review_groups`, and the per-group counts keyed by the same group ids
-  `groups.json` and `plan.json` use). The CLI echoes the same number. `findings.jsonl` and
-  `groups.json` are untouched: the projection depends on a policy, and those two artifacts must
-  stay readable by a consumer that has not chosen one.
-- **A projection, never a measurement**, said at every appearance -- the flag, the headline, the
-  column paragraph, the CLI line, and the artifact's own `kind`/`basis` fields. It is only true of
-  the policy it names, and a reviewer's decisions can still move it.
-- **Equal to what the resolver measures.** The projection replays the shipped `resolve_finding`
-  over the audit's own rows and counts `review_required` per group, so it must equal `plan.json`'s
-  `review_rows` group for group under the same policy -- a second READING of one implementation,
-  not a second implementation. `tests/llb/conflicts/test_policy_projection.py` pins that equality
-  on the mixed fixture (one claim-tier duplicate the policy accepts plus one semantic-tier
-  duplicate it escalates: 2 to decide, 1 to review) and across both policies on rows that separate
-  them. The ranking does not change: the decision table still ranks on `to decide`, the only count
-  that exists without a policy.
+- **What it adds.** A headline line per policy, one `to review (projected, <policy>)` column per
+  policy in the decision-groups table, and `policy_projection` in `summary.json`
+  (`schema_version: 2`, `kind: projection`, `basis`, `policies`, `by_policy` with each policy's
+  `review_rows` / `review_groups` / per-group counts, and `deltas`). The per-group counts are keyed
+  by the same group ids `groups.json` and `plan.json` use. The CLI echoes the same numbers.
+  `findings.jsonl` and `groups.json` are untouched: the projection depends on a policy, and those
+  two artifacts must stay readable by a consumer that has not chosen one.
+- **One document shape, whatever N is.** The FIRST policy named is the baseline and its own counts
+  stay at the top level of `policy_projection` (`policy`, `review_rows`, `review_groups`,
+  `groups`), exactly where a single-policy consumer already reads them; `policies` / `by_policy` /
+  `deltas` are added beside them. `project_review_rows(rows, policy)` is the one-policy case of
+  `project_policies(rows, policies)` and returns the same document, so there is never a second
+  schema to branch on.
+- **The delta is the answer, not the columns.** `deltas` carries one entry per non-baseline policy:
+  `review_rows` (signed, negative means the switch removes review work), the same per group, and
+  `moved_groups` -- WHICH decisions the choice touches. A corpus-wide total of `-2` hides whether
+  that is one group changing or twenty cancelling out, which is why the group list rides with it.
+  A delta cell is rendered `+2` / `-2` / `0` through one helper so it can never be misread as a
+  count, and `0` is bare rather than `+0`.
+- **A projection, never a measurement**, said at every appearance -- the flag, every headline line,
+  the column paragraph, the CLI lines, and the artifact's own `kind`/`basis` fields. Each column is
+  only true of the policy it names, the delta inherits that caveat from both columns it subtracts,
+  and a reviewer's decisions can still move any of them.
+- **One policy renders exactly the column it always did.** With a single `--project-policy` value
+  the header is `to review (projected)` with no policy suffix and no delta column, and the report
+  is byte-identical to the one the single-policy path produced. Measured: the group-table header of
+  `.data/corpus-conflicts/20260812T-policy-choice-goods-single/report.md` is identical to the one
+  in `20260812T-projected-review-goods-semantic/report.md`, and a CI test asserts the two rendering
+  paths agree byte for byte on the same rows.
+- **Equal to what the resolver measures, column by column.** Each column replays the shipped
+  `resolve_finding` over the audit's own rows and counts `review_required` per group, so it must
+  equal `plan.json`'s `review_rows` group for group under that policy -- N columns are N READINGS
+  of one implementation, not N implementations.
+  `tests/llb/conflicts/test_policy_projection.py` pins that equality per column on a fixture that
+  separates the policies (a dated supersession plus an undated contradiction as the control), and
+  pins the delta as the difference of the two columns rather than a third computation. The ranking
+  does not change: the decision table still ranks on `to decide`, the only count that exists
+  without a policy.
 
 **The layering decision.** The projection needs the resolution vocabulary and the report must not
 have it, so it is composed ABOVE both layers: `src/llb/conflicts/policy_projection.py` imports
 `resolution_policy`, the CLI calls it and puts the plain JSON result on
-`AuditResult.policy_projection`, and `report.py` / `report_findings.py` render data they never
-derive. `conflicts.report*` therefore still imports nothing from `conflicts.resolution_*`, which
-`test_policy_projection.py` asserts by reading the report modules' own import lines rather than by
-convention. The cheaper alternative -- the report simply pointing at the resolver -- was kept as
+`AuditResult.policy_projection`, and `report.py` / `report_findings.py` / `report_projection.py`
+render data they never derive -- `report_projection.py` owns every way a projected count is allowed
+to appear, so the headline, the columns, and the prose cannot drift apart. `conflicts.report*`
+therefore still imports nothing from `conflicts.resolution_*`, which `test_policy_projection.py`
+asserts by discovering every `report*.py` and reading its import lines rather than by convention --
+so a renderer added later is held to the rule without anyone remembering to list it.
+
+The cheaper alternative -- the report simply pointing at the resolver -- was kept as
 well rather than replaced: every mention of the projection names `resolve-corpus-conflicts` and
 where the measured count lives, because the resolver without `--apply` already plans without
 touching a corpus byte and remains the only thing that MEASURES the count.
@@ -162,6 +192,50 @@ Measured on the two goods bundles, which are the two ends of the divergence:
   then measured `review_rows` 0 in every one of the six groups. An operator funding one review off
   the audit report alone would have funded a review that does not exist; the projection says so one
   command earlier, and says under which policy.
+
+#### What the policy choice costs, measured
+
+The two policies part in exactly one place: a **dated supersession**. `conservative` escalates it
+to `review_required`; `prefer-newer` suppresses the older side and accepts it. Every other relation
+resolves the same way under both. So a corpus with no dated supersession has a zero delta by
+construction, and both goods bundles are that corpus -- which is why the delta column needed a
+third bundle to be worth printing at all.
+
+CUDA host, RTX PRO 3000 Blackwell.
+
+| bundle | rows | `conservative` | `prefer-newer` | delta | groups moved |
+| --- | --- | --- | --- | --- | --- |
+| conflicts fixture, claim tier | 17 | 2 | 0 | **-2** | G4 |
+| goods semantic, budget 100 | 100 | 100 | 100 | 0 | none |
+
+- **The corpus where the choice is not free** is the committed fixture at
+  `samples/corpora/conflicts_uk_v1/`, which already plants a dated supersession (the 2021 vs 2024
+  thirty-versus-fifteen-day deadline, with `effective_date` on both documents) -- so nothing had to
+  be planted for this. Run:
+  `make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim
+  STORE=<heading@600 store> MIN_CLAIM_TOKENS=10 PROJECT_POLICY=conservative,prefer-newer`
+  (`.data/corpus-conflicts/20260812T-policy-choice-fixture-claim/`, 19-chunk
+  `multilingual-e5-base` `heading@600` store, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M agreeing with all
+  24 frozen probe pairs, 14 rows adjudicated in 53 s). It returns **17 findings in 4 groups, 9 to
+  decide**, including 2 `superseded_by` rows. The report reads `to review (PROJECTED under policy
+  conservative): 2 rows in 1 decision group`, `(PROJECTED under policy prefer-newer): 0 rows in 0
+  decision groups`, and `policy choice conservative -> prefer-newer: -2 rows to review, falling in
+  1 decision group (G4)`. Both columns were then checked against the thing they project: running
+  `resolve-corpus-conflicts` on the same rows under each policy wrote `plan.json` decisions equal
+  to the projection group for group (`{G1: 0, G2: 0, G3: 0, G4: 2}` and all zeros), under
+  `.data/corpus-conflicts/20260812T-policy-choice-fixture-claim/resolve-{conservative,prefer-newer}/`.
+- **The corpus where it is free** is goods
+  (`.data/corpus-conflicts/20260812T-policy-choice-goods-semantic/`, 100 rows, 6 groups): every row
+  is a semantic-tier duplicate, that tier has no deletion authority under either policy, so both
+  columns read 100 and the delta is 0 in every group. The report says so in those words -- **no
+  difference on this corpus** -- rather than printing two identical columns and leaving the
+  operator to compare them. Reading a zero delta correctly matters: it means the policy question
+  can be dropped on this corpus, not that the policies are interchangeable in general.
+
+The measurement's own limit: the fixture is 7 small documents, so its delta shows the mechanism
+rather than a realistic magnitude. Whether a production corpus carries enough dated supersessions
+for the choice to matter is a per-corpus question, and the delta column is what answers it in one
+command.
 
 ### One actionable set
 

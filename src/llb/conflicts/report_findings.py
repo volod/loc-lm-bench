@@ -14,19 +14,16 @@ so ranking is a way of reading the table, not a renaming of what is in it.
 """
 
 from llb.conflicts.census import FindingGroup, census_phrase, finding_census, group_findings
-from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
+from llb.conflicts.constants import DECIDE_LABEL
 from llb.conflicts.granularity import finding_granularity
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.report_granularity import granularity_section
+from llb.conflicts.report_projection import projected_columns, two_counts_paragraphs
 from llb.core.contracts.common import JsonObject
 
 _EXCERPT = 160
 # Shared units beyond this many are summarised rather than listed, to keep the cell readable.
 _MAX_LISTED_UNITS = 2
-# The opt-in projection's column, named so the word an operator funds is never printed bare: this
-# module renders a projection it is HANDED and never computes one, which is what keeps the
-# resolution vocabulary out of the report layer (see `policy_projection.py`).
-_PROJECTED_LABEL = f"{REVIEW_LABEL} (projected)"
 
 
 def _excerpt(text: str) -> str:
@@ -76,22 +73,15 @@ def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
     return (-group.decide_rows, -len(group.findings), -group.top_score, group.index)
 
 
-def _projected_cell(projection: JsonObject, group: FindingGroup) -> str:
-    """One group's projected review count, read out of data this module did not compute.
-
-    Empty when no policy was named, which is how the table keeps exactly the columns it had before
-    the flag existed instead of printing a zero that would read as a measured "nothing to review".
-    """
-    if not projection:
-        return ""
-    groups = projection.get("groups")
-    value = groups.get(group.label) if isinstance(groups, dict) else None
-    return f" {int(value) if isinstance(value, int) else 0} |"
-
-
 def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[str]:
-    projected_header = f" {_PROJECTED_LABEL} |" if projection else ""
-    projected_divider = " --- |" if projection else ""
+    """The decision table, widened by one column per projected policy and one per delta.
+
+    With no policy named there are no extra columns at all -- not a zero, which would read as a
+    measured "nothing to review" rather than as "nobody asked".
+    """
+    columns = projected_columns(projection)
+    projected_header = "".join(f" {column.header} |" for column in columns)
+    projected_divider = " --- |" * len(columns)
     lines = [
         f"| group | rows | {DECIDE_LABEL} |{projected_header} relations | shared unit "
         "| documents | top score |",
@@ -99,9 +89,9 @@ def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[st
     ]
     for group in sorted(groups, key=stake_key):
         documents = ", ".join(f"`{doc}`" for doc in group.documents)
+        projected = "".join(f" {column.cell(group.label)} |" for column in columns)
         lines.append(
-            f"| {group.label} | {len(group.findings)} | {group.decide_rows} |"
-            f"{_projected_cell(projection, group)}"
+            f"| {group.label} | {len(group.findings)} | {group.decide_rows} |{projected}"
             f" {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
             f"| {group.top_score:.3f} |"
         )
@@ -123,43 +113,6 @@ def _rows_table(groups: list[FindingGroup]) -> list[str]:
             )
     lines.append("")
     return lines
-
-
-def _two_counts_paragraphs(projection: JsonObject) -> list[str]:
-    """Why the audit prints one count, and -- when asked -- what the projected second one is.
-
-    The claim never weakens: the audit still cannot MEASURE the review count, because measuring it
-    means running the policy over the corpus an operator chose. What `--project-policy` adds is one
-    named policy replayed over these same rows, which is a projection and says so wherever it
-    appears.
-    """
-    measured = "an audit cannot measure it" if projection else "an audit cannot print it"
-    paragraphs = [
-        f"`{DECIDE_LABEL}` is NOT the count of human reviews this corpus costs. That second "
-        f"count, **{REVIEW_LABEL}**, is a property of the resolution POLICY -- the rows "
-        "`resolve-corpus-conflicts` leaves at `review_required` -- so it does not exist until "
-        f"a policy is chosen and {measured}. The two diverge in both directions: "
-        "an accepted `drop_duplicate` is to decide and not to review, while every semantic-tier "
-        "duplicate is to review under every policy because that tier has no deletion authority. "
-        f"`plan.json` prints both per group (`decide_rows`, `review_rows`) and ranks the review "
-        "ledger on the second, which is the one an operator funds.",
-        "",
-    ]
-    if not projection:
-        return paragraphs
-    policy = str(projection.get("policy", ""))
-    return paragraphs + [
-        f"The **{_PROJECTED_LABEL}** column is that second count PROJECTED under policy "
-        f"`{policy}`, because `--project-policy {policy}` was passed: each group's rows replayed "
-        f"through `resolve-corpus-conflicts --policy {policy}` and counted where that policy "
-        "leaves `review_required`. It is a projection under a named policy, never a measurement --"
-        " a different policy gives a different column, a reviewer's decisions can still move it, "
-        "and the ranking below is unchanged (it still ranks on "
-        f"`{DECIDE_LABEL}`, the only count that exists without a policy). The measured count is "
-        "`review_rows` in the `plan.json` that command writes, and it equals this column group for "
-        "group under the same policy.",
-        "",
-    ]
 
 
 def findings_section(result: AuditResult) -> list[str]:
@@ -191,7 +144,7 @@ def findings_section(result: AuditResult) -> list[str]:
             "renumbering -- the row table below and `findings.jsonl` keep the file's own order.",
             "",
         ]
-        + _two_counts_paragraphs(projection)
+        + two_counts_paragraphs(projection)
         + _groups_table(groups, projection)
         + granularity_section(finding_granularity(result.findings))
         + [

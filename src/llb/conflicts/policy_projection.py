@@ -17,11 +17,20 @@ policy would leave open. The result is a PROJECTION, not a measurement:
   pins that equality, which is what keeps this a second READING of one implementation rather than
   a second implementation of one number.
 
+Projecting ONE policy answers "what does my corpus cost?" but not the question an operator asks
+immediately afterwards -- "what would the other policy cost?". Since the projection is a pure
+replay over rows the audit already holds, every named policy costs one more pass and no model call,
+so `project_policies` runs the whole list and reports the per-group DELTA between them. That delta
+is the only thing that says whether the policy choice is even a choice on this corpus: on a corpus
+with no dated supersession it is zero everywhere, and an operator can stop thinking about it.
+
 **Layering.** This module imports `resolution_policy`; the report modules do NOT import it, and
 must not. The projection is computed above both layers (the CLI composes it) and handed to the
 renderer as plain JSON data, so `conflicts.report*` stays free of the resolution vocabulary and
 the detector keeps working without a policy. See the layering note in the conflict-detection doc.
 """
+
+from collections.abc import Sequence
 
 from llb.conflicts.group_artifact import group_summaries
 from llb.conflicts.resolution_policy import (
@@ -31,7 +40,12 @@ from llb.conflicts.resolution_policy import (
 )
 from llb.core.contracts.common import JsonObject
 
-PROJECTION_SCHEMA_VERSION = 1
+# 1 projected one named policy; 2 adds `policies` / `by_policy` / `deltas` beside the first
+# policy's own fields, which stay where a single-policy consumer already reads them.
+PROJECTION_SCHEMA_VERSION = 2
+# The per-policy counts every column is rendered from, named once so the delta and the renderer
+# cannot disagree about which fields a policy's block carries.
+POLICY_COUNT_FIELDS = ("review_rows", "review_groups", "groups")
 # What the number IS, carried in the artifact so a consumer cannot read it as a measurement even
 # if it never reads the report prose.
 PROJECTION_KIND = "projection"
@@ -48,7 +62,15 @@ def project_review_rows(rows: list[JsonObject], policy: str) -> JsonObject:
     `rows` are `findings.jsonl` rows in the file's own order -- the same order and the same
     grouping `groups.json` and `plan.json` use -- so the group ids here address exactly the groups
     those artifacts address.
+
+    This is the one-policy case of `project_policies`, and it returns the SAME document shape, so
+    there is exactly one `policy_projection` schema on disk however many policies were named.
     """
+    return project_policies(rows, [policy])
+
+
+def _project_one(rows: list[JsonObject], policy: str) -> JsonObject:
+    """The per-policy replay every column is computed from."""
     if policy not in POLICIES:
         raise ValueError(f"unknown resolution policy {policy!r}; choose one of {POLICIES}")
     status_by_id = {
@@ -71,4 +93,58 @@ def project_review_rows(rows: list[JsonObject], policy: str) -> JsonObject:
         "review_rows": sum(groups.values()),
         "review_groups": sum(1 for count in groups.values() if count),
         "groups": groups,
+    }
+
+
+def project_policies(rows: list[JsonObject], policies: Sequence[str]) -> JsonObject:
+    """Every named policy projected over the same rows, plus the delta between them.
+
+    The FIRST policy named is the baseline, in two senses: its own counts stay at the top level
+    exactly where a single-policy consumer already reads them, and every delta is measured against
+    it. So `--project-policy conservative,prefer-newer` answers "what does conservative cost, and
+    what would switching cost?" -- which is the order an operator asks the two questions in.
+
+    Every column comes from one replay helper, so a column here and the column a single-policy run
+    prints are the same number computed the same way, and each still equals the `review_rows` the
+    resolver measures under that policy.
+    """
+    named = list(policies)
+    if not named:
+        raise ValueError("project_policies needs at least one resolution policy")
+    if len(set(named)) != len(named):
+        raise ValueError(f"duplicate resolution policy in {named}; each column must be distinct")
+    per_policy = {policy: _project_one(rows, policy) for policy in named}
+    baseline = named[0]
+    return {
+        # The baseline's own projection IS the top level, so a consumer written against one policy
+        # keeps reading the same fields and never has to learn the multi-policy shape.
+        **per_policy[baseline],
+        "schema_version": PROJECTION_SCHEMA_VERSION,
+        "policies": named,
+        "by_policy": {
+            policy: {field: projected[field] for field in POLICY_COUNT_FIELDS}
+            for policy, projected in per_policy.items()
+        },
+        "deltas": [_delta(per_policy, baseline, policy) for policy in named[1:]],
+    }
+
+
+def _delta(per_policy: dict[str, JsonObject], baseline: str, policy: str) -> JsonObject:
+    """What switching from `baseline` to `policy` costs, per decision group and in total.
+
+    Negative means the switch removes review work. `moved_groups` is the answer an operator is
+    actually after -- WHICH decisions the policy choice touches -- because a corpus-wide total of
+    -2 hides whether that is one group changing or twenty cancelling out.
+    """
+    before, after = per_policy[baseline]["groups"], per_policy[policy]["groups"]
+    groups = {group_id: int(after[group_id]) - int(count) for group_id, count in before.items()}
+    return {
+        "baseline": baseline,
+        "policy": policy,
+        "review_rows": int(per_policy[policy]["review_rows"])
+        - int(per_policy[baseline]["review_rows"]),
+        "review_groups": int(per_policy[policy]["review_groups"])
+        - int(per_policy[baseline]["review_groups"]),
+        "groups": groups,
+        "moved_groups": [group_id for group_id, count in groups.items() if count],
     }

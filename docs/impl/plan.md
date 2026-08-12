@@ -45,39 +45,35 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-audit-projects-what-the-policy-choice-costs (optional)
+### conflict-policy-delta-on-a-corpus-with-real-supersessions (optional)
 
-`--project-policy` projects the review count under ONE policy per run, which answers "what does my
-corpus cost?" but not the question an operator asks immediately afterwards: "what would the other
-policy cost?" ([conflict
-detection](current/data-prep/conflict-decision-groups.md#projecting-the-review-count-one-command-earlier)).
-The projection is a pure replay of `resolve_finding` over rows the audit already holds, so
-projecting every policy at once costs one more pass over the rows and no model call. Emit a column
-per named policy (`--project-policy conservative,prefer-newer`) plus the per-group DELTA between
-them, so the operator sees which groups the policy choice actually moves. Motivation from the
-measured bundles: both goods bundles are degenerate for this purpose -- the semantic one projects
-100 of 100 under every policy because the tier has no deletion authority, and the claim one projects
-0 of 1 -- so the multi-policy column also needs a corpus where the choice is not free (dated
-supersessions at the claim tier), and finding or planting one is part of the task.
+The policy-choice delta is measured on exactly one corpus where it is non-zero -- the committed
+7-document fixture, whose 2 `superseded_by` rows make the delta `-2`
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+That shows the mechanism and says nothing about magnitude: a fixture planted to contain one dated
+supersession cannot tell an operator whether their corpus carries enough of them for the choice to
+matter. Both quickstart corpora report a zero delta, so the repo currently has no reading of how
+often the two policies actually part on real documents. Measure it on a corpus with genuine dated
+revisions (the 8-document HR corpus is the obvious candidate, and it is operator data absent from
+this host), and record the share of actionable rows the choice moves rather than only its sign.
 
-- Agent status: CLEAR
-- Dependencies: none. Reuse `project_review_rows` in `src/llb/conflicts/policy_projection.py`
-  unchanged (it already takes the policy as an argument) and the report's injected-projection seam;
-  the layering rule holds -- `conflicts.report*` must still not import `resolution_*`, which
-  `tests/llb/conflicts/test_policy_projection.py` asserts.
-- User-visible outcome: an operator picks a resolution policy knowing what the choice costs in human
-  decisions, instead of running the resolver twice to find out.
-- Scope boundary: in scope -- multiple projected columns, the per-group delta, the corpus that makes
-  the delta non-zero, and the labelling that keeps every column a projection. Out of scope -- adding
-  a policy to the vocabulary, ranking on a projected count, and making any projection the default.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering change with fixture tests; one claim-tier run on the CUDA host only if a
-  planted dated-supersession corpus is needed to make the delta non-zero.
-- Acceptance gates: `make ci` green; each column equals the `plan.json` `review_rows` the same
-  policy writes on the same rows; a corpus where the policies differ reports a non-zero delta and
-  names the groups it falls in; a single `--project-policy` value renders exactly today's column.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-decision-groups.md#projecting-the-review-count-one-command-earlier).
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `--project-policy conservative,prefer-newer` and the `deltas` block in
+  `src/llb/conflicts/policy_projection.py`; the corpus needs governance dates on both sides of a
+  revision pair, which is what promotes `contradicts` to `superseded_by`.
+- User-visible outcome: an operator learns whether the resolution-policy choice is a real decision
+  on corpora like theirs, or a knob that is free in practice.
+- Scope boundary: in scope -- one claim-tier run per corpus, the delta as a share of actionable
+  rows, and a stated reading. Out of scope -- adding a policy, changing how `superseded_by` is
+  derived, and making any policy the default.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` layout.
+- Execution path: one claim-tier run per corpus on the CUDA host with both policies projected; no
+  new CI coverage beyond the existing fixtures.
+- Acceptance gates: `make ci` green; every corpus reports its delta and the share of actionable
+  rows it moves, including the corpora where the share is zero; each projected column still equals
+  the `plan.json` `review_rows` the same policy writes on the same rows.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
 
 ### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 
