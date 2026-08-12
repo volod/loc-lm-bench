@@ -108,7 +108,7 @@ def test_the_findings_table_shows_one_decision_not_six_rows():
     groups = report.split("### Decision groups", 1)[1].split("### Rows", 1)[0]
     group_rows = [line for line in groups.splitlines() if line.startswith("| G")]
     assert len(group_rows) == 1
-    assert f"| G1 | 6 | `{REL_CONTRADICTS}` x6 | `{SHARED_CHUNK}` |" in group_rows[0]
+    assert f"| G1 | 6 | 6 | `{REL_CONTRADICTS}` x6 | `{SHARED_CHUNK}` |" in group_rows[0]
     rows = [line for line in report.split("### Rows", 1)[1].splitlines() if line.startswith("| G")]
     assert len(rows) == 6, "grouping is a rendering of every row, not a filter over them"
 

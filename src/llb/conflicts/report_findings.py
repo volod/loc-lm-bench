@@ -5,6 +5,12 @@ of evidence seen from several sides -- the same stale paragraph against six neig
 -- so the section leads with the GROUPS, states the distinct units the row count rests on, and only
 then prints every row. Nothing is dropped: `findings.jsonl` still carries one line per row, and the
 row table below the groups is the same list the report always printed, in the same order.
+
+The two tables are ordered on different questions, deliberately. Rows are read in file order, which
+is the order a resolution lane consumes them in. Groups are read to decide what to fund first, so
+they are ranked by `stake_key` -- work, then size, then score. The ids never move: a group id is
+derived from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` use,
+so ranking is a way of reading the table, not a renaming of what is in it.
 """
 
 from llb.conflicts.census import FindingGroup, census_phrase, finding_census, group_findings
@@ -46,17 +52,28 @@ def _relations_cell(group: FindingGroup) -> str:
     )
 
 
+def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
+    """Rank a decision by what it costs an operator, not by which row happened to score highest.
+
+    Work first (rows someone must act on), then how much of the list the decision settles, then the
+    top score, then the group's own id so the order is total. A score is the model's confidence in
+    one pair; it says nothing about how much is at stake in the group that holds it -- and on a
+    corpus where scores saturate, ranking on it is ranking on the identity tiebreak underneath.
+    """
+    return (-group.actionable_rows, -len(group.findings), -group.top_score, group.index)
+
+
 def _groups_table(groups: list[FindingGroup]) -> list[str]:
     lines = [
-        "| group | rows | relations | shared unit | documents | top score |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| group | rows | actionable | relations | shared unit | documents | top score |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for group in groups:
+    for group in sorted(groups, key=stake_key):
         documents = ", ".join(f"`{doc}`" for doc in group.documents)
-        top = max(finding.score for finding in group.findings)
         lines.append(
-            f"| {group.label} | {len(group.findings)} | {_relations_cell(group)} "
-            f"| {_shared_cell(group)} | {documents} | {top:.3f} |"
+            f"| {group.label} | {len(group.findings)} | {group.actionable_rows} "
+            f"| {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
+            f"| {group.top_score:.3f} |"
         )
     lines.append("")
     return lines
@@ -94,6 +111,11 @@ def findings_section(result: AuditResult) -> list[str]:
             "count is what an operator triages.",
             "",
             "### Decision groups",
+            "",
+            "Ranked by what each decision costs: rows an operator must act on first, then how many "
+            "rows the decision settles, then the top score. Group ids are assigned in file order, "
+            "so `G3` leading this table is a ranking, not a renumbering -- the row table below and "
+            "`findings.jsonl` keep the file's own order.",
             "",
         ]
         + _groups_table(groups)

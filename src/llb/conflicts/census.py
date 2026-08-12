@@ -147,6 +147,15 @@ class FindingGroup:
         return dict(sorted(counts.items()))
 
     @property
+    def actionable_rows(self) -> int:
+        """How many of the group's rows are work to do rather than facts that coexist."""
+        return sum(1 for finding in self.findings if is_actionable(finding.relation))
+
+    @property
+    def top_score(self) -> float:
+        return max((finding.score for finding in self.findings), default=0.0)
+
+    @property
     def label(self) -> str:
         return f"G{self.index}"
 

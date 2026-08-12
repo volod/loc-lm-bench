@@ -45,34 +45,62 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-group-ordering-by-what-is-at-stake (optional)
+### conflict-two-counts-of-the-same-work (optional)
 
-Decision groups are ordered by their single best ROW, so the group an operator reads first is the
-one holding the top-scored row rather than the one holding the most work: a group carrying one
-actionable row leads a group carrying twenty whenever its top row scores higher, and among groups
-with no actionable row at all the order is score then claim identity -- which is document id.
-Measured on the goods budget-100 bundle: four groups tie at top score 1.000, so a 51-row group, a
-13-row group, and a 2-row group are ordered by a tiebreak that carries no relevance at all
-([conflict detection](current/data-prep/conflict-detection.md#one-actionable-set)). Rank the
-**Decision groups** table on what the group actually costs -- actionable rows first, then rows, then
-top score -- while leaving the row ordering and `findings.jsonl` exactly as they are, since those
-are read row-wise and a resolution lane consumes them in file order.
+The audit and the resolver each print a count of "work" for the same decision group, and they are
+not the same number. The report's **actionable** column counts rows whose RELATION is not
+`complementary`; the plan's `review_rows` counts rows whose POLICY outcome needs a human. They
+diverge in both directions: an accepted `drop_duplicate` is actionable but needs no review, while
+every semantic-tier duplicate needs review because the tier has no deletion authority -- on the
+goods semantic bundle that makes all 100 rows actionable AND all 100 review-required, which hides
+the difference exactly where an operator would first meet it ([conflict
+detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it), [conflict
+resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
+Reconcile them: print both counts wherever either appears, name them differently ("to decide" versus
+"to review"), and rank the decision table on the one an operator actually funds -- or record why one
+number cannot serve both.
 
 - Agent status: CLEAR
-- Dependencies: none. `group_findings` in `src/llb/conflicts/census.py` assigns group ids in row
-  order; the group id must stay derivable from `findings.jsonl` alone, so the RANKING has to be a
-  rendering concern in `report_findings.py` rather than a re-numbering.
-- User-visible outcome: the first decision an operator reads is the one with the most at stake,
-  instead of the one that happens to contain the top-scored row.
-- Scope boundary: in scope -- the group table's ranking and the reading that explains it. Out of
-  scope -- renumbering group ids, changing row order, and changing `findings.jsonl`.
+- Dependencies: none. `is_actionable` (`src/llb/conflicts/constants.py`) defines the relation set,
+  `stake_key` (`report_findings.py`) ranks on it, and `group_decisions`
+  (`group_artifact.py`) computes `review_rows`; the detector cannot see policy outcomes, so the
+  audit-side count has to stay relation-based.
+- User-visible outcome: an operator comparing the audit report with the resolution plan is not left
+  reconciling two different numbers for the same group's workload.
+- Scope boundary: in scope -- the naming, both counts where either appears, and the ranking key's
+  choice. Out of scope -- changing the relation vocabulary, the resolution policy, and group
+  identity.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture where the largest group holds no top-scoring row
-  still lists it first; group ids stay equal to the ids derived from `findings.jsonl` in file order,
-  asserted against the `groups.json` sidecar.
+- Execution path: rendering and summary change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose group mixes an accepted duplicate with an
+  escalated candidate reports the two counts distinctly in the report and the plan; the ranking
+  states which count it uses.
 - Documentation target: [conflict
   detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+
+### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
+
+The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
+computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
+same order must re-derive the actionable count from the relation map and re-implement `stake_key`
+([conflict detection](current/data-prep/conflict-detection.md#the-groupsjson-sidecar)). That is the
+same drift the shared `finding_id` was introduced to prevent, one level up. Add `actionable_rows`
+and the rendered `rank` to each group summary (and to the plan's `decisions`), so a dashboard, a
+runtime, or a second report reads the audit's own ordering rather than an approximation of it.
+
+- Agent status: CLEAR
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking;
+  `group_summaries` in `group_artifact.py` builds the sidecar from `findings.jsonl` rows, so the
+  rank must be computable from rows alone to keep the sidecar derivable without the report.
+- User-visible outcome: every consumer of the audit shows the operator the same first decision.
+- Scope boundary: in scope -- the two fields, the shared ranking helper, and its test against the
+  rendered table. Out of scope -- changing the ranking itself, group identity, and `findings.jsonl`.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: sidecar and rendering change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; the sidecar's rank order equals the report's decision table
+  order on a fixture whose stake ranking differs from its file order; group ids stay in file order.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md#the-groupsjson-sidecar).
 
 ### conflict-decision-group-granularity (optional)
 

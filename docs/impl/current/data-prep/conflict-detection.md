@@ -334,13 +334,28 @@ counts). `src/llb/conflicts/census.py` computes the census and the grouping;
 - **Group.** Findings joined **transitively** by a shared unit, the same closure the `hash` tier
   applies to duplicate groups. A chunk that conflicts with six neighbours is ONE group, and so are
   three copies of one document: a shared unit is what makes two rows the same piece of evidence.
-  The report leads the findings section with a **Decision groups** table (rows, relations, shared
-  unit, documents, top score) and prints every row below it under its group label. `groups` is what
-  an operator triages; `findings` is what a resolution lane consumes.
+  The report leads the findings section with a **Decision groups** table (rows, actionable rows,
+  relations, shared unit, documents, top score) and prints every row below it under its group label.
+  `groups` is what an operator triages; `findings` is what a resolution lane consumes.
+- **Ranked by stake, named by file order.** The two are deliberately separate. A group's ID comes
+  from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` share, so it
+  never moves. The decision TABLE is ordered by `stake_key`
+  (`src/llb/conflicts/report_findings.py`): actionable rows first, then rows, then top score, then
+  the id. `G3` leading the table is therefore a ranking, not a renumbering, and the row table below
+  it stays in the file's order -- the order a resolution lane consumes.
 - **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
   as before -- the resolution lane reads rows, and nothing here suppresses, merges, or deduplicates
   one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
-  transitive closure, the document-tier fallback, and the census beside each printed count.
+  transitive closure, the document-tier fallback, and the census beside each printed count;
+  `test_group_ranking.py` asserts the ranking never renumbers a group.
+
+Why the table is not ranked on score: a score is the model's confidence in ONE pair and says nothing
+about how much the group holding it is worth. Measured on the goods semantic bundle (100 rows, 6
+groups) a 0.002 score difference put the 14-row decision ahead of the 29-row one; on the goods
+budget-100 claim bundle four groups tie at 1.000, so three of them were ordered by the claim-identity
+tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves above the 14-row
+one and the 3-row decision above the 2-row one, while the group holding the only actionable row
+still leads the claim bundle.
 
 ### One actionable set
 
