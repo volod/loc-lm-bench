@@ -68,11 +68,18 @@ class ConflictResolutionAdapter(ReviewAdapter):
 
 
 def _decision_group(row: Any) -> str:
-    """How many rows this record shares its decision with, so it is not read as one of N."""
+    """How many rows this record shares its decision with, so it is not read as one of N.
+
+    Both of the group's counts are named, because they answer different questions and a reviewer
+    meeting only one of them cannot tell which: `rows sharing this decision` is the group's size,
+    `to review` is how many of those rows this policy left open for a human.
+    """
     group_id, rows = _value(row.get("group_id")), row.get("group_rows")
     if not group_id or not isinstance(rows, int) or rows < 2:
         return ""
-    return f" ({group_id}, 1 of {rows} rows sharing this decision)"
+    review = row.get("group_review_rows")
+    open_rows = f", {review} to review" if isinstance(review, int) and review != rows else ""
+    return f" ({group_id}, 1 of {rows} rows sharing this decision{open_rows})"
 
 
 def _value(value: Any) -> str:

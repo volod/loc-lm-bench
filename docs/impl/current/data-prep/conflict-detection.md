@@ -334,13 +334,13 @@ counts). `src/llb/conflicts/census.py` computes the census and the grouping;
 - **Group.** Findings joined **transitively** by a shared unit, the same closure the `hash` tier
   applies to duplicate groups. A chunk that conflicts with six neighbours is ONE group, and so are
   three copies of one document: a shared unit is what makes two rows the same piece of evidence.
-  The report leads the findings section with a **Decision groups** table (rows, actionable rows,
+  The report leads the findings section with a **Decision groups** table (rows, `to decide`,
   relations, shared unit, documents, top score) and prints every row below it under its group label.
   `groups` is what an operator triages; `findings` is what a resolution lane consumes.
 - **Ranked by stake, named by file order.** The two are deliberately separate. A group's ID comes
   from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` share, so it
   never moves. The decision TABLE is ordered by `stake_key`
-  (`src/llb/conflicts/report_findings.py`): actionable rows first, then rows, then top score, then
+  (`src/llb/conflicts/report_findings.py`): `to decide` rows first, then rows, then top score, then
   the id. `G3` leading the table is therefore a ranking, not a renumbering, and the row table below
   it stays in the file's order -- the order a resolution lane consumes.
 - **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
@@ -357,10 +357,51 @@ tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves
 one and the 3-row decision above the 2-row one, while the group holding the only actionable row
 still leads the claim bundle.
 
+### To decide and to review are two counts, never one
+
+A decision group carries TWO counts of its work, and they are not the same number:
+
+| count | what it counts | where it is computed | who prints it |
+| --- | --- | --- | --- |
+| **to decide** (`decide_rows`) | rows whose RELATION is not `complementary` (`is_actionable`) | detection, from the relation alone | `report.md` headline, decision table, precision block; `plan.json` decisions |
+| **to review** (`review_rows`) | rows whose POLICY outcome is `review_required` | resolution, from `(relation, tier, governance, policy)` | `plan.json` decisions, the CLI summary, `resolution_review.jsonl` |
+
+Neither can serve both roles, and the reason is structural rather than an implementation gap: the
+review count is a property of a resolution POLICY, and the audit runs before an operator has chosen
+one. That is why the audit prints only `to decide`, names `to review` in the same breath, and says
+where it lives; and why `plan.json` -- the only artifact that holds both -- prints them side by side
+per group. The vocabulary is defined once in `src/llb/conflicts/constants.py` (`DECIDE_LABEL`,
+`REVIEW_LABEL`, `decide_count`); `FindingGroup.decide_rows` and `group_decisions` are its two
+consumers.
+
+They diverge in BOTH directions, measured on the two goods bundles:
+
+- **Goods budget-100 claim bundle** (`.data/corpus-conflicts/20260812T-two-counts-census-goods-budget100/`):
+  **1 to decide, 0 to review.** The single `subsumed_by` row is work by the relation vocabulary --
+  it is what the precision block measures and what leads `findings.jsonl` -- but the conservative
+  policy resolves subsumption as `keep_both` plus an annotation, so it costs a human nothing. An
+  operator funding one review off the audit report would have funded a review that does not exist.
+- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-two-counts-goods-semantic/`):
+  **100 to decide, 100 to review**, group for group (51/51, 29/29, 14/14, 3/3, 2/2, 1/1). Every
+  semantic-tier duplicate needs review under every policy because that tier has no deletion
+  authority, so the two counts coincide exactly -- and this is the bundle an operator meets first,
+  which is precisely why one name for both was survivable long enough to become misleading.
+
+**Which count each ranking uses is stated where the ranking is.** The audit's decision table ranks
+on `to decide` because it has nothing else; the review ledger ranks on `to review`, the count an
+operator actually funds, because by then the policy has run. On the goods semantic bundle that moves
+the ledger from id order (51, 14, 29, 3, 1, 2 rows) to review stake (51, 29, 14, 3, 2, 1), so the
+reviewer meets the biggest open decision first; a group's records stay one contiguous block either
+way. `tests/llb/conflicts/test_two_counts.py` pins the divergence on a mixed fixture (one claim-tier
+duplicate the policy accepts plus one semantic-tier duplicate it escalates: 2 to decide, 1 to
+review), the naming in both artifacts, and the ledger ranking.
+
 ### One actionable set
 
-"Actionable" has ONE definition, `is_actionable` in `src/llb/conflicts/constants.py`: every
-relation but `complementary`, plus anything the vocabulary does not recognize. The claim-tier
+"Actionable" -- the predicate behind the **to decide** count -- has ONE definition, `is_actionable`
+in `src/llb/conflicts/constants.py`: every relation but `complementary`, plus anything the
+vocabulary does not recognize. `decide_count` is the same predicate over a relation census, so the
+group table, the plan's `decide_rows`, and the CLI all count one set. The claim-tier
 precision block counts that set (`AdjudicatedRow.actionable`) and the report's ordering promotes
 that set (`finding_sort_key`), so a row the audit counts as work can never sort below a row it
 counts as none. Within each of the two buckets the order is descending score, then claim identity.

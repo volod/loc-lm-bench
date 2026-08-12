@@ -15,6 +15,10 @@ from llb.conflicts.group_artifact import group_decisions, group_summaries
 from llb.conflicts.hashing import finding_id
 from llb.core.contracts.common import JsonObject
 
+# 2 added `decisions` beside `items`; 3 gives every decision both counts of its work
+# (`decide_rows` beside `review_rows`).
+PLAN_SCHEMA_VERSION = 3
+
 POLICY_CONSERVATIVE = "conservative"
 POLICY_PREFER_NEWER = "prefer-newer"
 POLICIES = (POLICY_CONSERVATIVE, POLICY_PREFER_NEWER)
@@ -143,7 +147,9 @@ def build_plan(findings: list[JsonObject], policy: str, corpus_root: str) -> Jso
 
     The items are what the overlay is built from and what a rollback restores, so every row keeps
     its own record; `decisions` is what an operator reviews, because six rows quoting one stale
-    chunk are one call to make.
+    chunk are one call to make. Each decision carries BOTH counts of its work -- the audit's
+    relation-based `decide_rows` and this policy's `review_rows` -- so the plan is the artifact
+    that reconciles the two numbers the report and the ledger each print one of.
     """
     items = [resolve_finding(finding, policy) for finding in findings]
     summaries = group_summaries(findings)
@@ -157,7 +163,7 @@ def build_plan(findings: list[JsonObject], policy: str, corpus_root: str) -> Jso
         action = str(item["action"])
         counts[action] = counts.get(action, 0) + 1
     return {
-        "schema_version": 2,
+        "schema_version": PLAN_SCHEMA_VERSION,
         "policy": policy,
         "corpus_root": corpus_root,
         "items": items,

@@ -20,7 +20,7 @@ document -- because a shared unit is exactly what makes two rows the same piece 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from llb.conflicts.constants import is_actionable
+from llb.conflicts.constants import decide_count, is_actionable
 from llb.core.contracts.common import JsonObject
 
 if TYPE_CHECKING:  # `models` renders its own census, so the dependency only runs one way
@@ -147,9 +147,15 @@ class FindingGroup:
         return dict(sorted(counts.items()))
 
     @property
-    def actionable_rows(self) -> int:
-        """How many of the group's rows are work to do rather than facts that coexist."""
-        return sum(1 for finding in self.findings if is_actionable(finding.relation))
+    def decide_rows(self) -> int:
+        """The group's TO DECIDE count: rows whose relation is work, not facts that coexist.
+
+        Named for its counterpart rather than after the predicate: the resolution plan carries a TO
+        REVIEW count over the same group, the two differ in both directions, and the audit can only
+        compute this one (see `constants.decide_count`). An audit has no policy, so it has no
+        review count to print.
+        """
+        return decide_count(self.relation_counts())
 
     @property
     def top_score(self) -> float:
@@ -203,23 +209,24 @@ def rows_census(rows: list[JsonObject]) -> JsonObject:
     return census_of([row_pair_units(row) for row in rows])
 
 
-def _counted(count: int, noun: str) -> str:
+def counted(count: int, noun: str) -> str:
+    """`3 rows` / `1 row` -- one pluralizer, so no count in this lane reads as `1 rows`."""
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def census_units(census: JsonObject) -> str:
     """The units alone, to print after a count that is already on the line."""
     return (
-        f"on {_counted(int(census['documents']), 'document')} / "
-        f"{_counted(int(census['document_pairs']), 'document pair')} / "
-        f"{_counted(int(census['chunk_units']), 'chunk unit')}, in "
-        f"{_counted(int(census['groups']), 'group')} (largest {census['largest_group']})"
+        f"on {counted(int(census['documents']), 'document')} / "
+        f"{counted(int(census['document_pairs']), 'document pair')} / "
+        f"{counted(int(census['chunk_units']), 'chunk unit')}, in "
+        f"{counted(int(census['groups']), 'group')} (largest {census['largest_group']})"
     )
 
 
 def census_phrase(census: JsonObject) -> str:
     """The count and the units it rests on as one sentence."""
-    return f"{_counted(int(census['findings']), 'finding')} {census_units(census)}"
+    return f"{counted(int(census['findings']), 'finding')} {census_units(census)}"
 
 
 def relation_census(findings: list["Finding"]) -> dict[str, JsonObject]:

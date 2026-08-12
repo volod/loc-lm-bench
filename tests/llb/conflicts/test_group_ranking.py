@@ -71,7 +71,7 @@ def test_work_outranks_size():
         "small", 2, REL_CONTRADICTS, 0.1, offset=100
     )
     ranked = _groups_of(render_report(_result(findings)))
-    actionable = _label_of(findings, lambda group: group.actionable_rows == 2)
+    actionable = _label_of(findings, lambda group: group.decide_rows == 2)
     assert ranked[0] == actionable, "two rows someone must act on outrank twenty that coexist"
 
 

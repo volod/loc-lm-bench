@@ -14,6 +14,7 @@ so ranking is a way of reading the table, not a renaming of what is in it.
 """
 
 from llb.conflicts.census import FindingGroup, census_phrase, finding_census, group_findings
+from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
 from llb.conflicts.models import AuditResult, Finding
 
 _EXCERPT = 160
@@ -55,23 +56,28 @@ def _relations_cell(group: FindingGroup) -> str:
 def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
     """Rank a decision by what it costs an operator, not by which row happened to score highest.
 
-    Work first (rows someone must act on), then how much of the list the decision settles, then the
-    top score, then the group's own id so the order is total. A score is the model's confidence in
-    one pair; it says nothing about how much is at stake in the group that holds it -- and on a
-    corpus where scores saturate, ranking on it is ranking on the identity tiebreak underneath.
+    The ranking count is TO DECIDE (`decide_rows`), then how much of the list the decision settles,
+    then the top score, then the group's own id so the order is total. It is not TO REVIEW, the
+    count an operator funds, for a reason the report cannot engineer away: the review count is a
+    property of a resolution POLICY, and an audit runs before one is chosen. `constants` states the
+    pair; the resolution plan ranks on the review count once a policy exists.
+
+    A score is the model's confidence in one pair; it says nothing about how much is at stake in
+    the group that holds it -- and on a corpus where scores saturate, ranking on it is ranking on
+    the identity tiebreak underneath.
     """
-    return (-group.actionable_rows, -len(group.findings), -group.top_score, group.index)
+    return (-group.decide_rows, -len(group.findings), -group.top_score, group.index)
 
 
 def _groups_table(groups: list[FindingGroup]) -> list[str]:
     lines = [
-        "| group | rows | actionable | relations | shared unit | documents | top score |",
+        f"| group | rows | {DECIDE_LABEL} | relations | shared unit | documents | top score |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for group in sorted(groups, key=stake_key):
         documents = ", ".join(f"`{doc}`" for doc in group.documents)
         lines.append(
-            f"| {group.label} | {len(group.findings)} | {group.actionable_rows} "
+            f"| {group.label} | {len(group.findings)} | {group.decide_rows} "
             f"| {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
             f"| {group.top_score:.3f} |"
         )
@@ -112,18 +118,27 @@ def findings_section(result: AuditResult) -> list[str]:
             "",
             "### Decision groups",
             "",
-            "Ranked by what each decision costs: rows an operator must act on first, then how many "
-            "rows the decision settles, then the top score. Group ids are assigned in file order, "
-            "so `G3` leading this table is a ranking, not a renumbering -- the row table below and "
-            "`findings.jsonl` keep the file's own order.",
+            f"Ranked by **{DECIDE_LABEL}** -- rows whose relation is work rather than two facts "
+            "coexisting -- then by how many rows the decision settles, then by the top score. "
+            "Group ids are assigned in file order, so `G3` leading this table is a ranking, not a "
+            "renumbering -- the row table below and `findings.jsonl` keep the file's own order.",
+            "",
+            f"`{DECIDE_LABEL}` is NOT the count of human reviews this corpus costs. That second "
+            f"count, **{REVIEW_LABEL}**, is a property of the resolution POLICY -- the rows "
+            "`resolve-corpus-conflicts` leaves at `review_required` -- so it does not exist until "
+            "a policy is chosen and an audit cannot print it. The two diverge in both directions: "
+            "an accepted `drop_duplicate` is to decide and not to review, while every semantic-tier "
+            "duplicate is to review under every policy because that tier has no deletion authority. "
+            f"`plan.json` prints both per group (`decide_rows`, `review_rows`) and ranks the review "
+            "ledger on the second, which is the one an operator funds.",
             "",
         ]
         + _groups_table(groups)
         + [
             "### Rows",
             "",
-            "Every row `findings.jsonl` carries, grouped and with the rows an operator must act "
-            "on first -- every relation but `complementary`, the same set the claim-tier precision "
+            f"Every row `findings.jsonl` carries, grouped and with the **{DECIDE_LABEL}** rows "
+            "first -- every relation but `complementary`, the same set the claim-tier precision "
             "block counts. Offsets are exact character positions in the source document; `~` marks "
             "a claim whose quote could not be located, where the span falls back to the enclosing "
             "chunk.",

@@ -5,6 +5,7 @@ operator, what share survived claim adjudication -- with a bound that respects h
 chunks those rows come from, and only when the adjudicator earned the right to be quoted.
 """
 
+from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
 from llb.conflicts.models import AuditResult
 from llb.core.contracts.common import JsonObject
 
@@ -41,7 +42,8 @@ def precision_section(result: AuditResult) -> list[str]:
     point = block["returned_budget"]
     lines += [
         f"- adjudicated rows at the returned candidate budget: {point['budget']}",
-        f"- rows an operator must act on: {point['actionable_rows']}",
+        f"- rows **{DECIDE_LABEL}** (every relation but `complementary`): "
+        f"{point['actionable_rows']}",
         f"- **precision {point['precision']}**, two-way clustered 95% lower bound "
         f"**{point['two_way_clustered_lcb']}**",
         f"- Wilson 95% (pair rows, ignores clustering): {point['wilson_95']}",
@@ -58,12 +60,14 @@ def precision_section(result: AuditResult) -> list[str]:
         "### Precision against the candidate budget",
         "",
         "Candidates come out in rank order, so the rows at each budget are a prefix of the same "
-        "adjudicated list -- this is a sweep, not a re-measurement. `actionable left/right` counts "
-        "the distinct chunks the ACTIONABLE rows sit on, which is what decides whether the "
-        "clustered bound can clear zero: a resampled draw that misses all of them returns nothing.",
+        f"adjudicated list -- this is a sweep, not a re-measurement. `{DECIDE_LABEL} left/right` "
+        f"counts the distinct chunks the {DECIDE_LABEL} rows sit on, which is what decides whether "
+        "the clustered bound can clear zero: a resampled draw that misses all of them returns "
+        "nothing. This is the same relation-based count the decision table ranks on, not the "
+        f"policy's `{REVIEW_LABEL}` count, which only `plan.json` can compute.",
         "",
-        "| budget | actionable | precision | Wilson 95% | two-way clustered LCB "
-        "| left | right | actionable left | actionable right |",
+        f"| budget | {DECIDE_LABEL} | precision | Wilson 95% | two-way clustered LCB "
+        f"| left | right | {DECIDE_LABEL} left | {DECIDE_LABEL} right |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in block["precision_curve"]:

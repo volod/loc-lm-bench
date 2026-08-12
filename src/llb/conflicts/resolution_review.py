@@ -3,7 +3,9 @@
 A reviewer is the scarce resource in this lane, so the ledger is written to be read by decision:
 records stay one per open ROW -- a drop applies to one span, so the row is the unit a human can
 actually decide -- but each names the decision group it belongs to and how many rows share it, and
-the records are ordered so a group reads as one block instead of six unrelated conflicts.
+the records are ordered so a group reads as one block instead of six unrelated conflicts. The
+blocks themselves are ordered by TO REVIEW, the count this reviewer is actually funding, which is
+the one count the audit report could not rank on because it has no policy to read it from.
 
 Coming back, a decision may be addressed to a row or to a whole group. A group-wide decision may
 only KEEP: members of a group share a unit, not a document pair, so "drop a" means a different act
@@ -11,6 +13,8 @@ on each of them, and applying one group-wide would suppress spans nobody looked 
 """
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from llb.conflicts.resolution_policy import (
@@ -24,6 +28,20 @@ REVIEW_TYPE = "corpus_conflict_resolution"
 STATUS_REVIEW_REQUIRED = "review_required"
 _DROP_DECISIONS = ("drop_a", "drop_b")
 _ACCEPTED_RATIONALE = "accepted human review decision"
+
+
+@dataclass(frozen=True)
+class GroupCounts:
+    """A decision group's size and its two counts of work, as the ledger needs them."""
+
+    rows: int
+    decide_rows: int
+    review_rows: int
+
+
+# A row whose group the plan does not describe is its own decision, and it is open by definition:
+# only rows already at `review_required` reach the ledger.
+_LONE_ROW = GroupCounts(rows=1, decide_rows=1, review_rows=1)
 
 
 def read_jsonl(path: Path | str) -> list[JsonObject]:
@@ -85,28 +103,49 @@ def group_decisions(rows: list[JsonObject]) -> dict[str, str]:
 
 
 def review_jsonl(plan: JsonObject) -> str:
-    """One record per row still needing review, ordered so a decision group reads as a block."""
+    """One record per row still needing review, biggest review first, a group at a time.
+
+    The ledger is the one artifact ranked on TO REVIEW rather than on the audit's TO DECIDE: a
+    reviewer's cost is the open rows, not the rows whose relation the vocabulary calls work, and
+    here -- unlike in the audit report -- the policy has already run, so the funded count exists.
+    Every record still carries both counts of its group, so a reviewer reading one row can see how
+    the audit sized the same decision.
+    """
     items = plan.get("items")
     open_items = [
         item
         for item in (items if isinstance(items, list) else [])
         if isinstance(item, dict) and item.get("status") == STATUS_REVIEW_REQUIRED
     ]
-    group_rows = {
-        str(decision["group_id"]): int(decision["rows"])
-        for decision in plan.get("decisions") or []
-        if isinstance(decision, dict)
-    }
-    rows = [_record(item, group_rows) for item in sorted(open_items, key=_group_order)]
+    counts = group_counts(plan)
+    rows = [_record(item, counts) for item in sorted(open_items, key=_stake_order(counts))]
     return "".join(json.dumps(row, ensure_ascii=True) + "\n" for row in rows)
 
 
-def _record(item: JsonObject, group_rows: dict[str, int]) -> JsonObject:
+def group_counts(plan: JsonObject) -> dict[str, GroupCounts]:
+    """Rows, to-decide, and to-review per decision group, keyed by group id."""
+    return {
+        str(decision["group_id"]): GroupCounts(
+            rows=int(decision.get("rows", 1)),
+            decide_rows=int(decision.get("decide_rows", 0)),
+            review_rows=int(decision.get("review_rows", 0)),
+        )
+        for decision in plan.get("decisions") or []
+        if isinstance(decision, dict)
+    }
+
+
+def _record(item: JsonObject, counts: dict[str, GroupCounts]) -> JsonObject:
+    group = counts.get(str(item.get("group_id")), _LONE_ROW)
     return {
         "review_type": REVIEW_TYPE,
         "finding_id": item.get("finding_id"),
         "group_id": item.get("group_id"),
-        "group_rows": group_rows.get(str(item.get("group_id")), 1),
+        "group_rows": group.rows,
+        # Both counts, never one: `group_review_rows` is what this record costs a reviewer,
+        # `group_decide_rows` is what the audit report ranked the same group on.
+        "group_decide_rows": group.decide_rows,
+        "group_review_rows": group.review_rows,
         "relation": item.get("relation"),
         "rationale": item.get("rationale"),
         "a": item.get("a"),
@@ -116,7 +155,12 @@ def _record(item: JsonObject, group_rows: dict[str, int]) -> JsonObject:
     }
 
 
-def _group_order(item: JsonObject) -> tuple[int, str]:
-    """Sort review records by group id (`G12` after `G2`), keeping a group's rows adjacent."""
-    group_id = str(item.get("group_id") or "")
-    return (int(group_id[1:]) if group_id[1:].isdigit() else 0, str(item.get("finding_id")))
+def _stake_order(counts: dict[str, GroupCounts]) -> Callable[[JsonObject], tuple[int, int, str]]:
+    """Order by review stake first, then by group id -- a group's rows always stay adjacent."""
+
+    def key(item: JsonObject) -> tuple[int, int, str]:
+        group_id = str(item.get("group_id") or "")
+        index = int(group_id[1:]) if group_id[1:].isdigit() else 0
+        return (-counts.get(group_id, _LONE_ROW).review_rows, index, str(item.get("finding_id")))
+
+    return key

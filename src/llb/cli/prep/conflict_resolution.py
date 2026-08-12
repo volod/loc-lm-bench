@@ -101,7 +101,12 @@ def resolve_corpus_conflicts_cmd(
 
 
 def _echo_plan(plan: dict[str, Any], paths: dict[str, Path]) -> int:
-    """Report the plan as decisions first; returns the number of rows still needing review."""
+    """Report the plan as decisions first; returns the number of rows still needing review.
+
+    Both counts are echoed together, always: the audit report ranked on TO DECIDE and this lane
+    ranks on TO REVIEW, and an operator meeting the two numbers in two different terminals with the
+    same name is exactly the reconciliation these labels exist to prevent.
+    """
     items = plan.get("items") or []
     decisions = plan.get("decisions") or []
     typer.echo(f"[resolve-conflicts] plan: {paths['plan']}")
@@ -110,13 +115,20 @@ def _echo_plan(plan: dict[str, Any], paths: dict[str, Path]) -> int:
         f"[resolve-conflicts] {len(items)} rows in {len(decisions)} decision groups "
         f"(largest {max((int(d['rows']) for d in decisions), default=0)} rows)"
     )
+    from llb.conflicts.census import counted
+
+    decide_rows = sum(int(d.get("decide_rows", 0)) for d in decisions)
     review_count = sum(1 for item in items if item.get("status") == "review_required")
+    open_groups = sum(1 for d in decisions if d.get("status") == "review_required")
+    to_review = (
+        f"{counted(review_count, 'row')} in {counted(open_groups, 'decision group')}"
+        if review_count
+        else "none"
+    )
+    typer.echo(f"[resolve-conflicts] to decide (relation): {counted(decide_rows, 'row')}")
+    typer.echo(f"[resolve-conflicts] to review (policy {plan.get('policy')}): {to_review}")
     if review_count:
-        open_groups = sum(1 for d in decisions if d.get("status") == "review_required")
-        typer.echo(
-            f"[resolve-conflicts] review required: {review_count} rows in {open_groups} "
-            f"decision groups -> {paths['review']}"
-        )
+        typer.echo(f"[resolve-conflicts] review ledger -> {paths['review']}")
     return review_count
 
 

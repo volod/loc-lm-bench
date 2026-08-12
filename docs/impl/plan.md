@@ -45,53 +45,85 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-two-counts-of-the-same-work (optional)
+### conflict-audit-projects-the-policy-review-count (optional)
 
-The audit and the resolver each print a count of "work" for the same decision group, and they are
-not the same number. The report's **actionable** column counts rows whose RELATION is not
-`complementary`; the plan's `review_rows` counts rows whose POLICY outcome needs a human. They
-diverge in both directions: an accepted `drop_duplicate` is actionable but needs no review, while
-every semantic-tier duplicate needs review because the tier has no deletion authority -- on the
-goods semantic bundle that makes all 100 rows actionable AND all 100 review-required, which hides
-the difference exactly where an operator would first meet it ([conflict
-detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it), [conflict
-resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
-Reconcile them: print both counts wherever either appears, name them differently ("to decide" versus
-"to review"), and rank the decision table on the one an operator actually funds -- or record why one
-number cannot serve both.
+The audit report can name the review count but cannot print it: `to review` needs a resolution
+policy, and the audit runs before one is chosen, so an operator sizing a review budget off
+`report.md` alone still has to run the resolver to learn what it costs ([conflict
+detection](current/data-prep/conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one)).
+The gap is bridgeable without inverting the layering: `resolve_finding` is a pure function of
+`(relation, tier, governance, policy)`, all of which `findings.jsonl` already carries. Add an
+audit-side PROJECTION -- `audit-corpus-conflicts --project-policy conservative` emitting a
+`projected_review_rows` per group, labelled as a projection under a named policy and never as a
+measurement -- so the headline count an operator funds is available one command earlier. Decide
+first whether the projection belongs in the detector at all: it makes `report.md` depend on the
+resolution vocabulary, and the alternative (the report simply points at `resolve-corpus-conflicts
+--dry-run`) may be the cheaper answer.
 
 - Agent status: CLEAR
-- Dependencies: none. `is_actionable` (`src/llb/conflicts/constants.py`) defines the relation set,
-  `stake_key` (`report_findings.py`) ranks on it, and `group_decisions`
-  (`group_artifact.py`) computes `review_rows`; the detector cannot see policy outcomes, so the
-  audit-side count has to stay relation-based.
-- User-visible outcome: an operator comparing the audit report with the resolution plan is not left
-  reconciling two different numbers for the same group's workload.
-- Scope boundary: in scope -- the naming, both counts where either appears, and the ranking key's
-  choice. Out of scope -- changing the relation vocabulary, the resolution policy, and group
-  identity.
+- Dependencies: none. `resolve_finding` (`src/llb/conflicts/resolution_policy.py`) is the projection
+  and is already row-based; `decide_count` and the two labels live in
+  `src/llb/conflicts/constants.py`. The import direction is the whole design question -- today
+  `conflicts.report*` does not import `resolution_*`, and that is deliberate.
+- User-visible outcome: an operator reads the number of human decisions their corpus costs from the
+  audit itself, or learns in one line why they must run the resolver to get it.
+- Scope boundary: in scope -- the opt-in projection, its per-group field, the "projection, not
+  measurement" labelling, and the layering decision. Out of scope -- making the projection the
+  default, changing the resolution policy, and any change to `findings.jsonl`.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering and summary change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose group mixes an accepted duplicate with an
-  escalated candidate reports the two counts distinctly in the report and the plan; the ranking
-  states which count it uses.
+- Execution path: rendering change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; on a fixture whose group mixes an accepted duplicate with an
+  escalated candidate the projected count equals the plan's `review_rows` under the same policy;
+  without the flag the report is byte-identical to today's; the layering decision is recorded.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#the-count-and-the-units-behind-it).
+  detection](current/data-prep/conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one).
+
+### conflict-review-ledger-cost-model (optional)
+
+The review ledger now ranks its blocks by `to review`, on the assumption that N open rows cost a
+reviewer N times one row ([conflict
+resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
+That is almost certainly wrong in the direction that matters: the goods semantic bundle's 51-row
+group is 51 rows against ONE shared chunk, so a reviewer who reads that chunk once decides the rest
+by comparison, while 51 single-row groups are 51 unrelated reads. Ranking on raw open rows therefore
+over-states the concentrated group exactly where grouping was introduced to stop over-stating it.
+Measure it: time a reviewer (or a scripted proxy over the review TUI) on a concentrated block versus
+the same number of scattered rows, fit a per-group cost of the form `a + b * open_rows`, and rank on
+the fitted cost -- or record that the linear rank is within the measurement's own noise.
+
+- Agent status: HUMAN-GATED
+- Dependencies: reuse the ledger, its group blocks, and the review TUI's group titles; the two
+  goods bundles under `$DATA_DIR/corpus-conflicts/` already supply one concentrated and one
+  scattered shape.
+- User-visible outcome: the first decision the ledger shows a reviewer is the one that actually
+  costs the most of their time, not the one with the most rows.
+- Scope boundary: in scope -- the timing protocol, the fitted cost, and the ranking key it implies.
+  Out of scope -- changing what a review record is, group identity, and the audit-side ranking,
+  which has no policy to rank on.
+- Human step: a reviewer works both shapes under measurement; the fit cannot be produced from
+  artifacts alone.
+- Acceptance gates: `make ci` green; the report states the fitted per-group and per-row costs with
+  their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
 
 ### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 
 The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
 computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
-same order must re-derive the actionable count from the relation map and re-implement `stake_key`
+same order must re-derive the to-decide count from the relation map and re-implement `stake_key`
 ([conflict detection](current/data-prep/conflict-detection.md#the-groupsjson-sidecar)). That is the
-same drift the shared `finding_id` was introduced to prevent, one level up. Add `actionable_rows`
-and the rendered `rank` to each group summary (and to the plan's `decisions`), so a dashboard, a
-runtime, or a second report reads the audit's own ordering rather than an approximation of it.
+same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
+and the rendered `rank` to each group summary, and the same `rank` to the plan's `decisions`, so a
+dashboard, a runtime, or a second report reads the audit's own ordering rather than an
+approximation of it.
 
 - Agent status: CLEAR
 - Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking;
   `group_summaries` in `group_artifact.py` builds the sidecar from `findings.jsonl` rows, so the
   rank must be computable from rows alone to keep the sidecar derivable without the report.
+  `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
+  carry it, so the sidecar must reuse it rather than add a third implementation.
 - User-visible outcome: every consumer of the audit shows the operator the same first decision.
 - Scope boundary: in scope -- the two fields, the shared ranking helper, and its test against the
   rendered table. Out of scope -- changing the ranking itself, group identity, and `findings.jsonl`.

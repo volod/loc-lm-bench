@@ -6,6 +6,8 @@ an older document while restating knowledge that is still current therefore prod
 records with different relations instead of a single whole-document verdict.
 """
 
+from collections.abc import Mapping
+
 from llb.prep.ontology.constants import NEAR_DUP_COSINE_THRESHOLD
 
 # --- effort tiers (cheapest first; each tier runs every tier below it) ------------------------
@@ -59,6 +61,33 @@ def is_actionable(relation: str | None) -> bool:
     someone's problem, not a coexisting fact.
     """
     return relation is not None and relation != REL_COMPLEMENTARY
+
+
+# --- the two counts of one decision group's work ------------------------------------------------
+#
+# A decision group carries TWO counts of "work", and they are NOT interchangeable:
+#
+# - TO DECIDE (`decide_rows`) is RELATION-based: `is_actionable` over the group's rows. It exists
+#   the moment detection finishes, it is the set the claim-tier precision block measures, and it is
+#   the only one of the two the audit can compute -- a report is written before any resolution
+#   policy has been chosen.
+# - TO REVIEW (`review_rows`) is POLICY-based: the rows whose resolved status is `review_required`.
+#   It does not exist until an operator picks a policy, and it is the number they actually fund,
+#   because it counts human decisions rather than rows the vocabulary calls work.
+#
+# They diverge in BOTH directions. An accepted `drop_duplicate` is to-decide and not to-review: the
+# policy already settled it. Every semantic-tier duplicate is to-review under every policy, because
+# that tier has no deletion authority, so a group of 100 semantic duplicates is 100 to-decide AND
+# 100 to-review -- which is exactly where the two numbers look identical and an operator learns the
+# wrong lesson from them. Neither number can serve both roles, so both are printed wherever both
+# exist, they never share a name, and each ranking states which one it used.
+DECIDE_LABEL = "to decide"
+REVIEW_LABEL = "to review"
+
+
+def decide_count(relation_counts: Mapping[str, int]) -> int:
+    """The TO DECIDE count over a relation census -- one implementation for every consumer."""
+    return sum(count for relation, count in relation_counts.items() if is_actionable(relation))
 
 
 # Relations the model may return; `superseded_by` is derived, never asked for, because it needs

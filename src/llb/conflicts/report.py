@@ -13,14 +13,23 @@ grouping are rendering, never a filter over the rows.
 import json
 from pathlib import Path
 
-from llb.conflicts.census import census_units, finding_census, finding_sort_key, relation_census
+from llb.conflicts.census import (
+    census_units,
+    counted,
+    finding_census,
+    finding_sort_key,
+    relation_census,
+)
 from llb.conflicts.constants import (
+    DECIDE_LABEL,
     FINDINGS_FILE,
     GROUPS_FILE,
     REPORT_FILE,
+    REVIEW_LABEL,
     SUMMARY_FILE,
     TIER_SEMANTIC,
     TREE_META_FILE,
+    is_actionable,
 )
 from llb.conflicts.group_artifact import groups_document
 from llb.conflicts.hashing import sha256_text
@@ -42,6 +51,7 @@ def render_report(result: AuditResult) -> str:
         f"- effort: `{result.effort}`",
         f"- documents: {result.n_docs}",
         findings,
+        *_decide_line(result),
         "",
     ]
     lines += _relations_section(result)
@@ -50,6 +60,24 @@ def render_report(result: AuditResult) -> str:
     lines += _needles_section(result)
     lines += findings_section(result)
     return "\n".join(lines)
+
+
+def _decide_line(result: AuditResult) -> list[str]:
+    """The headline TO DECIDE count, named apart from the review count it is not.
+
+    An operator reads the headline before anything else and then meets a second number in the
+    resolution plan; naming only one of them there is what leaves them reconciling two counts of
+    the same group's work. The audit can print only this one -- the other needs a policy.
+    """
+    if not result.findings:
+        return []
+    decide = sum(1 for finding in result.findings if is_actionable(finding.relation))
+    return [
+        f"- {DECIDE_LABEL}: {decide} of {counted(len(result.findings), 'row')} "
+        "(every relation but `complementary`). This is NOT the number of human reviews the corpus "
+        f"costs: that count is **{REVIEW_LABEL}** (`review_rows` in the resolution `plan.json`), "
+        "it depends on the resolution policy, and it can be larger or smaller than this one."
+    ]
 
 
 def _relations_section(result: AuditResult) -> list[str]:

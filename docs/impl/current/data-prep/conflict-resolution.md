@@ -27,21 +27,31 @@ convert similarity rank into destructive policy.
 ## Decision groups in the plan and the review ledger
 
 A plan that lists one escalation per ROW asks for the review the audit report was changed to stop
-asking for: six rows quoting one stale chunk are one call. `plan.json` (schema 2) therefore carries
+asking for: six rows quoting one stale chunk are one call. `plan.json` (schema 3) therefore carries
 both units.
 
 - **`items`** is unchanged -- one per finding row, and still the only thing the overlay and its
   rollback are built from. Each item now names its `group_id`.
 - **`decisions`** is one entry per [decision
   group](conflict-detection.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
-  `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `review_rows`,
-  and a `status`. `action` is the action every member agreed on and is **null** when they did not,
-  so a mixed group reads as mixed. A decision never authorizes what no member row already
-  authorized -- it is a view over the per-row policy, not a second policy.
+  `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `decide_rows`,
+  `review_rows`, and a `status`. `action` is the action every member agreed on and is **null** when
+  they did not, so a mixed group reads as mixed. A decision never authorizes what no member row
+  already authorized -- it is a view over the per-row policy, not a second policy.
+- **Both counts of the work, in the one artifact that holds both.** `decide_rows` is the audit's
+  relation-based count restated here; `review_rows` is this policy's count of rows still needing a
+  human. They differ in both directions, so the plan is where they are reconciled rather than
+  compared across two terminals -- see [to decide and to
+  review](conflict-detection.md#to-decide-and-to-review-are-two-counts-never-one). Schema 3 is
+  exactly that addition; schema 2 added `decisions` beside `items`.
 - **`resolution_review.jsonl`** keeps one record per open row -- a drop applies to one span, so the
-  row stays the unit a reviewer decides on -- but every record carries `group_id` and `group_rows`,
-  the records are ordered so a group reads as a block, and the review TUI titles each record
-  `(G1, 1 of 51 rows sharing this decision)`.
+  row stays the unit a reviewer decides on -- but every record carries `group_id`, `group_rows`,
+  `group_decide_rows`, and `group_review_rows`. The records are ordered by **to review** first, then
+  by group id, so a group still reads as one contiguous block while the block that costs the most
+  human time leads the file. This is the one artifact ranked on the count an operator funds; the
+  audit report cannot be, because it has no policy. The review TUI titles each record
+  `(G1, 1 of 51 rows sharing this decision, 12 to review)`, dropping the second clause when every
+  row in the group is open.
 - **A whole-group decision** is a ledger row carrying `group_id` and `resolution_decision` with no
   `finding_id`; it settles every member. It may only be `keep_both`. A group-wide `drop_a` /
   `drop_b` is REFUSED with the group named, because members of one group share a unit but not a
@@ -58,6 +68,19 @@ documents, semantic tier at `MAX_CANDIDATE_PAIRS=100`): **100 rows in 6 decision
 100 undifferentiated records. Six group-wide `keep_both` rows settle all of them
 (`action_counts: {keep_both: 100}`, every decision `accepted`, no suppression in the overlay), which
 is the review the corpus actually requires.
+
+The CLI summary names both counts on every run, so the number an operator carries out of the
+terminal is labelled:
+
+```text
+[resolve-conflicts] 100 rows in 6 decision groups (largest 51 rows)
+[resolve-conflicts] to decide (relation): 100 rows
+[resolve-conflicts] to review (policy conservative): 100 rows in 6 decision groups
+```
+
+The same two lines on the budget-100 claim bundle read `to decide (relation): 1 row` and `to review
+(policy conservative): none` -- the divergence in the other direction, with the audit's one
+actionable row costing zero human decisions.
 
 ## Overlay and rollback contract
 

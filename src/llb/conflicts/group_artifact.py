@@ -12,6 +12,7 @@ derive a grouping the other does not have. `findings.jsonl` itself is untouched 
 """
 
 from llb.conflicts.census import PairUnits, group_indices, row_pair_units, rows_census
+from llb.conflicts.constants import decide_count
 from llb.conflicts.hashing import finding_id
 from llb.core.contracts.common import JsonObject
 
@@ -82,6 +83,11 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
     The decision NEVER invents authority a member row does not already carry -- the overlay is
     still built from the per-row items. `action` is the action every member agreed on and is null
     when they did not, so a mixed group reads as mixed instead of as one confident edit.
+
+    Both counts of the group's work ride here, because this is the only artifact that holds both.
+    `decide_rows` is the audit's relation-based count, restated from the summary so a plan reader
+    never has to re-derive the number the report ranked on; `review_rows` is this policy's own
+    count of rows still needing a human. See `constants` for why neither can serve both roles.
     """
     by_id = {str(item.get("finding_id")): item for item in items}
     decisions: list[JsonObject] = []
@@ -99,6 +105,7 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
                 "shared_units": list(summary["shared_units"]),
                 "actions": actions,
                 "action": next(iter(actions)) if len(actions) == 1 else None,
+                "decide_rows": decide_count(summary["relations"]),
                 "review_rows": review_rows,
                 "status": "review_required" if review_rows else "accepted",
             }
