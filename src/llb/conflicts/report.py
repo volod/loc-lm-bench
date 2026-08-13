@@ -87,11 +87,12 @@ def _projected_review_line(result: AuditResult) -> list[str]:
     Without `--project-policy` this is nothing at all and the report is byte-identical to a report
     that never heard of the resolution vocabulary. With it, the headline count an operator funds is
     available one command earlier -- labelled as a projection under a NAMED policy every time it
-    appears -- and with several named, the delta that says whether the choice costs anything here.
+    appears -- and with several named, the delta that says whether the choice costs anything here,
+    beside the governance coverage that says whether a non-zero delta was reachable at all.
     """
     if not result.findings:
         return []
-    return projected_review_lines(result.policy_projection)
+    return projected_review_lines(result.policy_projection, result.governance_coverage)
 
 
 def _relations_section(result: AuditResult) -> list[str]:

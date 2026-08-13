@@ -45,33 +45,102 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-governance-coverage-behind-a-zero-policy-delta (optional)
+### conflict-governance-coverage-names-the-stage-that-lost-the-orderable-pair (optional)
 
-A zero policy-choice delta has two opposite readings and the audit cannot tell them apart: the
-corpus may carry dated revisions the two policies happen to agree on, or it may carry no governance
-dates at all, in which case `superseded_by` can never be derived and the zero is a property of the
-INGESTION rather than of the knowledge
-([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-Every corpus on this host that reports a zero is the second case, so an operator who reads "the
-choice is free here" is currently being told something the run did not measure. Report the
-precondition beside the delta: documents carrying `effective_date` / `version`, and the share of
-the returned candidate pairs whose two sides are ORDERABLE by `compare_editions` -- then say a zero
-delta on a corpus with no orderable pair is structural, and only a zero delta with orderable pairs
-present is evidence the policies agree.
+The precondition behind a zero policy delta is counted on the pairs the audit RETURNED, so two
+corpora an operator would fix in opposite ways print the same structural line: one with no
+governance dates anywhere (re-ingest it) and one dated end to end whose single revision pair never
+entered the candidate list at the budget the run used (raise the budget, re-chunk, or re-embed)
+([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
+Only the first is fixable at ingestion, and today's reading names ingestion for both. Count
+orderability one level up as well -- over the corpus's own DOCUMENT pairs, which needs no candidate
+list and no store -- and report the two counts beside each other, so a run with orderable document
+pairs and no orderable returned pair reads as a RETRIEVAL miss rather than an ingestion gap.
 
 - Agent status: CLEAR
-- Dependencies: none. `compare_editions` in `src/llb/conflicts/governance.py` is the orderability
-  test and `load_corpus_docs` already resolves the governance fields; the delta block lives in
-  `src/llb/conflicts/policy_projection.py` and renders through `report_projection.py`.
-- User-visible outcome: an operator reading a free policy choice learns whether their corpus has
-  nothing to decide or simply has no dates to decide it with -- the second is fixable at ingestion.
-- Scope boundary: in scope -- the coverage counts, the orderable-pair share, their appearance
-  beside the delta, and the two-reading statement. Out of scope -- changing how `superseded_by` is
-  derived, inferring dates from document text, and refusing to project when coverage is zero.
+- Dependencies: none. `pair_orderability` in `src/llb/conflicts/governance_coverage.py` is the
+  returned-pair count and `compare_editions` is the same orderability test at either level;
+  `load_corpus_docs` already resolves the governance fields the document-pair count needs. Keep the
+  document-pair pass off the quadratic path for large corpora -- ordering is decided by two fields,
+  so the pairs can be counted from the distinct `(effective_date, version)` values rather than by
+  enumerating pairs.
+- User-visible outcome: an operator whose corpus IS dated stops being told to re-ingest it, and
+  learns the orderable pair was lost between the store and the candidate budget instead.
+- Scope boundary: in scope -- the document-pair count, its appearance beside the returned-pair
+  count, and the three-way reading (no dates / dates but no candidate / dates and candidates).
+  Out of scope -- changing the candidate budget on the finding, re-running detection to chase a
+  missed pair, and inferring dates from document text.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
 - Execution path: audit-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture with dated documents and one with none report
-  different coverage and the matching reading; the delta itself is unchanged on both.
+- Acceptance gates: `make ci` green; a fixture whose documents are dated but whose returned rows
+  are not orderable reads as a retrieval miss, and one with no dated document still reads as
+  structural; both keep today's delta unchanged.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
+
+### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
+
+The audit tells an operator a zero policy delta is "fixable at INGESTION (record `effective_date`
+or `version`)", but ingestion itself never mentions it: `make ingest-corpus` writes a manifest whose
+governance fields are empty and reports success, so the gap is only ever discovered after a store
+build and an audit run
+([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
+Report the same document-side count at ingestion time -- documents carrying `effective_date` /
+`version`, per field -- in the ingest summary and in the corpus manifest, phrased as what it costs
+(no supersession can ever be derived on this corpus) rather than as a warning to scroll past. It
+must stay a REPORT: a corpus without governance dates is a legitimate corpus and ingestion must not
+fail, refuse, or invent a date for it.
+
+- Agent status: CLEAR
+- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance_coverage.py` is the
+  count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
+  is; `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
+  where ingestion already holds the same fields.
+- User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
+  they are still ingesting it, not two commands and one GPU run later.
+- Scope boundary: in scope -- the count in the ingest summary and manifest, and the one-line
+  consequence. Out of scope -- failing or refusing an undated ingest, inferring dates from document
+  text or file mtime, and any change to the audit-side counts.
+- Data and artifact paths: the existing corpus manifest under the ingested corpus root.
+- Execution path: ingest-side counting with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; an undated corpus ingests successfully and reports zero
+  coverage with the consequence named; a dated corpus reports its per-field counts; the manifest
+  round-trips the counts and the audit's own coverage agrees with them on the same corpus.
+- Documentation target: the corpus-ingestion section of
+  [data prep](current/data-prep.md) plus a pointer from
+  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
+
+### conflict-policy-share-across-repeat-audits-of-one-corpus (optional)
+
+The policy-choice share is quoted from ONE audit and is not reproducible across audits of the same
+corpus: three claim-tier runs of the committed fixture at identical settings returned the same 17
+rows, the same 9 actionable rows, and the same 0.4286 claim-tier precision, yet the third called one
+row `subsumed_by` where the first two called it `superseded_by` -- so the delta read 1 of 9 (11.1%)
+instead of 2 of 9 (22.2%)
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+The share is a count of the one relation the policies part on, so it inherits the adjudicator's
+sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
+(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
+shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
+two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
+honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
+result -- the spread is small enough that a point estimate is honest -- is a valid outcome.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. `make audit-corpus-conflicts EFFORT=claim PROJECT_POLICY=conservative,prefer-newer`
+  and its artifacts are current behavior; the three bundles above are the first three samples and
+  need no re-running. Do not change the relation vocabulary or the prompt -- that would measure a
+  different adjudicator instead of this one's variance.
+- User-visible outcome: an operator comparing this week's policy share to last week's learns which
+  part of the difference is their corpus and which part is the model being asked twice.
+- Scope boundary: in scope -- the repeat runs, the spread of the relation mix and the share, and the
+  pin-or-band decision. Out of scope -- changing the adjudication prompt, the calibration gate, and
+  quoting a band before the spread is measured.
+- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per repeat.
+- Execution path: N claim-tier runs of one corpus on the CUDA host; CI covers whatever pinning the
+  decision adopts, over the injected adjudicator.
+- Acceptance gates: `make ci` green; every repeat reports its relation mix and share; the reading
+  states the spread and either pins the call or records the band the share must be quoted with.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
 

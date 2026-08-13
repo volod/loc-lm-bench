@@ -120,6 +120,11 @@ class AuditResult:
     claim_precision: JsonObject = field(default_factory=dict)
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
+    # Whether this corpus could carry a dated supersession at all: the documents that record an
+    # orderable governance field, and the returned pairs `compare_editions` can order. Detection-
+    # side and policy-free, so it is recorded on every run -- it is what tells a zero policy delta
+    # (a property of the KNOWLEDGE) apart from a corpus that was ingested without dates at all.
+    governance_coverage: JsonObject = field(default_factory=dict)
     # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
     # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole
     # point: the detector runs without a resolution policy, and the renderer reads this dict
@@ -168,6 +173,8 @@ class AuditResult:
             payload["claim_precision"] = dict(self.claim_precision)
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
+        if self.governance_coverage:
+            payload["governance_coverage"] = dict(self.governance_coverage)
         if self.policy_projection:
             payload["policy_projection"] = dict(self.policy_projection)
         return payload

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from llb.conflicts.census import counted
 from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
+from llb.conflicts.governance_coverage import coverage_reading
 from llb.core.contracts.common import JsonObject
 
 # The column an operator funds, never printed bare: the word `projected` rides with it everywhere.
@@ -146,8 +147,24 @@ def _delta_line(delta: JsonObject) -> str:
     )
 
 
-def projected_review_lines(projection: JsonObject) -> list[str]:
-    """The headline block: one line per policy, then the delta between them.
+def coverage_sentence(projection: JsonObject, coverage: JsonObject) -> str:
+    """The precondition beside the delta, or `""` where there is no delta for it to explain.
+
+    A delta is the only place the counts change a reading: with one policy there is no choice to
+    call free, and without a coverage record (a projection over rows alone) there is nothing
+    measured to say. `zero_delta` is read over EVERY delta -- if no named policy moved a row, the
+    whole block is the zero the coverage has to explain. The report and the CLI both call this and
+    add their own prefix, so the two cannot decide differently which zero they are looking at.
+    """
+    deltas = list(projection.get("deltas") or [])
+    if not deltas or not coverage:
+        return ""
+    moved = any(int(delta["moved_rows"]) for delta in deltas)
+    return coverage_reading(coverage, zero_delta=not moved)
+
+
+def projected_review_lines(projection: JsonObject, coverage: JsonObject | None = None) -> list[str]:
+    """The headline block: one line per policy, the delta between them, then its precondition.
 
     Without `--project-policy` this is nothing at all and the report is byte-identical to a report
     that never heard of the resolution vocabulary.
@@ -158,7 +175,9 @@ def projected_review_lines(projection: JsonObject) -> list[str]:
     lines = [
         _policy_line(projection, policy, first=index == 0) for index, policy in enumerate(named)
     ]
-    return lines + [_delta_line(delta) for delta in projection.get("deltas") or []]
+    lines += [_delta_line(delta) for delta in projection.get("deltas") or []]
+    precondition = coverage_sentence(projection, coverage or {})
+    return lines + [f"- {precondition}"] if precondition else lines
 
 
 def two_counts_paragraphs(projection: JsonObject) -> list[str]:

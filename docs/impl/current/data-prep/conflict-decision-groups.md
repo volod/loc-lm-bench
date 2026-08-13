@@ -125,7 +125,9 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
   `review_rows` / `review_groups` / per-group counts, and `deltas`). The per-group counts are keyed
   by the same group ids `groups.json` and `plan.json` use. The CLI echoes the same numbers.
   `findings.jsonl` and `groups.json` are untouched: the projection depends on a policy, and those
-  two artifacts must stay readable by a consumer that has not chosen one.
+  two artifacts must stay readable by a consumer that has not chosen one. A delta also brings
+  [the governance coverage behind it](#the-precondition-behind-a-zero-delta), which is recorded on
+  every run whether or not a policy was named.
 - **One document shape, whatever N is.** The FIRST policy named is the baseline and its own counts
   stay at the top level of `policy_projection` (`policy`, `review_rows`, `review_groups`,
   `groups`), exactly where a single-policy consumer already reads them; `policies` / `by_policy` /
@@ -255,10 +257,9 @@ call and no store.
   BOTH sides, and neither quickstart corpus carries either field on any document: 0 of 5 goods
   documents and 0 of 3 quickstart-PDF documents, against 7 of 7 in the fixture. Their zero delta is
   therefore a property of how they were ingested (PDF conversion, no governance front matter), not
-  a finding that their revisions agree under both policies. An operator reading "the choice is free
-  here" needs that distinction, and the audit does not currently draw it -- that is tracked in
-  [`plan.md`](../../plan.md) (`conflict-governance-coverage-behind-a-zero-policy-delta`), not a
-  claim this page makes.
+  a finding that their revisions agree under both policies. The audit now draws that distinction
+  itself, beside the delta: see
+  [the precondition behind a zero delta](#the-precondition-behind-a-zero-delta).
 - **A zero share and no share are different answers.** goods claim reads `0 of 2 actionable rows
   (0.0%)` -- there IS work to decide (2 `subsumed_by` rows) and the policy choice touches none of
   it. quickstart-PDF reads `0 of 0 actionable rows` with `moved_share: null` -- its 100 rows are
@@ -277,7 +278,7 @@ call and no store.
   settles rows, and that a cancelling delta renders as the rows it moved instead of as **no
   difference**.
 
-Two limits of this measurement, both worth stating because they bound what the 22.2% means:
+Three limits of this measurement, all worth stating because they bound what the 22.2% means:
 
 - **The only non-zero share on this host comes from a planted corpus.** The fixture is 7 small
   documents built to contain one dated supersession, so 22.2% is the share of a corpus designed to
@@ -292,6 +293,100 @@ Two limits of this measurement, both worth stating because they bound what the 2
   runs today (`source_findings_sha256` pins a plan to its own rows), so no artifact is wrong; a
   reader comparing two audit reports by group label would be. A row-derived group key is tracked in
   [`plan.md`](../../plan.md) (`conflict-group-ids-that-survive-a-re-run`).
+- **And the share itself is not reproducible across runs.** A third audit of the same fixture at
+  the same settings (`20260813T-governance-coverage-fixture-claim`, same 7 documents, same 19-chunk
+  store, same 24/24 frozen probe, same 14 adjudicated rows, same 0.4286 claim-tier precision)
+  returned the same 17 rows and 9 actionable rows but a different relation MIX: one row the earlier
+  two runs called `superseded_by` came back `subsumed_by`, so the delta read **-1 row, 1 of 9
+  (11.1%)** in `G4` instead of -2 and 22.2%. The adjudication endpoint runs at temperature 0.2 with
+  no seed, so a relation on a borderline pair is a sample rather than a constant -- and the
+  policy-choice share inherits that variance directly, because it is a count of one relation.
+  Quoting 22.2% as the fixture's share therefore over-states the precision of a single run; the
+  spread is unmeasured, and measuring it is tracked in [`plan.md`](../../plan.md)
+  (`conflict-policy-share-across-repeat-audits-of-one-corpus`).
+
+#### The precondition behind a zero delta
+
+A zero delta has two opposite readings and the delta cannot tell them apart: the corpus may carry
+dated revisions the two policies agree on, or it may carry no governance dates at all -- in which
+case `superseded_by` can never be derived, the zero is a property of the INGESTION rather than of
+the knowledge, and it is fixed where the corpus is built rather than where it is reviewed. Every
+corpus on this host that reports a zero is the second case, so the audit reports the PRECONDITION
+beside the delta rather than leaving an operator to read "the choice is free here" off a run that
+could not have said anything else.
+
+`src/llb/conflicts/governance_coverage.py` counts it at the two levels it can be missing at, using
+`compare_editions` -- the same orderability test that promotes a dated contradiction to
+`superseded_by`, so the precondition cannot drift from the thing it is a precondition for:
+
+| level | field | what it means |
+| --- | --- | --- |
+| corpus | `dated_documents` of `documents`, plus `documents_by_field` | documents recording `effective_date` or `version`; zero here means no run over this corpus can ever produce a non-zero delta |
+| run | `orderable_pairs` of `returned_pairs`, plus `orderable_share` | returned pairs whose two sides that function actually orders; the stricter count, and the one the reading turns on |
+
+The two are different questions: a corpus can date every document and still return no orderable
+pair, because two sides carrying the SAME date order no better than two undated ones.
+`orderable_share` is `null` rather than `0.0` when a run returned no pair at all, the same
+distinction `moved_share` draws one level up.
+
+**Where it appears.** `governance_coverage` rides in `summary.json` on every run, projection or
+not -- it is detection-side and policy-free. The READING is printed once beside the delta, in
+`report.md` and in the CLI through the same helper, and only where a delta exists: with one policy
+there is no choice to call free, and with no `--project-policy` the report is unchanged. A zero
+delta with no orderable pair reads **STRUCTURAL** and names ingestion as the fix; a zero delta with
+orderable pairs present reads as being about the corpus's KNOWLEDGE; a non-zero delta carries the
+counts without a reading, because the delta already is one.
+`tests/llb/conflicts/test_governance_coverage.py` pins the counts, both readings, and the gate --
+two corpora with byte-identical bodies, one dated and one not, whose coverage differs and whose
+delta does not.
+
+Measured over the four bundles the [policy-choice table](#what-the-policy-choice-costs-measured)
+above was measured on, recomputed from each `findings.jsonl` plus its corpus with no model, no
+store, and no re-adjudication (`pair_orderability` reads rows alone; only the document count needs
+the corpus):
+
+| bundle | dated documents | orderable returned pairs | delta | reading |
+| --- | --- | --- | --- | --- |
+| conflicts fixture, claim | 7 of 7 | 16 of 17 (0.941) | **-2** | non-zero; the counts ride with it |
+| goods, claim budget 100 | 0 of 5 | 0 of 100 (0.0) | 0 | STRUCTURAL |
+| quickstart-PDF, claim budget 100 | 0 of 3 | 0 of 100 (0.0) | 0 | STRUCTURAL |
+| goods, semantic | 0 of 5 | 0 of 100 (0.0) | 0 | STRUCTURAL |
+
+The shipped command was then run end to end on the fixture to check the live path rather than the
+recompute (CUDA host, RTX PRO 3000 Blackwell, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M, 24/24 frozen
+probe pairs, 14 rows adjudicated in 54 s,
+`.data/corpus-conflicts/20260813T-governance-coverage-fixture-claim/`):
+
+```text
+make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim \
+  STORE=<19-chunk heading@600 store> MIN_CLAIM_TOKENS=10 \
+  PROJECT_POLICY=conservative,prefer-newer
+[conflicts] policy choice conservative -> prefer-newer: -1 rows to review in G4; moves 1 of 9
+  actionable rows (11.1%)
+[conflicts] governance coverage: 7 of 7 documents with `effective_date` or `version`
+  (7 `effective_date`, 7 `version`), 16 of 17 returned pairs orderable by `compare_editions` --
+  the rows the choice moves are drawn from those orderable pairs.
+```
+
+That run is also where the [third limit](#what-the-policy-choice-costs-measured) above came from:
+its delta is -1 rather than the -2 the two earlier audits of the same corpus measured, while its
+coverage is identical to theirs. The precondition is a property of the corpus and reproduces; the
+delta is a property of one adjudication and does not.
+
+**Orderability is necessary, not sufficient -- by a wide margin.** The fixture's 16 of 17 returned
+pairs are orderable and only 2 rows move: a pair must also be adjudicated `contradicts` before the
+dates promote it to `superseded_by`, so the orderable share is a loose upper bound on the delta and
+must never be read as a prediction of one. What it does rule out is the opposite error, which is
+the one an operator actually makes: a zero delta on a corpus with no orderable pair is not evidence
+about the corpus at all.
+
+**What it does not separate yet.** The run-level count is measured on the pairs the audit RETURNED,
+so a dated corpus whose one revision pair never entered the candidate list reports the same
+structural line as a corpus with no dates -- and the two are fixed in opposite ways (raise the
+budget versus re-ingest). A document-pair-level count is tracked in [`plan.md`](../../plan.md)
+(`conflict-governance-coverage-names-the-stage-that-lost-the-orderable-pair`), and surfacing the
+same count at ingestion time -- where the reading says the fix belongs -- in
+`corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for`.
 
 ### One actionable set
 

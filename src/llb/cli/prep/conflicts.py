@@ -233,12 +233,17 @@ def _projected_policies(value: Optional[str]) -> list[str]:
     return named
 
 
-def _echo_projection(projection: JsonObject) -> None:
+def _echo_projection(projection: JsonObject, coverage: JsonObject) -> None:
     """One line per projected policy, then the delta -- the same reading the report prints."""
     if not projection:
         return
     from llb.conflicts.census import counted
-    from llb.conflicts.report_projection import moved_share_phrase, policies_of, signed_delta
+    from llb.conflicts.report_projection import (
+        coverage_sentence,
+        moved_share_phrase,
+        policies_of,
+        signed_delta,
+    )
 
     for policy in policies_of(projection):
         counts = projection.get("by_policy", {}).get(policy, projection)
@@ -261,6 +266,11 @@ def _echo_projection(projection: JsonObject) -> None:
             f"{signed_delta(int(delta['review_rows']))} rows to review{where}; "
             f"moves {moved_share_phrase(delta)}"
         )
+    # The same precondition the report prints beside the delta, decided by the same helper: a free
+    # choice on a corpus with no orderable pair is a property of the ingestion, not of the corpus.
+    precondition = coverage_sentence(projection, coverage)
+    if precondition:
+        typer.echo(f"[conflicts] {precondition}")
 
 
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
@@ -284,7 +294,7 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(line)
     for relation, row in relation_census(result.findings).items():
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
-    _echo_projection(result.policy_projection)
+    _echo_projection(result.policy_projection, result.governance_coverage)
     precision = result.claim_precision
     if precision.get("reported"):
         point = precision["returned_budget"]

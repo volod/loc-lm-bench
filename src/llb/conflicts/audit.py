@@ -25,6 +25,7 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
+from llb.conflicts.governance_coverage import governance_coverage
 from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
@@ -131,12 +132,18 @@ def run_audit(
         result.tiers.append(lexical_stats)
         _LOG.info("[conflicts] tier=lexical findings=%d", len(lexical_findings))
 
-    if TIER_SEMANTIC not in tiers:
-        return result
-    if store is None:
-        raise SystemExit(
-            "[conflicts] the semantic tier needs a built store: pass --store or build one "
-            "with `make build-index`."
-        )
-    run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+    if TIER_SEMANTIC in tiers:
+        if store is None:
+            raise SystemExit(
+                "[conflicts] the semantic tier needs a built store: pass --store or build one "
+                "with `make build-index`."
+            )
+        run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+
+    # One exit, because the governance coverage is a property of the corpus AND of the rows every
+    # tier returned: a delta of zero means one thing when a returned pair could have been ordered
+    # by edition and the opposite when the corpus was ingested without a date on any document.
+    result.governance_coverage = governance_coverage(
+        [doc.governance for doc in docs], result.rows()
+    )
     return result
