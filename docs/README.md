@@ -21,6 +21,7 @@ routes you from a high-level topic to the specific document.
 | Forward plan | [impl/plan.md](impl/plan.md) | Future engineering tasks only |
 | Guides | [guides/README.md](guides/README.md) | Operator workflows and learning material, grouped by topic |
 | Inference | [inference/config-example.md](inference/config-example.md) | GPU tier detection, automatic CUDA-host draft selection, and generated serve/run configs |
+| Reference | [reference/model-families.md](reference/model-families.md), [reference/data-licenses.md](reference/data-licenses.md) | The candidate model roster with per-tier artifacts and weight licenses; the terms on every committed fixture and fetched task set |
 
 ## Guides by group
 
