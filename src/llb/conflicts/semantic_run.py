@@ -3,6 +3,8 @@
 import logging
 from typing import TYPE_CHECKING
 
+from llb.conflicts.claim_calibration import calibrate_adjudicator, load_calibration_probe
+from llb.conflicts.claim_precision import precision_block
 from llb.conflicts.claim_tier import adjudicate_pairs
 from llb.conflicts.constants import (
     DEFAULT_COSINE_THRESHOLD,
@@ -11,6 +13,7 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc
+from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.needles import analyze_needles
 from llb.conflicts.null_calibration import resolve_cos_threshold
@@ -99,8 +102,13 @@ def run_semantic_tiers(
     complete: LLMComplete | None,
     settled: set[tuple[str, str]],
     tree: SemanticPrefixTree | None,
-) -> None:
-    """Build/reuse the tree, run the semantic tier, then adjudicate if requested."""
+) -> DocumentChunks:
+    """Build/reuse the tree, run the semantic tier, then adjudicate if requested.
+
+    Returns the per-document chunk accounting the audit needs to name the STAGE an orderable
+    document pair was lost at. It is returned rather than recorded on the result because it is an
+    input to a reading, not a finding: the comparable set is known exactly here and nowhere else.
+    """
     governance = {doc.doc_id: doc.governance for doc in docs}
     centered = params.center_vectors and len(store.vectors) >= MIN_CENTERING_VECTORS
     if params.center_vectors and not centered:
@@ -150,6 +158,7 @@ def run_semantic_tiers(
     }
     _record_needles(result, goldset, store, vectors, cos_threshold)
     _record_claims(result, params, store, governance, complete, semantic_findings, pairs)
+    return DocumentChunks.of(store.chunks, allowed, settled)
 
 
 def _record_needles(
@@ -187,6 +196,7 @@ def _record_claims(
             "[conflicts] the claim tier needs a model endpoint: pass --conflict-model "
             "(and --conflict-backend) so candidate pairs can be adjudicated."
         )
+    calibration = _calibrate(params, complete)
     cap = params.max_claim_pairs or len(pairs)
     selected = pairs[:cap]
     if len(selected) < len(pairs):
@@ -195,8 +205,33 @@ def _record_claims(
             len(selected),
             len(pairs),
         )
-    claim_findings, claim_stats = adjudicate_pairs(selected, store.chunks, governance, complete)
+    claim_findings, claim_stats, rows = adjudicate_pairs(
+        selected, store.chunks, governance, complete
+    )
     result.findings.extend(claim_findings)
     result.findings.extend(semantic_findings[len(selected) :])
     result.tiers.append(claim_stats)
+    result.claim_precision = precision_block(rows, calibration, seed=params.null_seed)
     _LOG.info("[conflicts] tier=claim findings=%d", len(claim_findings))
+    if not result.claim_precision["reported"]:
+        _LOG.warning(
+            "[conflicts] claim-tier precision not reported: %s", result.claim_precision["reason"]
+        )
+
+
+def _calibrate(params: "AuditParams", complete: LLMComplete) -> JsonObject | None:
+    """Adjudicate the frozen probe first, so the precision block knows what it may print."""
+    if not params.calibrate_adjudicator:
+        return None
+    probe = load_calibration_probe(params.calibration_probe)
+    calibration = calibrate_adjudicator(probe, complete)
+    _LOG.info(
+        "[conflicts] adjudicator calibration: %s of %s frozen probe pairs agree (accuracy %s, "
+        "Wilson 95%% lower bound %s, gate %s)",
+        calibration["agreements"],
+        calibration["parsed_pairs"],
+        calibration["accuracy"],
+        calibration["accuracy_wilson_95"][0],
+        calibration["min_accuracy_lcb"],
+    )
+    return calibration

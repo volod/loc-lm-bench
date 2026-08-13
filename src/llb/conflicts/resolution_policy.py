@@ -1,7 +1,5 @@
 """Deterministic policy for turning conflict findings into reviewable actions."""
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,7 +11,13 @@ from llb.conflicts.constants import (
     REL_SUBSUMES,
     REL_SUPERSEDED_BY,
 )
+from llb.conflicts.group_artifact import group_decisions, group_summaries
+from llb.conflicts.hashing import finding_id
 from llb.core.contracts.common import JsonObject
+
+# 2 added `decisions` beside `items`; 3 gives every decision both counts of its work
+# (`decide_rows` beside `review_rows`).
+PLAN_SCHEMA_VERSION = 3
 
 POLICY_CONSERVATIVE = "conservative"
 POLICY_PREFER_NEWER = "prefer-newer"
@@ -34,12 +38,6 @@ class _Resolution:
     target_side: str | None = None
     rationale: str = "relation carries distinct or complementary knowledge"
     status: str = STATUS_ACCEPTED
-
-
-def finding_id(finding: JsonObject) -> str:
-    """Stable identity for one finding, independent of JSON object key order."""
-    encoded = json.dumps(finding, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def _side(finding: JsonObject, name: str) -> JsonObject:
@@ -145,16 +143,31 @@ def resolve_finding(finding: JsonObject, policy: str) -> JsonObject:
 
 
 def build_plan(findings: list[JsonObject], policy: str, corpus_root: str) -> JsonObject:
+    """One item per finding row, plus one decision per group of rows that share a chunk.
+
+    The items are what the overlay is built from and what a rollback restores, so every row keeps
+    its own record; `decisions` is what an operator reviews, because six rows quoting one stale
+    chunk are one call to make. Each decision carries BOTH counts of its work -- the audit's
+    relation-based `decide_rows` and this policy's `review_rows` -- so the plan is the artifact
+    that reconciles the two numbers the report and the ledger each print one of.
+    """
     items = [resolve_finding(finding, policy) for finding in findings]
+    summaries = group_summaries(findings)
+    group_by_finding = {
+        fid: summary["group_id"] for summary in summaries for fid in summary["finding_ids"]
+    }
+    for item in items:
+        item["group_id"] = group_by_finding.get(str(item["finding_id"]))
     counts: dict[str, int] = {}
     for item in items:
         action = str(item["action"])
         counts[action] = counts.get(action, 0) + 1
     return {
-        "schema_version": 1,
+        "schema_version": PLAN_SCHEMA_VERSION,
         "policy": policy,
         "corpus_root": corpus_root,
         "items": items,
+        "decisions": group_decisions(summaries, items),
         "action_counts": dict(sorted(counts.items())),
     }
 

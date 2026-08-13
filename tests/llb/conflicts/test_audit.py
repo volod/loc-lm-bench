@@ -12,6 +12,7 @@ import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import (
+    REL_COMPLEMENTARY,
     REL_DUPLICATE,
     REL_SUBSUMED_BY,
     REL_SUPERSEDED_BY,
@@ -89,6 +90,17 @@ def test_semantic_effort_pairs_the_revision_but_does_not_label_the_disagreement(
     assert relation_for(result.findings, DOC_2021, DOC_2024) == {REL_DUPLICATE}
     semantic = next(stat for stat in result.tiers if stat.tier == TIER_SEMANTIC)
     assert semantic.extra["cross_document_pairs"] > 0
+
+
+def test_semantic_candidates_come_out_in_rank_order():
+    """A prefix of the list must be the TOP of the similarity ordering, not the traversal order.
+
+    `--max-claim-pairs` and the claim-tier precision curve both read a prefix, and the threshold
+    is documented as a rank cutoff -- an unsorted list would make both of them arbitrary subsets.
+    """
+    result = audit(TIER_SEMANTIC)
+    scores = [finding.score for finding in result.findings if finding.tier == TIER_SEMANTIC]
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_claim_effort_recovers_partial_supersession():
@@ -199,12 +211,18 @@ def test_write_audit_persists_findings_report_and_summary(tmp_path):
 
 
 def test_report_leads_with_actionable_relations():
+    """Every relation the precision block counts as work leads the list; only coexistence sinks."""
     result = audit(TIER_CLAIM)
     report = render_report(result)
     assert "# Corpus conflict audit" in report
-    body = report.split("## Findings", 1)[1]
-    first_row = next(line for line in body.splitlines() if line.startswith("| `"))
-    assert REL_SUPERSEDED_BY in first_row or "contradicts" in first_row
+    body = report.split("### Rows", 1)[1]
+    rows = [line for line in body.splitlines() if line.startswith("| G")]
+    assert REL_SUPERSEDED_BY in rows[0] or "contradicts" in rows[0] or REL_DUPLICATE in rows[0]
+    coexisting = [index for index, row in enumerate(rows) if f"`{REL_COMPLEMENTARY}`" in row]
+    actionable = [index for index, row in enumerate(rows) if f"`{REL_COMPLEMENTARY}`" not in row]
+    assert not coexisting or not actionable or min(coexisting) > max(actionable), (
+        "a row an operator must act on never sorts below one they can ignore"
+    )
 
 
 def test_report_renders_for_a_clean_corpus(tmp_path):

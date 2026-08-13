@@ -6,11 +6,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from llb.conflicts.null_research_clusters import two_way_tail_interval
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_evaluation import (
     MIN_COVERAGE_PROBABILITY,
     MIN_TAIL_OBSERVATIONS,
     simulated_wilson_coverage,
-    wilson_interval,
 )
 from llb.conflicts.null_research_geometry import CorpusGeometry
 from llb.conflicts.null_research_matching import MAX_ABS_STANDARDIZED_DIFFERENCE, MAX_MEMBERSHIP_AUC

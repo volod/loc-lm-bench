@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Optional
 import typer
 
 from llb.cli.app import app
+from llb.core.contracts.common import JsonObject
+from llb.conflicts.claim_calibration import DEFAULT_CALIBRATION_PROBE
 from llb.conflicts.constants import (
     CONFLICTS_METHOD,
     DEFAULT_CONTAINMENT_THRESHOLD,
@@ -24,6 +26,7 @@ from llb.conflicts.null_distribution import (
     DEFAULT_NULL_SAMPLE_PAIRS,
     DEFAULT_NULL_SEED,
 )
+from llb.conflicts.resolution_policy import POLICIES
 
 if TYPE_CHECKING:
     from llb.conflicts.models import AuditResult
@@ -88,13 +91,26 @@ def audit_corpus_conflicts_cmd(
         help="pairs sampled to estimate the null distribution (--cos-quantile only)",
     ),
     null_seed: int = typer.Option(
-        DEFAULT_NULL_SEED, help="seed for null-distribution sampling; fixed for reproducibility"
+        DEFAULT_NULL_SEED,
+        help="seed for null-distribution sampling and the clustered precision bootstrap; "
+        "fixed for reproducibility",
     ),
     leaf_size: int = typer.Option(
         DEFAULT_LEAF_SIZE, min=1, help="semantic prefix tree leaf capacity"
     ),
     max_claim_pairs: int = typer.Option(
         0, min=0, help="cap adjudicated pairs (0 = every candidate pair)"
+    ),
+    calibrate_adjudicator: bool = typer.Option(
+        True,
+        "--calibrate-adjudicator/--no-calibrate-adjudicator",
+        help="adjudicate the frozen calibration probe before measuring claim-tier precision; "
+        "without it the precision block is suppressed rather than printed uncalibrated",
+    ),
+    calibration_probe: Optional[Path] = typer.Option(
+        None,
+        help="frozen-label probe for adjudicator calibration "
+        f"(default {DEFAULT_CALIBRATION_PROBE})",
     ),
     min_claim_tokens: int = typer.Option(
         MIN_CLAIM_TOKENS,
@@ -112,6 +128,14 @@ def audit_corpus_conflicts_cmd(
         min=0,
         help="PCA dimensions for exact Euclidean tree blocking (0 = blocked all-pairs scan)",
     ),
+    project_policy: Optional[str] = typer.Option(
+        None,
+        help="also PROJECT the `to review` count under these resolution policies, comma-separated "
+        f"({' | '.join(POLICIES)}): the rows `resolve-corpus-conflicts --policy <p>` would leave "
+        "at `review_required`, one column per policy per decision group, plus the DELTA between "
+        "them so the cost of the policy CHOICE is visible. Projections under named policies, "
+        "never measurements -- off by default, and off leaves the report unchanged",
+    ),
 ) -> None:
     """Report duplicated, stale, and contradictory knowledge in a corpus. Never edits the corpus."""
     from llb.conflicts.adjudicator import build_adjudicator
@@ -123,6 +147,7 @@ def audit_corpus_conflicts_cmd(
 
     if effort not in TIERS:
         raise typer.BadParameter(f"unknown effort {effort!r}; choose one of {', '.join(TIERS)}")
+    projected_policies = _projected_policies(project_policy)
     tiers = tiers_up_to(effort)
 
     view = None
@@ -160,11 +185,20 @@ def audit_corpus_conflicts_cmd(
             min_claim_tokens=min_claim_tokens,
             center_vectors=center_vectors,
             project_dims=project_dims,
+            calibrate_adjudicator=calibrate_adjudicator,
+            calibration_probe=calibration_probe,
         ),
         store=view,
         goldset=items,
         complete=complete,
     )
+
+    # The projection is composed HERE, above both layers: it needs the resolution vocabulary, and
+    # the report must not. `write_audit` renders whatever plain data it is handed.
+    if projected_policies:
+        from llb.conflicts.policy_projection import project_policies
+
+        result.policy_projection = project_policies(result.rows(), projected_policies)
 
     out_dir = (
         out if out is not None else resolve_data_dir() / CONFLICTS_METHOD / generation_timestamp()
@@ -173,9 +207,80 @@ def audit_corpus_conflicts_cmd(
     _echo_summary(result, paths)
 
 
+def _projected_policies(value: Optional[str]) -> list[str]:
+    """Parse `--project-policy a,b` into an ordered, de-duplicated, validated policy list.
+
+    The first policy named is the delta's baseline and stays the one whose counts sit at the top
+    level of the artifact, so the order an operator types is the order the report reads in.
+    """
+    if value is None:
+        return []
+    named = [item.strip() for item in value.split(",") if item.strip()]
+    if not named:
+        raise typer.BadParameter(
+            f"--project-policy needs at least one policy; choose from {', '.join(POLICIES)}"
+        )
+    unknown = [policy for policy in named if policy not in POLICIES]
+    if unknown:
+        raise typer.BadParameter(
+            f"unknown resolution policy {', '.join(repr(p) for p in unknown)}; "
+            f"choose from {', '.join(POLICIES)}"
+        )
+    if len(set(named)) != len(named):
+        raise typer.BadParameter(
+            f"--project-policy repeats a policy ({value!r}); each column must be a distinct policy"
+        )
+    return named
+
+
+def _echo_projection(projection: JsonObject, coverage: JsonObject) -> None:
+    """One line per projected policy, then the delta -- the same reading the report prints."""
+    if not projection:
+        return
+    from llb.conflicts.census import counted
+    from llb.conflicts.report_projection import (
+        coverage_sentence,
+        moved_share_phrase,
+        policies_of,
+        signed_delta,
+    )
+
+    for policy in policies_of(projection):
+        counts = projection.get("by_policy", {}).get(policy, projection)
+        typer.echo(
+            f"[conflicts] to review PROJECTED under policy {policy}: "
+            f"{counted(int(counts['review_rows']), 'row')} in "
+            f"{counted(int(counts['review_groups']), 'decision group')} "
+            "(a projection, not a measurement; resolve-corpus-conflicts measures it)"
+        )
+    for delta in projection.get("deltas") or []:
+        moved = [str(group) for group in delta["moved_groups"]]
+        if not int(delta["moved_rows"]):
+            where = " -- the choice is free on this corpus"
+        elif moved:
+            where = f" in {', '.join(moved)}"
+        else:
+            where = " -- cancelling out inside the groups it moves rows in"
+        typer.echo(
+            f"[conflicts] policy choice {delta['baseline']} -> {delta['policy']}: "
+            f"{signed_delta(int(delta['review_rows']))} rows to review{where}; "
+            f"moves {moved_share_phrase(delta)}"
+        )
+    # The same precondition the report prints beside the delta, decided by the same helper: a free
+    # choice on a corpus with no orderable pair is a property of the ingestion, not of the corpus.
+    precondition = coverage_sentence(projection, coverage)
+    if precondition:
+        typer.echo(f"[conflicts] {precondition}")
+
+
 def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
+    from llb.conflicts.census import census_units, finding_census, relation_census
+
+    census = finding_census(result.findings)
     typer.echo(
-        f"[conflicts] effort={result.effort} docs={result.n_docs} findings={len(result.findings)}"
+        f"[conflicts] effort={result.effort} docs={result.n_docs} findings={census['findings']} "
+        f"groups={census['groups']} docs_touched={census['documents']} "
+        f"doc_pairs={census['document_pairs']} chunk_units={census['chunk_units']}"
     )
     semantic = next((t for t in result.tiers if t.tier == TIER_SEMANTIC), None)
     if semantic is not None and "cos_threshold" in semantic.extra:
@@ -187,8 +292,18 @@ def _echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
                 f" q={null.get('resolved_quantile')} over {null['total_pairs']} comparable pairs"
             )
         typer.echo(line)
-    for relation, count in result.relation_counts().items():
-        typer.echo(f"[conflicts]   {relation}: {count}")
+    for relation, row in relation_census(result.findings).items():
+        typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
+    _echo_projection(result.policy_projection, result.governance_coverage)
+    precision = result.claim_precision
+    if precision.get("reported"):
+        point = precision["returned_budget"]
+        typer.echo(
+            f"[conflicts] claim-tier precision {point['precision']} at budget {point['budget']} "
+            f"(two-way clustered 95% LCB {point['two_way_clustered_lcb']})"
+        )
+    elif precision:
+        typer.echo(f"[conflicts] claim-tier precision not reported: {precision['reason']}")
     if result.needles:
         typer.echo(
             f"[conflicts] needles: {result.needles.get('ambiguous_items')}/"

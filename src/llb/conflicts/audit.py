@@ -25,11 +25,15 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
+from llb.conflicts.document_chunks import DocumentChunks
+from llb.conflicts.governance_coverage import governance_coverage
+from llb.conflicts.governance_stage import lost_pair_attribution
 from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
 from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
 from llb.conflicts.semantic_run import run_semantic_tiers
+from llb.conflicts.stage_replay import stage_attribution_inputs
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.core.contracts.common import JsonObject
@@ -56,6 +60,8 @@ class AuditParams:
     min_claim_tokens: int = MIN_CLAIM_TOKENS
     center_vectors: bool = True
     project_dims: int = 0
+    calibrate_adjudicator: bool = True
+    calibration_probe: Path | str | None = None
 
     def payload(self) -> JsonObject:
         return {
@@ -72,6 +78,10 @@ class AuditParams:
             "min_claim_tokens": self.min_claim_tokens,
             "center_vectors": self.center_vectors,
             "project_dims": self.project_dims,
+            "calibrate_adjudicator": self.calibrate_adjudicator,
+            "calibration_probe": str(self.calibration_probe)
+            if self.calibration_probe is not None
+            else None,
         }
 
 
@@ -125,12 +135,30 @@ def run_audit(
         result.tiers.append(lexical_stats)
         _LOG.info("[conflicts] tier=lexical findings=%d", len(lexical_findings))
 
-    if TIER_SEMANTIC not in tiers:
-        return result
-    if store is None:
-        raise SystemExit(
-            "[conflicts] the semantic tier needs a built store: pass --store or build one "
-            "with `make build-index`."
-        )
-    run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+    # None below the semantic tier, and that is itself the attribution: a run that read no store
+    # lost its orderable pairs at the effort dial rather than at any knob inside retrieval.
+    chunks: DocumentChunks | None = None
+    if TIER_SEMANTIC in tiers:
+        if store is None:
+            raise SystemExit(
+                "[conflicts] the semantic tier needs a built store: pass --store or build one "
+                "with `make build-index`."
+            )
+        chunks = run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+
+    # One exit, because the governance coverage is a property of the corpus AND of the rows every
+    # tier returned: a delta of zero means one thing when a returned pair could have been ordered
+    # by edition and the opposite when the corpus was ingested without a date on any document.
+    rows = result.rows()
+    documents = [(doc.doc_id, doc.governance) for doc in docs]
+    coverage = governance_coverage([doc.governance for doc in docs], rows)
+    result.governance_coverage = {
+        **coverage,
+        # Beside the counts, never inside them: the counts say a pair was lost, this says where.
+        **lost_pair_attribution(coverage, documents, rows, chunks),
+    }
+    # And what that attribution was read from, so the bundle can answer the question again under a
+    # changed rule once the store is gone. Written on every run, including the ones that lost
+    # nothing: which pair a rule change would name is not knowable when the record is written.
+    result.stage_inputs = stage_attribution_inputs(documents, chunks)
     return result

@@ -4,12 +4,12 @@ import math
 
 from llb.conflicts.null_research_advanced import candidate_gates, clustered_tail_payload
 from llb.conflicts.null_research_controls import MatchedControls
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
     count_at_or_above,
     fixture_metrics,
     transfer_payload,
-    wilson_interval,
 )
 from llb.conflicts.null_research_geometry import CorpusGeometry
 from llb.core.contracts.common import JsonObject

@@ -45,36 +45,397 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-audit-measured-precision
+### conflict-bundle-record-covers-the-readings-that-still-need-a-store (optional)
 
-Report what an operator can act on. `audit-corpus-conflicts --effort claim` already adjudicates
-every candidate row, yet its artifacts still describe the semantic tier by counts and a resolved
-cosine; the quantity operators need -- the share of the returned list that survives claim
-adjudication, with an interval that respects how few distinct claims those rows come from -- is
-produced only by the research harness. Move it into the audit.
+The stage attribution is now recomputable from a bundle alone, and it is the only reading that is:
+the record it reads carries the corpus's ordering fields and the per-document chunk accounting, and
+nothing else a re-read might need
+([decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)).
+Every other question asked of a finished run -- what a different `--min-claim-tokens` would have
+excluded, what a different candidate budget would have returned, which chunk a lost pair would have
+matched on -- still reaches for the store that run read, and a store rebuilt since answers about
+itself. Decide which of those readings deserve the same treatment and what each one costs to
+record: the exclusion reasons per document are three more counters, a candidate-budget replay needs
+the ranked candidate list (bounded by the budget, so recordable), and a chunk-level replay needs
+ordinals and is where the record stops being small. Record what pays for itself, and state the
+boundary for what does not, so an operator knows which questions a bundle can answer alone.
+
+- Agent status: CLEAR
+- Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/stage_replay.py` is the
+  record and its schema version is the migration seam; `select_content_chunks` in
+  `semantic_filter.py` already computes the exclusion counts, and `detect_semantic_pairs` holds the
+  ranked candidate list.
+- User-visible outcome: an operator knows, per question, whether a finished bundle can answer it or
+  whether the store has to be rebuilt first -- instead of finding out when the answer is wrong.
+- Scope boundary: in scope -- the per-reading cost/benefit, whichever inputs pay for themselves,
+  the schema bump, and the stated boundary. Out of scope -- recording chunk text, recording
+  anything unbounded by a run parameter, and changing any tier's behavior.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
+- Execution path: artifact change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; each recorded reading replays to what the live run produced on
+  a bundle at every tier; the record's size stays linear in DOCUMENTS or in a run parameter, proved
+  on the largest committed bundle; a bundle at the older schema still reads.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle).
+
+### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
+
+The attribution names ONE stage and one pair, and a run that loses pairs at three stages says
+nothing about how much of the corpus each knob would recover: the purpose-built chunking-gap run
+loses two of its three document pairs to the missing document and one to candidate selection, and
+the reading names only the first
+([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
+An operator sizing a fix wants the split -- turning this knob reaches N of the M orderable pairs
+the run lost, and the rest are elsewhere. Count the lost orderable pairs per stage (the census the
+one-pair scan already walks the classes for) and print it beside the named pair, keeping the single
+named pair as the headline so the reading does not turn back into a list of knobs. Cost is the
+constraint: a full census is the quadratic sweep the one-pair rule exists to avoid, so bound it by
+the per-document classes (a document lost at a stage bounds its own pairs) or cap the count and say
+it is a floor.
+
+- Agent status: CLEAR
+- Dependencies: none. `_document_stage` and `REPORT_STAGE_ORDER` in
+  `src/llb/conflicts/governance_stage.py` are the classes and their order; `orderable_document_pairs`
+  in `governance_coverage.py` is the denominator and is already counted without enumerating pairs.
+- User-visible outcome: an operator learns whether the named knob recovers most of what the run
+  lost or one pair of it.
+- Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
+  scope -- naming a second pair, adding a stage, and re-running detection.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: audit-side reading with fixture tests; recompute over the bundles on disk, no GPU.
+- Acceptance gates: `make ci` green; the per-stage counts sum to the lost orderable pairs on a
+  fixture that loses pairs at three stages; the cost stays inside the stated bound on a corpus
+  large enough for the difference to show.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
+
+### conflict-decision-groups-page-is-past-the-split-threshold (optional)
+
+[decision groups](current/data-prep/conflict-decision-groups.md) is ~800 lines and its headings
+describe two subjects: how many decisions a row count is (census, grouping rules, ranking, the
+`groups.json` sidecar) and what a policy choice costs (the projection, the governance-coverage
+precondition, the stage attribution and its bundle re-read). That is past the ~500-line split rule
+in [AGENTS.md](../../AGENTS.md), and the second subject is where every recent addition lands, so the
+page grows in one place. Split along the heading seam -- move the projection/coverage/stage
+subsections to a new topic page, add its row to the area page, and repoint the inbound links.
+Anchors keep their fragments, so only paths change and `make lint-doc-links` proves the move.
+
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `plan.md`, `conflict-detection.md`, and `conflict-resolution.md`.
+- User-visible outcome: a reader looking for what a policy choice costs stops scrolling past the
+  counting rules to reach it.
+- Scope boundary: in scope -- the split, the area-page row, and the link repointing. Out of scope
+  -- rewriting the moved text and changing any measured result.
+- Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
+  no anchor text changes.
+- Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
+
+### venv-pins-the-mcp-version-vllm-pulls-in (optional)
+
+`make venv` installs the lockfile and then `scripts/build_vllm.sh` installs vLLM, whose `mcp`
+requirement is unpinned -- so a rebuild on a CUDA host today resolves `mcp` 2.0.0 over the 1.28.1
+the lock pins, and `mypy` fails on `src/llb/bench/mcp_server.py` because 2.x renamed `Tool`'s
+`inputSchema` to `input_schema`. `make ci` is red until the venv is corrected by hand, which is the
+wrong place to discover it: the failure looks like a source bug and is a dependency resolution. Fix
+it where the drift happens -- have the vLLM install respect the locked `mcp` (a constraint on that
+install, or a re-sync afterwards) -- and decide separately whether `mcp_server.py` should support
+both APIs, since a host that genuinely needs vLLM's `mcp` will hit the same rename.
+
+- Agent status: CLEAR
+- Dependencies: none. `scripts/build_vllm.sh` is the install step, `uv.lock` is the pin
+  (`mcp` 1.28.1 outside the crewai extra), and `src/llb/bench/mcp_server.py` is the caller.
+- User-visible outcome: a fresh `make venv` leaves `make ci` green without a manual `uv pip install`.
+- Scope boundary: in scope -- the constraint (or post-install re-sync), a check that the resolved
+  `mcp` matches the lock, and the compatibility decision for the two `Tool` signatures. Out of scope
+  -- upgrading the lock to `mcp` 2.x as part of this task and changing what vLLM version is
+  installed.
+- Execution path: one `make venv` on the CUDA host followed by `make ci`; no GPU work beyond the
+  install itself.
+- Acceptance gates: `make venv` from a removed `.venv` followed by `make ci` is green with no
+  manual step; the resolved `mcp` version is asserted against the lock, or the caller works under
+  both signatures.
+- Documentation target: the environment section of
+  [host validation](current/host-validation.md).
+
+### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
+
+The audit tells an operator a zero policy delta is "fixable at INGESTION (record `effective_date`
+or `version`)", but ingestion itself never mentions it: `make ingest-corpus` writes a manifest whose
+governance fields are empty and reports success, so the gap is only ever discovered after a store
+build and an audit run
+([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
+Report the same document-side count at ingestion time -- documents carrying `effective_date` /
+`version`, per field -- in the ingest summary and in the corpus manifest, phrased as what it costs
+(no supersession can ever be derived on this corpus) rather than as a warning to scroll past. It
+must stay a REPORT: a corpus without governance dates is a legitimate corpus and ingestion must not
+fail, refuse, or invent a date for it.
+
+- Agent status: CLEAR
+- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance_coverage.py` is the
+  count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
+  is, and `document_pair_orderability` beside it is the same input again -- report both, since a
+  corpus dated end to end with one shared edition is orderable by neither;
+  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
+  where ingestion already holds the same fields.
+- User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
+  they are still ingesting it, not two commands and one GPU run later.
+- Scope boundary: in scope -- the count in the ingest summary and manifest, and the one-line
+  consequence. Out of scope -- failing or refusing an undated ingest, inferring dates from document
+  text or file mtime, and any change to the audit-side counts.
+- Data and artifact paths: the existing corpus manifest under the ingested corpus root.
+- Execution path: ingest-side counting with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; an undated corpus ingests successfully and reports zero
+  coverage with the consequence named; a dated corpus reports its per-field counts; the manifest
+  round-trips the counts and the audit's own coverage agrees with them on the same corpus.
+- Documentation target: the corpus-ingestion section of
+  [data prep](current/data-prep.md) plus a pointer from
+  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
+
+### conflict-group-ids-that-survive-a-re-run (optional)
+
+A group id is `G<n>` from `findings.jsonl` file order, and that order is the score-ranked one -- so
+a group id is stable inside one run and NOT across two runs of the same corpus, because the claim
+adjudicator's scores are not bit-reproducible. Measured: two claim-tier runs of the committed
+fixture returned the same 17 rows, the same relations, and the same document pairs, yet the group
+holding the dated supersession was `G4` in one and `G3` in the other
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+Nothing joins across runs today, so nothing is broken -- but an operator comparing this week's
+audit to last week's, or a dashboard keying a decision on `G3`, silently compares two different
+decisions. Give a group an identity derived from its ROWS (a digest over its member `finding_id`s,
+which are content hashes) carried beside the positional id, so a cross-run comparison joins on
+something the ordering cannot move.
+
+- Agent status: CLEAR
+- Dependencies: none. `finding_id` (`src/llb/conflicts/hashing.py`) is already the content-addressed
+  row identity and `group_summaries` (`group_artifact.py`) is where a group's member list is built;
+  the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
+  join on it within a run.
+- User-visible outcome: an operator can tell whether the decision they triaged last week is the
+  decision the audit is showing them today.
+- Scope boundary: in scope -- the row-derived group key, its appearance in `groups.json` and
+  `plan.json`, and a test that re-ordering the same rows preserves it. Out of scope -- replacing
+  the positional id, changing the grouping rule, and building a cross-run diff command.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: sidecar and plan change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose rows are re-ordered so the positional ids move
+  keeps every row-derived key; two audits of the same corpus whose rows differ only in order agree
+  on the keys group for group.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
+
+### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
+
+The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
+computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
+same order must re-derive the to-decide count from the relation map and re-implement `stake_key`
+([decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar)). That is
+the same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
+and the rendered `rank` to each group summary, and the same `rank` to the plan's `decisions`, so a
+dashboard, a runtime, or a second report reads the audit's own ordering rather than an
+approximation of it.
+
+- Agent status: CLEAR
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking;
+  `group_summaries` in `group_artifact.py` builds the sidecar from `findings.jsonl` rows, so the
+  rank must be computable from rows alone to keep the sidecar derivable without the report.
+  `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
+  carry it, so the sidecar must reuse it rather than add a third implementation.
+- User-visible outcome: every consumer of the audit shows the operator the same first decision.
+- Scope boundary: in scope -- the two fields, the shared ranking helper, and its test against the
+  rendered table. Out of scope -- changing the ranking itself, group identity, and `findings.jsonl`.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: sidecar and rendering change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; the sidecar's rank order equals the report's decision table
+  order on a fixture whose stake ranking differs from its file order; group ids stay in file order.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
+
+### conflict-decision-chain-length-in-the-stake-ranking (optional)
+
+The decision table ranks a group on `to decide` then rows, and both treat a group as flat -- but the
+audit now measures how many distinct pieces of shared evidence each group's chain runs through
+(`quoted_group_split` in
+[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)),
+and on the measured bundles the spread inside one row count is large: a 6-row fan resting on ONE
+chunk is one decision, while goods G1's 51 rows run through 23. Two groups with the same row count
+therefore cost an operator very different amounts, and the ranking cannot see the difference. Fold
+the chain length into `stake_key` (or add it as a decision-table column and state why it is not
+ranked on), and measure how often the order actually changes on the committed bundles -- a signal
+that never reorders anything is not worth a column.
+
+- Agent status: CLEAR
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking and
+  `shared_unit_indices` in `src/llb/conflicts/granularity.py` is the chain length; the ranking must
+  stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
+- User-visible outcome: the first decision the report offers is the one that actually costs the most,
+  not the one with the most rows.
+- Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
+  and the keep-or-drop verdict. Out of scope -- changing group identity, changing either grouping
+  rule, and ranking on a projected count.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: rendering change with fixture tests; recompute the order over committed bundles,
+  no GPU.
+- Acceptance gates: `make ci` green; group ids never move; the report states on how many of the
+  measured bundles the order changed, including the bundles where it did not.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+
+### conflict-policy-share-across-repeat-audits-of-one-corpus (optional)
+
+The policy-choice share is quoted from ONE audit and is not reproducible across audits of the same
+corpus: three claim-tier runs of the committed fixture at identical settings returned the same 17
+rows, the same 9 actionable rows, and the same 0.4286 claim-tier precision, yet the third called one
+row `subsumed_by` where the first two called it `superseded_by` -- so the delta read 1 of 9 (11.1%)
+instead of 2 of 9 (22.2%)
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+The share is a count of the one relation the policies part on, so it inherits the adjudicator's
+sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
+(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
+shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
+two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
+honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
+result -- the spread is small enough that a point estimate is honest -- is a valid outcome.
 
 - Agent status: RUN NEEDED
-- Dependencies: reuse the precision curve, the two-way clustered bound
-  (`null_research_clusters.py`), and the adjudicator-calibration gate from [null
-  research](current/data-prep/conflict-null-research.md#third-generation-negative-result); the claim
-  tier and its artifacts are current behavior in [conflict
-  detection](current/data-prep/conflict-detection.md#effort-tiers).
-- User-visible outcome: `summary.json` and `report.md` carry a measured claim-tier precision at the
-  returned candidate budget with its two-way clustered lower bound, so the audit stops leaving a
-  rank cutoff as its only summary statistic.
-- Scope boundary: in scope -- a precision block computed from the claim tier's own verdicts, its
-  clustered bound, the calibration gate that suppresses the block when the adjudicator is not
-  calibrated against frozen labels, and the report/summary rendering. Out of scope -- changing
-  candidate generation, the relation vocabulary, or any threshold default, and printing a precision
-  figure without its bound or without the calibration that earns it.
+- Dependencies: none. `make audit-corpus-conflicts EFFORT=claim PROJECT_POLICY=conservative,prefer-newer`
+  and its artifacts are current behavior; the three bundles above are the first three samples and
+  need no re-running. Do not change the relation vocabulary or the prompt -- that would measure a
+  different adjudicator instead of this one's variance.
+- User-visible outcome: an operator comparing this week's policy share to last week's learns which
+  part of the difference is their corpus and which part is the model being asked twice.
+- Scope boundary: in scope -- the repeat runs, the spread of the relation mix and the share, and the
+  pin-or-band decision. Out of scope -- changing the adjudication prompt, the calibration gate, and
+  quoting a band before the spread is measured.
+- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per repeat.
+- Execution path: N claim-tier runs of one corpus on the CUDA host; CI covers whatever pinning the
+  decision adopts, over the injected adjudicator.
+- Acceptance gates: `make ci` green; every repeat reports its relation mix and share; the reading
+  states the spread and either pins the call or records the band the share must be quoted with.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
+### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
+
+The policy-choice delta and its share of actionable rows are measured, but on exactly one corpus
+where the share is non-zero -- the committed 7-document fixture, which was planted to contain one
+dated supersession
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+Every other corpus on this host carries no governance dates at all, so its zero share is structural
+and carries no information about magnitude. The open question is unchanged and now sharper: on a
+corpus of genuine dated revisions, what share of the actionable rows does the policy choice move?
+Run the shipped `--project-policy conservative,prefer-newer` reading against the 8-document HR
+corpus (operator data, absent from this host) or another corpus with governance dates on both sides
+of a revision pair, and record the share beside the fixture's.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. The projection, the delta, and the `moved_rows` / `moved_share` reading are
+  current behavior; the corpus needs `effective_date` or `version` on both sides of a revision
+  pair, which is what promotes `contradicts` to `superseded_by`.
+- User-visible outcome: an operator learns whether the resolution-policy choice is a real decision
+  on corpora like theirs, or a knob that is free in practice.
+- Scope boundary: in scope -- one claim-tier run per dated corpus and the share beside the
+  fixture's. Out of scope -- adding a policy, changing how `superseded_by` is derived, and making
+  any policy the default.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` layout.
+- Execution path: one claim-tier run per corpus on the CUDA host with both policies projected; no
+  new CI coverage beyond the existing fixtures.
+- Acceptance gates: `make ci` green; every corpus reports its delta and the share of actionable
+  rows it moves; each projected column still equals the `plan.json` `review_rows` the same policy
+  writes on the same rows.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
+### conflict-claim-yield-across-store-generations (optional)
+
+The claim tier's candidate list at a fixed budget is a RANK cutoff into the store's own similarity
+ordering, so it is a property of the store as much as of the corpus -- and the two measured goods
+budget-100 runs disagree sharply about how much the corpus contains: 8 actionable rows on the
+1,139-chunk store at resolved cosine 0.3648, 1 actionable row on the 954-chunk store at 0.3604
+([conflict detection](current/data-prep/conflict-decision-groups.md#measured-on-the-goods-corpus)). The
+two runs differ in chunk count, duplicate collapse, and resolved threshold at once, so nothing
+establishes which factor moved the yield, and an operator cannot tell whether a low actionable count
+means a clean corpus or an unlucky store. Vary one factor at a time (duplicate collapse on/off,
+chunk size, budget) on the same corpus and record which one the yield tracks.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `make build-index` per store variant and `make audit-corpus-conflicts
+  EFFORT=claim MAX_CANDIDATE_PAIRS=100`; the calibration probe and precision block are current
+  behavior.
+- User-visible outcome: an operator reading a low actionable count learns whether it is evidence
+  about their corpus or about the store they happened to build.
+- Scope boundary: in scope -- the one-factor-at-a-time store sweep, the per-variant actionable
+  yield and overlap of the returned rows, and a stated reading. Out of scope -- changing the
+  chunker, the threshold calibration, and the candidate budget defaults before the sweep supports it.
+- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per variant.
+- Execution path: one claim run per store variant on the CUDA host; no new CI coverage beyond the
+  existing fixtures.
+- Acceptance gates: `make ci` green; every variant reports its actionable yield and its row overlap
+  with the baseline variant; the reading names the factor the yield tracks, or records that the
+  variants do not separate.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+
+### conflict-precision-bound-at-document-clustering (optional)
+
+The clustered bound treats a CHUNK as the independent unit, and on a concentrated corpus that is
+still too generous. Measured: every one of the goods corpus's 8 actionable rows at budget 100 points
+at the same right document, so at the document level the corpus supplies one observation, not eight
+-- yet the chunk-level bound resamples 42 left and 51 right chunks
+([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
+The bound refused a floor there anyway, which is why this is a sharpening rather than a correction,
+but nothing establishes which unit the audit should quote when the two disagree. Compute the bound
+at both clusterings on the same rows, report them side by side on both quickstart corpora, and state
+the rule: quote the document-level bound always, quote the chunk-level bound when the corpus spreads
+its conflicts, or quote both.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. `two_way_proportion_bound` already takes arbitrary cluster keys, so the
+  document-level bound is the same estimator over `doc_id` keys; the rows and their verdicts come
+  from the existing budget-100 runs and need no re-adjudication.
+- User-visible outcome: the precision floor an operator reads is clustered on the unit their corpus
+  actually repeats, instead of on whichever unit the chunker happened to produce.
+- Scope boundary: in scope -- the second clustering, the side-by-side report, and a stated rule for
+  which bound the audit quotes. Out of scope -- a third clustering level, changing the estimator,
+  and changing the calibration gate.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: extend `src/llb/conflicts/claim_tier.py` and `report.py` with the shared precision
-  helpers, add a deterministic fixture test with an injected adjudicator, then one CUDA-host claim
-  run per quickstart corpus for the recorded evidence.
-- Acceptance gates: `make ci` green with the injected adjudicator; the printed bound equals the
-  research harness's bound on the same rows; and the block is absent, with a stated reason, whenever
-  the adjudicator misses its calibration bound.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+- Execution path: recompute both bounds over the committed budget-100 per-row ledgers on the CUDA
+  host (no model calls needed); CI covers both clusterings over fixture rows.
+- Acceptance gates: `make ci` green; both corpora report both bounds at every measured budget; the
+  report names which bound the audit quotes and why, and the chunk-level bound never reads lower
+  than the document-level one on the same rows.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+
+### conflict-adjudicator-probe-difficulty (optional)
+
+The frozen calibration probe is passed **24/24** by MamayLM-Gemma-3-12B, which means the gate is
+currently proving only that an adjudicator is not badly broken -- a probe nobody fails cannot
+separate a good adjudicator from an adequate one, and the audit will happily quote a precision
+figure from either
+([conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)). Add a
+harder frozen tier: pairs whose actionable/complementary split is genuinely arguable (a restated
+fact under a different heading, two numeric claims about different quantities in the same
+sentence shape, a partial supersession where only one clause changed), score two host-fit model
+families against both tiers, and either raise `MIN_ADJUDICATOR_ACCURACY_LCB` on the evidence or
+record that the gate's job is a floor rather than a ranking.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `src/llb/conflicts/claim_calibration.py`, its heading-addressed probe
+  format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
+  offset-exact and pass the existing corpus-unchanged assertion.
+- User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
+  choose between, instead of only rejecting a broken one.
+- Scope boundary: in scope -- the harder probe tier, its frozen labels and rationale, a two-family
+  comparison, and a gate-threshold decision. Out of scope -- changing the adjudication prompt, the
+  relation vocabulary, and scoring agreement on anything but the actionable binary before the
+  comparison supports it.
+- Data and artifact paths: `samples/corpora/conflicts_uk_v1/adjudicator_probe.json` and the
+  existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts.
+- Execution path: one calibration-only run per model family on the CUDA host; CI covers the new
+  tier's passage resolution and label balance.
+- Acceptance gates: `make ci` green; both families score both tiers; the report states whether the
+  hard tier separates them and either raises the gate or records why it stays a floor.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe).
 
 ### conflict-claim-tier-cross-encoder-prefilter (optional)
 
@@ -1010,10 +1371,73 @@ the entry on Ollama so the roster is served by one backend end to end.
   [backend telemetry](current/backend-telemetry.md) and the host setup notes in
   [host validation](current/host-validation.md).
 
+### conflict-decision-group-partition-refinement (optional)
+
+The audit now quotes a RANGE because neither measured rule is a decision count: the transitive
+closure is a partition but too coarse, and the shared-unit rule is finer but a COVER -- 65 to 80
+percent of rows join two of its groups on every corpus measured, so its count cannot be funded one
+review each
+([decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)).
+A single number needs a third rule that is BOTH a partition and finer than the closure. Measure one:
+cut the closure's chain at its weakest joins (a shared unit carrying only low-score pairs, or only
+`complementary` relations, is a chunk two decisions merely pass through) and check whether the
+resulting partition lands inside the measured range rather than collapsing back to one of its ends.
+A negative result -- no cut rule lands inside without splitting a genuine decision -- is a valid
+outcome and closes the question.
+
+- Agent status: RUN NEEDED, RESEARCH
+- Dependencies: none. Reuse `granularity.py`'s two rules as the bracket the third must sit inside and
+  `compare-conflict-granularity` to read the result over committed runs.
+- User-visible outcome: either one decision count an operator can fund directly, or a recorded reason
+  the audit will keep quoting a range.
+- Scope boundary: in scope -- the cut rule, its partition proof, and the comparison against both
+  measured ends. Out of scope -- changing detection, changing `findings.jsonl` or the group ids
+  `plan.json` joins on, and adopting a third rule as the quoted one before it lands inside the range.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` and
+  `$DATA_DIR/corpus-conflict-granularity/<run>/` layouts.
+- Execution path: recompute over committed run artifacts on the CUDA host; the measured bundles are
+  all narrower than the 8-document HR corpus (which is operator data and absent from this host), so
+  the run needs at least one bundle from a corpus that supplies a genuinely long chain. CI covers the
+  cut rule and the partition invariant over fixture rows.
+- Acceptance gates: `make ci` green; the third rule is asserted to be a partition on every fixture;
+  every measured bundle reports its count under all three rules; the reading states whether the
+  partition lands strictly inside the range, or records that it does not and why.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+
 ## Human-Assisted Tasks
 
 Add new human-gated work here per [Adding Future Tasks](#adding-future-tasks) when acceptance
 requires human judgment or authorization.
+
+### conflict-review-ledger-cost-model (optional)
+
+The review ledger now ranks its blocks by `to review`, on the assumption that N open rows cost a
+reviewer N times one row ([conflict
+resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)).
+That is almost certainly wrong in the direction that matters: the goods semantic bundle's 51-row
+group is 51 rows against ONE shared chunk, so a reviewer who reads that chunk once decides the rest
+by comparison, while 51 single-row groups are 51 unrelated reads. Ranking on raw open rows therefore
+over-states the concentrated group exactly where grouping was introduced to stop over-stating it.
+Measure it: time a reviewer (or a scripted proxy over the review TUI) on a concentrated block versus
+the same number of scattered rows, fit a per-group cost of the form `a + b * open_rows`, and rank on
+the fitted cost -- or record that the linear rank is within the measurement's own noise.
+
+- Agent status: HUMAN-GATED
+- Dependencies: reuse the ledger, its group blocks, and the review TUI's group titles; the two
+  goods bundles under `$DATA_DIR/corpus-conflicts/` already supply one concentrated and one
+  scattered shape.
+- User-visible outcome: the first decision the ledger shows a reviewer is the one that actually
+  costs the most of their time, not the one with the most rows.
+- Scope boundary: in scope -- the timing protocol, the fitted cost, and the ranking key it implies.
+  Out of scope -- changing what a review record is, group identity, and the audit-side ranking,
+  which has no policy to rank on.
+- Human step: a reviewer works both shapes under measurement; the fit cannot be produced from
+  artifacts alone.
+- Acceptance gates: `make ci` green; the report states the fitted per-group and per-row costs with
+  their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
 
 ### embedding-clustered chunk merging (optional)
 
@@ -1239,19 +1663,53 @@ say whether a shared-bridge question genuinely needs both facts.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
 
+### conflict-group-review-throughput (optional)
+
+Whole-group review is now possible but unmeasured: a reviewer can settle a decision group with one
+`keep_both` row, and on the goods semantic bundle six such rows settle all 100 escalations
+([conflict resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger))
+-- but nothing establishes that a human reading ONE group record decides as accurately as one
+reading its rows, which is the assumption the whole collapse rests on. Measure it: have a reviewer
+settle one corpus's escalations row by row and another's group by group, record wall-clock time per
+decision and the disagreement rate between the two passes on the same rows, and state whether group
+review is safe for `keep_both` at the group sizes this repo actually produces (largest 51 rows).
+
+- Agent status: HUMAN-GATED -- the deliverable is the reviewer's measured throughput and agreement;
+  the ledger, the timing capture, and the disagreement report are agent-buildable.
+- Dependencies: reuse the grouped review ledger and the group-wide keep in
+  [conflict resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
+  and the review TUI adapter in `src/llb/review/adapters/conflicts.py`.
+- User-visible outcome: an operator learns whether reviewing by decision costs accuracy before
+  adopting it as the default review mode.
+- Scope boundary: in scope -- the paired review passes, per-decision timing, the disagreement
+  report, and a recommendation on group size limits. Out of scope -- extending group decisions to
+  destructive actions before the measurement supports it, and any change to the grouping rule.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts plus a
+  timing ledger beside them.
+- Execution path: two review passes over the committed goods bundle; CI covers the timing capture
+  and the disagreement report over fixture ledgers.
+- Acceptance gates: `make ci` green; both passes cover the identical rows; the report states time
+  per decision and the disagreement rate, and either recommends group review or names the group
+  size above which it stops being safe.
+- Documentation target: [conflict
+  resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
+  and the [verification gate](current/data-prep/verification-gate.md).
+
 ### conflict-adjudicator-label-slice
 
-Produce frozen human labels for real candidate rows so a measured claim-tier precision can be
-trusted off the planted fixture. Adjudicator agreement is currently calibrated only against the
-seven-document planted corpus, whose relations are synthetic by construction; nothing measures
-whether the model agrees with a human on HR or goods rows ([null
-research](current/data-prep/conflict-null-research.md#third-generation-negative-result)).
+Produce frozen human labels for real candidate rows so the audit's measured claim-tier precision can
+be trusted off the planted fixture. The shipped calibration gate scores the adjudicator only against
+the seven-document planted probe, whose relations are synthetic by construction and which the
+current host model passes 24/24 ([conflict
+detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)); nothing measures
+whether the model agrees with a human on HR or goods rows.
 
 - Agent status: HUMAN-GATED
-- Dependencies: `conflict-audit-measured-precision` consumes the resulting bound; candidate ranking
-  and claim adjudication are current behavior. Human step that gates completion: an authorized
-  reviewer assigns one relation from the claim vocabulary to every row of the frozen slice without
-  seeing the model's verdict.
+- Dependencies: the audit's precision block and its calibration gate are current behavior
+  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)) and
+  consume the resulting bound; candidate ranking and claim adjudication are current behavior too.
+  Human step that gates completion: an authorized reviewer assigns one relation from the claim
+  vocabulary to every row of the frozen slice without seeing the model's verdict.
 - User-visible outcome: a committed frozen slice plus a measured human-versus-adjudicator agreement
   bound -- what lets a precision number transfer to corpora the planted fixture does not represent.
 - Scope boundary: in scope -- slice selection stratified by corpus and rank band, blind review,

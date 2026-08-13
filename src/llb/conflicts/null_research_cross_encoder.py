@@ -14,12 +14,12 @@ improvement alone can never accept it.
 from dataclasses import dataclass
 
 from llb.conflicts.null_research_advanced import candidate_gates, clustered_tail_payload
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_evaluation import (
     FIXTURE_POSITIVE_DOC_PAIRS,
     fixture_metrics,
     paired_transfer_payload,
     threshold_for_fpr,
-    wilson_interval,
 )
 from llb.conflicts.null_research_geometry import CorpusGeometry, DocPair
 from llb.conflicts.null_research_precision import CandidateRow

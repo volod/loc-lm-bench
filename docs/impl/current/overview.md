@@ -231,7 +231,8 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
-| Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `measure-duplicate-residue` |
+| Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `compare-conflict-granularity`,
+`recompute-conflict-stage`, `measure-duplicate-residue` |
 | Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |
 | Verification and review | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-adjudicate`, `verify-accept`, `review` (`make review-workbench`) |
 | Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score`, `judge-experiment`, `frontier-judge-agreement` |

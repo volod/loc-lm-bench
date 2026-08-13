@@ -23,7 +23,8 @@ in the order a corpus travels through them.
 
 | Page | What it answers |
 | --- | --- |
-| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, and why the rank cutoff is not a false-positive rate |
+| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, why the rank cutoff is not a false-positive rate, and the measured claim-tier precision with its calibration gate that is reported instead |
+| [Decision groups and their counts](data-prep/conflict-decision-groups.md) | How many decisions a row count is: the distinct-unit census, the two grouping rules and the decision range between them, `to decide` versus `to review`, the policy projection, and the `groups.json` sidecar |
 | [Independent-null research](data-prep/conflict-null-research.md) | Three generations of candidate nulls, why each failed, the control-bank size a usable tail would need, and the measured claim-tier precision that replaces the missing rate |
 | [Closing the independent-null question](data-prep/conflict-null-closure.md) | The fourth generation: generated in-support controls, cross-encoder relation scoring, the distribution-free unit floor a certified tail needs, and the decision to stop |
 | [Conflict resolution](data-prep/conflict-resolution.md) | The overlay and rollback contract, and the CUDA-host and large-corpus evidence behind it |

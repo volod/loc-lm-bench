@@ -131,6 +131,11 @@ def detect_semantic_pairs(
     for `pairs[i]`. Callers rely on that alignment to tell adjudicated pairs from unadjudicated
     ones by position, which is the only reliable way: the claim tier narrows a finding's span to
     the quoted claim, so its span key never equals the enclosing chunk's.
+
+    Both lists come out in RANK order -- descending cosine, ties broken on chunk ordinals. The
+    threshold is a rank cutoff into the corpus's own similarity ordering, so a caller that keeps a
+    prefix of the list (`--max-claim-pairs`, the precision curve's budgets) must be keeping the top
+    of that ordering rather than whatever order the tree happened to traverse in.
     """
     started = time.monotonic()
     stats = TierStats(tier=TIER_SEMANTIC)
@@ -150,13 +155,16 @@ def detect_semantic_pairs(
             projected_vectors,
             euclidean_threshold(cos_threshold),
         )
-    pairs = cross_document_pairs(
-        vectors,
-        chunks,
-        cos_threshold=cos_threshold,
-        skip_doc_pairs=skip_doc_pairs,
-        allowed=allowed,
-        candidates=candidates,
+    pairs = sorted(
+        cross_document_pairs(
+            vectors,
+            chunks,
+            cos_threshold=cos_threshold,
+            skip_doc_pairs=skip_doc_pairs,
+            allowed=allowed,
+            candidates=candidates,
+        ),
+        key=lambda pair: (-pair[2], pair[0], pair[1]),
     )
     findings: list[Finding] = []
     for left, right, similarity in pairs:

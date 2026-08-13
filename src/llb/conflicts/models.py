@@ -9,6 +9,7 @@ matched back fall back to the enclosing chunk span and say so).
 from dataclasses import dataclass, field
 from typing import Any
 
+from llb.conflicts.constants import COVERAGE_FIELD, STAGE_INPUTS_FIELD
 from llb.core.contracts.common import JsonObject
 
 
@@ -117,8 +118,35 @@ class AuditResult:
     findings: list[Finding] = field(default_factory=list)
     tiers: list[TierStats] = field(default_factory=list)
     needles: JsonObject = field(default_factory=dict)
+    claim_precision: JsonObject = field(default_factory=dict)
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
+    # Whether this corpus could carry a dated supersession at all: the documents that record an
+    # orderable governance field, the corpus's own document pairs `compare_editions` can order, and
+    # the returned pairs it can order. Detection-side and policy-free, so it is recorded on every
+    # run -- it is what tells a zero policy delta (a property of the KNOWLEDGE) apart from a pair
+    # the candidate list never returned, apart from a corpus ingested without dates at all.
+    governance_coverage: JsonObject = field(default_factory=dict)
+    # What the stage attribution above was READ FROM, so a finished bundle can be re-read under a
+    # changed rule without the store that run held (`stage_replay.py`). Empty only on a result that
+    # never ran the corpus pass; the chunk half of it is absent below the semantic tier, which is
+    # itself the `effort` reading.
+    stage_inputs: JsonObject = field(default_factory=dict)
+    # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
+    # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole
+    # point: the detector runs without a resolution policy, and the renderer reads this dict
+    # without importing the resolution vocabulary that produced it.
+    policy_projection: JsonObject = field(default_factory=dict)
+
+    def rows(self) -> list["JsonObject"]:
+        """The findings as `findings.jsonl` rows, in the order that file is written in.
+
+        One implementation, because the sidecar's group ids, the projection's group ids, and the
+        rows on disk must all be derived from the SAME ordering or they address different groups.
+        """
+        from llb.conflicts.census import finding_sort_key
+
+        return [finding.payload() for finding in sorted(self.findings, key=finding_sort_key)]
 
     def relation_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -127,17 +155,35 @@ class AuditResult:
         return dict(sorted(counts.items()))
 
     def summary(self) -> JsonObject:
+        # Imported here rather than at module scope: the census reads these models, so the
+        # dependency runs one way and this file stays the leaf every conflicts module can import.
+        from llb.conflicts.census import finding_census, relation_census
+        from llb.conflicts.granularity import finding_granularity
+
         payload: dict[str, Any] = {
             "effort": self.effort,
             "corpus_root": self.corpus_root,
             "n_docs": self.n_docs,
             "n_findings": len(self.findings),
+            "finding_census": finding_census(self.findings),
+            # Both grouping rules, so a consumer reads the decision RANGE rather than the quoted
+            # group count alone; `granularity.QUOTED_RULE` names which end the audit is built on.
+            "group_granularity": finding_granularity(self.findings),
             "relations": self.relation_counts(),
+            "relation_census": relation_census(self.findings),
             "tiers": [stat.payload() for stat in self.tiers],
             "params": dict(self.params),
         }
         if self.needles:
             payload["needles"] = dict(self.needles)
+        if self.claim_precision:
+            payload["claim_precision"] = dict(self.claim_precision)
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
+        if self.governance_coverage:
+            payload[COVERAGE_FIELD] = dict(self.governance_coverage)
+        if self.stage_inputs:
+            payload[STAGE_INPUTS_FIELD] = dict(self.stage_inputs)
+        if self.policy_projection:
+            payload["policy_projection"] = dict(self.policy_projection)
         return payload

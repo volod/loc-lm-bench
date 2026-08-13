@@ -11,13 +11,10 @@ from llb.conflicts.constants import (
     REVIEW_RECORDS_FILE,
     SUMMARY_FILE,
 )
+from llb.conflicts.group_artifact import group_decisions, group_summaries
 from llb.conflicts.overlay import applied_overlay_path, overlay_from_plan
-from llb.conflicts.resolution_policy import (
-    ACTION_DROP_DUPLICATE,
-    ACTION_KEEP_BOTH,
-    STATUS_ACCEPTED,
-    build_plan,
-)
+from llb.conflicts.resolution_policy import build_plan
+from llb.conflicts.resolution_review import merge_review_decisions, review_jsonl
 from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 
@@ -63,6 +60,7 @@ def create_resolution_artifacts(
     if reviewed is not None:
         merge_review_decisions(plan, reviewed)
         plan["action_counts"] = _action_counts(plan)
+        plan["decisions"] = group_decisions(group_summaries(findings), plan["items"])
     overlay = overlay_from_plan(plan)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -74,7 +72,7 @@ def create_resolution_artifacts(
     }
     atomic_write_text(paths["plan"], _json(plan))
     atomic_write_text(paths["overlay"], _json(overlay))
-    atomic_write_text(paths["review"], _review_jsonl(plan))
+    atomic_write_text(paths["review"], review_jsonl(plan))
     return plan, overlay, paths
 
 
@@ -137,59 +135,6 @@ def _validate_ref(corpus_root: Path, ref: JsonObject, finding_id: str, tier: str
     quoted = ref.get("text")
     if ref.get("offsets_exact", True) and isinstance(quoted, str) and text[start:end] != quoted:
         raise ValueError(f"finding {finding_id}: source text changed since audit: {doc_id}")
-
-
-def merge_review_decisions(plan: JsonObject, path: Path | str) -> None:
-    decisions = {
-        str(row["finding_id"]): str(row.get("resolution_decision", ""))
-        for row in _read_jsonl(path)
-        if row.get("finding_id")
-    }
-    items = plan.get("items")
-    for item in items if isinstance(items, list) else []:
-        if not isinstance(item, dict):
-            continue
-        decision = decisions.get(str(item.get("finding_id")))
-        if decision == ACTION_KEEP_BOTH:
-            item.update(action=ACTION_KEEP_BOTH, status=STATUS_ACCEPTED, target_side=None)
-            item["target_doc_id"] = None
-            item["rationale"] = "accepted human review decision"
-        elif decision in ("drop_a", "drop_b"):
-            side = decision[-1]
-            ref = item.get(side)
-            item.update(action=ACTION_DROP_DUPLICATE, status=STATUS_ACCEPTED, target_side=side)
-            item["target_doc_id"] = ref.get("doc_id") if isinstance(ref, dict) else None
-            item["rationale"] = "accepted human review decision"
-
-
-def _read_jsonl(path: Path | str) -> list[JsonObject]:
-    rows: list[JsonObject] = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        payload = json.loads(line)
-        if isinstance(payload, dict):
-            rows.append(payload)
-    return rows
-
-
-def _review_jsonl(plan: JsonObject) -> str:
-    items = plan.get("items")
-    rows = []
-    for item in items if isinstance(items, list) else []:
-        if not isinstance(item, dict) or item.get("status") != "review_required":
-            continue
-        rows.append(
-            {
-                "review_type": "corpus_conflict_resolution",
-                "finding_id": item.get("finding_id"),
-                "relation": item.get("relation"),
-                "rationale": item.get("rationale"),
-                "a": item.get("a"),
-                "b": item.get("b"),
-                "staleness": item.get("staleness"),
-                "resolution_decision": "",
-            }
-        )
-    return "".join(json.dumps(row, ensure_ascii=True) + "\n" for row in rows)
 
 
 def _action_counts(plan: JsonObject) -> dict[str, int]:

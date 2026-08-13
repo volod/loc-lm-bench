@@ -6,7 +6,8 @@ Part of the [Data prep](../data-prep.md) area of the
 `llb resolve-corpus-conflicts` and the `make resolve-corpus-conflicts` alias turn an audit
 `findings.jsonl` into `plan.json`, `conflict_overlay.json`, `resolution_review.jsonl`, and
 `effect.md`. The implementation is split across `src/llb/conflicts/resolution_policy.py`,
-`resolution_io.py`, `overlay.py`, and `resolution_effect.py`; Typer wiring lives in
+`resolution_io.py`, `resolution_review.py` (the reviewer's ledger and returned decisions),
+`overlay.py`, `group_artifact.py`, and `resolution_effect.py`; Typer wiring lives in
 `src/llb/cli/prep/conflict_resolution.py`.
 
 The policy is deliberately narrower than the detector:
@@ -23,11 +24,80 @@ deletion authority. Its rank-selected goods candidates coexist with the claim-le
 the corpus has no confirmed cross-document duplicate. Automatic suppression at that tier would
 convert similarity rank into destructive policy.
 
+## Decision groups in the plan and the review ledger
+
+A plan that lists one escalation per ROW asks for the review the audit report was changed to stop
+asking for: six rows quoting one stale chunk are one call. `plan.json` (schema 3) therefore carries
+both units.
+
+- **`items`** is unchanged -- one per finding row, and still the only thing the overlay and its
+  rollback are built from. Each item now names its `group_id`.
+- **`decisions`** is one entry per [decision
+  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
+  `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `decide_rows`,
+  `review_rows`, and a `status`. `action` is the action every member agreed on and is **null** when
+  they did not, so a mixed group reads as mixed. A decision never authorizes what no member row
+  already authorized -- it is a view over the per-row policy, not a second policy.
+- **Both counts of the work, in the one artifact that holds both.** `decide_rows` is the audit's
+  relation-based count restated here; `review_rows` is this policy's count of rows still needing a
+  human. They differ in both directions, so the plan is where they are reconciled rather than
+  compared across two terminals -- see [to decide and to
+  review](conflict-decision-groups.md#to-decide-and-to-review-are-two-counts-never-one). Schema 3 is
+  exactly that addition; schema 2 added `decisions` beside `items`.
+- **`resolution_review.jsonl`** keeps one record per open row -- a drop applies to one span, so the
+  row stays the unit a reviewer decides on -- but every record carries `group_id`, `group_rows`,
+  `group_decide_rows`, and `group_review_rows`. The records are ordered by **to review** first, then
+  by group id, so a group still reads as one contiguous block while the block that costs the most
+  human time leads the file. This is the one artifact ranked on the count an operator funds; the
+  audit report cannot be, because it has no policy. The review TUI titles each record
+  `(G1, 1 of 51 rows sharing this decision, 12 to review)`, dropping the second clause when every
+  row in the group is open.
+- **A whole-group decision** is a ledger row carrying `group_id` and `resolution_decision` with no
+  `finding_id`; it settles every member. It may only be `keep_both`. A group-wide `drop_a` /
+  `drop_b` is REFUSED with the group named, because members of one group share a unit but not a
+  document pair, so "drop a" means a different act on each of them and would suppress spans no
+  reviewer looked at.
+
+The planner derives the grouping from the rows it reads, so an audit bundle written before
+`groups.json` existed still plans by decision; `tests/llb/conflicts/test_decision_groups.py` asserts
+the derived groups equal the sidecar's.
+
+Measured on the goods corpus (`$DATA_DIR/corpus-conflicts/20260812T-groups-goods-semantic/`, 5
+documents, semantic tier at `MAX_CANDIDATE_PAIRS=100`): **100 rows in 6 decision groups, largest 51**
+-- all 100 escalate, as the semantic tier has no deletion authority, so a reviewer previously faced
+100 undifferentiated records. Six group-wide `keep_both` rows settle all of them
+(`action_counts: {keep_both: 100}`, every decision `accepted`, no suppression in the overlay), which
+is the review the corpus actually requires.
+
+The CLI summary names both counts on every run, so the number an operator carries out of the
+terminal is labelled:
+
+```text
+[resolve-conflicts] 100 rows in 6 decision groups (largest 51 rows)
+[resolve-conflicts] to decide (relation): 100 rows
+[resolve-conflicts] to review (policy conservative): 100 rows in 6 decision groups
+```
+
+The same two lines on the budget-100 claim bundle read `to decide (relation): 1 row` and `to review
+(policy conservative): none` -- the divergence in the other direction, with the audit's one
+actionable row costing zero human decisions.
+
+`review_rows` here is the MEASURED count. The audit can be asked to project the same number one
+command earlier under a named policy (`--project-policy`), and the projection is required to equal
+this plan's `review_rows` group for group -- see [projecting the review
+count](conflict-decision-groups.md#projecting-the-review-count-one-command-earlier).
+
 ## Overlay and rollback contract
 
 Applying a plan validates every document, offset, and exact quote against the current corpus, then
 atomically installs `.llb/conflict_overlay.json` below the corpus root. A stale audit is rejected
 before any directive is installed. Source `.md` and `.txt` bytes are never edited.
+
+The overlay is a function of the finding SET, not of the order the rows were read in: each
+document's annotations and suppress-spans are sorted by their own identity, so re-reading an audit
+whose rows were merely re-sorted produces the same bytes and cannot republish a store generation
+that changes nothing (the fingerprint folds the directive into the document). Only
+`source_findings_sha256` differs, which is what it is for.
 
 `chunk_corpus` consumes the control file. Whole-document duplicate directives omit that document;
 claim-level directives omit chunks overlapping the accepted span; keep/escalate records add

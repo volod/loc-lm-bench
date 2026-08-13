@@ -163,20 +163,25 @@ def test_partial_supersession_yields_one_relation_per_claim_pair():
             ' "rationale": "same rule"}'
         )
 
-    findings, stats = adjudicate_pairs([(0, 1, 0.96), (2, 3, 0.99)], chunks, governance, complete)
+    findings, stats, rows = adjudicate_pairs(
+        [(0, 1, 0.96), (2, 3, 0.99)], chunks, governance, complete
+    )
     assert {f.relation for f in findings} == {REL_SUPERSEDED_BY, REL_DUPLICATE}
     assert (stats.extra["model_calls"], stats.extra["unparsed_verdicts"]) == (2, 0)
+    assert [row.left_key for row in rows] == [chunks[0]["chunk_id"], chunks[2]["chunk_id"]]
+    assert all(row.actionable for row in rows)
     superseded = next(f for f in findings if f.relation == REL_SUPERSEDED_BY)
     assert superseded.a.doc_id == "regulation-2021.md"
     assert superseded.a.offsets_exact and superseded.b.offsets_exact
 
 
 def test_unparsed_verdicts_are_counted_and_skipped_not_fatal():
-    findings, stats = adjudicate_pairs(
+    findings, stats, rows = adjudicate_pairs(
         [(0, 1, 0.9)], [OLD_CHUNK, CHUNK], {}, lambda prompt: "the model rambled"
     )
     assert findings == []
     assert stats.extra["unparsed_verdicts"] == 1
+    assert [(row.parsed, row.actionable) for row in rows] == [(False, False)]
 
 
 def test_adjudication_is_deterministic_under_a_fixed_completion():
@@ -187,6 +192,6 @@ def test_adjudication_is_deterministic_under_a_fixed_completion():
         ' "claim_a": "становить тридцять календарних днів",'
         ' "claim_b": "становить п\'ятнадцять робочих днів", "rationale": "r"}'
     )
-    first, _ = adjudicate_pairs([(0, 1, 0.9)], chunks, governance, lambda p: response)
-    second, _ = adjudicate_pairs([(0, 1, 0.9)], chunks, governance, lambda p: response)
+    first, _, _ = adjudicate_pairs([(0, 1, 0.9)], chunks, governance, lambda p: response)
+    second, _, _ = adjudicate_pairs([(0, 1, 0.9)], chunks, governance, lambda p: response)
     assert [f.payload() for f in first] == [f.payload() for f in second]

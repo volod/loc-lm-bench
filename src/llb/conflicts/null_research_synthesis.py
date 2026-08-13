@@ -17,7 +17,7 @@ import time
 
 from llb.conflicts.claim_prompt import AdjudicationError, adjudication_prompt, parse_adjudication
 from llb.conflicts.constants import MIN_CLAIM_TOKENS, REL_COMPLEMENTARY
-from llb.conflicts.null_research_evaluation import wilson_interval
+from llb.conflicts.interval_stats import wilson_interval
 from llb.conflicts.null_research_geometry import CorpusGeometry, EmbedTexts
 from llb.conflicts.vectorops import VectorSet
 from llb.core.contracts.common import JsonObject

@@ -67,6 +67,36 @@ def fake_store_view(corpus_root: Path | str = FIXTURE_CORPUS, size: int = 600) -
     )
 
 
+# --- throwaway dated corpora (the stage attribution and its replay) ----------------------------
+
+# Enough tokens to clear `MIN_CLAIM_TOKENS`, and few enough to chunk as one heading-sized unit.
+BODY_TOKENS = 40
+
+
+def dated_body(start: int, count: int = BODY_TOKENS) -> str:
+    """A body drawn from one token window. Two disjoint windows are unrelated to cosine alike."""
+    return " ".join(f"пункт{index:04d}" for index in range(start, start + count))
+
+
+def dated_corpus(root: Path, documents: dict[str, tuple[str, str]]) -> Path:
+    """`{name: (effective_date, body)}` written as a corpus of dated Markdown documents."""
+    root.mkdir(parents=True, exist_ok=True)
+    for name, (date, body) in documents.items():
+        (root / name).write_text(f"---\neffective_date: {date}\n---\n{body}\n", encoding="utf-8")
+    return root
+
+
+def store_over(root: Path, *, without: str = "") -> StoreView:
+    """A StoreView over the corpus's real chunks, optionally missing one document's entirely."""
+    chunks = [chunk for chunk in chunk_fixture(root) if chunk["doc_id"] != without]
+    return StoreView(
+        index_dir=root,
+        chunks=chunks,
+        vectors=VectorSet([bow_vector(chunk["text"]) for chunk in chunks]),
+        meta={"embedding_model": "fake-hashed-bow", "corpus_fingerprint": "stage"},
+    )
+
+
 def ordinal_of(chunks, doc_id: str, needle: str) -> int:
     """The ordinal of `doc_id`'s chunk containing `needle` (fails loudly when absent)."""
     for ordinal, chunk in enumerate(chunks):
@@ -96,6 +126,74 @@ def scripted_completer(script):
         return '{"relation": "complementary", "confidence": 0.1, "claim_a": "", "claim_b": ""}'
 
     return complete
+
+
+def probe_aware(base, *, correct: bool = True):
+    """Wrap an adjudicator so the frozen calibration probe is answered from its own labels.
+
+    `correct=True` is an adjudicator that is calibrated by construction; `correct=False` calls
+    every complementary probe pair a duplicate, which is the failure mode the gate exists to
+    catch -- it inflates precision on a corpus with nothing to find.
+    """
+    from llb.conflicts.claim_calibration import load_calibration_probe
+
+    labels = {
+        (pair.left_text, pair.right_text): pair.relation
+        if correct or pair.actionable
+        else "duplicate"
+        for pair in load_calibration_probe().pairs
+    }
+
+    def complete(prompt: str) -> str:
+        # The fixture documents restate each other verbatim, so the two passages must be read out
+        # of the prompt's own delimiters rather than searched for -- a substring probe binds the
+        # wrong pair whenever two sections carry identical text.
+        quoted = prompt.split('"""')
+        passages = (quoted[1].strip(), quoted[3].strip()) if len(quoted) > 4 else ("", "")
+        if passages not in labels:
+            return base(prompt)
+        return (
+            f'{{"relation": "{labels[passages]}", "confidence": 0.9,'
+            ' "claim_a": "", "claim_b": "", "rationale": "probe"}'
+        )
+
+    return complete
+
+
+def adjudicated_rows(flags, *, left_keys=None, right_keys=None, parsed=None):
+    """Claim-tier rows carrying the given actionable flags, ranked highest cosine first."""
+    from llb.conflicts.claim_precision import AdjudicatedRow
+    from llb.conflicts.constants import REL_COMPLEMENTARY, REL_DUPLICATE
+
+    left_keys = left_keys or [f"left#{index}" for index in range(len(flags))]
+    right_keys = right_keys or [f"right#{index}" for index in range(len(flags))]
+    parsed = [True] * len(flags) if parsed is None else parsed
+    return [
+        AdjudicatedRow(
+            rank=index + 1,
+            left_key=left_keys[index],
+            right_key=right_keys[index],
+            score=1.0 - index / 1000,
+            relation=(REL_DUPLICATE if flag else REL_COMPLEMENTARY) if ok else None,
+            parsed=ok,
+        )
+        for index, (flag, ok) in enumerate(zip(flags, parsed))
+    ]
+
+
+def calibrated_stub(accuracy_lcb: float = 0.9) -> dict:
+    """A calibration payload that clears the gate, so precision tests isolate the precision."""
+    from llb.conflicts.claim_calibration import MIN_ADJUDICATOR_ACCURACY_LCB
+
+    return {
+        "probe_id": "test",
+        "parsed_pairs": 24,
+        "agreements": 23,
+        "accuracy": 0.958333,
+        "accuracy_wilson_95": [accuracy_lcb, 1.0],
+        "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
+        "calibrated": True,
+    }
 
 
 @pytest.fixture
