@@ -369,15 +369,20 @@ parameters, `finding_census` /
 `relation_census`, [`group_granularity`](conflict-decision-groups.md#how-many-decisions-the-row-count-is)
 (both grouping rules and the decision range), the optional
 [`policy_projection`](conflict-decision-groups.md#projecting-the-review-count-one-command-earlier)
-block, and the `claim_precision` block with its per-row ledger and all 24 calibration verdicts), and
-`tree_meta.json` (tree geometry plus the embedder fingerprint that pins reuse, since centroids are
-only meaningful in the space that produced them). With projected blocking, the resolved store
+block, the
+[`stage_attribution_inputs`](conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)
+record a later re-read of the stage attribution is recomputed from, and the `claim_precision` block
+with its per-row ledger and all 24 calibration verdicts), and `tree_meta.json` (tree geometry plus
+the embedder fingerprint that pins reuse, since centroids are only meaningful in the space that
+produced them). With projected blocking, the resolved store
 generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
 `semantic_tree/tree_meta.json`. The projection JSON carries its own SHA-256 fingerprint.
 
 `make compare-conflict-granularity` writes
-`$DATA_DIR/corpus-conflict-granularity/<run>/{granularity.md,granularity.json}` -- a re-reading of
-audit runs already on disk, so it produces no findings of its own.
+`$DATA_DIR/corpus-conflict-granularity/<run>/{granularity.md,granularity.json}` and
+[`make recompute-conflict-stage`](conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)
+writes `$DATA_DIR/corpus-conflict-stage/<run>/{stage.md,stage.json}` -- both are re-readings of
+audit runs already on disk, so they produce no findings of their own.
 
 ## Evidence run
 

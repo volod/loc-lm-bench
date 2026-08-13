@@ -33,6 +33,7 @@ from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
 from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
 from llb.conflicts.semantic_run import run_semantic_tiers
+from llb.conflicts.stage_replay import stage_attribution_inputs
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.core.contracts.common import JsonObject
@@ -149,12 +150,15 @@ def run_audit(
     # tier returned: a delta of zero means one thing when a returned pair could have been ordered
     # by edition and the opposite when the corpus was ingested without a date on any document.
     rows = result.rows()
+    documents = [(doc.doc_id, doc.governance) for doc in docs]
     coverage = governance_coverage([doc.governance for doc in docs], rows)
     result.governance_coverage = {
         **coverage,
         # Beside the counts, never inside them: the counts say a pair was lost, this says where.
-        **lost_pair_attribution(
-            coverage, [(doc.doc_id, doc.governance) for doc in docs], rows, chunks
-        ),
+        **lost_pair_attribution(coverage, documents, rows, chunks),
     }
+    # And what that attribution was read from, so the bundle can answer the question again under a
+    # changed rule once the store is gone. Written on every run, including the ones that lost
+    # nothing: which pair a rule change would name is not knowable when the record is written.
+    result.stage_inputs = stage_attribution_inputs(documents, chunks)
     return result

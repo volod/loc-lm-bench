@@ -43,14 +43,16 @@ from llb.conflicts.governance_stage import (
     lost_pair_sentence,
     returned_doc_pairs,
 )
-from llb.conflicts.store_access import StoreView
-from llb.conflicts.vectorops import VectorSet
 
-from conflict_helpers import FAKE_COS_THRESHOLD, bow_vector, chunk_fixture
+from conflict_helpers import (
+    BODY_TOKENS,
+    FAKE_COS_THRESHOLD,
+    dated_body as _body,
+    dated_corpus as _corpus,
+    store_over as _store,
+)
 
 SHORT = "коротка примітка"
-# Enough tokens to clear `MIN_CLAIM_TOKENS`, and few enough to chunk as one heading-sized unit.
-BODY_TOKENS = 40
 # The bodies below share tokens only where a test wants two documents to LOOK alike: the fake
 # embedder is a hashed bag of words, so token overlap is the whole similarity signal, and two
 # bodies drawn from disjoint windows are unrelated to the lexical tier and to cosine alike.
@@ -59,29 +61,6 @@ CORE = 4
 _2021 = {"effective_date": "2021-01-01"}
 _2024 = {"effective_date": "2024-01-01"}
 _2026 = {"effective_date": "2026-01-01"}
-
-
-def _body(start: int, count: int = BODY_TOKENS) -> str:
-    return " ".join(f"пункт{index:04d}" for index in range(start, start + count))
-
-
-def _corpus(root: Path, documents: dict[str, tuple[str, str]]) -> Path:
-    """`{name: (effective_date, body)}` written as a corpus of dated Markdown documents."""
-    root.mkdir(parents=True, exist_ok=True)
-    for name, (date, body) in documents.items():
-        (root / name).write_text(f"---\neffective_date: {date}\n---\n{body}\n", encoding="utf-8")
-    return root
-
-
-def _store(root: Path, *, without: str = "") -> StoreView:
-    """A StoreView over the corpus's real chunks, optionally missing one document's entirely."""
-    chunks = [chunk for chunk in chunk_fixture(root) if chunk["doc_id"] != without]
-    return StoreView(
-        index_dir=root,
-        chunks=chunks,
-        vectors=VectorSet([bow_vector(chunk["text"]) for chunk in chunks]),
-        meta={"embedding_model": "fake-hashed-bow", "corpus_fingerprint": "stage"},
-    )
 
 
 def _lost(result) -> dict:

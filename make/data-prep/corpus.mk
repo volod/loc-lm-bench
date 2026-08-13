@@ -2,7 +2,8 @@
 
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
 	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
-	research-conflict-nulls resolve-corpus-conflicts compare-conflict-granularity
+	research-conflict-nulls resolve-corpus-conflicts compare-conflict-granularity \
+	recompute-conflict-stage
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -133,6 +134,16 @@ compare-conflict-granularity: ## Recompute both decision-grouping rules (transit
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-conflict-granularity "$${args[@]}"
+
+recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_OUT=); reads summary.json + findings.jsonl only -- no model, no store, no corpus
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(STAGE_RUNS)" || { echo "ERROR: set STAGE_RUNS=\"<audit-run-dir> ...\""; exit 1; }
+	@args=(); \
+	for dir in $(STAGE_RUNS); do args+=(--run "$$dir"); done; \
+	if [ -n "$(STAGE_OUT)" ]; then args+=(--out "$(STAGE_OUT)"); fi; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main recompute-conflict-stage "$${args[@]}"
 
 validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to the committed fixture)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

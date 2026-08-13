@@ -9,6 +9,7 @@ matched back fall back to the enclosing chunk span and say so).
 from dataclasses import dataclass, field
 from typing import Any
 
+from llb.conflicts.constants import COVERAGE_FIELD, STAGE_INPUTS_FIELD
 from llb.core.contracts.common import JsonObject
 
 
@@ -126,6 +127,11 @@ class AuditResult:
     # run -- it is what tells a zero policy delta (a property of the KNOWLEDGE) apart from a pair
     # the candidate list never returned, apart from a corpus ingested without dates at all.
     governance_coverage: JsonObject = field(default_factory=dict)
+    # What the stage attribution above was READ FROM, so a finished bundle can be re-read under a
+    # changed rule without the store that run held (`stage_replay.py`). Empty only on a result that
+    # never ran the corpus pass; the chunk half of it is absent below the semantic tier, which is
+    # itself the `effort` reading.
+    stage_inputs: JsonObject = field(default_factory=dict)
     # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
     # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole
     # point: the detector runs without a resolution policy, and the renderer reads this dict
@@ -175,7 +181,9 @@ class AuditResult:
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
         if self.governance_coverage:
-            payload["governance_coverage"] = dict(self.governance_coverage)
+            payload[COVERAGE_FIELD] = dict(self.governance_coverage)
+        if self.stage_inputs:
+            payload[STAGE_INPUTS_FIELD] = dict(self.stage_inputs)
         if self.policy_projection:
             payload["policy_projection"] = dict(self.policy_projection)
         return payload

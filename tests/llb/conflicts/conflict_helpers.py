@@ -67,6 +67,36 @@ def fake_store_view(corpus_root: Path | str = FIXTURE_CORPUS, size: int = 600) -
     )
 
 
+# --- throwaway dated corpora (the stage attribution and its replay) ----------------------------
+
+# Enough tokens to clear `MIN_CLAIM_TOKENS`, and few enough to chunk as one heading-sized unit.
+BODY_TOKENS = 40
+
+
+def dated_body(start: int, count: int = BODY_TOKENS) -> str:
+    """A body drawn from one token window. Two disjoint windows are unrelated to cosine alike."""
+    return " ".join(f"пункт{index:04d}" for index in range(start, start + count))
+
+
+def dated_corpus(root: Path, documents: dict[str, tuple[str, str]]) -> Path:
+    """`{name: (effective_date, body)}` written as a corpus of dated Markdown documents."""
+    root.mkdir(parents=True, exist_ok=True)
+    for name, (date, body) in documents.items():
+        (root / name).write_text(f"---\neffective_date: {date}\n---\n{body}\n", encoding="utf-8")
+    return root
+
+
+def store_over(root: Path, *, without: str = "") -> StoreView:
+    """A StoreView over the corpus's real chunks, optionally missing one document's entirely."""
+    chunks = [chunk for chunk in chunk_fixture(root) if chunk["doc_id"] != without]
+    return StoreView(
+        index_dir=root,
+        chunks=chunks,
+        vectors=VectorSet([bow_vector(chunk["text"]) for chunk in chunks]),
+        meta={"embedding_model": "fake-hashed-bow", "corpus_fingerprint": "stage"},
+    )
+
+
 def ordinal_of(chunks, doc_id: str, needle: str) -> int:
     """The ordinal of `doc_id`'s chunk containing `needle` (fails loudly when absent)."""
     for ordinal, chunk in enumerate(chunks):

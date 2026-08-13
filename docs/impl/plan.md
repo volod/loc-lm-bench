@@ -45,35 +45,38 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-stage-attribution-is-recomputable-from-a-bundle-alone (optional)
+### conflict-bundle-record-covers-the-readings-that-still-need-a-store (optional)
 
-Re-reading a finished audit under a changed attribution rule needs the STORE that run read, plus
-the `--min-claim-tokens` it used, because the per-document chunk accounting the stage is decided
-from (`DocumentChunks`) is folded during the run and never written down
-([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
-A bundle on disk is therefore not self-describing the way `findings.jsonl` is for the granularity
-rules, which `make compare-conflict-granularity` re-reads with no store and no model -- and a store
-rebuilt since the run gives a DIFFERENT answer while looking like the same recompute. Record the
-per-document counts (stored chunks, comparable chunks, and the settled copies) in `summary.json`
-beside the coverage, and read the attribution back from them, so a rule change can be scored over
-the archive without re-running anything and without the store still existing.
+The stage attribution is now recomputable from a bundle alone, and it is the only reading that is:
+the record it reads carries the corpus's ordering fields and the per-document chunk accounting, and
+nothing else a re-read might need
+([decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)).
+Every other question asked of a finished run -- what a different `--min-claim-tokens` would have
+excluded, what a different candidate budget would have returned, which chunk a lost pair would have
+matched on -- still reaches for the store that run read, and a store rebuilt since answers about
+itself. Decide which of those readings deserve the same treatment and what each one costs to
+record: the exclusion reasons per document are three more counters, a candidate-budget replay needs
+the ranked candidate list (bounded by the budget, so recordable), and a chunk-level replay needs
+ordinals and is where the record stops being small. Record what pays for itself, and state the
+boundary for what does not, so an operator knows which questions a bundle can answer alone.
 
 - Agent status: CLEAR
-- Dependencies: none. `DocumentChunks.of` in `src/llb/conflicts/document_chunks.py` is the record
-  and `run_semantic_tiers` is where it is folded; the payload must stay absent (not empty) below
-  the semantic tier, since that absence is what the `effort` reading is read from.
-- User-visible outcome: an operator can ask what an audit from last month would say under today's
-  rule, from the bundle alone.
-- Scope boundary: in scope -- the recorded counts, reading the attribution back from them, and a
-  test that the recompute equals the live run on the same bundle. Out of scope -- recording chunk
-  TEXT or ordinals, changing the stage rule, and a cross-run diff command.
+- Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/stage_replay.py` is the
+  record and its schema version is the migration seam; `select_content_chunks` in
+  `semantic_filter.py` already computes the exclusion counts, and `detect_semantic_pairs` holds the
+  ranked candidate list.
+- User-visible outcome: an operator knows, per question, whether a finished bundle can answer it or
+  whether the store has to be rebuilt first -- instead of finding out when the answer is wrong.
+- Scope boundary: in scope -- the per-reading cost/benefit, whichever inputs pay for themselves,
+  the schema bump, and the stated boundary. Out of scope -- recording chunk text, recording
+  anything unbounded by a run parameter, and changing any tier's behavior.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the attribution recomputed from `summary.json` alone equals
-  the one the run recorded, on a bundle at every stage; a pre-existing bundle without the counts
-  degrades to "not recomputable" rather than to a wrong stage.
+- Acceptance gates: `make ci` green; each recorded reading replays to what the live run produced on
+  a bundle at every tier; the record's size stays linear in DOCUMENTS or in a run parameter, proved
+  on the largest committed bundle; a bundle at the older schema still reads.
 - Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
+  [decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle).
 
 ### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
 
@@ -108,11 +111,11 @@ it is a floor.
 
 ### conflict-decision-groups-page-is-past-the-split-threshold (optional)
 
-[decision groups](current/data-prep/conflict-decision-groups.md) is ~740 lines and its headings
+[decision groups](current/data-prep/conflict-decision-groups.md) is ~800 lines and its headings
 describe two subjects: how many decisions a row count is (census, grouping rules, ranking, the
 `groups.json` sidecar) and what a policy choice costs (the projection, the governance-coverage
-precondition, the stage attribution). That is past the ~500-line split rule in
-[AGENTS.md](../../AGENTS.md), and the second subject is where every recent addition lands, so the
+precondition, the stage attribution and its bundle re-read). That is past the ~500-line split rule
+in [AGENTS.md](../../AGENTS.md), and the second subject is where every recent addition lands, so the
 page grows in one place. Split along the heading seam -- move the projection/coverage/stage
 subsections to a new topic page, add its row to the area page, and repoint the inbound links.
 Anchors keep their fragments, so only paths change and `make lint-doc-links` proves the move.

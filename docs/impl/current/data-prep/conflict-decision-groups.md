@@ -512,7 +512,9 @@ orderable pair it could have -- nothing is printed and nothing is invented. The 
 is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's chunks, the tier's
 comparable ordinals, and the hash tier's settled copies; below the semantic tier it is `None`, and
 that absence IS the `effort` reading (with no stage to be earliest, corpus order is the whole rule
-there). `DocumentChunks` lives in `src/llb/conflicts/document_chunks.py`;
+there). `DocumentChunks` lives in `src/llb/conflicts/document_chunks.py` and is written into
+`summary.json` so the reading survives the store
+([recomputing the stage from a finished bundle](#recomputing-the-stage-from-a-finished-bundle));
 `tests/llb/conflicts/test_governance_stage.py` pins each stage, the earliest-stage rule, its cost
 bound, and the silence.
 
@@ -556,8 +558,12 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own
 ```
 
 **Do the two rules ever disagree? Not on a single bundle this host had.** Recomputed over every
-audit bundle on disk -- each bundle's own rows from its `findings.jsonl`, the per-document chunk
-accounting rebuilt from the store that run read, no model and no re-adjudication:
+audit bundle on disk at the time -- each bundle's own rows from its `findings.jsonl`, the
+per-document chunk accounting rebuilt from the store that run read, no model and no
+re-adjudication. (Rebuilding that accounting from the store is exactly what
+[the bundle record](#recomputing-the-stage-from-a-finished-bundle) replaced afterwards; those 23
+bundles predate the record and now read as "not recomputable" rather than being re-derived from a
+store that has since moved.)
 
 | bundles | attribution | earliest stage vs first pair |
 | --- | --- | --- |
@@ -593,6 +599,61 @@ comparable documents with nothing in common) and the two pairs through `z-travel
 Corpus order names the first of those -- `a-archive.md` + `b-visit.md`, and "raise
 `--max-candidate-pairs`, or lower the cosine threshold", advice that would return unrelated rows
 and still never reach the missing document. The earliest stage names the gap.
+
+#### Recomputing the stage from a finished bundle
+
+The stage rule reads three inputs and only one of them used to survive the run: `findings.jsonl`
+carries the returned pairs, but the corpus's ordering fields and the per-document chunk accounting
+were re-derived by reading the corpus and rebuilding the store -- and both of those move. A store
+rebuilt since collapses a different duplicate, chunks a document differently, or is one ingest ahead
+of the one the run read; a re-ingested corpus carries a new `effective_date`. Either one answers a
+DIFFERENT question while looking like the same recompute, which is what made this reading unlike
+the granularity rules `make compare-conflict-granularity` re-scores from rows alone.
+
+So the run writes both of them down beside the coverage they explain, as
+`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/stage_replay.py` builds it;
+`AuditResult.stage_inputs` carries it):
+
+| key | what it carries | why it is recorded |
+| --- | --- | --- |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
+| `chunks` | `stored` / `comparable` / `copies` per document (`DocumentChunks.payload`) | the store's own answer, which a rebuild changes |
+
+`chunks` is ABSENT below the semantic tier, never empty: that absence is what the `effort` reading
+is read from, and an empty accounting says the opposite (a store that held nothing) -- a run whose
+record is edited to carry one names CHUNKING on every pair instead, which CI pins. Chunk text and
+chunk ordinals are deliberately not recorded, so the record costs one small entry per DOCUMENT
+rather than per chunk: measured at **533 bytes** on the goods budget-100 bundle, whose store holds
+954 chunks over 5 documents.
+
+```bash
+make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> <audit-run-dir>"
+# -> $DATA_DIR/corpus-conflict-stage/<run>/{stage.md,stage.json}
+```
+
+Each bundle is re-read from its own `summary.json` and `findings.jsonl` -- no store, no corpus, and
+no model call -- and reported beside the attribution its run recorded, so a rule change is scored on
+the bundles where the two readings PART. A bundle written before the record answers "not
+recomputable" and keeps its recorded attribution: no answer is the correct answer there, since the
+only thing left to derive one from is a store that has moved since.
+
+**Measured over the whole archive** (31 bundles under `.data/corpus-conflicts/`, CUDA host, no model
+call; `.data/corpus-conflict-stage/20260813T-archive-replay/`):
+
+| bundles | recomputed | reading |
+| --- | --- | --- |
+| 5 (`20260813T-stage-replay-*`, one per stage) | `effort`, `chunking`, `claim_token_floor`, `duplicate_collapse`, `candidates` | **same stage and same pair as the run recorded, on all five** |
+| 1 (goods, budget 100, 954 chunks) | nothing lost -- the corpus orders no document pair | recomputable and empty, which is the run's own answer |
+| 25 (every bundle written before the record) | none | not recomputable, recorded attribution intact |
+
+The five are the one-run-per-stage table above re-run under the current build (same corpora, same
+knobs: `--effort hash`; `COS_THRESHOLD=0.7`; `COS_THRESHOLD=0.7 MIN_CLAIM_TOKENS=8`;
+`COS_THRESHOLD=0.9 MIN_CLAIM_TOKENS=8` against the stale store; `MIN_CLAIM_TOKENS=10` against the
+fixture's heading store), and each one re-reads to its own answer with the store no longer
+consulted. `tests/llb/conflicts/test_stage_replay.py` pins the equality at every stage over a JSON
+round-trip, the refusal on a bundle without the record and on one from a newer schema, and the
+independence directly -- it deletes the corpus and rebuilds the store to a DIFFERENT stage between
+the run and the re-read.
 
 ### One actionable set
 

@@ -164,6 +164,11 @@ DEFAULT_CROSS_ENCODER_ROWS = 50
 # --- artifact names ---------------------------------------------------------------------------
 
 CONFLICTS_METHOD = "corpus-conflicts"
+# The two `summary.json` keys a RE-READ of a finished bundle addresses: the coverage the stage
+# attribution rides in, and the per-document record that attribution can be recomputed from. Named
+# here rather than at either reader, so the writer and the re-reader cannot part company over them.
+COVERAGE_FIELD = "governance_coverage"
+STAGE_INPUTS_FIELD = "stage_attribution_inputs"
 FINDINGS_FILE = "findings.jsonl"
 GROUPS_FILE = "groups.json"
 REPORT_FILE = "report.md"
