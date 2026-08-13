@@ -45,39 +45,88 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-stage-attribution-reports-the-earliest-stage-not-the-first-pair (optional)
+### conflict-stage-attribution-is-recomputable-from-a-bundle-alone (optional)
 
-The stage attribution names the FIRST orderable document pair that did not survive, in corpus
-order, and on the 7-document fixture that pair is `archive-policy.md` + `deadline-note.md` at
-`candidates` -- two unrelated documents that were never going to pair, and the least informative of
-the five stages
+Re-reading a finished audit under a changed attribution rule needs the STORE that run read, plus
+the `--min-claim-tokens` it used, because the per-document chunk accounting the stage is decided
+from (`DocumentChunks`) is folded during the run and never written down
 ([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
-A corpus with one genuine chunking gap and many merely unrelated pairs therefore reports
-`candidates` and hides the gap: the pair an operator needs is the one lost EARLIEST, not the one
-whose documents sort first. Report the earliest stage present instead (with the pair that
-demonstrates it), and keep the scan off a quadratic path -- the early stages are properties of a
-DOCUMENT (no stored chunk, no comparable chunk) rather than of a pair, so the documents in each
-class can be found in one pass and only their pairs need testing. State whether the earliest stage
-and the first pair ever disagree on the committed bundles; if they never do, the rule change is not
-worth making.
+A bundle on disk is therefore not self-describing the way `findings.jsonl` is for the granularity
+rules, which `make compare-conflict-granularity` re-reads with no store and no model -- and a store
+rebuilt since the run gives a DIFFERENT answer while looking like the same recompute. Record the
+per-document counts (stored chunks, comparable chunks, and the settled copies) in `summary.json`
+beside the coverage, and read the attribution back from them, so a rule change can be scored over
+the archive without re-running anything and without the store still existing.
 
 - Agent status: CLEAR
-- Dependencies: none. `first_lost_orderable_pair` and `_stage_of` in
-  `src/llb/conflicts/governance_stage.py` are the scan and the stage order; `DocumentChunks`
-  already carries the per-document facts the early stages are read from.
-- User-visible outcome: an operator whose store is missing a document learns that, instead of being
-  pointed at a candidate budget that is not the problem.
-- Scope boundary: in scope -- the earliest-stage rule, its cost bound, and the disagreement count
-  over the committed bundles. Out of scope -- reporting more than one pair, adding a stage, and
-  re-running detection to chase a pair.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: audit-side rule change with fixture tests; recompute over committed bundles, no
-  GPU.
-- Acceptance gates: `make ci` green; a fixture whose earliest lost stage is `chunking` and whose
-  first lost pair is `candidates` reports `chunking`; the reading states on how many committed
-  bundles the two rules disagree, including the bundles where they do not.
+- Dependencies: none. `DocumentChunks.of` in `src/llb/conflicts/document_chunks.py` is the record
+  and `run_semantic_tiers` is where it is folded; the payload must stay absent (not empty) below
+  the semantic tier, since that absence is what the `effort` reading is read from.
+- User-visible outcome: an operator can ask what an audit from last month would say under today's
+  rule, from the bundle alone.
+- Scope boundary: in scope -- the recorded counts, reading the attribution back from them, and a
+  test that the recompute equals the live run on the same bundle. Out of scope -- recording chunk
+  TEXT or ordinals, changing the stage rule, and a cross-run diff command.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
+- Execution path: artifact change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; the attribution recomputed from `summary.json` alone equals
+  the one the run recorded, on a bundle at every stage; a pre-existing bundle without the counts
+  degrades to "not recomputable" rather than to a wrong stage.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
+
+### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
+
+The attribution names ONE stage and one pair, and a run that loses pairs at three stages says
+nothing about how much of the corpus each knob would recover: the purpose-built chunking-gap run
+loses two of its three document pairs to the missing document and one to candidate selection, and
+the reading names only the first
+([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
+An operator sizing a fix wants the split -- turning this knob reaches N of the M orderable pairs
+the run lost, and the rest are elsewhere. Count the lost orderable pairs per stage (the census the
+one-pair scan already walks the classes for) and print it beside the named pair, keeping the single
+named pair as the headline so the reading does not turn back into a list of knobs. Cost is the
+constraint: a full census is the quadratic sweep the one-pair rule exists to avoid, so bound it by
+the per-document classes (a document lost at a stage bounds its own pairs) or cap the count and say
+it is a floor.
+
+- Agent status: CLEAR
+- Dependencies: none. `_document_stage` and `REPORT_STAGE_ORDER` in
+  `src/llb/conflicts/governance_stage.py` are the classes and their order; `orderable_document_pairs`
+  in `governance_coverage.py` is the denominator and is already counted without enumerating pairs.
+- User-visible outcome: an operator learns whether the named knob recovers most of what the run
+  lost or one pair of it.
+- Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
+  scope -- naming a second pair, adding a stage, and re-running detection.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: audit-side reading with fixture tests; recompute over the bundles on disk, no GPU.
+- Acceptance gates: `make ci` green; the per-stage counts sum to the lost orderable pairs on a
+  fixture that loses pairs at three stages; the cost stays inside the stated bound on a corpus
+  large enough for the difference to show.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
+
+### conflict-decision-groups-page-is-past-the-split-threshold (optional)
+
+[decision groups](current/data-prep/conflict-decision-groups.md) is ~740 lines and its headings
+describe two subjects: how many decisions a row count is (census, grouping rules, ranking, the
+`groups.json` sidecar) and what a policy choice costs (the projection, the governance-coverage
+precondition, the stage attribution). That is past the ~500-line split rule in
+[AGENTS.md](../../AGENTS.md), and the second subject is where every recent addition lands, so the
+page grows in one place. Split along the heading seam -- move the projection/coverage/stage
+subsections to a new topic page, add its row to the area page, and repoint the inbound links.
+Anchors keep their fragments, so only paths change and `make lint-doc-links` proves the move.
+
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `plan.md`, `conflict-detection.md`, and `conflict-resolution.md`.
+- User-visible outcome: a reader looking for what a policy choice costs stops scrolling past the
+  counting rules to reach it.
+- Scope boundary: in scope -- the split, the area-page row, and the link repointing. Out of scope
+  -- rewriting the moved text and changing any measured result.
+- Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
+  no anchor text changes.
+- Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
 
 ### venv-pins-the-mcp-version-vllm-pulls-in (optional)
 

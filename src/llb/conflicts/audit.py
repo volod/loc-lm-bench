@@ -25,8 +25,9 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
+from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.governance_coverage import governance_coverage
-from llb.conflicts.governance_stage import DocumentChunks, lost_pair_attribution
+from llb.conflicts.governance_stage import lost_pair_attribution
 from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats

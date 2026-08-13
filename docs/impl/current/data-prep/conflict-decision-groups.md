@@ -461,9 +461,9 @@ Surfacing the corpus-side counts at ingestion time -- where the third reading sa
 #### Which stage lost the orderable pair
 
 The reading above names RETRIEVAL, and RETRIEVAL is four knobs at once. `governance_stage.py` picks
-between them on ONE pair: the first orderable document pair no returned row joins, scanned in
-corpus order, with the stage read off what the run already recorded. Nothing here re-runs
-detection, moves a threshold, or looks at a pair the corpus cannot order.
+between them on ONE pair -- an orderable document pair no returned row joins -- with the stage read
+off what the run already recorded. Nothing here re-runs detection, moves a threshold, or looks at a
+pair the corpus cannot order.
 
 | stage | what places it there | the one knob |
 | --- | --- | --- |
@@ -474,15 +474,47 @@ detection, moves a threshold, or looks at a pair the corpus cannot order.
 | `candidates` | both sides are comparable and the pair still never reached a row | raise `--max-candidate-pairs`, or lower the cosine threshold |
 
 The stages are tried in that order, which is the order a pair meets them: a document the store
-never held cannot have met a threshold. The attribution rides in `governance_coverage` as
+never held cannot have met a threshold. That is also how a pair whose two documents stopped at
+different stages is attributed -- the earlier stop is what explains the pair.
+
+**Which pair is named: the earliest stage, not the first pair in corpus order.** A run can lose
+pairs at several stages at once and only one pair is reported, so the choice IS the reading. Corpus
+order would name whichever lost pair's documents sort first, which is a file name rather than a
+diagnosis: on the 7-document fixture that pair is `archive-policy.md` + `deadline-note.md` at
+`candidates`, two unrelated documents that were never going to pair, so a corpus with one genuine
+chunking gap and many merely unrelated pairs would report a candidate budget and never mention the
+gap. The earliest stage is reported instead, with the corpus-first pair that demonstrates it, and
+it is the one an operator has to fix first anyway.
+
+**Except the stage whose knob is `none`, which sorts last.** `duplicate_collapse` is second in
+pipeline order and LAST in report order, because it is not a loss anyone acts on -- the claim is in
+the store the whole time under the copy that survived -- so it can never displace a stage that names
+real work, and it is reported only when a run lost nothing else. Not hypothetical: the demo corpus's
+claim-floor run below loses `handbook_2026.md` + `policy_2024.md` at the floor AND
+`handbook_2026.md` + `policy_2024_copy.md` at duplicate collapse, so a strict pipeline order would
+answer "none -- read this pair through `policy_2024.md`" on a run whose actual knob is
+`--min-claim-tokens`. The report order is DERIVED from `STAGE_KNOBS` rather than written out, so a
+stage added with a knob takes its pipeline position automatically.
+
+**What the scan costs.** Every stage below the effort dial is a property of one DOCUMENT rather than
+of a pair (no stored chunk, no comparable chunk), so the documents that can demonstrate a stage are
+found in a single pass over the corpus and only THEIR pairs are ever tested: linear in the corpus
+per stage, with the quadratic sweep reached only for `candidates`, which is the cost the corpus-order
+scan already paid. Every hit is confirmed against the pair rule, which stays the single
+implementation of the stage order. CI pins the bound by counting the document pairs each rule tests
+on a 60-document corpus whose only lost pair is the last one in corpus order: **59 against 1,770**.
+
+The attribution rides in `governance_coverage` as
 `lost_orderable_pair` (`documents`, `stage`, `reason`, `knob`) and prints as one sentence after the
 counts, in `report.md` and the CLI alike. Where it is present the retrieval reading DROPS its
 four-knob list; where it is absent -- a corpus that can order nothing, or a run that returned every
 orderable pair it could have -- nothing is printed and nothing is invented. The per-document input
 is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's chunks, the tier's
 comparable ordinals, and the hash tier's settled copies; below the semantic tier it is `None`, and
-that absence IS the `effort` reading. `tests/llb/conflicts/test_governance_stage.py` pins each
-stage, the corpus-order scan, and the silence.
+that absence IS the `effort` reading (with no stage to be earliest, corpus order is the whole rule
+there). `DocumentChunks` lives in `src/llb/conflicts/document_chunks.py`;
+`tests/llb/conflicts/test_governance_stage.py` pins each stage, the earliest-stage rule, its cost
+bound, and the silence.
 
 **Measured, one run per stage** (CUDA host; the semantic runs read real e5-base store vectors, no
 model call):
@@ -493,6 +525,7 @@ model call):
 | `20260813T-stage-attribution-claim-floor` (demo corpus, `--effort semantic`, default floor) | `claim_token_floor` | the same pair |
 | `20260813T-stage-attribution-recovered` (demo corpus, `MIN_CLAIM_TOKENS=8`) | `duplicate_collapse` | `handbook_2026.md` + `policy_2024_copy.md` |
 | `20260813T-stage-attribution-fixture-semantic` (7-document fixture, 19-chunk store) | `candidates` | `archive-policy.md` + `deadline-note.md` |
+| `20260813T-stage-earliest-chunking-gap` (3-document corpus, store built before its third document) | `chunking` | `a-archive.md` + `z-travel.md` |
 
 The three demo-corpus runs are one corpus read three ways, and they walk an operator through the
 fix: at `--effort hash` the knob is the effort dial, and raising it moves the attribution to the
@@ -504,26 +537,62 @@ and the pair through the collapsed copy can never be returned. That is the stage
 *none*, and it is why "rebuild the store" is not the advice for every chunkless document -- a
 rebuild would collapse the duplicate again.
 
+That run re-executed under the earliest-stage rule
+(`.data/corpus-conflicts/20260813T-stage-earliest-claim-floor/`) names the same stage and the same
+pair, which is the knobless-stage rule doing its job -- the corpus loses a second pair at duplicate
+collapse, and a strict pipeline order would have answered with it:
+
 ```text
 make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own-store> \
   COS_THRESHOLD=0.7 PROJECT_POLICY=conservative,prefer-newer
 [conflicts] governance coverage: ... 2 of 3 document pairs and 0 of 1 returned pair orderable by
   `compare_editions` -- so the zero above is STRUCTURAL for this RUN, and the stage that lost the
   orderable pair is RETRIEVAL, not ingestion: ... Fixable where the candidate list is built, not by
-  re-ingesting the corpus. First orderable document pair that did not survive:
-  `handbook_2026.md` + `policy_2024.md`, lost at the CLAIM-TOKEN FLOOR (every chunk of
-  `handbook_2026.md` and `policy_2024.md` in the store is excluded from comparison -- front matter,
-  below `--min-claim-tokens`, or a repeated metadata block). One knob: lower `--min-claim-tokens`,
-  or re-chunk so the claim lands in a longer chunk.
+  re-ingesting the corpus. Earliest stage an orderable document pair was lost at: the CLAIM-TOKEN
+  FLOOR, shown by `handbook_2026.md` + `policy_2024.md` (every chunk of `handbook_2026.md` and
+  `policy_2024.md` in the store is excluded from comparison -- front matter, below
+  `--min-claim-tokens`, or a repeated metadata block). One knob: lower `--min-claim-tokens`, or
+  re-chunk so the claim lands in a longer chunk.
 ```
 
-**Where the corpus-order rule is weakest.** On the 7-document fixture the pair named is
-`archive-policy.md` + `deadline-note.md` at `candidates` -- two unrelated documents that were never
-going to pair, and the least informative of the five answers. Corpus order picks the first lost
-pair, not the most diagnostic one, so a corpus with one genuine chunking gap and many merely
-unrelated pairs can report `candidates` and hide the gap. Reporting the EARLIEST stage present
-instead is tracked in [`plan.md`](../../plan.md)
-(`conflict-stage-attribution-reports-the-earliest-stage-not-the-first-pair`).
+**Do the two rules ever disagree? Not on a single bundle this host had.** Recomputed over every
+audit bundle on disk -- each bundle's own rows from its `findings.jsonl`, the per-document chunk
+accounting rebuilt from the store that run read, no model and no re-adjudication:
+
+| bundles | attribution | earliest stage vs first pair |
+| --- | --- | --- |
+| 11 (goods, quickstart-PDF) | none -- nothing orderable at either level | both rules silent |
+| 12 (fixture x 6, demo corpus x 6) | `effort` x 4, `candidates` x 5, `claim_token_floor`, `duplicate_collapse` x 2 | **same pair on all 12** |
+
+So the rule change is invisible in the archive, and the reason is corpus size rather than luck: the
+two dated corpora on this host are 3 and 7 documents whose stores hold every document they were
+built from, so each run loses its pairs at ONE stage with a knob. The change decides only a corpus
+that loses pairs at two such stages -- which is the case the fixture in CI pins and the run below
+builds, and which is what a real operator corpus looks like.
+
+**The disagreement, run end to end** (`.data/corpus-conflicts/20260813T-stage-earliest-chunking-gap/`,
+CUDA host, real e5-base store vectors, no model call). Three dated documents at
+`.data/corpus-stage-earliest-demo/`, two of them unrelated to each other, and a store built over an
+earlier state of the corpus that did not yet contain the third -- the ordinary shape of a store one
+ingest behind its corpus:
+
+```text
+make build-index CORPUS=<corpus-before-the-third-document> CHUNK_STRATEGY=heading CHUNK_SIZE=600
+make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<the-stale-store> \
+  COS_THRESHOLD=0.9 MIN_CLAIM_TOKENS=8 PROJECT_POLICY=conservative,prefer-newer
+[conflicts] governance coverage: 3 of 3 documents with `effective_date` or `version`
+  (3 `effective_date`, 3 `version`), 3 of 3 document pairs and 0 of 0 returned pairs orderable by
+  `compare_editions` -- so the zero above is STRUCTURAL for this RUN ... Earliest stage an orderable
+  document pair was lost at: CHUNKING, shown by `a-archive.md` + `z-travel.md` (no chunk of
+  `z-travel.md` is in the store the audit read). One knob: rebuild the store over this corpus, or
+  re-chunk it.
+```
+
+The run loses all three of its document pairs: `a-archive.md` + `b-visit.md` at `candidates` (two
+comparable documents with nothing in common) and the two pairs through `z-travel.md` at `chunking`.
+Corpus order names the first of those -- `a-archive.md` + `b-visit.md`, and "raise
+`--max-candidate-pairs`, or lower the cosine threshold", advice that would return unrelated rows
+and still never reach the missing document. The earliest stage names the gap.
 
 ### One actionable set
 

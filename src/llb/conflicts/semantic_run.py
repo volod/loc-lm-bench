@@ -13,7 +13,7 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc
-from llb.conflicts.governance_stage import DocumentChunks
+from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.needles import analyze_needles
 from llb.conflicts.null_calibration import resolve_cos_threshold

@@ -5,12 +5,15 @@ return one. That reading ends in four knobs at once (raise `--effort`, raise
 `--max-candidate-pairs`, re-chunk, re-embed) because nothing in the run recorded which of them
 dropped the pair. These tests pin the attribution that does:
 
-1. the pair itself -- the FIRST orderable document pair no returned row joins, scanned in corpus
-   order, with returned pairs and unorderable pairs skipped;
+1. the pair itself -- one lost orderable document pair, drawn from the EARLIEST stage the run lost
+   one at and taken in corpus order within that stage, with returned pairs and unorderable pairs
+   skipped;
 2. the stage -- read off the chunk accounting the semantic tier produced anyway, at each of the
    five places a pair can stop: the effort dial, duplicate collapse, chunking, the claim-token
    floor, and candidate selection;
-3. the silence -- a run that returned every orderable document pair it could have prints no
+3. the cost -- the earliest stage is found from per-DOCUMENT facts, so a corpus whose first lost
+   pair sits far into the pair space is still scanned linearly;
+4. the silence -- a run that returned every orderable document pair it could have prints no
    attribution at all, because there is no knob to turn.
 
 The end-to-end cases run the real audit over throwaway corpora and a StoreView of real chunk
@@ -24,6 +27,7 @@ import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import TIER_HASH, TIER_SEMANTIC
+from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.governance_coverage import RETRIEVAL_KNOBS, coverage_reading
 from llb.conflicts.governance_stage import (
     LOST_PAIR_FIELD,
@@ -33,7 +37,7 @@ from llb.conflicts.governance_stage import (
     STAGE_DUPLICATE_COLLAPSE,
     STAGE_EFFORT,
     STAGE_KNOBS,
-    DocumentChunks,
+    earliest_lost_orderable_pair,
     first_lost_orderable_pair,
     lost_pair_attribution,
     lost_pair_sentence,
@@ -54,6 +58,7 @@ CORE = 4
 
 _2021 = {"effective_date": "2021-01-01"}
 _2024 = {"effective_date": "2024-01-01"}
+_2026 = {"effective_date": "2026-01-01"}
 
 
 def _body(start: int, count: int = BODY_TOKENS) -> str:
@@ -108,6 +113,81 @@ def test_the_returned_pairs_are_read_off_the_rows_unordered():
     rows = [{"a": {"doc_id": "z.md"}, "b": {"doc_id": "a.md"}}]
 
     assert returned_doc_pairs(rows) == {("a.md", "z.md")}
+
+
+def test_the_earliest_stage_is_named_even_when_another_pair_sorts_first():
+    """The rule: corpus order picks WITHIN a stage, never between two of them.
+
+    `a.md` + `b.md` sorts first and is a candidate-selection miss -- two documents that were never
+    going to pair. `z.md` is in no chunk of the store at all, which is a gap an operator can fix,
+    and it is the pair that names it that has to be reported.
+    """
+    documents = [("a.md", _2021), ("b.md", _2024), ("z.md", _2026)]
+    chunks = DocumentChunks(stored={"a.md": 2, "b.md": 2}, comparable={"a.md": 2, "b.md": 2})
+
+    assert first_lost_orderable_pair(documents, set()) == ("a.md", "b.md")
+    assert earliest_lost_orderable_pair(documents, set(), chunks) == ("a.md", "z.md")
+
+
+def test_the_stage_with_no_knob_never_outranks_a_stage_with_one():
+    """Duplicate collapse is a non-loss: the claim is in the store under the copy that survived.
+
+    So it sorts last however early in the pipeline it sits, and is reported only when a run lost
+    nothing else -- otherwise a report whose one advice is "none" would hide a real knob.
+    """
+    documents = [("a.md", _2021), ("copy.md", _2024), ("short.md", _2026)]
+    stored = {"a.md": 2, "kept.md": 2, "short.md": 1}
+    copies = {"copy.md": ("kept.md",), "kept.md": ("copy.md",)}
+    chunks = DocumentChunks(stored=stored, comparable={"a.md": 2, "kept.md": 2}, copies=copies)
+
+    assert earliest_lost_orderable_pair(documents, set(), chunks) == ("a.md", "short.md")
+    # With that floor miss returned, the collapsed pairs are all that is left -- and now they print.
+    returned = {("a.md", "short.md")}
+    assert earliest_lost_orderable_pair(documents, returned, chunks) == ("a.md", "copy.md")
+
+
+class _CountingPairs(set):
+    """A returned-pair set that counts how many document pairs the scan actually tests."""
+
+    lookups = 0
+
+    def __contains__(self, item: object) -> bool:
+        self.lookups += 1
+        return super().__contains__(item)
+
+
+def test_the_earliest_stage_is_found_without_walking_the_pair_space():
+    """The cost bound: every stage below `candidates` is a property of a DOCUMENT, not of a pair.
+
+    Sixty dated documents whose only lost pair is the last one in corpus order. The corpus-order
+    scan has to reach it through the whole pair space; the earliest-stage scan finds the one
+    document with no chunk in the store first and tests only ITS pairs.
+    """
+    size = 60
+    documents = [
+        (f"d{index:02d}.md", {"effective_date": f"20{index:02d}-01-01"}) for index in range(size)
+    ]
+    names = [doc_id for doc_id, _ in documents]
+    returned = {
+        tuple(sorted([left, right]))
+        for left in names
+        for right in names
+        if left < right and not (right == names[-1] and left == names[-2])
+    }
+    chunks = DocumentChunks(
+        stored={doc_id: 1 for doc_id in names[:-1]},
+        comparable={doc_id: 1 for doc_id in names[:-1]},
+    )
+
+    earliest_pairs, corpus_order_pairs = _CountingPairs(returned), _CountingPairs(returned)
+    assert earliest_lost_orderable_pair(documents, earliest_pairs, chunks) == (
+        names[-2],
+        names[-1],
+    )
+    assert first_lost_orderable_pair(documents, corpus_order_pairs) == (names[-2], names[-1])
+
+    assert earliest_pairs.lookups <= size, "one pass over the corpus, for the one lost document"
+    assert corpus_order_pairs.lookups > size * (size - 1) // 4, "the corpus-order scan pays pairs"
 
 
 def test_nothing_orderable_in_the_corpus_means_no_attribution_and_no_scan():
@@ -204,6 +284,39 @@ def test_a_pair_whose_document_never_reached_the_store_names_chunking(tmp_path):
     assert _lost(result)["documents"] == ["new.md", "old.md"]
     assert _lost(result)["stage"] == STAGE_CHUNKING
     assert "no chunk of `new.md`" in _lost(result)["reason"]
+
+
+def test_the_chunking_gap_is_named_even_when_an_unrelated_pair_sorts_first(tmp_path):
+    """The whole rule change, decided by the pipeline: three dated documents, two lost pairs.
+
+    `a-old.md` + `b-new.md` sorts first and stops at candidate selection -- both comparable, and
+    nothing in common. `z-gap.md` is in the store not at all. Corpus order would name the pair that
+    was never going to pair and leave the gap unmentioned.
+    """
+    corpus = _corpus(
+        tmp_path / "corpus",
+        {
+            "a-old.md": ("2021-01-01", _body(0)),
+            "b-new.md": ("2024-01-01", _body(500)),
+            "z-gap.md": ("2026-01-01", _body(1000)),
+        },
+    )
+    result = run_audit(
+        corpus,
+        AuditParams(effort=TIER_SEMANTIC, cos_threshold=FAKE_COS_THRESHOLD),
+        store=_store(corpus, without="z-gap.md"),
+    )
+    documents = [("a-old.md", _2021), ("b-new.md", _2024), ("z-gap.md", _2026)]
+
+    assert result.governance_coverage["orderable_document_pairs"] == 3
+    assert not result.findings, "no pair survived, so all three are the scan's to explain"
+    assert first_lost_orderable_pair(documents, returned_doc_pairs(result.rows())) == (
+        "a-old.md",
+        "b-new.md",
+    ), "the rule this replaces would have named the unrelated pair"
+    assert _lost(result)["stage"] == STAGE_CHUNKING
+    assert _lost(result)["documents"] == ["a-old.md", "z-gap.md"]
+    assert _lost(result)["knob"] == STAGE_KNOBS[STAGE_CHUNKING]
 
 
 def test_a_pair_through_a_collapsed_duplicate_names_the_copy_the_store_kept(tmp_path):
@@ -336,7 +449,7 @@ def test_the_retrieval_reading_names_one_knob_when_the_stage_is_attributed(tmp_p
 
     assert "the stage that lost the orderable pair is RETRIEVAL" in reading
     assert RETRIEVAL_KNOBS not in reading, "the four-knob list is what the attribution replaces"
-    assert "lost at the CLAIM-TOKEN FLOOR" in reading
+    assert "Earliest stage an orderable document pair was lost at: the CLAIM-TOKEN FLOOR" in reading
     assert reading.endswith(f"One knob: {STAGE_KNOBS[STAGE_CLAIM_FLOOR]}.")
 
 

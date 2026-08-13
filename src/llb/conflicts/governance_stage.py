@@ -20,18 +20,21 @@ pick:
 
 A REPORT over what the run already computed. Nothing here re-runs detection to chase the pair,
 and nothing here moves a threshold or a budget: the stage is read off the chunk accounting the
-semantic tier produced anyway, and off the rows the audit returned. One pair is named -- the first
-that did not survive -- because the deliverable is the KNOB, and the knob is a property of the
-stage rather than of the pair.
+semantic tier produced anyway, and off the rows the audit returned.
+
+ONE pair is named, because the deliverable is the KNOB and the knob is a property of the stage
+rather than of the pair. Which pair that is, is the EARLIEST stage present rather than the first
+pair in corpus order: corpus order names whichever pair's documents happen to sort first, which on
+a corpus with one genuine chunking gap and many merely unrelated pairs is a `candidates` pair that
+was never going to pair -- and the gap goes unmentioned. The earliest stage is the one an operator
+has to fix first anyway, since a document the store never held cannot have met a threshold.
 """
 
-from collections import Counter, defaultdict
-from collections.abc import Container, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Container, Sequence
 
+from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.governance import ORDERING_FIELDS, compare_editions, edition_key
 from llb.core.contracts.common import JsonObject
-from llb.core.contracts.rag import ChunkRecord
 
 # The key the attribution rides under, inside the `governance_coverage` payload it explains.
 LOST_PAIR_FIELD = "lost_orderable_pair"
@@ -61,69 +64,50 @@ STAGE_KNOBS = {
     STAGE_CANDIDATES: "raise `--max-candidate-pairs`, or lower the cosine threshold",
 }
 
-
-@dataclass(frozen=True)
-class DocumentChunks:
-    """What each document reached, as the store the semantic tier read records it.
-
-    Three facts per document, because they miss at three stages and take three different knobs: a
-    document with no stored chunk never reached the store, a document whose stored chunks are all
-    excluded reached it and was filtered back out before any pair was formed, and a document whose
-    only copy in the store is another document's reached it under that copy's name.
-    """
-
-    stored: Mapping[str, int]
-    comparable: Mapping[str, int]
-    # Documents the hash tier proved copies of each other, which is what tells a store that never
-    # saw a document from a store that COLLAPSED it into a copy it kept.
-    copies: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-
-    @classmethod
-    def of(
-        cls,
-        chunks: Sequence[ChunkRecord],
-        comparable: Container[int],
-        settled: Iterable[tuple[str, str]] = (),
-    ) -> "DocumentChunks":
-        """Fold the store's chunks, the tier's comparable ordinals, and the settled copies per document."""
-        stored: Counter[str] = Counter()
-        kept: Counter[str] = Counter()
-        for ordinal, chunk in enumerate(chunks):
-            doc_id = str(chunk["doc_id"])
-            stored[doc_id] += 1
-            if ordinal in comparable:
-                kept[doc_id] += 1
-        copies: dict[str, list[str]] = defaultdict(list)
-        for left, right in settled:
-            copies[left].append(right)
-            copies[right].append(left)
-        return cls(
-            stored=dict(stored),
-            comparable=dict(kept),
-            copies={doc_id: tuple(sorted(named)) for doc_id, named in copies.items()},
-        )
-
-    def stored_copy_of(self, doc_id: str) -> str | None:
-        """A document proved a copy of `doc_id` whose chunks the store DID keep, if there is one."""
-        return next(
-            (copy for copy in self.copies.get(doc_id, ()) if self.stored.get(copy)),
-            None,
-        )
+# The order a PAIR meets the stages, which is how a pair whose two documents stopped at different
+# ones is attributed: the earlier stop explains the pair, because a document the store never held
+# cannot have met a threshold. `effort` is absent -- it is a property of the RUN, not of a document.
+PAIR_STAGE_ORDER = (
+    STAGE_CHUNKING,
+    STAGE_DUPLICATE_COLLAPSE,
+    STAGE_CLAIM_FLOOR,
+    STAGE_CANDIDATES,
+)
+# The order the stages are REPORTED in, which is the same order with the one knobless stage sunk to
+# the end. Duplicate collapse is not a loss an operator acts on -- the claim is in the store the
+# whole time under the copy that survived -- so it can never outrank a stage that names real work;
+# it is reported only when it is the only thing a run lost. Derived from `STAGE_KNOBS` rather than
+# written out, so a stage added with a knob takes its pipeline position automatically.
+REPORT_STAGE_ORDER = tuple(stage for stage in PAIR_STAGE_ORDER if stage in STAGE_KNOBS) + tuple(
+    stage for stage in PAIR_STAGE_ORDER if stage not in STAGE_KNOBS
+)
 
 
 def _quoted(doc_ids: Sequence[str], joiner: str) -> str:
     return f" {joiner} ".join(f"`{doc_id}`" for doc_id in doc_ids)
 
 
-def _collapsed_stage(missing: Sequence[str], chunks: DocumentChunks) -> tuple[str, str, str] | None:
+def _document_stage(doc_id: str, chunks: DocumentChunks) -> str:
+    """The stage a DOCUMENT is lost at, whatever it is paired with.
+
+    Every stage below `effort` is a property of ONE document, which is what keeps the scan off a
+    quadratic path: the documents that can demonstrate a stage are found in a single pass over the
+    corpus, and only their own pairs are ever tested.
+    """
+    if not chunks.stored.get(doc_id):
+        return STAGE_DUPLICATE_COLLAPSE if chunks.stored_copy_of(doc_id) else STAGE_CHUNKING
+    if not chunks.comparable.get(doc_id):
+        return STAGE_CLAIM_FLOOR
+    return STAGE_CANDIDATES
+
+
+def _collapsed_stage(missing: Sequence[str], chunks: DocumentChunks) -> tuple[str, str, str]:
     """The pair is missing only documents the store already holds under a copy's name.
 
     Not a loss and not a knob: re-chunking or rebuilding would collapse the duplicate again, and
     the claim is in the store the whole time under the copy that survived.
     """
     kept = [chunks.stored_copy_of(doc_id) for doc_id in missing]
-    if not all(kept):
-        return None
     surviving = _quoted(sorted({copy for copy in kept if copy}), "and")
     proved = "them copies" if len(missing) > 1 else "it a copy"
     return (
@@ -143,16 +127,21 @@ def _stage_of(pair: tuple[str, str], chunks: DocumentChunks | None) -> tuple[str
             "documents were ever compared",
             STAGE_KNOBS[STAGE_EFFORT],
         )
-    missing = [doc_id for doc_id in pair if not chunks.stored.get(doc_id)]
-    if missing:
-        collapsed = _collapsed_stage(missing, chunks)
-        return collapsed or (
+    stages = {doc_id: _document_stage(doc_id, chunks) for doc_id in pair}
+    stage = min(stages.values(), key=PAIR_STAGE_ORDER.index)
+    missing = [
+        doc_id for doc_id in pair if stages[doc_id] in (STAGE_CHUNKING, STAGE_DUPLICATE_COLLAPSE)
+    ]
+    if stage == STAGE_DUPLICATE_COLLAPSE:
+        return _collapsed_stage(missing, chunks)
+    if stage == STAGE_CHUNKING:
+        return (
             STAGE_CHUNKING,
             f"no chunk of {_quoted(missing, 'or')} is in the store the audit read",
             STAGE_KNOBS[STAGE_CHUNKING],
         )
-    filtered = [doc_id for doc_id in pair if not chunks.comparable.get(doc_id)]
-    if filtered:
+    if stage == STAGE_CLAIM_FLOOR:
+        filtered = [doc_id for doc_id in pair if stages[doc_id] == STAGE_CLAIM_FLOOR]
         return (
             STAGE_CLAIM_FLOOR,
             f"every chunk of {_quoted(filtered, 'and')} in the store is excluded from comparison "
@@ -178,24 +167,92 @@ def _orderable_documents(
     ]
 
 
+def _is_lost(
+    keyed: Sequence[tuple[str, JsonObject]],
+    pair: tuple[int, int],
+    returned_pairs: Container[tuple[str, str]],
+) -> bool:
+    """Whether this index pair is orderable by edition and joined by no returned row."""
+    (left, left_governance), (right, right_governance) = keyed[pair[0]], keyed[pair[1]]
+    if tuple(sorted([left, right])) in returned_pairs:
+        return False
+    return compare_editions(left_governance, right_governance).newer_side is not None
+
+
 def first_lost_orderable_pair(
     documents: Sequence[tuple[str, JsonObject]],
-    returned_doc_pairs: Container[tuple[str, str]],
+    returned_pairs: Container[tuple[str, str]],
 ) -> tuple[str, str] | None:
-    """The first document pair `compare_editions` orders that no returned row joins.
+    """The first document pair `compare_editions` orders that no returned row joins, in corpus order.
 
     Pairs are scanned in corpus order and the scan STOPS at the first hit, so what it costs is the
-    distance to that hit rather than the pair space: a run that lost a pair early pays a handful of
-    comparisons. Documents carrying no ordering field at all are dropped first -- they cannot sit
-    in an orderable pair, so an undated corpus empties the scan instead of walking it.
+    distance to that hit rather than the pair space. Documents carrying no ordering field at all
+    are dropped first -- they cannot sit in an orderable pair, so an undated corpus empties the
+    scan instead of walking it. This is the rule when every lost pair stopped at the SAME stage,
+    which is exactly the run that read no store; `earliest_lost_orderable_pair` is the rule
+    otherwise.
     """
     keyed = _orderable_documents(documents)
-    for index, (left, left_governance) in enumerate(keyed):
-        for right, right_governance in keyed[index + 1 :]:
-            if tuple(sorted([left, right])) in returned_doc_pairs:
+    for left in range(len(keyed)):
+        for right in range(left + 1, len(keyed)):
+            if _is_lost(keyed, (left, right), returned_pairs):
+                return (keyed[left][0], keyed[right][0])
+    return None
+
+
+def _first_pair_at(
+    stage: str,
+    keyed: Sequence[tuple[str, JsonObject]],
+    members: Sequence[int],
+    returned_pairs: Container[tuple[str, str]],
+    chunks: DocumentChunks,
+) -> tuple[int, int] | None:
+    """The corpus-first lost pair the pair rule attributes to `stage`, tested from `members` only.
+
+    A pair can only reach `stage` through a document that is lost there, so the members are the
+    whole search space and the cost is one pass over the corpus PER MEMBER -- linear in the corpus
+    for every stage but `candidates`, whose members are the documents that reached the candidate
+    list and whose sweep is the one the corpus-order scan already paid.
+
+    Every hit is confirmed against `_stage_of`, which stays the single implementation of the rule:
+    a member's pair can belong to an EARLIER stage than the member does (a chunkless partner beats
+    a filtered one), and such a pair is found under that stage instead.
+    """
+    best: tuple[int, int] | None = None
+    for index in members:
+        for other in range(len(keyed)):
+            pair = (min(index, other), max(index, other))
+            if index == other or not _is_lost(keyed, pair, returned_pairs):
                 continue
-            if compare_editions(left_governance, right_governance).newer_side is not None:
-                return (left, right)
+            if _stage_of((keyed[pair[0]][0], keyed[pair[1]][0]), chunks)[0] != stage:
+                continue
+            # Partners ascend, so the first hit is this member's own corpus-first pair.
+            best = pair if best is None else min(best, pair)
+            break
+    return best
+
+
+def earliest_lost_orderable_pair(
+    documents: Sequence[tuple[str, JsonObject]],
+    returned_pairs: Container[tuple[str, str]],
+    chunks: DocumentChunks | None,
+) -> tuple[str, str] | None:
+    """The lost orderable pair from the EARLIEST stage the run lost one at, in corpus order within it.
+
+    A run that read no store lost every pair at the effort dial, so there is no earliest stage to
+    pick and corpus order is the whole rule.
+    """
+    if chunks is None:
+        return first_lost_orderable_pair(documents, returned_pairs)
+    keyed = _orderable_documents(documents)
+    document_stages = [_document_stage(doc_id, chunks) for doc_id, _ in keyed]
+    for stage in REPORT_STAGE_ORDER:
+        members = [index for index, at in enumerate(document_stages) if at == stage]
+        if not members:
+            continue
+        found = _first_pair_at(stage, keyed, members, returned_pairs, chunks)
+        if found is not None:
+            return (keyed[found[0]][0], keyed[found[1]][0])
     return None
 
 
@@ -218,7 +275,7 @@ def lost_pair_attribution(
     rows: Sequence[JsonObject],
     chunks: DocumentChunks | None,
 ) -> JsonObject:
-    """`{LOST_PAIR_FIELD: ...}` for the first orderable pair lost, or `{}` when none was.
+    """`{LOST_PAIR_FIELD: ...}` for the earliest stage a pair was lost at, or `{}` when none was.
 
     Empty is the common and correct answer twice over: a corpus that can order nothing has no pair
     to lose, and a run that returned every orderable pair it could have lost none -- in both cases
@@ -226,7 +283,7 @@ def lost_pair_attribution(
     """
     if not int(coverage.get("orderable_document_pairs") or 0):
         return {}
-    lost = first_lost_orderable_pair(documents, returned_doc_pairs(rows))
+    lost = earliest_lost_orderable_pair(documents, returned_doc_pairs(rows), chunks)
     if lost is None:
         return {}
     stage, reason, knob = _stage_of(lost, chunks)
@@ -247,6 +304,6 @@ def lost_pair_sentence(coverage: JsonObject) -> str:
         return ""
     left, right = lost["documents"]
     return (
-        f"First orderable document pair that did not survive: `{left}` + `{right}`, lost at "
-        f"{STAGE_NAMES[lost['stage']]} ({lost['reason']}). One knob: {lost['knob']}."
+        f"Earliest stage an orderable document pair was lost at: {STAGE_NAMES[lost['stage']]}, "
+        f"shown by `{left}` + `{right}` ({lost['reason']}). One knob: {lost['knob']}."
     )
