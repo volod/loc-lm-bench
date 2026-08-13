@@ -13,6 +13,7 @@ from llb.conflicts.constants import (
     tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc
+from llb.conflicts.governance_stage import DocumentChunks
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.needles import analyze_needles
 from llb.conflicts.null_calibration import resolve_cos_threshold
@@ -101,8 +102,13 @@ def run_semantic_tiers(
     complete: LLMComplete | None,
     settled: set[tuple[str, str]],
     tree: SemanticPrefixTree | None,
-) -> None:
-    """Build/reuse the tree, run the semantic tier, then adjudicate if requested."""
+) -> DocumentChunks:
+    """Build/reuse the tree, run the semantic tier, then adjudicate if requested.
+
+    Returns the per-document chunk accounting the audit needs to name the STAGE an orderable
+    document pair was lost at. It is returned rather than recorded on the result because it is an
+    input to a reading, not a finding: the comparable set is known exactly here and nowhere else.
+    """
     governance = {doc.doc_id: doc.governance for doc in docs}
     centered = params.center_vectors and len(store.vectors) >= MIN_CENTERING_VECTORS
     if params.center_vectors and not centered:
@@ -152,6 +158,7 @@ def run_semantic_tiers(
     }
     _record_needles(result, goldset, store, vectors, cos_threshold)
     _record_claims(result, params, store, governance, complete, semantic_findings, pairs)
+    return DocumentChunks.of(store.chunks, allowed, settled)
 
 
 def _record_needles(

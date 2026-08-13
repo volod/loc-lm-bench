@@ -20,6 +20,9 @@ SIDE_A = "a"
 SIDE_B = "b"
 BASIS_EFFECTIVE_DATE = "effective_date"
 BASIS_VERSION = "version"
+# The fields `compare_editions` can order on, named beside the function itself so the coverage
+# counts, the stage attribution, and the ordering cannot part company over which fields those are.
+ORDERING_FIELDS = (BASIS_EFFECTIVE_DATE, BASIS_VERSION)
 
 
 def _date_key(value: str) -> tuple[int, int, int] | None:

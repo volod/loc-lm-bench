@@ -342,7 +342,7 @@ test pins that count against enumerating `compare_editions` over every pair of e
 drawable from a governance pool covering present, absent, blank, shared, and unparseable fields.
 
 **Where it appears.** `governance_coverage` rides in `summary.json` on every run, projection or
-not -- it is detection-side and policy-free (`schema_version` 2 since the document-pair count
+not -- it is detection-side and policy-free (`schema_version` 3 since the stage attribution below
 joined it). The READING is printed once beside the delta, in `report.md` and in the CLI through the
 same helper, and only where a delta exists: with one policy there is no choice to call free, and
 with no `--project-policy` the report is unchanged. A non-zero delta carries the counts without a
@@ -352,7 +352,7 @@ whole content of the difference:
 | coverage | reading | where the fix is |
 | --- | --- | --- |
 | a returned pair orders | about the corpus's **KNOWLEDGE**: dated pairs were reachable and the policies settled them the same way | nowhere -- this is evidence |
-| no returned pair orders, but document pairs do | **STRUCTURAL for this RUN**, and the stage that lost the orderable pair is **RETRIEVAL** | the candidate list: raise `--effort` or `--max-candidate-pairs`, re-chunk, or re-embed |
+| no returned pair orders, but document pairs do | **STRUCTURAL for this RUN**, and the stage that lost the orderable pair is **RETRIEVAL** | the candidate list -- narrowed to one knob by the [stage attribution](#which-stage-lost-the-orderable-pair), or listed as all four when the run recorded none |
 | nothing orders at either level | **STRUCTURAL**, and no run over this corpus could have differed | **INGESTION**: record `effective_date` or `version` (or distinct ones -- one edition on every document counts as none) |
 
 `tests/llb/conflicts/test_governance_coverage.py` pins the counts, all three readings, and the gate
@@ -421,6 +421,10 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=hash \
   re-embed), not by re-ingesting the corpus.
 ```
 
+That four-knob tail is quoted as it was printed; the same command now ends in the one knob the
+[stage attribution](#which-stage-lost-the-orderable-pair) picked
+(`.data/corpus-conflicts/20260813T-stage-attribution-effort-hash/`).
+
 Before this count, that run printed the ingestion line -- advice that would have changed nothing on
 a corpus already dated end to end. Taking the advice it prints now recovers the pair: the same
 corpus at `--effort semantic` against a store of its own returns the cross-edition pair as well,
@@ -450,13 +454,76 @@ must never be read as a prediction of one. What it does rule out is the opposite
 the one an operator actually makes: a zero delta on a corpus with no orderable pair is not evidence
 about the corpus at all.
 
-**What it does not separate yet.** The retrieval reading names the STAGE, not the KNOB: it lists
-`--effort`, `--max-candidate-pairs`, chunking, and embedding together, because nothing in the run
-records which of them dropped the orderable document pair. Narrowing that to the specific knob is
-tracked in [`plan.md`](../../plan.md)
-(`conflict-coverage-names-the-knob-that-dropped-the-orderable-pair`), and surfacing the corpus-side
-counts at ingestion time -- where the third reading says the fix belongs -- in
-`corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for`.
+Surfacing the corpus-side counts at ingestion time -- where the third reading says the fix belongs
+-- is tracked in [`plan.md`](../../plan.md)
+(`corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for`).
+
+#### Which stage lost the orderable pair
+
+The reading above names RETRIEVAL, and RETRIEVAL is four knobs at once. `governance_stage.py` picks
+between them on ONE pair: the first orderable document pair no returned row joins, scanned in
+corpus order, with the stage read off what the run already recorded. Nothing here re-runs
+detection, moves a threshold, or looks at a pair the corpus cannot order.
+
+| stage | what places it there | the one knob |
+| --- | --- | --- |
+| `effort` | the run read no store, so only whole documents were ever compared | raise `--effort` to `semantic` or `claim` |
+| `duplicate_collapse` | a side has no chunk in the store because the hash tier proved it a copy of one that does | none -- read the pair through the copy the store kept |
+| `chunking` | a side has no chunk in the store, and no copy of it does either | rebuild the store over this corpus, or re-chunk it |
+| `claim_token_floor` | a side's chunks are in the store and every one is excluded from comparison | lower `--min-claim-tokens`, or re-chunk |
+| `candidates` | both sides are comparable and the pair still never reached a row | raise `--max-candidate-pairs`, or lower the cosine threshold |
+
+The stages are tried in that order, which is the order a pair meets them: a document the store
+never held cannot have met a threshold. The attribution rides in `governance_coverage` as
+`lost_orderable_pair` (`documents`, `stage`, `reason`, `knob`) and prints as one sentence after the
+counts, in `report.md` and the CLI alike. Where it is present the retrieval reading DROPS its
+four-knob list; where it is absent -- a corpus that can order nothing, or a run that returned every
+orderable pair it could have -- nothing is printed and nothing is invented. The per-document input
+is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's chunks, the tier's
+comparable ordinals, and the hash tier's settled copies; below the semantic tier it is `None`, and
+that absence IS the `effort` reading. `tests/llb/conflicts/test_governance_stage.py` pins each
+stage, the corpus-order scan, and the silence.
+
+**Measured, one run per stage** (CUDA host; the semantic runs read real e5-base store vectors, no
+model call):
+
+| run | stage named | pair |
+| --- | --- | --- |
+| `20260813T-stage-attribution-effort-hash` (demo corpus, `--effort hash`) | `effort` | `handbook_2026.md` + `policy_2024.md` |
+| `20260813T-stage-attribution-claim-floor` (demo corpus, `--effort semantic`, default floor) | `claim_token_floor` | the same pair |
+| `20260813T-stage-attribution-recovered` (demo corpus, `MIN_CLAIM_TOKENS=8`) | `duplicate_collapse` | `handbook_2026.md` + `policy_2024_copy.md` |
+| `20260813T-stage-attribution-fixture-semantic` (7-document fixture, 19-chunk store) | `candidates` | `archive-policy.md` + `deadline-note.md` |
+
+The three demo-corpus runs are one corpus read three ways, and they walk an operator through the
+fix: at `--effort hash` the knob is the effort dial, and raising it moves the attribution to the
+claim-token floor -- which is exactly the knob the recovery run above had to turn (`MIN_CLAIM_TOKENS=8`,
+its documents being one sentence each) and which the four-knob list did not mention at all. Lowering
+the floor then returns the cross-edition pair, and what is left is the `duplicate_collapse` case:
+`policy_2024_copy.md` is byte-identical to `policy_2024.md`, the store holds one chunk set for both,
+and the pair through the collapsed copy can never be returned. That is the stage whose knob is
+*none*, and it is why "rebuild the store" is not the advice for every chunkless document -- a
+rebuild would collapse the duplicate again.
+
+```text
+make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own-store> \
+  COS_THRESHOLD=0.7 PROJECT_POLICY=conservative,prefer-newer
+[conflicts] governance coverage: ... 2 of 3 document pairs and 0 of 1 returned pair orderable by
+  `compare_editions` -- so the zero above is STRUCTURAL for this RUN, and the stage that lost the
+  orderable pair is RETRIEVAL, not ingestion: ... Fixable where the candidate list is built, not by
+  re-ingesting the corpus. First orderable document pair that did not survive:
+  `handbook_2026.md` + `policy_2024.md`, lost at the CLAIM-TOKEN FLOOR (every chunk of
+  `handbook_2026.md` and `policy_2024.md` in the store is excluded from comparison -- front matter,
+  below `--min-claim-tokens`, or a repeated metadata block). One knob: lower `--min-claim-tokens`,
+  or re-chunk so the claim lands in a longer chunk.
+```
+
+**Where the corpus-order rule is weakest.** On the 7-document fixture the pair named is
+`archive-policy.md` + `deadline-note.md` at `candidates` -- two unrelated documents that were never
+going to pair, and the least informative of the five answers. Corpus order picks the first lost
+pair, not the most diagnostic one, so a corpus with one genuine chunking gap and many merely
+unrelated pairs can report `candidates` and hide the gap. Reporting the EARLIEST stage present
+instead is tracked in [`plan.md`](../../plan.md)
+(`conflict-stage-attribution-reports-the-earliest-stage-not-the-first-pair`).
 
 ### One actionable set
 

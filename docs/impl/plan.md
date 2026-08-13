@@ -45,36 +45,39 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-coverage-names-the-knob-that-dropped-the-orderable-pair (optional)
+### conflict-stage-attribution-reports-the-earliest-stage-not-the-first-pair (optional)
 
-The coverage reading now names the STAGE an orderable pair was lost at, but on a retrieval miss it
-lists every knob at once -- raise `--effort`, raise `--max-candidate-pairs`, re-chunk, re-embed --
-because nothing in the run records which one dropped the pair
-([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
-The run already holds enough to narrow it: an orderable document pair whose documents contribute no
-chunk to the store was lost at CHUNKING or at ingestion into the store; one whose chunks are in the
-store but never became a candidate was lost at the threshold or the budget; one adjudicated and
-returned as `complementary` was not lost at all. Report the first orderable document pair that did
-not survive, with the stage it stopped at, so the advice is one knob rather than four. Keep it a
-report over what the run already computed -- re-running detection to chase the pair is a different
-(and much more expensive) feature.
+The stage attribution names the FIRST orderable document pair that did not survive, in corpus
+order, and on the 7-document fixture that pair is `archive-policy.md` + `deadline-note.md` at
+`candidates` -- two unrelated documents that were never going to pair, and the least informative of
+the five stages
+([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
+A corpus with one genuine chunking gap and many merely unrelated pairs therefore reports
+`candidates` and hides the gap: the pair an operator needs is the one lost EARLIEST, not the one
+whose documents sort first. Report the earliest stage present instead (with the pair that
+demonstrates it), and keep the scan off a quadratic path -- the early stages are properties of a
+DOCUMENT (no stored chunk, no comparable chunk) rather than of a pair, so the documents in each
+class can be found in one pass and only their pairs need testing. State whether the earliest stage
+and the first pair ever disagree on the committed bundles; if they never do, the rule change is not
+worth making.
 
 - Agent status: CLEAR
-- Dependencies: none. `document_pair_orderability` in `src/llb/conflicts/governance_coverage.py`
-  supplies the orderable document pairs, and the semantic tier's `TierStats.extra` already records
-  chunk counts, exclusions, and the candidate budget the run resolved.
-- User-visible outcome: an operator reading a retrieval miss turns one knob instead of trying four.
-- Scope boundary: in scope -- the per-stage attribution for orderable document pairs that did not
-  reach the returned rows, and its appearance beside the existing counts. Out of scope -- changing
-  any threshold or budget on the finding, re-running detection, and reporting attribution for pairs
-  the corpus cannot order at all.
+- Dependencies: none. `first_lost_orderable_pair` and `_stage_of` in
+  `src/llb/conflicts/governance_stage.py` are the scan and the stage order; `DocumentChunks`
+  already carries the per-document facts the early stages are read from.
+- User-visible outcome: an operator whose store is missing a document learns that, instead of being
+  pointed at a candidate budget that is not the problem.
+- Scope boundary: in scope -- the earliest-stage rule, its cost bound, and the disagreement count
+  over the committed bundles. Out of scope -- reporting more than one pair, adding a stage, and
+  re-running detection to chase a pair.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: audit-side attribution with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose orderable document pair is excluded by the
-  claim-token floor names that stage, and one excluded by the candidate budget names that one; a
-  run where every orderable document pair was returned prints no attribution at all.
+- Execution path: audit-side rule change with fixture tests; recompute over committed bundles, no
+  GPU.
+- Acceptance gates: `make ci` green; a fixture whose earliest lost stage is `chunking` and whose
+  first lost pair is `candidates` reports `chunking`; the reading states on how many committed
+  bundles the two rules disagree, including the bundles where they do not.
 - Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
+  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
 
 ### venv-pins-the-mcp-version-vllm-pulls-in (optional)
 
@@ -290,7 +293,6 @@ of a revision pair, and record the share beside the fixture's.
   writes on the same rows.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
-
 
 ### conflict-claim-yield-across-store-generations (optional)
 
@@ -1316,7 +1318,6 @@ the entry on Ollama so the roster is served by one backend end to end.
 - Documentation target: the roster baseline in
   [backend telemetry](current/backend-telemetry.md) and the host setup notes in
   [host validation](current/host-validation.md).
-
 
 ### conflict-decision-group-partition-refinement (optional)
 

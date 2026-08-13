@@ -26,6 +26,7 @@ from llb.conflicts.constants import (
 )
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
 from llb.conflicts.governance_coverage import governance_coverage
+from llb.conflicts.governance_stage import DocumentChunks, lost_pair_attribution
 from llb.conflicts.hash_tier import detect_hash_duplicates
 from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
@@ -132,18 +133,27 @@ def run_audit(
         result.tiers.append(lexical_stats)
         _LOG.info("[conflicts] tier=lexical findings=%d", len(lexical_findings))
 
+    # None below the semantic tier, and that is itself the attribution: a run that read no store
+    # lost its orderable pairs at the effort dial rather than at any knob inside retrieval.
+    chunks: DocumentChunks | None = None
     if TIER_SEMANTIC in tiers:
         if store is None:
             raise SystemExit(
                 "[conflicts] the semantic tier needs a built store: pass --store or build one "
                 "with `make build-index`."
             )
-        run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+        chunks = run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
 
     # One exit, because the governance coverage is a property of the corpus AND of the rows every
     # tier returned: a delta of zero means one thing when a returned pair could have been ordered
     # by edition and the opposite when the corpus was ingested without a date on any document.
-    result.governance_coverage = governance_coverage(
-        [doc.governance for doc in docs], result.rows()
-    )
+    rows = result.rows()
+    coverage = governance_coverage([doc.governance for doc in docs], rows)
+    result.governance_coverage = {
+        **coverage,
+        # Beside the counts, never inside them: the counts say a pair was lost, this says where.
+        **lost_pair_attribution(
+            coverage, [(doc.doc_id, doc.governance) for doc in docs], rows, chunks
+        ),
+    }
     return result

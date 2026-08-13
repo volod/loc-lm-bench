@@ -25,6 +25,8 @@ The middle count is what names the STAGE that lost an orderable pair, which is t
 is here: a corpus dated end to end whose one revision pair never entered the candidate list at the
 budget the run used, and a corpus with no date anywhere, both return zero orderable pairs -- and an
 operator fixes them in opposite places (raise the budget, re-chunk, or re-embed versus re-ingest).
+Which of those knobs it is, on one named pair, comes from `governance_stage.py` and rides in this
+payload as `lost_orderable_pair` -- optional, because a run that lost nothing has no knob to name.
 
 Detection-side and policy-free: nothing here imports the resolution vocabulary, so the coverage is
 recorded on every audit and only its READING beside a delta needs a policy to have been named.
@@ -37,20 +39,18 @@ from collections import Counter
 from collections.abc import Hashable, Sequence
 
 from llb.conflicts.census import counted
-from llb.conflicts.governance import (
-    BASIS_EFFECTIVE_DATE,
-    BASIS_VERSION,
-    compare_editions,
-    edition_key,
-)
+from llb.conflicts.governance import ORDERING_FIELDS, compare_editions, edition_key
+from llb.conflicts.governance_stage import lost_pair_sentence
 from llb.core.contracts.common import JsonObject
 
 # 1 counts dated documents and orderable returned pairs beside the policy delta.
 # 2 adds the orderable DOCUMENT pairs between them, which is what names the stage a run lost one at.
-COVERAGE_SCHEMA_VERSION = 2
-# The fields `compare_editions` can order on, named once so the count and the test cannot part.
-ORDERING_FIELDS = (BASIS_EFFECTIVE_DATE, BASIS_VERSION)
+# 3 adds the optional `lost_orderable_pair` attribution, which names that stage on one pair.
+COVERAGE_SCHEMA_VERSION = 3
 ORDERING_FIELDS_PHRASE = " or ".join(f"`{field}`" for field in ORDERING_FIELDS)
+# The knobs the retrieval reading lists when nothing narrowed them to one. `governance_stage.py`
+# narrows them whenever the run recorded what it needs to; this is what an audit that did not says.
+RETRIEVAL_KNOBS = " (raise `--effort` or `--max-candidate-pairs`, re-chunk, or re-embed)"
 COVERAGE_LABEL = "governance coverage"
 
 
@@ -228,28 +228,35 @@ def coverage_reading(coverage: JsonObject, *, zero_delta: bool) -> str:
 
     A non-zero delta needs no reading; the counts still ride with it, because they are the pairs
     the choice was drawn from.
+
+    Every reading can carry the STAGE attribution, because a run that returned some orderable pairs
+    can still have lost others -- and where the attribution is present it REPLACES the retrieval
+    reading's list of knobs, which is the whole point of having measured which one it was.
     """
     counts = f"{COVERAGE_LABEL}: {coverage_counts_phrase(coverage)}"
+    attribution = lost_pair_sentence(coverage)
     if not zero_delta:
-        return f"{counts} -- the rows the choice moves are drawn from those orderable pairs."
-    if has_orderable_pair(coverage):
-        return (
+        reading = f"{counts} -- the rows the choice moves are drawn from those orderable pairs."
+    elif has_orderable_pair(coverage):
+        reading = (
             f"{counts} -- so the zero above is about this corpus's KNOWLEDGE: a dated supersession "
             "was reachable on this run (these pairs carry the fields that promote one), and none "
             "of them became one the policies part over."
         )
-    if has_orderable_document_pair(coverage):
-        return (
+    elif has_orderable_document_pair(coverage):
+        reading = (
             f"{counts} -- so the zero above is STRUCTURAL for this RUN, and the stage that lost "
             "the orderable pair is RETRIEVAL, not ingestion: this corpus DOES carry document "
             "pairs `compare_editions` can order, and none of them reached the rows the audit "
-            "returned. Fixable where the candidate list is built (raise `--effort` or "
-            "`--max-candidate-pairs`, re-chunk, or re-embed), not by re-ingesting the corpus."
+            "returned. Fixable where the candidate list is built"
+            f"{'' if attribution else RETRIEVAL_KNOBS}, not by re-ingesting the corpus."
         )
-    return (
-        f"{counts} -- so the zero above is STRUCTURAL, not a finding about this corpus's "
-        "knowledge: `superseded_by` is derived from `compare_editions`, no document pair in the "
-        "corpus carries what it needs (no date at all, or one edition on every document), and no "
-        "policy pair could have differed on any run over this corpus. "
-        f"Fixable at INGESTION (record {ORDERING_FIELDS_PHRASE} on the documents), not at review."
-    )
+    else:
+        reading = (
+            f"{counts} -- so the zero above is STRUCTURAL, not a finding about this corpus's "
+            "knowledge: `superseded_by` is derived from `compare_editions`, no document pair in "
+            "the corpus carries what it needs (no date at all, or one edition on every document), "
+            "and no policy pair could have differed on any run over this corpus. Fixable at "
+            f"INGESTION (record {ORDERING_FIELDS_PHRASE} on the documents), not at review."
+        )
+    return f"{reading} {attribution}" if attribution else reading
