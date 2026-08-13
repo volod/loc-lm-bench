@@ -45,35 +45,98 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-policy-delta-on-a-corpus-with-real-supersessions (optional)
+### conflict-governance-coverage-behind-a-zero-policy-delta (optional)
 
-The policy-choice delta is measured on exactly one corpus where it is non-zero -- the committed
-7-document fixture, whose 2 `superseded_by` rows make the delta `-2`
+A zero policy-choice delta has two opposite readings and the audit cannot tell them apart: the
+corpus may carry dated revisions the two policies happen to agree on, or it may carry no governance
+dates at all, in which case `superseded_by` can never be derived and the zero is a property of the
+INGESTION rather than of the knowledge
 ([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-That shows the mechanism and says nothing about magnitude: a fixture planted to contain one dated
-supersession cannot tell an operator whether their corpus carries enough of them for the choice to
-matter. Both quickstart corpora report a zero delta, so the repo currently has no reading of how
-often the two policies actually part on real documents. Measure it on a corpus with genuine dated
-revisions (the 8-document HR corpus is the obvious candidate, and it is operator data absent from
-this host), and record the share of actionable rows the choice moves rather than only its sign.
+Every corpus on this host that reports a zero is the second case, so an operator who reads "the
+choice is free here" is currently being told something the run did not measure. Report the
+precondition beside the delta: documents carrying `effective_date` / `version`, and the share of
+the returned candidate pairs whose two sides are ORDERABLE by `compare_editions` -- then say a zero
+delta on a corpus with no orderable pair is structural, and only a zero delta with orderable pairs
+present is evidence the policies agree.
+
+- Agent status: CLEAR
+- Dependencies: none. `compare_editions` in `src/llb/conflicts/governance.py` is the orderability
+  test and `load_corpus_docs` already resolves the governance fields; the delta block lives in
+  `src/llb/conflicts/policy_projection.py` and renders through `report_projection.py`.
+- User-visible outcome: an operator reading a free policy choice learns whether their corpus has
+  nothing to decide or simply has no dates to decide it with -- the second is fixable at ingestion.
+- Scope boundary: in scope -- the coverage counts, the orderable-pair share, their appearance
+  beside the delta, and the two-reading statement. Out of scope -- changing how `superseded_by` is
+  derived, inferring dates from document text, and refusing to project when coverage is zero.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: audit-side counting with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture with dated documents and one with none report
+  different coverage and the matching reading; the delta itself is unchanged on both.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
+### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
+
+The policy-choice delta and its share of actionable rows are measured, but on exactly one corpus
+where the share is non-zero -- the committed 7-document fixture, which was planted to contain one
+dated supersession
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+Every other corpus on this host carries no governance dates at all, so its zero share is structural
+and carries no information about magnitude. The open question is unchanged and now sharper: on a
+corpus of genuine dated revisions, what share of the actionable rows does the policy choice move?
+Run the shipped `--project-policy conservative,prefer-newer` reading against the 8-document HR
+corpus (operator data, absent from this host) or another corpus with governance dates on both sides
+of a revision pair, and record the share beside the fixture's.
 
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `--project-policy conservative,prefer-newer` and the `deltas` block in
-  `src/llb/conflicts/policy_projection.py`; the corpus needs governance dates on both sides of a
-  revision pair, which is what promotes `contradicts` to `superseded_by`.
+- Dependencies: none. The projection, the delta, and the `moved_rows` / `moved_share` reading are
+  current behavior; the corpus needs `effective_date` or `version` on both sides of a revision
+  pair, which is what promotes `contradicts` to `superseded_by`.
 - User-visible outcome: an operator learns whether the resolution-policy choice is a real decision
   on corpora like theirs, or a knob that is free in practice.
-- Scope boundary: in scope -- one claim-tier run per corpus, the delta as a share of actionable
-  rows, and a stated reading. Out of scope -- adding a policy, changing how `superseded_by` is
-  derived, and making any policy the default.
+- Scope boundary: in scope -- one claim-tier run per dated corpus and the share beside the
+  fixture's. Out of scope -- adding a policy, changing how `superseded_by` is derived, and making
+  any policy the default.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` layout.
 - Execution path: one claim-tier run per corpus on the CUDA host with both policies projected; no
   new CI coverage beyond the existing fixtures.
 - Acceptance gates: `make ci` green; every corpus reports its delta and the share of actionable
-  rows it moves, including the corpora where the share is zero; each projected column still equals
-  the `plan.json` `review_rows` the same policy writes on the same rows.
+  rows it moves; each projected column still equals the `plan.json` `review_rows` the same policy
+  writes on the same rows.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
+### conflict-group-ids-that-survive-a-re-run (optional)
+
+A group id is `G<n>` from `findings.jsonl` file order, and that order is the score-ranked one -- so
+a group id is stable inside one run and NOT across two runs of the same corpus, because the claim
+adjudicator's scores are not bit-reproducible. Measured: two claim-tier runs of the committed
+fixture returned the same 17 rows, the same relations, and the same document pairs, yet the group
+holding the dated supersession was `G4` in one and `G3` in the other
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+Nothing joins across runs today, so nothing is broken -- but an operator comparing this week's
+audit to last week's, or a dashboard keying a decision on `G3`, silently compares two different
+decisions. Give a group an identity derived from its ROWS (a digest over its member `finding_id`s,
+which are content hashes) carried beside the positional id, so a cross-run comparison joins on
+something the ordering cannot move.
+
+- Agent status: CLEAR
+- Dependencies: none. `finding_id` (`src/llb/conflicts/hashing.py`) is already the content-addressed
+  row identity and `group_summaries` (`group_artifact.py`) is where a group's member list is built;
+  the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
+  join on it within a run.
+- User-visible outcome: an operator can tell whether the decision they triaged last week is the
+  decision the audit is showing them today.
+- Scope boundary: in scope -- the row-derived group key, its appearance in `groups.json` and
+  `plan.json`, and a test that re-ordering the same rows preserves it. Out of scope -- replacing
+  the positional id, changing the grouping rule, and building a cross-run diff command.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: sidecar and plan change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose rows are re-ordered so the positional ids move
+  keeps every row-derived key; two audits of the same corpus whose rows differ only in order agree
+  on the keys group for group.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
 
 ### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 

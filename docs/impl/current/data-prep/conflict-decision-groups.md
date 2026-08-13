@@ -121,7 +121,7 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
   code with and without the flag.
 - **What it adds.** A headline line per policy, one `to review (projected, <policy>)` column per
   policy in the decision-groups table, and `policy_projection` in `summary.json`
-  (`schema_version: 2`, `kind: projection`, `basis`, `policies`, `by_policy` with each policy's
+  (`schema_version: 3`, `kind: projection`, `basis`, `policies`, `by_policy` with each policy's
   `review_rows` / `review_groups` / per-group counts, and `deltas`). The per-group counts are keyed
   by the same group ids `groups.json` and `plan.json` use. The CLI echoes the same numbers.
   `findings.jsonl` and `groups.json` are untouched: the projection depends on a policy, and those
@@ -138,6 +138,18 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
   that is one group changing or twenty cancelling out, which is why the group list rides with it.
   A delta cell is rendered `+2` / `-2` / `0` through one helper so it can never be misread as a
   count, and `0` is bare rather than `+0`.
+- **And the delta reads as a SHARE, because a sign is not a magnitude.** `-2` on a 17-row fixture
+  and `-2` on a corpus of thousands are the same sign and different decisions, so each delta also
+  carries `moved_rows`, `actionable_rows`, and `moved_share`, rendered as
+  `moves 2 of 9 actionable rows (22.2%)` in the headline and the CLI through one helper
+  (`moved_share_phrase`). The denominator is the audit's own **to decide** set (`decide_count`,
+  the one `is_actionable` definition), so the share is measured against the rows the audit already
+  calls work rather than against a second notion of "relevant". `moved_rows` is a GROSS count of
+  rows whose resolved status differs, not the net: two rows moving opposite ways inside one group
+  would cancel in `review_rows` and still cost an operator two decisions -- which the two shipped
+  policies [cannot yet do](#what-the-policy-choice-costs-measured). `moved_share` is `null`, never
+  `0.0`, on a corpus with nothing to decide -- no work at all and work the choice never touches
+  are opposite readings.
 - **A projection, never a measurement**, said at every appearance -- the flag, every headline line,
   the column paragraph, the CLI lines, and the artifact's own `kind`/`basis` fields. Each column is
   only true of the policy it names, the delta inherits that caveat from both columns it subtracts,
@@ -201,12 +213,27 @@ resolves the same way under both. So a corpus with no dated supersession has a z
 construction, and both goods bundles are that corpus -- which is why the delta column needed a
 third bundle to be worth printing at all.
 
-CUDA host, RTX PRO 3000 Blackwell.
+A sign, though, only answers WHETHER the choice is a choice. `-2` on a 17-row fixture and `-2` on a
+corpus of thousands are the same sign and completely different decisions, so every delta is also
+read as a SHARE of the rows the audit calls work: `moved_rows` of `actionable_rows`, rendered
+`moves 2 of 9 actionable rows (22.2%)`. That is the number that transfers between corpora.
 
-| bundle | rows | `conservative` | `prefer-newer` | delta | groups moved |
-| --- | --- | --- | --- | --- | --- |
-| conflicts fixture, claim tier | 17 | 2 | 0 | **-2** | G4 |
-| goods semantic, budget 100 | 100 | 100 | 100 | 0 | none |
+CUDA host, RTX PRO 3000 Blackwell, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating, one claim-tier
+run per corpus present on this host with `PROJECT_POLICY=conservative,prefer-newer`. Every run
+agreed with all 24 frozen probe pairs before its rows were adjudicated.
+
+| bundle | rows | to decide | `conservative` | `prefer-newer` | delta | groups moved | rows moved |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| conflicts fixture, claim | 17 | 9 | 2 | 0 | **-2** | G3 | **2 of 9 (22.2%)** |
+| goods, claim budget 100 | 100 | 2 | 0 | 0 | 0 | none | 0 of 2 (0.0%) |
+| quickstart-PDF, claim budget 100 | 100 | 0 | 0 | 0 | 0 | none | 0 of 0 |
+| goods, semantic (re-read) | 100 | 100 | 100 | 100 | 0 | none | 0 of 100 (0.0%) |
+
+The first three rows are runs under `.data/corpus-conflicts/20260813T-policy-share-{fixture,goods,
+quickstart-pdf}-claim/`. The fourth is the committed semantic bundle
+(`20260812T-policy-choice-goods-semantic/findings.jsonl`) re-read through `project_policies`: the
+share is a pure function of the rows, so an audit already on disk gets its share back with no model
+call and no store.
 
 - **The corpus where the choice is not free** is the committed fixture at
   `samples/corpora/conflicts_uk_v1/`, which already plants a dated supersession (the 2021 vs 2024
@@ -214,28 +241,57 @@ CUDA host, RTX PRO 3000 Blackwell.
   be planted for this. Run:
   `make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim
   STORE=<heading@600 store> MIN_CLAIM_TOKENS=10 PROJECT_POLICY=conservative,prefer-newer`
-  (`.data/corpus-conflicts/20260812T-policy-choice-fixture-claim/`, 19-chunk
-  `multilingual-e5-base` `heading@600` store, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M agreeing with all
-  24 frozen probe pairs, 14 rows adjudicated in 53 s). It returns **17 findings in 4 groups, 9 to
-  decide**, including 2 `superseded_by` rows. The report reads `to review (PROJECTED under policy
-  conservative): 2 rows in 1 decision group`, `(PROJECTED under policy prefer-newer): 0 rows in 0
-  decision groups`, and `policy choice conservative -> prefer-newer: -2 rows to review, falling in
-  1 decision group (G4)`. Both columns were then checked against the thing they project: running
+  (`.data/corpus-conflicts/20260813T-policy-share-fixture-claim/`, 19-chunk `multilingual-e5-base`
+  `heading@600` store, 14 rows adjudicated in 49 s). It returns **17 findings in 4 groups, 9 to
+  decide**, including 2 `superseded_by` rows, and the report reads `policy choice conservative ->
+  prefer-newer: -2 rows to review, falling in 1 decision group (G3). The choice moves 2 of 9
+  actionable rows (22.2%)`. Both columns were checked against the thing they project: running
   `resolve-corpus-conflicts` on the same rows under each policy wrote `plan.json` decisions equal
-  to the projection group for group (`{G1: 0, G2: 0, G3: 0, G4: 2}` and all zeros), under
-  `.data/corpus-conflicts/20260812T-policy-choice-fixture-claim/resolve-{conservative,prefer-newer}/`.
-- **The corpus where it is free** is goods
-  (`.data/corpus-conflicts/20260812T-policy-choice-goods-semantic/`, 100 rows, 6 groups): every row
-  is a semantic-tier duplicate, that tier has no deletion authority under either policy, so both
-  columns read 100 and the delta is 0 in every group. The report says so in those words -- **no
-  difference on this corpus** -- rather than printing two identical columns and leaving the
-  operator to compare them. Reading a zero delta correctly matters: it means the policy question
-  can be dropped on this corpus, not that the policies are interchangeable in general.
+  to the projection group for group (`{G1: 0, G2: 0, G3: 2, G4: 0}` and all zeros), under
+  `.../20260813T-policy-share-fixture-claim/resolve-{conservative,prefer-newer}/`. The same check
+  passed on the other two bundles, where both policies leave every group at zero.
+- **The corpora where it is free are free for a reason that is not about their knowledge.**
+  `superseded_by` is derived from `compare_editions`, which needs `effective_date` or `version` on
+  BOTH sides, and neither quickstart corpus carries either field on any document: 0 of 5 goods
+  documents and 0 of 3 quickstart-PDF documents, against 7 of 7 in the fixture. Their zero delta is
+  therefore a property of how they were ingested (PDF conversion, no governance front matter), not
+  a finding that their revisions agree under both policies. An operator reading "the choice is free
+  here" needs that distinction, and the audit does not currently draw it -- that is tracked in
+  [`plan.md`](../../plan.md) (`conflict-governance-coverage-behind-a-zero-policy-delta`), not a
+  claim this page makes.
+- **A zero share and no share are different answers.** goods claim reads `0 of 2 actionable rows
+  (0.0%)` -- there IS work to decide (2 `subsumed_by` rows) and the policy choice touches none of
+  it. quickstart-PDF reads `0 of 0 actionable rows` with `moved_share: null` -- its 100 rows are
+  every one `complementary`, so there is no work for a policy to move in the first place. The
+  artifact keeps them apart (`null` is never written as `0.0`) because they lead an operator to
+  opposite next steps.
+- **The share counts rows that MOVED, not the net -- and today those are the same number.**
+  `review_rows` is a signed per-group total, so two rows moving opposite ways inside one group
+  would cancel to zero while still costing two decisions; `moved_rows` is the gross count and
+  cannot. The two shipped policies cannot actually produce that case: `prefer-newer` differs from
+  `conservative` on one relation in one direction (it settles a dated supersession instead of
+  escalating it) and never turns an accepted row back into review work, so `|delta| == moved_rows`
+  on all four bundles above and on any corpus this pair is run over. The gross count is therefore
+  carried against a third policy rather than proven necessary by these corpora, and
+  `tests/llb/conflicts/test_policy_projection.py` pins both halves: that the shipped pair only
+  settles rows, and that a cancelling delta renders as the rows it moved instead of as **no
+  difference**.
 
-The measurement's own limit: the fixture is 7 small documents, so its delta shows the mechanism
-rather than a realistic magnitude. Whether a production corpus carries enough dated supersessions
-for the choice to matter is a per-corpus question, and the delta column is what answers it in one
-command.
+Two limits of this measurement, both worth stating because they bound what the 22.2% means:
+
+- **The only non-zero share on this host comes from a planted corpus.** The fixture is 7 small
+  documents built to contain one dated supersession, so 22.2% is the share of a corpus designed to
+  have one, not an estimate of what a production corpus carries. The 8-document HR corpus is
+  operator data and absent from this host; measuring a real dated corpus stays open work in
+  [`plan.md`](../../plan.md) (`conflict-policy-delta-on-an-operator-corpus-with-dated-revisions`).
+- **Group ids are stable inside a run, not across two.** The fixture was audited twice
+  (`20260812T-policy-choice-fixture-claim` and `20260813T-policy-share-fixture-claim`) and returned
+  the same 17 rows, the same relations, and the same document pairs both times -- but the
+  adjudicator's scores are not bit-reproducible, the row order is score-ranked, and so the group
+  holding the supersession was `G4` in the first run and `G3` in the second. Nothing joins across
+  runs today (`source_findings_sha256` pins a plan to its own rows), so no artifact is wrong; a
+  reader comparing two audit reports by group label would be. A row-derived group key is tracked in
+  [`plan.md`](../../plan.md) (`conflict-group-ids-that-survive-a-re-run`).
 
 ### One actionable set
 

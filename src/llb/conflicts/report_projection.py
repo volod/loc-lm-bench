@@ -103,21 +103,44 @@ def _policy_line(projection: JsonObject, policy: str, *, first: bool) -> str:
     )
 
 
+def moved_share_phrase(delta: JsonObject) -> str:
+    """`2 of 9 actionable rows (22.2%)` -- the delta as a share, which is what transfers.
+
+    A sign says whether the policy choice is a choice; only a share says how big a one, and only
+    the share is comparable between a 17-row fixture and a corpus of thousands. It counts rows
+    that MOVED rather than the net `review_rows`, because two rows moving opposite ways inside one
+    group would cancel in the net and still cost an operator two decisions -- which the two shipped
+    policies cannot yet do, so today the two counts agree everywhere.
+    """
+    moved, actionable = int(delta["moved_rows"]), int(delta["actionable_rows"])
+    count = f"{moved} of {counted(actionable, 'actionable row')}"
+    # `0 of 0 actionable rows` is the whole reading on a corpus with nothing to decide; a percent
+    # of nothing is not, so the ratio is the only part that needs the guard.
+    return count if not actionable else f"{count} ({moved / actionable:.1%})"
+
+
 def _delta_line(delta: JsonObject) -> str:
     """What the policy CHOICE costs -- the number a single projected column cannot show."""
     moved = [str(group) for group in delta["moved_groups"]]
     rows, baseline, policy = int(delta["review_rows"]), delta["baseline"], delta["policy"]
-    if not moved:
+    share = moved_share_phrase(delta)
+    if not int(delta["moved_rows"]):
         return (
             f"- policy choice `{baseline}` -> `{policy}`: **no difference on this corpus** -- the "
             "two policies leave the same rows open in every decision group, so the choice costs "
-            "nothing here. It is not free in general: the policies part on dated supersessions, "
-            "and this corpus has none the tiers found."
+            f"nothing here (**{share}** moved). It is not free in general: the policies part on "
+            "dated supersessions, and this corpus has none the tiers found."
         )
+    where = (
+        f"falling in {counted(len(moved), 'decision group')} ({', '.join(moved)})"
+        if moved
+        else "cancelling out inside the decision groups it moves rows in"
+    )
     return (
         f"- policy choice `{baseline}` -> `{policy}`: **{signed_delta(rows)} "
-        f"{'rows' if abs(rows) != 1 else 'row'}** to review, falling in "
-        f"{counted(len(moved), 'decision group')} ({', '.join(moved)}). A delta between two "
+        f"{'rows' if abs(rows) != 1 else 'row'}** to review, {where}. The choice moves "
+        f"**{share}** -- the share, not the sign, is what says whether a corpus carries enough "
+        "dated supersessions for the choice to matter. A delta between two "
         "projections, so it inherits their caveat: it is what the resolver would measure under "
         "each policy, not what a reviewer will decide."
     )

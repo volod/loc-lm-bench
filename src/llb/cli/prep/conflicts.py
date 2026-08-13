@@ -238,7 +238,7 @@ def _echo_projection(projection: JsonObject) -> None:
     if not projection:
         return
     from llb.conflicts.census import counted
-    from llb.conflicts.report_projection import policies_of, signed_delta
+    from llb.conflicts.report_projection import moved_share_phrase, policies_of, signed_delta
 
     for policy in policies_of(projection):
         counts = projection.get("by_policy", {}).get(policy, projection)
@@ -249,11 +249,17 @@ def _echo_projection(projection: JsonObject) -> None:
             "(a projection, not a measurement; resolve-corpus-conflicts measures it)"
         )
     for delta in projection.get("deltas") or []:
-        moved = delta["moved_groups"]
-        where = f" in {', '.join(moved)}" if moved else " -- the choice is free on this corpus"
+        moved = [str(group) for group in delta["moved_groups"]]
+        if not int(delta["moved_rows"]):
+            where = " -- the choice is free on this corpus"
+        elif moved:
+            where = f" in {', '.join(moved)}"
+        else:
+            where = " -- cancelling out inside the groups it moves rows in"
         typer.echo(
             f"[conflicts] policy choice {delta['baseline']} -> {delta['policy']}: "
-            f"{signed_delta(int(delta['review_rows']))} rows to review{where}"
+            f"{signed_delta(int(delta['review_rows']))} rows to review{where}; "
+            f"moves {moved_share_phrase(delta)}"
         )
 
 
