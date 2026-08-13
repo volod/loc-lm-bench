@@ -121,9 +121,10 @@ class AuditResult:
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
     # Whether this corpus could carry a dated supersession at all: the documents that record an
-    # orderable governance field, and the returned pairs `compare_editions` can order. Detection-
-    # side and policy-free, so it is recorded on every run -- it is what tells a zero policy delta
-    # (a property of the KNOWLEDGE) apart from a corpus that was ingested without dates at all.
+    # orderable governance field, the corpus's own document pairs `compare_editions` can order, and
+    # the returned pairs it can order. Detection-side and policy-free, so it is recorded on every
+    # run -- it is what tells a zero policy delta (a property of the KNOWLEDGE) apart from a pair
+    # the candidate list never returned, apart from a corpus ingested without dates at all.
     governance_coverage: JsonObject = field(default_factory=dict)
     # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
     # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole

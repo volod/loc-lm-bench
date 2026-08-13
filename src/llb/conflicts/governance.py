@@ -38,6 +38,12 @@ def _version_key(value: str) -> tuple[tuple[int, Any], ...]:
     return tuple(parts)
 
 
+_KEY_OF_BASIS: dict[str, Callable[[str], Any]] = {
+    BASIS_EFFECTIVE_DATE: _date_key,
+    BASIS_VERSION: _version_key,
+}
+
+
 def _compare(a_value: str | None, b_value: str | None, key: Callable[[str], Any]) -> str | None:
     """`"a"` / `"b"` for the greater side under `key`, or None when not orderable."""
     if not a_value or not b_value or a_value == b_value:
@@ -46,6 +52,20 @@ def _compare(a_value: str | None, b_value: str | None, key: Callable[[str], Any]
     if a_key is None or b_key is None or a_key == b_key:
         return None
     return SIDE_A if a_key > b_key else SIDE_B
+
+
+def edition_key(governance: JsonObject, field: str) -> Any | None:
+    """The key `compare_editions` orders `field` on, or None when this record cannot be ordered by it.
+
+    Two records are orderable by `field` exactly when both keys exist and DIFFER -- the same three
+    conditions `_compare` applies, restated in a form that can be grouped instead of enumerated, so
+    a count over a corpus's document pairs stays linear in the documents rather than quadratic in
+    the pairs. It is the same key function either way, so the count cannot drift from the ordering.
+    """
+    value = governance.get(field)
+    if not isinstance(value, str) or not value:
+        return None
+    return _KEY_OF_BASIS[field](value)
 
 
 def compare_editions(a: JsonObject, b: JsonObject) -> Staleness:

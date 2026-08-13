@@ -315,42 +315,67 @@ corpus on this host that reports a zero is the second case, so the audit reports
 beside the delta rather than leaving an operator to read "the choice is free here" off a run that
 could not have said anything else.
 
-`src/llb/conflicts/governance_coverage.py` counts it at the two levels it can be missing at, using
-`compare_editions` -- the same orderability test that promotes a dated contradiction to
+`src/llb/conflicts/governance_coverage.py` counts it at the three levels it can be missing at,
+using `compare_editions` -- the same orderability test that promotes a dated contradiction to
 `superseded_by`, so the precondition cannot drift from the thing it is a precondition for:
 
 | level | field | what it means |
 | --- | --- | --- |
 | corpus | `dated_documents` of `documents`, plus `documents_by_field` | documents recording `effective_date` or `version`; zero here means no run over this corpus can ever produce a non-zero delta |
-| run | `orderable_pairs` of `returned_pairs`, plus `orderable_share` | returned pairs whose two sides that function actually orders; the stricter count, and the one the reading turns on |
+| corpus | `orderable_document_pairs` of `document_pairs` | the corpus's OWN document pairs that function can order -- what the corpus could have supplied, with no candidate list and no store involved |
+| run | `orderable_pairs` of `returned_pairs`, plus `orderable_share` | returned pairs whose two sides that function actually orders; the stricter count, and the one a policy is replayed over |
 
-The two are different questions: a corpus can date every document and still return no orderable
-pair, because two sides carrying the SAME date order no better than two undated ones.
+The three are different questions. A corpus can date every document and still have nothing to
+order, because two documents carrying the SAME date order no better than two undated ones -- which
+is why the middle count is not implied by the first. And it can have orderable document pairs and
+still return none of them, which is why the middle count is not implied by the last.
 `orderable_share` is `null` rather than `0.0` when a run returned no pair at all, the same
 distinction `moved_share` draws one level up.
 
+The middle count is what names the STAGE a run lost an orderable pair at, and it is the reason the
+level exists: two corpora an operator would fix in opposite ways used to print the same structural
+line. `orderable_document_pairs` is derived from the distinct ordering KEYS rather than by
+enumerating pairs -- inclusion-exclusion over the date-key and version-key multisets
+(`document_pair_orderability`, with `edition_key` in `src/llb/conflicts/governance.py` as the
+shared key function) -- so a corpus of thousands of documents stays off a quadratic path. The unit
+test pins that count against enumerating `compare_editions` over every pair of every corpus
+drawable from a governance pool covering present, absent, blank, shared, and unparseable fields.
+
 **Where it appears.** `governance_coverage` rides in `summary.json` on every run, projection or
-not -- it is detection-side and policy-free. The READING is printed once beside the delta, in
-`report.md` and in the CLI through the same helper, and only where a delta exists: with one policy
-there is no choice to call free, and with no `--project-policy` the report is unchanged. A zero
-delta with no orderable pair reads **STRUCTURAL** and names ingestion as the fix; a zero delta with
-orderable pairs present reads as being about the corpus's KNOWLEDGE; a non-zero delta carries the
-counts without a reading, because the delta already is one.
-`tests/llb/conflicts/test_governance_coverage.py` pins the counts, both readings, and the gate --
-two corpora with byte-identical bodies, one dated and one not, whose coverage differs and whose
-delta does not.
+not -- it is detection-side and policy-free (`schema_version` 2 since the document-pair count
+joined it). The READING is printed once beside the delta, in `report.md` and in the CLI through the
+same helper, and only where a delta exists: with one policy there is no choice to call free, and
+with no `--project-policy` the report is unchanged. A non-zero delta carries the counts without a
+reading, because the delta already is one. A zero delta gets one of three, and the stage is the
+whole content of the difference:
+
+| coverage | reading | where the fix is |
+| --- | --- | --- |
+| a returned pair orders | about the corpus's **KNOWLEDGE**: dated pairs were reachable and the policies settled them the same way | nowhere -- this is evidence |
+| no returned pair orders, but document pairs do | **STRUCTURAL for this RUN**, and the stage that lost the orderable pair is **RETRIEVAL** | the candidate list: raise `--effort` or `--max-candidate-pairs`, re-chunk, or re-embed |
+| nothing orders at either level | **STRUCTURAL**, and no run over this corpus could have differed | **INGESTION**: record `effective_date` or `version` (or distinct ones -- one edition on every document counts as none) |
+
+`tests/llb/conflicts/test_governance_coverage.py` pins the counts, all three readings, and the gate
+-- three corpora audited the same way whose coverage reads at three different stages and whose
+delta is zero on all three, so the coverage is never an input to the delta.
 
 Measured over the four bundles the [policy-choice table](#what-the-policy-choice-costs-measured)
 above was measured on, recomputed from each `findings.jsonl` plus its corpus with no model, no
 store, and no re-adjudication (`pair_orderability` reads rows alone; only the document count needs
 the corpus):
 
-| bundle | dated documents | orderable returned pairs | delta | reading |
-| --- | --- | --- | --- | --- |
-| conflicts fixture, claim | 7 of 7 | 16 of 17 (0.941) | **-2** | non-zero; the counts ride with it |
-| goods, claim budget 100 | 0 of 5 | 0 of 100 (0.0) | 0 | STRUCTURAL |
-| quickstart-PDF, claim budget 100 | 0 of 3 | 0 of 100 (0.0) | 0 | STRUCTURAL |
-| goods, semantic | 0 of 5 | 0 of 100 (0.0) | 0 | STRUCTURAL |
+| bundle | dated documents | orderable document pairs | orderable returned pairs | delta | reading |
+| --- | --- | --- | --- | --- | --- |
+| conflicts fixture, claim | 7 of 7 | 20 of 21 | 16 of 17 (0.941) | **-2** | non-zero; the counts ride with it |
+| goods, claim budget 100 | 0 of 5 | 0 of 10 | 0 of 100 (0.0) | 0 | STRUCTURAL, INGESTION |
+| quickstart-PDF, claim budget 100 | 0 of 3 | 0 of 3 | 0 of 100 (0.0) | 0 | STRUCTURAL, INGESTION |
+| goods, semantic | 0 of 5 | 0 of 10 | 0 of 100 (0.0) | 0 | STRUCTURAL, INGESTION |
+
+No committed bundle reads as a retrieval miss: every corpus on this host that reports a zero either
+carries no governance date anywhere (the three undated rows, where re-ingesting IS the fix) or is
+the planted fixture, whose returned pairs order. The stage split was therefore demonstrated on a
+purpose-built dated corpus rather than found in the archive; the two runs below are that
+demonstration.
 
 The shipped command was then run end to end on the fixture to check the live path rather than the
 recompute (CUDA host, RTX PRO 3000 Blackwell, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M, 24/24 frozen
@@ -371,7 +396,52 @@ make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT
 That run is also where the [third limit](#what-the-policy-choice-costs-measured) above came from:
 its delta is -1 rather than the -2 the two earlier audits of the same corpus measured, while its
 coverage is identical to theirs. The precondition is a property of the corpus and reproduces; the
-delta is a property of one adjudication and does not.
+delta is a property of one adjudication and does not. Its coverage line predates the document-pair
+clause and is quoted as it was printed; the fixture's document-pair count (20 of 21) comes from the
+recompute above and from the hash-tier run below.
+
+**The stage split, run end to end.** Three documents, all dated, all versioned: two byte-identical
+copies of one edition and a third carrying a later edition of a claim that contradicts them
+(`.data/corpus-governance-stage-demo/`). The hash tier returns exactly one pair -- the two copies,
+which share an edition and order no better than two undated documents -- so the run has orderable
+document pairs and no orderable returned pair, which is the reading the count was added for
+(`.data/corpus-conflicts/20260813T-doc-pair-orderability-retrieval-miss-hash/`):
+
+```text
+make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=hash \
+  PROJECT_POLICY=conservative,prefer-newer
+[conflicts] policy choice conservative -> prefer-newer: 0 rows to review -- the choice is free on
+  this corpus; moves 0 of 1 actionable row (0.0%)
+[conflicts] governance coverage: 3 of 3 documents with `effective_date` or `version`
+  (3 `effective_date`, 3 `version`), 2 of 3 document pairs and 0 of 1 returned pair orderable by
+  `compare_editions` -- so the zero above is STRUCTURAL for this RUN, and the stage that lost the
+  orderable pair is RETRIEVAL, not ingestion: this corpus DOES carry document pairs
+  `compare_editions` can order, and none of them reached the rows the audit returned. Fixable
+  where the candidate list is built (raise `--effort` or `--max-candidate-pairs`, re-chunk, or
+  re-embed), not by re-ingesting the corpus.
+```
+
+Before this count, that run printed the ingestion line -- advice that would have changed nothing on
+a corpus already dated end to end. Taking the advice it prints now recovers the pair: the same
+corpus at `--effort semantic` against a store of its own returns the cross-edition pair as well,
+and the reading moves to KNOWLEDGE with the delta still zero
+(`.data/corpus-conflicts/20260813T-doc-pair-orderability-retrieval-recovered-semantic/`, store
+`.data/llb/rag-governance-stage-demo`; the documents are one sentence each, so the run needs
+`MIN_CLAIM_TOKENS=8` and `COS_THRESHOLD=0.7` to keep them above the claim floor):
+
+```text
+make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own-store> \
+  COS_THRESHOLD=0.7 MIN_CLAIM_TOKENS=8 PROJECT_POLICY=conservative,prefer-newer
+[conflicts] governance coverage: 3 of 3 documents with `effective_date` or `version`
+  (3 `effective_date`, 3 `version`), 2 of 3 document pairs and 1 of 2 returned pairs orderable by
+  `compare_editions` -- so the zero above is about this corpus's KNOWLEDGE: a dated supersession
+  was reachable on this run (these pairs carry the fields that promote one), and none of them
+  became one the policies part over.
+```
+
+The corpus-side counts are identical across the two runs (3 of 3 documents, 2 of 3 document pairs),
+which is the point: the corpus did not change between them, only the stage that chose the
+candidates -- and only the run-level count moved.
 
 **Orderability is necessary, not sufficient -- by a wide margin.** The fixture's 16 of 17 returned
 pairs are orderable and only 2 rows move: a pair must also be adjudicated `contradicts` before the
@@ -380,12 +450,12 @@ must never be read as a prediction of one. What it does rule out is the opposite
 the one an operator actually makes: a zero delta on a corpus with no orderable pair is not evidence
 about the corpus at all.
 
-**What it does not separate yet.** The run-level count is measured on the pairs the audit RETURNED,
-so a dated corpus whose one revision pair never entered the candidate list reports the same
-structural line as a corpus with no dates -- and the two are fixed in opposite ways (raise the
-budget versus re-ingest). A document-pair-level count is tracked in [`plan.md`](../../plan.md)
-(`conflict-governance-coverage-names-the-stage-that-lost-the-orderable-pair`), and surfacing the
-same count at ingestion time -- where the reading says the fix belongs -- in
+**What it does not separate yet.** The retrieval reading names the STAGE, not the KNOB: it lists
+`--effort`, `--max-candidate-pairs`, chunking, and embedding together, because nothing in the run
+records which of them dropped the orderable document pair. Narrowing that to the specific knob is
+tracked in [`plan.md`](../../plan.md)
+(`conflict-coverage-names-the-knob-that-dropped-the-orderable-pair`), and surfacing the corpus-side
+counts at ingestion time -- where the third reading says the fix belongs -- in
 `corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for`.
 
 ### One actionable set

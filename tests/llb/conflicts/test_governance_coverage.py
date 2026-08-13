@@ -4,10 +4,13 @@ A zero delta has two opposite readings -- the corpus carries dated revisions the
 on, or it carries no governance dates at all and `superseded_by` could never have been derived --
 and the delta alone cannot tell them apart. These tests pin the distinction end to end:
 
-1. the counts (`document_coverage`, `pair_orderability`) measure the two levels the precondition
-   can be missing at, and `compare_editions` is the same orderability test detection promotes on;
-2. the READING beside a zero delta follows the counts: structural with no orderable pair, evidence
-   about the corpus's knowledge with one;
+1. the counts (`document_coverage`, `document_pair_orderability`, `pair_orderability`) measure the
+   three levels the precondition can be missing at, and `compare_editions` is the same orderability
+   test detection promotes on -- the document-pair count is asserted against enumerating that
+   function over every pair, because it is computed from key multisets instead;
+2. the READING beside a zero delta follows the counts, and names the STAGE: an ingestion gap with
+   nothing orderable anywhere, a retrieval miss when the corpus has orderable document pairs and
+   the returned rows have none, evidence about the corpus's knowledge when a returned pair orders;
 3. the delta itself never moves, on either corpus -- the coverage is a second reading beside it,
    not an input to it.
 
@@ -17,16 +20,20 @@ precondition.
 """
 
 import json
+from itertools import combinations, combinations_with_replacement
 
 import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import REL_DUPLICATE, TIER_CLAIM, TIER_HASH
+from llb.conflicts.governance import compare_editions
 from llb.conflicts.governance_coverage import (
     COVERAGE_SCHEMA_VERSION,
     coverage_reading,
     document_coverage,
+    document_pair_orderability,
     governance_coverage,
+    has_orderable_document_pair,
     has_orderable_pair,
     pair_orderability,
 )
@@ -75,6 +82,23 @@ def _corpus(root, *, dated: bool):
     return root
 
 
+def _revision_corpus(root):
+    """A dated corpus whose orderable pair is NOT the pair the tiers return.
+
+    Two byte-identical copies of one edition (the duplicate the hash tier finds, and two sides
+    carrying the same date order no better than two undated ones) beside a third document holding a
+    later edition of something else -- so the corpus supplies orderable document pairs and the
+    returned row is not one of them.
+    """
+    root.mkdir(parents=True)
+    for name in ("first.md", "second.md"):
+        (root / name).write_text(f"---\neffective_date: 2024-01-01\n---\n{BODY}", encoding="utf-8")
+    (root / "third.md").write_text(
+        "---\neffective_date: 2026-01-01\n---\na later edition of another claim\n", encoding="utf-8"
+    )
+    return root
+
+
 def _audit(root):
     return run_audit(root, AuditParams(effort=TIER_HASH))
 
@@ -101,6 +125,93 @@ def test_document_coverage_counts_the_fields_an_edition_comparison_can_use(
     assert coverage["documents"] == 1
     assert coverage["dated_documents"] == dated
     assert coverage["documents_by_field"] == by_field
+
+
+@pytest.mark.parametrize(
+    ("governances", "pairs", "orderable"),
+    [
+        ([], 0, 0),
+        ([{"effective_date": "2024-01-01"}], 0, 0),
+        # Dated end to end and nothing to order: one edition recorded on both documents.
+        ([{"effective_date": "2024-01-01"}] * 2, 1, 0),
+        ([{"effective_date": "2021-01-01"}, {"effective_date": "2024-01-01"}], 1, 1),
+        ([{"version": "v1"}, {"version": "v2"}], 1, 1),
+        # A field each orders nothing: `compare_editions` needs the SAME field on both sides.
+        ([{"effective_date": "2024-01-01"}, {"version": "v2"}], 1, 0),
+        # The version fallback carries a pair the dates cannot.
+        (
+            [
+                {"effective_date": "2024-01-01", "version": "v1"},
+                {"effective_date": "2024-01-01", "version": "v2"},
+            ],
+            1,
+            1,
+        ),
+        # Orderable BOTH ways is still one pair -- the inclusion-exclusion term, not a double count.
+        (
+            [
+                {"effective_date": "2021-01-01", "version": "v1"},
+                {"effective_date": "2024-01-01", "version": "v2"},
+                {"effective_date": "2026-01-01", "version": "v3"},
+            ],
+            3,
+            3,
+        ),
+        # Two copies of one edition beside a revision: 3 pairs, and the 2 crossing the revision.
+        (
+            [
+                {"effective_date": "2024-01-01"},
+                {"effective_date": "2024-01-01"},
+                {"effective_date": "2026-01-01"},
+            ],
+            3,
+            2,
+        ),
+        ([{"language": "uk"}, {}], 1, 0),
+    ],
+)
+def test_document_pair_orderability_counts_what_the_corpus_itself_could_have_supplied(
+    governances, pairs, orderable
+):
+    """The middle count: measured on the corpus alone, with no candidate list and no store."""
+    coverage = document_pair_orderability(governances)
+
+    assert coverage["document_pairs"] == pairs
+    assert coverage["orderable_document_pairs"] == orderable
+    assert has_orderable_document_pair(coverage) is bool(orderable)
+
+
+_GOVERNANCE_POOL = (
+    {},
+    {"language": "uk"},
+    {"effective_date": "2024-01-01"},
+    {"effective_date": "2021-05-05"},
+    {"version": "v1"},
+    {"version": "v2"},
+    {"effective_date": "2024-01-01", "version": "v1"},
+    {"effective_date": "2021-05-05", "version": "v2"},
+    {"effective_date": "not-a-date", "version": "v1"},
+)
+
+
+@pytest.mark.parametrize("size", [2, 3, 4])
+def test_the_document_pair_count_equals_enumerating_compare_editions_over_every_pair(size):
+    """The count is derived from key multisets, so it is pinned against the quadratic truth.
+
+    Every corpus of `size` documents drawable from a pool covering each way the fields can be
+    present, absent, blank, shared, or unparseable -- the count must agree with the function it is
+    a precondition for on all of them, or the audit is measuring a different orderability.
+    """
+    for corpus in combinations_with_replacement(_GOVERNANCE_POOL, size):
+        enumerated = sum(
+            1
+            for left, right in combinations(corpus, 2)
+            if compare_editions(left, right).newer_side is not None
+        )
+        coverage = document_pair_orderability(list(corpus))
+
+        assert coverage["document_pairs"] == size * (size - 1) // 2
+        assert coverage["orderable_document_pairs"] == enumerated, corpus
 
 
 @pytest.mark.parametrize(
@@ -145,7 +256,7 @@ def test_a_run_that_returned_nothing_has_no_share_rather_than_a_zero_one():
 # --- the reading beside the delta ----------------------------------------------------------------
 
 
-def test_a_zero_delta_with_no_orderable_pair_reads_as_structural():
+def test_a_zero_delta_with_nothing_orderable_anywhere_reads_as_an_ingestion_gap():
     """The failure mode: an operator told the choice is free by a run that could not have differed."""
     undated = _projected(
         [_row(1, a_governance={}, b_governance={})],
@@ -155,9 +266,32 @@ def test_a_zero_delta_with_no_orderable_pair_reads_as_structural():
 
     assert "**no difference on this corpus**" in report
     assert "0 of 2 documents with `effective_date` or `version`" in report
-    assert "0 of 1 returned pair orderable by `compare_editions`" in report
+    assert "0 of 1 document pair and 0 of 1 returned pair orderable by `compare_editions`" in report
     assert "the zero above is STRUCTURAL" in report
     assert "Fixable at INGESTION" in report
+    assert "RETRIEVAL" not in report
+
+
+def test_a_zero_delta_on_a_dated_corpus_whose_rows_order_none_names_retrieval_instead():
+    """The reading this count exists for: the same structural zero, the opposite fix.
+
+    The corpus carries a revision `compare_editions` orders, and the pair the audit RETURNED is two
+    copies of one edition -- so nothing about the ingestion is wrong and re-ingesting would change
+    nothing. The stage that lost the orderable pair is the one that chose the candidates.
+    """
+    one_edition = {"effective_date": "2024-01-01"}
+    revision = {"effective_date": "2026-01-01"}
+    findings = [_row(1, a_governance=one_edition, b_governance=one_edition)]
+    rows = AuditResult(effort=TIER_CLAIM, corpus_root="c", n_docs=3, findings=findings).rows()
+    report = render_report(
+        _projected(findings, governance_coverage([one_edition, one_edition, revision], rows))
+    )
+
+    assert "**no difference on this corpus**" in report
+    assert "3 of 3 documents with `effective_date` or `version`" in report
+    assert "2 of 3 document pairs and 0 of 1 returned pair orderable" in report
+    assert "the stage that lost the orderable pair is RETRIEVAL, not ingestion" in report
+    assert "Fixable at INGESTION" not in report
 
 
 def test_a_zero_delta_with_orderable_pairs_present_reads_as_the_policies_agreeing():
@@ -208,7 +342,38 @@ def test_a_non_zero_delta_carries_the_counts_without_a_zero_reading():
     assert "STRUCTURAL" not in reading and "KNOWLEDGE" not in reading
 
 
-# --- the acceptance gate: two corpora, different coverage, the same delta -------------------------
+# --- the acceptance gate: three corpora, different coverage, the same delta -----------------------
+
+
+def test_three_corpora_read_as_three_stages_and_the_delta_never_moves(tmp_path):
+    """The gate the document-pair count exists for: one zero delta, three different fixes.
+
+    All three audits return a hash-tier duplicate, which resolves the same way under either policy,
+    so all three deltas are zero and a report printing only the delta would say "the choice is free
+    here" three times. The coverage separates them by the STAGE the orderable pair was lost at.
+    """
+    dated = _audit(_corpus(tmp_path / "dated", dated=True))
+    undated = _audit(_corpus(tmp_path / "undated", dated=False))
+    revision = _audit(_revision_corpus(tmp_path / "revision"))
+    results = (dated, undated, revision)
+
+    coverage = revision.governance_coverage
+    assert coverage["dated_documents"] == 3, "dated end to end, and audited at the same effort"
+    assert (coverage["orderable_document_pairs"], coverage["document_pairs"]) == (2, 3)
+    assert (coverage["orderable_pairs"], coverage["returned_pairs"]) == (0, 1)
+    assert undated.governance_coverage["orderable_document_pairs"] == 0
+    assert dated.governance_coverage["orderable_document_pairs"] == 1
+
+    deltas = [project_policies(result.rows(), list(POLICY_PAIR))["deltas"] for result in results]
+    assert deltas[0] == deltas[1] == deltas[2], "the coverage reads beside the delta, never into it"
+    assert deltas[0][0]["moved_rows"] == 0 and deltas[0][0]["review_rows"] == 0
+
+    knowledge, ingestion, retrieval = (
+        coverage_reading(result.governance_coverage, zero_delta=True) for result in results
+    )
+    assert "KNOWLEDGE" in knowledge and "STRUCTURAL" not in knowledge
+    assert "Fixable at INGESTION" in ingestion and "RETRIEVAL" not in ingestion
+    assert "RETRIEVAL, not ingestion" in retrieval and "INGESTION" not in retrieval
 
 
 def test_two_corpora_differing_only_in_dates_report_different_coverage_and_the_same_delta(tmp_path):

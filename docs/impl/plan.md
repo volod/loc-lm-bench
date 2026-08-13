@@ -45,38 +45,63 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-governance-coverage-names-the-stage-that-lost-the-orderable-pair (optional)
+### conflict-coverage-names-the-knob-that-dropped-the-orderable-pair (optional)
 
-The precondition behind a zero policy delta is counted on the pairs the audit RETURNED, so two
-corpora an operator would fix in opposite ways print the same structural line: one with no
-governance dates anywhere (re-ingest it) and one dated end to end whose single revision pair never
-entered the candidate list at the budget the run used (raise the budget, re-chunk, or re-embed)
+The coverage reading now names the STAGE an orderable pair was lost at, but on a retrieval miss it
+lists every knob at once -- raise `--effort`, raise `--max-candidate-pairs`, re-chunk, re-embed --
+because nothing in the run records which one dropped the pair
 ([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
-Only the first is fixable at ingestion, and today's reading names ingestion for both. Count
-orderability one level up as well -- over the corpus's own DOCUMENT pairs, which needs no candidate
-list and no store -- and report the two counts beside each other, so a run with orderable document
-pairs and no orderable returned pair reads as a RETRIEVAL miss rather than an ingestion gap.
+The run already holds enough to narrow it: an orderable document pair whose documents contribute no
+chunk to the store was lost at CHUNKING or at ingestion into the store; one whose chunks are in the
+store but never became a candidate was lost at the threshold or the budget; one adjudicated and
+returned as `complementary` was not lost at all. Report the first orderable document pair that did
+not survive, with the stage it stopped at, so the advice is one knob rather than four. Keep it a
+report over what the run already computed -- re-running detection to chase the pair is a different
+(and much more expensive) feature.
 
 - Agent status: CLEAR
-- Dependencies: none. `pair_orderability` in `src/llb/conflicts/governance_coverage.py` is the
-  returned-pair count and `compare_editions` is the same orderability test at either level;
-  `load_corpus_docs` already resolves the governance fields the document-pair count needs. Keep the
-  document-pair pass off the quadratic path for large corpora -- ordering is decided by two fields,
-  so the pairs can be counted from the distinct `(effective_date, version)` values rather than by
-  enumerating pairs.
-- User-visible outcome: an operator whose corpus IS dated stops being told to re-ingest it, and
-  learns the orderable pair was lost between the store and the candidate budget instead.
-- Scope boundary: in scope -- the document-pair count, its appearance beside the returned-pair
-  count, and the three-way reading (no dates / dates but no candidate / dates and candidates).
-  Out of scope -- changing the candidate budget on the finding, re-running detection to chase a
-  missed pair, and inferring dates from document text.
+- Dependencies: none. `document_pair_orderability` in `src/llb/conflicts/governance_coverage.py`
+  supplies the orderable document pairs, and the semantic tier's `TierStats.extra` already records
+  chunk counts, exclusions, and the candidate budget the run resolved.
+- User-visible outcome: an operator reading a retrieval miss turns one knob instead of trying four.
+- Scope boundary: in scope -- the per-stage attribution for orderable document pairs that did not
+  reach the returned rows, and its appearance beside the existing counts. Out of scope -- changing
+  any threshold or budget on the finding, re-running detection, and reporting attribution for pairs
+  the corpus cannot order at all.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: audit-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose documents are dated but whose returned rows
-  are not orderable reads as a retrieval miss, and one with no dated document still reads as
-  structural; both keep today's delta unchanged.
+- Execution path: audit-side attribution with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a fixture whose orderable document pair is excluded by the
+  claim-token floor names that stage, and one excluded by the candidate budget names that one; a
+  run where every orderable document pair was returned prints no attribution at all.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
+
+### venv-pins-the-mcp-version-vllm-pulls-in (optional)
+
+`make venv` installs the lockfile and then `scripts/build_vllm.sh` installs vLLM, whose `mcp`
+requirement is unpinned -- so a rebuild on a CUDA host today resolves `mcp` 2.0.0 over the 1.28.1
+the lock pins, and `mypy` fails on `src/llb/bench/mcp_server.py` because 2.x renamed `Tool`'s
+`inputSchema` to `input_schema`. `make ci` is red until the venv is corrected by hand, which is the
+wrong place to discover it: the failure looks like a source bug and is a dependency resolution. Fix
+it where the drift happens -- have the vLLM install respect the locked `mcp` (a constraint on that
+install, or a re-sync afterwards) -- and decide separately whether `mcp_server.py` should support
+both APIs, since a host that genuinely needs vLLM's `mcp` will hit the same rename.
+
+- Agent status: CLEAR
+- Dependencies: none. `scripts/build_vllm.sh` is the install step, `uv.lock` is the pin
+  (`mcp` 1.28.1 outside the crewai extra), and `src/llb/bench/mcp_server.py` is the caller.
+- User-visible outcome: a fresh `make venv` leaves `make ci` green without a manual `uv pip install`.
+- Scope boundary: in scope -- the constraint (or post-install re-sync), a check that the resolved
+  `mcp` matches the lock, and the compatibility decision for the two `Tool` signatures. Out of scope
+  -- upgrading the lock to `mcp` 2.x as part of this task and changing what vLLM version is
+  installed.
+- Execution path: one `make venv` on the CUDA host followed by `make ci`; no GPU work beyond the
+  install itself.
+- Acceptance gates: `make venv` from a removed `.venv` followed by `make ci` is green with no
+  manual step; the resolved `mcp` version is asserted against the lock, or the caller works under
+  both signatures.
+- Documentation target: the environment section of
+  [host validation](current/host-validation.md).
 
 ### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
 
@@ -94,7 +119,9 @@ fail, refuse, or invent a date for it.
 - Agent status: CLEAR
 - Dependencies: none. `document_coverage` in `src/llb/conflicts/governance_coverage.py` is the
   count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
-  is; `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
+  is, and `document_pair_orderability` beside it is the same input again -- report both, since a
+  corpus dated end to end with one shared edition is orderable by neither;
+  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
   where ingestion already holds the same fields.
 - User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
   they are still ingesting it, not two commands and one GPU run later.
@@ -109,71 +136,6 @@ fail, refuse, or invent a date for it.
 - Documentation target: the corpus-ingestion section of
   [data prep](current/data-prep.md) plus a pointer from
   [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
-
-### conflict-policy-share-across-repeat-audits-of-one-corpus (optional)
-
-The policy-choice share is quoted from ONE audit and is not reproducible across audits of the same
-corpus: three claim-tier runs of the committed fixture at identical settings returned the same 17
-rows, the same 9 actionable rows, and the same 0.4286 claim-tier precision, yet the third called one
-row `subsumed_by` where the first two called it `superseded_by` -- so the delta read 1 of 9 (11.1%)
-instead of 2 of 9 (22.2%)
-([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-The share is a count of the one relation the policies part on, so it inherits the adjudicator's
-sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
-(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
-shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
-two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
-honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
-result -- the spread is small enough that a point estimate is honest -- is a valid outcome.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. `make audit-corpus-conflicts EFFORT=claim PROJECT_POLICY=conservative,prefer-newer`
-  and its artifacts are current behavior; the three bundles above are the first three samples and
-  need no re-running. Do not change the relation vocabulary or the prompt -- that would measure a
-  different adjudicator instead of this one's variance.
-- User-visible outcome: an operator comparing this week's policy share to last week's learns which
-  part of the difference is their corpus and which part is the model being asked twice.
-- Scope boundary: in scope -- the repeat runs, the spread of the relation mix and the share, and the
-  pin-or-band decision. Out of scope -- changing the adjudication prompt, the calibration gate, and
-  quoting a band before the spread is measured.
-- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per repeat.
-- Execution path: N claim-tier runs of one corpus on the CUDA host; CI covers whatever pinning the
-  decision adopts, over the injected adjudicator.
-- Acceptance gates: `make ci` green; every repeat reports its relation mix and share; the reading
-  states the spread and either pins the call or records the band the share must be quoted with.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
-
-### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
-
-The policy-choice delta and its share of actionable rows are measured, but on exactly one corpus
-where the share is non-zero -- the committed 7-document fixture, which was planted to contain one
-dated supersession
-([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-Every other corpus on this host carries no governance dates at all, so its zero share is structural
-and carries no information about magnitude. The open question is unchanged and now sharper: on a
-corpus of genuine dated revisions, what share of the actionable rows does the policy choice move?
-Run the shipped `--project-policy conservative,prefer-newer` reading against the 8-document HR
-corpus (operator data, absent from this host) or another corpus with governance dates on both sides
-of a revision pair, and record the share beside the fixture's.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. The projection, the delta, and the `moved_rows` / `moved_share` reading are
-  current behavior; the corpus needs `effective_date` or `version` on both sides of a revision
-  pair, which is what promotes `contradicts` to `superseded_by`.
-- User-visible outcome: an operator learns whether the resolution-policy choice is a real decision
-  on corpora like theirs, or a knob that is free in practice.
-- Scope boundary: in scope -- one claim-tier run per dated corpus and the share beside the
-  fixture's. Out of scope -- adding a policy, changing how `superseded_by` is derived, and making
-  any policy the default.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` layout.
-- Execution path: one claim-tier run per corpus on the CUDA host with both policies projected; no
-  new CI coverage beyond the existing fixtures.
-- Acceptance gates: `make ci` green; every corpus reports its delta and the share of actionable
-  rows it moves; each projected column still equals the `plan.json` `review_rows` the same policy
-  writes on the same rows.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
 
 ### conflict-group-ids-that-survive-a-re-run (optional)
 
@@ -264,39 +226,71 @@ that never reorders anything is not worth a column.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
 
-### conflict-decision-group-partition-refinement (optional)
+### conflict-policy-share-across-repeat-audits-of-one-corpus (optional)
 
-The audit now quotes a RANGE because neither measured rule is a decision count: the transitive
-closure is a partition but too coarse, and the shared-unit rule is finer but a COVER -- 65 to 80
-percent of rows join two of its groups on every corpus measured, so its count cannot be funded one
-review each
-([decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)).
-A single number needs a third rule that is BOTH a partition and finer than the closure. Measure one:
-cut the closure's chain at its weakest joins (a shared unit carrying only low-score pairs, or only
-`complementary` relations, is a chunk two decisions merely pass through) and check whether the
-resulting partition lands inside the measured range rather than collapsing back to one of its ends.
-A negative result -- no cut rule lands inside without splitting a genuine decision -- is a valid
-outcome and closes the question.
+The policy-choice share is quoted from ONE audit and is not reproducible across audits of the same
+corpus: three claim-tier runs of the committed fixture at identical settings returned the same 17
+rows, the same 9 actionable rows, and the same 0.4286 claim-tier precision, yet the third called one
+row `subsumed_by` where the first two called it `superseded_by` -- so the delta read 1 of 9 (11.1%)
+instead of 2 of 9 (22.2%)
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+The share is a count of the one relation the policies part on, so it inherits the adjudicator's
+sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
+(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
+shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
+two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
+honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
+result -- the spread is small enough that a point estimate is honest -- is a valid outcome.
 
-- Agent status: RUN NEEDED, RESEARCH
-- Dependencies: none. Reuse `granularity.py`'s two rules as the bracket the third must sit inside and
-  `compare-conflict-granularity` to read the result over committed runs.
-- User-visible outcome: either one decision count an operator can fund directly, or a recorded reason
-  the audit will keep quoting a range.
-- Scope boundary: in scope -- the cut rule, its partition proof, and the comparison against both
-  measured ends. Out of scope -- changing detection, changing `findings.jsonl` or the group ids
-  `plan.json` joins on, and adopting a third rule as the quoted one before it lands inside the range.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` and
-  `$DATA_DIR/corpus-conflict-granularity/<run>/` layouts.
-- Execution path: recompute over committed run artifacts on the CUDA host; the measured bundles are
-  all narrower than the 8-document HR corpus (which is operator data and absent from this host), so
-  the run needs at least one bundle from a corpus that supplies a genuinely long chain. CI covers the
-  cut rule and the partition invariant over fixture rows.
-- Acceptance gates: `make ci` green; the third rule is asserted to be a partition on every fixture;
-  every measured bundle reports its count under all three rules; the reading states whether the
-  partition lands strictly inside the range, or records that it does not and why.
+- Agent status: RUN NEEDED
+- Dependencies: none. `make audit-corpus-conflicts EFFORT=claim PROJECT_POLICY=conservative,prefer-newer`
+  and its artifacts are current behavior; the three bundles above are the first three samples and
+  need no re-running. Do not change the relation vocabulary or the prompt -- that would measure a
+  different adjudicator instead of this one's variance.
+- User-visible outcome: an operator comparing this week's policy share to last week's learns which
+  part of the difference is their corpus and which part is the model being asked twice.
+- Scope boundary: in scope -- the repeat runs, the spread of the relation mix and the share, and the
+  pin-or-band decision. Out of scope -- changing the adjudication prompt, the calibration gate, and
+  quoting a band before the spread is measured.
+- Data and artifact paths: one `$DATA_DIR/corpus-conflicts/<run>/` per repeat.
+- Execution path: N claim-tier runs of one corpus on the CUDA host; CI covers whatever pinning the
+  decision adopts, over the injected adjudicator.
+- Acceptance gates: `make ci` green; every repeat reports its relation mix and share; the reading
+  states the spread and either pins the call or records the band the share must be quoted with.
 - Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
+### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
+
+The policy-choice delta and its share of actionable rows are measured, but on exactly one corpus
+where the share is non-zero -- the committed 7-document fixture, which was planted to contain one
+dated supersession
+([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
+Every other corpus on this host carries no governance dates at all, so its zero share is structural
+and carries no information about magnitude. The open question is unchanged and now sharper: on a
+corpus of genuine dated revisions, what share of the actionable rows does the policy choice move?
+Run the shipped `--project-policy conservative,prefer-newer` reading against the 8-document HR
+corpus (operator data, absent from this host) or another corpus with governance dates on both sides
+of a revision pair, and record the share beside the fixture's.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. The projection, the delta, and the `moved_rows` / `moved_share` reading are
+  current behavior; the corpus needs `effective_date` or `version` on both sides of a revision
+  pair, which is what promotes `contradicts` to `superseded_by`.
+- User-visible outcome: an operator learns whether the resolution-policy choice is a real decision
+  on corpora like theirs, or a knob that is free in practice.
+- Scope boundary: in scope -- one claim-tier run per dated corpus and the share beside the
+  fixture's. Out of scope -- adding a policy, changing how `superseded_by` is derived, and making
+  any policy the default.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` layout.
+- Execution path: one claim-tier run per corpus on the CUDA host with both policies projected; no
+  new CI coverage beyond the existing fixtures.
+- Acceptance gates: `make ci` green; every corpus reports its delta and the share of actionable
+  rows it moves; each projected column still equals the `plan.json` `review_rows` the same policy
+  writes on the same rows.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured).
+
 
 ### conflict-claim-yield-across-store-generations (optional)
 
@@ -1322,6 +1316,41 @@ the entry on Ollama so the roster is served by one backend end to end.
 - Documentation target: the roster baseline in
   [backend telemetry](current/backend-telemetry.md) and the host setup notes in
   [host validation](current/host-validation.md).
+
+
+### conflict-decision-group-partition-refinement (optional)
+
+The audit now quotes a RANGE because neither measured rule is a decision count: the transitive
+closure is a partition but too coarse, and the shared-unit rule is finer but a COVER -- 65 to 80
+percent of rows join two of its groups on every corpus measured, so its count cannot be funded one
+review each
+([decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)).
+A single number needs a third rule that is BOTH a partition and finer than the closure. Measure one:
+cut the closure's chain at its weakest joins (a shared unit carrying only low-score pairs, or only
+`complementary` relations, is a chunk two decisions merely pass through) and check whether the
+resulting partition lands inside the measured range rather than collapsing back to one of its ends.
+A negative result -- no cut rule lands inside without splitting a genuine decision -- is a valid
+outcome and closes the question.
+
+- Agent status: RUN NEEDED, RESEARCH
+- Dependencies: none. Reuse `granularity.py`'s two rules as the bracket the third must sit inside and
+  `compare-conflict-granularity` to read the result over committed runs.
+- User-visible outcome: either one decision count an operator can fund directly, or a recorded reason
+  the audit will keep quoting a range.
+- Scope boundary: in scope -- the cut rule, its partition proof, and the comparison against both
+  measured ends. Out of scope -- changing detection, changing `findings.jsonl` or the group ids
+  `plan.json` joins on, and adopting a third rule as the quoted one before it lands inside the range.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` and
+  `$DATA_DIR/corpus-conflict-granularity/<run>/` layouts.
+- Execution path: recompute over committed run artifacts on the CUDA host; the measured bundles are
+  all narrower than the 8-document HR corpus (which is operator data and absent from this host), so
+  the run needs at least one bundle from a corpus that supplies a genuinely long chain. CI covers the
+  cut rule and the partition invariant over fixture rows.
+- Acceptance gates: `make ci` green; the third rule is asserted to be a partition on every fixture;
+  every measured bundle reports its count under all three rules; the reading states whether the
+  partition lands strictly inside the range, or records that it does not and why.
+- Documentation target:
+  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
 
 ## Human-Assisted Tasks
 
