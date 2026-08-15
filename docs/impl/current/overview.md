@@ -366,3 +366,35 @@ flake8-bugbear, implicit string concatenation, ...), so a GitHub runner resolvin
 the dev box reported 1391 findings on unchanged code while the dev box was green. A linter release
 must never be able to fail CI on code nobody touched; widening the rule set is a deliberate,
 separate change to that `select` list.
+
+## Documentation And Specification Gates
+
+Three checks keep the written product and the built product from drifting apart. The first two run
+in `make lint-md` (the full local `make test` flow); the third runs in `make ci-checks`, so it fails
+in the change that caused it rather than at the next doc lint.
+
+| Check | Command | What it refuses |
+| --- | --- | --- |
+| Markdown style | `make lint-md` | pymarkdown findings; config in `pyproject.toml` `[tool.pymarkdown]`. Fix BY HAND -- `pymarkdown fix` corrupts prose on 0.9.38 |
+| Link landing | `make lint-doc-links` | A relative link whose file is missing or whose `#anchor` no heading produces (`llb.quality.doc_links`) |
+| Spec/plan integrity | `make lint-spec-plan` | A disagreement between the spec's capability registry and `plan.md` (`llb.quality.spec_plan_integrity`) |
+
+`lint-spec-plan` is the join between three documents that are otherwise only related by convention:
+[the spec](../../design/spec.md) says what the product does, its
+[capability registry](../../design/spec.md#capability-registry) says how each capability is
+evaluated and where it is implemented, and [plan.md](../plan.md) holds the remaining work. It
+enforces four invariants:
+
+- every plan task carries a `Serves` line naming a registered capability id, and sits in that
+  capability's `###` group;
+- every `shipped` capability links to implementation docs; every `planned` one has at least one open
+  task;
+- every capability declares a non-empty evaluation;
+- the plan's capability groups appear in the registry's row order, in both task sections.
+
+The last one is what keeps "what do I work on next" a position rather than an argument: the registry
+row order IS the implementation line, and it runs down the trust chain. The checker never judges
+whether a capability is worth having -- only whether both documents say the same thing about it. A
+capability found while implementing is added through
+[Extending this specification](../../design/spec.md#extending-this-specification) before it becomes
+tasks, which is what stops undocumented capability from accumulating in `src/`.
