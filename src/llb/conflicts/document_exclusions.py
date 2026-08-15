@@ -106,7 +106,10 @@ class DocumentExclusions:
             FRONT_MATTER: interned_counts(self.front_matter, interner),
             LOW_CONTENT: interned_counts(self.low_content, interner),
             METADATA_BLOCK: interned_counts(self.metadata_block, interner),
-            FLOOR_KEY: interned_counts(self.recovery_floor, interner),
+            # The one map here where a missing document is not a zero one: absence says no
+            # `--min-claim-tokens` value returns this document, which is not the same claim as a
+            # floor of 0. So it declines the default fold rather than trade the distinction away.
+            FLOOR_KEY: interned_counts(self.recovery_floor, interner, absent_is_zero=False),
             STORED_KEY: int(self.min_claim_tokens),
         }
 

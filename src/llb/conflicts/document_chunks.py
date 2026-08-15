@@ -31,6 +31,13 @@ from llb.conflicts.document_index import (
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
 
+STORED_KEY = "stored"
+COMPARABLE_KEY = "comparable"
+COPIES_KEY = "copies"
+# The two maps that are per-document COUNTS, and so are the ones a recorded default can fold;
+# `copies` is a map of names and has no count to share.
+COUNT_KEYS = (STORED_KEY, COMPARABLE_KEY)
+
 
 def _copies(value: object, naming: DocumentNaming) -> dict[str, tuple[str, ...]]:
     """A recorded `{doc_id: [copy, ...]}` map; a bundle that recorded none has no copies."""
@@ -82,12 +89,14 @@ class DocumentChunks:
         """The three maps as `summary.json` carries them, so a bundle can be re-read without a store.
 
         Every document is a POSITION in the record's own id table rather than an id, because these
-        three maps mention the same corpus three times over (`document_index.py`).
+        three maps mention the same corpus three times over (`document_index.py`) -- and each count
+        map then records the count most documents share once rather than per document, where that
+        is smaller.
         """
         return {
-            "stored": interned_counts(self.stored, interner),
-            "comparable": interned_counts(self.comparable, interner),
-            "copies": {
+            STORED_KEY: interned_counts(self.stored, interner),
+            COMPARABLE_KEY: interned_counts(self.comparable, interner),
+            COPIES_KEY: {
                 interner.key(doc_id): [interner.position(copy) for copy in named]
                 for doc_id, named in self.copies.items()
             },
@@ -104,9 +113,9 @@ class DocumentChunks:
         is a document accounting with nothing in it, which is what a store with no chunks is.
         """
         return cls(
-            stored=named_counts(payload.get("stored"), naming),
-            comparable=named_counts(payload.get("comparable"), naming),
-            copies=_copies(payload.get("copies"), naming),
+            stored=named_counts(payload.get(STORED_KEY), naming),
+            comparable=named_counts(payload.get(COMPARABLE_KEY), naming),
+            copies=_copies(payload.get(COPIES_KEY), naming),
         )
 
     def stored_copy_of(self, doc_id: str) -> str | None:

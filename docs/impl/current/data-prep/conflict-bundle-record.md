@@ -36,19 +36,22 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 All of it rides under `stage_attribution_inputs` in `summary.json`
 (`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
-**6**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
+**7**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
 newer questions with a refusal, and a schema-2 bundle still answers a budget inside its prefix -- it
-just cannot say what truncated that prefix. Versions 4, 5, and 6 are the only three that CHANGE a
-shape rather than adding to it, and all three are about the id table: 4 is
-[the table itself](#the-id-table-every-document-named-once), 5 is
+just cannot say what truncated that prefix. Versions 4 through 7 are the only ones that CHANGE a
+shape rather than adding to it, and each removes one repetition: 4 is
+[the id table itself](#the-id-table-every-document-named-once), 5 is
 [the label it stopped carrying](#the-label-a-document-with-nothing-to-label-was-carrying), 6 is
-[the head and tail every id shares](#the-head-and-tail-every-id-shares).
+[the head and tail every id shares](#the-head-and-tail-every-id-shares), and 7 is
+[the count most documents share](#the-count-most-documents-share). All four obey one rule
+(`src/llb/conflicts/record_fold.py`): a fold is taken only where it is actually smaller, so a corpus
+it does not suit gets the previous form byte for byte instead of a penalty.
 
 | key | what it carries | module |
 | --- | --- | --- |
 | `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- the id alone where it has neither, and the id minus whatever head and tail the whole table shares | `bundle_record.py` |
 | `document_id_prefix` / `document_id_suffix` | the head and tail every id in the table shares, absent when the fold does not pay for itself | `document_affix.py` |
-| `chunks` | `stored` / `comparable` / `copies` per document | `document_chunks.py` |
+| `chunks` | `stored` / `comparable` / `copies` per document; the two count maps carry a `default` where one count dominates | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
 | `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs`, `covered_to_rank`, and the `cap` the prefix was written at | `candidate_record.py` |
 | `extra_document_ids` | the ids the store held that the audited corpus did not, absent when they agree | `document_index.py` |
@@ -81,7 +84,7 @@ Two facts the change has to survive, and both are load-bearing:
   nothing else can: a position and an id are both strings once they are JSON object keys. Both forms
   resolve to the same document ids, so *every reading replays identically through either* -- checked
   over the whole archive below, and pinned in CI by
-  `test_every_reading_replays_identically_through_all_four_forms`
+  `test_every_reading_replays_identically_through_all_five_forms`
   (`tests/llb/conflicts/test_bundle_id_table.py`), which rewrites a fresh record into the older form
   (`keyed_by_id` in `tests/llb/conflicts/conflict_helpers.py`) rather than freezing a blob, so a new
   field cannot quietly go untested on the older side.
@@ -292,7 +295,7 @@ the column table
 concatenation of two values named in the same object, not an OFFSET into a field order kept in
 another file, and there is no array whose mis-length silently re-labels every document after it.
 
-**Every reading replays identically through all four forms.** The 24-bundle archive sweep
+**Every reading replays identically through every form.** The 24-bundle archive sweep
 (no record at all, schema 1, schema 2, schema 4/5) re-taken on this build produces a `stage.json`
 and a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
 (`.data/corpus-conflict-stage/20260815T-id-fold-archive/` against
@@ -301,11 +304,90 @@ schema-5 predecessor -- `id-fold-squad-cos060` against `bare-id-squad-cos060`, a
 `id-fold-fixture-semantic` against `bare-id-fixture-semantic` -- replay to the same attribution, the
 same agreement verdict, and the same budget answer as it
 (`.data/corpus-conflict-stage/20260815T-id-fold-pairs/`). In CI,
-`test_every_reading_replays_identically_through_all_four_forms` runs a path-shaped MIXED corpus --
+`test_every_reading_replays_identically_through_all_five_forms` runs a path-shaped MIXED corpus --
 dated documents and one undated, so the table carries a labelled entry and a bare stem under a live
-fold -- and asserts every reading equal across schema 6, the unfolded schema 5
-(`unfolded_documents`), the labelled schema 4, and the id-keyed schema 3 and schema 1, each
-rewritten from a fresh record rather than frozen as a blob.
+fold -- and asserts every reading equal across the unfolded schema 5 (`unfolded_documents`), the
+labelled schema 4, and the id-keyed schema 3 and schema 1, with schema 6 joining them when
+[the count default](#the-count-most-documents-share) landed. Each is rewritten from a fresh record
+rather than frozen as a blob.
+
+### The count most documents share
+
+With the id table folded, `documents` fell to 4.0 KiB of the 250-document record's 10.3 and `chunks`
+became the largest part at 4.8 -- so the next repetition was one level down, in the COUNTS rather
+than in the keys. A count map is one small integer per document, and on a real corpus nearly every
+document has the same one: 190 of the 250 documents store exactly one chunk, and 201 of them have
+exactly one comparable chunk. That number was being written out 250 times.
+
+So a count map records the value most CORPUS documents share once, under `default`, and lists only
+the documents that differ (`interned_counts` / `named_counts` in
+`src/llb/conflicts/document_index.py`). Every count map in the record is offered the fold -- the two
+under `chunks` and the three exclusion reasons -- under the same per-map gate as the id fold.
+
+**Three things a default must not swallow**, because in a count map absence already carries meaning:
+
+- a corpus document whose count DIFFERS is listed with its own count, including an explicit `0`.
+  That is how a document absent from `comparable` survives a non-zero default: the record says zero
+  rather than letting the default speak for it;
+- an id the audited corpus never carried is listed whatever its count. The default covers the
+  documents the record can enumerate, and an extra (`extra_document_ids`) is not one of them, so a
+  store one build ahead of the corpus cannot acquire a count it never had;
+- `recovery_floor` declines the fold outright (`absent_is_zero=False`). It is the one map here where
+  a missing document is not a zero one -- absence says *no* `--min-claim-tokens` value returns this
+  document, a floor of `0` says one does -- and the fold trades those two being the same for bytes.
+
+Reading back, the default is expanded over the corpus documents FIRST so an explicit entry always
+wins, and the zeros are then dropped -- because under a fold a zero is the absence the plain map
+expresses. That is what makes a folded map read back as exactly the mapping the plain one gives,
+rather than as the same answers in a denser dict.
+
+**Measured, on real bundles** (CUDA host, no adjudication call; compact `json.dumps` bytes). The
+schema-6 column is the same content with the defaults written back out:
+
+| bundle | documents | `stored` | `comparable` | `chunks` | whole record | `summary.json` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `20260815T-count-default-squad-cos060` | 250 | 2,390 -> 591 (-75%) | 2,362 -> 485 (-79%) | 4,794 -> 1,118 (-77%) | 10,276 -> 6,600 (-36%) | 40,477 -> 36,801 (-9%) |
+| `20260815T-count-default-squad-cos080` | 250 | 2,390 -> 591 (-75%) | 2,362 -> 485 (-79%) | 4,794 -> 1,118 (-77%) | 9,473 -> 5,797 (-39%) | 36,728 -> 33,052 (-10%) |
+| `20260815T-count-default-fixture-semantic` | 7 | 48 -> 46 (-4%) | 48 -> 46 (-4%) | 175 -> 171 (-2%) | 1,209 -> 1,179 (-2%) | 13,223 -> 13,193 (-0.2%) |
+| `20260815T-count-default-fixture-floor` | 7 | 48 -> 46 (-4%) | 2 -> 2 (declined) | 129 -> 127 (-2%) | 1,136 -> 1,106 (-3%) | 13,152 -> 13,122 (-0.2%) |
+| `20260815T-count-default-fixture-hash` | 7 | absent | absent | absent | 637 (0%) | 3,276 (0%) |
+
+**Where the gate declines is as much of the result as where it takes.** On the same 250-document
+bundle the four `exclusions` maps are offered the fold and refuse it -- 444 bytes before and 444
+after -- because they are SPARSE: their dominant value is zero, so the default would name it and
+then list every document anyway, for 13 bytes more per map. `comparable` on the floor run refuses
+for the same reason from the other end (nothing is comparable, so the map is empty). The fixture
+takes it in three places and gains 30 bytes; the hash-tier bundle records no counts at all and is
+untouched. No bundle on this host pays anything for the option.
+
+**Decision: take the default.** It removes three quarters of the record's largest part on the corpus
+size where the record actually costs something, costs nothing on the four maps and two bundles where
+it buys nothing, and needs no new concept to read -- `default` is one key naming a number, beside
+the entries that were already there.
+
+**What was declined**, and measured rather than assumed: folding the three maps into ONE entry per
+document (`{"9": [2, 1]}` instead of two maps) reaches 965 bytes against the default's 1,118 on the
+same bundle -- 153 bytes better. It is refused for the reason
+[the positional document row was](#the-label-a-document-with-nothing-to-label-was-carrying): a pair
+read by OFFSET is legible only to a reader who knows the field order, and it makes a fourth count a
+schema bump rather than an additive key. Inverting each map to `{count: [position, ...]}` was priced
+too and reaches only 2,371 (-51%), less than half of what the default takes.
+
+**Every reading replays identically.** The 24-bundle archive sweep re-taken on this build produces a
+`stage.json` and a `stage.md` BYTE-IDENTICAL to the pre-change sweep
+(`.data/corpus-conflict-stage/20260815T-count-default-archive/` against
+`.data/corpus-conflict-stage/20260815T-id-fold-archive/`), and each re-taken bundle replays to the
+same attribution, agreement verdict, and budget answer as its predecessor -- including
+`count-default-fixture-floor` against the **schema-2** `bundle-record-fixture-floor`, which is the
+bundle whose reading quotes exclusion counts and a recovery floor by value, so a default that
+swallowed either would show up as a changed sentence
+(`.data/corpus-conflict-stage/20260815T-count-default-pairs/`). Directly on disk, every re-taken
+bundle's `chunks` and `exclusions` unfold byte-for-byte to the schema-6 bundle of the same run. In
+CI, `test_every_reading_replays_identically_through_all_five_forms` adds the count-unfolded schema 6
+to the four id-table forms, and `test_a_document_the_default_does_not_speak_for_is_written_out`,
+`test_a_map_where_no_count_dominates_records_the_entries_it_always_did`, and
+`test_a_recovery_floor_declines_the_fold_because_absence_is_not_zero` pin the three things a default
+must not swallow.
 
 ### Why a document is not comparable, and the floor that returns it
 
@@ -487,22 +569,23 @@ had used it.
 
 ## The size the record actually costs
 
-Bytes at schema 6, with the same content unfolded (schema 5), with labelled entries (schema 4), and
-at the pre-interning form (keyed by id) beside it:
+Bytes at schema 7, with the same content at each form the record has had before it: the counts
+written per document (schema 6), the ids unfolded too (5), the labels back (4), and the pre-interning
+form keyed by id:
 
-| bundle | documents | store chunks | record bytes | schema 5 | schema 4 | keyed by id | of which `candidates` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `20260815T-id-fold-fixture-hash` | 7 | -- (no store) | 637 | 637 | 637 | 637 | absent |
-| `20260815T-id-fold-fixture-semantic` | 7 | 19 | 1,209 | 1,209 | 1,209 | 2,056 | 186 |
-| `20260815T-id-fold-squad-cos080` | 250 | 311 | 9,473 | 11,911 | 14,911 | 25,278 | 93 |
-| `20260815T-id-fold-squad-cos060` | 250 | 311 | 10,276 | 12,714 | 15,714 | 27,578 | 896 |
+| bundle | documents | store chunks | record bytes | schema 6 | schema 5 | schema 4 | keyed by id | of which `candidates` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `20260815T-count-default-fixture-hash` | 7 | -- (no store) | 637 | 637 | 637 | 637 | 637 | absent |
+| `20260815T-count-default-fixture-semantic` | 7 | 19 | 1,179 | 1,209 | 1,209 | 1,209 | 2,056 | 186 |
+| `20260815T-count-default-squad-cos080` | 250 | 311 | 5,797 | 9,473 | 11,911 | 14,911 | 25,278 | 93 |
+| `20260815T-count-default-squad-cos060` | 250 | 311 | 6,600 | 10,276 | 12,714 | 15,714 | 27,578 | 896 |
 
-The largest bundle on this host now records 10.3 KiB over 250 documents -- about 41 bytes per
-document -- against a 40 KiB `summary.json`. The id table no longer dominates it: `documents` is
-4.0 KiB of the 10.3, below `chunks` at 4.8 KiB, with `exclusions` 0.4 KiB and `candidates` 0.9 KiB.
-That is the floor the bound predicts, reached -- the record costs one STEM per document plus a
-handful of integers, plus a labelled entry for each document that actually has an ordering field to
-label, and what every id has in common is written down once.
+The largest bundle on this host now records 6.6 KiB over 250 documents -- about 26 bytes per
+document -- against a 37 KiB `summary.json`, from 27.6 KiB before any of the four folds. What it
+costs is back to the id table and nothing else: `documents` is 4.0 KiB of the 6.6, against
+`candidates` 0.9 KiB, `chunks` 1.1 KiB, and `exclusions` 0.4 KiB. That is the floor the size bound
+predicts, reached from both ends -- one stem per document, one shared affix, one default per count
+map, and a handful of integers for the documents that differ from it.
 
 At the thresholds those runs used, no corpus here has a candidate list long enough for the cap to
 bite -- it takes a deliberately loosened cosine to reach it, which is what
@@ -531,6 +614,8 @@ scattered corpus and the too-small one),
 | the record a run writes | `src/llb/conflicts/bundle_record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`, `naming_of`) |
 | the id table both forms resolve against | `src/llb/conflicts/document_index.py` (`DocumentInterner`, `DocumentNaming`) |
 | the head and tail the table is folded on | `src/llb/conflicts/document_affix.py` (`IdAffix.over`, `pays_for_itself`, `stem`, `expand`) |
+| the rule every fold obeys | `src/llb/conflicts/record_fold.py` (`json_bytes`, `smaller_form`) |
+| the count default a map is folded on | `src/llb/conflicts/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
 | re-reading a bundle with it | `src/llb/conflicts/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/candidate_record.py` |

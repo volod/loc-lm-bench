@@ -36,7 +36,9 @@ from llb.conflicts.bundle_record import (
 from llb.conflicts.candidate_record import ENTRIES_KEY
 from llb.conflicts.constants import TIER_SEMANTIC
 from llb.conflicts.document_affix import PREFIX_KEY, SUFFIX_KEY, IdAffix
-from llb.conflicts.document_index import EXTRA_IDS_KEY, DocumentNaming
+from llb.conflicts.document_chunks import COUNT_KEYS as CHUNK_COUNT_KEYS
+from llb.conflicts.document_exclusions import REASON_NAMES
+from llb.conflicts.document_index import COUNT_DEFAULT_KEY, EXTRA_IDS_KEY, DocumentNaming
 from llb.conflicts.models import AuditResult
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vectorops import VectorSet
@@ -44,6 +46,10 @@ from llb.core.paths import PROJECT_ROOT
 from llb.rag.chunking.corpus import chunk_corpus
 
 FIXTURE_CORPUS = PROJECT_ROOT / "samples" / "corpora" / "conflicts_uk_v1" / "corpus"
+
+# The exclusion maps that are per-document counts, so the ones a recorded default can fold.
+# `recovery_floor` is deliberately absent: it declines the fold (`document_exclusions.py`).
+REASON_KEYS = tuple(REASON_NAMES)
 
 # Calibrated for the hashed-BoW fake (see the module docstring).
 FAKE_COS_THRESHOLD = 0.85
@@ -332,13 +338,53 @@ def _candidates_by_id(candidates: dict, naming: DocumentNaming) -> dict:
     }
 
 
+def _plain_counts(recorded: dict, corpus_size: int) -> dict:
+    """One count map with its recorded default written back out per document, as schema 6 did.
+
+    A map that carries no default folded nothing and comes through untouched. The expansion mirrors
+    `named_counts`: the default first so an explicit entry wins, then the zeros dropped, because a
+    zero under a fold is the absence the plain map expresses.
+    """
+    default = recorded.get(COUNT_DEFAULT_KEY)
+    if not isinstance(default, int):
+        return recorded
+    expanded = {
+        **{str(position): default for position in range(corpus_size)},
+        **{key: value for key, value in recorded.items() if key != COUNT_DEFAULT_KEY},
+    }
+    return {key: value for key, value in expanded.items() if value}
+
+
+def unfolded_counts(record: dict, *, schema: int = 6) -> dict:
+    """The same bundle record with every count map written per document, as schema 6 did.
+
+    Schema 7 records the count most corpus documents share once and lists only the documents that
+    differ. Only the maps under `chunks` and `exclusions` can carry a default, and `recovery_floor`
+    declines the fold outright, so it is not among them.
+    """
+    corpus_size = len(record[DOCUMENTS_KEY])
+    unfolded = {**record, SCHEMA_KEY: schema}
+    for part, foldable in ((CHUNKS_KEY, CHUNK_COUNT_KEYS), (EXCLUSIONS_KEY, REASON_KEYS)):
+        if not isinstance(unfolded.get(part), dict):
+            continue
+        unfolded[part] = {
+            name: _plain_counts(value, corpus_size)
+            if name in foldable and isinstance(value, dict)
+            else value
+            for name, value in unfolded[part].items()
+        }
+    return unfolded
+
+
 def unfolded_documents(record: dict, *, schema: int = 5) -> dict:
     """The same bundle record with every document entry spelling out its WHOLE id, as schema 5 did.
 
     Schema 6 records the head and tail every id shares once and leaves each entry its stem. Undoing
     that is the affix put back and the two keys dropped, so a record folding nothing comes through
-    unchanged apart from its version.
+    unchanged apart from its version. The count fold above it is undone first, since schema 5 knew
+    neither.
     """
+    record = unfolded_counts(record)
     affix = IdAffix.from_record(record)
     unfolded = {key: value for key, value in record.items() if key not in (PREFIX_KEY, SUFFIX_KEY)}
     unfolded[SCHEMA_KEY] = schema

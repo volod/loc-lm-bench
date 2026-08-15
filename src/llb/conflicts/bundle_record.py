@@ -75,7 +75,12 @@ from llb.core.contracts.common import JsonObject
 # (`document_affix.py`), so what is left per entry is the stem. Self-describing like 5 and for the
 # same reason: the two keys are present exactly when the entries are stems, and a corpus that shares
 # nothing to fold writes neither key and is byte for byte a schema-5 table.
-STAGE_INPUTS_SCHEMA_VERSION = 6
+#
+# 7 does the same one level down, to the COUNTS rather than the ids: a count map records the value
+# most corpus documents share once, under `default`, and lists only the documents that differ
+# (`document_index.py`). Self-describing again -- a map carrying a `default` key is at the new form
+# -- and gated per map, so a map where no count dominates is byte for byte a schema-6 map.
+STAGE_INPUTS_SCHEMA_VERSION = 7
 INTERNED_IDS_SCHEMA_VERSION = 4
 SCHEMA_KEY = "schema_version"
 DOCUMENTS_KEY = "documents"

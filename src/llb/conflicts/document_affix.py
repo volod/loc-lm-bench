@@ -20,10 +20,10 @@ self-describing: the keys are present exactly when the entries are stems, so no 
 `schema_version` to tell a stem from an id.
 """
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from llb.conflicts.record_fold import json_bytes
 from llb.core.contracts.common import JsonObject
 
 PREFIX_KEY = "document_id_prefix"
@@ -43,11 +43,6 @@ def _common_prefix(values: Sequence[str]) -> str:
     while length < len(low) and length < len(high) and low[length] == high[length]:
         length += 1
     return low[:length]
-
-
-def _json_bytes(value: object) -> int:
-    """The bytes `value` occupies in the record, which is written with `ensure_ascii=False`."""
-    return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
 
 
 @dataclass(frozen=True)
@@ -78,16 +73,17 @@ class IdAffix:
     def pays_for_itself(self, documents: int) -> bool:
         """Whether folding `documents` ids saves more bytes than recording the fold costs.
 
-        This is the whole of the "buys nothing, costs nothing" side. A corpus that shares no head
-        or tail folds to nothing by arithmetic, and a corpus too small to amortize the two keys is
+        This is this fold's half of the rule in `record_fold.py`. A corpus that shares no head or
+        tail folds to nothing by arithmetic, and a corpus too small to amortize the two keys is
         refused the fold rather than charged for it -- which is the case on every bundle here below
-        about a dozen documents.
+        about a dozen documents. The saving is counted rather than measured against a built table,
+        because the table cannot be built until the affix is decided.
         """
         shared = len(self.prefix.encode("utf-8")) + len(self.suffix.encode("utf-8"))
         if not shared:
             return False
         cost = sum(
-            len(key) + _json_bytes(value) + KEY_OVERHEAD_BYTES
+            len(key) + json_bytes(value) + KEY_OVERHEAD_BYTES
             for key, value in self.payload().items()
         )
         return documents * shared > cost

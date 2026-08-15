@@ -36,8 +36,16 @@ from llb.conflicts.bundle_record import (
 )
 from llb.conflicts.constants import STAGE_INPUTS_FIELD
 from llb.conflicts.document_affix import PREFIX_KEY, SUFFIX_KEY, IdAffix
-from llb.conflicts.document_chunks import DocumentChunks
-from llb.conflicts.document_index import EXTRA_IDS_KEY
+from llb.conflicts.document_chunks import COMPARABLE_KEY, STORED_KEY, DocumentChunks
+from llb.conflicts.document_exclusions import FLOOR_KEY, DocumentExclusions
+from llb.conflicts.document_index import (
+    COUNT_DEFAULT_KEY,
+    EXTRA_IDS_KEY,
+    DocumentInterner,
+    DocumentNaming,
+    interned_counts,
+    named_counts,
+)
 from llb.conflicts.stage_replay import replay_entry
 
 from conflict_helpers import (
@@ -52,6 +60,7 @@ from conflict_helpers import (
     bundle_of,
     keyed_by_id,
     labelled_documents,
+    unfolded_counts,
     unfolded_documents,
 )
 
@@ -201,16 +210,18 @@ def test_a_corpus_the_fold_cannot_pay_on_records_the_table_it_always_did(tmp_pat
 
     Two ways a corpus reaches that: it shares no head or tail at all (documents in many directories
     under mixed extensions), or it shares one too rarely to earn the two keys recording it costs.
-    Both write the schema-5 table byte for byte, which is asserted rather than argued.
+    Both write the schema-5 table -- every entry its WHOLE id, and neither key beside it.
     """
     result = audit_over(tmp_path / name, documents, cos_threshold=RANKED_COS)
     summary, _ = bundle_of(result)
     record = summary[STAGE_INPUTS_FIELD]
+    written = [
+        entry if isinstance(entry, str) else entry[DOC_ID_KEY] for entry in record[DOCUMENTS_KEY]
+    ]
 
     assert PREFIX_KEY not in record and SUFFIX_KEY not in record
-    assert json.dumps(record, ensure_ascii=False) == json.dumps(
-        {**unfolded_documents(record), SCHEMA_KEY: STAGE_INPUTS_SCHEMA_VERSION}, ensure_ascii=False
-    )
+    assert written == sorted(documents), "the table holds whole ids, not stems"
+    assert [doc_id for doc_id, _ in documents_of(record)] == written
 
 
 def test_the_fold_never_takes_more_of_an_id_than_the_id_has():
@@ -252,22 +263,110 @@ def test_an_id_the_corpus_never_carried_is_recorded_whole_rather_than_folded():
     assert [doc_id for doc_id, _ in documents_of(record)] == [doc_id for doc_id, _ in documents]
 
 
-# --- the gate all three are held to -------------------------------------------------------------
+# --- schema 7: the count most documents share ---------------------------------------------------
 
 
-def test_every_reading_replays_identically_through_all_four_forms(tmp_path):
+def test_the_count_most_documents_share_is_recorded_once(tmp_path):
+    """The fold one level down from the ids: a map's dominant count leaves its per-document entries.
+
+    On a corpus where nearly every document stores one chunk and excludes none, the maps were
+    writing that same small number out once per document -- the last thing in the record repeating
+    without carrying anything.
+    """
+    result = audit_over(tmp_path / "corpus", PATH_SHAPED, cos_threshold=RANKED_COS)
+    summary, _ = bundle_of(result)
+    record = summary[STAGE_INPUTS_FIELD]
+    chunks = record[CHUNKS_KEY]
+
+    assert chunks[STORED_KEY][COUNT_DEFAULT_KEY] == 1
+    assert len(chunks[STORED_KEY]) < len(PATH_SHAPED), "most documents are not written at all"
+
+    folded = len(json.dumps(record, ensure_ascii=False))
+    plain = len(json.dumps(unfolded_counts(record), ensure_ascii=False))
+
+    assert folded < plain, f"{plain} -> {folded} bytes"
+    assert recorded_inputs(record) == recorded_inputs(unfolded_counts(record))
+
+
+def test_a_map_where_no_count_dominates_records_the_entries_it_always_did():
+    """The other half again: a map whose documents all differ is written plainly, not defaulted.
+
+    A default there would name one document's count and then list every other document anyway, so
+    the fold is refused and the map costs exactly what it cost before.
+    """
+    interner = DocumentInterner([f"d{index}.md" for index in range(4)])
+    distinct = {f"d{index}.md": index + 1 for index in range(4)}
+    dominated = {f"d{index}.md": 1 for index in range(4)}
+
+    plain = interned_counts(distinct, interner)
+    folded = interned_counts(dominated, interner)
+
+    assert plain == {"0": 1, "1": 2, "2": 3, "3": 4}, "no default key at all"
+    assert folded[COUNT_DEFAULT_KEY] == 1 and len(folded) == 1
+    naming = DocumentNaming.by_position(list(distinct))
+    assert named_counts(plain, naming) == distinct
+    assert named_counts(folded, naming) == dominated
+
+
+def test_a_document_the_default_does_not_speak_for_is_written_out(tmp_path):
+    """Two documents a default must never cover, for two different reasons.
+
+    A corpus document whose count DIFFERS is listed with its own count -- including a zero, which is
+    how a document absent from `comparable` survives a non-zero default. And an id the audited
+    corpus never carried is listed whatever its count, because the fold covers the documents the
+    record can enumerate and an extra is not one of them.
+    """
+    documents = [(f"docs/uk/{index:02d}.txt", {}) for index in range(40)]
+    ahead = DocumentChunks(
+        stored={**{doc_id: 1 for doc_id, _ in documents}, "elsewhere/gone.md": 4},
+        comparable={doc_id: 1 for doc_id, _ in documents[:39]},
+    )
+
+    record = json.loads(
+        json.dumps(stage_attribution_inputs(documents, RunInputs(chunks=ahead)), ensure_ascii=False)
+    )
+    stored, comparable = record[CHUNKS_KEY][STORED_KEY], record[CHUNKS_KEY][COMPARABLE_KEY]
+
+    assert stored[COUNT_DEFAULT_KEY] == 1 and stored["40"] == 4, "the extra keeps its own count"
+    assert comparable[COUNT_DEFAULT_KEY] == 1 and comparable["39"] == 0, "the odd one out is a zero"
+    assert recorded_inputs(record).chunks == ahead
+
+
+def test_a_recovery_floor_declines_the_fold_because_absence_is_not_zero():
+    """The map where the fold would trade a distinction for bytes, and so is not offered it.
+
+    An absent `recovery_floor` says no `--min-claim-tokens` value returns this document; a floor of
+    0 says one does. The fold writes a zero back as an absence, so a floor map that defaulted would
+    turn the second claim into the first.
+    """
+    interner = DocumentInterner([f"d{index}.md" for index in range(4)])
+    floors = {"d0.md": 7, "d1.md": 7, "d2.md": 7, "d3.md": 0}
+
+    written = DocumentExclusions(recovery_floor=floors, min_claim_tokens=25).payload(interner)
+
+    assert COUNT_DEFAULT_KEY not in written[FLOOR_KEY]
+    naming = DocumentNaming.by_position(list(floors))
+    assert DocumentExclusions.from_payload(written, naming).floor_for("d3.md") == 0
+
+
+# --- the gate all four are held to --------------------------------------------------------------
+
+
+def test_every_reading_replays_identically_through_all_five_forms(tmp_path):
     """The migration gate: which form a bundle is in must be invisible to every reading.
 
     The corpus is deliberately MIXED -- dated documents and one with no ordering field at all, under
     path-shaped ids -- so the record carries a labelled entry and a bare stem side by side under a
-    live fold. The older forms are that record with the fold undone (schema 5), the label put back
-    (schema 4), and the positions unwound too (schema 3 and 1).
+    live fold. The older forms are that record with the count defaults written back out (schema 6),
+    the id fold undone too (schema 5), the label put back (schema 4), and the positions unwound
+    (schema 3 and 1).
     """
     documents = {f"corpus/docs/uk/{name}": value for name, value in RANKED_WITH_UNDATED.items()}
     result = audit_over(tmp_path / "corpus", documents, cos_threshold=RANKED_COS)
     summary, rows = bundle_of(result)
     record = summary[STAGE_INPUTS_FIELD]
     forms = {
+        6: unfolded_counts(record),
         5: unfolded_documents(record),
         4: labelled_documents(record),
         3: keyed_by_id(record, schema=3),
