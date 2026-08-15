@@ -32,7 +32,13 @@ from llb.conflicts.bundle_readings import (
     READING_STAGE,
     bundle_readings,
 )
-from llb.conflicts.candidate_record import DEFAULT_CANDIDATE_RECORD_PAIRS, CandidateRecord
+from llb.conflicts.candidate_record import (
+    CAP_KEY,
+    DEFAULT_CANDIDATE_RECORD_PAIRS,
+    UNRECORDED_CAP,
+    UNRECORDED_CAP_PHRASE,
+    CandidateRecord,
+)
 from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH, TIER_SEMANTIC
 from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.document_exclusions import DocumentExclusions
@@ -88,10 +94,17 @@ def _audit(
     effort: str = TIER_SEMANTIC,
     cos_threshold: float = FAKE_COS_THRESHOLD,
     min_claim_tokens: int | None = None,
+    candidate_budget: int | None = None,
+    record_cap: int | None = None,
 ) -> AuditResult:
     """One real audit over a throwaway dated corpus, with a store only from the semantic tier up."""
     corpus = dated_corpus(root, documents)
-    params = AuditParams(effort=effort, cos_threshold=cos_threshold)
+    params = AuditParams(
+        effort=effort,
+        cos_threshold=cos_threshold,
+        max_candidate_pairs=candidate_budget,
+        max_candidate_record_pairs=record_cap,
+    )
     if min_claim_tokens is not None:
         params.min_claim_tokens = min_claim_tokens
     store = store_over(corpus) if effort == TIER_SEMANTIC else None
@@ -288,6 +301,60 @@ def test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches(tmp_p
     assert capped.covered_to_rank == 1 and not capped.covers(2)
 
 
+def test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced(tmp_path):
+    """A truncated prefix and a short ranking look identical, so the record says which it is.
+
+    The cap is what an operator who re-reads deeply raises, and a bundle that does not carry it
+    leaves them guessing whether the corpus ran out or the run stopped writing.
+    """
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = _bundle(result)
+    capped = CandidateRecord.from_payload(summary[STAGE_INPUTS_FIELD][CANDIDATES_KEY])
+
+    assert (capped.cap, len(capped.entries)) == (1, 1)
+    assert result.params["max_candidate_record_pairs"] == 1
+    assert capped.covers(1) and not capped.covers(2)
+
+    refused = replay_attribution(summary, rows, budget=2)
+
+    assert not refused.recomputable
+    assert "capped at 1 document pairs" in refused.reason
+    assert "`--max-candidate-record-pairs`" in refused.reason
+
+
+def test_the_record_cap_overrides_the_runs_own_candidate_budget(tmp_path):
+    """The two knobs are different questions: how many pairs the RUN returns, and how many it records.
+
+    Left alone the record follows the run's budget, since a re-read only ever asks downward. Set,
+    it wins -- a corpus that is re-read deeper pays for the depth rather than losing the reading.
+    """
+    followed = _audit(tmp_path / "followed", RANKED, cos_threshold=RANKED_COS, candidate_budget=1)
+    overridden = _audit(
+        tmp_path / "overridden",
+        RANKED,
+        cos_threshold=RANKED_COS,
+        candidate_budget=1,
+        record_cap=50,
+    )
+
+    assert CandidateRecord.from_payload(followed.stage_inputs[CANDIDATES_KEY]).cap == 1
+    assert CandidateRecord.from_payload(overridden.stage_inputs[CANDIDATES_KEY]).cap == 50
+
+
+def test_a_schema_two_bundle_answers_inside_its_prefix_and_says_the_cap_is_unknown(tmp_path):
+    """The seam: the cap is additive, so an older bundle keeps every answer it already gave."""
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = _bundle(result)
+    older = summary[STAGE_INPUTS_FIELD]
+    older[SCHEMA_KEY] = 2
+    older[CANDIDATES_KEY].pop(CAP_KEY)
+
+    assert replay_attribution(summary, rows, budget=1).recomputable
+    refused = replay_attribution(summary, rows, budget=2)
+    assert not refused.recomputable and UNRECORDED_CAP_PHRASE in refused.reason
+    assert CandidateRecord.from_payload(older[CANDIDATES_KEY]).cap == UNRECORDED_CAP
+
+
 def test_a_bundle_without_a_candidate_record_refuses_the_budget_question(tmp_path):
     """A bundle from before the record answers its stage and refuses the budget -- never both."""
     result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
@@ -367,3 +434,16 @@ def test_the_report_states_per_question_what_the_archive_can_answer(tmp_path):
     assert "## The same bundles at candidate budget 1" in report
     assert "- attribution moves at this budget: 1 of 1" in report
     assert "MOVES the attribution" in budget_line(entries[0])
+
+
+def test_a_refused_budget_names_its_knob_in_the_report_not_only_in_the_echo(tmp_path):
+    """The table says "not recomputable"; the reason is what tells an operator which knob to raise."""
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = _bundle(result)
+    entries = [replay_entry("capped", "a/summary.json", summary, rows, budget=2)]
+
+    report = replay_report(entries)
+
+    assert "- refused (no record, or past the recorded prefix): 1 of 1" in report
+    assert "capped at 1 document pairs" in report
+    assert "`--max-candidate-record-pairs`" in report

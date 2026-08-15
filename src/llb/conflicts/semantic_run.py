@@ -169,13 +169,23 @@ def run_semantic_tiers(
         exclusions=DocumentExclusions.of(
             store.chunks, selection, min_claim_tokens=params.min_claim_tokens
         ),
-        # The run's own budget is the cap when it set one: a record deeper than the budget answers
-        # about ranks the run itself refused to reach, and the operator's question is downward.
-        candidates=CandidateRecord.of(
-            pairs,
-            store.chunks,
-            limit=params.max_candidate_pairs or DEFAULT_CANDIDATE_RECORD_PAIRS,
-        ),
+        candidates=CandidateRecord.of(pairs, store.chunks, limit=_record_cap(params)),
+    )
+
+
+def _record_cap(params: "AuditParams") -> int:
+    """How many document pairs this run's candidate record keeps.
+
+    Three sources in order, and the order is the point. An explicit
+    `--max-candidate-record-pairs` is what an operator who re-reads deeply sets, so it wins. Absent
+    that, the run's own candidate budget is the cap: a record deeper than the budget answers about
+    ranks the run itself refused to reach, and the re-read's question is downward. Absent both, the
+    constant -- which is priced on the depth/cost curve rather than guessed.
+    """
+    return (
+        params.max_candidate_record_pairs
+        or params.max_candidate_pairs
+        or DEFAULT_CANDIDATE_RECORD_PAIRS
     )
 
 

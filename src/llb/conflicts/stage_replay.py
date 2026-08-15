@@ -45,7 +45,8 @@ CANDIDATE_TIERS = (TIER_SEMANTIC, TIER_CLAIM)
 NO_CANDIDATE_RECORD_REASON = "no ranked candidate list: this bundle predates the candidate record"
 NO_STORE_BUDGET_REASON = "no ranked candidate list: this run read no store, so none was ever built"
 BUDGET_BEYOND_RECORD_REASON = (
-    "budget {budget} is past rank {covered}, the deepest the capped candidate record reaches"
+    "budget {budget} is past rank {covered}, the deepest the capped candidate record reaches "
+    "({cap})"
 )
 
 
@@ -107,8 +108,12 @@ def _pairs_at_budget(
         missing = NO_STORE_BUDGET_REASON if CHUNKS_KEY not in record else NO_CANDIDATE_RECORD_REASON
         return None, missing
     if not candidates.covers(budget):
+        # The refusal names the knob, because "past the record" is otherwise indistinguishable
+        # from "past the corpus": one is re-runnable at a larger cap, the other is not.
         return None, BUDGET_BEYOND_RECORD_REASON.format(
-            budget=budget, covered=candidates.covered_to_rank
+            budget=budget,
+            covered=candidates.covered_to_rank,
+            cap=candidates.cap_phrase(),
         )
     return returned_pairs_at_budget(rows, candidates, budget), ""
 

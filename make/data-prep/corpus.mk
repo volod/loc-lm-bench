@@ -54,7 +54,7 @@ audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLD
 	if [ -n "$(REPEAT_RECOVER)" ]; then args+=(--recover-straddle); fi; \
 	$(PY) -m llb.main audit-repeat-yield "$${args[@]}"
 
-audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CALIBRATION_PROBE=, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block, PROJECT_POLICY=conservative[,prefer-newer] projects the `to review` count under each named policy plus the DELTA between them); never edits the corpus
+audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CALIBRATION_PROBE=, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block, PROJECT_POLICY=conservative[,prefer-newer] projects the `to review` count under each named policy plus the DELTA between them, MAX_CANDIDATE_RECORD_PAIRS= sets how deep the bundle's candidate record reaches for a later budget re-read); never edits the corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--corpus "$(CORPUS)" --effort "$(or $(EFFORT),hash)"); \
 	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
@@ -66,6 +66,7 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(COS_THRESHOLD)" ]; then args+=(--cos-threshold "$(COS_THRESHOLD)"); fi; \
 	if [ -n "$(COS_QUANTILE)" ]; then args+=(--cos-quantile "$(COS_QUANTILE)"); fi; \
 	if [ -n "$(MAX_CANDIDATE_PAIRS)" ]; then args+=(--max-candidate-pairs "$(MAX_CANDIDATE_PAIRS)"); fi; \
+	if [ -n "$(MAX_CANDIDATE_RECORD_PAIRS)" ]; then args+=(--max-candidate-record-pairs "$(MAX_CANDIDATE_RECORD_PAIRS)"); fi; \
 	if [ -n "$(NULL_SAMPLE_PAIRS)" ]; then args+=(--null-sample-pairs "$(NULL_SAMPLE_PAIRS)"); fi; \
 	if [ -n "$(NULL_SEED)" ]; then args+=(--null-seed "$(NULL_SEED)"); fi; \
 	if [ -n "$(MAX_CLAIM_PAIRS)" ]; then args+=(--max-claim-pairs "$(MAX_CLAIM_PAIRS)"); fi; \

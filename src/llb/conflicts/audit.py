@@ -52,6 +52,10 @@ class AuditParams:
     cos_threshold: float | None = None
     cos_quantile: float | None = None
     max_candidate_pairs: int | None = None
+    # How many DOCUMENT pairs the bundle's candidate record keeps, which bounds how deep a later
+    # budget re-read can reach. None resolves in `semantic_run.py`, never here: the fallback is the
+    # run's own candidate budget, and only the semantic pass knows the ranking it applies to.
+    max_candidate_record_pairs: int | None = None
     null_sample_pairs: int = DEFAULT_NULL_SAMPLE_PAIRS
     null_seed: int = DEFAULT_NULL_SEED
     leaf_size: int = DEFAULT_LEAF_SIZE
@@ -70,6 +74,7 @@ class AuditParams:
             "cos_threshold": self.cos_threshold,
             "cos_quantile": self.cos_quantile,
             "max_candidate_pairs": self.max_candidate_pairs,
+            "max_candidate_record_pairs": self.max_candidate_record_pairs,
             "null_sample_pairs": self.null_sample_pairs,
             "null_seed": self.null_seed,
             "leaf_size": self.leaf_size,

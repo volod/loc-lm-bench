@@ -139,7 +139,7 @@ def _budget_section(entries: list[JsonObject]) -> list[str]:
     asked = [entry for entry in entries if "at_budget" in entry]
     budget = asked[0]["at_budget"]["budget"]
     moved = sum(1 for entry in asked if entry["at_budget"]["changes"])
-    refused = sum(1 for entry in asked if not entry["at_budget"]["recomputable"])
+    refusals = [entry["at_budget"] for entry in asked if not entry["at_budget"]["recomputable"]]
     lines = [
         f"## The same bundles at candidate budget {budget}",
         "",
@@ -148,7 +148,15 @@ def _budget_section(entries: list[JsonObject]) -> list[str]:
         "recorded prefix is refused rather than answered from a truncated list.",
         "",
         f"- attribution moves at this budget: {moved} of {len(asked)}",
-        f"- refused (no record, or past the recorded prefix): {refused} of {len(asked)}",
+        f"- refused (no record, or past the recorded prefix): {len(refusals)} of {len(asked)}",
+        # The table says only "not recomputable", and the three ways a budget is refused have three
+        # different fixes -- re-run the audit, raise `--effort`, raise the record cap. Counted per
+        # reason rather than per bundle, because an archive sweep repeats each one many times.
+        *(
+            f"  - {reason} -- {sum(1 for r in refusals if r['reason'] == reason)} of "
+            f"{len(refusals)}"
+            for reason in sorted({str(refusal["reason"]) for refusal in refusals})
+        ),
         "",
         "| run | document pairs returned | at this budget | moves |",
         "| --- | --- | --- | --- |",

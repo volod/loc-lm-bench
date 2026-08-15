@@ -96,15 +96,20 @@ class Reading:
 
 
 def _budget_detail(inputs: RunInputs) -> str:
-    """How deep into the ranking the recorded prefix reaches, which is the budget ceiling."""
+    """How deep into the ranking the recorded prefix reaches, which is the budget ceiling.
+
+    A prefix that stops short says what stopped it. Without that the two ways a record can end --
+    the corpus ranked no more, or this run declined to write more down -- read identically, and
+    only the second has a knob.
+    """
     candidates = inputs.candidates
     if candidates is None:
         return ""
-    reach = (
-        "the whole candidate list"
-        if candidates.covered_to_rank >= candidates.total_pairs
-        else f"rank {candidates.covered_to_rank} of {candidates.total_pairs}"
-    )
+    if candidates.covered_to_rank >= candidates.total_pairs:
+        reach = "the whole candidate list"
+    else:
+        depth = f"rank {candidates.covered_to_rank} of {candidates.total_pairs}"
+        reach = f"{depth}, {candidates.cap_phrase()}"
     return f"answers any budget up to {reach} ({len(candidates.entries)} document pairs recorded)"
 
 

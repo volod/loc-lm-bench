@@ -51,16 +51,22 @@ The bundle record is linear in DOCUMENTS as intended, and on a 250-document corp
 27.6 KiB of which 24 KiB is document ids repeated across four maps -- `documents`, `chunks.stored`,
 `chunks.comparable`, and the three `exclusions` maps each key on the full id
 ([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
+The ranked `candidates` list carries TWO ids per row on top of that, and is the single largest
+consumer once the list is deep: 173 KiB of a 198 KiB record with the whole ranking written down, and
+66.7 bytes per row of which the ids are most
+([bundle record](current/data-prep/conflict-bundle-record.md#how-deep-the-prefix-reaches-and-what-the-depth-costs)).
 A corpus of tens of thousands of documents carries that multiplier into every `summary.json`, and
 the ids are the one part of the record with no information in their repetition. Intern them: the
-`documents` list is already the corpus-order index, so every other map can key on its position and
-the record shrinks toward one id per document. The schema version is the seam and a reader must keep
-accepting the current form, since the point of the record is bundles written by older builds.
+`documents` list is already the corpus-order index, so every other map and every candidate row can
+key on its position and the record shrinks toward one id per document. The schema version is the seam
+and a reader must keep accepting the current form, since the point of the record is bundles written
+by older builds.
 
 - Agent status: CLEAR
 - Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/bundle_record.py` builds the
-  record; `DocumentChunks.payload` / `DocumentExclusions.payload` are the maps, and `documents_of`
-  is the order an index would be resolved against.
+  record; `DocumentChunks.payload` / `DocumentExclusions.payload` are the maps,
+  `CandidateRecord.payload` is the ranked rows, and `documents_of` is the order an index would be
+  resolved against.
 - User-visible outcome: a bundle from a large corpus stays small enough that nobody is tempted to
   strip the record from it.
 - Scope boundary: in scope -- the interning, the schema bump, the reader that accepts both forms,
@@ -73,35 +79,6 @@ accepting the current form, since the point of the record is bundles written by 
   older schema still reads.
 - Documentation target:
   [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
-
-### conflict-candidate-record-cap-decided-on-evidence (optional)
-
-The ranked candidate record is capped at `DEFAULT_CANDIDATE_RECORD_PAIRS` (200 document pairs) and
-NO corpus on this host reaches it -- the densest measured run forms 38 candidate pairs over 250
-documents -- so `covered_to_rank`, the truncation, and the refusal past it are pinned only by a
-fixture ([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
-The constant is therefore a guess: nothing establishes whether 200 is generous or already too small
-for the budgets operators actually re-read at. Measure it -- on a corpus dense enough to saturate
-the list, record how deep a re-read is typically asked to go and what the cap costs in bytes at
-several values -- and either set the constant on that evidence or make it a run parameter that is
-recorded beside the prefix it produced.
-
-- Agent status: RUN NEEDED
-- Dependencies: none. `CandidateRecord.of` in `src/llb/conflicts/candidate_record.py` takes the cap
-  and already records `total_pairs` / `covered_to_rank`; the run's own `--max-candidate-pairs`
-  overrides the constant today.
-- User-visible outcome: a budget re-read reaches as deep as operators actually ask, and the byte
-  cost of that depth is a measured number rather than a round one.
-- Scope boundary: in scope -- one dense corpus, the depth/cost curve, and the constant-or-parameter
-  decision. Out of scope -- recording chunk-level pairs, removing the cap, and changing the refusal
-  behavior past it.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: one semantic-tier run per threshold on the CUDA host; CI covers the cap and the
-  refusal over fixtures.
-- Acceptance gates: `make ci` green; the report states the cap's byte cost at each measured value
-  and names the chosen one with its reason; a run at the chosen cap still refuses a budget past it.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned).
 
 ### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
 
@@ -334,6 +311,43 @@ that never reorders anything is not worth a column.
   measured bundles the order changed, including the bundles where it did not.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+
+### conflict-candidate-record-cap-on-a-natively-dense-corpus (optional)
+
+The candidate record's cap is priced, but on a density no operator would run at: no corpus on this
+host saturates the list at any real threshold, so the depth/cost curve was measured by dropping the
+cosine to 0.25 on the 250-document quickstart corpus, which forms 3,127 candidate rows against the
+38 the same corpus returns at the 0.6 it was actually audited at
+([bundle record](current/data-prep/conflict-bundle-record.md#how-deep-the-prefix-reaches-and-what-the-depth-costs)).
+Two things that decide the cap are therefore substitutes rather than measurements. The RANKS-PER-PAIR
+collapse ratio (1.11 at cap 200, 1.22 over the whole list) is what turns a cap in document pairs into
+an answerable depth in ranks, and on a corpus whose density comes from genuine near-duplicates rather
+than from a loosened threshold it could be far higher -- the same cap would then buy much less depth.
+And the depth a re-read is asked at rests on a structural bound (the question is downward, so the
+run's own budget is the ceiling) plus two operating budgets, never on an observed re-read. Re-price
+it on a corpus that saturates the list at an operating cosine, and record the budget each
+`recompute-conflict-stage` run is actually asked at so the depth side stops being an argument.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. `--max-candidate-record-pairs` and the recorded `cap` are current behavior;
+  `CandidateRecord.of` in `src/llb/conflicts/candidate_record.py` is where the collapse happens and
+  `covered_to_rank` is the ratio's numerator. The corpus is the missing input: it needs many
+  near-duplicate documents, not a lowered threshold.
+- User-visible outcome: an operator on a duplicate-heavy corpus learns whether the shipped cap still
+  answers the budgets they ask, instead of inheriting a number priced on a synthetic density.
+- Scope boundary: in scope -- one natively dense corpus, its ranks-per-pair ratio at several caps,
+  the re-read depths observed, and a keep-or-change verdict on the constant. Out of scope --
+  recording chunk-level pairs, removing the cap, changing the refusal past it, and re-deciding the
+  cap before a corpus that saturates at an operating threshold exists.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` and
+  `$DATA_DIR/corpus-conflict-stage/<run>/` artifacts only.
+- Execution path: one semantic-tier run per cap on the CUDA host; CI covers the ratio and the
+  refusal over fixtures.
+- Acceptance gates: `make ci` green; the reading states the ranks-per-pair ratio at each measured cap
+  beside the quickstart corpus's, and either keeps `DEFAULT_CANDIDATE_RECORD_PAIRS` with its reason
+  or moves it; a stage re-read records the budget it was asked at.
+- Documentation target:
+  [bundle record](current/data-prep/conflict-bundle-record.md#how-deep-the-prefix-reaches-and-what-the-depth-costs).
 
 ### conflict-policy-share-across-repeat-audits-of-one-corpus (optional)
 

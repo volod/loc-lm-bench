@@ -36,15 +36,16 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 All of it rides under `stage_attribution_inputs` in `summary.json`
 (`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
-**2**; the additions are additive, so a schema-1 bundle still replays its stage and answers the two
-newer questions with a refusal.
+**3**; every addition so far is additive, so a schema-1 bundle still replays its stage and answers
+the two newer questions with a refusal, and a schema-2 bundle still answers a budget inside its
+prefix -- it just cannot say what truncated that prefix.
 
 | key | what it carries | module |
 | --- | --- | --- |
 | `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | `bundle_record.py` |
 | `chunks` | `stored` / `comparable` / `copies` per document | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
-| `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs` and `covered_to_rank` | `candidate_record.py` |
+| `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs`, `covered_to_rank`, and the `cap` the prefix was written at | `candidate_record.py` |
 
 Why `documents` and `chunks` cannot be re-derived instead of recorded -- corpus order is data, and a
 rebuilt store answers about itself -- is in
@@ -126,9 +127,16 @@ the candidate SET and not the candidate ORDER.
 appears at. Collapsed, because every reading built on it is a document-pair reading and the first
 rank a pair appears at is exactly what decides whether a budget returns it. Capped, because the
 uncollapsed list is quadratic in CHUNKS and the collapsed one is quadratic in DOCUMENTS: the cap is
-the run's own `--max-candidate-pairs` when it set one and `DEFAULT_CANDIDATE_RECORD_PAIRS` (200)
-otherwise, and `covered_to_rank` says how deep the record reaches. A budget past it is REFUSED, not
-answered from a truncated list.
+`--max-candidate-record-pairs` when the run set one, the run's own `--max-candidate-pairs` when it
+set that instead, and `DEFAULT_CANDIDATE_RECORD_PAIRS` (200) otherwise. `covered_to_rank` says how
+deep the record reaches and `cap` says what stopped it there. A budget past the prefix is REFUSED,
+not answered from a truncated list, and the refusal names the knob:
+
+```text
+[stage] <run> at budget 223: not recomputable -- budget 223 is past rank 222, the deepest the
+  capped candidate record reaches (capped at 200 document pairs -- re-run with a larger
+  `--max-candidate-record-pairs` to record more)
+```
 
 ```bash
 make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." STAGE_BUDGET=2
@@ -158,6 +166,67 @@ than the reading: the fixture's corpus-first lost orderable pair is `archive-pol
 precisely why the pair COUNT is reported beside the name -- on the fixture the budget silently costs
 three of eight document pairs while the sentence stays word for word identical.
 
+### How deep the prefix reaches, and what the depth costs
+
+The cap used to be a round number nobody had priced -- 200 document pairs, pinned only by a fixture,
+because no corpus on this host formed a candidate list long enough to reach it. It is now measured,
+and it is a run parameter (`--max-candidate-record-pairs` / `MAX_CANDIDATE_RECORD_PAIRS`) recorded
+beside the prefix it produced.
+
+**Where the cap starts to bite.** On the 250-document quickstart corpus (CUDA host, the committed
+e5-base 311-chunk store, `--effort semantic`, no model call) the crossing is between cos 0.51 and
+cos 0.50: at 0.51 the ranking is 188 chunk pairs collapsing to 170 document pairs and the cap never
+bites; at 0.50 it is 224 collapsing to 202, and the record keeps 200 of them, reaching rank 222 of
+224. That is with `DEFAULT_COSINE_THRESHOLD` at **0.9** and the runs behind this page at 0.6 and
+0.8, where the same corpus forms 38 and 1 candidate rows. So on this host the constant is
+unreachable at any threshold an operator would audit at, and the sweep below has to manufacture the
+density to price it. The other way a run gets a deep list -- `--max-candidate-pairs`, which resolves
+its own cosine (0.36 on the goods corpus) -- caps the record at that budget and never reaches the
+constant either.
+
+**The depth/cost curve** (same corpus and store at cos 0.25, where the ranking is 3,127 chunk pairs
+collapsing to 2,560 document pairs; one `make audit-corpus-conflicts` run per cap, artifacts under
+`.data/corpus-conflicts/20260815T-candidate-cap-cos025-<cap>/`):
+
+| cap | pairs recorded | answers budgets to rank | `candidates` bytes | whole record | `summary.json` |
+| --- | --- | --- | --- | --- | --- |
+| 25 | 25 | 26 | 1,713 | 26,854 | 81,489 |
+| 50 | 50 | 53 | 3,362 | 28,503 | 84,589 |
+| 100 | 100 | 107 | 6,665 | 31,806 | 90,792 |
+| 200 (default) | 200 | 222 | 13,353 | 38,494 | 103,280 |
+| 400 | 400 | 458 | 26,736 | 51,877 | 128,264 |
+| 800 | 800 | 920 | 53,488 | 78,629 | 178,215 |
+| 2,600 (whole list) | 2,560 | 3,127 | 172,918 | 198,059 | 399,727 |
+
+**The cost side cannot pick the value.** The curve is a straight line at **66.7 to 68.5 bytes per
+recorded document pair** with no knee anywhere on it, so every cap is affordable and every cap is
+worse than the one below it by the same amount per pair. What it does establish is the price of the
+extremes: recording the whole list turns a 25 KiB record into a 198 KiB one and takes half of
+`summary.json`, which is the outcome the cap exists to prevent.
+
+**What picks it is the depth a re-read can ask at**, and two facts bound that:
+
+- a cap of N document pairs answers every budget up to at least rank N -- each recorded pair
+  consumes one rank or more, so `covered_to_rank >= N` by construction, and the cap is therefore
+  readable in the budget's own units;
+- the question is downward. `--budget` asks what a SMALLER candidate budget would have returned, so
+  the run's own budget is the ceiling on it, not a starting point. The deepest budget any measured
+  claim-tier run on this host used is 100 (`MAX_CANDIDATE_PAIRS=100` on the goods corpus) and
+  `SUGGESTED_MAX_CANDIDATE_PAIRS` is 50.
+
+**Decision: the constant stays 200**, now for a stated reason rather than by default -- it is 2x the
+deepest measured operating budget and 4x the suggested one, it guarantees an answer to rank 200 or
+better, and it costs 13.3 KiB. It is no longer the only lever: a corpus that is genuinely re-read
+deeper sets `--max-candidate-record-pairs` and pays ~67 bytes per pair, and the refusal past the
+prefix names that flag instead of leaving an operator to find it. On the cos 0.50 run above, raising
+the cap from 200 to 250 recovers the last 2 document pairs and the last 2 ranks for **134 bytes**.
+
+**The cap is recorded because a truncated prefix and a short ranking look identical.** `cap` sits
+beside `covered_to_rank`, so a reader can tell "the corpus ranked no more" from "this run declined
+to write more down" -- only the second has a knob. A schema-2 bundle carries no `cap` and says so
+(`cap not recorded: this bundle predates it`) rather than reporting today's constant as if that run
+had used it.
+
 ## The size the record actually costs
 
 | bundle | documents | store chunks | record bytes | of which `candidates` |
@@ -169,10 +238,14 @@ three of eight document pairs while the sentence stays word for word identical.
 
 The largest bundle on this host records 27.6 KiB over 250 documents -- about 110 bytes per document
 -- against a 74 KiB `summary.json`, and the per-document maps (`documents` 9.5 KiB, `chunks`
-14.5 KiB, `exclusions` 1.1 KiB) are what dominate it, exactly as the bound predicts. No corpus here
-has a candidate list long enough for the cap to bite, so the cap and its refusal are pinned in CI
-instead (`test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches`), alongside a
-growth test that doubles a corpus past the cap and asserts the record less than doubles.
+14.5 KiB, `exclusions` 1.1 KiB) are what dominate it, exactly as the bound predicts. At the
+thresholds those runs used, no corpus here has a candidate list long enough for the cap to bite --
+it takes a deliberately loosened cosine to reach it, which is what
+[the depth/cost curve](#how-deep-the-prefix-reaches-and-what-the-depth-costs) does. The cap, the
+refusal, and the knob the refusal names are therefore pinned in CI over fixtures
+(`test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches`,
+`test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced`), alongside a growth test
+that doubles a corpus past the cap and asserts the record less than doubles.
 
 ## Where it lives
 

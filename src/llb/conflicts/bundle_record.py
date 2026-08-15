@@ -39,9 +39,11 @@ from llb.conflicts.governance import ORDERING_FIELDS
 from llb.core.contracts.common import JsonObject
 
 # 1 records the corpus documents with their ordering fields plus the per-document chunk accounting.
-# 2 adds the per-document exclusion reasons and the ranked candidate list. Both are additive, so a
-# schema-1 bundle still replays its stage -- it answers the two newer questions with a refusal.
-STAGE_INPUTS_SCHEMA_VERSION = 2
+# 2 adds the per-document exclusion reasons and the ranked candidate list. 3 adds the cap the
+# candidate prefix was written at. All additive, so a schema-1 bundle still replays its stage (it
+# answers the two newer questions with a refusal) and a schema-2 bundle still answers a budget
+# inside its prefix -- it just cannot say what truncated that prefix.
+STAGE_INPUTS_SCHEMA_VERSION = 3
 SCHEMA_KEY = "schema_version"
 DOCUMENTS_KEY = "documents"
 CHUNKS_KEY = "chunks"
