@@ -36,16 +36,18 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 All of it rides under `stage_attribution_inputs` in `summary.json`
 (`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
-**5**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
+**6**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
 newer questions with a refusal, and a schema-2 bundle still answers a budget inside its prefix -- it
-just cannot say what truncated that prefix. Versions 4 and 5 are the only two that CHANGE a shape
-rather than adding to it, and both are about the id table: 4 is
+just cannot say what truncated that prefix. Versions 4, 5, and 6 are the only three that CHANGE a
+shape rather than adding to it, and all three are about the id table: 4 is
 [the table itself](#the-id-table-every-document-named-once), 5 is
-[the label it stopped carrying](#the-label-a-document-with-nothing-to-label-was-carrying).
+[the label it stopped carrying](#the-label-a-document-with-nothing-to-label-was-carrying), 6 is
+[the head and tail every id shares](#the-head-and-tail-every-id-shares).
 
 | key | what it carries | module |
 | --- | --- | --- |
-| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- and the id alone where it has neither | `bundle_record.py` |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- the id alone where it has neither, and the id minus whatever head and tail the whole table shares | `bundle_record.py` |
+| `document_id_prefix` / `document_id_suffix` | the head and tail every id in the table shares, absent when the fold does not pay for itself | `document_affix.py` |
 | `chunks` | `stored` / `comparable` / `copies` per document | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
 | `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs`, `covered_to_rank`, and the `cap` the prefix was written at | `candidate_record.py` |
@@ -79,9 +81,10 @@ Two facts the change has to survive, and both are load-bearing:
   nothing else can: a position and an id are both strings once they are JSON object keys. Both forms
   resolve to the same document ids, so *every reading replays identically through either* -- checked
   over the whole archive below, and pinned in CI by
-  `test_every_reading_replays_identically_through_both_forms`, which rewrites a fresh record into
-  the older form (`keyed_by_id` in `tests/llb/conflicts/conflict_helpers.py`) rather than freezing a
-  blob, so a new field cannot quietly go untested on the older side.
+  `test_every_reading_replays_identically_through_all_four_forms`
+  (`tests/llb/conflicts/test_bundle_id_table.py`), which rewrites a fresh record into the older form
+  (`keyed_by_id` in `tests/llb/conflicts/conflict_helpers.py`) rather than freezing a blob, so a new
+  field cannot quietly go untested on the older side.
 
 **Measured over the whole bundle archive** (24 bundles under `.data/corpus-conflicts/`, spanning
 no record at all, schema 1, and schema 2; CUDA host, no model call):
@@ -176,7 +179,8 @@ The bare id charges none of that, and it says something the object did not: this
 nothing to order on, which is precisely why its pairs are unorderable. The form is also
 self-describing -- a string is an id, an object is a labelled entry -- so unlike the position/id
 seam of schema 4, no reader needs `schema_version` to tell the two apart; the version is bumped for
-a consumer that assumed every entry was an object, not because the reader could not cope.
+a consumer that assumed every entry was an object, not because the reader could not cope. What was
+left after it is the id STRING, which is what [the fold](#the-head-and-tail-every-id-shares) prices.
 
 **What the decision declines is measured, not assumed**: on a fully dated corpus of 25,000
 documents the positional row would save a further ~975 KB (1,225,000 against 2,200,000 bytes). If
@@ -205,12 +209,103 @@ a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
 `.data/corpus-conflict-stage/20260815T-interned-ids-archive/`), and the two re-taken bundles above
 replay to the same attribution, the same agreement verdict, and the same budget answer as the
 schema-4 and schema-2 bundles of the same runs
-(`.data/corpus-conflict-stage/20260815T-bare-id-pairs/`). In CI,
-`test_every_reading_replays_identically_through_all_three_forms` runs a MIXED corpus -- three dated
-documents and one undated, so the record carries both entry shapes -- and asserts every reading
-equal across schema 5, schema 4 (`labelled_documents`), and the id-keyed schema 3 and schema 1
-(`keyed_by_id`), each rewritten from a fresh record rather than frozen as a blob so a new field
-cannot go untested on an older side.
+(`.data/corpus-conflict-stage/20260815T-bare-id-pairs/`). The same gate now covers four forms and is
+[re-stated with the fold](#the-head-and-tail-every-id-shares).
+
+### The head and tail every id shares
+
+With the table down to one bare id per undated document, every remaining lever was on the id STRING
+rather than on the shape around it. A corpus-relative id is a PATH, and a corpus is usually one
+directory of one file type, so the ids share a head and a tail that carry nothing per document: the
+250-document quickstart corpus writes `squad/` and `.txt` 250 times each, 2.5 KiB of the table's
+6.5. So the record writes them ONCE (`document_id_prefix` / `document_id_suffix`,
+`src/llb/conflicts/document_affix.py`) and each entry keeps only its stem.
+
+**The fold is applied only where it pays for itself**, which is the whole of the "buys nothing,
+costs nothing" side. `IdAffix.over` computes the shared head and tail and then compares what they
+save across the table against what the two keys cost; below break-even it returns the EMPTY fold and
+the table is written exactly as schema 5 wrote it, byte for byte. Break-even is small and depends
+only on how much is shared:
+
+| shared affix | bytes per document | pays from |
+| --- | --- | --- |
+| `squad/` + `.txt` | 10 | 6 documents |
+| `.txt` alone | 4 | 8 documents |
+| `.md` alone | 3 | 10 documents |
+| `corpus/docs/uk/` + `.txt` | 19 | 4 documents |
+
+The reassembly is EXACT, which matters more than the bytes: an id is the join key for
+`findings.jsonl` and for the store, so a stem that reassembles to anything but the original would
+silently unjoin the record from both. Two things make it exact rather than nearly so:
+
+- the suffix is taken over what the PREFIX left behind, so the two can never overlap into a negative
+  stem. Ids that are runs of one character share their head and, read independently, the same tail;
+  taking the tail from the remainder makes the overlap impossible by construction rather than by a
+  length check somebody has to remember;
+- `extra_document_ids` is deliberately NOT folded. An extra id comes from a store one build ahead of
+  the audited corpus, so it need not share that corpus's head or tail, and folding the table around
+  it would charge every document the difference to accommodate an id that is absent from a normal
+  bundle.
+
+Like schema 5 and unlike schema 4, the form is self-describing: the two keys are present exactly
+when the entries are stems, so no reader needs `schema_version` to tell a stem from an id. The
+version is bumped for a consumer that assumed `documents` held whole ids.
+
+**Measured, on real bundles** (CUDA host, no adjudication call -- the encoder runs only to build the
+stores; compact `json.dumps` bytes, the unit the rest of this page quotes). The two `scattered`
+corpora are the SAME 250 documents as the squad run,
+re-laid under a different id shape (`.data/corpus-conflicts/_id_shape_corpora/`) and re-indexed at
+the same e5-base settings into 311 chunks (`.data/id-fold-stores/`), so the id is the only thing
+that differs -- and they return the same 38 rows over the same 36 document pairs:
+
+| bundle | id shape | prefix | suffix | `documents` | whole record | `summary.json` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `20260815T-id-fold-squad-cos060` | `squad/<hex>.txt` | `squad/` | `.txt` | 6,500 -> 4,000 (-38.5%) | 12,714 -> 10,276 (-19.2%) | 42,915 -> 40,477 (-5.7%) |
+| `20260815T-id-fold-squad-cos080` | `squad/<hex>.txt` | `squad/` | `.txt` | 6,500 -> 4,000 (-38.5%) | 11,911 -> 9,473 (-20.5%) | 39,165 -> 36,727 (-6.2%) |
+| `20260815T-id-fold-scattered-txt` | `<dir>/<hex>.txt`, 159 directories | -- | `.txt` | 5,750 -> 4,750 (-17.4%) | 11,964 -> 10,994 (-8.1%) | 46,826 -> 45,856 (-2.1%) |
+| `20260815T-id-fold-scattered-mixed` | `<dir>/<hex>.txt`\|`.md` | -- | -- | 5,625 (0%) | 11,839 (0%) | 46,578 (0%) |
+| `20260815T-id-fold-fixture-semantic` | 7 flat `.md` | -- | -- | 601 (0%) | 1,209 (0%) | 13,223 (0%) |
+| `20260815T-id-fold-fixture-hash` | 7 flat `.md` | -- | -- | 601 (0%) | 637 (0%) | 3,276 (0%) |
+
+The last three rows are the two ways a corpus reaches "costs nothing", and both are byte-for-byte
+identical to the schema-5 table rather than nearly so: `scattered-mixed` shares no head and no tail
+at all, and the 7-document fixture shares `.md` but is three documents short of the ten that earn
+the key recording it. The middle row is the case the fold half-pays: the prefix is not shared, the
+suffix is, and the table takes the 4 bytes per document that are actually there.
+
+**Decision: take the fold.** It pays on the path-shaped corpus (-38.5% of the table) and costs
+exactly zero where it buys nothing, which is what the keep-or-change verdict was conditioned on.
+The saving is a fixed number of bytes per document -- `len(prefix) + len(suffix)`, minus the two
+keys once -- so it does not change a growth term and the percentage only firms up with the corpus:
+
+| documents | flat table | folded table | saving |
+| --- | --- | --- | --- |
+| 250 | 6,500 | 4,062 | -37.5% |
+| 2,500 | 65,000 | 40,062 | -38.4% |
+| 25,000 | 650,000 | 400,062 | -38.5% |
+
+**What it costs a reader** is that `documents` no longer spells an id out, so a grep of
+`summary.json` for `squad/0004bc24d22e.txt` finds it in `findings.jsonl`'s rows and not in the
+table. That is the one objection, and it is smaller than the ones that sank the positional row and
+the column table
+([the label section](#the-label-a-document-with-nothing-to-label-was-carrying)): the join is one
+concatenation of two values named in the same object, not an OFFSET into a field order kept in
+another file, and there is no array whose mis-length silently re-labels every document after it.
+
+**Every reading replays identically through all four forms.** The 24-bundle archive sweep
+(no record at all, schema 1, schema 2, schema 4/5) re-taken on this build produces a `stage.json`
+and a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
+(`.data/corpus-conflict-stage/20260815T-id-fold-archive/` against
+`.data/corpus-conflict-stage/20260815T-bare-id-archive/`), and the two bundles above that have a
+schema-5 predecessor -- `id-fold-squad-cos060` against `bare-id-squad-cos060`, and
+`id-fold-fixture-semantic` against `bare-id-fixture-semantic` -- replay to the same attribution, the
+same agreement verdict, and the same budget answer as it
+(`.data/corpus-conflict-stage/20260815T-id-fold-pairs/`). In CI,
+`test_every_reading_replays_identically_through_all_four_forms` runs a path-shaped MIXED corpus --
+dated documents and one undated, so the table carries a labelled entry and a bare stem under a live
+fold -- and asserts every reading equal across schema 6, the unfolded schema 5
+(`unfolded_documents`), the labelled schema 4, and the id-keyed schema 3 and schema 1, each
+rewritten from a fresh record rather than frozen as a blob.
 
 ### Why a document is not comparable, and the floor that returns it
 
@@ -392,21 +487,22 @@ had used it.
 
 ## The size the record actually costs
 
-Bytes at schema 5, with the same content at schema 4 (labelled entries) and at the pre-interning
-form (keyed by id) beside it:
+Bytes at schema 6, with the same content unfolded (schema 5), with labelled entries (schema 4), and
+at the pre-interning form (keyed by id) beside it:
 
-| bundle | documents | store chunks | record bytes | schema 4 | keyed by id | of which `candidates` |
-| --- | --- | --- | --- | --- | --- | --- |
-| `20260815T-bundle-record-fixture-hash` | 7 | -- (no store) | 637 | 637 | 637 | absent |
-| `20260815T-bare-id-fixture-semantic` | 7 | 19 | 1,209 | 1,209 | 2,056 | 186 |
-| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 311 | 11,909 | 14,909 | 25,276 | 91 |
-| `20260815T-bare-id-squad-cos060` | 250 | 311 | 12,714 | 15,714 | 27,578 | 896 |
+| bundle | documents | store chunks | record bytes | schema 5 | schema 4 | keyed by id | of which `candidates` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `20260815T-id-fold-fixture-hash` | 7 | -- (no store) | 637 | 637 | 637 | 637 | absent |
+| `20260815T-id-fold-fixture-semantic` | 7 | 19 | 1,209 | 1,209 | 1,209 | 2,056 | 186 |
+| `20260815T-id-fold-squad-cos080` | 250 | 311 | 9,473 | 11,911 | 14,911 | 25,278 | 93 |
+| `20260815T-id-fold-squad-cos060` | 250 | 311 | 10,276 | 12,714 | 15,714 | 27,578 | 896 |
 
-The largest bundle on this host records 12.7 KiB over 250 documents -- about 51 bytes per document
--- against a 43 KiB `summary.json`. What dominates it is still the id table, and now it is nothing
-but ids: `documents` is 6.5 KiB of the 12.7, against `chunks` 4.8 KiB and `exclusions` 0.4 KiB.
-That is the floor the bound predicts -- the record costs one id per document plus a handful of
-integers, plus a labelled entry for each document that actually has an ordering field to label.
+The largest bundle on this host now records 10.3 KiB over 250 documents -- about 41 bytes per
+document -- against a 40 KiB `summary.json`. The id table no longer dominates it: `documents` is
+4.0 KiB of the 10.3, below `chunks` at 4.8 KiB, with `exclusions` 0.4 KiB and `candidates` 0.9 KiB.
+That is the floor the bound predicts, reached -- the record costs one STEM per document plus a
+handful of integers, plus a labelled entry for each document that actually has an ordering field to
+label, and what every id has in common is written down once.
 
 At the thresholds those runs used, no corpus here has a candidate list long enough for the cap to
 bite -- it takes a deliberately loosened cosine to reach it, which is what
@@ -420,7 +516,13 @@ going negative on a corpus of very short ids. The document table's own form is p
 `test_a_document_with_nothing_to_order_on_is_recorded_as_the_id_alone` and
 `test_dropping_the_empty_label_is_a_saving_on_undated_documents_and_free_on_dated_ones`, the second
 of which asserts BOTH halves of the decision -- smaller on an undated corpus, and byte-for-byte
-unchanged on a dated one.
+unchanged on a dated one. The id fold carries both halves too:
+`test_the_head_and_tail_a_path_shaped_corpus_shares_are_recorded_once`,
+`test_a_corpus_the_fold_cannot_pay_on_records_the_table_it_always_did` (parameterized over the
+scattered corpus and the too-small one),
+`test_every_folded_id_round_trips_to_the_exact_string_it_was_written_from`,
+`test_the_fold_never_takes_more_of_an_id_than_the_id_has`, and
+`test_an_id_the_corpus_never_carried_is_recorded_whole_rather_than_folded`.
 
 ## Where it lives
 
@@ -428,9 +530,10 @@ unchanged on a dated one.
 | --- | --- |
 | the record a run writes | `src/llb/conflicts/bundle_record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`, `naming_of`) |
 | the id table both forms resolve against | `src/llb/conflicts/document_index.py` (`DocumentInterner`, `DocumentNaming`) |
+| the head and tail the table is folded on | `src/llb/conflicts/document_affix.py` (`IdAffix.over`, `pays_for_itself`, `stem`, `expand`) |
 | re-reading a bundle with it | `src/llb/conflicts/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/candidate_record.py` |
 | the per-question verdicts | `src/llb/conflicts/bundle_readings.py` |
 | rendering | `src/llb/conflicts/report_stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
-| tests | `tests/llb/conflicts/test_bundle_record.py`, `tests/llb/conflicts/test_stage_replay.py` |
+| tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_stage_replay.py` |

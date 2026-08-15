@@ -7,8 +7,9 @@ today's store gives -- and they look identical from the outside. So the run reco
 readings were read FROM, beside the coverage they explain:
 
 - `documents`: every corpus document in corpus order, with the `effective_date` / `version` it was
-  audited under -- and the id alone where it has neither. Corpus order is data here, not
-  presentation: it is what picks between two pairs lost at the same stage.
+  audited under -- and the id alone where it has neither, minus the head and tail every id shares
+  (`document_affix.py`). Corpus order is data here, not presentation: it is what picks between two
+  pairs lost at the same stage.
 - `chunks`: what the store held per document, what the tier compared per document, and the copies
   the hash tier settled (`document_chunks.py`).
 - `exclusions`: the exclusion reason per document, plus the floor each one would return at
@@ -19,7 +20,9 @@ readings were read FROM, beside the coverage they explain:
 `documents` is also the record's ID TABLE: the last three name a document by its position in it
 rather than by its id, so every id is written exactly once however many maps mention it
 (`document_index.py`). That is the whole of schema 4, and a bundle at any earlier schema keys on the
-id itself and reads exactly as it did.
+id itself and reads exactly as it did. Schema 6 then takes the head and tail that one copy shares
+with every other id out of the table and records them once (`document_affix.py`), so what a document
+costs the record is its stem.
 
 The last three are ABSENT below the semantic tier, never empty: a run that read no store built no
 accounting, no exclusion pass, and no ranking, and an empty one would say the opposite (a store that
@@ -38,6 +41,7 @@ from dataclasses import dataclass
 
 from llb.conflicts.candidate_record import CandidateRecord
 from llb.conflicts.constants import COVERAGE_FIELD, STAGE_INPUTS_FIELD
+from llb.conflicts.document_affix import IdAffix
 from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.document_exclusions import DocumentExclusions
 from llb.conflicts.document_index import (
@@ -66,7 +70,12 @@ from llb.core.contracts.common import JsonObject
 # beyond its id. Unlike 4, this form is self-describing -- a string is an id and an object is a
 # labelled entry -- so the version marks the change for a consumer rather than being what tells the
 # reader which form it holds.
-STAGE_INPUTS_SCHEMA_VERSION = 5
+#
+# 6 folds the head and tail every id shares out of the table and records them once
+# (`document_affix.py`), so what is left per entry is the stem. Self-describing like 5 and for the
+# same reason: the two keys are present exactly when the entries are stems, and a corpus that shares
+# nothing to fold writes neither key and is byte for byte a schema-5 table.
+STAGE_INPUTS_SCHEMA_VERSION = 6
 INTERNED_IDS_SCHEMA_VERSION = 4
 SCHEMA_KEY = "schema_version"
 DOCUMENTS_KEY = "documents"
@@ -98,7 +107,7 @@ class RunInputs:
     candidates: CandidateRecord | None = None
 
 
-def _document_entry(doc_id: str, governance: JsonObject) -> str | JsonObject:
+def _document_entry(doc_id: str, governance: JsonObject, affix: IdAffix) -> str | JsonObject:
     """One document as the record carries it: its id, plus the ordering fields it actually has.
 
     The values are recorded RAW, exactly as `compare_editions` received them, so a replay orders
@@ -109,25 +118,30 @@ def _document_entry(doc_id: str, governance: JsonObject) -> str | JsonObject:
     thing a reader wants said -- this document has nothing to order on, which is why its pairs are
     unorderable. The label stays wherever there is a value to label, so the field names are never
     positional and a later ordering field is still an additive change.
+
+    The id itself is written minus whatever head and tail every id in the table shares, which is
+    the whole id under the empty fold.
     """
     fields: JsonObject = {
         name: value
         for name in ORDERING_FIELDS
         if isinstance(value := governance.get(name), str) and value
     }
-    return {DOC_ID_KEY: doc_id, **fields} if fields else doc_id
+    stem = affix.stem(doc_id)
+    return {DOC_ID_KEY: stem, **fields} if fields else stem
 
 
-def _entry_id(entry: object) -> str | None:
+def _entry_id(entry: object, affix: IdAffix) -> str | None:
     """The document an entry names at either form, or None when it names none.
 
-    None is not the empty id: an entry recording an empty `doc_id` is inside the contract and stays
-    a slot in the id table, while an entry that is neither an id nor a labelled object is not.
+    None is not the empty stem: an entry recording an empty `doc_id` is inside the contract and
+    stays a slot in the id table (under a fold it names the id the affixes spell out on their own),
+    while an entry that is neither a stem nor a labelled object is not.
     """
     if isinstance(entry, str):
-        return entry
+        return affix.expand(entry)
     if isinstance(entry, dict) and DOC_ID_KEY in entry:
-        return str(entry[DOC_ID_KEY])
+        return affix.expand(str(entry[DOC_ID_KEY]))
     return None
 
 
@@ -145,12 +159,22 @@ def stage_attribution_inputs(
 
     `documents` is written first because it IS the id table the rest of the record keys on; the
     extras it did not cover are only known once every other part has been written, so they are
-    appended last.
+    appended last. The fold the table is written under comes before it, so a reader meets the
+    prefix and suffix before the stems they belong to.
+
+    `extra_document_ids` is deliberately NOT folded: an extra id is one the audited corpus did not
+    carry, so it need not share the corpus's head or tail, and folding the table around it would
+    cost every document the saving to accommodate an id that is absent from a normal bundle.
     """
-    interner = DocumentInterner([doc_id for doc_id, _ in documents])
+    doc_ids = [doc_id for doc_id, _ in documents]
+    affix = IdAffix.over(doc_ids)
+    interner = DocumentInterner(doc_ids)
     record: JsonObject = {
         SCHEMA_KEY: STAGE_INPUTS_SCHEMA_VERSION,
-        DOCUMENTS_KEY: [_document_entry(doc_id, governance) for doc_id, governance in documents],
+        **affix.payload(),
+        DOCUMENTS_KEY: [
+            _document_entry(doc_id, governance, affix) for doc_id, governance in documents
+        ],
     }
     for key, part in (
         (CHUNKS_KEY, inputs.chunks),
@@ -169,10 +193,11 @@ def documents_of(record: JsonObject) -> list[tuple[str, JsonObject]]:
     entries = record.get(DOCUMENTS_KEY)
     if not isinstance(entries, list):
         return []
+    affix = IdAffix.from_record(record)
     return [
         (doc_id, _entry_governance(entry))
         for entry in entries
-        if (doc_id := _entry_id(entry)) is not None
+        if (doc_id := _entry_id(entry, affix)) is not None
     ]
 
 
@@ -186,7 +211,8 @@ def _id_table(record: JsonObject) -> list[str]:
     entries = record.get(DOCUMENTS_KEY)
     if not isinstance(entries, list):
         return []
-    return [_entry_id(entry) or "" for entry in entries]
+    affix = IdAffix.from_record(record)
+    return [_entry_id(entry, affix) or "" for entry in entries]
 
 
 def naming_of(record: JsonObject) -> DocumentNaming:

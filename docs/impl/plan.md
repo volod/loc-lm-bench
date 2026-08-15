@@ -45,37 +45,67 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-bundle-record-id-table-is-now-the-whole-cost (optional)
+### conflict-record-cost-is-now-the-chunk-accounting (optional)
 
-The `documents` table is 6.5 KiB of the 12.7 KiB record on the 250-document bundle and is now
-nothing but ids, so every remaining lever is on the id STRING rather than on the shape around it
-([bundle record](current/data-prep/conflict-bundle-record.md#the-label-a-document-with-nothing-to-label-was-carrying)).
-The ids that dominate are corpus-relative paths sharing a long prefix (`squad/<hex>.txt` -- 250
-documents repeating `squad/` and `.txt` for 2.5 KiB of the 6.5), which a recorded prefix plus a stem
-per document removes without touching what a reader sees, since the reading side reassembles the
-full id before anything consumes it. Price a common-prefix/suffix fold against the measured bundle
-and against a corpus whose documents sit in many directories (where the fold buys nothing and must
-not cost anything), and keep the flat ids unless the fold pays on both. The trap to avoid is a fold
-whose reassembly is not exact: an id is the join key for `findings.jsonl` and for the store, so a
-lossy round-trip is worse than the bytes it saves.
+The id table is no longer what a bundle record costs: on the 250-document bundle `documents` is
+4.0 KiB of 10.3 and `chunks` is 4.8 KiB, so the largest part is now the per-document chunk
+accounting
+([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
+That part is three integer maps keyed by corpus position, and two of them are dominated by one
+value: on the 250-document bundle `stored` writes 250 entries of which 190 are `1` (2,402 bytes) and
+`comparable` writes 247 of which 201 are `1` (2,378 bytes), while `copies` is empty and costs 14.
+The map already uses ABSENCE to mean something -- `comparable` omits the three documents with no
+comparable chunk -- so a recorded default per map, with an entry written only where the count
+differs from it, is the same idea one step further. Price that against the bundles on disk, plus the
+alternative of one entry per document carrying all three counts instead of three maps. Apply the
+same gate the id fold is held to -- take it only where it pays for itself, so a corpus with no
+dominant value is charged nothing -- and keep the current shape unless a fold clears it. The trap is
+that a default makes absence mean two things at once: `chunks` being absent already means the run
+read no store, and `comparable` omitting a document already means zero, so a default must not
+collide with either.
 
 - Agent status: CLEAR
-- Dependencies: none. `_document_entry` / `_entry_id` in `src/llb/conflicts/bundle_record.py` are
-  the two sides, and `DocumentInterner` (`document_index.py`) already owns the id table the fold
-  would apply to.
-- User-visible outcome: the record's dominant remaining cost is either removed or kept for a stated
-  reason, on the same footing as the label and the interning before it.
-- Scope boundary: in scope -- the measured saving on a path-shaped corpus and on a flat one, the
-  exact round-trip, and a keep-or-change verdict with the schema bump if it changes. Out of scope
-  -- compressing `summary.json` as a whole, hashing an id to a shorter one, and dropping the
-  `extra_document_ids` seam.
+- Dependencies: none. `DocumentChunks.payload` / `from_payload` in
+  `src/llb/conflicts/document_chunks.py` are the two sides, and `IdAffix.pays_for_itself`
+  (`document_affix.py`) is the break-even gate to reuse rather than re-derive.
+- User-visible outcome: the record's largest remaining part is either reduced or kept for a stated
+  reason, on the same footing as the id table before it.
+- Scope boundary: in scope -- the measured saving per fold on the bundles on disk, the exact
+  round-trip, and a keep-or-change verdict with the schema bump if it changes. Out of scope --
+  compressing `summary.json` as a whole, recording anything per chunk, and changing which counts
+  the accounting holds.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the saving is stated on a path-shaped corpus and on a corpus
-  where the prefix is not shared; if the form changes, every recorded id round-trips to the exact
-  string it was written from and every reading replays identically through all recorded forms.
+- Acceptance gates: `make ci` green; the saving is stated on the 250-document bundle and on a bundle
+  where no value dominates; if the form changes, every reading replays identically through all
+  recorded forms, an absent `chunks` still reads as "this run read no store", and a document absent
+  from `comparable` still reads as zero.
 - Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-id-table-every-document-named-once).
+  [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
+
+### conflict-bundle-record-page-is-past-the-split-threshold (optional)
+
+[bundle record](current/data-prep/conflict-bundle-record.md) is ~535 lines and its headings describe
+two subjects: what SHAPE the record is written in (the id table, the label it dropped, the affix
+fold, and the size table that prices all three) and what the record ANSWERS (the verdict table, the
+exclusion floor, the candidate budget, the depth/cost curve). That is past the ~500-line split rule
+in [AGENTS.md](../../AGENTS.md), and the shape subject is where each successive size change lands, so
+the page grows in one place. The test side is already split along exactly this seam
+(`test_bundle_record.py` against `test_bundle_id_table.py`), so the heading seam is established
+rather than proposed -- move the shape subsections to a new topic page, add its row to the area
+page, and repoint the inbound links. Anchors keep their fragments, so only paths change and
+`make lint-doc-links` proves the move.
+
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `plan.md`, `conflict-detection.md`, and `conflict-decision-groups.md`.
+- User-visible outcome: a reader looking for what a bundle can answer stops scrolling past three
+  successive byte-accounting decisions to reach it.
+- Scope boundary: in scope -- the split, the area-page row, and the link repointing. Out of scope
+  -- rewriting the moved text and changing any measured result.
+- Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
+  no anchor text changes.
+- Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
 
 ### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
 

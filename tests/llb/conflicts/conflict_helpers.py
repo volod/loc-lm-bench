@@ -17,11 +17,13 @@ real multilingual encoder would give it, which is why the tests pass an explicit
 instead of the production default -- the tier logic is what is under test here, not the encoder.
 """
 
+import json
 import zlib
 from pathlib import Path
 
 import pytest
 
+from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.bundle_record import (
     CANDIDATES_KEY,
     CHUNKS_KEY,
@@ -32,7 +34,10 @@ from llb.conflicts.bundle_record import (
     naming_of,
 )
 from llb.conflicts.candidate_record import ENTRIES_KEY
+from llb.conflicts.constants import TIER_SEMANTIC
+from llb.conflicts.document_affix import PREFIX_KEY, SUFFIX_KEY, IdAffix
 from llb.conflicts.document_index import EXTRA_IDS_KEY, DocumentNaming
+from llb.conflicts.models import AuditResult
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vectorops import VectorSet
 from llb.core.paths import PROJECT_ROOT
@@ -94,11 +99,16 @@ def dated_corpus(root: Path, documents: dict[str, tuple[str, str]]) -> Path:
 
     An EMPTY date writes the body with no front matter at all, which is the undated document every
     corpus on this host is made of -- the case the record carries as a bare id.
+
+    A name may carry directories, since a doc_id is a corpus-relative PATH and the shape of that
+    path is what the id fold is priced on.
     """
     root.mkdir(parents=True, exist_ok=True)
     for name, (date, body) in documents.items():
         front = f"---\neffective_date: {date}\n---\n" if date else ""
-        (root / name).write_text(f"{front}{body}\n", encoding="utf-8")
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{front}{body}\n", encoding="utf-8")
     return root
 
 
@@ -110,6 +120,84 @@ def store_over(root: Path, *, without: str = "") -> StoreView:
         chunks=chunks,
         vectors=VectorSet([bow_vector(chunk["text"]) for chunk in chunks]),
         meta={"embedding_model": "fake-hashed-bow", "corpus_fingerprint": "stage"},
+    )
+
+
+# The corpora the bundle-record tests audit, and the one audit both test modules run over them.
+# Shared because the record's two subjects -- what it ANSWERS (`test_bundle_record.py`) and what
+# SHAPE it answers from (`test_bundle_id_table.py`) -- ask the same corpora different questions, and
+# a second copy of a corpus is a second thing to keep in step.
+
+SHORT_BODY = "коротка примітка"
+
+# Two documents a store holds and the comparison drops, for the two DIFFERENT reasons the floor
+# knob can and cannot move: one is under the floor, the other is nothing but front matter.
+BELOW_THE_FLOOR = {
+    "old.md": ("2021-01-01", dated_body(0)),
+    "new.md": ("2024-01-01", SHORT_BODY),
+}
+
+# Three dated documents whose candidate ranking is a chain: `a` matches `b` strongly and `c` weakly,
+# and `b` and `c` share nothing. Every pair is orderable, so which one the attribution names is
+# decided purely by how deep into the ranking the budget reaches.
+RANKED = {
+    "a-first.md": ("2021-01-01", f"{dated_body(0, 30)} {dated_body(100, 10)}"),
+    "b-second.md": ("2022-01-01", f"{dated_body(0, 30)} {dated_body(200, 10)}"),
+    "c-third.md": ("2023-01-01", f"{dated_body(100, 10)} {dated_body(300, 30)}"),
+}
+# Between the b/c pair's cosine and the a/c pair's, so the ranking has a tail the budget cuts.
+RANKED_COS = 0.89
+
+# The same ranking with one document carrying no ordering field, which is what every corpus on this
+# host looks like: the record holds a labelled entry and a bare id in the same table.
+RANKED_WITH_UNDATED = {**RANKED, "d-undated.md": ("", dated_body(0, 30))}
+
+# Nothing to order on anywhere -- the corpus the bare-id form is priced on.
+UNDATED = {name: ("", body) for name, (_, body) in RANKED.items()}
+
+# The two id SHAPES the fold is priced between, carrying the SAME documents either way so the id is
+# the only thing that differs. `PATH_SHAPED` is what a real corpus looks like -- one directory and
+# one file type, so every id repeats `docs/uk/` and `.txt`; `SCATTERED` is the corpus that shares
+# nothing to fold, its documents in different directories under different extensions. The stems run
+# 00..39 rather than 0000..0039 so they share no leading digit of their own, which would otherwise
+# make even the scattered corpus foldable and stop it testing what it is here to test.
+FOLD_BODIES = {f"{index:02d}": ("", dated_body(index * 5, 40)) for index in range(40)}
+PATH_SHAPED = {f"docs/uk/{stem}.txt": value for stem, value in FOLD_BODIES.items()}
+SCATTERED = {
+    f"{chr(ord('a') + int(stem) % 20)}{stem}/doc{stem}.{'txt' if int(stem) % 2 else 'md'}": value
+    for stem, value in FOLD_BODIES.items()
+}
+
+
+def audit_over(
+    root: Path,
+    documents: dict[str, tuple[str, str]],
+    *,
+    effort: str = TIER_SEMANTIC,
+    cos_threshold: float = FAKE_COS_THRESHOLD,
+    min_claim_tokens: int | None = None,
+    candidate_budget: int | None = None,
+    record_cap: int | None = None,
+) -> AuditResult:
+    """One real audit over a throwaway dated corpus, with a store only from the semantic tier up."""
+    corpus = dated_corpus(root, documents)
+    params = AuditParams(
+        effort=effort,
+        cos_threshold=cos_threshold,
+        max_candidate_pairs=candidate_budget,
+        max_candidate_record_pairs=record_cap,
+    )
+    if min_claim_tokens is not None:
+        params.min_claim_tokens = min_claim_tokens
+    store = store_over(corpus) if effort == TIER_SEMANTIC else None
+    return run_audit(corpus, params, store=store)
+
+
+def bundle_of(result: AuditResult) -> tuple[dict, list]:
+    """The two files a replay reads, through JSON exactly as `write_audit` puts them on disk."""
+    return (
+        json.loads(json.dumps(result.summary(), ensure_ascii=False)),
+        json.loads(json.dumps(result.rows(), ensure_ascii=False)),
     )
 
 
@@ -244,19 +332,39 @@ def _candidates_by_id(candidates: dict, naming: DocumentNaming) -> dict:
     }
 
 
+def unfolded_documents(record: dict, *, schema: int = 5) -> dict:
+    """The same bundle record with every document entry spelling out its WHOLE id, as schema 5 did.
+
+    Schema 6 records the head and tail every id shares once and leaves each entry its stem. Undoing
+    that is the affix put back and the two keys dropped, so a record folding nothing comes through
+    unchanged apart from its version.
+    """
+    affix = IdAffix.from_record(record)
+    unfolded = {key: value for key, value in record.items() if key not in (PREFIX_KEY, SUFFIX_KEY)}
+    unfolded[SCHEMA_KEY] = schema
+    unfolded[DOCUMENTS_KEY] = [
+        affix.expand(entry)
+        if isinstance(entry, str)
+        else {**entry, DOC_ID_KEY: affix.expand(str(entry[DOC_ID_KEY]))}
+        for entry in record[DOCUMENTS_KEY]
+    ]
+    return unfolded
+
+
 def labelled_documents(record: dict, *, schema: int = 4) -> dict:
     """The same bundle record with every document entry LABELLED, as schemas 1-4 wrote them.
 
     Schema 5 records a document with no ordering field as the bare id; before it, that document was
-    a one-key object. Only the entries change, so this is the older `documents` form with the rest
-    of the record untouched.
+    a one-key object. The fold is undone first, since schemas 1-4 wrote whole ids -- so what is left
+    changing is only the entries.
     """
+    flat = unfolded_documents(record)
     return {
-        **record,
+        **flat,
         SCHEMA_KEY: schema,
         DOCUMENTS_KEY: [
             {DOC_ID_KEY: entry} if isinstance(entry, str) else entry
-            for entry in record[DOCUMENTS_KEY]
+            for entry in flat[DOCUMENTS_KEY]
         ],
     }
 
@@ -264,11 +372,12 @@ def labelled_documents(record: dict, *, schema: int = 4) -> dict:
 def keyed_by_id(record: dict, *, schema: int) -> dict:
     """The same bundle record in the PRE-INTERNING form every bundle on disk before schema 4 uses.
 
-    Schema 4 replaced each document id outside `documents` with its corpus position, and schema 5
-    dropped the label from a document with nothing to label -- the only two changes the record has
-    ever made to a shape rather than adding to it. Every reading has to replay identically through
-    all three forms, so the tests need the older ones -- rewritten here from a fresh record rather
-    than committed as a frozen blob, so a new field cannot quietly go untested on the older side.
+    Schema 4 replaced each document id outside `documents` with its corpus position, schema 5
+    dropped the label from a document with nothing to label, and schema 6 folded the shared head and
+    tail out of the ids -- the only three changes the record has ever made to a shape rather than
+    adding to it. Every reading has to replay identically through all four forms, so the tests need
+    the older ones -- rewritten here from a fresh record rather than committed as a frozen blob, so
+    a new field cannot quietly go untested on the older side.
     """
     naming = naming_of(record)
     legacy = {

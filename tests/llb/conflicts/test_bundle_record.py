@@ -13,16 +13,18 @@ about itself:
 And the boundary: the questions whose input is per CHUNK are refused at every schema, said out loud
 in the readings table rather than discovered when an answer turns out wrong.
 
+The SHAPE those answers are keyed on -- the `documents` id table and the three changes the record
+has made to it -- is `test_bundle_id_table.py`; the corpora both modules audit are shared in
+`conflict_helpers.py`.
+
 Everything goes through a JSON round-trip, because the record's whole purpose is to be read off
 disk months later.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
-from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.bundle_readings import (
     OUT_OF_SCOPE,
     READING_BUDGET,
@@ -32,6 +34,11 @@ from llb.conflicts.bundle_readings import (
     READING_STAGE,
     bundle_readings,
 )
+from llb.conflicts.bundle_record import (
+    CANDIDATES_KEY,
+    EXCLUSIONS_KEY,
+    recorded_inputs,
+)
 from llb.conflicts.candidate_record import (
     CAP_KEY,
     DEFAULT_CANDIDATE_RECORD_PAIRS,
@@ -39,35 +46,17 @@ from llb.conflicts.candidate_record import (
     UNRECORDED_CAP_PHRASE,
     CandidateRecord,
 )
-from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH, TIER_SEMANTIC
+from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH
 from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.document_exclusions import DocumentExclusions
+from llb.conflicts.document_index import DocumentInterner, DocumentNaming
 from llb.conflicts.governance_stage import (
     LOST_PAIR_FIELD,
     STAGE_CANDIDATES,
     STAGE_CLAIM_FLOOR,
     attribution_over_returned,
 )
-from llb.conflicts.document_index import (
-    EXTRA_IDS_KEY,
-    DocumentInterner,
-    DocumentNaming,
-)
-from llb.conflicts.models import AuditResult
 from llb.conflicts.report_stage_replay import budget_line, replay_report
-from llb.conflicts.bundle_record import (
-    CANDIDATES_KEY,
-    CHUNKS_KEY,
-    DOC_ID_KEY,
-    DOCUMENTS_KEY,
-    EXCLUSIONS_KEY,
-    SCHEMA_KEY,
-    STAGE_INPUTS_SCHEMA_VERSION,
-    RunInputs,
-    documents_of,
-    recorded_inputs,
-    stage_attribution_inputs,
-)
 from llb.conflicts.stage_replay import (
     CANDIDATE_TIERS,
     NO_CANDIDATE_RECORD_REASON,
@@ -77,72 +66,16 @@ from llb.conflicts.stage_replay import (
 )
 
 from conflict_helpers import (
-    FAKE_COS_THRESHOLD,
+    BELOW_THE_FLOOR,
+    RANKED,
+    RANKED_COS,
+    audit_over,
+    bundle_of,
     dated_body,
     dated_corpus,
     keyed_by_id,
-    labelled_documents,
     store_over,
 )
-
-SHORT = "коротка примітка"
-
-# Two documents a store holds and the comparison drops, for the two DIFFERENT reasons the floor
-# knob can and cannot move: one is under the floor, the other is nothing but front matter.
-BELOW_THE_FLOOR = {
-    "old.md": ("2021-01-01", dated_body(0)),
-    "new.md": ("2024-01-01", SHORT),
-}
-
-# Three dated documents whose candidate ranking is a chain: `a` matches `b` strongly and `c` weakly,
-# and `b` and `c` share nothing. Every pair is orderable, so which one the attribution names is
-# decided purely by how deep into the ranking the budget reaches.
-RANKED = {
-    "a-first.md": ("2021-01-01", f"{dated_body(0, 30)} {dated_body(100, 10)}"),
-    "b-second.md": ("2022-01-01", f"{dated_body(0, 30)} {dated_body(200, 10)}"),
-    "c-third.md": ("2023-01-01", f"{dated_body(100, 10)} {dated_body(300, 30)}"),
-}
-# Between the b/c pair's cosine and the a/c pair's, so the ranking has a tail the budget cuts.
-RANKED_COS = 0.89
-
-# The same ranking with one document carrying no ordering field, which is what every corpus on this
-# host looks like: the record holds a labelled entry and a bare id in the same table.
-RANKED_WITH_UNDATED = {**RANKED, "d-undated.md": ("", dated_body(0, 30))}
-
-# Nothing to order on anywhere -- the corpus the bare-id form is priced on.
-UNDATED = {name: ("", body) for name, (_, body) in RANKED.items()}
-
-
-def _audit(
-    root: Path,
-    documents: dict[str, tuple[str, str]],
-    *,
-    effort: str = TIER_SEMANTIC,
-    cos_threshold: float = FAKE_COS_THRESHOLD,
-    min_claim_tokens: int | None = None,
-    candidate_budget: int | None = None,
-    record_cap: int | None = None,
-) -> AuditResult:
-    """One real audit over a throwaway dated corpus, with a store only from the semantic tier up."""
-    corpus = dated_corpus(root, documents)
-    params = AuditParams(
-        effort=effort,
-        cos_threshold=cos_threshold,
-        max_candidate_pairs=candidate_budget,
-        max_candidate_record_pairs=record_cap,
-    )
-    if min_claim_tokens is not None:
-        params.min_claim_tokens = min_claim_tokens
-    store = store_over(corpus) if effort == TIER_SEMANTIC else None
-    return run_audit(corpus, params, store=store)
-
-
-def _bundle(result: AuditResult) -> tuple[dict, list]:
-    """The two files a replay reads, through JSON exactly as `write_audit` puts them on disk."""
-    return (
-        json.loads(json.dumps(result.summary(), ensure_ascii=False)),
-        json.loads(json.dumps(result.rows(), ensure_ascii=False)),
-    )
 
 
 # --- reading 1: why a document is not comparable, and the floor that returns it ------------------
@@ -154,15 +87,15 @@ def test_the_floor_the_record_names_is_the_floor_that_recovers_the_document(tmp_
     A knob printed as a VALUE is only worth more than "lower it" if the value works, so this is
     asserted against a second live run rather than against the record that produced it.
     """
-    result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
-    summary, _ = _bundle(result)
+    result = audit_over(tmp_path / "corpus", BELOW_THE_FLOOR)
+    summary, _ = bundle_of(result)
     exclusions = recorded_inputs(summary[STAGE_INPUTS_FIELD]).exclusions
     floor = exclusions.floor_for("new.md")
 
     assert result.governance_coverage[LOST_PAIR_FIELD]["stage"] == STAGE_CLAIM_FLOOR
     assert floor is not None and floor < result.params["min_claim_tokens"]
 
-    recovered = _audit(tmp_path / "recovered", BELOW_THE_FLOOR, min_claim_tokens=floor)
+    recovered = audit_over(tmp_path / "recovered", BELOW_THE_FLOOR, min_claim_tokens=floor)
 
     assert recorded_inputs(recovered.stage_inputs).chunks.comparable.get("new.md")
     assert recovered.governance_coverage.get(LOST_PAIR_FIELD, {}).get("stage") != STAGE_CLAIM_FLOOR
@@ -170,8 +103,8 @@ def test_the_floor_the_record_names_is_the_floor_that_recovers_the_document(tmp_
 
 def test_the_exclusion_counts_are_disjoint_and_account_for_every_dropped_chunk(tmp_path):
     """One reason per excluded chunk: the three counters must reconstruct `stored - comparable`."""
-    result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
-    summary, _ = _bundle(result)
+    result = audit_over(tmp_path / "corpus", BELOW_THE_FLOOR)
+    summary, _ = bundle_of(result)
     inputs = recorded_inputs(summary[STAGE_INPUTS_FIELD])
 
     for doc_id, stored in inputs.chunks.stored.items():
@@ -213,7 +146,7 @@ def test_the_record_stays_linear_in_documents(tmp_path):
             f"d{index:03d}.md": (f"20{index + 10:02d}-01-01", dated_body(index * 5, 40))
             for index in range(count)
         }
-        result = _audit(tmp_path / f"corpus{count}", documents, cos_threshold=0.0)
+        result = audit_over(tmp_path / f"corpus{count}", documents, cos_threshold=0.0)
         return (
             len(json.dumps(result.stage_inputs, ensure_ascii=False)),
             recorded_inputs(result.stage_inputs).candidates,
@@ -252,8 +185,8 @@ def test_the_exclusion_record_round_trips_through_json():
 
 def test_the_recorded_candidate_pairs_are_the_pairs_the_run_returned(tmp_path):
     """At its own budget the record must reproduce the run: same document pairs, no more, no less."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
     candidates = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
     returned = {
         tuple(sorted([row["a"]["doc_id"], row["b"]["doc_id"]]))
@@ -267,8 +200,8 @@ def test_the_recorded_candidate_pairs_are_the_pairs_the_run_returned(tmp_path):
 
 def test_a_smaller_budget_moves_the_attribution_to_the_pair_it_drops(tmp_path):
     """The reading itself: the same bundle, asked what a shallower candidate list would have cost."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
 
     at_full = replay_attribution(summary, rows)
     at_one = replay_attribution(summary, rows, budget=1)
@@ -281,8 +214,8 @@ def test_a_smaller_budget_moves_the_attribution_to_the_pair_it_drops(tmp_path):
 
 def test_the_budget_reading_counts_the_pairs_the_named_pair_cannot_show(tmp_path):
     """A budget that takes pairs away without moving the NAME still has to report the loss."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
 
     at_budget = replay_entry("ranked", "s.json", summary, rows, budget=1)["at_budget"]
 
@@ -295,8 +228,8 @@ def test_the_budget_reading_counts_the_pairs_the_named_pair_cannot_show(tmp_path
 
 def test_a_run_below_the_semantic_tier_refuses_the_budget_by_naming_the_store(tmp_path):
     """Never "predates the record": the fix for an `--effort hash` run is `--effort`, not a re-run."""
-    result = _audit(tmp_path / "corpus", RANKED, effort=TIER_HASH)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, effort=TIER_HASH)
+    summary, rows = bundle_of(result)
 
     refused = replay_attribution(summary, rows, budget=1)
 
@@ -313,8 +246,8 @@ def test_a_budget_past_the_recorded_prefix_is_refused_rather_than_guessed():
 
 def test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches(tmp_path):
     """The size bound: a record capped at N document pairs never records the N+1st."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, _ = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, _ = bundle_of(result)
     full = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
 
     assert full.covers(full.total_pairs), "uncapped, the record answers for the whole ranking"
@@ -334,8 +267,8 @@ def test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced(tmp_p
     The cap is what an operator who re-reads deeply raises, and a bundle that does not carry it
     leaves them guessing whether the corpus ran out or the run stopped writing.
     """
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = bundle_of(result)
     capped = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
 
     assert (capped.cap, len(capped.entries)) == (1, 1)
@@ -355,8 +288,10 @@ def test_the_record_cap_overrides_the_runs_own_candidate_budget(tmp_path):
     Left alone the record follows the run's budget, since a re-read only ever asks downward. Set,
     it wins -- a corpus that is re-read deeper pays for the depth rather than losing the reading.
     """
-    followed = _audit(tmp_path / "followed", RANKED, cos_threshold=RANKED_COS, candidate_budget=1)
-    overridden = _audit(
+    followed = audit_over(
+        tmp_path / "followed", RANKED, cos_threshold=RANKED_COS, candidate_budget=1
+    )
+    overridden = audit_over(
         tmp_path / "overridden",
         RANKED,
         cos_threshold=RANKED_COS,
@@ -370,8 +305,8 @@ def test_the_record_cap_overrides_the_runs_own_candidate_budget(tmp_path):
 
 def test_a_schema_two_bundle_answers_inside_its_prefix_and_says_the_cap_is_unknown(tmp_path):
     """The seam: the cap is additive, so an older bundle keeps every answer it already gave."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = bundle_of(result)
     older = keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=2)
     older[CANDIDATES_KEY].pop(CAP_KEY)
     summary[STAGE_INPUTS_FIELD] = older
@@ -384,8 +319,8 @@ def test_a_schema_two_bundle_answers_inside_its_prefix_and_says_the_cap_is_unkno
 
 def test_a_bundle_without_a_candidate_record_refuses_the_budget_question(tmp_path):
     """A bundle from before the record answers its stage and refuses the budget -- never both."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
     summary[STAGE_INPUTS_FIELD].pop(CANDIDATES_KEY)
 
     assert replay_attribution(summary, rows).recomputable, "the stage is unaffected"
@@ -393,136 +328,13 @@ def test_a_bundle_without_a_candidate_record_refuses_the_budget_question(tmp_pat
     assert (refused.recomputable, refused.reason) == (False, NO_CANDIDATE_RECORD_REASON)
 
 
-# --- the id table: one copy of each id, and both forms of the record ----------------------------
-
-
-def test_every_document_id_is_written_exactly_once(tmp_path):
-    """The interning itself: outside `documents` the record mentions no id, only positions.
-
-    `documents` is the id table, so a corpus of thousands pays for its ids once instead of once per
-    map plus twice per candidate row.
-    """
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, _ = _bundle(result)
-    record = summary[STAGE_INPUTS_FIELD]
-    outside = json.dumps(
-        {key: value for key, value in record.items() if key != DOCUMENTS_KEY}, ensure_ascii=False
-    )
-
-    assert record[SCHEMA_KEY] == STAGE_INPUTS_SCHEMA_VERSION
-    assert [entry["doc_id"] for entry in record[DOCUMENTS_KEY]] == sorted(RANKED)
-    for doc_id in RANKED:
-        assert doc_id not in outside, doc_id
-    assert EXTRA_IDS_KEY not in record, "the store and the corpus agree, so there is nothing extra"
-
-
-def test_the_interned_record_is_smaller_than_the_form_it_replaces(tmp_path):
-    """The whole point of the change, asserted rather than left to the measured bundles.
-
-    The saving is the difference between an id and its ordinal, so it grows with the corpus -- but
-    it must never be negative, which is what a corpus of one-character ids would test for.
-    """
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, _ = _bundle(result)
-    record = summary[STAGE_INPUTS_FIELD]
-
-    interned = len(json.dumps(record, ensure_ascii=False))
-    by_id = len(json.dumps(keyed_by_id(record, schema=3), ensure_ascii=False))
-
-    assert interned < by_id, f"{by_id} -> {interned} bytes"
-
-
-def test_every_reading_replays_identically_through_all_three_forms(tmp_path):
-    """The migration gate: which form a bundle is in must be invisible to every reading.
-
-    The corpus is deliberately MIXED -- three dated documents and one with no ordering field at all
-    -- so the record carries a labelled entry and a bare id side by side, and the older forms are
-    the same record with the label put back (schema 4) and the positions unwound too (schema 3).
-    """
-    result = _audit(tmp_path / "corpus", RANKED_WITH_UNDATED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
-    record = summary[STAGE_INPUTS_FIELD]
-    forms = {
-        4: labelled_documents(record),
-        3: keyed_by_id(record, schema=3),
-        1: keyed_by_id(record, schema=1),
-    }
-
-    assert {type(entry) for entry in record[DOCUMENTS_KEY]} == {str, dict}, "both entry forms"
-    for schema, older in forms.items():
-        bundle = {**summary, STAGE_INPUTS_FIELD: older}
-        assert documents_of(older) == documents_of(record), schema
-        assert recorded_inputs(older) == recorded_inputs(record), schema
-        assert replay_entry("b", "s.json", bundle, rows, budget=1) == replay_entry(
-            "b", "s.json", summary, rows, budget=1
-        ), schema
-
-
-def test_a_document_with_nothing_to_order_on_is_recorded_as_the_id_alone(tmp_path):
-    """The bare-id form, and the reason it loses nothing: it reads back as the same document.
-
-    The object it replaces held a label and no value under it, so what a reader gets from the entry
-    -- this document has no `effective_date` and no `version`, which is why its pairs cannot be
-    ordered -- is what the bare id says outright.
-    """
-    result = _audit(tmp_path / "corpus", UNDATED, cos_threshold=RANKED_COS)
-    summary, _ = _bundle(result)
-    record = summary[STAGE_INPUTS_FIELD]
-
-    assert record[DOCUMENTS_KEY] == sorted(UNDATED)
-    assert documents_of(record) == [(doc_id, {}) for doc_id in sorted(UNDATED)]
-    assert recorded_inputs(record) == recorded_inputs(labelled_documents(record))
-
-
-def test_dropping_the_empty_label_is_a_saving_on_undated_documents_and_free_on_dated_ones(tmp_path):
-    """Where the remaining per-document cost went, and where it deliberately did not.
-
-    A corpus with governance dates keeps every label and pays exactly what it paid before: the
-    change removes a label with nothing under it, never a label.
-    """
-
-    def bytes_of(name: str, documents: dict) -> tuple[int, int]:
-        record = _bundle(_audit(tmp_path / name, documents, cos_threshold=RANKED_COS))[0][
-            STAGE_INPUTS_FIELD
-        ][DOCUMENTS_KEY]
-        labelled = [{DOC_ID_KEY: entry} if isinstance(entry, str) else entry for entry in record]
-        return (
-            len(json.dumps(record, ensure_ascii=False)),
-            len(json.dumps(labelled, ensure_ascii=False)),
-        )
-
-    undated, undated_labelled = bytes_of("undated", UNDATED)
-    dated, dated_labelled = bytes_of("dated", RANKED)
-
-    assert undated < undated_labelled, f"{undated_labelled} -> {undated} bytes"
-    assert dated == dated_labelled, "a dated document keeps every label it had"
-
-
-def test_a_document_the_corpus_never_carried_is_interned_beside_the_table(tmp_path):
-    """A store one build ahead of the corpus holds chunks the `documents` table cannot name.
-
-    Recording such an id as a bare key would make a key sometimes an ordinal and sometimes an id,
-    which no reader can tell apart -- so it joins the table instead, after the corpus documents.
-    """
-    ahead = DocumentChunks(stored={"a-first.md": 1, "gone.md": 2}, comparable={"a-first.md": 1})
-    documents = [("a-first.md", {"effective_date": "2021-01-01"})]
-
-    record = json.loads(
-        json.dumps(stage_attribution_inputs(documents, RunInputs(chunks=ahead)), ensure_ascii=False)
-    )
-
-    assert record[EXTRA_IDS_KEY] == ["gone.md"]
-    assert set(record[CHUNKS_KEY]["stored"]) == {"0", "1"}
-    assert recorded_inputs(record).chunks == ahead
-
-
 # --- the older schema, and the boundary ---------------------------------------------------------
 
 
 def test_a_schema_one_bundle_still_replays_its_stage(tmp_path):
     """The migration seam: the new keys are additive, so an older bundle loses no reading it had."""
-    result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", BELOW_THE_FLOOR)
+    summary, rows = bundle_of(result)
     older = keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=1)
     older.pop(EXCLUSIONS_KEY)
     older.pop(CANDIDATES_KEY)
@@ -544,8 +356,8 @@ def test_a_schema_one_bundle_still_replays_its_stage(tmp_path):
 @pytest.mark.parametrize("name", [READING_CHUNK_MATCH, READING_FLOOR_SWEEP])
 def test_the_per_chunk_questions_are_refused_at_every_schema(tmp_path, name):
     """The stated boundary: a newer run does not make a per-chunk reading recordable."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, _ = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, _ = bundle_of(result)
 
     named = {reading.name: reading for reading in bundle_readings(summary)}
 
@@ -556,8 +368,8 @@ def test_the_per_chunk_questions_are_refused_at_every_schema(tmp_path, name):
 
 def test_a_run_below_the_semantic_tier_says_it_read_no_store(tmp_path):
     """The two newer readings are absent there for a reason the operator can act on: `--effort`."""
-    result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR, effort=TIER_HASH)
-    summary, _ = _bundle(result)
+    result = audit_over(tmp_path / "corpus", BELOW_THE_FLOOR, effort=TIER_HASH)
+    summary, _ = bundle_of(result)
 
     named = {reading.name: reading for reading in bundle_readings(summary)}
 
@@ -572,8 +384,8 @@ def test_a_run_below_the_semantic_tier_says_it_read_no_store(tmp_path):
 
 def test_the_report_states_per_question_what_the_archive_can_answer(tmp_path):
     """The user-visible outcome: a per-question verdict, including the questions nobody can ask."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
     entries = [replay_entry("ranked", "a/summary.json", summary, rows, budget=1)]
 
     report = replay_report(entries)
@@ -588,8 +400,8 @@ def test_the_report_states_per_question_what_the_archive_can_answer(tmp_path):
 
 def test_a_refused_budget_names_its_knob_in_the_report_not_only_in_the_echo(tmp_path):
     """The table says "not recomputable"; the reason is what tells an operator which knob to raise."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
-    summary, rows = _bundle(result)
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
+    summary, rows = bundle_of(result)
     entries = [replay_entry("capped", "a/summary.json", summary, rows, budget=2)]
 
     report = replay_report(entries)
