@@ -630,6 +630,12 @@ share of that record.
 | `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
 | `chunks` | `stored` / `comparable` / `copies` per document (`DocumentChunks.payload`) | the store's own answer, which a rebuild changes |
 
+`documents` is also the record's id table: from `schema_version` 4 `chunks` keys on a document's
+POSITION in it rather than on its id, and so does every other map in the record
+([the id table](conflict-bundle-record.md#the-id-table-every-document-named-once)). Both forms
+resolve to the same document ids and every reading replays identically through either, so the
+figures below -- measured before the interning -- are an upper bound on what the record costs today.
+
 `chunks` is ABSENT below the semantic tier, never empty: that absence is what the `effort` reading
 is read from, and an empty accounting says the opposite (a store that held nothing) -- a run whose
 record is edited to carry one names CHUNKING on every pair instead, which CI pins. Chunk text and

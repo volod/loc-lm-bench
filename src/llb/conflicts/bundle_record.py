@@ -16,6 +16,11 @@ readings were read FROM, beside the coverage they explain:
 - `candidates`: the ranked candidate list collapsed to document pairs, capped by the run's own
   budget or by a constant (`candidate_record.py`).
 
+`documents` is also the record's ID TABLE: the last three name a document by its position in it
+rather than by its id, so every id is written exactly once however many maps mention it
+(`document_index.py`). That is the whole of schema 4, and a bundle at any earlier schema keys on the
+id itself and reads exactly as it did.
+
 The last three are ABSENT below the semantic tier, never empty: a run that read no store built no
 accounting, no exclusion pass, and no ranking, and an empty one would say the opposite (a store that
 held nothing). Chunk text and chunk ordinals are deliberately not recorded either -- the record says
@@ -35,15 +40,27 @@ from llb.conflicts.candidate_record import CandidateRecord
 from llb.conflicts.constants import COVERAGE_FIELD, STAGE_INPUTS_FIELD
 from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.document_exclusions import DocumentExclusions
+from llb.conflicts.document_index import (
+    EXTRA_IDS_KEY,
+    DocumentInterner,
+    DocumentNaming,
+)
 from llb.conflicts.governance import ORDERING_FIELDS
 from llb.core.contracts.common import JsonObject
 
 # 1 records the corpus documents with their ordering fields plus the per-document chunk accounting.
 # 2 adds the per-document exclusion reasons and the ranked candidate list. 3 adds the cap the
-# candidate prefix was written at. All additive, so a schema-1 bundle still replays its stage (it
-# answers the two newer questions with a refusal) and a schema-2 bundle still answers a budget
+# candidate prefix was written at. 1-3 are additive, so a schema-1 bundle still replays its stage
+# (it answers the two newer questions with a refusal) and a schema-2 bundle still answers a budget
 # inside its prefix -- it just cannot say what truncated that prefix.
-STAGE_INPUTS_SCHEMA_VERSION = 3
+#
+# 4 is the first version that CHANGES an existing shape rather than adding to it: every document
+# outside `documents` is named by its corpus position instead of by its id (`document_index.py`).
+# Nothing is lost or gained by the change -- both forms resolve to the same document ids and every
+# reading replays identically through either -- so the version is the only thing that tells them
+# apart, and the reader keeps both.
+STAGE_INPUTS_SCHEMA_VERSION = 4
+INTERNED_IDS_SCHEMA_VERSION = 4
 SCHEMA_KEY = "schema_version"
 DOCUMENTS_KEY = "documents"
 CHUNKS_KEY = "chunks"
@@ -91,7 +108,13 @@ def _document_entry(doc_id: str, governance: JsonObject) -> JsonObject:
 def stage_attribution_inputs(
     documents: Sequence[tuple[str, JsonObject]], inputs: RunInputs
 ) -> JsonObject:
-    """Everything the bundle's readings need that a finished run would otherwise lose."""
+    """Everything the bundle's readings need that a finished run would otherwise lose.
+
+    `documents` is written first because it IS the id table the rest of the record keys on; the
+    extras it did not cover are only known once every other part has been written, so they are
+    appended last.
+    """
+    interner = DocumentInterner([doc_id for doc_id, _ in documents])
     record: JsonObject = {
         SCHEMA_KEY: STAGE_INPUTS_SCHEMA_VERSION,
         DOCUMENTS_KEY: [_document_entry(doc_id, governance) for doc_id, governance in documents],
@@ -102,7 +125,9 @@ def stage_attribution_inputs(
         (CANDIDATES_KEY, inputs.candidates),
     ):
         if part is not None:
-            record[key] = part.payload()
+            record[key] = part.payload(interner)
+    if interner.extras:
+        record[EXTRA_IDS_KEY] = interner.extras
     return record
 
 
@@ -121,6 +146,39 @@ def documents_of(record: JsonObject) -> list[tuple[str, JsonObject]]:
     ]
 
 
+def _id_table(record: JsonObject) -> list[str]:
+    """The recorded ids by SLOT, keeping the position of an entry `documents_of` would drop.
+
+    `documents_of` skips a malformed entry, which is right for a reading over the documents and
+    wrong for the id table -- a skipped entry there would shift every position after it and rename
+    every document the maps refer to.
+    """
+    entries = record.get(DOCUMENTS_KEY)
+    if not isinstance(entries, list):
+        return []
+    return [
+        str(entry[DOC_ID_KEY]) if isinstance(entry, dict) and DOC_ID_KEY in entry else ""
+        for entry in entries
+    ]
+
+
+def naming_of(record: JsonObject) -> DocumentNaming:
+    """How this record names a document outside `documents`: by corpus position, or by id.
+
+    The schema version is the only thing that separates the two forms, since a position and an id
+    are both strings once they are JSON object keys. A record with no version at all is one of the
+    earliest bundles, which predates the interning.
+    """
+    version = record.get(SCHEMA_KEY)
+    if not isinstance(version, int) or version < INTERNED_IDS_SCHEMA_VERSION:
+        return DocumentNaming.by_id()
+    extras = record.get(EXTRA_IDS_KEY)
+    return DocumentNaming.by_position(
+        _id_table(record),
+        [str(extra) for extra in extras] if isinstance(extras, list) else (),
+    )
+
+
 def recorded_inputs(record: JsonObject) -> RunInputs:
     """The three recorded parts, each None when the bundle carries no entry for it.
 
@@ -133,15 +191,20 @@ def recorded_inputs(record: JsonObject) -> RunInputs:
         for key in (CHUNKS_KEY, EXCLUSIONS_KEY, CANDIDATES_KEY)
         if isinstance(value := record.get(key), dict)
     }
+    naming = naming_of(record)
     return RunInputs(
-        chunks=(DocumentChunks.from_payload(parts[CHUNKS_KEY]) if CHUNKS_KEY in parts else None),
+        chunks=(
+            DocumentChunks.from_payload(parts[CHUNKS_KEY], naming) if CHUNKS_KEY in parts else None
+        ),
         exclusions=(
-            DocumentExclusions.from_payload(parts[EXCLUSIONS_KEY])
+            DocumentExclusions.from_payload(parts[EXCLUSIONS_KEY], naming)
             if EXCLUSIONS_KEY in parts
             else None
         ),
         candidates=(
-            CandidateRecord.from_payload(parts[CANDIDATES_KEY]) if CANDIDATES_KEY in parts else None
+            CandidateRecord.from_payload(parts[CANDIDATES_KEY], naming)
+            if CANDIDATES_KEY in parts
+            else None
         ),
     )
 

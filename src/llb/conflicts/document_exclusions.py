@@ -31,6 +31,12 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from llb.conflicts.document_index import (
+    DocumentInterner,
+    DocumentNaming,
+    interned_counts,
+    named_counts,
+)
 from llb.conflicts.semantic_filter import ContentSelection
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
@@ -48,13 +54,6 @@ REASON_NAMES: dict[str, str] = {
 
 STORED_KEY = "min_claim_tokens"
 FLOOR_KEY = "recovery_floor"
-
-
-def _counts(value: object) -> dict[str, int]:
-    """A recorded `{doc_id: count}` map, keeping only the entries that are actually a count."""
-    if not isinstance(value, Mapping):
-        return {}
-    return {str(key): int(count) for key, count in value.items() if isinstance(count, int)}
 
 
 @dataclass(frozen=True)
@@ -101,25 +100,27 @@ class DocumentExclusions:
             min_claim_tokens=min_claim_tokens,
         )
 
-    def payload(self) -> JsonObject:
-        """The four maps as `summary.json` carries them, keyed by reason."""
+    def payload(self, interner: DocumentInterner) -> JsonObject:
+        """The four maps as `summary.json` carries them, keyed by reason then by corpus position."""
         return {
-            FRONT_MATTER: dict(self.front_matter),
-            LOW_CONTENT: dict(self.low_content),
-            METADATA_BLOCK: dict(self.metadata_block),
-            FLOOR_KEY: dict(self.recovery_floor),
+            FRONT_MATTER: interned_counts(self.front_matter, interner),
+            LOW_CONTENT: interned_counts(self.low_content, interner),
+            METADATA_BLOCK: interned_counts(self.metadata_block, interner),
+            FLOOR_KEY: interned_counts(self.recovery_floor, interner),
             STORED_KEY: int(self.min_claim_tokens),
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "DocumentExclusions":
+    def from_payload(
+        cls, payload: Mapping[str, object], naming: DocumentNaming
+    ) -> "DocumentExclusions":
         """Read back what `payload` wrote; a missing map is a run that excluded nothing that way."""
         stored = payload.get(STORED_KEY)
         return cls(
-            front_matter=_counts(payload.get(FRONT_MATTER)),
-            low_content=_counts(payload.get(LOW_CONTENT)),
-            metadata_block=_counts(payload.get(METADATA_BLOCK)),
-            recovery_floor=_counts(payload.get(FLOOR_KEY)),
+            front_matter=named_counts(payload.get(FRONT_MATTER), naming),
+            low_content=named_counts(payload.get(LOW_CONTENT), naming),
+            metadata_block=named_counts(payload.get(METADATA_BLOCK), naming),
+            recovery_floor=named_counts(payload.get(FLOOR_KEY), naming),
             min_claim_tokens=stored if isinstance(stored, int) else 0,
         )
 

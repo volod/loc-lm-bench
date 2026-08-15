@@ -22,6 +22,15 @@ from pathlib import Path
 
 import pytest
 
+from llb.conflicts.bundle_record import (
+    CANDIDATES_KEY,
+    CHUNKS_KEY,
+    EXCLUSIONS_KEY,
+    SCHEMA_KEY,
+    naming_of,
+)
+from llb.conflicts.candidate_record import ENTRIES_KEY
+from llb.conflicts.document_index import EXTRA_IDS_KEY, DocumentNaming
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.vectorops import VectorSet
 from llb.core.paths import PROJECT_ROOT
@@ -194,6 +203,58 @@ def calibrated_stub(accuracy_lcb: float = 0.9) -> dict:
         "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
         "calibrated": True,
     }
+
+
+def _map_by_id(value: dict, naming: DocumentNaming) -> dict:
+    """One recorded map back in id-keyed form, whatever its values are."""
+    return {
+        naming.name(str(key)): (
+            [naming.name(str(item)) for item in inner] if isinstance(inner, list) else inner
+        )
+        for key, inner in value.items()
+    }
+
+
+def _part_by_id(part: dict, naming: DocumentNaming) -> dict:
+    """A record part that holds maps (`chunks`, `exclusions`) with every map keyed by id again.
+
+    `min_claim_tokens` sits beside those maps and is a plain integer, so it passes through.
+    """
+    return {
+        name: _map_by_id(inner, naming) if isinstance(inner, dict) else inner
+        for name, inner in part.items()
+    }
+
+
+def _candidates_by_id(candidates: dict, naming: DocumentNaming) -> dict:
+    """The ranked prefix with each row naming its two documents by id instead of by position."""
+    return {
+        **candidates,
+        ENTRIES_KEY: [
+            [rank, naming.name(str(left)), naming.name(str(right)), cosine]
+            for rank, left, right, cosine in candidates[ENTRIES_KEY]
+        ],
+    }
+
+
+def keyed_by_id(record: dict, *, schema: int) -> dict:
+    """The same bundle record in the PRE-INTERNING form every bundle on disk before schema 4 uses.
+
+    Schema 4 replaced each document id outside `documents` with its corpus position, and that is the
+    one change the record has ever made to a shape rather than adding to it. Every reading has to
+    replay identically through both forms, so the tests need the older one -- rewritten here from a
+    fresh record rather than committed as a frozen blob, so a new field cannot quietly go untested
+    on the older side.
+    """
+    naming = naming_of(record)
+    legacy = {key: value for key, value in record.items() if key != EXTRA_IDS_KEY}
+    legacy[SCHEMA_KEY] = schema
+    for key in (CHUNKS_KEY, EXCLUSIONS_KEY):
+        if key in legacy:
+            legacy[key] = _part_by_id(legacy[key], naming)
+    if CANDIDATES_KEY in legacy:
+        legacy[CANDIDATES_KEY] = _candidates_by_id(legacy[CANDIDATES_KEY], naming)
+    return legacy
 
 
 @pytest.fixture

@@ -36,9 +36,10 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 All of it rides under `stage_attribution_inputs` in `summary.json`
 (`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
-**3**; every addition so far is additive, so a schema-1 bundle still replays its stage and answers
-the two newer questions with a refusal, and a schema-2 bundle still answers a budget inside its
-prefix -- it just cannot say what truncated that prefix.
+**4**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
+newer questions with a refusal, and a schema-2 bundle still answers a budget inside its prefix -- it
+just cannot say what truncated that prefix. Version 4 is the first that CHANGES a shape rather than
+adding to it, and it is [the id table](#the-id-table-every-document-named-once).
 
 | key | what it carries | module |
 | --- | --- | --- |
@@ -46,6 +47,7 @@ prefix -- it just cannot say what truncated that prefix.
 | `chunks` | `stored` / `comparable` / `copies` per document | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
 | `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs`, `covered_to_rank`, and the `cap` the prefix was written at | `candidate_record.py` |
+| `extra_document_ids` | the ids the store held that the audited corpus did not, absent when they agree | `document_index.py` |
 
 Why `documents` and `chunks` cannot be re-derived instead of recorded -- corpus order is data, and a
 rebuilt store answers about itself -- is in
@@ -54,6 +56,62 @@ rebuilt store answers about itself -- is in
 `chunks`, `exclusions`, and `candidates` are ABSENT below the semantic tier, never empty: a run that
 read no store built no accounting, no exclusion pass, and no ranking, and an empty one would say the
 opposite (a store that held nothing).
+
+### The id table: every document named once
+
+The record is linear in DOCUMENTS as intended, but a document id used to be written down five times
+over -- in `documents`, in `chunks.stored`, in `chunks.comparable`, in each of the three
+`exclusions` maps, and twice per row of the ranked `candidates` list. That repetition carried no
+information: `documents` is already the corpus-order index every other key could name a position in.
+So it does. Every key outside `documents` is that POSITION -- a decimal string in the maps, an
+integer in the candidate rows -- and `documents` is the table they resolve against
+(`src/llb/conflicts/document_index.py`: `DocumentInterner` writes, `DocumentNaming` reads).
+
+Two facts the change has to survive, and both are load-bearing:
+
+- **A store can be one build ahead of the corpus**, so a chunk can carry a doc_id the audited
+  `documents` list never had. Such an id is appended to `extra_document_ids` and referenced by
+  position like any other. The alternative -- leaving it as a bare key -- would make a key sometimes
+  an ordinal and sometimes an id, which no reader can tell apart.
+- **Bundles on disk are at the older form.** `naming_of` picks the form off `schema_version`, and
+  nothing else can: a position and an id are both strings once they are JSON object keys. Both forms
+  resolve to the same document ids, so *every reading replays identically through either* -- checked
+  over the whole archive below, and pinned in CI by
+  `test_every_reading_replays_identically_through_both_forms`, which rewrites a fresh record into
+  the older form (`keyed_by_id` in `tests/llb/conflicts/conflict_helpers.py`) rather than freezing a
+  blob, so a new field cannot quietly go untested on the older side.
+
+**Measured over the whole bundle archive** (24 bundles under `.data/corpus-conflicts/`, spanning
+no record at all, schema 1, and schema 2; CUDA host, no model call):
+
+```bash
+make recompute-conflict-stage STAGE_RUNS="<the 24 run dirs>" STAGE_BUDGET=2 \
+  STAGE_OUT=.data/corpus-conflict-stage/20260815T-interned-ids-archive
+```
+
+The resulting `stage.json` is **byte-identical** to the archive sweep taken before the interning
+(`.data/corpus-conflict-stage/20260815T-bundle-record-archive/stage.json`): same attribution, same
+agreement verdict, same budget answers, same refusals and refusal reasons. Separately, every
+recorded bundle re-encoded through `stage_attribution_inputs` returns the same `RunInputs` and the
+same `documents_of` as the bundle it came from.
+
+The saving is the difference between an id and its ordinal, so it grows with the id length and with
+how many maps mention the document. On the largest bundle on this host (250 documents, corpus
+`.data/prepare-goldset/20260711T092608Z/corpus`, re-run at cos 0.6 as
+`.data/corpus-conflicts/20260815T-interned-ids-squad-cos060/`):
+
+| part | keyed by id | keyed by position | saving |
+| --- | --- | --- | --- |
+| `documents` (the table itself) | 9,500 | 9,500 | 0 |
+| `chunks` | 14,455 | 4,794 | 67% |
+| `exclusions` | 1,106 | 444 | 60% |
+| `candidates` (36 pairs) | 2,437 | 896 | 63% |
+| **whole record** | **27,578** | **15,714** | **43%** |
+
+`summary.json` for that run falls from 57.7 KiB to 45.9 KiB. Below the semantic tier the record is
+`documents` and nothing else, so it is unchanged at 637 bytes -- there is no repetition there to
+remove. What remains is the floor the change was aiming at: **one id per document**, and on this
+bundle the table is 9,500 of the 15,714 bytes left.
 
 ### Why a document is not comparable, and the floor that returns it
 
@@ -186,22 +244,26 @@ constant either.
 
 **The depth/cost curve** (same corpus and store at cos 0.25, where the ranking is 3,127 chunk pairs
 collapsing to 2,560 document pairs; one `make audit-corpus-conflicts` run per cap, artifacts under
-`.data/corpus-conflicts/20260815T-candidate-cap-cos025-<cap>/`):
+`.data/corpus-conflicts/20260815T-candidate-cap-cos025-<cap>/`). Those runs predate
+[the id table](#the-id-table-every-document-named-once), so both columns are given -- the bytes as
+those bundles hold them, and the bytes the same content occupies re-encoded at schema 4:
 
 | cap | pairs recorded | answers budgets to rank | `candidates` bytes | whole record | `summary.json` |
 | --- | --- | --- | --- | --- | --- |
-| 25 | 25 | 26 | 1,713 | 26,854 | 81,489 |
-| 50 | 50 | 53 | 3,362 | 28,503 | 84,589 |
-| 100 | 100 | 107 | 6,665 | 31,806 | 90,792 |
-| 200 (default) | 200 | 222 | 13,353 | 38,494 | 103,280 |
-| 400 | 400 | 458 | 26,736 | 51,877 | 128,264 |
-| 800 | 800 | 920 | 53,488 | 78,629 | 178,215 |
-| 2,600 (whole list) | 2,560 | 3,127 | 172,918 | 198,059 | 399,727 |
+| 25 | 25 | 26 | 1,713 -> 643 | 26,854 -> 15,461 | 81,489 -> 51,334 |
+| 50 | 50 | 53 | 3,362 -> 1,220 | 28,503 -> 16,038 | 84,589 -> 51,912 |
+| 100 | 100 | 107 | 6,665 -> 2,380 | 31,806 -> 17,198 | 90,792 -> 53,072 |
+| 200 (default) | 200 | 222 | 13,353 -> 4,783 | 38,494 -> 19,601 | 103,280 -> 55,475 |
+| 400 | 400 | 458 | 26,736 -> 9,596 | 51,877 -> 24,414 | 128,264 -> 60,289 |
+| 800 | 800 | 920 | 53,488 -> 19,182 | 78,629 -> 34,000 | 178,215 -> 69,874 |
+| 2,600 (whole list) | 2,560 | 3,127 | 172,918 -> 63,199 | 198,059 -> 78,017 | 399,727 -> 113,893 |
 
-**The cost side cannot pick the value.** The curve is a straight line at **66.7 to 68.5 bytes per
-recorded document pair** with no knee anywhere on it, so every cap is affordable and every cap is
-worse than the one below it by the same amount per pair. What it does establish is the price of the
-extremes: recording the whole list turns a 25 KiB record into a 198 KiB one and takes half of
+**The cost side cannot pick the value.** The curve is a straight line with no knee anywhere on it --
+**66.7 to 68.5 bytes per recorded document pair** before the id table, **23.8 to 25.7 bytes** after
+it -- so every cap is affordable and every cap is worse than the one below it by the same amount per
+pair. Interning moved the whole line down without bending it, which is the point: it removes a
+constant per row, not a growth term. What the curve does establish is the price of the extremes:
+recording the whole list still turns a 15 KiB record into a 78 KiB one and takes more than half of
 `summary.json`, which is the outcome the cap exists to prevent.
 
 **What picks it is the depth a re-read can ask at**, and two facts bound that:
@@ -216,10 +278,12 @@ extremes: recording the whole list turns a 25 KiB record into a 198 KiB one and 
 
 **Decision: the constant stays 200**, now for a stated reason rather than by default -- it is 2x the
 deepest measured operating budget and 4x the suggested one, it guarantees an answer to rank 200 or
-better, and it costs 13.3 KiB. It is no longer the only lever: a corpus that is genuinely re-read
-deeper sets `--max-candidate-record-pairs` and pays ~67 bytes per pair, and the refusal past the
-prefix names that flag instead of leaving an operator to find it. On the cos 0.50 run above, raising
-the cap from 200 to 250 recovers the last 2 document pairs and the last 2 ranks for **134 bytes**.
+better, and it costs 4.8 KiB. The id table cut that price from 13.3 KiB without touching the depth
+argument, which is what the decision actually rests on, so the value does not move. The constant is
+no longer the only lever either: a corpus that is genuinely re-read deeper sets
+`--max-candidate-record-pairs` and pays ~24 bytes per pair, and the refusal past the prefix names
+that flag instead of leaving an operator to find it. On the cos 0.50 run above, raising the cap from
+200 to 250 recovers the last 2 document pairs and the last 2 ranks for **48 bytes**.
 
 **The cap is recorded because a truncated prefix and a short ranking look identical.** `cap` sits
 beside `covered_to_rank`, so a reader can tell "the corpus ranked no more" from "this run declined
@@ -229,29 +293,37 @@ had used it.
 
 ## The size the record actually costs
 
-| bundle | documents | store chunks | record bytes | of which `candidates` |
-| --- | --- | --- | --- | --- |
-| `20260815T-bundle-record-fixture-hash` | 7 | -- (no store) | 637 | absent |
-| `20260815T-bundle-record-fixture-semantic` | 7 | 19 | 2,044 | 429 |
-| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 311 | 25,266 | 125 |
-| `20260815T-bundle-record-squad-semantic-cos060` | 250 | 311 | 27,566 | 2,425 |
+Bytes at schema 4, with the same content keyed by id beside it:
 
-The largest bundle on this host records 27.6 KiB over 250 documents -- about 110 bytes per document
--- against a 74 KiB `summary.json`, and the per-document maps (`documents` 9.5 KiB, `chunks`
-14.5 KiB, `exclusions` 1.1 KiB) are what dominate it, exactly as the bound predicts. At the
-thresholds those runs used, no corpus here has a candidate list long enough for the cap to bite --
-it takes a deliberately loosened cosine to reach it, which is what
+| bundle | documents | store chunks | record bytes | keyed by id | of which `candidates` |
+| --- | --- | --- | --- | --- | --- |
+| `20260815T-bundle-record-fixture-hash` | 7 | -- (no store) | 637 | 637 | absent |
+| `20260815T-bundle-record-fixture-semantic` | 7 | 19 | 1,207 | 2,044 | 184 |
+| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 311 | 14,909 | 25,266 | 91 |
+| `20260815T-bundle-record-squad-semantic-cos060` | 250 | 311 | 15,712 | 27,566 | 894 |
+
+The largest bundle on this host records 15.7 KiB over 250 documents -- about 63 bytes per document
+-- against a 46 KiB `summary.json`. What dominates it now is the id table itself: `documents` is
+9.5 KiB of the 15.7, against `chunks` 4.8 KiB and `exclusions` 0.4 KiB. That is the shape the bound
+predicts once the repetition is gone -- the record costs one id per document plus a handful of
+integers, and the ids are the larger half.
+
+At the thresholds those runs used, no corpus here has a candidate list long enough for the cap to
+bite -- it takes a deliberately loosened cosine to reach it, which is what
 [the depth/cost curve](#how-deep-the-prefix-reaches-and-what-the-depth-costs) does. The cap, the
 refusal, and the knob the refusal names are therefore pinned in CI over fixtures
 (`test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches`,
 `test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced`), alongside a growth test
-that doubles a corpus past the cap and asserts the record less than doubles.
+that doubles a corpus past the cap and asserts the record less than doubles, and
+`test_the_interned_record_is_smaller_than_the_form_it_replaces`, which keeps the saving from ever
+going negative on a corpus of very short ids.
 
 ## Where it lives
 
 | what | where |
 | --- | --- |
-| the record a run writes | `src/llb/conflicts/bundle_record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`) |
+| the record a run writes | `src/llb/conflicts/bundle_record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`, `naming_of`) |
+| the id table both forms resolve against | `src/llb/conflicts/document_index.py` (`DocumentInterner`, `DocumentNaming`) |
 | re-reading a bundle with it | `src/llb/conflicts/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/candidate_record.py` |

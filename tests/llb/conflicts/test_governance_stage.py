@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
+from llb.conflicts.bundle_record import recorded_inputs
 from llb.conflicts.constants import TIER_HASH, TIER_SEMANTIC
 from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.governance_coverage import RETRIEVAL_KNOBS, coverage_reading
@@ -341,7 +342,7 @@ def test_a_pair_excluded_by_the_claim_token_floor_names_that_floor(tmp_path):
     assert "`new.md`" in _lost(result)["reason"]
     # The exclusion record turns the floor knob into a floor VALUE, and names the reason rather
     # than the three-way disjunction the counts-only reading could offer.
-    floor = result.stage_inputs["exclusions"]["recovery_floor"]["new.md"]
+    floor = recorded_inputs(result.stage_inputs).exclusions.floor_for("new.md")
     assert "1 below `--min-claim-tokens`" in _lost(result)["reason"]
     assert _lost(result)["knob"].startswith(f"lower `--min-claim-tokens` to {floor} or below")
     assert STAGE_KNOBS[STAGE_CLAIM_FLOOR] not in _lost(result)["knob"]
@@ -434,7 +435,7 @@ def test_the_retrieval_reading_names_one_knob_when_the_stage_is_attributed(tmp_p
     assert "the stage that lost the orderable pair is RETRIEVAL" in reading
     assert RETRIEVAL_KNOBS not in reading, "the four-knob list is what the attribution replaces"
     assert "Earliest stage an orderable document pair was lost at: the CLAIM-TOKEN FLOOR" in reading
-    floor = result.stage_inputs["exclusions"]["recovery_floor"]["new.md"]
+    floor = recorded_inputs(result.stage_inputs).exclusions.floor_for("new.md")
     assert reading.endswith(
         f"One knob: lower `--min-claim-tokens` to {floor} or below (this run used "
         f"{result.params['min_claim_tokens']}), or re-chunk so the claim lands in a longer chunk."

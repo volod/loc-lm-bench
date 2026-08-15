@@ -27,6 +27,7 @@ import pytest
 from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH, TIER_SEMANTIC
 from llb.conflicts.document_chunks import DocumentChunks
+from llb.conflicts.document_index import DocumentInterner, DocumentNaming
 from llb.conflicts.governance_stage import (
     LOST_PAIR_FIELD,
     STAGE_CANDIDATES,
@@ -46,6 +47,7 @@ from llb.conflicts.bundle_record import (
     NO_RECORD_REASON,
     SCHEMA_KEY,
     STAGE_INPUTS_SCHEMA_VERSION,
+    recorded_inputs,
 )
 from llb.conflicts.stage_replay import (
     recorded_attribution,
@@ -194,7 +196,8 @@ def test_the_record_carries_counts_and_ordering_fields_only(tmp_path):
         for name in ("stored", "comparable")
         for count in record[CHUNKS_KEY][name].values()
     )
-    assert set(record[CHUNKS_KEY]["copies"]) == {"policy.md", "policy_copy.md"}
+    copies = recorded_inputs(record).chunks.copies
+    assert set(copies) == {"policy.md", "policy_copy.md"}
     assert [entry[DOC_ID_KEY] for entry in record[DOCUMENTS_KEY]] == sorted(WITH_A_COPY)
     assert {key for entry in record[DOCUMENTS_KEY] for key in entry} == {
         DOC_ID_KEY,
@@ -204,13 +207,15 @@ def test_the_record_carries_counts_and_ordering_fields_only(tmp_path):
 
 def test_the_chunk_accounting_round_trips_through_the_record():
     """`stored` / `comparable` / `copies` back out as they went in, copies included."""
+    doc_ids = ["a.md", "b.md", "kept.md"]
     chunks = DocumentChunks(
         stored={"a.md": 3, "kept.md": 2},
         comparable={"a.md": 3},
         copies={"b.md": ("kept.md",), "kept.md": ("b.md",)},
     )
+    written = json.loads(json.dumps(chunks.payload(DocumentInterner(doc_ids))))
 
-    assert DocumentChunks.from_payload(json.loads(json.dumps(chunks.payload()))) == chunks
+    assert DocumentChunks.from_payload(written, DocumentNaming.by_position(doc_ids)) == chunks
 
 
 # --- refusal: what a bundle that cannot answer says --------------------------------------------

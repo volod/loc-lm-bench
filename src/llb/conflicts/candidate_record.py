@@ -32,6 +32,7 @@ look identical from the outside: without it a reader cannot tell "the corpus ran
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from llb.conflicts.document_index import DocumentInterner, DocumentNaming
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
 
@@ -40,9 +41,9 @@ from llb.core.contracts.rag import ChunkRecord
 # Decided on the depth/cost curve measured over the 250-document quickstart corpus, where the
 # candidate list saturates any cap worth testing (see the bundle-record page). Two facts set it:
 #
-# - cost is LINEAR in the cap at ~67 bytes per document pair, with no knee anywhere on the curve --
-#   so the cost side cannot pick a value, it can only price one. At 200 that is 13.3 KiB, the same
-#   order as the per-document maps beside it and a third of the record.
+# - cost is LINEAR in the cap at ~24 bytes per document pair (~67 before the ids were interned),
+#   with no knee anywhere on the curve -- so the cost side cannot pick a value, it can only price
+#   one. At 200 that is 4.8 KiB, the same order as the per-document maps beside it.
 # - what a cap buys is DEPTH, and a cap of N document pairs answers every budget up to at least
 #   rank N (each recorded pair consumes one rank or more, so `covered_to_rank >= N`). 200 is
 #   therefore 4x `SUGGESTED_MAX_CANDIDATE_PAIRS` (50) and 2x the deepest budget any measured claim
@@ -50,7 +51,7 @@ from llb.core.contracts.rag import ChunkRecord
 #   the run's own budget is the ceiling on the question rather than a starting point.
 #
 # A corpus that is genuinely re-read deeper raises `--max-candidate-record-pairs` and pays the
-# ~67 bytes per pair; the refusal past the cap names that knob rather than truncating silently.
+# ~24 bytes per pair; the refusal past the cap names that knob rather than truncating silently.
 DEFAULT_CANDIDATE_RECORD_PAIRS = 200
 
 ENTRIES_KEY = "document_pairs"
@@ -112,20 +113,30 @@ class CandidateRecord:
             covered = rank
         return cls(entries=tuple(entries), total_pairs=len(pairs), covered_to_rank=covered, cap=cap)
 
-    def payload(self) -> JsonObject:
+    def payload(self, interner: DocumentInterner) -> JsonObject:
+        """The prefix as `summary.json` carries it, each row naming its two documents by position.
+
+        Two ids per row is what makes this the record's largest consumer once the list is deep, so
+        interning them is where the saving concentrates (`document_index.py`).
+        """
         return {
-            ENTRIES_KEY: [list(entry) for entry in self.entries],
+            ENTRIES_KEY: [
+                [rank, interner.position(left), interner.position(right), cosine]
+                for rank, left, right, cosine in self.entries
+            ],
             TOTAL_KEY: self.total_pairs,
             COVERED_KEY: self.covered_to_rank,
             CAP_KEY: self.cap,
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "CandidateRecord":
+    def from_payload(
+        cls, payload: Mapping[str, object], naming: DocumentNaming
+    ) -> "CandidateRecord":
         """Read back what `payload` wrote, dropping any entry that is not a well-formed row."""
         rows = payload.get(ENTRIES_KEY)
         entries = [
-            (int(row[0]), str(row[1]), str(row[2]), float(row[3]))
+            (int(row[0]), naming.name(str(row[1])), naming.name(str(row[2])), float(row[3]))
             for row in (rows if isinstance(rows, list) else [])
             if isinstance(row, list) and len(row) == 4
         ]

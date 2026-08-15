@@ -45,40 +45,38 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-bundle-record-interns-the-document-ids (optional)
+### conflict-bundle-record-documents-table-is-the-remaining-cost (optional)
 
-The bundle record is linear in DOCUMENTS as intended, and on a 250-document corpus it is still
-27.6 KiB of which 24 KiB is document ids repeated across four maps -- `documents`, `chunks.stored`,
-`chunks.comparable`, and the three `exclusions` maps each key on the full id
+With every other key naming a corpus POSITION, the `documents` table is what is left: 9.5 KiB of the
+15.7 KiB record on the 250-document bundle, against 4.8 KiB for `chunks` and 0.4 KiB for
+`exclusions`
 ([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
-The ranked `candidates` list carries TWO ids per row on top of that, and is the single largest
-consumer once the list is deep: 173 KiB of a 198 KiB record with the whole ranking written down, and
-66.7 bytes per row of which the ids are most
-([bundle record](current/data-prep/conflict-bundle-record.md#how-deep-the-prefix-reaches-and-what-the-depth-costs)).
-A corpus of tens of thousands of documents carries that multiplier into every `summary.json`, and
-the ids are the one part of the record with no information in their repetition. Intern them: the
-`documents` list is already the corpus-order index, so every other map and every candidate row can
-key on its position and the record shrinks toward one id per document. The schema version is the seam
-and a reader must keep accepting the current form, since the point of the record is bundles written
-by older builds.
+About a quarter of the table is not id at all -- each entry is a JSON object, so `"doc_id"` and each
+ordering field name is repeated once per document, ~38 bytes per entry before the values. A
+positional row (`[doc_id, effective_date, version]`, or a column-wise table) removes that repetition
+and nothing else, and the same schema seam that carries the interning carries it. The reason to
+decide rather than just do it is READABILITY: the record is read by hand when a bundle disagrees
+with a run, and a row of unlabelled values is worse at that than a labelled object. Price both at a
+corpus size where it matters (tens of thousands of documents), and keep the labelled form unless the
+saving is worth what it costs a reader.
 
 - Agent status: CLEAR
-- Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/bundle_record.py` builds the
-  record; `DocumentChunks.payload` / `DocumentExclusions.payload` are the maps,
-  `CandidateRecord.payload` is the ranked rows, and `documents_of` is the order an index would be
-  resolved against.
-- User-visible outcome: a bundle from a large corpus stays small enough that nobody is tempted to
-  strip the record from it.
-- Scope boundary: in scope -- the interning, the schema bump, the reader that accepts both forms,
-  and the measured before/after on the largest bundle. Out of scope -- dropping any recorded field,
-  compressing `summary.json`, and changing what the readings answer.
+- Dependencies: none. `_document_entry` and `documents_of` in `src/llb/conflicts/bundle_record.py`
+  are the two sides; `ORDERING_FIELDS` (`governance.py`) is the field set an unlabelled row would
+  have to pin an order for, and pinning it is what makes a later field addition a schema bump rather
+  than an additive one.
+- User-visible outcome: the bundle record's remaining per-document cost is either removed or kept
+  for a stated reason, instead of being the part nobody looked at after the ids were interned.
+- Scope boundary: in scope -- the projected saving at several corpus sizes, the readability cost,
+  and a keep-or-change verdict with the schema bump if it changes. Out of scope -- dropping an
+  ordering field, compressing `summary.json`, and changing what the readings answer.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; every reading replays identically through both forms; the
-  measured record on a 250-document bundle is smaller and the saving is stated; a bundle at either
-  older schema still reads.
+- Acceptance gates: `make ci` green; the saving is stated at the measured 250-document bundle and
+  projected at one an order of magnitude larger; if the form changes, every reading replays
+  identically through all three forms and a bundle at every earlier schema still reads.
 - Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
+  [bundle record](current/data-prep/conflict-bundle-record.md#the-id-table-every-document-named-once).
 
 ### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
 

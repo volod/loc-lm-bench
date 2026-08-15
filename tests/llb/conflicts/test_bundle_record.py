@@ -48,13 +48,23 @@ from llb.conflicts.governance_stage import (
     STAGE_CLAIM_FLOOR,
     attribution_over_returned,
 )
+from llb.conflicts.document_index import (
+    EXTRA_IDS_KEY,
+    DocumentInterner,
+    DocumentNaming,
+)
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report_stage_replay import budget_line, replay_report
 from llb.conflicts.bundle_record import (
     CANDIDATES_KEY,
     CHUNKS_KEY,
+    DOCUMENTS_KEY,
     EXCLUSIONS_KEY,
     SCHEMA_KEY,
+    STAGE_INPUTS_SCHEMA_VERSION,
+    RunInputs,
+    recorded_inputs,
+    stage_attribution_inputs,
 )
 from llb.conflicts.stage_replay import (
     CANDIDATE_TIERS,
@@ -64,7 +74,13 @@ from llb.conflicts.stage_replay import (
     replay_entry,
 )
 
-from conflict_helpers import FAKE_COS_THRESHOLD, dated_body, dated_corpus, store_over
+from conflict_helpers import (
+    FAKE_COS_THRESHOLD,
+    dated_body,
+    dated_corpus,
+    keyed_by_id,
+    store_over,
+)
 
 SHORT = "коротка примітка"
 
@@ -130,7 +146,7 @@ def test_the_floor_the_record_names_is_the_floor_that_recovers_the_document(tmp_
     """
     result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
     summary, _ = _bundle(result)
-    exclusions = DocumentExclusions.from_payload(summary[STAGE_INPUTS_FIELD][EXCLUSIONS_KEY])
+    exclusions = recorded_inputs(summary[STAGE_INPUTS_FIELD]).exclusions
     floor = exclusions.floor_for("new.md")
 
     assert result.governance_coverage[LOST_PAIR_FIELD]["stage"] == STAGE_CLAIM_FLOOR
@@ -138,7 +154,7 @@ def test_the_floor_the_record_names_is_the_floor_that_recovers_the_document(tmp_
 
     recovered = _audit(tmp_path / "recovered", BELOW_THE_FLOOR, min_claim_tokens=floor)
 
-    assert recovered.stage_inputs[CHUNKS_KEY]["comparable"].get("new.md")
+    assert recorded_inputs(recovered.stage_inputs).chunks.comparable.get("new.md")
     assert recovered.governance_coverage.get(LOST_PAIR_FIELD, {}).get("stage") != STAGE_CLAIM_FLOOR
 
 
@@ -146,13 +162,11 @@ def test_the_exclusion_counts_are_disjoint_and_account_for_every_dropped_chunk(t
     """One reason per excluded chunk: the three counters must reconstruct `stored - comparable`."""
     result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
     summary, _ = _bundle(result)
-    record = summary[STAGE_INPUTS_FIELD]
-    exclusions = DocumentExclusions.from_payload(record[EXCLUSIONS_KEY])
-    chunks = record[CHUNKS_KEY]
+    inputs = recorded_inputs(summary[STAGE_INPUTS_FIELD])
 
-    for doc_id, stored in chunks["stored"].items():
-        excluded = sum(count for _, count in exclusions.reasons_for(doc_id))
-        assert stored - chunks["comparable"].get(doc_id, 0) == excluded, doc_id
+    for doc_id, stored in inputs.chunks.stored.items():
+        excluded = sum(count for _, count in inputs.exclusions.reasons_for(doc_id))
+        assert stored - inputs.chunks.comparable.get(doc_id, 0) == excluded, doc_id
 
 
 def test_a_document_no_floor_can_recover_is_told_so_rather_than_given_a_value():
@@ -192,7 +206,7 @@ def test_the_record_stays_linear_in_documents(tmp_path):
         result = _audit(tmp_path / f"corpus{count}", documents, cos_threshold=0.0)
         return (
             len(json.dumps(result.stage_inputs, ensure_ascii=False)),
-            CandidateRecord.from_payload(result.stage_inputs[CANDIDATES_KEY]),
+            recorded_inputs(result.stage_inputs).candidates,
         )
 
     small, small_candidates = recorded(25)
@@ -214,9 +228,12 @@ def test_the_exclusion_record_round_trips_through_json():
         recovery_floor={"a.md": 6, "b.md": 9},
         min_claim_tokens=25,
     )
+    interner = DocumentInterner(["a.md", "b.md"])
+    written = json.loads(json.dumps(exclusions.payload(interner)))
 
     assert (
-        DocumentExclusions.from_payload(json.loads(json.dumps(exclusions.payload()))) == exclusions
+        DocumentExclusions.from_payload(written, DocumentNaming.by_position(["a.md", "b.md"]))
+        == exclusions
     )
 
 
@@ -227,7 +244,7 @@ def test_the_recorded_candidate_pairs_are_the_pairs_the_run_returned(tmp_path):
     """At its own budget the record must reproduce the run: same document pairs, no more, no less."""
     result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
     summary, rows = _bundle(result)
-    candidates = CandidateRecord.from_payload(summary[STAGE_INPUTS_FIELD][CANDIDATES_KEY])
+    candidates = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
     returned = {
         tuple(sorted([row["a"]["doc_id"], row["b"]["doc_id"]]))
         for row in rows
@@ -288,7 +305,7 @@ def test_the_candidate_record_stops_at_its_cap_and_says_how_far_it_reaches(tmp_p
     """The size bound: a record capped at N document pairs never records the N+1st."""
     result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
     summary, _ = _bundle(result)
-    full = CandidateRecord.from_payload(summary[STAGE_INPUTS_FIELD][CANDIDATES_KEY])
+    full = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
 
     assert full.covers(full.total_pairs), "uncapped, the record answers for the whole ranking"
 
@@ -309,7 +326,7 @@ def test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced(tmp_p
     """
     result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
     summary, rows = _bundle(result)
-    capped = CandidateRecord.from_payload(summary[STAGE_INPUTS_FIELD][CANDIDATES_KEY])
+    capped = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
 
     assert (capped.cap, len(capped.entries)) == (1, 1)
     assert result.params["max_candidate_record_pairs"] == 1
@@ -337,22 +354,22 @@ def test_the_record_cap_overrides_the_runs_own_candidate_budget(tmp_path):
         record_cap=50,
     )
 
-    assert CandidateRecord.from_payload(followed.stage_inputs[CANDIDATES_KEY]).cap == 1
-    assert CandidateRecord.from_payload(overridden.stage_inputs[CANDIDATES_KEY]).cap == 50
+    assert recorded_inputs(followed.stage_inputs).candidates.cap == 1
+    assert recorded_inputs(overridden.stage_inputs).candidates.cap == 50
 
 
 def test_a_schema_two_bundle_answers_inside_its_prefix_and_says_the_cap_is_unknown(tmp_path):
     """The seam: the cap is additive, so an older bundle keeps every answer it already gave."""
     result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS, record_cap=1)
     summary, rows = _bundle(result)
-    older = summary[STAGE_INPUTS_FIELD]
-    older[SCHEMA_KEY] = 2
+    older = keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=2)
     older[CANDIDATES_KEY].pop(CAP_KEY)
+    summary[STAGE_INPUTS_FIELD] = older
 
     assert replay_attribution(summary, rows, budget=1).recomputable
     refused = replay_attribution(summary, rows, budget=2)
     assert not refused.recomputable and UNRECORDED_CAP_PHRASE in refused.reason
-    assert CandidateRecord.from_payload(older[CANDIDATES_KEY]).cap == UNRECORDED_CAP
+    assert recorded_inputs(older).candidates.cap == UNRECORDED_CAP
 
 
 def test_a_bundle_without_a_candidate_record_refuses_the_budget_question(tmp_path):
@@ -366,6 +383,77 @@ def test_a_bundle_without_a_candidate_record_refuses_the_budget_question(tmp_pat
     assert (refused.recomputable, refused.reason) == (False, NO_CANDIDATE_RECORD_REASON)
 
 
+# --- the id table: one copy of each id, and both forms of the record ----------------------------
+
+
+def test_every_document_id_is_written_exactly_once(tmp_path):
+    """The interning itself: outside `documents` the record mentions no id, only positions.
+
+    `documents` is the id table, so a corpus of thousands pays for its ids once instead of once per
+    map plus twice per candidate row.
+    """
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, _ = _bundle(result)
+    record = summary[STAGE_INPUTS_FIELD]
+    outside = json.dumps(
+        {key: value for key, value in record.items() if key != DOCUMENTS_KEY}, ensure_ascii=False
+    )
+
+    assert record[SCHEMA_KEY] == STAGE_INPUTS_SCHEMA_VERSION
+    assert [entry["doc_id"] for entry in record[DOCUMENTS_KEY]] == sorted(RANKED)
+    for doc_id in RANKED:
+        assert doc_id not in outside, doc_id
+    assert EXTRA_IDS_KEY not in record, "the store and the corpus agree, so there is nothing extra"
+
+
+def test_the_interned_record_is_smaller_than_the_form_it_replaces(tmp_path):
+    """The whole point of the change, asserted rather than left to the measured bundles.
+
+    The saving is the difference between an id and its ordinal, so it grows with the corpus -- but
+    it must never be negative, which is what a corpus of one-character ids would test for.
+    """
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, _ = _bundle(result)
+    record = summary[STAGE_INPUTS_FIELD]
+
+    interned = len(json.dumps(record, ensure_ascii=False))
+    by_id = len(json.dumps(keyed_by_id(record, schema=3), ensure_ascii=False))
+
+    assert interned < by_id, f"{by_id} -> {interned} bytes"
+
+
+def test_every_reading_replays_identically_through_both_forms(tmp_path):
+    """The migration gate: which form a bundle is in must be invisible to every reading."""
+    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = _bundle(result)
+    older = {**summary, STAGE_INPUTS_FIELD: keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=3)}
+
+    assert recorded_inputs(older[STAGE_INPUTS_FIELD]) == recorded_inputs(
+        summary[STAGE_INPUTS_FIELD]
+    )
+    assert replay_entry("older", "s.json", older, rows, budget=1) == replay_entry(
+        "older", "s.json", summary, rows, budget=1
+    )
+
+
+def test_a_document_the_corpus_never_carried_is_interned_beside_the_table(tmp_path):
+    """A store one build ahead of the corpus holds chunks the `documents` table cannot name.
+
+    Recording such an id as a bare key would make a key sometimes an ordinal and sometimes an id,
+    which no reader can tell apart -- so it joins the table instead, after the corpus documents.
+    """
+    ahead = DocumentChunks(stored={"a-first.md": 1, "gone.md": 2}, comparable={"a-first.md": 1})
+    documents = [("a-first.md", {"effective_date": "2021-01-01"})]
+
+    record = json.loads(
+        json.dumps(stage_attribution_inputs(documents, RunInputs(chunks=ahead)), ensure_ascii=False)
+    )
+
+    assert record[EXTRA_IDS_KEY] == ["gone.md"]
+    assert set(record[CHUNKS_KEY]["stored"]) == {"0", "1"}
+    assert recorded_inputs(record).chunks == ahead
+
+
 # --- the older schema, and the boundary ---------------------------------------------------------
 
 
@@ -373,10 +461,10 @@ def test_a_schema_one_bundle_still_replays_its_stage(tmp_path):
     """The migration seam: the new keys are additive, so an older bundle loses no reading it had."""
     result = _audit(tmp_path / "corpus", BELOW_THE_FLOOR)
     summary, rows = _bundle(result)
-    older = summary[STAGE_INPUTS_FIELD]
-    older[SCHEMA_KEY] = 1
+    older = keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=1)
     older.pop(EXCLUSIONS_KEY)
     older.pop(CANDIDATES_KEY)
+    summary[STAGE_INPUTS_FIELD] = older
 
     replay = replay_attribution(summary, rows)
     named = {reading.name: reading for reading in bundle_readings(summary)}

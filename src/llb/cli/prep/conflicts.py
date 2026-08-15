@@ -85,7 +85,7 @@ def audit_corpus_conflicts_cmd(
         help="how many DOCUMENT pairs of the ranked candidate list the bundle records, which "
         "bounds how deep a later `recompute-conflict-stage --budget` can reach "
         f"(default {DEFAULT_CANDIDATE_RECORD_PAIRS}, or this run's --max-candidate-pairs when it "
-        "sets one); costs about 67 bytes per pair and answers every budget up to at least that "
+        "sets one); costs about 24 bytes per pair and answers every budget up to at least that "
         "rank",
     ),
     cos_quantile: Optional[float] = typer.Option(
