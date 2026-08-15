@@ -36,14 +36,16 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 All of it rides under `stage_attribution_inputs` in `summary.json`
 (`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
-**4**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
+**5**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
 newer questions with a refusal, and a schema-2 bundle still answers a budget inside its prefix -- it
-just cannot say what truncated that prefix. Version 4 is the first that CHANGES a shape rather than
-adding to it, and it is [the id table](#the-id-table-every-document-named-once).
+just cannot say what truncated that prefix. Versions 4 and 5 are the only two that CHANGE a shape
+rather than adding to it, and both are about the id table: 4 is
+[the table itself](#the-id-table-every-document-named-once), 5 is
+[the label it stopped carrying](#the-label-a-document-with-nothing-to-label-was-carrying).
 
 | key | what it carries | module |
 | --- | --- | --- |
-| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | `bundle_record.py` |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- and the id alone where it has neither | `bundle_record.py` |
 | `chunks` | `stored` / `comparable` / `copies` per document | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
 | `candidates` | the ranked candidate list collapsed to `[rank, left doc, right doc, cosine]`, with `total_pairs`, `covered_to_rank`, and the `cap` the prefix was written at | `candidate_record.py` |
@@ -111,7 +113,104 @@ how many maps mention the document. On the largest bundle on this host (250 docu
 `summary.json` for that run falls from 57.7 KiB to 45.9 KiB. Below the semantic tier the record is
 `documents` and nothing else, so it is unchanged at 637 bytes -- there is no repetition there to
 remove. What remains is the floor the change was aiming at: **one id per document**, and on this
-bundle the table is 9,500 of the 15,714 bytes left.
+bundle the table is 9,500 of the 15,714 bytes left -- which is what the next section prices.
+
+### The label a document with nothing to label was carrying
+
+With every key outside `documents` naming a position, the table itself was the remaining cost, and
+about a quarter of it was not id: every entry was a JSON object, so `"doc_id"` and each ordering
+field name was written once per document. Four forms were priced -- the labelled object it started
+as, a positional row `[doc_id, effective_date, version]`, a column-wise table of parallel arrays,
+and the id ALONE for a document carrying no ordering field.
+
+**What each form costs per document**, at the 250-document corpus's 22-character ids. Every one of
+these forms removes a fixed number of bytes per row and none of them changes a growth term, so the
+percentages hold at 250, 2,500, and 25,000 documents to within the table's own few bytes of
+overhead -- the same shape as the interning above, and the reason a projection here is arithmetic
+rather than a second measurement:
+
+| form | undated document | fully dated document |
+| --- | --- | --- |
+| labelled object (schemas 1-4) | 38.00 B | 88.00 B |
+| positional row, trailing `null`s trimmed | 28.00 B (-26.3%) | 49.00 B (-44.3%) |
+| positional row, padded to fixed arity | 40.00 B (**+5.3%**) | 49.00 B (-44.3%) |
+| column-wise table | 26.05 B (-31.5%) | 47.18 B (-46.4%) |
+| **the id alone when undated (schema 5)** | **26.00 B (-31.6%)** | 88.00 B (0%) |
+
+Projected onto whole tables, which is where the numbers a decision would rest on live:
+
+| documents | labelled | positional row | column table | id alone when undated |
+| --- | --- | --- | --- | --- |
+| 250, undated | 9,500 | 7,000 | 6,512 | 6,500 |
+| 2,500, undated | 95,000 | 70,000 | 65,012 | 65,000 |
+| 25,000, undated | 950,000 | 700,000 | 650,012 | 650,000 |
+| 25,000, 10% dated | 1,075,000 | 752,500 | 972,545 | 805,000 |
+| 25,000, fully dated | 2,200,000 | 1,225,000 | 1,175,045 | 2,200,000 |
+
+**Decision: take the saving where the label carries nothing, and decline the other two forms.** A
+document with no ordering field is recorded as the id itself; a document with one keeps the labelled
+object it always had. That is the whole of schema 5, and it takes the entire undated saving -- 26.00
+bytes per document against the column table's 26.05 and the row form's 28.00 -- in the case that is
+not hypothetical here: every corpus on this host except the planted 7-document fixture carries no
+governance date at all, which is the same fact
+[the zero-delta precondition](conflict-decision-groups.md#the-precondition-behind-a-zero-delta)
+reports from the other side.
+
+**What the other two forms cost a reader**, which is why the extra they buy on a dated corpus is
+declined rather than unnoticed:
+
+- a positional row is read by OFFSET, so `["archive-policy.md", null, "1.0"]` is legible only to a
+  reader who knows `ORDERING_FIELDS` and its order -- and the record is read by hand exactly when a
+  bundle disagrees with a run, which is the worst moment to need a second file to decode the first;
+- pinning that order makes a later ordering field a schema BUMP rather than an additive change.
+  Today a new field is a new key that older bundles simply lack, and `documents_of` reads it by
+  name;
+- the fixed-arity row is not even a saving on the corpora that exist here: `null`-padded it COSTS
+  5%, and trimming the padding means a document with a `version` and no `effective_date` still needs
+  an interior `null`;
+- a column table takes one document's record out of one place: reading a single document means
+  indexing three parallel arrays at the same offset, and a mis-length in one array silently
+  re-labels every document after it.
+
+The bare id charges none of that, and it says something the object did not: this document has
+nothing to order on, which is precisely why its pairs are unorderable. The form is also
+self-describing -- a string is an id, an object is a labelled entry -- so unlike the position/id
+seam of schema 4, no reader needs `schema_version` to tell the two apart; the version is bumped for
+a consumer that assumed every entry was an object, not because the reader could not cope.
+
+**What the decision declines is measured, not assumed**: on a fully dated corpus of 25,000
+documents the positional row would save a further ~975 KB (1,225,000 against 2,200,000 bytes). If
+such a corpus appears, the same schema seam that carried the interning carries that too.
+
+**Measured, on real bundles** (CUDA host, no model call; the 250-document run re-taken as
+`.data/corpus-conflicts/20260815T-bare-id-squad-cos060/`, the fixture as
+`.data/corpus-conflicts/20260815T-bare-id-fixture-semantic/`):
+
+| bundle | documents | dated | `documents` | whole record | `summary.json` |
+| --- | --- | --- | --- | --- | --- |
+| `20260815T-bare-id-squad-cos060` | 250 | 0 | 9,500 -> 6,500 (-32%) | 15,714 -> 12,714 (-19%) | 45,885 -> 42,885 (-6.5%) |
+| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 0 | 9,500 -> 6,500 (-32%) | 14,909 -> 11,909 (-20%) | 42,097 -> 39,097 (-7.1%) |
+| `20260815T-bare-id-fixture-semantic` | 7 | 7 | 601 -> 601 (0%) | 1,209 -> 1,209 | unchanged |
+| `20260815T-bundle-record-fixture-hash` | 7 | 7 | 601 -> 601 (0%) | 637 -> 637 | unchanged |
+
+Both squad runs are byte-for-byte the same audit as their schema-4 predecessors apart from the
+table: `documents_of` and `recorded_inputs` return equal values, and every other key of the record
+is identical. The dated fixture is the control -- it keeps every label and pays exactly what it
+paid.
+
+**Every reading replays identically through all three forms.** The 24-bundle archive sweep
+(no record at all, schema 1, schema 2, schema 4) re-taken on this build produces a `stage.json` and
+a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
+(`.data/corpus-conflict-stage/20260815T-bare-id-archive/` against
+`.data/corpus-conflict-stage/20260815T-interned-ids-archive/`), and the two re-taken bundles above
+replay to the same attribution, the same agreement verdict, and the same budget answer as the
+schema-4 and schema-2 bundles of the same runs
+(`.data/corpus-conflict-stage/20260815T-bare-id-pairs/`). In CI,
+`test_every_reading_replays_identically_through_all_three_forms` runs a MIXED corpus -- three dated
+documents and one undated, so the record carries both entry shapes -- and asserts every reading
+equal across schema 5, schema 4 (`labelled_documents`), and the id-keyed schema 3 and schema 1
+(`keyed_by_id`), each rewritten from a fresh record rather than frozen as a blob so a new field
+cannot go untested on an older side.
 
 ### Why a document is not comparable, and the floor that returns it
 
@@ -293,20 +392,21 @@ had used it.
 
 ## The size the record actually costs
 
-Bytes at schema 4, with the same content keyed by id beside it:
+Bytes at schema 5, with the same content at schema 4 (labelled entries) and at the pre-interning
+form (keyed by id) beside it:
 
-| bundle | documents | store chunks | record bytes | keyed by id | of which `candidates` |
-| --- | --- | --- | --- | --- | --- |
-| `20260815T-bundle-record-fixture-hash` | 7 | -- (no store) | 637 | 637 | absent |
-| `20260815T-bundle-record-fixture-semantic` | 7 | 19 | 1,207 | 2,044 | 184 |
-| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 311 | 14,909 | 25,266 | 91 |
-| `20260815T-bundle-record-squad-semantic-cos060` | 250 | 311 | 15,712 | 27,566 | 894 |
+| bundle | documents | store chunks | record bytes | schema 4 | keyed by id | of which `candidates` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `20260815T-bundle-record-fixture-hash` | 7 | -- (no store) | 637 | 637 | 637 | absent |
+| `20260815T-bare-id-fixture-semantic` | 7 | 19 | 1,209 | 1,209 | 2,056 | 186 |
+| `20260815T-bundle-record-squad-semantic-cos080` | 250 | 311 | 11,909 | 14,909 | 25,276 | 91 |
+| `20260815T-bare-id-squad-cos060` | 250 | 311 | 12,714 | 15,714 | 27,578 | 896 |
 
-The largest bundle on this host records 15.7 KiB over 250 documents -- about 63 bytes per document
--- against a 46 KiB `summary.json`. What dominates it now is the id table itself: `documents` is
-9.5 KiB of the 15.7, against `chunks` 4.8 KiB and `exclusions` 0.4 KiB. That is the shape the bound
-predicts once the repetition is gone -- the record costs one id per document plus a handful of
-integers, and the ids are the larger half.
+The largest bundle on this host records 12.7 KiB over 250 documents -- about 51 bytes per document
+-- against a 43 KiB `summary.json`. What dominates it is still the id table, and now it is nothing
+but ids: `documents` is 6.5 KiB of the 12.7, against `chunks` 4.8 KiB and `exclusions` 0.4 KiB.
+That is the floor the bound predicts -- the record costs one id per document plus a handful of
+integers, plus a labelled entry for each document that actually has an ordering field to label.
 
 At the thresholds those runs used, no corpus here has a candidate list long enough for the cap to
 bite -- it takes a deliberately loosened cosine to reach it, which is what
@@ -316,7 +416,11 @@ refusal, and the knob the refusal names are therefore pinned in CI over fixtures
 `test_the_cap_is_a_run_parameter_recorded_beside_the_prefix_it_produced`), alongside a growth test
 that doubles a corpus past the cap and asserts the record less than doubles, and
 `test_the_interned_record_is_smaller_than_the_form_it_replaces`, which keeps the saving from ever
-going negative on a corpus of very short ids.
+going negative on a corpus of very short ids. The document table's own form is pinned the same way:
+`test_a_document_with_nothing_to_order_on_is_recorded_as_the_id_alone` and
+`test_dropping_the_empty_label_is_a_saving_on_undated_documents_and_free_on_dated_ones`, the second
+of which asserts BOTH halves of the decision -- smaller on an undated corpus, and byte-for-byte
+unchanged on a dated one.
 
 ## Where it lives
 

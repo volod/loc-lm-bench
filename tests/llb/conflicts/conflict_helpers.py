@@ -25,6 +25,8 @@ import pytest
 from llb.conflicts.bundle_record import (
     CANDIDATES_KEY,
     CHUNKS_KEY,
+    DOC_ID_KEY,
+    DOCUMENTS_KEY,
     EXCLUSIONS_KEY,
     SCHEMA_KEY,
     naming_of,
@@ -88,10 +90,15 @@ def dated_body(start: int, count: int = BODY_TOKENS) -> str:
 
 
 def dated_corpus(root: Path, documents: dict[str, tuple[str, str]]) -> Path:
-    """`{name: (effective_date, body)}` written as a corpus of dated Markdown documents."""
+    """`{name: (effective_date, body)}` written as a corpus of dated Markdown documents.
+
+    An EMPTY date writes the body with no front matter at all, which is the undated document every
+    corpus on this host is made of -- the case the record carries as a bare id.
+    """
     root.mkdir(parents=True, exist_ok=True)
     for name, (date, body) in documents.items():
-        (root / name).write_text(f"---\neffective_date: {date}\n---\n{body}\n", encoding="utf-8")
+        front = f"---\neffective_date: {date}\n---\n" if date else ""
+        (root / name).write_text(f"{front}{body}\n", encoding="utf-8")
     return root
 
 
@@ -237,17 +244,36 @@ def _candidates_by_id(candidates: dict, naming: DocumentNaming) -> dict:
     }
 
 
+def labelled_documents(record: dict, *, schema: int = 4) -> dict:
+    """The same bundle record with every document entry LABELLED, as schemas 1-4 wrote them.
+
+    Schema 5 records a document with no ordering field as the bare id; before it, that document was
+    a one-key object. Only the entries change, so this is the older `documents` form with the rest
+    of the record untouched.
+    """
+    return {
+        **record,
+        SCHEMA_KEY: schema,
+        DOCUMENTS_KEY: [
+            {DOC_ID_KEY: entry} if isinstance(entry, str) else entry
+            for entry in record[DOCUMENTS_KEY]
+        ],
+    }
+
+
 def keyed_by_id(record: dict, *, schema: int) -> dict:
     """The same bundle record in the PRE-INTERNING form every bundle on disk before schema 4 uses.
 
-    Schema 4 replaced each document id outside `documents` with its corpus position, and that is the
-    one change the record has ever made to a shape rather than adding to it. Every reading has to
-    replay identically through both forms, so the tests need the older one -- rewritten here from a
-    fresh record rather than committed as a frozen blob, so a new field cannot quietly go untested
-    on the older side.
+    Schema 4 replaced each document id outside `documents` with its corpus position, and schema 5
+    dropped the label from a document with nothing to label -- the only two changes the record has
+    ever made to a shape rather than adding to it. Every reading has to replay identically through
+    all three forms, so the tests need the older ones -- rewritten here from a fresh record rather
+    than committed as a frozen blob, so a new field cannot quietly go untested on the older side.
     """
     naming = naming_of(record)
-    legacy = {key: value for key, value in record.items() if key != EXTRA_IDS_KEY}
+    legacy = {
+        key: value for key, value in labelled_documents(record).items() if key != EXTRA_IDS_KEY
+    }
     legacy[SCHEMA_KEY] = schema
     for key in (CHUNKS_KEY, EXCLUSIONS_KEY):
         if key in legacy:

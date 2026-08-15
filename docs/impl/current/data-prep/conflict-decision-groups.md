@@ -627,14 +627,17 @@ share of that record.
 
 | key | what it carries | why it is recorded |
 | --- | --- | --- |
-| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- and the id alone where it has neither | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
 | `chunks` | `stored` / `comparable` / `copies` per document (`DocumentChunks.payload`) | the store's own answer, which a rebuild changes |
 
 `documents` is also the record's id table: from `schema_version` 4 `chunks` keys on a document's
 POSITION in it rather than on its id, and so does every other map in the record
-([the id table](conflict-bundle-record.md#the-id-table-every-document-named-once)). Both forms
-resolve to the same document ids and every reading replays identically through either, so the
-figures below -- measured before the interning -- are an upper bound on what the record costs today.
+([the id table](conflict-bundle-record.md#the-id-table-every-document-named-once)); from
+`schema_version` 5 a document with no ordering field to label is recorded as that id alone
+([the label](conflict-bundle-record.md#the-label-a-document-with-nothing-to-label-was-carrying)).
+All three forms resolve to the same document ids and every reading replays identically through each,
+so the figures below -- measured before either change -- are an upper bound on what the record costs
+today.
 
 `chunks` is ABSENT below the semantic tier, never empty: that absence is what the `effort` reading
 is read from, and an empty accounting says the opposite (a store that held nothing) -- a run whose

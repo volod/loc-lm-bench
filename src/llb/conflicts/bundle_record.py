@@ -7,8 +7,8 @@ today's store gives -- and they look identical from the outside. So the run reco
 readings were read FROM, beside the coverage they explain:
 
 - `documents`: every corpus document in corpus order, with the `effective_date` / `version` it was
-  audited under. Corpus order is data here, not presentation -- it is what picks between two pairs
-  lost at the same stage.
+  audited under -- and the id alone where it has neither. Corpus order is data here, not
+  presentation: it is what picks between two pairs lost at the same stage.
 - `chunks`: what the store held per document, what the tier compared per document, and the copies
   the hash tier settled (`document_chunks.py`).
 - `exclusions`: the exclusion reason per document, plus the floor each one would return at
@@ -59,7 +59,14 @@ from llb.core.contracts.common import JsonObject
 # Nothing is lost or gained by the change -- both forms resolve to the same document ids and every
 # reading replays identically through either -- so the version is the only thing that tells them
 # apart, and the reader keeps both.
-STAGE_INPUTS_SCHEMA_VERSION = 4
+#
+# 5 drops the LABEL from a document that has nothing to label: an entry with no ordering field at
+# all is the id itself instead of a one-key object. The label is kept wherever there is a value
+# under it, so the only entry that changes shape is the one whose object carried no information
+# beyond its id. Unlike 4, this form is self-describing -- a string is an id and an object is a
+# labelled entry -- so the version marks the change for a consumer rather than being what tells the
+# reader which form it holds.
+STAGE_INPUTS_SCHEMA_VERSION = 5
 INTERNED_IDS_SCHEMA_VERSION = 4
 SCHEMA_KEY = "schema_version"
 DOCUMENTS_KEY = "documents"
@@ -91,18 +98,44 @@ class RunInputs:
     candidates: CandidateRecord | None = None
 
 
-def _document_entry(doc_id: str, governance: JsonObject) -> JsonObject:
+def _document_entry(doc_id: str, governance: JsonObject) -> str | JsonObject:
     """One document as the record carries it: its id, plus the ordering fields it actually has.
 
     The values are recorded RAW, exactly as `compare_editions` received them, so a replay orders
     the pair the same way the run did -- including the values it could not order.
+
+    A document with NO ordering field is the id itself rather than a one-key object. Nothing is
+    lost: the object it replaces carried a label and no value under it, and the bare id says the
+    thing a reader wants said -- this document has nothing to order on, which is why its pairs are
+    unorderable. The label stays wherever there is a value to label, so the field names are never
+    positional and a later ordering field is still an additive change.
     """
-    entry: JsonObject = {DOC_ID_KEY: doc_id}
-    for name in ORDERING_FIELDS:
-        value = governance.get(name)
-        if isinstance(value, str) and value:
-            entry[name] = value
-    return entry
+    fields: JsonObject = {
+        name: value
+        for name in ORDERING_FIELDS
+        if isinstance(value := governance.get(name), str) and value
+    }
+    return {DOC_ID_KEY: doc_id, **fields} if fields else doc_id
+
+
+def _entry_id(entry: object) -> str | None:
+    """The document an entry names at either form, or None when it names none.
+
+    None is not the empty id: an entry recording an empty `doc_id` is inside the contract and stays
+    a slot in the id table, while an entry that is neither an id nor a labelled object is not.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and DOC_ID_KEY in entry:
+        return str(entry[DOC_ID_KEY])
+    return None
+
+
+def _entry_governance(entry: object) -> JsonObject:
+    """The ordering fields an entry carries, which is none of them at the bare-id form."""
+    if not isinstance(entry, dict):
+        return {}
+    return {name: entry[name] for name in ORDERING_FIELDS if isinstance(entry.get(name), str)}
 
 
 def stage_attribution_inputs(
@@ -137,12 +170,9 @@ def documents_of(record: JsonObject) -> list[tuple[str, JsonObject]]:
     if not isinstance(entries, list):
         return []
     return [
-        (
-            str(entry[DOC_ID_KEY]),
-            {name: entry[name] for name in ORDERING_FIELDS if isinstance(entry.get(name), str)},
-        )
+        (doc_id, _entry_governance(entry))
         for entry in entries
-        if isinstance(entry, dict) and DOC_ID_KEY in entry
+        if (doc_id := _entry_id(entry)) is not None
     ]
 
 
@@ -156,10 +186,7 @@ def _id_table(record: JsonObject) -> list[str]:
     entries = record.get(DOCUMENTS_KEY)
     if not isinstance(entries, list):
         return []
-    return [
-        str(entry[DOC_ID_KEY]) if isinstance(entry, dict) and DOC_ID_KEY in entry else ""
-        for entry in entries
-    ]
+    return [_entry_id(entry) or "" for entry in entries]
 
 
 def naming_of(record: JsonObject) -> DocumentNaming:

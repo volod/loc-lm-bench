@@ -58,11 +58,13 @@ from llb.conflicts.report_stage_replay import budget_line, replay_report
 from llb.conflicts.bundle_record import (
     CANDIDATES_KEY,
     CHUNKS_KEY,
+    DOC_ID_KEY,
     DOCUMENTS_KEY,
     EXCLUSIONS_KEY,
     SCHEMA_KEY,
     STAGE_INPUTS_SCHEMA_VERSION,
     RunInputs,
+    documents_of,
     recorded_inputs,
     stage_attribution_inputs,
 )
@@ -79,6 +81,7 @@ from conflict_helpers import (
     dated_body,
     dated_corpus,
     keyed_by_id,
+    labelled_documents,
     store_over,
 )
 
@@ -101,6 +104,13 @@ RANKED = {
 }
 # Between the b/c pair's cosine and the a/c pair's, so the ranking has a tail the budget cuts.
 RANKED_COS = 0.89
+
+# The same ranking with one document carrying no ordering field, which is what every corpus on this
+# host looks like: the record holds a labelled entry and a bare id in the same table.
+RANKED_WITH_UNDATED = {**RANKED, "d-undated.md": ("", dated_body(0, 30))}
+
+# Nothing to order on anywhere -- the corpus the bare-id form is priced on.
+UNDATED = {name: ("", body) for name, (_, body) in RANKED.items()}
 
 
 def _audit(
@@ -422,18 +432,70 @@ def test_the_interned_record_is_smaller_than_the_form_it_replaces(tmp_path):
     assert interned < by_id, f"{by_id} -> {interned} bytes"
 
 
-def test_every_reading_replays_identically_through_both_forms(tmp_path):
-    """The migration gate: which form a bundle is in must be invisible to every reading."""
-    result = _audit(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
-    summary, rows = _bundle(result)
-    older = {**summary, STAGE_INPUTS_FIELD: keyed_by_id(summary[STAGE_INPUTS_FIELD], schema=3)}
+def test_every_reading_replays_identically_through_all_three_forms(tmp_path):
+    """The migration gate: which form a bundle is in must be invisible to every reading.
 
-    assert recorded_inputs(older[STAGE_INPUTS_FIELD]) == recorded_inputs(
-        summary[STAGE_INPUTS_FIELD]
-    )
-    assert replay_entry("older", "s.json", older, rows, budget=1) == replay_entry(
-        "older", "s.json", summary, rows, budget=1
-    )
+    The corpus is deliberately MIXED -- three dated documents and one with no ordering field at all
+    -- so the record carries a labelled entry and a bare id side by side, and the older forms are
+    the same record with the label put back (schema 4) and the positions unwound too (schema 3).
+    """
+    result = _audit(tmp_path / "corpus", RANKED_WITH_UNDATED, cos_threshold=RANKED_COS)
+    summary, rows = _bundle(result)
+    record = summary[STAGE_INPUTS_FIELD]
+    forms = {
+        4: labelled_documents(record),
+        3: keyed_by_id(record, schema=3),
+        1: keyed_by_id(record, schema=1),
+    }
+
+    assert {type(entry) for entry in record[DOCUMENTS_KEY]} == {str, dict}, "both entry forms"
+    for schema, older in forms.items():
+        bundle = {**summary, STAGE_INPUTS_FIELD: older}
+        assert documents_of(older) == documents_of(record), schema
+        assert recorded_inputs(older) == recorded_inputs(record), schema
+        assert replay_entry("b", "s.json", bundle, rows, budget=1) == replay_entry(
+            "b", "s.json", summary, rows, budget=1
+        ), schema
+
+
+def test_a_document_with_nothing_to_order_on_is_recorded_as_the_id_alone(tmp_path):
+    """The bare-id form, and the reason it loses nothing: it reads back as the same document.
+
+    The object it replaces held a label and no value under it, so what a reader gets from the entry
+    -- this document has no `effective_date` and no `version`, which is why its pairs cannot be
+    ordered -- is what the bare id says outright.
+    """
+    result = _audit(tmp_path / "corpus", UNDATED, cos_threshold=RANKED_COS)
+    summary, _ = _bundle(result)
+    record = summary[STAGE_INPUTS_FIELD]
+
+    assert record[DOCUMENTS_KEY] == sorted(UNDATED)
+    assert documents_of(record) == [(doc_id, {}) for doc_id in sorted(UNDATED)]
+    assert recorded_inputs(record) == recorded_inputs(labelled_documents(record))
+
+
+def test_dropping_the_empty_label_is_a_saving_on_undated_documents_and_free_on_dated_ones(tmp_path):
+    """Where the remaining per-document cost went, and where it deliberately did not.
+
+    A corpus with governance dates keeps every label and pays exactly what it paid before: the
+    change removes a label with nothing under it, never a label.
+    """
+
+    def bytes_of(name: str, documents: dict) -> tuple[int, int]:
+        record = _bundle(_audit(tmp_path / name, documents, cos_threshold=RANKED_COS))[0][
+            STAGE_INPUTS_FIELD
+        ][DOCUMENTS_KEY]
+        labelled = [{DOC_ID_KEY: entry} if isinstance(entry, str) else entry for entry in record]
+        return (
+            len(json.dumps(record, ensure_ascii=False)),
+            len(json.dumps(labelled, ensure_ascii=False)),
+        )
+
+    undated, undated_labelled = bytes_of("undated", UNDATED)
+    dated, dated_labelled = bytes_of("dated", RANKED)
+
+    assert undated < undated_labelled, f"{undated_labelled} -> {undated} bytes"
+    assert dated == dated_labelled, "a dated document keeps every label it had"
 
 
 def test_a_document_the_corpus_never_carried_is_interned_beside_the_table(tmp_path):

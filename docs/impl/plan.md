@@ -45,36 +45,35 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-bundle-record-documents-table-is-the-remaining-cost (optional)
+### conflict-bundle-record-id-table-is-now-the-whole-cost (optional)
 
-With every other key naming a corpus POSITION, the `documents` table is what is left: 9.5 KiB of the
-15.7 KiB record on the 250-document bundle, against 4.8 KiB for `chunks` and 0.4 KiB for
-`exclusions`
-([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
-About a quarter of the table is not id at all -- each entry is a JSON object, so `"doc_id"` and each
-ordering field name is repeated once per document, ~38 bytes per entry before the values. A
-positional row (`[doc_id, effective_date, version]`, or a column-wise table) removes that repetition
-and nothing else, and the same schema seam that carries the interning carries it. The reason to
-decide rather than just do it is READABILITY: the record is read by hand when a bundle disagrees
-with a run, and a row of unlabelled values is worse at that than a labelled object. Price both at a
-corpus size where it matters (tens of thousands of documents), and keep the labelled form unless the
-saving is worth what it costs a reader.
+The `documents` table is 6.5 KiB of the 12.7 KiB record on the 250-document bundle and is now
+nothing but ids, so every remaining lever is on the id STRING rather than on the shape around it
+([bundle record](current/data-prep/conflict-bundle-record.md#the-label-a-document-with-nothing-to-label-was-carrying)).
+The ids that dominate are corpus-relative paths sharing a long prefix (`squad/<hex>.txt` -- 250
+documents repeating `squad/` and `.txt` for 2.5 KiB of the 6.5), which a recorded prefix plus a stem
+per document removes without touching what a reader sees, since the reading side reassembles the
+full id before anything consumes it. Price a common-prefix/suffix fold against the measured bundle
+and against a corpus whose documents sit in many directories (where the fold buys nothing and must
+not cost anything), and keep the flat ids unless the fold pays on both. The trap to avoid is a fold
+whose reassembly is not exact: an id is the join key for `findings.jsonl` and for the store, so a
+lossy round-trip is worse than the bytes it saves.
 
 - Agent status: CLEAR
-- Dependencies: none. `_document_entry` and `documents_of` in `src/llb/conflicts/bundle_record.py`
-  are the two sides; `ORDERING_FIELDS` (`governance.py`) is the field set an unlabelled row would
-  have to pin an order for, and pinning it is what makes a later field addition a schema bump rather
-  than an additive one.
-- User-visible outcome: the bundle record's remaining per-document cost is either removed or kept
-  for a stated reason, instead of being the part nobody looked at after the ids were interned.
-- Scope boundary: in scope -- the projected saving at several corpus sizes, the readability cost,
-  and a keep-or-change verdict with the schema bump if it changes. Out of scope -- dropping an
-  ordering field, compressing `summary.json`, and changing what the readings answer.
+- Dependencies: none. `_document_entry` / `_entry_id` in `src/llb/conflicts/bundle_record.py` are
+  the two sides, and `DocumentInterner` (`document_index.py`) already owns the id table the fold
+  would apply to.
+- User-visible outcome: the record's dominant remaining cost is either removed or kept for a stated
+  reason, on the same footing as the label and the interning before it.
+- Scope boundary: in scope -- the measured saving on a path-shaped corpus and on a flat one, the
+  exact round-trip, and a keep-or-change verdict with the schema bump if it changes. Out of scope
+  -- compressing `summary.json` as a whole, hashing an id to a shorter one, and dropping the
+  `extra_document_ids` seam.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the saving is stated at the measured 250-document bundle and
-  projected at one an order of magnitude larger; if the form changes, every reading replays
-  identically through all three forms and a bundle at every earlier schema still reads.
+- Acceptance gates: `make ci` green; the saving is stated on a path-shaped corpus and on a corpus
+  where the prefix is not shared; if the form changes, every recorded id round-trips to the exact
+  string it was written from and every reading replays identically through all recorded forms.
 - Documentation target:
   [bundle record](current/data-prep/conflict-bundle-record.md#the-id-table-every-document-named-once).
 
