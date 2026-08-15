@@ -470,7 +470,7 @@ pair the corpus cannot order.
 | `effort` | the run read no store, so only whole documents were ever compared | raise `--effort` to `semantic` or `claim` |
 | `duplicate_collapse` | a side has no chunk in the store because the hash tier proved it a copy of one that does | none -- read the pair through the copy the store kept |
 | `chunking` | a side has no chunk in the store, and no copy of it does either | rebuild the store over this corpus, or re-chunk it |
-| `claim_token_floor` | a side's chunks are in the store and every one is excluded from comparison | lower `--min-claim-tokens`, or re-chunk |
+| `claim_token_floor` | a side's chunks are in the store and every one is excluded from comparison | lower `--min-claim-tokens` to the value the record names, or re-chunk ([bundle record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it)) |
 | `candidates` | both sides are comparable and the pair still never reached a row | raise `--max-candidate-pairs`, or lower the cosine threshold |
 
 The stages are tried in that order, which is the order a pair meets them: a document the store
@@ -557,6 +557,12 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own
   re-chunk so the claim lands in a longer chunk.
 ```
 
+The claim-floor sentence above is the reading BEFORE the per-document exclusion record: the
+disjunction is what a run that kept one exclusion total could offer. A run under the current build
+names the reason per document and the floor value that returns the pair
+([bundle record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it));
+the stage and the pair are unchanged.
+
 **Do the two rules ever disagree? Not on a single bundle this host had.** Recomputed over every
 audit bundle on disk at the time -- each bundle's own rows from its `findings.jsonl`, the
 per-document chunk accounting rebuilt from the store that run read, no model and no
@@ -611,8 +617,13 @@ DIFFERENT question while looking like the same recompute, which is what made thi
 the granularity rules `make compare-conflict-granularity` re-scores from rows alone.
 
 So the run writes both of them down beside the coverage they explain, as
-`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/stage_replay.py` builds it;
-`AuditResult.stage_inputs` carries it):
+`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/bundle_record.py` builds it,
+`stage_replay.py` re-reads it;
+`AuditResult.stage_inputs` carries it). The stage was the FIRST reading to get that treatment and is
+no longer the only one: which other questions a finished bundle answers alone, which it refuses, and
+where the record's size bound draws the line are in
+[what a bundle can answer alone](conflict-bundle-record.md). The two keys below are the stage's own
+share of that record.
 
 | key | what it carries | why it is recorded |
 | --- | --- | --- |

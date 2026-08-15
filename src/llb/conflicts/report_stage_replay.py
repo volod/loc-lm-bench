@@ -12,6 +12,8 @@ from llb.core.contracts.common import JsonObject
 _NOTHING_LOST = "no orderable pair lost"
 _UNANSWERABLE = "not recomputable"
 _AGREEMENT = {True: "yes", False: "**no**", None: "--"}
+# A budget that MOVES the attribution is the notable outcome, so it is the emphasized one.
+_MOVES = {True: "**yes**", False: "no", None: "--"}
 
 
 def stage_phrase(lost: JsonObject | None) -> str:
@@ -31,6 +33,34 @@ def replay_line(entry: JsonObject) -> str:
     lost = entry["recomputed"]
     reading = lost_pair_sentence({LOST_PAIR_FIELD: lost}) if lost else f"{_NOTHING_LOST}."
     return f"[stage] {label}: {verdict} -- {reading}"
+
+
+def budget_line(entry: JsonObject) -> str:
+    """What the same bundle would have said at a smaller candidate budget, or why it cannot say."""
+    at_budget = entry["at_budget"]
+    label, budget = entry["label"], at_budget["budget"]
+    if not at_budget["recomputable"]:
+        return f"[stage] {label} at budget {budget}: {_UNANSWERABLE} -- {at_budget['reason']}"
+    lost = at_budget["recomputed"]
+    reading = lost_pair_sentence({LOST_PAIR_FIELD: lost}) if lost else f"{_NOTHING_LOST}."
+    moved = (
+        "MOVES the attribution" if at_budget["changes"] else "leaves the attribution where it is"
+    )
+    return (
+        f"[stage] {label} at budget {budget}: {pairs_phrase(at_budget)}, and {moved} -- {reading}"
+    )
+
+
+def pairs_phrase(at_budget: JsonObject) -> str:
+    """`5 of the run's 8 document pairs return` -- what the budget actually took away.
+
+    The count is the reading the NAMED pair cannot give: on a corpus whose corpus-first lost pair is
+    lost at every budget, the name is identical at every budget and the count is not.
+    """
+    returned, run = at_budget["document_pairs"], at_budget["run_document_pairs"]
+    if returned is None:
+        return "the returned pairs are not recomputable"
+    return f"{returned} of the run's {run} document pairs return"
 
 
 def replay_report(entries: list[JsonObject]) -> str:
@@ -60,9 +90,81 @@ def replay_report(entries: list[JsonObject]) -> str:
             f"| `{entry['label']}` | {stage_phrase(entry['recorded'])} | {recomputed} "
             f"| {_AGREEMENT[entry['agrees']]} |"
         )
+    lines += ["", *_readings_section(entries)]
+    if any("at_budget" in entry for entry in entries):
+        lines += ["", *_budget_section(entries)]
     if unanswerable:
         lines += ["", *_refusal_section(unanswerable)]
     return "\n".join(lines) + "\n"
+
+
+def _readings_section(entries: list[JsonObject]) -> list[str]:
+    """Which of the questions asked of a finished run this archive can answer, per question.
+
+    Counted across the archive rather than printed per bundle: the operator's question is "can I
+    ask this of the runs I have", and the two standing refusals are properties of the record's
+    boundary rather than of any one bundle, so they read the same on every row by construction.
+    """
+    questions: dict[str, tuple[str, int, set[str]]] = {}
+    for entry in entries:
+        for reading in entry.get("readings", []):
+            question, answers, reasons = questions.setdefault(
+                reading["name"], (reading["question"], 0, set())
+            )
+            if reading["available"]:
+                answers += 1
+            elif reading["detail"]:
+                reasons.add(str(reading["detail"]))
+            questions[reading["name"]] = (question, answers, reasons)
+    if not questions:
+        return []
+    lines = [
+        "## What a bundle can answer alone",
+        "",
+        "Per question, over the bundles read. A question answered by no bundle at ANY schema is a "
+        "boundary the record keeps deliberately -- its input is bounded by neither DOCUMENTS nor a "
+        "run parameter -- and the fix for it is to rebuild the store and re-run, not to re-read.",
+        "",
+        "| question | bundles that answer it | why not |",
+        "| --- | --- | --- |",
+    ]
+    for question, answers, reasons in questions.values():
+        why = "; ".join(sorted(reasons)) or "--"
+        lines.append(f"| {question} | {answers} of {len(entries)} | {why} |")
+    return lines
+
+
+def _budget_section(entries: list[JsonObject]) -> list[str]:
+    """The same archive re-read at a smaller candidate budget, which is the one knob a prefix covers."""
+    asked = [entry for entry in entries if "at_budget" in entry]
+    budget = asked[0]["at_budget"]["budget"]
+    moved = sum(1 for entry in asked if entry["at_budget"]["changes"])
+    refused = sum(1 for entry in asked if not entry["at_budget"]["recomputable"])
+    lines = [
+        f"## The same bundles at candidate budget {budget}",
+        "",
+        "The budget is a rank cutoff into the store's own cosine ordering, so a SMALLER one returns "
+        "a prefix of the same ranking and the recorded prefix answers it exactly. A budget past the "
+        "recorded prefix is refused rather than answered from a truncated list.",
+        "",
+        f"- attribution moves at this budget: {moved} of {len(asked)}",
+        f"- refused (no record, or past the recorded prefix): {refused} of {len(asked)}",
+        "",
+        "| run | document pairs returned | at this budget | moves |",
+        "| --- | --- | --- | --- |",
+    ]
+    for entry in asked:
+        at_budget = entry["at_budget"]
+        reading = (
+            _UNANSWERABLE
+            if not at_budget["recomputable"]
+            else stage_phrase(at_budget["recomputed"])
+        )
+        lines.append(
+            f"| `{entry['label']}` | {pairs_phrase(at_budget)} | {reading} "
+            f"| {_MOVES[at_budget['changes']]} |"
+        )
+    return lines
 
 
 def _refusal_section(unanswerable: list[JsonObject]) -> list[str]:

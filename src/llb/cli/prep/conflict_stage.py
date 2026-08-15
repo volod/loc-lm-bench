@@ -26,6 +26,11 @@ def recompute_conflict_stage_cmd(
         "--run",
         help="audit run directory (or its summary.json); repeat to score a whole archive",
     ),
+    budget: Optional[int] = typer.Option(
+        None,
+        "--budget",
+        help="also re-read each bundle as if its candidate budget had been this rank cutoff",
+    ),
     out: Optional[Path] = typer.Option(
         None, help=f"report directory (default: $DATA_DIR/{STAGE_METHOD}/<run>/)"
     ),
@@ -33,11 +38,11 @@ def recompute_conflict_stage_cmd(
     """Re-read which stage each audited run lost an orderable document pair at."""
     import json
 
-    from llb.conflicts.report_stage_replay import replay_line, replay_report
+    from llb.conflicts.report_stage_replay import budget_line, replay_line, replay_report
     from llb.core.paths import resolve_data_dir
     from llb.core.store_generations import generation_timestamp
 
-    entries = [_entry(path) for path in run]
+    entries = [_entry(path, budget) for path in run]
     out_dir = out if out is not None else resolve_data_dir() / STAGE_METHOD / generation_timestamp()
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / STAGE_REPORT_FILE
@@ -46,10 +51,12 @@ def recompute_conflict_stage_cmd(
     data_path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
     for entry in entries:
         typer.echo(replay_line(entry))
+        if "at_budget" in entry:
+            typer.echo(budget_line(entry))
     typer.echo(f"[stage] report: {report_path}")
 
 
-def _entry(path: Path) -> JsonObject:
+def _entry(path: Path, budget: int | None = None) -> JsonObject:
     """One bundle re-read from the two files it wrote, labelled by its run directory."""
     import json
 
@@ -70,4 +77,5 @@ def _entry(path: Path) -> JsonObject:
         str(summary_path),
         json.loads(summary_path.read_text(encoding="utf-8")),
         rows,
+        budget=budget,
     )

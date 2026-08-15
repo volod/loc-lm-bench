@@ -45,38 +45,92 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-bundle-record-covers-the-readings-that-still-need-a-store (optional)
+### conflict-bundle-record-interns-the-document-ids (optional)
 
-The stage attribution is now recomputable from a bundle alone, and it is the only reading that is:
-the record it reads carries the corpus's ordering fields and the per-document chunk accounting, and
-nothing else a re-read might need
-([decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)).
-Every other question asked of a finished run -- what a different `--min-claim-tokens` would have
-excluded, what a different candidate budget would have returned, which chunk a lost pair would have
-matched on -- still reaches for the store that run read, and a store rebuilt since answers about
-itself. Decide which of those readings deserve the same treatment and what each one costs to
-record: the exclusion reasons per document are three more counters, a candidate-budget replay needs
-the ranked candidate list (bounded by the budget, so recordable), and a chunk-level replay needs
-ordinals and is where the record stops being small. Record what pays for itself, and state the
-boundary for what does not, so an operator knows which questions a bundle can answer alone.
+The bundle record is linear in DOCUMENTS as intended, and on a 250-document corpus it is still
+27.6 KiB of which 24 KiB is document ids repeated across four maps -- `documents`, `chunks.stored`,
+`chunks.comparable`, and the three `exclusions` maps each key on the full id
+([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
+A corpus of tens of thousands of documents carries that multiplier into every `summary.json`, and
+the ids are the one part of the record with no information in their repetition. Intern them: the
+`documents` list is already the corpus-order index, so every other map can key on its position and
+the record shrinks toward one id per document. The schema version is the seam and a reader must keep
+accepting the current form, since the point of the record is bundles written by older builds.
 
 - Agent status: CLEAR
-- Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/stage_replay.py` is the
-  record and its schema version is the migration seam; `select_content_chunks` in
-  `semantic_filter.py` already computes the exclusion counts, and `detect_semantic_pairs` holds the
-  ranked candidate list.
-- User-visible outcome: an operator knows, per question, whether a finished bundle can answer it or
-  whether the store has to be rebuilt first -- instead of finding out when the answer is wrong.
-- Scope boundary: in scope -- the per-reading cost/benefit, whichever inputs pay for themselves,
-  the schema bump, and the stated boundary. Out of scope -- recording chunk text, recording
-  anything unbounded by a run parameter, and changing any tier's behavior.
+- Dependencies: none. `stage_attribution_inputs` in `src/llb/conflicts/bundle_record.py` builds the
+  record; `DocumentChunks.payload` / `DocumentExclusions.payload` are the maps, and `documents_of`
+  is the order an index would be resolved against.
+- User-visible outcome: a bundle from a large corpus stays small enough that nobody is tempted to
+  strip the record from it.
+- Scope boundary: in scope -- the interning, the schema bump, the reader that accepts both forms,
+  and the measured before/after on the largest bundle. Out of scope -- dropping any recorded field,
+  compressing `summary.json`, and changing what the readings answer.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; each recorded reading replays to what the live run produced on
-  a bundle at every tier; the record's size stays linear in DOCUMENTS or in a run parameter, proved
-  on the largest committed bundle; a bundle at the older schema still reads.
+- Acceptance gates: `make ci` green; every reading replays identically through both forms; the
+  measured record on a 250-document bundle is smaller and the saving is stated; a bundle at either
+  older schema still reads.
 - Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle).
+  [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
+
+### conflict-candidate-record-cap-decided-on-evidence (optional)
+
+The ranked candidate record is capped at `DEFAULT_CANDIDATE_RECORD_PAIRS` (200 document pairs) and
+NO corpus on this host reaches it -- the densest measured run forms 38 candidate pairs over 250
+documents -- so `covered_to_rank`, the truncation, and the refusal past it are pinned only by a
+fixture ([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
+The constant is therefore a guess: nothing establishes whether 200 is generous or already too small
+for the budgets operators actually re-read at. Measure it -- on a corpus dense enough to saturate
+the list, record how deep a re-read is typically asked to go and what the cap costs in bytes at
+several values -- and either set the constant on that evidence or make it a run parameter that is
+recorded beside the prefix it produced.
+
+- Agent status: RUN NEEDED
+- Dependencies: none. `CandidateRecord.of` in `src/llb/conflicts/candidate_record.py` takes the cap
+  and already records `total_pairs` / `covered_to_rank`; the run's own `--max-candidate-pairs`
+  overrides the constant today.
+- User-visible outcome: a budget re-read reaches as deep as operators actually ask, and the byte
+  cost of that depth is a measured number rather than a round one.
+- Scope boundary: in scope -- one dense corpus, the depth/cost curve, and the constant-or-parameter
+  decision. Out of scope -- recording chunk-level pairs, removing the cap, and changing the refusal
+  behavior past it.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: one semantic-tier run per threshold on the CUDA host; CI covers the cap and the
+  refusal over fixtures.
+- Acceptance gates: `make ci` green; the report states the cap's byte cost at each measured value
+  and names the chosen one with its reason; a run at the chosen cap still refuses a budget past it.
+- Documentation target:
+  [bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned).
+
+### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
+
+The budget re-read reports how many DOCUMENT pairs a smaller candidate budget would have returned
+(5 of 8 on the fixture at budget 2), but the coverage reading the whole page is about counts
+ORDERABLE pairs -- so an operator cannot tell whether a cheaper budget costs supersession evidence
+or only pairs the corpus could never order anyway
+([bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned)).
+The named-pair reading does not close the gap either: on every measured bundle the named pair was
+identical at every budget, because the corpus-first lost pair is lost at all of them. Report the
+orderable count beside the total -- the record already carries each document's ordering fields, so
+`compare_editions` over the recorded documents is the whole computation -- and state what a budget
+costs in the units the reading is quoted in.
+
+- Agent status: CLEAR
+- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/stage_replay.py` is the set
+  and `documents_of` beside it carries the ordering fields; `compare_editions`
+  (`governance.py`) is the orderability test the coverage already uses.
+- User-visible outcome: an operator lowering the candidate budget learns whether it costs evidence
+  or only noise.
+- Scope boundary: in scope -- the orderable count at a budget, beside the run's own, and its line in
+  the report. Out of scope -- re-adjudicating rows, a per-stage census, and changing the named pair.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
+- Execution path: replay-side counting with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; at the run's own budget the orderable count equals the
+  bundle's recorded `orderable_pairs`; a fixture whose budget drops only unorderable pairs reports a
+  cost of zero orderable pairs while the total falls.
+- Documentation target:
+  [bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned).
 
 ### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
 

@@ -24,8 +24,8 @@ from llb.conflicts.constants import (
     TIER_SEMANTIC,
     tiers_up_to,
 )
+from llb.conflicts.bundle_record import RunInputs, stage_attribution_inputs
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
-from llb.conflicts.document_chunks import DocumentChunks
 from llb.conflicts.governance_coverage import governance_coverage
 from llb.conflicts.governance_stage import lost_pair_attribution
 from llb.conflicts.hash_tier import detect_hash_duplicates
@@ -33,7 +33,6 @@ from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
 from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
 from llb.conflicts.semantic_run import run_semantic_tiers
-from llb.conflicts.stage_replay import stage_attribution_inputs
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.core.contracts.common import JsonObject
@@ -135,16 +134,16 @@ def run_audit(
         result.tiers.append(lexical_stats)
         _LOG.info("[conflicts] tier=lexical findings=%d", len(lexical_findings))
 
-    # None below the semantic tier, and that is itself the attribution: a run that read no store
+    # Empty below the semantic tier, and that is itself the attribution: a run that read no store
     # lost its orderable pairs at the effort dial rather than at any knob inside retrieval.
-    chunks: DocumentChunks | None = None
+    inputs = RunInputs()
     if TIER_SEMANTIC in tiers:
         if store is None:
             raise SystemExit(
                 "[conflicts] the semantic tier needs a built store: pass --store or build one "
                 "with `make build-index`."
             )
-        chunks = run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+        inputs = run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
 
     # One exit, because the governance coverage is a property of the corpus AND of the rows every
     # tier returned: a delta of zero means one thing when a returned pair could have been ordered
@@ -155,10 +154,10 @@ def run_audit(
     result.governance_coverage = {
         **coverage,
         # Beside the counts, never inside them: the counts say a pair was lost, this says where.
-        **lost_pair_attribution(coverage, documents, rows, chunks),
+        **lost_pair_attribution(coverage, documents, rows, inputs.chunks, inputs.exclusions),
     }
     # And what that attribution was read from, so the bundle can answer the question again under a
     # changed rule once the store is gone. Written on every run, including the ones that lost
     # nothing: which pair a rule change would name is not knowable when the record is written.
-    result.stage_inputs = stage_attribution_inputs(documents, chunks)
+    result.stage_inputs = stage_attribution_inputs(documents, inputs)
     return result

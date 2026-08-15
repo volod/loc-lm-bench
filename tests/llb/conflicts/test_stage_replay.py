@@ -37,13 +37,17 @@ from llb.conflicts.governance_stage import (
 )
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report_stage_replay import replay_line, replay_report
-from llb.conflicts.stage_replay import (
+from llb.conflicts.bundle_record import (
+    CANDIDATES_KEY,
     CHUNKS_KEY,
-    DOC_ID_KEY,
     DOCUMENTS_KEY,
+    DOC_ID_KEY,
+    EXCLUSIONS_KEY,
     NO_RECORD_REASON,
     SCHEMA_KEY,
     STAGE_INPUTS_SCHEMA_VERSION,
+)
+from llb.conflicts.stage_replay import (
     recorded_attribution,
     replay_attribution,
     replay_entry,
@@ -183,7 +187,7 @@ def test_the_record_carries_counts_and_ordering_fields_only(tmp_path):
     summary, _ = _bundle(result)
     record = summary[STAGE_INPUTS_FIELD]
 
-    assert set(record) == {SCHEMA_KEY, DOCUMENTS_KEY, CHUNKS_KEY}
+    assert set(record) == {SCHEMA_KEY, DOCUMENTS_KEY, CHUNKS_KEY, EXCLUSIONS_KEY, CANDIDATES_KEY}
     assert set(record[CHUNKS_KEY]) == {"stored", "comparable", "copies"}
     assert all(
         isinstance(count, int)
