@@ -45,50 +45,108 @@ advance, and a negative result is a valid outcome that must be recorded rather t
 
 Add new agent-buildable work here per [Adding Future Tasks](#adding-future-tasks).
 
-### conflict-summary-store-fingerprint-map-is-most-of-the-file (optional)
+### conflict-summary-group-granularity-repeats-its-own-prose-in-every-bundle (optional)
 
-Four folds took the per-document record from 27.6 KiB to 6.6 on the 250-document bundle, and the
-consequence is that the record is no longer what `summary.json` costs: `tree` is **23,897 bytes of
-the 36,801** (65%), against the record's 6,600
-([bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs)).
-Almost all of it is one key -- `tree.doc_fingerprints`, 23,500 bytes of `{doc_id: sha256}` copied
-verbatim out of `store_meta.json` -- which repeats in full both things the record just learned not
-to: every document id (unfolded and un-interned, ~22 bytes each) and a 64-hex digest per document
-where the tree only ever compares them for equality. Decide what the bundle actually needs the map
-FOR -- if it is "did the store change since this run", one digest over the sorted pairs answers it
-in 64 bytes; if per-document staleness is the point, the ids can key on the record's own table and
-the digests can be truncated to a stated collision bound. Price both against the bundles on disk and
-state which question the bundle is answering, since that is what picks between them.
+With the store manifest gone from the `tree` block, the second-largest key in a 250-document
+`summary.json` is `group_granularity` at **2,537 of 13,409 bytes** (19%), and about a third of it is
+not data: `unit` (181 bytes) plus one `description` per grouping rule are BUILD constants -- the same
+sentences in every bundle every run ever wrote, explaining a rule whose prose already lives in
+[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+The rest is `rules.*.sizes` and `quoted_group_split`, which are linear in GROUPS and therefore in
+ROWS -- the one growth term in `summary.json` that the record's own size bound (linear in DOCUMENTS
+or bounded by a run parameter) does not cover, so a claim-tier run on a conflict-dense corpus grows
+it without limit. Price both halves against the bundles on disk: drop or version the prose (a rule
+name plus a schema version is what a consumer joins on), and decide whether `sizes` should stay a
+list or become the `size_counts` histogram it is already recorded beside.
 
 - Agent status: CLEAR
-- Dependencies: none. The map is written from `store_meta.json` (`doc_fingerprints`) into the audit
-  summary's `tree` block; `DocumentInterner` / `IdAffix` (`src/llb/conflicts/document_index.py`,
-  `document_affix.py`) are the id table it could key on, and `record_fold.py` is the gate every
-  other fold in the bundle is held to.
-- User-visible outcome: a finished bundle stops carrying a second copy of the store's manifest to
-  answer a question none of its readings ask per document.
-- Scope boundary: in scope -- what the map is read for, a keep-or-change verdict with the measured
-  saving, and the schema bump if it changes. Out of scope -- changing what the tree indexes,
-  removing the corpus fingerprint, and compressing `summary.json` as a stream.
+- Dependencies: none. `finding_granularity` and `quoted_group_split`
+  (`src/llb/conflicts/granularity.py`) build the block, `record_fold.py` is the gate every other
+  fold in the bundle is held to, and `schema_version` inside the block is the migration seam.
+- User-visible outcome: a bundle's size tracks its corpus and its run parameters, instead of the
+  number of rows the adjudicator happened to return.
+- Scope boundary: in scope -- the measured saving per half, a keep-or-change verdict, and the
+  schema bump if the form changes. Out of scope -- changing either grouping rule, the decision
+  range, and what the report renders from the block.
 - Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
 - Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the reading names the question the map answers and the
-  consumer that asks it; if the form changes, every bundle reading replays identically through the
-  old and new forms and a store that genuinely changed is still detected as changed.
+- Acceptance gates: `make ci` green; every bundle reading replays identically through the old and
+  new forms; a corpus whose row count grows tenfold grows the block less than tenfold, or the
+  reading states why a list is kept.
 - Documentation target:
   [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
 
+### conflict-bundle-records-the-store-it-read-but-not-where-it-was (optional)
+
+A bundle can now be PLACED against a store -- `recompute-conflict-stage --store <dir>` says whether
+the store on disk is the one that run read
+([bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy)) --
+but the operator has to supply the path, and a sweep can only be pointed at ONE store while its
+bundles were taken over many. The bundle records the store's identity and not its LOCATION, so
+"which of my stores is this bundle about" is unanswerable even when every candidate store is on the
+host. Record the store directory the run read (relative to `$DATA_DIR` where it sits under it, since
+an absolute path is host-specific and the repo forbids hardcoding one), and let the re-read resolve
+it -- falling back to the explicit flag, and saying plainly when the recorded location is gone
+rather than reporting a mismatch it did not test.
+
+- Agent status: CLEAR
+- Dependencies: none. `StoreView.index_dir` is the resolved path the audit already holds,
+  `store_identity.py` is where the identity is recorded and compared, and `resolve_data_dir` /
+  `resolve_store_dir` (`src/llb/core/`) are how a recorded location must be re-resolved.
+- User-visible outcome: an archive sweep tells an operator which of their stores each bundle's
+  readings are about, without being told the answer first.
+- Scope boundary: in scope -- the recorded location, its resolution on re-read, the explicit-flag
+  precedence, and the "recorded store is gone" reading. Out of scope -- recording anything else
+  about the store, searching the host for a matching store, and changing the identity digest.
+- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
+- Execution path: artifact change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; a bundle whose recorded store still exists is placed against it
+  with no flag; a bundle whose store has been deleted says so rather than reporting a mismatch; an
+  explicit `--store` still wins; no absolute host path reaches the artifact.
+- Documentation target:
+  [bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy).
+
+### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
+
+`tree_is_reusable` (`src/llb/conflicts/tree_refresh.py`) documents itself as the rule that stops a
+tree built under one encoder from being queried under another, and nothing in `src/` calls it: the
+only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
+`prepare_projected_index`'s `source_fingerprint`, which hashes the encoder, the dimension, the
+centering flag, the corpus fingerprint, the store manifest, and the whole chunk table into one
+value, so it is strictly stronger AND covers only the PROJECTED path -- the full-space path builds a
+fresh tree every run and reuses nothing. Two live functions describing one gate is how a later change
+gets made in the wrong place. Decide which it is: delete the unused one and say the fingerprint is
+the gate, or make it the cheap pre-check the full-space path is missing and give that path a
+persisted tree to reuse.
+
+- Agent status: CLEAR
+- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`tree_node.py`) are one side,
+  `_source_fingerprint` / `prepare_projected_index` (`src/llb/conflicts/projected_index.py`) the
+  other, and `_active_tree` (`semantic_run.py`) is the full-space path that persists nothing.
+- User-visible outcome: one documented rule for when a persisted tree may be reused, in the place
+  the reuse actually happens.
+- Scope boundary: in scope -- the verdict, the deletion or the wiring, and the test that follows it.
+  Out of scope -- changing the tree format, changing what the fingerprint covers, and adding
+  persistence to the full-space path unless the verdict picks that.
+- Execution path: source change with fixture tests; no GPU.
+- Acceptance gates: `make ci` green; every reuse decision in `src/` goes through exactly one
+  function; a tree built under a different encoder is still refused on both paths.
+- Documentation target: [conflict
+  detection](current/data-prep/conflict-detection.md).
+
 ### conflict-bundle-record-page-is-past-the-split-threshold (optional)
 
-[bundle record](current/data-prep/conflict-bundle-record.md) is ~625 lines and its headings describe
+[bundle record](current/data-prep/conflict-bundle-record.md) is ~740 lines and its headings describe
 two subjects: what SHAPE the record is written in (the id table, the label it dropped, the affix
-fold, the count default, and the size table that prices all four) and what the record ANSWERS (the
-verdict table, the exclusion floor, the candidate budget, the depth/cost curve). That is well past
-the ~500-line split rule in [AGENTS.md](../../AGENTS.md), and the shape subject is where every
-successive size change lands, so the page grows in one place and has now been pushed past the rule
-twice. The test side is already split along exactly this seam (`test_bundle_record.py` against
-`test_bundle_id_table.py`), so the heading seam is established rather than proposed -- move the
-shape subsections to a new topic page, add its row to the area page, and repoint the inbound links.
+fold, the count default, the store identity, and the size table that prices them) and what the
+record ANSWERS (the verdict table, the exclusion floor, the candidate budget, the depth/cost curve).
+That is well past the ~500-line split rule in [AGENTS.md](../../AGENTS.md), and the shape subject is
+where every successive size change lands, so the page grows in one place and has now been pushed
+past the rule three times. The test side is already split along exactly this seam
+(`test_bundle_record.py` against `test_bundle_id_table.py` and `test_store_identity.py`), so the
+heading seam is established rather than proposed --
+move the shape subsections to a new topic page, add its row to the area page, and repoint the
+inbound links.
 Anchors keep their fragments, so only paths change and `make lint-doc-links` proves the move.
 
 - Agent status: CLEAR

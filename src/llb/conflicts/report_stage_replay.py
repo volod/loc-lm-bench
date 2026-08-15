@@ -51,6 +51,12 @@ def budget_line(entry: JsonObject) -> str:
     )
 
 
+def store_line(entry: JsonObject) -> str:
+    """Whether the store `--store` names is the store this bundle's readings are about."""
+    identity = entry["store_identity"]
+    return f"[stage] {entry['label']}: {identity['detail']}"
+
+
 def pairs_phrase(at_budget: JsonObject) -> str:
     """`5 of the run's 8 document pairs return` -- what the budget actually took away.
 
@@ -91,6 +97,8 @@ def replay_report(entries: list[JsonObject]) -> str:
             f"| {_AGREEMENT[entry['agrees']]} |"
         )
     lines += ["", *_readings_section(entries)]
+    if any("store_identity" in entry for entry in entries):
+        lines += ["", *_store_section(entries)]
     if any("at_budget" in entry for entry in entries):
         lines += ["", *_budget_section(entries)]
     if unanswerable:
@@ -131,6 +139,36 @@ def _readings_section(entries: list[JsonObject]) -> list[str]:
     for question, answers, reasons in questions.values():
         why = "; ".join(sorted(reasons)) or "--"
         lines.append(f"| {question} | {answers} of {len(entries)} | {why} |")
+    return lines
+
+
+def _store_section(entries: list[JsonObject]) -> list[str]:
+    """Which of these bundles were taken over the store `--store` names, and which were not.
+
+    This is the one question the recorded store manifest is asked, and it is an equality test: a
+    bundle's readings describe the store its run held, so a bundle taken over a different store
+    answers correctly about something the operator is not looking at.
+    """
+    placed = [entry for entry in entries if "store_identity" in entry]
+    comparable = [entry for entry in placed if entry["store_identity"]["comparable"]]
+    same = [entry for entry in comparable if not entry["store_identity"]["changed"]]
+    lines = [
+        "## The store these bundles read",
+        "",
+        "Each run recorded a digest over the store manifest it read, so a bundle can be PLACED "
+        "against a store on disk without keeping a second copy of that manifest. The answer is an "
+        "equality test and nothing more: which documents changed is the store's own question, "
+        "asked of `store_meta.json` by `llb refresh-index`, not of a finished audit.",
+        "",
+        f"- taken over this store: {len(same)} of {len(placed)}",
+        f"- taken over a different store: {len(comparable) - len(same)} of {len(placed)}",
+        f"- not comparable (no store identity recorded): {len(placed) - len(comparable)} of "
+        f"{len(placed)}",
+        "",
+        "| run | this store |",
+        "| --- | --- |",
+    ]
+    lines += [f"| `{entry['label']}` | {entry['store_identity']['detail']} |" for entry in placed]
     return lines
 
 

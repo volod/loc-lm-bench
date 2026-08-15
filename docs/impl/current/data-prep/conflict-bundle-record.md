@@ -581,11 +581,16 @@ form keyed by id:
 | `20260815T-count-default-squad-cos060` | 250 | 311 | 6,600 | 10,276 | 12,714 | 15,714 | 27,578 | 896 |
 
 The largest bundle on this host now records 6.6 KiB over 250 documents -- about 26 bytes per
-document -- against a 37 KiB `summary.json`, from 27.6 KiB before any of the four folds. What it
+document -- against a 13.1 KiB `summary.json`, from 27.6 KiB before any of the four folds. What it
 costs is back to the id table and nothing else: `documents` is 4.0 KiB of the 6.6, against
 `candidates` 0.9 KiB, `chunks` 1.1 KiB, and `exclusions` 0.4 KiB. That is the floor the size bound
 predicts, reached from both ends -- one stem per document, one shared affix, one default per count
 map, and a handful of integers for the documents that differ from it.
+
+The record is now the LARGEST thing in `summary.json` (6,600 of 13,409 bytes) rather than a share of
+it. It was not, until the four folds finished: at that point the file's biggest key was the `tree`
+block, and almost all of that was a second copy of the store's own manifest, which is what
+[the store the bundle does not copy](#the-store-the-bundle-does-not-copy) removed.
 
 At the thresholds those runs used, no corpus here has a candidate list long enough for the cap to
 bite -- it takes a deliberately loosened cosine to reach it, which is what
@@ -607,6 +612,116 @@ scattered corpus and the too-small one),
 `test_the_fold_never_takes_more_of_an_id_than_the_id_has`, and
 `test_an_id_the_corpus_never_carried_is_recorded_whole_rather_than_folded`.
 
+## The store the bundle does not copy
+
+Once the four folds finished, the per-document record was no longer what `summary.json` cost. On the
+250-document bundle the `tree` block was **23,897 of the 36,801 bytes** (65%) against the record's
+6,600, and 23,500 of that was ONE key: `tree.doc_fingerprints`, the store's whole `{doc_id: sha256}`
+manifest copied verbatim out of `store_meta.json`. It repeated in full both things the record had
+just learned not to -- every document id, unfolded and un-interned, and a 64-hex digest per document
+that nothing compares for anything but equality.
+
+**What the map was read FOR is the question that picks the form, and the answer is: nothing, per
+document.** The per-document question -- WHICH documents changed -- has a consumer, and it is not a
+bundle:
+
+| who asks | of what | why not the bundle |
+| --- | --- | --- |
+| `llb refresh-index` / `refresh_store` (`src/llb/rag/refresh/diff.py`) | `store_meta.json`, the authoritative map | the store's own manifest is current; a bundle's copy is a snapshot from run time and can only be a worse answer to the same question |
+| the projection/tree reuse gate (`prepare_projected_index`) | `source_fingerprint`, which already hashes the map | it needs one equality test, and hashes the chunk table with it |
+| anything reading a finished bundle | -- | nothing read it at all: the copy was write-only in `summary.json` and in the persisted `tree_meta.json` sidecar alike |
+
+What a BUNDLE is asked is one question with a yes-or-no answer: **is the store on disk still the
+store this run read?** That is an equality test over the whole map, so it is answered by one digest
+over the sorted pairs -- 64 hex characters, independent of the corpus size. The pairs are sorted
+before hashing, so the digest is a property of the mapping rather than of the order a store happened
+to write it in: a rebuild that visits the corpus in a different order over identical content is the
+same store and reads as one.
+
+**Decision: record the identity, not the manifest.** `doc_fingerprints_digest` plus
+`doc_fingerprints_documents` replace `doc_fingerprints`
+(`identity_payload`, `src/llb/conflicts/store_identity.py`). The document count rides along because
+it is 3 bytes and it is what makes a changed-store sentence readable ("250 documents recorded, 251
+on disk now"); the verdict itself never rests on it, which is why an EDITED document under an
+unchanged count is still detected below. A store that records no fingerprints at all -- a store
+built before them, or a run below the semantic tier -- records no identity rather than the digest of
+an empty map: "identical to every other fingerprintless store" would be a claim where the absence is
+a silence.
+
+**What the other option costs.** Keying the map on the record's own document table and truncating
+each digest to a stated collision bound would preserve a per-document answer for roughly
+`len(table) + n * bound` bytes -- still linear in DOCUMENTS, still a second copy of a manifest that
+is authoritative elsewhere, and still answering a question no reader of a bundle asks. It is
+declined for the reason the positional document row was
+([the label section](#the-label-a-document-with-nothing-to-label-was-carrying)): the extra it buys
+is real only for a consumer that does not exist, and it charges every bundle a growth term for it.
+
+**Measured, on real bundles** (CUDA host, no adjudication call -- the encoder runs only to build the
+stores; compact `json.dumps` bytes, the unit the rest of this page quotes). Each run is the same
+audit as its `count-default` predecessor, re-taken on this build:
+
+| bundle | documents | `tree` | `summary.json` | record |
+| --- | --- | --- | --- | --- |
+| `20260815T-store-identity-squad-cos060` | 250 | 23,897 -> 505 (-97.9%) | 36,801 -> 13,409 (-63.6%) | 6,600 (0%) |
+| `20260815T-store-identity-squad-cos080` | 250 | 23,897 -> 505 (-97.9%) | 33,052 -> 9,660 (-70.8%) | 5,797 (0%) |
+| `20260815T-store-identity-fixture-semantic` | 7 | 1,037 -> 500 (-51.8%) | 13,193 -> 12,656 (-4.1%) | 1,179 (0%) |
+| `20260815T-store-identity-fixture-floor` | 7 | 1,037 -> 500 (-51.8%) | 13,122 -> 12,585 (-4.1%) | 1,106 (0%) |
+| `20260815T-store-identity-fixture-hash` | 7 | absent | 3,276 (0%) | 637 (0%) |
+
+The saving is the whole map minus 130 bytes, so it grows with the corpus exactly as the map did:
+94 bytes per document at the quickstart corpus's 22-character ids, which is 23.5 KB at 250 documents
+and would be 2.35 MB at 25,000. The hash-tier bundle is the control -- it built no tree, has no
+`tree` block, and is byte-for-byte unchanged. Every other key of every re-taken bundle is identical
+to its predecessor's apart from the wall-clock `seconds` each tier reports.
+
+**The form is self-describing, so no version moves.** `doc_fingerprints_digest` is present exactly
+when `doc_fingerprints` is not, and `StoreIdentity.of` reads either -- computing the digest from a
+recorded map when that is all a bundle has. So `TREE_VERSION` stays where it is (bumping it would
+force every persisted tree on the host to rebuild, for a change that touches no geometry) and
+`stage_attribution_inputs.schema_version` stays at 7, because the `tree` block is not part of that
+record.
+
+**The consumer that asks the question** is the stage re-read, pointed at a store:
+
+```bash
+make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." \
+  STAGE_STORE=<index-dir> STAGE_OUT=<report-dir>
+# [stage] <run>: the store is the one this run read (7 documents)
+# [stage] <run>: the store is NOT the one this run read: 250 documents recorded, 7 on disk now
+#   -- this bundle's readings are about the store it held, not this one
+```
+
+It reads `store_meta.json` and nothing else -- no chunks, no vector index, no encoder -- so an
+archive sweep can place every bundle it holds against one store for the cost of one small JSON file.
+`STAGE_STORE` is opt-in and the sweep without it is exactly what it always was, which is the point:
+the re-read's own answers still come from the bundle alone, and this is the one question that
+genuinely needs the store.
+
+**A store that genuinely changed is still detected as changed.** Measured on this host: the fixture
+corpus copied to `.data/store-identity-stores/edited-corpus/` with ONE document extended by one
+sentence, re-indexed at the same e5-base heading settings into
+`.data/store-identity-stores/edited/`, still holds 7 documents and 19 chunks -- and both fixture
+bundles are placed against it as `NOT the one this run read: 7 documents recorded, 7 on disk now`
+(`.data/corpus-conflict-stage/20260815T-store-identity-edited/`). A count comparison would have
+missed it; the digest does not.
+
+**Every reading replays identically through both forms.** The 24-bundle archive sweep re-taken on
+this build produces a `stage.json` and a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
+(`.data/corpus-conflict-stage/20260815T-store-identity-archive/` against
+`.data/corpus-conflict-stage/20260815T-count-default-archive/`), and each re-taken bundle replays to
+the same attribution, agreement verdict, and budget answer as its `count-default` predecessor
+(`.data/corpus-conflict-stage/20260815T-store-identity-pairs/`). The identity verdict itself is the
+same through either form on real data: pointed at the fixture store, the schema-7 bundle and its
+old-form predecessor both read as "the one this run read"
+(`.data/corpus-conflict-stage/20260815T-store-identity-placed/`). In CI,
+`test_a_bundle_at_either_form_returns_the_identical_verdict` pins that equality over both a matching
+and a changed store, `test_a_store_that_genuinely_changed_is_detected_as_changed` covers all three
+ways a manifest changes (a document edited, added, and removed),
+`test_the_digest_is_a_property_of_the_mapping_and_not_of_the_order_it_was_written_in` pins the
+sorting, and `test_the_identity_costs_the_same_whatever_the_corpus_size_is` asserts the recorded
+size is constant in the corpus where the map it replaces was linear
+(`tests/llb/conflicts/test_store_identity.py`).
+
 ## Where it lives
 
 | what | where |
@@ -616,9 +731,11 @@ scattered corpus and the too-small one),
 | the head and tail the table is folded on | `src/llb/conflicts/document_affix.py` (`IdAffix.over`, `pays_for_itself`, `stem`, `expand`) |
 | the rule every fold obeys | `src/llb/conflicts/record_fold.py` (`json_bytes`, `smaller_form`) |
 | the count default a map is folded on | `src/llb/conflicts/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
+| the store identity the `tree` block records | `src/llb/conflicts/store_identity.py` (`fingerprint_digest`, `identity_payload`, `StoreIdentity.of`, `compare_store`), written by `tree_meta` (`tree_refresh.py`) |
+| the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints`, meta only -- no chunks, no vectors) |
 | re-reading a bundle with it | `src/llb/conflicts/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/candidate_record.py` |
 | the per-question verdicts | `src/llb/conflicts/bundle_readings.py` |
 | rendering | `src/llb/conflicts/report_stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
-| tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_stage_replay.py` |
+| tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/test_stage_replay.py` |

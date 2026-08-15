@@ -136,12 +136,13 @@ compare-conflict-granularity: ## Recompute both decision-grouping rules (transit
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-conflict-granularity "$${args[@]}"
 
-recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_OUT=); reads summary.json + findings.jsonl only -- no model, no store, no corpus
+recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_STORE=, STAGE_OUT=); reads summary.json + findings.jsonl only -- no model, no corpus, and no store unless STAGE_STORE asks which bundles were taken over it
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(STAGE_RUNS)" || { echo "ERROR: set STAGE_RUNS=\"<audit-run-dir> ...\""; exit 1; }
 	@args=(); \
 	for dir in $(STAGE_RUNS); do args+=(--run "$$dir"); done; \
 	if [ -n "$(STAGE_BUDGET)" ]; then args+=(--budget "$(STAGE_BUDGET)"); fi; \
+	if [ -n "$(STAGE_STORE)" ]; then args+=(--store "$(STAGE_STORE)"); fi; \
 	if [ -n "$(STAGE_OUT)" ]; then args+=(--out "$(STAGE_OUT)"); fi; \
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
 	export DATA_DIR="$(DATA_DIR)"; \
