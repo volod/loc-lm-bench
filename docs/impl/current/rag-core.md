@@ -24,6 +24,7 @@ question you have.
 | Retrieve | [Hybrid retrieval](rag-core/hybrid-retrieval.md) | Dense + BM25 + RRF, the fusion-weight verdict re-read two ways, and what apostrophe-variant tokenization is worth |
 | Retrieve | [Graph-vector fusion](rag-core/graph-vector-fusion.md) | Span identity, candidate depth, and question-type routing across the fused lane |
 | Re-rank | [Reranking, context order, and query-side processing](rag-core/rerank-and-query.md) | Cross-encoder reranking, context ordering, Ukrainian query preparation, HyDE and decomposition |
+| Re-rank | [Reranker bake-off](rag-core/reranker-bakeoff.md) | Which cross-encoder to run, what it buys in first-hit rank, and what it costs in latency and VRAM beside the generator |
 | Generate | [Generation graph and scoring](rag-core/scoring.md) | The generation graph, the headline objective's verbosity confound, its decomposition and declared ranking policy, groundedness and citation metrics |
 | Measure | [Retrieval metrics](rag-core/retrieval-metrics.md) | Recall@k / MRR by source span, the paired lane verdict, the per-question-type slices, and the measurement floor |
 | Persist | [Backends, persistence, and execution](rag-core/persistence-and-execution.md) | Backend seam, the persisted retrieval record, executor, durability, and the RAG-config sweep grid |

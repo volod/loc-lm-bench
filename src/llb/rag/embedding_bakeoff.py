@@ -25,12 +25,12 @@ from collections.abc import Sequence
 from typing import Any, Callable
 
 from llb.core.contracts.rag import RetrievalPair
+from llb.rag.candidate_screen import SkippedCandidate
 from llb.rag.embedding_bakeoff_models import (
     BakeoffItem,
     BakeoffReport,
     BuiltStore,
     CandidateResult,
-    SkippedCandidate,
     StoreBuilder,
 )
 from llb.rag.embedding_families import resolve_convention
@@ -160,10 +160,10 @@ class _ScoredCandidates:
             release()
 
 
-def _paired_items(
+def paired_item_ledger(
     vectors: dict[str, MetricVectors], count: int, item_ids: Sequence[str] | None
 ) -> list[dict[str, object]]:
-    """The per-item ledger a paired reading is recomputable from."""
+    """The per-item ledger a paired reading is recomputable from (shared with the reranker lane)."""
     return [
         {
             "item_id": item_ids[index] if item_ids is not None else str(index),
@@ -233,7 +233,7 @@ def run_bakeoff(
         "corpus_root": corpus_root,
         "candidates": scored.rows,
         "best_recall": best_recall(scored.rows),
-        "paired_items": _paired_items(scored.vectors, len(items), item_ids),
+        "paired_items": paired_item_ledger(scored.vectors, len(items), item_ids),
     }
     if skipped:
         report["skipped"] = list(skipped)

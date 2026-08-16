@@ -250,6 +250,21 @@ EMBED_ENCODER_COMPARE_CPU ?=
 # Alibaba-NLP/gte-multilingual-base and jinaai/jina-embeddings-v3. Only the literal 1 enables it;
 # without it those roster rows are SKIPPED and the reason is recorded in the report.
 EMBED_ALLOW_REMOTE_CODE ?=
+# Reranker bake-off (compare-rerankers): the incumbent cross-encoder every candidate is paired
+# against, the roster (empty = the default UA candidate set), and the cost side of the choice.
+# RERANK_GENERATOR_VRAM_MB declares how much VRAM the generator holds while serving; without it the
+# footprints are still measured and the fit gate does not run. Only the literal 1 enables
+# RERANK_ALLOW_REMOTE_CODE, without which the jina / gte candidates are SKIPPED and recorded.
+RERANK_BASELINE ?= BAAI/bge-reranker-v2-m3
+RERANK_MODELS ?=
+RERANK_ADOPTION_BARS ?=
+RERANK_ALLOW_REMOTE_CODE ?=
+RERANK_BATCH_SIZE ?=
+RERANK_DTYPE ?=
+RERANK_GENERATOR_VRAM_MB ?=
+RERANK_RESAMPLES ?=
+RERANK_CONFIDENCE ?=
+COMPARE_RERANKERS_OUT ?=
 ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=

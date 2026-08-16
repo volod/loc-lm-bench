@@ -14,11 +14,18 @@ from llb.cli.app import app
 from llb.core import env
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.rag.embedding import remote_code_opt_in
-from llb.rag.embedding_bakeoff_models import SKIP_REMOTE_CODE, BuiltStore
+from llb.rag.candidate_screen import SKIP_REMOTE_CODE
+from llb.rag.embedding_bakeoff_models import BuiltStore
 
 from _embedding_bakeoff_uncertainty_helpers import BASELINE, _HitSetStore, _questions
 
 REMOTE_CODE_MODEL = "jinaai/jina-embeddings-v3"
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Keep the run dir the command creates inside the test's tmp path, not the operator's."""
+    monkeypatch.setenv(env.DATA_DIR, str(tmp_path / "data"))
 
 
 @pytest.fixture

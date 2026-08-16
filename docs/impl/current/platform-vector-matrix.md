@@ -405,3 +405,30 @@ sitting below it on the other. Peak VRAM across the seven scored candidates stay
 targets the transformers 4.x API and breaks on the pinned 5.12.1. Full tables, the checkpoint-dtype
 caveat on the throughput column, and the two failure diagnoses are in
 [RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16).
+
+## Reranker Bake-off
+
+`compare-rerankers` fixes the encoder, the chunking, and the candidate pool and varies the
+CROSS-ENCODER, ranking candidates on recall@k / MRR / first-hit rank plus the two columns a reranker
+is actually chosen on -- rerank latency per query and the VRAM it holds beside a resident generator.
+See [RAG core](rag-core/reranker-bakeoff.md) for the lane, the shared-pool design, the reranker-off
+row, the per-candidate process isolation, and the full tables.
+
+```bash
+make compare-rerankers GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus SPLIT= RAG_K=10 \
+  NOISE_FLOOR=1 RERANK_GENERATOR_VRAM_MB=<mb>   # declares the budget the fit gate reads
+make compare-rerankers GOLDSET=... RERANK_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
+make run-eval MODEL=<m> RERANKER=BAAI/bge-reranker-v2-m3        # apply a chosen reranker
+```
+
+Recommended reranker for the 16 GB host: `BAAI/bge-reranker-v2-m3`, the current default. The
+2026-08-16 bake-off (five candidates, both corpora, `e5-base` + `recursive@800/120`, pool 30, k=10,
+measured with a 12B UA generator holding 8,278 MiB) verdicts **RETAIN** on both: `Qwen3-Reranker-0.6B`
+ties it on recall and sits 0.017 MRR below at twice the latency, and `mxbai-rerank-base-v2` is below
+it on both bars with intervals that exclude zero on the 250-item fixture. What the reranker buys is
+first-hit RANK -- against no reranking, +0.094 MRR `[+0.063, +0.127]` but only +0.020 recall@10 --
+for ~530-600 ms per query and a ~4.5 GiB scoring peak, which fits beside the generator on this host.
+`jina-reranker-v2-base-multilingual` and `gte-multilingual-reranker-base` could not be scored at
+all: their remote code targets the transformers 4.x API and breaks on the pinned 5.12.1, the same
+packaging hole the encoder roster hit. Full tables and the two failure diagnoses are in
+[RAG core](rag-core/reranker-bakeoff.md#what-the-bake-off-measured-2026-08-16-cuda-host).

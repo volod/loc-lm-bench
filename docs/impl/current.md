@@ -38,7 +38,7 @@ closed each one and what would make it worth reopening.
 | --- | --- | --- |
 | [Overview](current/overview.md) | System shape, setup, repo layout, artifact roots | page |
 | [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 10 pages |
-| [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 13 pages |
+| [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 14 pages |
 | [GraphRAG](current/graphrag-backend.md) | Knowledge-graph retrieval and graph-vs-vector evidence | 4 pages |
 | [Extended workflows](current/extended-workflows.md) | Agentic harnesses, agent context policies, prompt systems, fine-tuning | 14 pages |
 | [Evaluation rigor](current/rigor-board-judge.md) | Model resolution, sweeps, tuning, joint search, board, judge, miss analysis | 5 pages |
@@ -67,6 +67,7 @@ Questions that land deeper than an area page. Everything else is one hop from th
 | Cold/warm encoder throughput on CUDA hosts (load vs compile vs steady encode) | [Embedders](current/rag-core/embedders.md#blackwell-encoder-throughput-decomposition) |
 | Cheap CUDA embedder (e5-small) when quality is flat on a 12 GiB host | [Embedders](current/rag-core/embedders.md#blackwell-sub-base-encoder-roster-e5-small) |
 | Which embedder to adopt, and whether a rank-quality gain is worth it | [First-hit-rank adoption bar](current/rag-core/first-hit-rank-adoption.md) |
+| Which cross-encoder reranker to run, and what it costs in latency and VRAM | [Reranker bake-off](current/rag-core/reranker-bakeoff.md) |
 
 ### Reading a verdict
 

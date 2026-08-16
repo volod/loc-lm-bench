@@ -76,43 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### reranker-bake-off
-
-The cross-encoder is pinned to one model (`BAAI/bge-reranker-v2-m3`, `DEFAULT_RERANKER` in
-`src/llb/rag/rerank.py`) and has never been compared with anything, while the adoption evidence
-shows the reranked cell is where a retrieval change actually reaches the answer for some models
-([RAG core](current/rag-core/first-hit-rank-adoption.md#the-scoped-first-hit-rank-adoption-bar)). A
-reranker is also the cheapest place to buy first-hit rank on a 16 GiB host, and the multilingual
-cross-encoder field has moved. Bake off the current candidates that cover Ukrainian --
-`BAAI/bge-reranker-v2-m3` (incumbent), `jinaai/jina-reranker-v2-base-multilingual`,
-`Alibaba-NLP/gte-multilingual-reranker-base`, `mixedbread-ai/mxbai-rerank-base-v2`,
-`Qwen/Qwen3-Reranker-0.6B` -- on the accepted ledger at a fixed encoder and chunking, reporting
-recall@k / MRR / first-hit rank with the standard paired verdict plus the cost columns a reranker is
-actually chosen on (rerank latency per query, VRAM while the generator is resident).
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the paired lane and verdict machinery documented in
-  [RAG core](current/rag-core/retrieval-metrics.md#paired-lane-uncertainty-and-verdict); this task feeds
-  `embedder-decision-on-a-resolvable-item-set`. Reuse `CrossEncoderReranker` and the `+rerank` row
-  seam in `src/llb/rag/compare.py`.
-- User-visible outcome: the shipped reranker is a measured choice with a cost, not a default nobody
-  has questioned, and the operator learns whether the rank gain is worth the second model in VRAM.
-- Scope boundary: in scope -- the candidate lane, the paired verdict, the latency/VRAM columns, and a
-  keep-or-swap recommendation. Out of scope -- reranker fine-tuning, hosted rerankers, listwise/LLM
-  rerankers, and changing `rerank_candidates` defaults before the bake-off supports it.
-- Data and artifact paths: `$DATA_DIR/compare-rerankers/<run>/{report.md,report.json}`.
-- Execution path: `make compare-rerankers GOLDSET=<accepted> CORPUS=<dir> NOISE_FLOOR=1` on the CUDA
-  host; a candidate that needs `trust_remote_code` is refused unless explicitly opted into, and a
-  candidate that does not fit beside the generator is reported as skipped with its measured
-  footprint rather than silently omitted. CI covers scoring, ranking, and the verdict over a fake
-  cross-encoder -- no download, no GPU.
-- Acceptance gates: `make ci` green; every candidate is scored on the identical item set at the same
-  seed with its own documented query/passage input format; each row carries a paired delta against
-  the incumbent plus rerank latency; the report states keep or swap and names the cost of the swap.
-- Documentation target: [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order)
-  and the recommendation line in [platform matrix](current/platform-vector-matrix.md).
-
 #### multihop-both-hops-ceiling
 
 Every fused row measured so far -- every weight, both depths, both identity policies -- retrieves
@@ -246,6 +209,16 @@ scoring pass, or a non-remote-code load path per candidate, whichever the two mo
 -- and gate whichever route on a card-parity check, because gte is the case that proves a candidate
 can RUN and still be wrong.
 
+The RERANKER roster has the same hole from the same cause, so the load route must cover both
+rosters rather than only the encoders: `jinaai/jina-reranker-v2-base-multilingual` raises
+`ImportError: cannot import name 'create_position_ids_from_input_ids'` against
+`transformers.models.xlm_roberta`, and `Alibaba-NLP/gte-multilingual-reranker-base` gathers its rope
+tables with an uninitialized `position_ids` buffer -- an out-of-bounds index that reports
+`IndexError` on CPU and a device-side assert on CUDA
+([RAG core](current/rag-core/reranker-bakeoff.md#what-this-establishes)). Two of the five reranker
+candidates are therefore unranked for a packaging reason, and the same `[encoders-legacy]`-style
+pinned pass (or non-remote-code load path) is what would score them.
+
 Fold in the second confound the roster surfaced: the published checkpoints differ in PRECISION
 (`multilingual-e5-large-instruct` ships float16, `Qwen3-Embedding-0.6B` bfloat16, every incumbent
 float32), so warm chunks/s is not comparable across rows as a model property -- the instruct
@@ -256,27 +229,32 @@ read as a recommendation.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse the convention registry and the `trust_remote_code` opt-in in
-  `src/llb/rag/embedding_families.py` / `src/llb/rag/embedding.py`, and the roster screening in
-  `src/llb/rag/embedding_bakeoff_roster.py` (a candidate that cannot load already has a skip row to
-  land in).
-- User-visible outcome: the Ukrainian encoder ranking covers every candidate an operator would
-  shortlist rather than only the ones whose publisher tracked the pinned transformers, and its
-  throughput column compares encoders at a stated precision instead of at whatever each publisher
-  uploaded.
-- Scope boundary: in scope -- the compatibility route for the two named encoders, a card-parity
-  check before a candidate is scored, the declared dtype knob, and a re-run of the affected rows.
-  Out of scope -- unpinning or upgrading the repo-wide transformers version for the SHIPPED path,
-  vendoring or patching third-party modelling code into `src/`, and any change to the verdict bars.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
-- Execution path: `make compare-embeddings EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` on the CUDA host
-  once the load route exists; CI covers the card-parity check and the dtype resolution over fake
-  encoders -- no download, no GPU.
-- Acceptance gates: `make ci` green; each of the two encoders is either scored with its card
-  reference similarities reproduced, or recorded as unscorable with the diagnosis and the pin that
-  would be required; the previously scored rows reproduce their recorded numbers; every row states
-  the dtype it was measured at.
-- Documentation target: the embedder sections of [RAG core](current/rag-core/embedders.md) and
+- Dependencies: none. Reuse the convention registries and the `trust_remote_code` opt-in in
+  `src/llb/rag/embedding_families.py` / `src/llb/rag/embedding.py` and
+  `src/llb/rag/rerank_bakeoff/families.py`, plus the shared roster screening in
+  `src/llb/rag/candidate_screen.py` (a candidate that cannot load already has a skip row to land
+  in, and the reranker lane already isolates each candidate in its own process).
+- User-visible outcome: the Ukrainian encoder and reranker rankings cover every candidate an
+  operator would shortlist rather than only the ones whose publisher tracked the pinned
+  transformers, and the throughput column compares encoders at a stated precision instead of at
+  whatever each publisher uploaded.
+- Scope boundary: in scope -- the compatibility route for the two named encoders and the two named
+  rerankers, a card-parity check before a candidate is scored, the declared dtype knob, and a re-run
+  of the affected rows. Out of scope -- unpinning or upgrading the repo-wide transformers version
+  for the SHIPPED path, vendoring or patching third-party modelling code into `src/`, and any change
+  to the verdict bars.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` and
+  `$DATA_DIR/compare-rerankers/<run>/` layouts.
+- Execution path: `make compare-embeddings EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` and `make
+  compare-rerankers RERANK_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` on the CUDA host once the load route
+  exists; CI covers the card-parity check and the dtype resolution over fake encoders -- no
+  download, no GPU.
+- Acceptance gates: `make ci` green; each of the two encoders and each of the two rerankers is
+  either scored with its card reference behavior reproduced, or recorded as unscorable with the
+  diagnosis and the pin that would be required; the previously scored rows reproduce their recorded
+  numbers; every encoder row states the dtype it was measured at.
+- Documentation target: the embedder sections of [RAG core](current/rag-core/embedders.md), the
+  [reranker bake-off](current/rag-core/reranker-bakeoff.md), and
   [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
 
 #### chunker-bake-off-under-the-size-cap (optional)

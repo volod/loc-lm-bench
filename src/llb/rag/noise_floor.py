@@ -50,6 +50,9 @@ DEFAULT_SEED = 13
 
 _SCORE_KEY = "retrieval_score"
 
+# One lane's candidate pools: (pool in the lane's own rank order, gold spans) per scored item.
+LanePools = list[tuple[list[ChunkRecord], list[SourceSpanRecord]]]
+
 
 def measure_noise_floor(
     stores: dict[str, Retriever],
@@ -65,24 +68,71 @@ def measure_noise_floor(
     the two agree by construction -- and at `CANDIDATE_DEPTH_FACTOR * k` for the candidate pool
     every replicate re-ranks under fresh noise before keeping its own top k.
     """
+    candidates = max(k, CANDIDATE_DEPTH_FACTOR * k)
+    pools = {
+        label: [
+            (_candidate_pool(store, question, k, candidates), spans) for question, spans in items
+        ]
+        for label, store in stores.items()
+    }
+    bases = {
+        label: evaluate_retrieval(
+            [(store.retrieve(question, k), spans) for question, spans in items], k
+        )
+        for label, store in stores.items()
+        if _pools_are_scored(pools[label])  # an unscored lane is skipped before it costs a pass
+    }
+    return measure_pool_floor(
+        pools,
+        bases,
+        k,
+        candidates=candidates,
+        replicates=replicates,
+        jitter=jitter,
+        seed=seed,
+    )
+
+
+def measure_pool_floor(
+    pools: dict[str, LanePools],
+    bases: dict[str, RetrievalMetrics],
+    k: int,
+    *,
+    candidates: int,
+    replicates: int = DEFAULT_REPLICATES,
+    jitter: float = DEFAULT_SCORE_JITTER,
+    seed: int = DEFAULT_SEED,
+    jitter_by_lane: dict[str, float] | None = None,
+) -> NoiseFloorReport:
+    """The floor over ALREADY-RETRIEVED lane pools, so a lane can supply its own ranking scores.
+
+    `measure_noise_floor` builds the pools from stores; a lane whose published ranking is NOT the
+    store's own score -- a reranked lane, whose order comes from a cross-encoder -- builds them
+    itself, writes the score its row was ranked on into `retrieval_score`, and reads its floor here.
+
+    `jitter_by_lane` overrides the shared amplitude per lane, which is what keeps lanes on different
+    score scales comparable: an absolute jitter is a tighter floor for a model whose scores simply
+    span a wider range, and that is a property of the head, not of the ranking.
+    """
     if replicates < 2:
         raise ValueError("noise-floor needs at least 2 replicates to have a spread")
     if jitter <= 0:
         raise ValueError("noise-floor jitter must be > 0")
-    candidates = max(k, CANDIDATE_DEPTH_FACTOR * k)
     lanes: dict[str, LaneFloor] = {}
     unscored: list[str] = []
-    for label, store in stores.items():
-        pools = [
-            (_candidate_pool(store, question, k, candidates), spans) for question, spans in items
-        ]
-        if not _pools_are_scored(pools):
+    per_lane = jitter_by_lane or {}
+    for label, lane_pools in pools.items():
+        if not _pools_are_scored(lane_pools):
             unscored.append(label)
             continue
-        base = evaluate_retrieval(
-            [(store.retrieve(question, k), spans) for question, spans in items], k
+        lanes[label] = _lane_floor(
+            lane_pools,
+            bases[label],
+            k,
+            replicates,
+            per_lane.get(label, jitter),
+            _lane_seed(label, seed),
         )
-        lanes[label] = _lane_floor(pools, base, k, replicates, jitter, _lane_seed(label, seed))
     report: NoiseFloorReport = {
         "replicates": replicates,
         "jitter": jitter,
@@ -93,6 +143,8 @@ def measure_noise_floor(
         "floor_recall_at_k": _worst(lanes, "recall_at_k"),
         "floor_mrr": _worst(lanes, "mrr"),
     }
+    if per_lane:
+        report["jitter_by_lane"] = {label: per_lane[label] for label in sorted(per_lane)}
     margin = floor_margin(lanes, report["floor_recall_at_k"])
     if margin is not None:
         report["margin"] = margin
@@ -150,7 +202,7 @@ def floor_margin(lanes: dict[str, LaneFloor], floor: float) -> FloorMargin | Non
     }
 
 
-def _pools_are_scored(pools: list[tuple[list[ChunkRecord], list[SourceSpanRecord]]]) -> bool:
+def _pools_are_scored(pools: LanePools) -> bool:
     """True when at least one retrieved candidate carries a score to perturb."""
     return any(_SCORE_KEY in chunk for pool, _ in pools for chunk in pool)
 
@@ -161,7 +213,7 @@ def _lane_seed(label: str, seed: int) -> int:
 
 
 def _lane_floor(
-    pools: list[tuple[list[ChunkRecord], list[SourceSpanRecord]]],
+    pools: LanePools,
     base: RetrievalMetrics,
     k: int,
     replicates: int,

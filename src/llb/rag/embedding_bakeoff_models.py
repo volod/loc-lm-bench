@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
+from llb.rag.candidate_screen import SkippedCandidate
 from llb.rag.encoder_throughput import HostThroughputSummary, ThroughputProfile
 from llb.rag.embedding_bakeoff_uncertainty import (
     BakeoffVerdict,
@@ -51,9 +52,6 @@ DEFAULT_LOCAL_CANDIDATES = [
 
 BYTES_PER_MB = 1024 * 1024
 
-# Why a roster entry produced no row. `SKIP_REMOTE_CODE` is a policy decline, not a failure.
-SKIP_REMOTE_CODE = "trust_remote_code_not_opted_in"
-
 
 def slugify_model(model: str) -> str:
     """Filesystem-safe slug for a model id, for the per-candidate store directory."""
@@ -80,15 +78,6 @@ class BuiltStore:
 
 # embedding_model -> BuiltStore. The CLI binds the heavy real builder; tests inject a fake.
 StoreBuilder = Callable[[str], BuiltStore]
-
-
-class SkippedCandidate(TypedDict):
-    """A roster entry that produced no row, and why -- so the report shrinks visibly, not quietly."""
-
-    model: str
-    family: str
-    reason: str
-    detail: str
 
 
 class CandidateResult(TypedDict):

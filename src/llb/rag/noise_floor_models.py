@@ -49,6 +49,10 @@ class NoiseFloorReport(TypedDict):
     seed: int
     lanes: dict[str, LaneFloor]
     unscored: list[str]  # lanes whose candidates expose no score, so nothing can be perturbed
+    # Per-lane jitter amplitude, present only when a lane overrode the shared one -- lanes whose
+    # ranking scores live on different scales (cross-encoder heads) are read at scale-matched
+    # amplitudes, and the report has to say which.
+    jitter_by_lane: NotRequired[dict[str, float]]
     floor_recall_at_k: float
     floor_mrr: float
     margin: NotRequired[FloorMargin]  # absent when no lane was measured

@@ -121,6 +121,29 @@ compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSE
 			$(if $(filter 1,$(EMBED_ENCODER_COMPARE_CPU)),--encoder-compare-cpu,),) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
 
+COMPARE_RERANKERS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_RERANKERS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-rerankers: ## Rank cross-encoder rerankers on one pool with paired evidence + cost (CONFIG= or GOLDSET=; CORPUS= RERANK_MODELS= RERANK_BASELINE= RERANK_CANDIDATES= RERANK_ADOPTION_BARS=recall_at_k[,mrr] RERANK_ALLOW_REMOTE_CODE=1 RERANK_GENERATOR_VRAM_MB= RERANK_BATCH_SIZE= RERANK_DTYPE= NOISE_FLOOR=1; needs ".[rag]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-rerankers $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(COMPARE_RERANKERS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_RERANKERS_SPLIT_ARG) \
+		$(if $(CORPUS),--corpus-root "$(CORPUS)",) \
+		$(if $(RERANK_MODELS),--models "$(RERANK_MODELS)",) \
+		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(RERANK_BASELINE),--baseline "$(RERANK_BASELINE)",) \
+		$(if $(RERANK_ADOPTION_BARS),--adoption-bars "$(RERANK_ADOPTION_BARS)",) \
+		$(if $(filter 1,$(RERANK_ALLOW_REMOTE_CODE)),--allow-remote-code,) \
+		$(if $(RERANK_GENERATOR_VRAM_MB),--generator-vram-mb $(RERANK_GENERATOR_VRAM_MB),) \
+		$(if $(RERANK_BATCH_SIZE),--batch-size $(RERANK_BATCH_SIZE),) \
+		$(if $(RERANK_DTYPE),--dtype "$(RERANK_DTYPE)",) \
+		$(if $(RERANK_RESAMPLES),--resamples $(RERANK_RESAMPLES),) \
+		$(if $(RERANK_CONFIDENCE),--confidence $(RERANK_CONFIDENCE),) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_RERANKERS_OUT),--out "$(COMPARE_RERANKERS_OUT)",)
+
 compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(EMBED_BASELINE_DATA_DIR)" || { echo "ERROR: set EMBED_BASELINE_DATA_DIR=<root whose llb/rag store was built with EMBED_BASELINE>"; exit 1; }

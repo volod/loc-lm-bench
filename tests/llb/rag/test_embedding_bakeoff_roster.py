@@ -2,7 +2,8 @@
 
 import pytest
 
-from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES, SKIP_REMOTE_CODE
+from llb.rag.candidate_screen import SKIP_REMOTE_CODE
+from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
 from llb.rag.embedding_bakeoff_roster import UnregisteredCandidateError, screen_candidates
 
 REMOTE_CODE_MODELS = ("Alibaba-NLP/gte-multilingual-base", "jinaai/jina-embeddings-v3")

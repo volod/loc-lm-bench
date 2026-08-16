@@ -35,11 +35,30 @@ class RerankScorer(Protocol):
 
 
 class CrossEncoderReranker:
-    """Lazy sentence-transformers CrossEncoder behind the `RerankScorer` seam ([rag] extra)."""
+    """Lazy sentence-transformers CrossEncoder behind the `RerankScorer` seam ([rag] extra).
 
-    def __init__(self, model_name: str = DEFAULT_RERANKER, device: str | None = None):
+    The optional knobs exist for the reranker bake-off (`llb.rag.rerank_bakeoff`), which loads
+    candidates other than the pinned default: `trust_remote_code` for a family that ships its
+    forward pass as repository code, `model_kwargs` for the load-time dtype an operator would
+    actually deploy, and `batch_size` because the measured latency of a candidate is a property of
+    the batch it was scored in. Each candidate's own query-side instruction rides its
+    `config_sentence_transformers.json`, so it is applied by the model rather than re-typed here.
+    """
+
+    def __init__(
+        self,
+        model_name: str = DEFAULT_RERANKER,
+        device: str | None = None,
+        *,
+        trust_remote_code: bool = False,
+        model_kwargs: dict[str, Any] | None = None,
+        batch_size: int | None = None,
+    ):
         self.model_name = model_name
         self._device = device
+        self._trust_remote_code = trust_remote_code
+        self._model_kwargs = model_kwargs
+        self._batch_size = batch_size
         self._model = None
 
     def _load(self) -> Any:
@@ -50,14 +69,32 @@ class CrossEncoderReranker:
                 raise SystemExit(
                     'ERROR: reranking needs the [rag] extra. Run: uv pip install -e ".[rag]"'
                 ) from exc
-            self._model = CrossEncoder(self.model_name, device=self._device)
+            self._model = CrossEncoder(
+                self.model_name,
+                device=self._device,
+                trust_remote_code=self._trust_remote_code,
+                model_kwargs=self._model_kwargs,
+            )
         return self._model
 
     def __call__(self, question: str, texts: list[str]) -> list[float]:
         if not texts:
             return []
-        scores = self._load().predict([(question, text) for text in texts])
+        pairs = [(question, text) for text in texts]
+        predict_kwargs = {"batch_size": self._batch_size} if self._batch_size else {}
+        scores = self._load().predict(pairs, **predict_kwargs)
         return [float(s) for s in scores]
+
+    def release(self) -> None:
+        """Drop the loaded weights and free the CUDA cache so the next candidate starts clean."""
+        self._model = None
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # optional path; never fail a bake-off for cache cleanup
+            pass
 
 
 def rerank_chunks(

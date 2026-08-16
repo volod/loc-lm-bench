@@ -35,7 +35,7 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 
 if TYPE_CHECKING:
-    from llb.rag.embedding_bakeoff_models import SkippedCandidate
+    from llb.rag.candidate_screen import SkippedCandidate
 
 
 def _resolve_roster(
