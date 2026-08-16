@@ -19,7 +19,11 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 )
 
 
-BASELINE = "baseline-model"
+# Real roster ids, not placeholders: `compare-embeddings` screens its roster against the
+# convention registry (`llb.rag.embedding_bakeoff_roster`), so a CLI-level test has to name
+# candidates whose query/passage format is actually declared.
+BASELINE = "intfloat/multilingual-e5-base"
+CLI_CANDIDATE = "BAAI/bge-m3"
 
 
 def _chunk(doc: str, start: int) -> ChunkRecord:

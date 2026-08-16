@@ -30,18 +30,29 @@ BakeoffItem = tuple[str, list[SourceSpanRecord]]
 KIND_LOCAL = "local"
 KIND_API = "api"
 
-# Default LOCAL candidates for Ukrainian RAG. Current default first; e5-small is the cheap
-# CUDA sibling for 12 GiB hosts; then larger retrieval-tuned alternatives; then the paraphrase/
-# STS model whose objective differs (why the ranking is measured).
+# Default LOCAL candidates for Ukrainian RAG, in three bands: the incumbents (current default
+# first, then its cheap CUDA sibling and the larger retrieval-tuned alternatives), the current
+# multilingual retrieval generation an operator would actually shortlist today, and the
+# paraphrase/STS model whose objective differs (which is why the ranking is measured, not assumed).
+# Every id here MUST carry a declared convention in `llb.rag.embedding_families`; two of the
+# current-generation rows need `trust_remote_code` and are skipped unless opted into
+# (`llb.rag.embedding_bakeoff_roster`).
 DEFAULT_LOCAL_CANDIDATES = [
     "intfloat/multilingual-e5-base",  # current RunConfig default
     "intfloat/multilingual-e5-small",  # sub-base retrieval-tuned; cheap CUDA alternative
     "intfloat/multilingual-e5-large",
     "BAAI/bge-m3",
+    "intfloat/multilingual-e5-large-instruct",  # instruct-format sibling of e5-large
+    "Alibaba-NLP/gte-multilingual-base",  # trust_remote_code
+    "jinaai/jina-embeddings-v3",  # trust_remote_code; task LoRA adapters
+    "Qwen/Qwen3-Embedding-0.6B",  # decoder-based, instruct query format
     "lang-uk/ukr-paraphrase-multilingual-mpnet-base",
 ]
 
 BYTES_PER_MB = 1024 * 1024
+
+# Why a roster entry produced no row. `SKIP_REMOTE_CODE` is a policy decline, not a failure.
+SKIP_REMOTE_CODE = "trust_remote_code_not_opted_in"
 
 
 def slugify_model(model: str) -> str:
@@ -71,11 +82,26 @@ class BuiltStore:
 StoreBuilder = Callable[[str], BuiltStore]
 
 
+class SkippedCandidate(TypedDict):
+    """A roster entry that produced no row, and why -- so the report shrinks visibly, not quietly."""
+
+    model: str
+    family: str
+    reason: str
+    detail: str
+
+
 class CandidateResult(TypedDict):
-    """One embedder's row: retrieval quality plus throughput / size / device fit."""
+    """One embedder's row: retrieval quality plus throughput / size / device fit.
+
+    `family` is the declared query/passage convention the row was scored under
+    (`llb.rag.embedding_families`); without it on the row, a reader cannot tell whether two
+    candidates were even asked the same question.
+    """
 
     model: str
     kind: str
+    family: str
     recall_at_k: float
     mrr: float
     n: int
@@ -86,6 +112,8 @@ class CandidateResult(TypedDict):
     index_bytes: int
     device: NotRequired[str]
     cost_usd: NotRequired[float]
+    # True when this row was scored with repository-supplied modelling code executing.
+    trust_remote_code: NotRequired[bool]
     # Cold/warm encoder decomposition (optional; present when --encoder-throughput ran).
     throughput_profile: NotRequired[ThroughputProfile]
     # Paired percentile-bootstrap delta against the baseline embedder over shared resample index
@@ -100,6 +128,9 @@ class BakeoffReport(TypedDict):
     corpus_root: str
     candidates: list[CandidateResult]
     best_recall: str | None
+    # Roster entries that produced no row (see `llb.rag.embedding_bakeoff_roster`). Present only
+    # when something was skipped, so a report that ranks fewer models than the roster names says so.
+    skipped: NotRequired[list[SkippedCandidate]]
     # How the paired intervals on the rows were drawn (baseline / resamples / confidence / seed),
     # so the report is reproducible from its own header.
     uncertainty: NotRequired[UncertaintySettings]

@@ -246,6 +246,10 @@ EMBED_ENCODER_MIN_WARM ?= 3
 EMBED_ENCODER_MAX_WARM ?= 10
 EMBED_ENCODER_MAX_WARM_SECONDS ?= 180
 EMBED_ENCODER_COMPARE_CPU ?=
+# Opt into bake-off candidates that ship their own modelling code (trust_remote_code), e.g.
+# Alibaba-NLP/gte-multilingual-base and jinaai/jina-embeddings-v3. Only the literal 1 enables it;
+# without it those roster rows are SKIPPED and the reason is recorded in the report.
+EMBED_ALLOW_REMOTE_CODE ?=
 ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=

@@ -76,45 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### embedder-candidate-roster-refresh
-
-The bake-off's default candidate list is the 2023-2024 multilingual generation, and the paired lane
-now says the choice is undecidable on the item sets the repo has partly because the candidates are
-close together ([RAG core](current/rag-core/embedders.md#the-recommendation-re-read-with-paired-uncertainty)).
-Add the current multilingual retrieval encoders that fit a 16 GiB host beside the incumbents --
-`intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
-`jinaai/jina-embeddings-v3`, `Qwen/Qwen3-Embedding-0.6B` -- and register each one's convention
-FIRST. That registration is the substance of the task, not a detail: `embedding_family` resolves by
-substring, so `multilingual-e5-large-instruct` currently resolves to the plain `e5` family and would
-be scored with the plain `query:` / `passage:` prefixes instead of its instruction format, and an
-unrecognized id
-falls through to `plain` with no instruction at all -- the exact silent recall loss the family table
-exists to prevent ([RAG core](current/rag-core/embedders.md#embedder-conventions-and-bake-off)).
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none, but the decision it feeds is `embedder-decision-on-a-resolvable-item-set`.
-  Reuse `src/llb/rag/embedding.py` (family table, query/passage conventions) and the bake-off lane
-  unchanged.
-- User-visible outcome: the Ukrainian embedder recommendation is made against the encoders an
-  operator would actually consider today, each scored under its own documented convention.
-- Scope boundary: in scope -- the family entries and their unit tests, the candidate list, VRAM/
-  throughput/index-size measurement per candidate, and a re-run of the paired bake-off on both scored
-  corpora. Out of scope -- fine-tuning (that is `ua-embedder-domain-finetune`), late-interaction /
-  multi-vector retrieval, hosted API encoders beyond the existing opt-in row, and changing the
-  shipped default before a candidate separates.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
-- Execution path: `make compare-embeddings MODELS=<roster> NOISE_FLOOR=1` on the CUDA host; a
-  candidate requiring `trust_remote_code` is opt-in and recorded as such. CI covers each new family's
-  query/passage convention against its model card's documented format and asserts that an unknown id
-  does not silently resolve to `plain`.
-- Acceptance gates: `make ci` green; every candidate's convention is unit-tested and cited; the
-  incumbent rows reproduce their recorded numbers; each new row carries its paired delta, throughput,
-  index size, and peak VRAM; the verdict is recorded as adopt, retain, or undecidable at the reached
-  sample size.
-- Documentation target: the embedder sections of [RAG core](current/rag-core.md) and
-  [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
-
 #### reranker-bake-off
 
 The cross-encoder is pinned to one model (`BAAI/bge-reranker-v2-m3`, `DEFAULT_RERANKER` in
@@ -269,6 +230,54 @@ re-readable on the axis a chunking change actually moves.
   does not.
 - Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the
   table-aware chunking evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
+
+#### remote-code-encoder-load-contract (optional)
+
+Two roster candidates an operator would genuinely shortlist cannot be scored at all:
+`jinaai/jina-embeddings-v3` raises `AttributeError: 'XLMRobertaLoRA' object has no attribute
+'all_tied_weights_keys'` at load, and `Alibaba-NLP/gte-multilingual-base` loads but returns
+embeddings that do not reproduce its own model card, because transformers 5.x leaves its
+remote code's non-persistent `position_ids` buffer uninitialized ([RAG
+core](current/rag-core/embedders.md#the-two-remote-code-candidates-do-not-run-on-the-pinned-stack)).
+Both repositories target the transformers 4.x API and the repo pins 5.12.1, so the encoder roster
+has a hole that is a PACKAGING fact, not a quality one. Give the bake-off a way to score them:
+either an `[encoders-legacy]` optional extra pinning a compatible transformers for a separate
+scoring pass, or a non-remote-code load path per candidate, whichever the two models actually admit
+-- and gate whichever route on a card-parity check, because gte is the case that proves a candidate
+can RUN and still be wrong.
+
+Fold in the second confound the roster surfaced: the published checkpoints differ in PRECISION
+(`multilingual-e5-large-instruct` ships float16, `Qwen3-Embedding-0.6B` bfloat16, every incumbent
+float32), so warm chunks/s is not comparable across rows as a model property -- the instruct
+variant's 3.4x lead over `e5-large` at identical parameter count and dimension is its dtype ([RAG
+core](current/rag-core/embedders.md#read-the-throughput-column-with-the-checkpoint-dtype)). Add a
+declared per-candidate dtype so precision is a controlled variable and the throughput column can be
+read as a recommendation.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse the convention registry and the `trust_remote_code` opt-in in
+  `src/llb/rag/embedding_families.py` / `src/llb/rag/embedding.py`, and the roster screening in
+  `src/llb/rag/embedding_bakeoff_roster.py` (a candidate that cannot load already has a skip row to
+  land in).
+- User-visible outcome: the Ukrainian encoder ranking covers every candidate an operator would
+  shortlist rather than only the ones whose publisher tracked the pinned transformers, and its
+  throughput column compares encoders at a stated precision instead of at whatever each publisher
+  uploaded.
+- Scope boundary: in scope -- the compatibility route for the two named encoders, a card-parity
+  check before a candidate is scored, the declared dtype knob, and a re-run of the affected rows.
+  Out of scope -- unpinning or upgrading the repo-wide transformers version for the SHIPPED path,
+  vendoring or patching third-party modelling code into `src/`, and any change to the verdict bars.
+- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` layout.
+- Execution path: `make compare-embeddings EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` on the CUDA host
+  once the load route exists; CI covers the card-parity check and the dtype resolution over fake
+  encoders -- no download, no GPU.
+- Acceptance gates: `make ci` green; each of the two encoders is either scored with its card
+  reference similarities reproduced, or recorded as unscorable with the diagnosis and the pin that
+  would be required; the previously scored rows reproduce their recorded numbers; every row states
+  the dtype it was measured at.
+- Documentation target: the embedder sections of [RAG core](current/rag-core/embedders.md) and
+  [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
 
 #### chunker-bake-off-under-the-size-cap (optional)
 

@@ -3,16 +3,70 @@
 Part of the [RAG core](../rag-core.md) area of the
 [current implementation index](../../current.md).
 
-Per-family query/passage conventions (`src/llb/rag/embedding.py`): a retrieval-tuned encoder scored
-with the wrong instruction silently loses recall, so `Embedder` applies each model FAMILY's
-convention (`embedding_family` resolves it, `apply_query_convention` / `apply_passage_convention`
-are pure + unit-tested):
+## The convention registry
 
-- `e5` (`intfloat/multilingual-e5-*`): `query:` / `passage:` prefixes (each with a trailing space);
-- `bge-m3` (`BAAI/bge-m3`): NO instruction on either side (FlagEmbedding retrieval default);
-- `bge` (other BGE retrieval lines, e.g. `bge-large-en-v1.5`): a query-only instruction;
-- `plain` (paraphrase/STS models like `lang-uk/ukr-paraphrase-multilingual-mpnet-base`): symmetric,
-  no prefix.
+Per-family query/passage conventions live in `src/llb/rag/embedding_families.py`: a retrieval-tuned
+encoder scored with the wrong instruction silently loses recall, so `Embedder`
+(`src/llb/rag/embedding.py`) applies each model FAMILY's declared convention. Resolution is an
+ORDERED registry, not a chain of substring tests -- `embedding_family` walks a match table whose
+first row whose every substring appears in the lowercased id wins, `resolve_convention` returns the
+`EmbeddingConvention` record, and `apply_query_convention` / `apply_passage_convention` are pure +
+unit-tested (`tests/llb/rag/test_embedding_families.py`). Every entry names the model card its
+prefixes were read from, so a row's format is auditable without reading module history.
+
+| family | models | query side | passage side | notes |
+| --- | --- | --- | --- | --- |
+| `e5` | `intfloat/multilingual-e5-{small,base,large}` | `"query: "` | `"passage: "` | |
+| `e5-instruct` | `intfloat/multilingual-e5-large-instruct` | `"Instruct: <task>\nQuery: "` | none | card: "no need to add instruction for retrieval documents" |
+| `bge-m3` | `BAAI/bge-m3` | none | none | FlagEmbedding retrieval default |
+| `bge` | other BGE retrieval lines (`bge-large-en-v1.5`) | query-only instruction | none | |
+| `gte-multilingual` | `Alibaba-NLP/gte-multilingual-base` | none | none | needs `trust_remote_code` |
+| `jina-v3` | `jinaai/jina-embeddings-v3` | `"Represent the query for retrieving evidence documents: "` plus `task="retrieval.query"` | `"Represent the document for retrieval: "` plus `task="retrieval.passage"` | needs `trust_remote_code`; `task=` selects the LoRA adapter, which the prompt text alone does not |
+| `qwen3-embedding` | `Qwen/Qwen3-Embedding-0.6B` | `"Instruct: <task>\nQuery:"` (NO trailing space) | none | prompt taken verbatim from the repo's `config_sentence_transformers.json` |
+| `plain` | paraphrase/STS (`lang-uk/ukr-paraphrase-multilingual-mpnet-base`, LaBSE, `all-mpnet`) | none | none | symmetric |
+| `unknown` | anything unregistered | none | none | see below -- NOT a convention |
+
+`<task>` is the shared `RETRIEVAL_TASK` constant, "Given a web search query, retrieve relevant
+passages that answer the query", which both instruct-style cards use verbatim.
+
+**An unregistered id resolves to `unknown`, not to `plain`.** That distinction is the point of the
+table. `plain` -- symmetric, no instruction -- is a DOCUMENTED property of the paraphrase/STS line,
+not a safe default for an encoder whose card nobody read, and the old fall-through made those two
+cases indistinguishable: `multilingual-e5-large-instruct` landed in plain `e5` and would have been
+scored with `query:` / `passage:` prefixes its card never documents, while any unknown id was
+encoded with no instruction at all. `Embedder` now WARNS on an `unknown` family, and
+`compare-embeddings` refuses such a candidate outright (below).
+
+Some conventions are more than a prefix, so an `EmbeddingConvention` also carries per-side
+`SentenceTransformer.encode()` kwargs (jina-v3's task adapter) and a `trust_remote_code` flag.
+
+## The `trust_remote_code` opt-in
+
+Two current-generation candidates ship their forward pass as repository code. Executing downloaded
+code is an operator decision, so it is opt-in: `LLB_TRUST_REMOTE_CODE=1` (or
+`Embedder(..., trust_remote_code=True)`, which wins over the env knob). Without it `Embedder._load`
+refuses with a message naming both the knob and the card to review. `compare-embeddings
+--allow-remote-code` (Make: `EMBED_ALLOW_REMOTE_CODE=1`) exports the knob process-wide -- like
+`LLB_EMBED_DEVICE`, because the store build, the lazy reload behind `retrieve()`, and the throughput
+profiler each construct their own `Embedder` and all three must agree.
+
+## Roster screening
+
+`screen_candidates` (`src/llb/rag/embedding_bakeoff_roster.py`) runs before any store is built and
+splits the roster two ways:
+
+- an id with **no registered convention** RAISES `UnregisteredCandidateError`; the CLI exits 2
+  before building anything. Scoring an encoder under a guessed format understates it rather than
+  ranking it, which is the one failure a bake-off must not commit;
+- a **`trust_remote_code`** candidate without the opt-in is SKIPPED, and the reason lands in
+  `report.json` as a `skipped[]` entry and in `report.md` under "Roster entries not scored" -- so a
+  declined row reads as declined, never as beaten. The rest of the roster still ranks.
+
+Every scored row now also carries the `family` it was scored under and, when repo code ran,
+`trust_remote_code: true`; `report.md` prints both plus a peak-VRAM column fed from the
+`--encoder-throughput` decomposition.
+
+## The bake-off lane
 
 `llb compare-embeddings` (`src/llb/rag/embedding_bakeoff.py`; `make compare-embeddings`) answers
 "which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
@@ -21,10 +75,14 @@ model-independent source-span metric (reusing `evaluate_retrieval`), and reports
 index size, dimension, and device -- ending in the [adopt-or-retain verdict](paired-verdicts.md),
 which the operator applies via `build-index --embedding-model <winner>` +
 `RunConfig.embedding_model`. Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and
-`report.json` plus one saved store per candidate under `stores/<model-slug>/`. Default local
-candidates: `intfloat/multilingual-e5-base` (current default), `intfloat/multilingual-e5-small`
-(cheap CUDA sibling), `intfloat/multilingual-e5-large`, `BAAI/bge-m3`,
-`lang-uk/ukr-paraphrase-multilingual-mpnet-base`. The store builder is an injectable seam, so
+`report.json` plus one saved store per candidate under `stores/<model-slug>/`.
+`DEFAULT_LOCAL_CANDIDATES` (`src/llb/rag/embedding_bakeoff_models.py`) is nine ids in three bands:
+the incumbents (`intfloat/multilingual-e5-base` -- the current default and the paired baseline --
+plus `-small`, `-large`, and `BAAI/bge-m3`), the current multilingual retrieval generation
+(`intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
+`jinaai/jina-embeddings-v3`, `Qwen/Qwen3-Embedding-0.6B`), and the paraphrase/STS
+`lang-uk/ukr-paraphrase-multilingual-mpnet-base` whose objective differs. The store builder is an
+injectable seam, so
 scoring, ranking, the consent gate, and report shaping are fake-store unit-tested
 (`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network. The lane is four modules:
 `embedding_bakeoff_models.py` (the item/store seams and the row + report shapes every consumer
@@ -153,6 +211,120 @@ Reusable knobs: `--encoder-throughput`, `--encoder-precision`, `--encoder-min-wa
 `torch.cuda.empty_cache()` runs between candidates so peak VRAM is per-encoder, not stacked.
 CI covers the aggregation with an injected clock and fake encoders
 (`tests/llb/rag/test_encoder_throughput.py`).
+
+## The refreshed candidate roster (2026-08-16)
+
+RTX 4060 Ti (16,380 MiB) CUDA host, `LLB_EMBED_DEVICE=cuda`, both scored corpora, k=10,
+`recursive` 800/120, flat mode, 2000 resamples, seed 13, `NOISE_FLOOR=1`,
+`EMBED_ENCODER_THROUGHPUT=1`. Run configs unchanged
+(`.data/compare-embeddings/paired-uncertainty{,-fixture}.yaml`); reports under
+`$DATA_DIR/compare-embeddings/paired-uncertainty-pdf/compare-embeddings/20260816T120805.613959Z-d843778462a0/`
+and `.../paired-uncertainty-fixture/compare-embeddings/20260816T120246.110009Z-1d83e6004ec4/`, with
+the throughput host summaries beside them under each corpus's `encoder-throughput/<run>/`.
+
+Both corpora report a `+/-0.000` measurement floor with 0 fragile items, so every delta below is a
+SAMPLING statement. Seven of the nine roster ids were scored; the two `trust_remote_code` rows were
+declined by default and are read separately below.
+
+Committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (250 items, 311 chunks) -- deltas
+against `e5-base`:
+
+| model | family | recall@10 | MRR | recall delta | w/l/t | warm c/s | peak VRAM (MB) |
+| --- | --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `intfloat/multilingual-e5-large` | e5 | 1.000 | 0.879 | +0.020 [+0.004, +0.040] | 5/0/245 | 79.9 | 4001 |
+| `intfloat/multilingual-e5-small` | e5 | 0.996 | 0.836 | +0.016 [+0.004, +0.032] | 4/0/246 | 738.9 | 2691 |
+| `intfloat/multilingual-e5-large-instruct` | e5-instruct | 0.992 | 0.850 | +0.012 [0.000, +0.028] | 3/0/247 | 272.6 | 5077 |
+| `BAAI/bge-m3` | bge-m3 | 0.992 | 0.849 | +0.012 [0.000, +0.028] | 3/0/247 | 80.7 | 4001 |
+| `intfloat/multilingual-e5-base` | e5 | 0.980 | 0.847 | baseline | 0/0/250 | 261.2 | 2959 |
+| `Qwen/Qwen3-Embedding-0.6B` | qwen3-embedding | 0.976 | 0.814 | -0.004 [-0.024, +0.016] | 3/4/243 | 51.6 | 4049 |
+| `lang-uk/ukr-paraphrase...` | plain | 0.856 | 0.600 | -0.124 [-0.164, -0.084] | 0/31/219 | 440.1 | 2905 |
+
+Accepted converted-PDF goldset (40 items, 1120 chunks) -- deltas against `e5-base`:
+
+| model | family | recall@10 | MRR | recall delta | w/l/t | warm c/s | peak VRAM (MB) |
+| --- | --- | ---: | ---: | ---: | :-: | ---: | ---: |
+| `BAAI/bge-m3` | bge-m3 | 0.975 | 0.917 | +0.050 [-0.050, +0.150] | 3/1/36 | 65.4 | 3982 |
+| `intfloat/multilingual-e5-large` | e5 | 0.925 | 0.871 | 0.000 [-0.075, +0.075] | 1/1/38 | 64.8 | 3957 |
+| `intfloat/multilingual-e5-base` | e5 | 0.925 | 0.852 | baseline | 0/0/40 | 211.2 | 2915 |
+| `Qwen/Qwen3-Embedding-0.6B` | qwen3-embedding | 0.925 | 0.832 | 0.000 [-0.100, +0.100] | 2/2/36 | 50.1 | 4032 |
+| `intfloat/multilingual-e5-large-instruct` | e5-instruct | 0.900 | 0.850 | -0.025 [-0.075, 0.000] | 0/1/39 | 221.9 | 5058 |
+| `intfloat/multilingual-e5-small` | e5 | 0.900 | 0.770 | -0.025 [-0.075, 0.000] | 0/1/39 | 586.0 | 2647 |
+| `lang-uk/ukr-paraphrase...` | plain | 0.475 | 0.241 | -0.450 [-0.600, -0.275] | 1/19/20 | 437.7 | 2898 |
+
+**Verdict: RETAIN `intfloat/multilingual-e5-base` on both corpora.** No candidate clears the
+recall@k adoption bar on either. Adding the current generation did NOT resolve the standing
+undecidability -- it reproduced it with more rows:
+
+- **Neither new encoder separates upward anywhere.** `e5-large-instruct` ties `bge-m3` exactly on
+  the fixture (+0.012 `[0.000, +0.028]`, 3 wins / 0 losses -- an interval touching zero on 3
+  differing items, below the 6 an exact sign test needs) and is the second-WORST retrieval-tuned row
+  on the PDF corpus (-0.025, one lost item). `Qwen3-Embedding-0.6B` ties the baseline on the PDF
+  corpus (0.925, 2 wins / 2 losses) and sits BELOW it on the fixture (-0.004, 3 wins / 4 losses) --
+  the only retrieval-tuned candidate with a negative point estimate there.
+- **The incumbent rows reproduce bit-identically.** Every recorded recall/MRR value, paired bound,
+  and win/loss/tie ledger from [the 2026-07-24 paired
+  re-read](#the-recommendation-re-read-with-paired-uncertainty) reappears unchanged for `e5-base`,
+  `e5-large`, `bge-m3`, and the `lang-uk` paraphrase model on both corpora, so the new rows are
+  measured against an unmoved ruler. (`e5-small`'s recorded 1.000 / 0.819 was taken on the 82-item
+  `final` split, a different item set; on the full 250 it is 0.996 / 0.836.)
+- **The corpora still disagree, and now on four candidates rather than two.** The PDF corpus's
+  point-estimate leader is `bge-m3`, the fixture's is `e5-large`; the two new candidates rank 4th
+  and 6th on one corpus and 3rd and 6th on the other. A single-corpus bake-off remains unreadable as
+  a general Ukrainian encoder ranking.
+- **The measurement floor is still not the binding constraint.** Zero band, zero fragile items, on
+  both corpora, across all seven candidates. Sampling is.
+
+### Read the throughput column with the checkpoint dtype
+
+Warm chunks/s is NOT comparable across these rows as an architecture property, because the shipped
+checkpoints differ in precision -- measured with `SentenceTransformer(...)` defaults on this host:
+
+| model | params | dtype | max_seq |
+| --- | ---: | --- | ---: |
+| `intfloat/multilingual-e5-small` | 118M | float32 | 512 |
+| `intfloat/multilingual-e5-base` | 278M | float32 | 512 |
+| `intfloat/multilingual-e5-large` | 560M | float32 | 512 |
+| `intfloat/multilingual-e5-large-instruct` | 560M | **float16** | 512 |
+| `BAAI/bge-m3` | 568M | float32 | 8192 |
+| `Qwen/Qwen3-Embedding-0.6B` | 596M | **bfloat16** | 32768 |
+| `lang-uk/ukr-paraphrase...` | 278M | float32 | **128** |
+
+So `e5-large-instruct` running 3.4x `e5-large` (272.6 vs 79.9 warm c/s) at the same parameter count
+and dimension is a PRECISION difference in the published weights, not a faster model, and its peak
+VRAM is nonetheless the roster's highest (5077 MB). `Qwen3-Embedding-0.6B` is the slowest row on
+both corpora (~50 c/s) despite being a 0.6B model: its 32,768-token window dominates. And the
+`lang-uk` paraphrase model's 128-token window is the mechanical reason its collapse is worst on the
+PDF corpus, whose 800-character chunks are truncated hard. Every candidate's peak VRAM stayed under
+5.1 GiB with `Embedder.release()` between candidates, so all seven fit the 16 GiB host beside a
+served generator.
+
+### The two remote-code candidates do not run on the pinned stack
+
+`Alibaba-NLP/gte-multilingual-base` and `jinaai/jina-embeddings-v3` were declined by default and
+then attempted explicitly (`make compare-embeddings ... MODELS=<id> EMBED_ALLOW_REMOTE_CODE=1`).
+Neither can be scored on this repo's pinned `transformers 5.12.1` / `torch 2.13.0+cu130` /
+`sentence-transformers 5.6.0`; both remote-code repositories target the transformers 4.x API:
+
+- **`jinaai/jina-embeddings-v3` fails at LOAD**: `AttributeError: 'XLMRobertaLoRA' object has no
+  attribute 'all_tied_weights_keys'`, raised from `transformers/modeling_utils.py`
+  `_move_missing_keys_from_meta_to_device`. The repo's `modeling_xlm_roberta.py` overrides
+  `from_pretrained` and defines only the older `_tied_weights_keys`.
+- **`Alibaba-NLP/gte-multilingual-base` loads but is BROKEN**: transformers 5.x materializes the
+  remote code's non-persistent `position_ids` buffer as uninitialized memory (observed values on the
+  order of `-6.5e16`), so `rope_cos[position_ids]` indexes out of bounds -- an `IndexError` on CPU
+  and a CUDA device-side assert on GPU. Repairing the buffer by hand
+  (`position_ids.copy_(torch.arange(n))`) makes it run but does NOT make it correct: its card's
+  reference similarities are `[[0.3017, 0.7504, 0.3203]]` and the repaired model returns
+  `[[0.738, 0.676, 0.598]]`, so something further down its attention/unpadding path is also wrong.
+  It is recorded as unscorable rather than scored on numbers that do not reproduce its card.
+
+The two candidates that DO run were checked against their cards' documented reference similarities
+through the registered conventions before scoring, which is what makes their rows readable:
+`multilingual-e5-large-instruct` reproduces `[[0.9193, 0.6758], [0.7038, 0.9213]]` to within 0.0005,
+and `Qwen3-Embedding-0.6B` reproduces `[[0.7646, 0.1414], [0.1355, 0.6000]]` to within 0.0051
+(fp/device noise). A CUDA device-side assert poisons the process's CUDA context, so a failing
+candidate deliberately FAILS the run rather than being caught and skipped -- continuing would score
+every later candidate on a corrupted context.
 
 ## Blackwell sub-base encoder roster (e5-small)
 

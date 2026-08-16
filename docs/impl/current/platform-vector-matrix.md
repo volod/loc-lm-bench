@@ -350,12 +350,20 @@ fingerprint guard, and the opt-in Cohere API-row egress gate.
 
 ```bash
 make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10 NOISE_FLOOR=1
+make compare-embeddings GOLDSET=... EMBED_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
 llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 --noise-floor \
   --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-small,\
 intfloat/multilingual-e5-large,BAAI/bge-m3 \
   --baseline intfloat/multilingual-e5-base
 make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOPTED embedder
 ```
+
+The default roster is nine ids: the four incumbents, the current multilingual retrieval generation
+(`multilingual-e5-large-instruct`, `gte-multilingual-base`, `jina-embeddings-v3`,
+`Qwen3-Embedding-0.6B`), and the paraphrase/STS control. A candidate with no declared query/passage
+convention fails the run before any store is built, and a `trust_remote_code` candidate is skipped
+with its reason recorded unless `EMBED_ALLOW_REMOTE_CODE=1`
+([RAG core](rag-core/embedders.md#roster-screening)).
 
 Every candidate row carries a PAIRED delta interval against `--baseline` plus the win/loss/tie
 ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
@@ -387,3 +395,13 @@ for those two configurations while the recall@k-only default is retained for the
 paraphrase/STS `lang-uk` model collapses on every run (recall@10 0.455 / 0.475 / 0.856) and is the
 one row that separates from the baseline in the negative direction on both corpora. Embed VRAM
 peaked ~4 GB, so all candidates fit the 16 GB host.
+
+The 2026-08-16 roster refresh added the current multilingual generation and did NOT change that
+call: on a 16,380 MiB RTX 4060 Ti both corpora still verdict **RETAIN `e5-base`**, with
+`multilingual-e5-large-instruct` tying `bge-m3` on the fixture (+0.012, 3 wins / 0 losses) and
+losing an item on the PDF corpus, and `Qwen3-Embedding-0.6B` tying the baseline on one corpus and
+sitting below it on the other. Peak VRAM across the seven scored candidates stayed under 5.1 GiB.
+`gte-multilingual-base` and `jina-embeddings-v3` could not be scored at all -- their remote code
+targets the transformers 4.x API and breaks on the pinned 5.12.1. Full tables, the checkpoint-dtype
+caveat on the throughput column, and the two failure diagnoses are in
+[RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16).

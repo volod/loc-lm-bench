@@ -95,13 +95,14 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 COMPARE_EMBEDDINGS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
 COMPARE_EMBEDDINGS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
-compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
+compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(COMPARE_EMBEDDINGS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_EMBEDDINGS_SPLIT_ARG) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
 		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
+		$(if $(filter 1,$(EMBED_ALLOW_REMOTE_CODE)),--allow-remote-code,) \
 		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
 		$(if $(EMBED_CONFIDENCE),--confidence $(EMBED_CONFIDENCE),) \
 		$(if $(EMBED_POWER_REFERENCE),--power-reference "$(EMBED_POWER_REFERENCE)",) \

@@ -30,6 +30,19 @@ def _throughput(row: CandidateResult) -> float:
     return row["n_indexed"] / row["embed_seconds"] if row["embed_seconds"] > 0 else 0.0
 
 
+def _peak_vram_mb(row: CandidateResult) -> str:
+    """Peak encoder VRAM from the warm decomposition, when `--encoder-throughput` measured it."""
+    profile = row.get("throughput_profile")
+    peak = profile.get("peak_vram_mb") if profile else None
+    return f"{peak:.0f}" if peak else _NO_PAIRED_CELL
+
+
+def _family_cell(row: CandidateResult) -> str:
+    """The convention the row was scored under, marked when it ran repo-supplied model code."""
+    family = row.get("family", "-")
+    return f"{family} (remote-code)" if row.get("trust_remote_code") else family
+
+
 def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str, str]:
     """Delta, ledger, sign p, randomization p, and reading (dashes without a baseline).
 
@@ -107,6 +120,8 @@ def format_report(report: BakeoffReport) -> str:
             f"{row['dim']:6d} {_throughput(row):9.1f} {size_mb:9.2f}   {delta:>22} {ledger:>12}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    for skipped in report.get("skipped") or []:
+        lines.append(f"  skipped: {skipped['model']} -- {skipped['detail']}")
     lines.extend(_verdict_lines(report, prefix="  "))
     floor = report.get("noise_floor")
     if floor is not None:
@@ -138,10 +153,11 @@ def render_markdown(report: BakeoffReport) -> str:
         lines.append(f"- adoption bar(s): {', '.join(settings.get('bars') or [BAR_RECALL])}")
     lines += [
         "",
-        "| model | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) | cost (USD) "
+        "| model | family | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) "
+        "| peak VRAM (MB) | cost (USD) "
         f"| recall delta vs {baseline or 'baseline'} | w/l/t | sign p | rand p "
         "| recall reading |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
         "| ---: | ---: | :-: |",
     ]
     for row in sorted(
@@ -151,8 +167,10 @@ def render_markdown(report: BakeoffReport) -> str:
         size_mb = row["index_bytes"] / BYTES_PER_MB
         delta, ledger, sign_p, randomization_p, reading = _paired_cells(row)
         lines.append(
-            f"| `{row['model']}` | {row['kind']} | {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
-            f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} | {cost} "
+            f"| `{row['model']}` | {_family_cell(row)} | {row['kind']} "
+            f"| {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
+            f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} "
+            f"| {_peak_vram_mb(row)} | {cost} "
             f"| {delta} | {ledger} | {sign_p} | {randomization_p} | {reading} |"
         )
     lines += ["", *_verdict_lines(report), ""]
@@ -162,11 +180,28 @@ def render_markdown(report: BakeoffReport) -> str:
         f"`build-index --embedding-model <model>` and set `RunConfig.embedding_model` to match.",
         "",
     ]
+    lines += _skipped_section(report)
     lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _floor_section(report)
     lines += _throughput_section(report)
     return "\n".join(lines)
+
+
+def _skipped_section(report: BakeoffReport) -> list[str]:
+    """Roster entries that produced no row. A report that ranks fewer models than the roster
+    named must SAY so -- otherwise a declined candidate reads as a candidate that lost."""
+    skipped = report.get("skipped")
+    if not skipped:
+        return []
+    lines = [
+        "## Roster entries not scored",
+        "",
+        "| model | family | reason |",
+        "| --- | --- | --- |",
+    ]
+    lines += [f"| `{row['model']}` | {row['family']} | {row['detail']} |" for row in skipped]
+    return [*lines, ""]
 
 
 def _throughput_section(report: BakeoffReport) -> list[str]:

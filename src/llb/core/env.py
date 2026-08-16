@@ -15,6 +15,11 @@ LLB_LOG = "LLB_LOG"
 # judge/candidate (the embedder is tiny, so CPU encoding is cheap).
 LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
 
+# Opt-in to `trust_remote_code` for encoders that ship their forward pass as repository code
+# (e.g. `Alibaba-NLP/gte-multilingual-base`, `jinaai/jina-embeddings-v3`). Unset -> such a model
+# is REFUSED rather than executing downloaded code implicitly (llb.rag.embedding).
+LLB_TRUST_REMOTE_CODE = "LLB_TRUST_REMOTE_CODE"
+
 # Hugging Face downloads (gated models and datasets)
 HF_TOKEN = "HF_TOKEN"
 GITHUB_TOKEN = "GITHUB_TOKEN"
