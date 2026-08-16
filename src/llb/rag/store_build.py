@@ -5,6 +5,7 @@ from typing import Any, cast
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.chunking.dispatch import chunk_spans
+from llb.rag.chunking.table import shifted_metadata
 from llb.rag.duplicate_tiers import TIER_EXACT
 from llb.rag.duplicates import (
     collapse_duplicate_chunks,
@@ -75,7 +76,11 @@ def _build_children(
         for j, (start, end, meta) in enumerate(
             chunk_spans(text, strategy, child_size, overlap, sem)
         ):
-            metadata = {**(parent.get("metadata") or {}), **(meta or {})}
+            # A child's span metadata is parent-local, so it moves with the child's own offsets.
+            metadata = {
+                **(parent.get("metadata") or {}),
+                **shifted_metadata(meta or {}, parent["char_start"]),
+            }
             children.append(
                 {
                     "doc_id": parent["doc_id"],

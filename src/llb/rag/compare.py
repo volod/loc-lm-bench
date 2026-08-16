@@ -19,6 +19,7 @@ from llb.core.contracts.rag import (
     RetrievalPair,
 )
 from llb.rag.compare_models import (
+    FOCUS_SLICES,
     CompareItem,
     ComparisonItemOutcome,
     ComparisonLane,
@@ -47,7 +48,7 @@ def _slice_reports(
     slice_labels: list[str | None],
     k: int,
 ) -> dict[str, ComparisonSlice]:
-    labels = sorted({label for label in slice_labels if label} | {"comparative", "multi-hop"})
+    labels = sorted({label for label in slice_labels if label} | set(FOCUS_SLICES))
     return {
         slice_label: {
             "n": slice_labels.count(slice_label),

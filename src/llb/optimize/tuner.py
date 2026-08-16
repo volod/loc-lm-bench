@@ -42,9 +42,10 @@ from llb.optimize.tuner_models import TuneResult, TwoStageResult
 
 OPTUNA_METHOD = "optuna"
 
-# The corpus-chunking additions (page / heading / late) join the search space only behind an
-# explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per trial and
-# `page` only differs from `recursive` on sidecar-bearing PDF corpora, so they are opt-in.
+# The corpus-chunking additions (page / heading / late / table) join the search space only
+# behind an explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per
+# trial, `page` only differs from `recursive` on sidecar-bearing PDF corpora, and `table` only
+# differs on corpora carrying markdown tables, so they are opt-in.
 # Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
 # the per-side candidate depth, sampled only when the trial picked hybrid mode.
 # Rerank search range (rerank-context-order): the candidate pool depth fed into the

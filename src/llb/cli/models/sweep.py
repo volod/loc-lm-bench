@@ -130,8 +130,9 @@ def tune_cmd(
     extended_chunkers: bool = typer.Option(
         False,
         "--extended-chunkers",
-        help="add the page/heading/late chunking strategies to the stage-1 search space "
-        "(late re-embeds whole documents per trial; page needs PDF citation sidecars)",
+        help="add the page/heading/late/table chunking strategies to the stage-1 search space "
+        "(late re-embeds whole documents per trial; page needs PDF citation sidecars; "
+        "table only differs on corpora carrying markdown tables)",
     ),
     tune_reranker: Optional[str] = typer.Option(
         None,

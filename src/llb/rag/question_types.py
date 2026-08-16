@@ -1,9 +1,12 @@
-"""Question-type labels for retrieval slicing, read from an ontology bundle's needle sidecar.
+"""Question-type labels for retrieval slicing, read from a draft bundle's item sidecars.
 
-Retrieval reports slice by question type (`factoid`, `comparative`, `multi-hop`, ...), but a gold
-set JSONL carries no type: the label lives in the draft bundle's `needle_items.jsonl` sidecar. This
-module is the one place that knows where that sidecar sits relative to a gold set -- beside it, or
-one level up when the gold set is an accepted ledger under `accepted/`.
+Retrieval reports slice by question type (`factoid`, `numeric`, `comparative`, `multi-hop`, ...),
+but a gold set JSONL carries no type: the label lives beside it, in the draft bundle's
+`needle_items.jsonl` (ontology-assisted drafting) or `item_provenance.jsonl` (the external-draft
+import lane). This module is the one place that knows where those sidecars sit relative to a gold
+set -- beside it, or one level up when the gold set is an accepted ledger under `accepted/` -- and
+it JOINS them, so a bundle carrying either one (or both) slices the same way. The first sidecar
+that labels an item wins; the rest only fill gaps.
 """
 
 import json
@@ -11,22 +14,20 @@ from collections import defaultdict
 from pathlib import Path
 
 SIDECAR_NAME = "needle_items.jsonl"
+PROVENANCE_SIDECAR_NAME = "item_provenance.jsonl"
+SIDECAR_NAMES = (SIDECAR_NAME, PROVENANCE_SIDECAR_NAME)
 ACCEPTED_DIRNAME = "accepted"
 
 
-def sidecar_path(goldset: Path) -> Path | None:
-    """The needle sidecar for this gold set, or None when the bundle has none."""
-    candidates = [goldset.parent / SIDECAR_NAME]
+def sidecar_paths(goldset: Path) -> list[Path]:
+    """Every question-type sidecar for this gold set, nearest directory first."""
+    roots = [goldset.parent]
     if goldset.parent.name == ACCEPTED_DIRNAME:
-        candidates.append(goldset.parent.parent / SIDECAR_NAME)
-    return next((path for path in candidates if path.is_file()), None)
+        roots.append(goldset.parent.parent)
+    return [root / name for root in roots for name in SIDECAR_NAMES if (root / name).is_file()]
 
 
-def load_question_types(goldset: Path) -> dict[str, str]:
-    """Map item id -> question type from the gold set's needle sidecar ({} when absent)."""
-    source = sidecar_path(goldset)
-    if source is None:
-        return {}
+def _labels_from(source: Path) -> dict[str, str]:
     labels: dict[str, str] = {}
     with source.open(encoding="utf-8") as handle:
         for line in handle:
@@ -40,11 +41,24 @@ def load_question_types(goldset: Path) -> dict[str, str]:
     return labels
 
 
+def load_question_types(goldset: Path) -> dict[str, str]:
+    """Map item id -> question type, joined over the gold set's sidecars ({} when it has none)."""
+    joined: dict[str, str] = {}
+    for source in sidecar_paths(goldset):
+        for item_id, question_type in _labels_from(source).items():
+            joined.setdefault(item_id, question_type)
+    return joined
+
+
 def aligned_question_types(goldset: Path, item_ids: list[str]) -> list[str | None] | None:
-    """Question types aligned one-to-one with `item_ids`, or None when no sidecar exists."""
-    if sidecar_path(goldset) is None:
-        return None
+    """Question types aligned one-to-one with `item_ids`, or None when nothing labels them.
+
+    None means "do not report slices at all" -- an empty or absent sidecar labels no item, and a
+    report of empty slices would read as a measured result rather than a missing input.
+    """
     labels = load_question_types(goldset)
+    if not labels:
+        return None
     return [labels.get(item_id) for item_id in item_ids]
 
 

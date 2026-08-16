@@ -21,6 +21,12 @@ ROW_ORACLE_DOC = "dense+oracle-doc"
 ROW_LEXICAL = "lexical"
 RERANK_ROW_SUFFIX = "+rerank"
 
+# Question-type slices always present in the report, even at n=0, so a reader can tell "this
+# corpus labels no numeric question" from "nobody looked". These are the slices a CHUNKING change
+# is read on: in converted Ukrainian PDFs the numeric and comparative answers live in tables, and
+# multi-hop answers need every span carried at once.
+FOCUS_SLICES = ("numeric", "comparative", "multi-hop")
+
 
 class Retriever(Protocol):
     def retrieve(self, question: str, k: int) -> list[ChunkRecord]: ...

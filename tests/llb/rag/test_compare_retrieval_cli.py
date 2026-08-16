@@ -65,6 +65,30 @@ def test_question_type_labels_are_absent_without_a_needle_sidecar(tmp_path):
     assert load_question_types(goldset) == {}
 
 
+def test_question_type_labels_come_from_the_item_provenance_sidecar(tmp_path):
+    # The external-draft import lane writes `item_provenance.jsonl` instead of a needle sidecar.
+    goldset = tmp_path / "goldset.jsonl"
+    goldset.write_text("", encoding="utf-8")
+    (tmp_path / "item_provenance.jsonl").write_text(
+        '{"id":"a","question_type":"numeric"}\n', encoding="utf-8"
+    )
+    assert load_question_types(goldset) == {"a": "numeric"}
+    assert aligned_question_types(goldset, ["a", "b"]) == ["numeric", None]
+
+
+def test_question_type_sidecars_join_with_the_needle_sidecar_winning(tmp_path):
+    goldset = tmp_path / "goldset.jsonl"
+    goldset.write_text("", encoding="utf-8")
+    (tmp_path / "needle_items.jsonl").write_text(
+        '{"id":"a","question_type":"numeric"}\n', encoding="utf-8"
+    )
+    (tmp_path / "item_provenance.jsonl").write_text(
+        '{"id":"a","question_type":"factoid"}\n{"id":"b","question_type":"comparative"}\n',
+        encoding="utf-8",
+    )
+    assert load_question_types(goldset) == {"a": "numeric", "b": "comparative"}
+
+
 def test_question_type_map_omits_duplicate_question_text_with_conflicting_labels(tmp_path):
     goldset = tmp_path / "goldset.jsonl"
     items = [

@@ -76,39 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### table-aware-chunking
-
-Add a `table` strategy to `src/llb/rag/chunking/`: chunk boundaries never split a markdown table
-row, a table that fits `size` stays one chunk carrying its nearest heading breadcrumb, and an
-oversized table splits between row blocks with the header row's offsets recorded as additive
-`metadata.table_header_span` -- chunk text stays a verbatim corpus slice with exact offsets.
-Non-table text routes through the `recursive` splitter. Extend `compare-retrieval` with a
-per-question-type breakdown (joined from `item_provenance.jsonl` when the sidecar exists) so the
-numeric and comparative slices -- where tables carry the answers in converted Ukrainian PDF
-corpora -- are scored beside the aggregate.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the chunking dispatch seam (`chunk_spans`), the markdown table output
-  of the PDF conversion lane ([data prep](current/data-prep.md)), and the question-type taxonomy
-  in the draft sidecars.
-- User-visible outcome: numeric and comparative questions whose evidence lives in tables stop
-  losing recall to mid-table chunk cuts, and the per-type breakdown shows exactly which question
-  slice a chunking change helps or hurts.
-- Scope boundary: in scope -- the strategy, tuner registration behind `--extended-chunkers`, and
-  the per-type `compare-retrieval` breakdown. Out of scope -- cell-level table QA, corpus text
-  rewriting, and HTML tables.
-- Data and artifact paths: per-strategy stores under the existing comparison layout
-  `$DATA_DIR/llb/rag/<strategy>/`; no new roots.
-- Execution path: `make build-index CHUNK_STRATEGY=table`; `make compare-retrieval
-  CHUNK_STRATEGIES=table,recursive,sentence GOLDSET=<gs>`; CI covers offset round-trips and
-  row-boundary alignment on a committed markdown-table fixture.
-- Acceptance gates: `make ci` green; every chunk stays offset-exact under `validate-goldset`;
-  a heavy comparison over the quickstart accepted goldset reports aggregate plus numeric-slice
-  recall@10 / MRR against `recursive` and `sentence`.
-- Documentation target: [RAG core](current/rag-core.md) chunking strategies and the
-  [data prep](current/data-prep.md) chunking list.
-
 #### embedder-candidate-roster-refresh
 
 The bake-off's default candidate list is the 2023-2024 multilingual generation, and the paired lane
@@ -262,6 +229,47 @@ Ukrainian baseline.
   [evaluation rigor](current/rigor-board-judge.md) and the query-side processing section of
   [RAG core](current/rag-core.md).
 
+#### retrieved-evidence-intactness-metric
+
+`recall@k` credits an item as soon as a retrieved chunk OVERLAPS a gold span by ONE character
+(`chunk_hits_span` in `src/llb/rag/retrieval.py`), so no retrieval metric in the repo can see
+whether the evidence arrived INTACT -- a chunk that cuts a table row in half scores the identical
+hit as one carrying the whole row, which is why a chunker that provably never cuts a row
+reproduces `recursive` to three decimals on a corpus where 24 of 95 items have gold evidence inside
+a table row ([RAG core](current/rag-core/chunking.md#retrieval-evidence)). Add the intactness pair
+beside recall@k / MRR: `span_char_coverage@k` (the share of each gold span's characters the top-k
+carries, averaged per item) and `span_intact@k` (1.0 only when some SINGLE retrieved chunk carries
+a span whole). Both are pure functions of the same (retrieved, spans) pairs every lane already
+builds, so every comparison lane gets them for free, and every chunker row in the repo becomes
+re-readable on the axis a chunking change actually moves.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `covered_span_count` / `span_coverage_at_k` in
+  `src/llb/rag/retrieval.py` (the multi-span refinements are the same shape one level up), the
+  metric-vector seam in `src/llb/rag/embedding_bakeoff_uncertainty.py` so the new columns get
+  paired intervals unchanged, and the slice reporting in `src/llb/rag/compare.py`.
+- User-visible outcome: an operator can tell "the evidence was retrieved" from "the evidence was
+  retrieved whole", which is the difference between a chunk the model can answer from and a
+  fragment it cannot.
+- Scope boundary: in scope -- the two metrics, their per-lane and per-slice columns, their paired
+  intervals, and a re-read of the recorded chunker rows. Out of scope -- changing what `recall@k`
+  means or which metric ranks the leaderboard, answer-side coverage (that is
+  `answer-side-span-coverage-metric`), and any chunker recommendation change before the re-read
+  supports one.
+- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` and
+  `$DATA_DIR/llb/rag/<strategy>/` comparison layout; no new roots.
+- Execution path: `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence NOISE_FLOOR=1`
+  on both scored corpora on the CUDA host; CI covers both metrics over fixtures (span carried
+  whole, span split across two chunks, span partly retrieved, span missed).
+- Acceptance gates: `make ci` green; recall@k and MRR reproduce their recorded values
+  bit-identically on both corpora (the metrics are additive); the report carries both new columns
+  per lane and per slice with paired intervals; the re-read states whether row-aligned chunking
+  separates from `recursive` on intactness at the reached sample size, including recording that it
+  does not.
+- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the
+  table-aware chunking evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
+
 #### chunker-bake-off-under-the-size-cap (optional)
 
 Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The
@@ -407,6 +415,44 @@ the drafted-grounding rules are current behavior
   factoid cost of the overlap row reproduces.
 - Documentation target: the answer-quality evidence subsection of
   [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
+
+#### table-header-context-restoration (optional)
+
+The `table` chunker records the header row's source offsets on every table chunk
+(`metadata.table_header_span`, [RAG core](current/rag-core/chunking.md#table-aware-chunking)) and
+NOTHING reads them: a middle row block reaches the model as rows of bare values whose column names
+sit in a different chunk, which is precisely the shape a numeric or comparative question cannot be
+answered from. Add an opt-in context-assembly step that, when a retrieved chunk carries
+`table_header_span` and does not already contain it, prepends the header row's source text to that
+chunk IN THE PROMPT ONLY -- the stored chunk, its offsets, and the source-span metric stay
+untouched, so retrieval scores are unchanged by construction and only answer quality can move.
+Measure it on the numeric and comparative slices, where the header is what the answer needs.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none in code, but it is only readable beside
+  `retrieved-evidence-intactness-metric`, which measures how often a row block arrives without its
+  header in the first place. Reuse `format_context` in `src/llb/eval/common.py`, the context-order
+  seam in [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order),
+  and the per-slice comparison in `src/llb/eval/answer_quality/`.
+- User-visible outcome: a table row block that reaches the model carries the column names that
+  make its numbers readable, instead of a grid of unlabeled values.
+- Scope boundary: in scope -- the prompt-side header restoration, its added-token cost, and a
+  per-slice answer-quality comparison with the standard paired verdict. Out of scope -- rewriting
+  stored chunk text, any change to the retrieval metrics or the chunk offsets, reconstructing a
+  table across chunks, and enabling the step by default before the measurement supports it.
+- Data and artifact paths: `$DATA_DIR/table-aware-chunking/<run>/answer-quality/`.
+- Execution path: `make build-index CHUNK_STRATEGY=table` then `make compare-answer-quality` with
+  the step off and on over a table-heavy corpus on the CUDA host; CI covers the restoration rule
+  (prepend, skip when the chunk already contains the header, skip when no span is recorded) and the
+  token accounting over fixtures.
+- Acceptance gates: `make ci` green; with the step off every recorded bundle reproduces
+  bit-identically; retrieval recall@k / MRR are identical with the step on and off (the change is
+  prompt-side only); the report carries the objective delta per question-type slice with paired
+  intervals plus the added tokens per answer, and states adopt or reject.
+- Documentation target: the table-aware chunking section of
+  [RAG core](current/rag-core/chunking.md#table-aware-chunking) and the context-order section of
+  [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
 
 ### Answer scoring -- `answer-scoring`
 

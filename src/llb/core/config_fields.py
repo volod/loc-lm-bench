@@ -20,7 +20,7 @@ from llb.core.config_validation import (
 )
 
 Strategy = Literal[
-    "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late"
+    "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late", "table"
 ]
 RetrievalBackend = Literal["faiss", "graph", "fused"]
 RetrievalStrategy = Literal["local_khop", "global_community"]

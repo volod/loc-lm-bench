@@ -77,11 +77,29 @@ def _diagnostic_lines(report: ComparisonReport, width: int) -> list[str]:
         from llb.rag.duplicates import format_duplicate_stats
 
         lines.append(f"  {label.ljust(width)}   {format_duplicate_stats(stats)}")
-    for slice_label, slice_report in report.get("slices", {}).items():
+    lines.extend(_slice_lines(report, width))
+    return lines
+
+
+def _slice_lines(report: ComparisonReport, width: int) -> list[str]:
+    """The per-question-type breakdown: one scored block per labeled slice, empties named once.
+
+    A slice with no labeled item scores nothing, so printing its zeros would read as a measured
+    result. The empty focus slices are named on one line instead, and the JSON report keeps every
+    slice (with its `n`) either way.
+    """
+    slices = report.get("slices", {})
+    lines: list[str] = []
+    for slice_label, slice_report in slices.items():
+        if not slice_report["n"]:
+            continue
         lines.append(f"  slice {slice_label} (n={slice_report['n']}):")
         for label in sorted(slice_report["backends"]):
             metrics = slice_report["backends"][label]
             lines.append(
                 f"    {label.ljust(width)}   {metrics['recall_at_k']:8.3f} {metrics['mrr']:8.3f}"
             )
+    empty = [label for label, entry in slices.items() if not entry["n"]]
+    if empty:
+        lines.append(f"  slices with no labeled item: {', '.join(sorted(empty))}")
     return lines
