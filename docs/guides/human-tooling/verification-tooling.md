@@ -31,9 +31,7 @@ navigation, saved status, and dataset/record/stratum progress use the action rol
 it directly with:
 
 ```bash
-source scripts/shared/common.sh
-llb_load_env
-uv pip install -e ".[review]"
+make install-extras EXTRAS=review
 make review-workbench REVIEW_PATH=<ledger-or-run-dir>
 ```
 

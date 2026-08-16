@@ -61,3 +61,21 @@ def load_store_view(index_dir: Path | str) -> StoreView:
             f"{len(vectors)} vectors."
         )
     return StoreView(index_dir=resolved, chunks=chunks, vectors=vectors, meta=meta)
+
+
+def store_doc_fingerprints(index_dir: Path | str) -> dict[str, str]:
+    """A store's `{doc_id: sha256}` manifest, read from its meta alone.
+
+    Placing a finished bundle against a store needs the manifest and nothing else -- no chunks, no
+    vector index, and no encoder -- so an archive sweep can ask "is this still the store that run
+    read" for the cost of one small JSON file per store.
+    """
+    resolved = resolve_store_dir(Path(index_dir), META_FILE)
+    meta_path = resolved / META_FILE
+    if not meta_path.is_file():
+        raise SystemExit(f"[conflicts] no store at {resolved}: nothing to compare a bundle with.")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    recorded = meta.get("doc_fingerprints")
+    if not isinstance(recorded, dict):
+        return {}
+    return {str(key): str(value) for key, value in recorded.items()}

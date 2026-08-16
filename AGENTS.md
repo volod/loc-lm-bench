@@ -97,26 +97,114 @@ stays a single page. Rules for keeping it navigable:
    "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
    is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
    residual work remains under it; if fully delivered with no residual, delete the whole item.
-3. **Promote insights to forward TODOs.** Implementation surfaces insights you only get by doing the
-   work -- a weakness in the result, a gap, a sharp edge, a research-grade improvement. Capture each
-   as a NEW forward task written as FUTURE work (what to do + why it helps + rough how), NOT as
-   commentary on what you did; flag it optional if it is. (E.g. "strengthen the borderline judge
-   calibration split -- its CI dips below the gate -- by adding harder + fluent-but-wrong items,
-   then re-run the calibrate loop".)
+3. **Route what the work surfaced.** Implementation surfaces things you only learn by doing it -- a
+   weakness in the result, a difficulty, a sharp edge, a capability the domain turns out to need.
+   Each one goes to exactly one of four places, and picking the right one is the whole discipline:
+   - a **chore** (a file over the soft limit, an artifact already inside its size bound) -- do it
+     inline now or drop it, never write it up as a task;
+   - an **audit of our own output** (an artifact's field layout or byte count) -- drop it;
+   - **more work under an existing capability** -- a new task in that capability's group in
+     `plan.md`, written as FUTURE work (what to do + why it helps + rough how), not as commentary on
+     what you did; flag it optional if it is. (E.g. "strengthen the borderline judge calibration
+     split -- its CI dips below the gate -- by adding harder + fluent-but-wrong items, then re-run
+     the calibrate loop".)
+   - a **capability the spec does not describe** -- do NOT open a task for it. Run the product
+     feature lifecycle below. This is the important one: a useful discovery is a reason to extend the
+     product, and extending it means amending the spec first.
+
+   Finishing a task and adding nothing is a normal, good outcome; so is finishing one and amending
+   the spec because the work taught you what the product was missing. What is never acceptable is
+   capability arriving in the plan, or in `src/`, that no spec section describes.
 4. **Keep only forward-actionable context.** When a remaining task needs a fact about delivered
    behavior to be implementable, state that fact in ONE line and LINK to `docs/impl/current.md` or
    the specific `docs/impl/current/*.md` topic for the detail -- never restate the delivered
    description in `plan.md`.
 
+## Product Feature Lifecycle
+
+The spec is a LIVING register of what the product does, not a scope fence. Implementation is the
+main way gaps in it are found, and finding one is a good outcome: a difficulty hit while building, a
+corpus property nobody anticipated, or a result that only makes sense alongside a capability that
+does not exist yet are all legitimate discoveries. What is NOT acceptable is acting on the discovery
+silently -- code and plan tasks that no spec section describes are capability nobody can evaluate,
+document, or later decide to remove.
+
+So the response to a discovery is to extend the product deliberately. Run these six steps in order;
+[Extending this specification](docs/design/spec.md#extending-this-specification) is the same list
+written for the reader of the spec.
+
+1. **State the problem in domain terms.** What can an operator not do, or not trust, today? "Our
+   artifact is bigger than it needs to be" is not a domain problem. "An operator cannot tell which
+   of two contradicting documents holds" is.
+2. **Amend `docs/design/spec.md`.** Extend the section that owns the capability, or add one,
+   INCLUDING its boundary -- what it explicitly does not do. A capability with no stated boundary
+   grows without one, which is how a helper becomes the third-largest package in the repo.
+3. **Declare the evaluation before implementing.** Name how anyone will know it works: the
+   measurement, its gate, and what a negative result would look like. A capability whose evaluation
+   cannot be stated is not ready to be built. A negative result is then a valid outcome to record,
+   not a thing to work around.
+4. **Register it.** Add a row to the [capability registry](docs/design/spec.md#capability-registry)
+   with status `planned` and the evaluation from step 3. Row order is the implementation line, so
+   placing the row is also deciding when it gets built.
+5. **Write the tasks.** Add them to `plan.md` under that capability's `###` group, each with a
+   `Serves` line naming the capability id.
+6. **Close the loop when it lands.** Record the delivered behavior in the current docs, remove the
+   task from `plan.md`, and flip the registry row to `shipped` with its implementation link.
+
+Steps 2-4 are the cost, and they are deliberately real: cheap enough that a genuine capability
+always clears them, expensive enough that a passing thought does not. Do them BEFORE writing code
+when the capability is known up front, and in the same change as the code when the work itself
+taught you the capability was needed -- never in a later ticket.
+
+**When an existing capability is the wrong shape,** amend its spec section rather than working
+around it in the implementation. A spec that no longer describes the code is worse than no spec: it
+is a document people trust and should not.
+
+**`(optional)` is binding within a capability group.** It sorts a task behind the non-optional tasks
+of its own group; it never reorders the line. An optional task of an earlier capability still comes
+before a required task of a later one -- the line is where priority lives, and `(optional)` only
+breaks ties inside a group.
+
+**A capability whose remaining work is entirely optional moves DOWN the line.** That is rule 3 of the
+[registry ordering](docs/design/spec.md#capability-registry), and it is the counterweight to the
+trust chain: a shipped upstream capability with nothing but refinements left is not what blocks the
+product, however far upstream it sits. Check this when a capability's group has grown -- concentrated
+growth in one shipped capability is the signal to re-read the line, not to work it harder.
+
+## Specification And Plan Integrity
+
+The spec and the plan must agree at all times, and `make lint-spec-plan` makes that a build failure
+rather than a review opinion. It runs inside `make ci-checks`, so a drift is caught in the change
+that introduced it. What it enforces:
+
+- every plan task carries a `Serves` line naming a capability id that exists in the registry;
+- every `shipped` capability links to its implementation docs, and every `planned` one has at least
+  one open plan task;
+- every capability declares a non-empty evaluation;
+- capability groups appear in `plan.md` in the registry's row order, in both sections.
+
+Run it after any edit to `docs/design/spec.md` or `docs/impl/plan.md`. When it fails, fix the
+DOCUMENTS -- the checker is reporting a real disagreement about what the product is, and the fix is
+never to loosen the check.
+
+**plan.md structure:** three levels -- `## Agent Implementation Tasks` / `## Human-Assisted Tasks`,
+then a `###` capability group whose heading is the capability title, two hyphens, and the backticked
+capability id, then one `####` heading per task id. Count tasks with
+`grep -c '^#### ' docs/impl/plan.md`.
+
 **plan.md content rules:**
 
 - Every line must answer "what remains to be done": well-defined specs, dependencies / blockers, and
-  explicit AGI-vs-human to-do instructions, ordered by priority and development sequence.
+  explicit AGI-vs-human to-do instructions, ordered by the capability implementation line.
 - FORBIDDEN in `plan.md`: "DONE", "delivered", "implemented", an ISO date, "we/I did", check marks,
   result values, or any past-tense status narrative -- all of that lives in `current.md`.
 - Self-check before finishing: the task diff NET-REMOVES the implemented scope from `plan.md` and
   ADDS it to the current docs (`current.md` index or `current/*.md` topic), and a grep of `plan.md`
   for `DONE` / `delivered` / `implemented` / an ISO date returns nothing left over from this task.
+- Self-check across a ticket: report the task count before and after, and say which capabilities
+  moved. Growth is allowed -- that is what extensibility means -- but it is REPORTED, never silent,
+  and growth concentrated in the capability you happened to be working in is the signal to stop and
+  ask whether the line still reflects what matters.
 
 ## Leaving The Host Clean
 

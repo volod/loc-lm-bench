@@ -3748,7 +3748,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'prep'", specifier = ">=1.40" },
     { name = "markitdown", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.1" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2,<2" },
     { name = "mlflow", marker = "extra == 'track'", specifier = ">=2.15" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "numpy", specifier = ">=2.0" },

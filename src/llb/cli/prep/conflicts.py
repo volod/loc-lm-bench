@@ -21,6 +21,7 @@ from llb.conflicts.constants import (
     TIERS,
     tiers_up_to,
 )
+from llb.conflicts.candidate_record import DEFAULT_CANDIDATE_RECORD_PAIRS
 from llb.conflicts.null_distribution import (
     SUGGESTED_MAX_CANDIDATE_PAIRS,
     DEFAULT_NULL_SAMPLE_PAIRS,
@@ -77,6 +78,15 @@ def audit_corpus_conflicts_cmd(
         f"tier returns at most this many candidate pairs (try {SUGGESTED_MAX_CANDIDATE_PAIRS}); "
         "portable across corpora and corpus sizes, unlike an absolute cosine or a bare quantile. "
         "A rank cutoff, not a false-positive guarantee -- see the data-prep known limitation",
+    ),
+    max_candidate_record_pairs: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="how many DOCUMENT pairs of the ranked candidate list the bundle records, which "
+        "bounds how deep a later `recompute-conflict-stage --budget` can reach "
+        f"(default {DEFAULT_CANDIDATE_RECORD_PAIRS}, or this run's --max-candidate-pairs when it "
+        "sets one); costs about 24 bytes per pair and answers every budget up to at least that "
+        "rank",
     ),
     cos_quantile: Optional[float] = typer.Option(
         None,
@@ -178,6 +188,7 @@ def audit_corpus_conflicts_cmd(
             cos_threshold=cos_threshold,
             cos_quantile=cos_quantile,
             max_candidate_pairs=max_candidate_pairs,
+            max_candidate_record_pairs=max_candidate_record_pairs,
             null_sample_pairs=null_sample_pairs,
             null_seed=null_seed,
             leaf_size=leaf_size,

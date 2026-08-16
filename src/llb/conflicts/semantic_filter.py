@@ -8,7 +8,7 @@ list of metadata labels.
 """
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from llb.conflicts.constants import (
@@ -31,18 +31,26 @@ def claim_token_count(text: str) -> int:
 
 @dataclass(frozen=True)
 class ContentSelection:
-    """Comparable ordinals plus disjoint exclusion-reason counts."""
+    """Comparable ordinals plus the disjoint exclusion sets -- one reason per excluded chunk.
+
+    The reasons are kept as ORDINAL SETS rather than as counts because the chunk each ordinal names
+    still exists here and nowhere downstream: the per-document exclusion record
+    (`document_exclusions.py`) is folded from them, and a count cannot say which document.
+    """
 
     ordinals: set[int]
-    front_matter: int
-    low_content: int
-    metadata_blocks: int
+    front_matter: set[int]
+    low_content: set[int]
+    metadata_blocks: set[int]
+    # Claim tokens per low-content ordinal. The floor is the ONLY one of the three exclusions a
+    # `--min-claim-tokens` change moves, so this is what turns "lower the floor" into a floor VALUE.
+    low_content_tokens: dict[int, int] = field(default_factory=dict)
 
     def stats(self) -> dict[str, int]:
         return {
-            "excluded_front_matter_chunks": self.front_matter,
-            "excluded_low_content_chunks": self.low_content,
-            "excluded_metadata_block_chunks": self.metadata_blocks,
+            "excluded_front_matter_chunks": len(self.front_matter),
+            "excluded_low_content_chunks": len(self.low_content),
+            "excluded_metadata_block_chunks": len(self.metadata_blocks),
         }
 
 
@@ -152,18 +160,23 @@ def select_content_chunks(
     """Select semantic-comparable chunks and account for one exclusion reason per chunk."""
     front_matter: set[int] = set()
     low_content: set[int] = set()
+    low_content_tokens: dict[int, int] = {}
     candidates: set[int] = set()
     for ordinal, chunk in enumerate(chunks):
         if int(chunk["char_end"]) <= body_offsets.get(chunk["doc_id"], 0):
             front_matter.add(ordinal)
-        elif claim_token_count(chunk["text"]) < min_tokens:
+            continue
+        tokens = claim_token_count(chunk["text"])
+        if tokens < min_tokens:
             low_content.add(ordinal)
+            low_content_tokens[ordinal] = tokens
         else:
             candidates.add(ordinal)
     metadata_blocks = repeated_metadata_ordinals(chunks, candidates)
     return ContentSelection(
         ordinals=candidates - metadata_blocks,
-        front_matter=len(front_matter),
-        low_content=len(low_content),
-        metadata_blocks=len(metadata_blocks),
+        front_matter=front_matter,
+        low_content=low_content,
+        metadata_blocks=metadata_blocks,
+        low_content_tokens=low_content_tokens,
     )

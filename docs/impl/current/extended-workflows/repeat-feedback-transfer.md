@@ -447,5 +447,6 @@ local no-egress run.
 
 The `[crewai]` extra is a standalone install lane in `uv`: upstream CrewAI pins older Chroma,
 LanceDB, and `tomli` ranges than the repo's RAG/vector/dev extras. `pyproject.toml` declares those
-extra conflicts so `uv lock` stays resolvable while `uv pip install -e ".[crewai]"` still works for
-host validation.
+extra conflicts so `uv lock` stays resolvable while
+`UV_PROJECT_ENVIRONMENT=<dir> uv sync --frozen --extra crewai` still installs that fork verbatim
+into a dedicated environment for host validation.

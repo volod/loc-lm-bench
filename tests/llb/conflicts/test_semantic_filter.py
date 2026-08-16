@@ -35,7 +35,9 @@ def test_fixture_repeated_metadata_is_excluded_and_one_off_prose_survives():
     assert len(registry) == 2
     assert registry.isdisjoint(selection.ordinals)
     assert ordinary in selection.ordinals
-    assert selection.metadata_blocks == 2
+    # The ordinals themselves, not a count: the per-document exclusion record is folded from them.
+    assert selection.metadata_blocks == registry
+    assert selection.stats()["excluded_metadata_block_chunks"] == 2
 
 
 def test_repeated_claim_prose_under_a_shared_heading_is_preserved():

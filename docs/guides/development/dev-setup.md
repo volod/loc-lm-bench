@@ -21,8 +21,40 @@ reproduce. Two consequences:
 - Editing dependencies in `pyproject.toml` makes the next `make venv` refresh `uv.lock`.
   **Commit the updated lock**: CI syncs `--locked` and fails on a stale one.
   `make venv VENV_LOCKED=1` reproduces that failure locally instead of relocking.
-- `--inexact` leaves packages the lock does not name in place, so vLLM/torch (installed by
-  `scripts/build_vllm.sh`) and any hand-installed extra survive a re-run.
+- `--inexact` leaves packages the lock does not name in place, so vLLM and any separately installed
+  extra survive a re-run. It is **not** a promise about `torch`: torch IS in the lock's resolution
+  (via sentence-transformers), so every sync installs the LOCKED torch over the one vLLM pinned.
+  `make venv` says so and reinstalls vLLM afterwards to put it back -- `VENV_INSTALL_VLLM=0`
+  included, since a skipped reinstall leaves a torch the serving stack cannot use.
+
+**`make venv` states which it is doing: reuse or rebuild.** `.venv/pyvenv.cfg` records the python
+version at creation time, so an OS upgrade (say 3.13.14 -> 3.13.15) leaves it behind the real one,
+and uv then treats the environment as stale and REPLACES it -- discarding vLLM, flashinfer, and the
+CUDA wheels, and putting the lock's torch back instead of the one vLLM pinned. `make venv` checks
+that before syncing and refuses a rebuild nobody asked for, naming what it would discard:
+
+    make venv-restamp          # patched python, same 3.x line: record it and keep the stack
+    make venv RECREATE_VENV=1  # accept the rebuild (the vLLM reinstall is then forced)
+
+Prefer the restamp: a CPython patch release keeps the ABI, so the venv already runs the new
+interpreter and only its recorded version is stale. A MINOR move (3.13 -> 3.14) is refused there --
+that venv really does need rebuilding. `LLB_VENV_STALE_GUARD=report` syncs anyway and `=off` skips
+the check; a rebuild that discarded vLLM reinstalls it even under `VENV_INSTALL_VLLM=0`.
+
+**Add an extra with `make install-extras`, never a bare `uv pip install`.** uv's pip interface has
+no lockfile, so `uv pip install -e ".[review]"` re-resolves the WHOLE requirement set and takes the
+newest version each specifier admits -- on a clean venv the `dev` extra alone lands ten declared
+packages off the lock, `ruff` and `mypy` among them, which is the split verdict the pins exist to
+prevent. `make install-extras` runs the same install under a `uv.lock`-derived constraint:
+
+    make install-extras EXTRAS=review,pdf-quality   # add extras, held to uv.lock
+    make lock-drift                                 # name anything already off the lock
+
+`make lock-drift` prints each off-lock package with the extra that declares it and the single
+`make install-extras EXTRAS=...` that puts them all back; it exits non-zero when anything drifted,
+and `LLB_EXTRAS_LOCK_GUARD=report` downgrades that to a warning while deliberately testing an
+upgrade. Only packages `pyproject.toml` declares are constrained -- vLLM/torch stay exactly where
+`scripts/build_vllm.sh` put them, since they are hardware-matched and trail the lock on purpose.
 
 `make venv` resolves uv's package link mode per host. If this checkout and uv's shared cache are on
 different devices, it sets `UV_LINK_MODE=copy` to avoid failed cross-device hardlinks; otherwise it
@@ -140,7 +172,7 @@ CrewAI remains a dedicated environment because its pins conflict with the dev/RA
 helpers used by that path: `poppler-utils`, `libmagic-dev`, `tesseract-ocr`, `tesseract-ocr-eng`,
 and `tesseract-ocr-ukr`. Install the Python extra on transform hosts with:
 
-    uv pip install --link-mode copy --python .venv/bin/python -e ".[pdf-quality]"
+    make install-extras EXTRAS=pdf-quality
 
 Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Install
 `marker-pdf` only in the dedicated CUDA transform environment when benchmarking it explicitly.

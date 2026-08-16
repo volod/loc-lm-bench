@@ -33,9 +33,7 @@ Install the optional terminal dependency from the loaded project environment, th
 supported path:
 
 ```bash
-source scripts/shared/common.sh
-llb_load_env
-uv pip install -e ".[review]"
+make install-extras EXTRAS=review
 make review-workbench REVIEW_PATH=<ledger-or-run-dir>
 # Low-level equivalent:
 llb review <ledger-or-run-dir>

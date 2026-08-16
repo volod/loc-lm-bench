@@ -3,6 +3,8 @@
 import logging
 from typing import TYPE_CHECKING
 
+from llb.conflicts.bundle_record import RunInputs
+from llb.conflicts.candidate_record import DEFAULT_CANDIDATE_RECORD_PAIRS, CandidateRecord
 from llb.conflicts.claim_calibration import calibrate_adjudicator, load_calibration_probe
 from llb.conflicts.claim_precision import precision_block
 from llb.conflicts.claim_tier import adjudicate_pairs
@@ -14,6 +16,7 @@ from llb.conflicts.constants import (
 )
 from llb.conflicts.corpus import CorpusDoc
 from llb.conflicts.document_chunks import DocumentChunks
+from llb.conflicts.document_exclusions import DocumentExclusions
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.needles import analyze_needles
 from llb.conflicts.null_calibration import resolve_cos_threshold
@@ -102,12 +105,15 @@ def run_semantic_tiers(
     complete: LLMComplete | None,
     settled: set[tuple[str, str]],
     tree: SemanticPrefixTree | None,
-) -> DocumentChunks:
+) -> RunInputs:
     """Build/reuse the tree, run the semantic tier, then adjudicate if requested.
 
-    Returns the per-document chunk accounting the audit needs to name the STAGE an orderable
-    document pair was lost at. It is returned rather than recorded on the result because it is an
-    input to a reading, not a finding: the comparable set is known exactly here and nowhere else.
+    Returns everything the bundle's own re-readings are taken from: the per-document chunk
+    accounting the STAGE attribution needs, the per-document exclusion reasons behind the
+    claim-token floor, and the ranked candidate list a budget replay is a prefix of. They are
+    returned rather than recorded on the result because they are inputs to readings, not findings --
+    and because the comparable set, the exclusion pass, and the ranking are all known exactly here
+    and nowhere else.
     """
     governance = {doc.doc_id: doc.governance for doc in docs}
     centered = params.center_vectors and len(store.vectors) >= MIN_CENTERING_VECTORS
@@ -158,7 +164,29 @@ def run_semantic_tiers(
     }
     _record_needles(result, goldset, store, vectors, cos_threshold)
     _record_claims(result, params, store, governance, complete, semantic_findings, pairs)
-    return DocumentChunks.of(store.chunks, allowed, settled)
+    return RunInputs(
+        chunks=DocumentChunks.of(store.chunks, allowed, settled),
+        exclusions=DocumentExclusions.of(
+            store.chunks, selection, min_claim_tokens=params.min_claim_tokens
+        ),
+        candidates=CandidateRecord.of(pairs, store.chunks, limit=_record_cap(params)),
+    )
+
+
+def _record_cap(params: "AuditParams") -> int:
+    """How many document pairs this run's candidate record keeps.
+
+    Three sources in order, and the order is the point. An explicit
+    `--max-candidate-record-pairs` is what an operator who re-reads deeply sets, so it wins. Absent
+    that, the run's own candidate budget is the cap: a record deeper than the budget answers about
+    ranks the run itself refused to reach, and the re-read's question is downward. Absent both, the
+    constant -- which is priced on the depth/cost curve rather than guessed.
+    """
+    return (
+        params.max_candidate_record_pairs
+        or params.max_candidate_pairs
+        or DEFAULT_CANDIDATE_RECORD_PAIRS
+    )
 
 
 def _record_needles(

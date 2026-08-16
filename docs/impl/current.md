@@ -6,6 +6,15 @@ where it lives, how the major flows run, and why the important design choices we
 For the product design, read [`docs/design/spec.md`](../design/spec.md). For future work, read
 [`docs/impl/plan.md`](plan.md).
 
+The three files are joined by the
+[capability registry](../design/spec.md#capability-registry): each capability names what evaluates
+it and links to the area page below that documents it, and every open plan task declares the
+capability it serves. `make lint-spec-plan` fails when a task serves a capability the spec does not
+register, when a shipped capability has no implementation docs, or when the plan's groups drift out
+of the registry's order. A capability found while implementing is added to the spec through
+[Extending this specification](../design/spec.md#extending-this-specification) before it becomes
+tasks here.
+
 ## How this documentation is organized
 
 Three levels, so a search stops at the smallest page that answers the question:

@@ -2,8 +2,9 @@
 ##@ Development
 
 .PHONY: \
-	demo-eval mlflow board recommend acceptance-gate-audit venv apt-deps test test-fast format \
-	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md
+	demo-eval mlflow board recommend acceptance-gate-audit venv venv-restamp install-extras lock-drift \
+	apt-deps test test-fast format \
+	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -61,33 +62,39 @@ acceptance-gate-audit: ## Classify experiment counts and write $DATA_DIR/accepta
 
 # `uv sync --inexact` installs the uv.lock versions -- the same set GitHub CI syncs -- WITHOUT
 # pruning packages the lock does not name. The exclusion matters: vLLM/torch/flash-attn (added by
-# scripts/build_vllm.sh below) and hand-installed extras like `.[pdf-quality]` / `.[review]` live
-# in this venv too, and plain `uv sync` would uninstall them on every re-run.
+# scripts/build_vllm.sh) and hand-installed extras like `.[pdf-quality]` / `.[review]` live in this
+# venv too, and plain `uv sync` would uninstall them on every re-run. It stops holding the moment
+# the SYSTEM python is patched under the venv, because uv then REPLACES the environment instead of
+# updating it -- so scripts/setup_venv.sh decides reuse-or-rebuild before syncing (llb.build.venv_state).
 venv: ## Create/update .venv from uv.lock + extras + vLLM on CUDA hosts; VENV_INSTALL_VLLM=0 to skip
 	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
 	@SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" production
 	@case ",$(EXTRAS)," in *,dev,*|*,dev) SKIP_APT="$(SKIP_APT)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" dev ;; esac
-	@if [ -n "$(RECREATE_VENV)" ] && [ -d "$(VENV)" ]; then echo "[venv] RECREATE_VENV set -- removing $(VENV)"; rm -rf "$(VENV)"; fi
-	@if [ ! -x "$(PY)" ]; then \
-		echo "[venv] creating $(VENV) (py$(PYTHON_VERSION))"; \
-	else \
-		echo "[venv] reusing $(VENV) -- updating deps (RECREATE_VENV=1 to rebuild)"; \
-	fi
-	@UV_LINK_MODE="$(UV_LINK_MODE)" bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_export_uv_link_mode; echo "[venv] uv link mode: $${UV_LINK_MODE:-default (cache + checkout share a device)}"; UV_PROJECT_ENVIRONMENT="$(VENV)" uv sync --inexact $(UV_SYNC_LOCK_FLAG) --python $(PYTHON_VERSION) $(UV_SYNC_EXTRAS)'
-	@echo "[venv] ready: $(VENV) (extras: $(EXTRAS); versions pinned by uv.lock)"
-	@case "$(VENV_INSTALL_VLLM)" in \
-	  0|false|no) echo "[venv] vLLM install skipped (VENV_INSTALL_VLLM=$(VENV_INSTALL_VLLM))" ;; \
-	  1|true|yes) echo "[venv] installing vLLM binary wheels (forced)"; bash "$(PROJECT_ROOT)/scripts/build_vllm.sh" ;; \
-	  auto) \
-	    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then \
-	      echo "[venv] CUDA host detected; installing vLLM binary wheels"; \
-	      bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"; \
-	    else \
-	      echo "[venv] vLLM install skipped (no CUDA GPU detected; set VENV_INSTALL_VLLM=1 to force)"; \
-	    fi ;; \
-	  *) echo "ERROR: VENV_INSTALL_VLLM must be auto, 1, or 0 (got $(VENV_INSTALL_VLLM))" >&2; exit 2 ;; \
-	esac
+	@VENV="$(VENV)" PYTHON_VERSION="$(PYTHON_VERSION)" EXTRAS="$(EXTRAS)" \
+	  RECREATE_VENV="$(RECREATE_VENV)" VENV_INSTALL_VLLM="$(VENV_INSTALL_VLLM)" \
+	  UV_LINK_MODE="$(UV_LINK_MODE)" \
+	  UV_SYNC_ARGS="--inexact $(UV_SYNC_LOCK_FLAG) --python $(PYTHON_VERSION) $(UV_SYNC_EXTRAS)" \
+	  bash "$(PROJECT_ROOT)/scripts/setup_venv.sh"
 	@bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_ensure_env || true'
+
+# The cheap half of the answer above: a CPython PATCH release keeps the ABI tag and the
+# site-packages layout, so a venv whose system python moved 3.13.14 -> 3.13.15 already runs the new
+# one and only its recorded version is stale. Recording it keeps a hardware-matched CUDA stack that
+# a rebuild would spend gigabytes reinstalling. A minor move is refused (llb.build.venv_interpreter).
+venv-restamp: ## Record the patched system python in .venv/pyvenv.cfg so `make venv` reuses the venv
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@$(PY) -m llb.build.venv_state --venv "$(VENV)" --restamp
+
+# A bare `uv pip install -e ".[review]"` re-resolves the WHOLE requirement set (uv's pip interface
+# has no lockfile), so it upgrades packages `uv sync` had just pinned -- ruff and mypy included,
+# which is how a local `make ci` starts disagreeing with GitHub CI. These two run that install under
+# a uv.lock-derived constraint and name whatever is still off the lock (llb.build.extras).
+install-extras: ## Install optional extras under the uv.lock constraint (EXTRAS=review,pdf-quality)
+	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash "$(PROJECT_ROOT)/scripts/install_extras.sh" --extras "$(EXTRAS)"
+
+lock-drift: ## Name every declared package whose installed version is off uv.lock
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash "$(PROJECT_ROOT)/scripts/install_extras.sh" --check
 
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
@@ -127,6 +134,7 @@ ci-checks:
 	$(PY) -m llb.quality.acceptance_gates --check
 	@$(MAKE) --no-print-directory complexity-gate
 	@$(MAKE) --no-print-directory shell-lint-gate
+	@$(MAKE) --no-print-directory lint-spec-plan
 
 # Both also run inside ci-checks -- these aliases are for running one gate alone after a change.
 complexity-gate: ## Fail on any Radon D-or-worse or cognitive-complexity finding
@@ -150,3 +158,7 @@ lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS ov
 lint-doc-links: ## Check every relative docs link resolves (file exists, #anchor is a real heading)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.doc_links
+
+lint-spec-plan: ## Check the spec's capability registry and plan.md agree (also runs in ci-checks)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.spec_plan_integrity

@@ -15,6 +15,7 @@ fresh build is the better trade.
 import math
 from dataclasses import dataclass
 
+from llb.conflicts.store_identity import identity_payload
 from llb.conflicts.tree import SemanticPrefixTree
 from llb.conflicts.tree_build import bisect
 from llb.conflicts.tree_node import TREE_VERSION, TreeNode, node_bounds, node_geometry
@@ -201,6 +202,10 @@ def tree_meta(
 
     The embedder fingerprint is what stops a tree built under one encoder from being queried under
     another -- centroids and radii are only meaningful in the space they were computed in.
+
+    The store's own manifest is recorded as an IDENTITY (`store_identity.py`) rather than copied in
+    full: the only question asked of it is whether the store on disk is still the store this was
+    built over, and one digest answers that in 64 bytes whatever the corpus size.
     """
     maximum_radius = max((node.radius for node in tree.nodes.values()), default=0.0)
     radius_payload: dict[str, object]
@@ -215,7 +220,7 @@ def tree_meta(
         "cos_threshold": cos_threshold,
         **radius_payload,
         "corpus_fingerprint": corpus_fingerprint,
-        "doc_fingerprints": dict(doc_fingerprints),
+        **identity_payload(doc_fingerprints),
     }
 
 

@@ -470,7 +470,7 @@ pair the corpus cannot order.
 | `effort` | the run read no store, so only whole documents were ever compared | raise `--effort` to `semantic` or `claim` |
 | `duplicate_collapse` | a side has no chunk in the store because the hash tier proved it a copy of one that does | none -- read the pair through the copy the store kept |
 | `chunking` | a side has no chunk in the store, and no copy of it does either | rebuild the store over this corpus, or re-chunk it |
-| `claim_token_floor` | a side's chunks are in the store and every one is excluded from comparison | lower `--min-claim-tokens`, or re-chunk |
+| `claim_token_floor` | a side's chunks are in the store and every one is excluded from comparison | lower `--min-claim-tokens` to the value the record names, or re-chunk ([bundle record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it)) |
 | `candidates` | both sides are comparable and the pair still never reached a row | raise `--max-candidate-pairs`, or lower the cosine threshold |
 
 The stages are tried in that order, which is the order a pair meets them: a document the store
@@ -557,6 +557,12 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own
   re-chunk so the claim lands in a longer chunk.
 ```
 
+The claim-floor sentence above is the reading BEFORE the per-document exclusion record: the
+disjunction is what a run that kept one exclusion total could offer. A run under the current build
+names the reason per document and the floor value that returns the pair
+([bundle record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it));
+the stage and the pair are unchanged.
+
 **Do the two rules ever disagree? Not on a single bundle this host had.** Recomputed over every
 audit bundle on disk at the time -- each bundle's own rows from its `findings.jsonl`, the
 per-document chunk accounting rebuilt from the store that run read, no model and no
@@ -611,13 +617,27 @@ DIFFERENT question while looking like the same recompute, which is what made thi
 the granularity rules `make compare-conflict-granularity` re-scores from rows alone.
 
 So the run writes both of them down beside the coverage they explain, as
-`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/stage_replay.py` builds it;
-`AuditResult.stage_inputs` carries it):
+`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/bundle_record.py` builds it,
+`stage_replay.py` re-reads it;
+`AuditResult.stage_inputs` carries it). The stage was the FIRST reading to get that treatment and is
+no longer the only one: which other questions a finished bundle answers alone, which it refuses, and
+where the record's size bound draws the line are in
+[what a bundle can answer alone](conflict-bundle-record.md). The two keys below are the stage's own
+share of that record.
 
 | key | what it carries | why it is recorded |
 | --- | --- | --- |
-| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- and the id alone where it has neither | corpus order is data, not presentation: it picks between two pairs lost at the same stage |
 | `chunks` | `stored` / `comparable` / `copies` per document (`DocumentChunks.payload`) | the store's own answer, which a rebuild changes |
+
+`documents` is also the record's id table: from `schema_version` 4 `chunks` keys on a document's
+POSITION in it rather than on its id, and so does every other map in the record
+([the id table](conflict-bundle-record.md#the-id-table-every-document-named-once)); from
+`schema_version` 5 a document with no ordering field to label is recorded as that id alone
+([the label](conflict-bundle-record.md#the-label-a-document-with-nothing-to-label-was-carrying)).
+All three forms resolve to the same document ids and every reading replays identically through each,
+so the figures below -- measured before either change -- are an upper bound on what the record costs
+today.
 
 `chunks` is ABSENT below the semantic tier, never empty: that absence is what the `effort` reading
 is read from, and an empty accounting says the opposite (a store that held nothing) -- a run whose

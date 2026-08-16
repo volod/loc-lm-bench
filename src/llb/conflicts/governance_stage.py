@@ -33,6 +33,7 @@ has to fix first anyway, since a document the store never held cannot have met a
 from collections.abc import Container, Sequence
 
 from llb.conflicts.document_chunks import DocumentChunks
+from llb.conflicts.document_exclusions import DocumentExclusions
 from llb.conflicts.governance import ORDERING_FIELDS, compare_editions, edition_key
 from llb.core.contracts.common import JsonObject
 
@@ -118,7 +119,49 @@ def _collapsed_stage(missing: Sequence[str], chunks: DocumentChunks) -> tuple[st
     )
 
 
-def _stage_of(pair: tuple[str, str], chunks: DocumentChunks | None) -> tuple[str, str, str]:
+def _floor_stage(
+    filtered: Sequence[str], exclusions: DocumentExclusions | None
+) -> tuple[str, str, str]:
+    """Every chunk of these documents is excluded -- for which reason, and at which floor.
+
+    Without the per-document exclusion record the reading can only offer the disjunction the run
+    threw away ("front matter, below the floor, or a metadata block"), two thirds of which the named
+    knob cannot move. With it, the reason carries the counts and the knob carries a VALUE -- or says
+    that no value works, when nothing the floor governs is what excluded the document.
+    """
+    excluded = _quoted(filtered, "and")
+    if exclusions is None:
+        return (
+            STAGE_CLAIM_FLOOR,
+            f"every chunk of {excluded} in the store is excluded from comparison -- front matter, "
+            "below `--min-claim-tokens`, or a repeated metadata block",
+            STAGE_KNOBS[STAGE_CLAIM_FLOOR],
+        )
+    per_document = "; ".join(f"`{doc_id}`: {exclusions.phrase_for(doc_id)}" for doc_id in filtered)
+    floors = [exclusions.floor_for(doc_id) for doc_id in filtered]
+    reason = f"every chunk of {excluded} in the store is excluded from comparison ({per_document})"
+    if any(floor is None for floor in floors):
+        return (
+            STAGE_CLAIM_FLOOR,
+            reason,
+            "re-chunk so the claim lands in a body chunk of its own -- no `--min-claim-tokens` "
+            "value returns this pair, because nothing the floor governs is what excluded it",
+        )
+    # The pair needs EVERY filtered side back, so the floor is the lowest of their recovery points.
+    return (
+        STAGE_CLAIM_FLOOR,
+        reason,
+        f"lower `--min-claim-tokens` to {min(floor for floor in floors if floor is not None)} or "
+        f"below (this run used {exclusions.min_claim_tokens}), or re-chunk so the claim lands in a "
+        "longer chunk",
+    )
+
+
+def _stage_of(
+    pair: tuple[str, str],
+    chunks: DocumentChunks | None,
+    exclusions: DocumentExclusions | None = None,
+) -> tuple[str, str, str]:
     """The stage this pair stopped at, the observation that places it there, and the one knob."""
     if chunks is None:
         return (
@@ -141,12 +184,8 @@ def _stage_of(pair: tuple[str, str], chunks: DocumentChunks | None) -> tuple[str
             STAGE_KNOBS[STAGE_CHUNKING],
         )
     if stage == STAGE_CLAIM_FLOOR:
-        filtered = [doc_id for doc_id in pair if stages[doc_id] == STAGE_CLAIM_FLOOR]
-        return (
-            STAGE_CLAIM_FLOOR,
-            f"every chunk of {_quoted(filtered, 'and')} in the store is excluded from comparison "
-            "-- front matter, below `--min-claim-tokens`, or a repeated metadata block",
-            STAGE_KNOBS[STAGE_CLAIM_FLOOR],
+        return _floor_stage(
+            [doc_id for doc_id in pair if stages[doc_id] == STAGE_CLAIM_FLOOR], exclusions
         )
     return (
         STAGE_CANDIDATES,
@@ -269,24 +308,25 @@ def returned_doc_pairs(rows: Sequence[JsonObject]) -> set[tuple[str, str]]:
     }
 
 
-def lost_pair_attribution(
+def attribution_over_returned(
     coverage: JsonObject,
     documents: Sequence[tuple[str, JsonObject]],
-    rows: Sequence[JsonObject],
+    returned_pairs: Container[tuple[str, str]],
     chunks: DocumentChunks | None,
+    exclusions: DocumentExclusions | None = None,
 ) -> JsonObject:
-    """`{LOST_PAIR_FIELD: ...}` for the earliest stage a pair was lost at, or `{}` when none was.
+    """The attribution against an explicit set of returned pairs -- the whole rule, once.
 
-    Empty is the common and correct answer twice over: a corpus that can order nothing has no pair
-    to lose, and a run that returned every orderable pair it could have lost none -- in both cases
-    there is no knob to name and the reading says nothing extra.
+    Taking the returned pairs rather than the rows is what lets a bundle replay ask the same
+    question at a DIFFERENT candidate budget (`candidate_record.py`): the budget changes which pairs
+    came back and changes nothing else, so the rule must not be re-implemented to vary it.
     """
     if not int(coverage.get("orderable_document_pairs") or 0):
         return {}
-    lost = earliest_lost_orderable_pair(documents, returned_doc_pairs(rows), chunks)
+    lost = earliest_lost_orderable_pair(documents, returned_pairs, chunks)
     if lost is None:
         return {}
-    stage, reason, knob = _stage_of(lost, chunks)
+    stage, reason, knob = _stage_of(lost, chunks, exclusions)
     return {
         LOST_PAIR_FIELD: {
             "documents": list(lost),
@@ -295,6 +335,24 @@ def lost_pair_attribution(
             "knob": knob,
         }
     }
+
+
+def lost_pair_attribution(
+    coverage: JsonObject,
+    documents: Sequence[tuple[str, JsonObject]],
+    rows: Sequence[JsonObject],
+    chunks: DocumentChunks | None,
+    exclusions: DocumentExclusions | None = None,
+) -> JsonObject:
+    """`{LOST_PAIR_FIELD: ...}` for the earliest stage a pair was lost at, or `{}` when none was.
+
+    Empty is the common and correct answer twice over: a corpus that can order nothing has no pair
+    to lose, and a run that returned every orderable pair it could have lost none -- in both cases
+    there is no knob to name and the reading says nothing extra.
+    """
+    return attribution_over_returned(
+        coverage, documents, returned_doc_pairs(rows), chunks, exclusions
+    )
 
 
 def lost_pair_sentence(coverage: JsonObject) -> str:

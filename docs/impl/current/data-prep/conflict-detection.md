@@ -120,6 +120,11 @@ Precedence is `--cos-threshold` > `--cos-quantile` > `--max-candidate-pairs` > t
 an operator who names a cosine has usually swept for it and is never silently overridden.
 Calibration is opt-in; with no knob the fixed `DEFAULT_COSINE_THRESHOLD` still applies.
 
+Not to be confused with the similarly named `--max-candidate-record-pairs`, which changes nothing
+about detection: it sets how much of the ranked list the BUNDLE writes down for a later budget
+re-read ([bundle
+record](conflict-bundle-record.md#how-deep-the-prefix-reaches-and-what-the-depth-costs)).
+
 The distribution is **enumerated exactly** whenever the comparable pair space fits
 `MAX_EXHAUSTIVE_PAIRS` (5M); sampling is only the fallback above that. That is not an
 optimization. Sampling puts a `1/N` floor under the estimable tail, and the HR corpus lands below

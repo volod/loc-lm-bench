@@ -164,7 +164,10 @@ make ci
 ```
 
 `make venv` creates `.venv`, installs the editable package with extras, and seeds `.env` from
-`.env.example`. GitHub CI uses the lighter dev dependency set and does not require GPU services.
+`.env.example`. Adding an extra afterwards goes through `make install-extras EXTRAS=<groups>` and
+never a bare `uv pip install`, and `make lock-drift` names anything already off the lock (see
+[An extras install respects uv.lock](#an-extras-install-respects-uvlock)).
+GitHub CI uses the lighter dev dependency set and does not require GPU services.
 `scripts/shared/common.sh` resolves `UV_LINK_MODE` adaptively: when uv's cache and this checkout
 are on different devices it exports `copy`, otherwise it leaves uv's default link mode in place.
 The Quick Start guide keeps each Make wrapper annotated with command purpose, default inputs,
@@ -220,6 +223,187 @@ The PDF draft wrapper defaults to all converted documents and `QUICKSTART_DRAFT_
 target before it estimates and confirms the full draft runtime. Model selection itself does not
 prompt, so an approved unattended run proceeds with `QUICKSTART_ASSUME_YES=1`. Benchmark, manual
 local, and `frontier` `litellm` routes remain explicit overrides.
+
+### The vLLM install respects uv.lock
+
+`make venv` syncs the lock and THEN installs vLLM, whose own requirements are mostly unpinned, so
+the second step was free to upgrade a package the first step had just pinned. Six of vLLM's
+requirements are packages this project also declares (`mcp`, `numpy`, `openai`, `psutil`,
+`pydantic`, `pyyaml`), and the one that actually moved is `mcp`: no `make venv` extra installs it,
+vLLM requires it with no specifier, so the install pulled the newest major -- `mcp` 2.0.0 over the
+1.28.1 the lock resolves. `mypy` then failed on `src/llb/bench/mcp_server.py`, which reads like a
+source bug and is a dependency resolution, and `make ci` stayed red until someone repaired the venv
+by hand.
+
+`llb.build.lock_guard` closes that at the point of drift. `llb.build.lock_reader` answers the three
+inputs -- which packages `pyproject.toml` declares, which versions `uv.lock` resolved for each, and
+which of those the interpreter holds -- and the guard turns them into a uv `--constraint` file that
+every `uv pip install` in `llb.build.vllm` runs under. A package is constrained only to versions the
+lock actually carries: an exact pin when the environment already holds a locked version or the lock
+carries exactly one, and the closed range the lock spans when conflicting extras forked it (`mcp` is
+1.26.0 under the crewai extra and 1.28.1 elsewhere, so the constraint is `>=1.26.0,<=1.28.1` --
+which excludes 2.x without evaluating an extra marker to guess which fork this venv is).
+
+After the install the environment is re-read and compared with a pre-install snapshot, because the
+two kinds of drift are different findings. A package this install MOVED off the lock fails the
+install by default; a package that was already off the lock is an earlier install's leftover (see
+[An extras install respects uv.lock](#an-extras-install-respects-uvlock)) and is logged as a
+warning naming the package, so an unrelated drift never fails someone's vLLM install.
+`LLB_VLLM_LOCK_GUARD` sets the cost of a caused drift: `refuse` (default), `report`, or `off`. The
+one failure the constraint introduces -- a future vLLM needing a version the lock lacks -- is
+reported with its remedy (`uv lock --upgrade-package <name>`, then commit the lock).
+
+Measured on the 16 GiB CUDA host (2026-08-16): the same clean-venv resolution installs `mcp==2.0.0`
+unconstrained and `mcp==1.28.1` under the 48-package lock constraint, and a real `make build-vllm`
+reports `the vLLM install moved nothing off uv.lock`. Coverage is
+`tests/llb/build/test_lock_guard.py` (constraint planning, drift attribution, all three guard
+modes) plus a `--constraint` assertion in `tests/llb/build/test_build_helper.py`.
+
+The paired decision on the SDK itself is recorded with the transport in
+[Category suite](category-benchmark-suite.md#tooling): the `[mcp]` extra now carries a `<2` bound,
+because mcp 2.x replaces the low-level server API rather than renaming a field.
+
+### An extras install respects uv.lock
+
+Running that guard surfaced the same failure class one step over. A hand-installed optional extra
+went through a bare `uv pip install -e ".[review]"`, and uv's pip interface has NO lockfile: it
+re-resolves the whole requirement set and takes the newest version each specifier admits. Measured
+on a clean venv, the `dev` extra alone lands **ten** declared packages off the lock -- `ruff`
+0.16.3 against 0.15.18, `mypy` 2.3.1 against 2.1.0, plus `numpy`, `openai`, `typer`,
+`huggingface-hub`, `anyio`, `pymupdf4llm`, `pymarkdownlnt`, and `textual`. Two of those are the
+linter and the type checker `make ci` runs, and the `dev` extra pins them EXACTLY on purpose, so a
+local `make ci` verdict stops matching GitHub CI's -- which is what the pins exist to prevent.
+
+`llb.build.extras` gives the extras install the vLLM treatment. `make install-extras EXTRAS=<groups>`
+assembles `uv pip install --python <venv> --constraint <lock-derived> -e ".[<groups>]"`, so the
+resolution is held to versions `uv.lock` carries, and re-checks the environment afterwards. Nothing
+in it is extras-specific beyond the `.[a,b]` requirement: `llb.build.lock_guard` grew a `Guard`
+record carrying the three strings that differ per caller (what the install calls itself, which
+variable relaxes it, the command that repairs it), and the constraint planner, drift report, and
+`refuse | report | off` modes are shared with the vLLM path. `LLB_EXTRAS_LOCK_GUARD` is the extras
+guard's variable; the vLLM one keeps `LLB_VLLM_LOCK_GUARD`, so relaxing one never relaxes the other.
+
+Only DECLARED packages are constrained, and that boundary is load-bearing rather than incidental:
+this host's `torch` is 2.11.0 (what vLLM 0.24.0 pinned) while the lock resolves 2.12.1, so a lock
+that reached past `pyproject.toml` would replace the hardware-matched torch on every extras
+install. A constrained `.[finetune]` install leaves torch untouched and moves only the declared
+packages.
+
+`make lock-drift` is the report half. `uv.lock` says which version each declared package should be
+at, and `pyproject.toml` says which extra declares it, so the report names both plus the single
+command that resolves the whole set:
+
+```text
+5 declared package(s) sit off uv.lock:
+  ruff 0.15.20 is off the lock (pinned: 0.15.18) -- declared by dev
+  textual 8.2.8 is off the lock (pinned: 8.2.7) -- declared by dev,review
+  ...
+put them back with: make install-extras EXTRAS=dev,finetune,prep,rag,review
+```
+
+It exits non-zero on drift; `LLB_EXTRAS_LOCK_GUARD=report` downgrades that while an upgrade is
+deliberately being tested.
+
+Measured on the 16 GiB CUDA host (2026-08-16): the host carried five off-lock declared packages
+(`deepeval` 4.0.7/4.0.6, `litellm` 1.90.0/1.89.3, `ruff` 0.15.20/0.15.18, `textual` 8.2.8/8.2.7,
+`trl` 1.8.0/1.7.1). The printed command resolved all five in one install -- no hand-editing, no
+package named twice -- and left `torch` 2.11.0, `vllm` 0.24.0, and `flashinfer-python` 0.6.12 in
+place. `make lock-drift` now reports `every declared package matches uv.lock`. Coverage is
+`tests/llb/build/test_extras.py`: argument assembly, the group-ownership report, the guard-mode
+exit codes, an unknown-extra refusal that never reaches uv, an end-to-end run of
+`scripts/install_extras.sh` against a fake `uv`, and a repo-level assertion that this venv's
+declared packages all sit on the lock.
+
+The one extra outside this path is `[crewai]`, which pyproject declares as a CONFLICTING extra and
+which lives in a dedicated environment; it installs lock-exactly with
+`UV_PROJECT_ENVIRONMENT=<dir> uv sync --frozen --extra crewai` (see
+[CrewAI harness](../../guides/benchmarking/crewai-harness.md)), and `make lock-drift` reads the
+project `.venv` only.
+
+### `make venv` says reuse or rebuild
+
+Both guards above protect what is IN the venv; this one protects the venv itself. `make venv`
+printed `reusing .venv -- updating deps` whenever `.venv/bin/python` existed, and `uv sync
+--inexact` leaves packages the lock does not name alone -- but neither holds once the SYSTEM
+interpreter the venv points at is patched underneath it. `pyvenv.cfg` records `version_info` at
+creation time and never again, so an OS python upgrade leaves the recorded version behind the real
+one, and uv then calls the environment stale and REPLACES it. Measured here: `uv sync --inexact
+--frozen --dry-run` reports `Would replace project environment at: .venv` and 140 packages to
+download, where a venv whose recorded version still matches reports `Would use`. The replacement
+installs the lock's `torch` 2.12.1 (CUDA 13) over the 2.11.0 (CUDA 12) vLLM 0.24.0 requires. On a
+CUDA host the `VENV_INSTALL_VLLM=auto` step afterwards pins torch back, so the damage is a silent
+full reinstall; with `VENV_INSTALL_VLLM=0`, or on a host that skips that step, the venv is left
+holding a torch its vLLM cannot use while the target reported a reuse.
+
+`llb.build.venv_interpreter` reads the fact -- what `pyvenv.cfg` recorded, which interpreter `home`
+resolves to now, and what that interpreter's version actually is -- and `llb.build.venv_state` turns
+it into the plan `make venv` announces BEFORE syncing: `create`, `reuse`, `rebuild`, or `unchecked`.
+A rebuild is priced in the packages the sync will not put back, which is a different question from
+`lock_guard.find_drift`: that one asks whether a DECLARED package sits off the lock, while a replace
+also drops everything the lock never carried (vLLM, flashinfer, the CUDA wheels). The hardware-matched
+names are listed and the rest counted. Three consequences follow the plan:
+
+- **the message is honest** -- `REBUILDING ... records python 3.13.14; /usr/bin/python3.13 is now
+  3.13.15` instead of `reusing`;
+- **the vLLM reinstall stops being skippable** -- a sync that moved the stack forces
+  `scripts/build_vllm.sh` afterwards, `VENV_INSTALL_VLLM=0` included, because that flag was set for
+  an environment the sync no longer leaves in place;
+- **an unrequested rebuild is refused** -- `LLB_VENV_STALE_GUARD` takes the same `refuse` (default)
+  `| report | off` as the other two guards, and `RECREATE_VENV=1` is the explicit "yes, replace it".
+
+**A REUSE moves the stack too, and that is the case running it found.** `--inexact` promises only
+not to REMOVE what the lock does not name; a package INSIDE the resolution is still installed at the
+locked version, and `torch` is inside it (`rag` -> sentence-transformers). Measured here on a venv
+that was not stale at all: `make venv VENV_INSTALL_VLLM=0` reported `reusing` and downgraded
+`torch` 2.13.0 -> 2.12.1 under a vLLM 0.27.1 that needs 2.13.0. So the plan prices a reuse as well,
+over the packages the lock also carries, and forces the reinstall on the same rule. The two actions
+put different things at stake, and the pricing says so: a rebuild loses everything (including what
+the lock never carried -- vLLM, flashinfer, the CUDA wheels), while a reuse only re-pins what the
+lock names.
+
+A rebuild has a third bucket the first run missed: a package can match the lock exactly and still
+not come back, because `uv sync` installs the extras it was ASKED for. `bitsandbytes` 0.49.2 matched
+`uv.lock` and vanished in the measured rebuild -- only `[finetune]` declares it, and `make venv`'s
+default extras do not include that group. Those are now named separately, with the
+`make install-extras EXTRAS=<group>` that restores them. Transitive-only packages stay out of reach
+without resolving the lock's graph, so the line names what an operator installed on purpose rather
+than claiming to enumerate every casualty.
+
+The refusal has to be actionable, so it names the cheap way out first. Within one `major.minor` a
+CPython patch release keeps the ABI tag (`cp313`) and the `site-packages` layout, so the venv is
+ALREADY running the patched interpreter through its `bin/python` symlink and every compiled wheel in
+it still loads -- only the recorded string is behind. `make venv-restamp` records the truth and the
+whole stack stands. A MINOR move is a different environment (new stdlib, new layout, unloadable
+extensions), so the restamp is refused there and the rebuild is the only answer -- the venv is built
+against the SYSTEM interpreter by design (a managed interpreter is out of scope), so that residual
+case remains a real rebuild.
+
+`make venv` now delegates the whole lifecycle to `scripts/setup_venv.sh` (plan, then sync, then the
+vLLM step), which also rejects an unusable `VENV_INSTALL_VLLM` before the sync rather than after it.
+A planner that cannot run at all logs one line and lets uv decide, because `make venv` is the
+command an operator runs to repair a half-broken venv.
+
+Measured on the 16 GiB CUDA host (2026-08-16): `.venv` recorded python 3.13.14 against a patched
+`/usr/bin/python3.13` at 3.13.15, and `make venv` refused, naming `flashinfer-python 0.6.12`,
+`torch 2.11.0 -> 2.12.1`, `torchaudio 2.11.0`, `torchvision 0.26.0 -> 0.27.1`, `vllm 0.24.0`, and
+91 more -- while uv's own dry run agreed (`Would replace`).
+
+The rebuild was then accepted and run for real (`make venv RECREATE_VENV=1 VENV_INSTALL_VLLM=0`):
+uv downloaded 140 packages, the forced vLLM step ran despite `=0`, and the venv came back with
+`vllm` 0.27.1 and `torch` 2.13.0+cu130 -- the torch that vLLM pinned, not the lock's 2.12.1.
+`VLLM_SPEC` is unpinned, so the reinstall takes the newest vLLM (0.24.0 -> 0.27.1 here) and its
+torch with it. `make lock-drift` reported `every declared package matches uv.lock`, `make ci` was
+green (3479 passed), and a served smoke request on the rebuilt stack answered in Ukrainian:
+`llb run-eval --backend vllm --model google/gemma-4-E4B-it-qat-w4a16-ct --limit 1` at 64.4 tok/s,
+peak VRAM 15893 MB, served ctx 8192, retrieval recall@5 = 1.000. The two findings above -- the
+`bitsandbytes` bucket and the reuse-side re-pin -- both came out of that run rather than out of
+review. Coverage is
+`tests/llb/build/test_venv_interpreter.py` (the recorded-vs-running comparison, the restamp and its
+minor-move refusal) and `tests/llb/build/test_venv_state.py` (the four actions, rebuild and reuse
+pricing, the unsynced-extra bucket, the refusal and its remedies, and end-to-end runs of
+`scripts/setup_venv.sh` against a fake `uv` proving the refusal happens before any sync, that
+`VENV_INSTALL_VLLM=0` is obeyed when the sync moves nothing, and that it is overridden when the
+sync moves the stack).
 
 Host-specific acceptance procedures and serving constraints live in
 [Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
@@ -366,3 +550,35 @@ flake8-bugbear, implicit string concatenation, ...), so a GitHub runner resolvin
 the dev box reported 1391 findings on unchanged code while the dev box was green. A linter release
 must never be able to fail CI on code nobody touched; widening the rule set is a deliberate,
 separate change to that `select` list.
+
+## Documentation And Specification Gates
+
+Three checks keep the written product and the built product from drifting apart. The first two run
+in `make lint-md` (the full local `make test` flow); the third runs in `make ci-checks`, so it fails
+in the change that caused it rather than at the next doc lint.
+
+| Check | Command | What it refuses |
+| --- | --- | --- |
+| Markdown style | `make lint-md` | pymarkdown findings; config in `pyproject.toml` `[tool.pymarkdown]`. Fix BY HAND -- `pymarkdown fix` corrupts prose on 0.9.38 |
+| Link landing | `make lint-doc-links` | A relative link whose file is missing or whose `#anchor` no heading produces (`llb.quality.doc_links`) |
+| Spec/plan integrity | `make lint-spec-plan` | A disagreement between the spec's capability registry and `plan.md` (`llb.quality.spec_plan_integrity`) |
+
+`lint-spec-plan` is the join between three documents that are otherwise only related by convention:
+[the spec](../../design/spec.md) says what the product does, its
+[capability registry](../../design/spec.md#capability-registry) says how each capability is
+evaluated and where it is implemented, and [plan.md](../plan.md) holds the remaining work. It
+enforces four invariants:
+
+- every plan task carries a `Serves` line naming a registered capability id, and sits in that
+  capability's `###` group;
+- every `shipped` capability links to implementation docs; every `planned` one has at least one open
+  task;
+- every capability declares a non-empty evaluation;
+- the plan's capability groups appear in the registry's row order, in both task sections.
+
+The last one is what keeps "what do I work on next" a position rather than an argument: the registry
+row order IS the implementation line, and it runs down the trust chain. The checker never judges
+whether a capability is worth having -- only whether both documents say the same thing about it. A
+capability found while implementing is added through
+[Extending this specification](../../design/spec.md#extending-this-specification) before it becomes
+tasks, which is what stops undocumented capability from accumulating in `src/`.

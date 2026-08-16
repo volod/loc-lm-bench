@@ -9,7 +9,7 @@ Control-plane smoke runs need only the normal development environment. Real adap
 CUDA host needs the fine-tuning extra:
 
 ```bash
-uv pip install -e ".[finetune]"
+make install-extras EXTRAS=finetune
 ```
 
 The `finetune` extra includes Optuna for `finetune-hparams`; GitHub CI installs `.[dev]`, which
