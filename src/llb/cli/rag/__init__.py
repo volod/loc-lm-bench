@@ -5,6 +5,7 @@ Importing each submodule registers its @app.command handlers on the shared Typer
 
 from llb.cli.rag import (  # noqa: F401
     compare_embeddings,
+    compare_rerankers,
     compare_retrieval,
     compare_stores,
     duplicate_residue,
@@ -12,6 +13,7 @@ from llb.cli.rag import (  # noqa: F401
     fusion_evidence,
     graph_index,
     index,
+    multihop_probe,
     refresh,
     validate,
 )

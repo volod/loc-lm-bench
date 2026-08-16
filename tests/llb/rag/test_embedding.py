@@ -1,22 +1,14 @@
-"""Device resolution + per-family query/passage conventions for the RAG embedder.
+"""Device / remote-code resolution for the RAG embedder.
 
-Pure resolution only -- no SentenceTransformer load, so no `[rag]` extra / GPU is needed.
+Pure resolution only -- no SentenceTransformer load, so no `[rag]` extra / GPU is needed. The
+per-family query/passage conventions live in `test_embedding_families.py`.
 """
 
 import pytest
 
 from llb.core import env
-from llb.rag.embedding import (
-    BGE_QUERY_INSTRUCTION,
-    FAMILY_BGE,
-    FAMILY_BGE_M3,
-    FAMILY_E5,
-    FAMILY_PLAIN,
-    Embedder,
-    apply_passage_convention,
-    apply_query_convention,
-    embedding_family,
-)
+from llb.rag.embedding import Embedder, remote_code_opt_in
+from llb.rag.embedding_families import FAMILY_E5, FAMILY_JINA_V3, FAMILY_UNKNOWN
 
 
 def test_resolve_device_defaults_to_none(monkeypatch):
@@ -30,39 +22,14 @@ def test_resolve_device_reads_env(monkeypatch):
 
 
 def test_resolve_device_constructor_arg_overrides_env(monkeypatch):
-    monkeypatch.setenv(env.LLB_EMBED_DEVICE, "cpu")
-    assert Embedder(device="cuda:1")._resolve_device() == "cuda:1"
+    monkeypatch.setenv(env.LLB_EMBED_DEVICE, "cuda:1")
+    assert Embedder(device="cuda:0")._resolve_device() == "cuda:0"
 
 
-@pytest.mark.parametrize(
-    "model, family",
-    [
-        ("intfloat/multilingual-e5-small", FAMILY_E5),
-        ("intfloat/multilingual-e5-base", FAMILY_E5),
-        ("intfloat/multilingual-e5-large", FAMILY_E5),
-        ("BAAI/bge-m3", FAMILY_BGE_M3),
-        ("BAAI/bge-large-en-v1.5", FAMILY_BGE),
-        ("lang-uk/ukr-paraphrase-multilingual-mpnet-base", FAMILY_PLAIN),
-    ],
-)
-def test_embedding_family_resolves_per_model(model, family):
-    assert embedding_family(model) == family
-    assert Embedder(model).family == family
-
-
-def test_e5_small_uses_same_prefixes_as_base():
-    # Sub-base sibling stays on the e5 query/passage convention; wrong family would cap recall.
-    assert apply_query_convention("intfloat/multilingual-e5-small", ["коли"]) == ["query: коли"]
-    assert apply_passage_convention("intfloat/multilingual-e5-small", ["текст"]) == [
-        "passage: текст"
-    ]
-
-
-def test_default_roster_includes_sub_base_e5_small():
-    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
-
-    assert "intfloat/multilingual-e5-small" in DEFAULT_LOCAL_CANDIDATES
-    assert DEFAULT_LOCAL_CANDIDATES[0] == "intfloat/multilingual-e5-base"
+def test_embedder_exposes_family_and_convention():
+    embedder = Embedder("intfloat/multilingual-e5-base")
+    assert embedder.family == FAMILY_E5
+    assert embedder.convention.query_prefix == "query: "
 
 
 def test_embedder_release_clears_loaded_weights():
@@ -72,18 +39,55 @@ def test_embedder_release_clears_loaded_weights():
     assert embedder._model is None
 
 
-def test_bge_m3_uses_no_prefix_on_either_side():
-    # BGE-M3's retrieval default is NO instruction; scoring it with e5 prefixes would cap recall.
-    assert apply_query_convention("BAAI/bge-m3", ["коли"]) == ["коли"]
-    assert apply_passage_convention("BAAI/bge-m3", ["текст"]) == ["текст"]
+# --- trust_remote_code gate -------------------------------------------------------------------
 
 
-def test_bge_v15_instructs_query_only():
-    assert apply_query_convention("BAAI/bge-large-en-v1.5", ["q"]) == [BGE_QUERY_INSTRUCTION + "q"]
-    assert apply_passage_convention("BAAI/bge-large-en-v1.5", ["p"]) == ["p"]  # passage untouched
+def test_load_kwargs_empty_for_a_family_that_needs_no_remote_code(monkeypatch):
+    monkeypatch.delenv(env.LLB_TRUST_REMOTE_CODE, raising=False)
+    assert Embedder("intfloat/multilingual-e5-base")._load_kwargs() == {}
 
 
-def test_plain_paraphrase_model_is_symmetric_no_prefix():
-    model = "lang-uk/ukr-paraphrase-multilingual-mpnet-base"
-    assert apply_query_convention(model, ["q"]) == ["q"]
-    assert apply_passage_convention(model, ["p"]) == ["p"]
+def test_remote_code_family_is_refused_without_the_opt_in(monkeypatch):
+    monkeypatch.delenv(env.LLB_TRUST_REMOTE_CODE, raising=False)
+    embedder = Embedder("jinaai/jina-embeddings-v3")
+    assert embedder.family == FAMILY_JINA_V3
+    with pytest.raises(SystemExit) as excinfo:
+        embedder._load_kwargs()
+    # The refusal must name the knob AND the card, or the operator cannot act on it.
+    assert env.LLB_TRUST_REMOTE_CODE in str(excinfo.value)
+    assert "huggingface.co/jinaai/jina-embeddings-v3" in str(excinfo.value)
+
+
+def test_remote_code_family_loads_under_the_env_opt_in(monkeypatch):
+    monkeypatch.setenv(env.LLB_TRUST_REMOTE_CODE, "1")
+    assert Embedder("Alibaba-NLP/gte-multilingual-base")._load_kwargs() == {
+        "trust_remote_code": True
+    }
+
+
+def test_constructor_opt_in_beats_the_env_knob(monkeypatch):
+    monkeypatch.delenv(env.LLB_TRUST_REMOTE_CODE, raising=False)
+    assert Embedder("jinaai/jina-embeddings-v3", trust_remote_code=True)._load_kwargs() == {
+        "trust_remote_code": True
+    }
+    monkeypatch.setenv(env.LLB_TRUST_REMOTE_CODE, "1")
+    with pytest.raises(SystemExit):
+        Embedder("jinaai/jina-embeddings-v3", trust_remote_code=False)._load_kwargs()
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [("1", True), ("true", True), ("YES", True), ("0", False), ("", False), ("no", False)],
+)
+def test_remote_code_opt_in_reads_truthy_env_values(monkeypatch, value, expected):
+    monkeypatch.setenv(env.LLB_TRUST_REMOTE_CODE, value)
+    assert remote_code_opt_in() is expected
+
+
+def test_unknown_family_warns_instead_of_loading_silently(monkeypatch, caplog):
+    monkeypatch.delenv(env.LLB_TRUST_REMOTE_CODE, raising=False)
+    embedder = Embedder("some-vendor/never-registered-encoder")
+    assert embedder.family == FAMILY_UNKNOWN
+    with caplog.at_level("WARNING"):
+        assert embedder._load_kwargs() == {}
+    assert "no registered query/passage convention" in caplog.text

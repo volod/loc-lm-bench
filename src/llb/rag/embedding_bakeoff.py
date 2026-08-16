@@ -25,6 +25,7 @@ from collections.abc import Sequence
 from typing import Any, Callable
 
 from llb.core.contracts.rag import RetrievalPair
+from llb.rag.candidate_screen import SkippedCandidate
 from llb.rag.embedding_bakeoff_models import (
     BakeoffItem,
     BakeoffReport,
@@ -32,6 +33,7 @@ from llb.rag.embedding_bakeoff_models import (
     CandidateResult,
     StoreBuilder,
 )
+from llb.rag.embedding_families import resolve_convention
 from llb.rag.embedding_bakeoff_uncertainty import (
     DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
@@ -69,9 +71,11 @@ def score_pairs(
     """Shape one candidate row from an already-retrieved pass (so the pass is never repeated)."""
     metrics = evaluate_retrieval(pairs, k)
     meta = getattr(built.store, "meta", {}) or {}
+    convention = resolve_convention(model)
     result: CandidateResult = {
         "model": model,
         "kind": built.kind,
+        "family": convention.family,
         "recall_at_k": metrics["recall_at_k"],
         "mrr": metrics["mrr"],
         "n": metrics["n"],
@@ -81,6 +85,8 @@ def score_pairs(
         "embed_seconds": round(built.embed_seconds, 3),
         "index_bytes": int(built.index_bytes),
     }
+    if convention.trust_remote_code:
+        result["trust_remote_code"] = True
     if built.device is not None:
         result["device"] = built.device
     if built.cost_usd is not None:
@@ -154,10 +160,10 @@ class _ScoredCandidates:
             release()
 
 
-def _paired_items(
+def paired_item_ledger(
     vectors: dict[str, MetricVectors], count: int, item_ids: Sequence[str] | None
 ) -> list[dict[str, object]]:
-    """The per-item ledger a paired reading is recomputable from."""
+    """The per-item ledger a paired reading is recomputable from (shared with the reranker lane)."""
     return [
         {
             "item_id": item_ids[index] if item_ids is not None else str(index),
@@ -178,6 +184,7 @@ def run_bakeoff(
     local_models: list[str],
     build_local: StoreBuilder,
     item_ids: Sequence[str] | None = None,
+    skipped: Sequence[SkippedCandidate] = (),
     api_model: str | None = None,
     build_api: StoreBuilder | None = None,
     data_classification: str | None = None,
@@ -204,6 +211,10 @@ def run_bakeoff(
     With `noise_floor` the candidate stores are kept until the whole set is scored and their
     measurement floor is measured over the SAME items, so the recommendation is published beside
     the delta it has to clear rather than as a bare third decimal.
+
+    `skipped` carries roster entries the caller screened out before any build
+    (`llb.rag.embedding_bakeoff_roster`); they ride into the report so a run that ranks fewer
+    candidates than the roster names states which are missing and why.
     """
     if item_ids is not None and len(item_ids) != len(items):
         raise ValueError("the embedder paired ledger needs one item id per scored item")
@@ -222,8 +233,10 @@ def run_bakeoff(
         "corpus_root": corpus_root,
         "candidates": scored.rows,
         "best_recall": best_recall(scored.rows),
-        "paired_items": _paired_items(scored.vectors, len(items), item_ids),
+        "paired_items": paired_item_ledger(scored.vectors, len(items), item_ids),
     }
+    if skipped:
+        report["skipped"] = list(skipped)
     _attach_uncertainty(
         report,
         scored.vectors,

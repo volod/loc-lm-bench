@@ -1,28 +1,21 @@
 """Focused embedding bakeoff report implementation."""
 
+from llb.rag.bakeoff_report_sections import (
+    NO_PAIRED_CELL as _NO_PAIRED_CELL,
+)
+from llb.rag.bakeoff_report_sections import (
+    boundary_section,
+    gate_summary,
+    paired_cells,
+    skipped_section,
+    verdict_lines,
+)
 from llb.rag.embedding_bakeoff_models import BYTES_PER_MB, BakeoffReport, CandidateResult
 from llb.rag.embedding_bakeoff_uncertainty import (
-    BARS,
     BAR_RECALL,
     DEFAULT_CONFIDENCE,
-    bar_stability,
-    recall_delta,
-)
-from llb.rag.embedding_bakeoff_verdict import (
-    DECISION_ADOPT,
 )
 from llb.rag.fusion_evidence.power_report import power_summary
-from llb.rag.fusion_evidence.evidence_gate import (
-    evidence_gate_summary,
-)
-from llb.rag.fusion_evidence.stability import (
-    boundary_table,
-    format_reading,
-)
-from llb.rag.fusion_evidence.stats import format_interval
-from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
-
-_NO_PAIRED_CELL = "-"
 
 
 def _throughput(row: CandidateResult) -> float:
@@ -30,59 +23,42 @@ def _throughput(row: CandidateResult) -> float:
     return row["n_indexed"] / row["embed_seconds"] if row["embed_seconds"] > 0 else 0.0
 
 
-def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str, str]:
-    """Delta, ledger, sign p, randomization p, and reading (dashes without a baseline).
+def _peak_vram_mb(row: CandidateResult) -> str:
+    """Peak encoder VRAM from the warm decomposition, when `--encoder-throughput` measured it."""
+    profile = row.get("throughput_profile")
+    peak = profile.get("peak_vram_mb") if profile else None
+    return f"{peak:.0f}" if peak else _NO_PAIRED_CELL
 
-    The reading column is what keeps a `flat` that missed by a mile from printing exactly like one
-    that missed by nothing -- the whole point of the borderline annotation.
-    """
-    paired = row.get("paired_vs_baseline")
-    if paired is None:
-        return (_NO_PAIRED_CELL,) * 5
-    delta = recall_delta(paired)
-    stability = bar_stability(paired, BAR_RECALL)
-    return (
-        format_interval(delta["delta"]),
-        f"{delta['wins']}/{delta['losses']}/{delta['ties']}",
-        f"{delta['sign_test_p']:.3f}",
-        format_randomization_p(delta),
-        format_reading(stability, stability["reading"]) if stability else _NO_PAIRED_CELL,
-    )
+
+def _family_cell(row: CandidateResult) -> str:
+    """The convention the row was scored under, marked when it ran repo-supplied model code."""
+    family = row.get("family", "-")
+    return f"{family} (remote-code)" if row.get("trust_remote_code") else family
+
+
+def _paired_cells(row: CandidateResult) -> tuple[str, str, str, str, str]:
+    """The recall@k paired cells -- the metric this lane's unconditional adoption bar is read on."""
+    return paired_cells(row, BAR_RECALL)
 
 
 def _gate_summary(report: BakeoffReport) -> list[str]:
     """How many of the bake-off's per-bar paired readings the minimum-evidence gate relabeled."""
     settings = report.get("uncertainty")
-    confidence = settings["confidence"] if settings else DEFAULT_CONFIDENCE
-    comparisons = [
-        paired["metrics"][bar]
-        for row in report["candidates"]
-        if (paired := row.get("paired_vs_baseline")) is not None
-        for bar in BARS
-    ]
-    gated, total = gated_readings(comparisons, confidence)
-    return evidence_gate_summary(gated, total, confidence)
+    return gate_summary(
+        report["candidates"], settings["confidence"] if settings else DEFAULT_CONFIDENCE
+    )
 
 
 def _boundary_section(report: BakeoffReport) -> list[str]:
     """How close each candidate's bar reading sits to the cut that produced it."""
     settings = report.get("uncertainty")
-    baseline = settings["baseline"] if settings else None
-    rows = []
-    for row in sorted(report["candidates"], key=lambda c: c["model"]):
-        paired = row.get("paired_vs_baseline")
-        if paired is None or row["model"] == baseline:
-            continue
-        for bar in BARS:
-            stability = bar_stability(paired, bar)
-            if stability is not None:
-                rows.append((f"`{row['model']}` {bar}", stability))
-    return boundary_table(
-        rows,
+    return boundary_section(
+        report["candidates"],
+        settings["baseline"] if settings else None,
+        settings["confidence"] if settings else DEFAULT_CONFIDENCE,
         title="How close each candidate sits to the adoption cut",
         key_header="candidate / bar",
         subject="the candidate",
-        confidence=settings["confidence"] if settings else 0.95,
     )
 
 
@@ -107,6 +83,8 @@ def format_report(report: BakeoffReport) -> str:
             f"{row['dim']:6d} {_throughput(row):9.1f} {size_mb:9.2f}   {delta:>22} {ledger:>12}"
         )
     lines.append(f"  best (recall@k): {report['best_recall']}")
+    for skipped in report.get("skipped") or []:
+        lines.append(f"  skipped: {skipped['model']} -- {skipped['detail']}")
     lines.extend(_verdict_lines(report, prefix="  "))
     floor = report.get("noise_floor")
     if floor is not None:
@@ -138,10 +116,11 @@ def render_markdown(report: BakeoffReport) -> str:
         lines.append(f"- adoption bar(s): {', '.join(settings.get('bars') or [BAR_RECALL])}")
     lines += [
         "",
-        "| model | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) | cost (USD) "
+        "| model | family | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) "
+        "| peak VRAM (MB) | cost (USD) "
         f"| recall delta vs {baseline or 'baseline'} | w/l/t | sign p | rand p "
         "| recall reading |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
         "| ---: | ---: | :-: |",
     ]
     for row in sorted(
@@ -151,8 +130,10 @@ def render_markdown(report: BakeoffReport) -> str:
         size_mb = row["index_bytes"] / BYTES_PER_MB
         delta, ledger, sign_p, randomization_p, reading = _paired_cells(row)
         lines.append(
-            f"| `{row['model']}` | {row['kind']} | {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
-            f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} | {cost} "
+            f"| `{row['model']}` | {_family_cell(row)} | {row['kind']} "
+            f"| {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
+            f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} "
+            f"| {_peak_vram_mb(row)} | {cost} "
             f"| {delta} | {ledger} | {sign_p} | {randomization_p} | {reading} |"
         )
     lines += ["", *_verdict_lines(report), ""]
@@ -162,11 +143,17 @@ def render_markdown(report: BakeoffReport) -> str:
         f"`build-index --embedding-model <model>` and set `RunConfig.embedding_model` to match.",
         "",
     ]
+    lines += _skipped_section(report)
     lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _floor_section(report)
     lines += _throughput_section(report)
     return "\n".join(lines)
+
+
+def _skipped_section(report: BakeoffReport) -> list[str]:
+    """Roster entries that produced no row (declined `trust_remote_code`, unregistered id)."""
+    return skipped_section(report.get("skipped") or [])
 
 
 def _throughput_section(report: BakeoffReport) -> list[str]:
@@ -184,15 +171,7 @@ def _throughput_section(report: BakeoffReport) -> list[str]:
 
 def _verdict_lines(report: BakeoffReport, prefix: str = "") -> list[str]:
     """The adopt-or-retain sentence, or a note that the run carries no paired reading."""
-    verdict = report.get("verdict")
-    if verdict is None:
-        return [
-            f"{prefix}No paired uncertainty was computed for this run, so the ranking above is a "
-            "point estimate only."
-        ]
-    call = "ADOPT" if verdict["decision"] == DECISION_ADOPT else verdict["decision"].upper()
-    named = f" `{verdict['model']}`" if verdict["model"] else ""
-    return [f"{prefix}Verdict: {call}{named} -- {verdict['reason']}."]
+    return verdict_lines(report, prefix)
 
 
 def _floor_section(report: BakeoffReport) -> list[str]:

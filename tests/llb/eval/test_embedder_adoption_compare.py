@@ -23,8 +23,8 @@ from llb.eval.embedder_adoption.cells import (
     build_cells,
     cell_config,
     parse_rerankers,
-    parse_top_ks,
 )
+from llb.eval.retrieval_budgets import parse_top_ks
 from llb.eval.embedder_adoption.compare import (
     compare_cells,
     with_reciprocal_rank,

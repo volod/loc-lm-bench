@@ -65,6 +65,24 @@ def format_margin(margin: FloorMargin) -> str:
     )
 
 
+def _per_lane_jitter_note(report: NoiseFloorReport) -> list[str]:
+    """Name the per-lane amplitudes when a lane overrode the shared one.
+
+    A reranked lane is read at a jitter scaled to its own score range, because two cross-encoder
+    heads do not share a scale -- so the headline amplitude above is not what every row was read at,
+    and a floor table that did not say so would invite exactly the wrong comparison.
+    """
+    per_lane = report.get("jitter_by_lane")
+    if not per_lane:
+        return []
+    amplitudes = ", ".join(f"`{label}` {value:.1e}" for label, value in sorted(per_lane.items()))
+    return [
+        "Amplitudes are SCALE-MATCHED per row (each row's own ranking-score range x the amplitude "
+        f"above), so rows on different score scales are read at comparable noise: {amplitudes}.",
+        "",
+    ]
+
+
 def render_noise_floor_markdown(
     report: NoiseFloorReport, *, title: str = "Measurement floor", scored: str = ""
 ) -> list[str]:
@@ -82,6 +100,7 @@ def render_noise_floor_markdown(
         f"{report['replicates']} seeded replicates of a {report['candidates']}-candidate pool "
         f"({scored or 'items'} scored: {n}; `src/llb/rag/noise_floor.py`).",
         "",
+        *_per_lane_jitter_note(report),
         "| row | recall@k band | MRR band | fragile |",
         "| --- | ---: | ---: | ---: |",
     ]

@@ -48,15 +48,17 @@ DECISION_RETAIN = "retain"
 DECISION_UNDECIDED = "undecided"
 
 
-def resolve_bars(spec: str | None) -> tuple[str, ...]:
-    """Parse a comma-separated adoption-bar selection; empty/None keeps the recall@k-only default.
+def resolve_bars(spec: str | None, default: Sequence[str] = DEFAULT_BARS) -> tuple[str, ...]:
+    """Parse a comma-separated adoption-bar selection; empty/None keeps the lane's default.
 
     `recall_at_k` is always kept: the second bar EXTENDS the decision, it never replaces the one
-    unconditional reason to swap an encoder.
+    unconditional reason to swap a component. `default` is the lane's own starting selection --
+    recall@k alone for the embedder lane, both bars for the reranker lane, where rank is the
+    quantity a cross-encoder can actually move.
     """
     names = [token.strip() for token in (spec or "").split(",") if token.strip()]
     if not names:
-        return DEFAULT_BARS
+        return tuple(default)
     unknown = [name for name in names if name not in BARS]
     if unknown:
         raise ValueError(

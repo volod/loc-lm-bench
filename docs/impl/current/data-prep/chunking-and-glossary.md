@@ -14,9 +14,11 @@ The `src/llb/rag/chunking/` package keeps every chunk offset-exact. Strategies:
 - `semantic`: pinned-embedder breakpoints while preserving source offsets;
 - `page`: PDF page/citation-aware boundaries that never cross a page-sidecar span;
 - `heading`: heading-hierarchy packing with heading lines kept in the chunk text;
-- `late`: sentence spans embedded by whole-document token pooling (late chunking).
+- `late`: sentence spans embedded by whole-document token pooling (late chunking);
+- `table`: markdown-table-aware boundaries -- a chunk never cuts a table ROW, and a split table
+  records its header row's offsets in `metadata.table_header_span`.
 
-The `page`/`heading`/`late` details, comparison command, and durable evidence live in the
+The `page`/`heading`/`late`/`table` details, comparison command, and durable evidence live in the
 [RAG core](../rag-core.md) chunking-strategies section.
 
 ```bash

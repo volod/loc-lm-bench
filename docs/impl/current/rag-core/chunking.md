@@ -29,6 +29,12 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
   consecutive encoder windows, e5-base: 512 tokens). Needs a token-level local embedder
   (`Embedder.passage_token_offsets` / `encode_passage_tokens`); flat mode only -- `RagStore.build`
   refuses `parent_child`; a chunk no token overlapped falls back to per-chunk encoding, logged.
+- `table`: markdown-table-aware -- a chunk boundary never falls inside a table ROW; a table that
+  fits `size` is ONE chunk carrying its nearest heading breadcrumb, a longer one splits between
+  row blocks and every block records the header row's SOURCE offsets in
+  `metadata.table_header_span`; non-table text routes through `recursive`, so a `table`-vs-
+  `recursive` delta isolates the table handling (see
+  [table-aware chunking](#table-aware-chunking)).
 
 Selection: `make build-index CHUNK_STRATEGY=<name> CHUNK_SIZE=<chars> CHUNK_OVERLAP=<chars>` /
 `build-index --strategy <name> --size <chars> --overlap <chars>` / `RunConfig.strategy`;
@@ -37,9 +43,9 @@ builds into that config's own `data_dir`, which is how an experiment gets a stor
 artifacts instead of overwriting the default one; with `CONFIG=` the YAML owns `corpus_root`
 unless `CORPUS=` is also passed on the command line. The Optuna
 tuner searches the original five by default; `llb tune --extended-chunkers` adds
-`page`/`heading`/`late` (`EXTENDED_STRATEGIES` in `src/llb/optimize/tuner.py`) -- opt-in because
-`late` re-embeds whole documents per trial and `page` only differs from `recursive` on
-sidecar-bearing PDF corpora.
+`page`/`heading`/`late`/`table` (`EXTENDED_STRATEGIES` in `src/llb/optimize/tuning_space.py`) --
+opt-in because `late` re-embeds whole documents per trial, `page` only differs from `recursive` on
+sidecar-bearing PDF corpora, and `table` only differs on corpora carrying markdown tables.
 
 Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,markdown,semantic`
 (`compare-retrieval --strategies ...`) builds one flat FAISS store per strategy over the SAME corpus
@@ -99,6 +105,117 @@ delta is -0.000 [-0.062, +0.062], 12/18/65, also flat. The verdict retains `recu
 point-estimate leader and the available item set does not separate the two chunkers under paired
 sampling. This result applies to the capped goods stores; the older seven-strategy accepted-PDF
 ranking remains a separate forward re-run because that exact accepted item set is unavailable.
+
+## Table-Aware Chunking
+
+`src/llb/rag/chunking/table.py` (`table_spans`, dispatched as `CHUNK_STRATEGY=table`) is the
+strategy for corpora whose answers live in converted-PDF markdown tables. It partitions a document
+into TABLE regions and everything else:
+
+- a table is found by the GFM rule -- a row line carrying a cell separator followed by a delimiter
+  line of dashes/colons/separators -- and runs to the first line that is not a row, so
+  `find_tables` never claims a plain `---` horizontal rule under a pipe-bearing paragraph;
+- a table that fits `size` stays ONE chunk; a longer one packs WHOLE ROWS up to `size` (reusing
+  the `sentence` packer), so a boundary never falls inside a row;
+- every chunk of a table carries `metadata.headers` (the breadcrumb of its nearest enclosing
+  heading, reusing the `markdown`/`heading` parser) and `metadata.table_header_span` --
+  the header row's `[start, end]` SOURCE offsets, so a consumer can restore the column names a
+  middle row block would otherwise have lost. The header is recorded as OFFSETS, never copied into
+  the text, because chunk text must stay a verbatim corpus slice for the source-span metric;
+- non-table text routes through the `recursive` splitter WITHIN its region, so a `table`-versus-
+  `recursive` delta isolates the table handling;
+- the one row a boundary may cut is a row longer than `size`: it falls through to the shared
+  [`size` cap](#size-is-a-hard-cap-on-every-strategy), exactly as an over-long sentence does under
+  `sentence`;
+- in `parent_child` mode a child re-chunks its PARENT'S text, so the header span it finds is
+  parent-local; `shifted_metadata` moves it with the child's own offsets (`_build_children` in
+  `src/llb/rag/store_build.py`), because a recorded span that did not move would point at
+  unrelated text.
+
+`table` is a first-class `RunConfig.strategy` value (`Strategy` in `src/llb/core/config_fields.py`),
+so `make build-index CHUNK_STRATEGY=table`, `CONFIG=` YAML, and the tuner all reach it.
+
+Tests: `tests/llb/rag/test_chunking_table.py` -- registration in `STRATEGIES` and
+`EXTENDED_STRATEGIES`, offset round-trips and the `size` cap at both a splitting and a
+non-splitting size, no boundary inside a row, row-boundary-aligned blocks, the breadcrumb of each
+table's own enclosing heading, header spans that resolve to the real header row, header text never
+copied into a later block, no non-whitespace character lost, prose regions carrying no table
+metadata, the horizontal-rule rejection, and the over-long-row fallback.
+
+### Row integrity: what the strategy guarantees and what `recursive` already achieved
+
+Row-cut census (2026-08-16) over five corpus/size settings (`chunk_corpus` + `find_tables`; a row
+is "cut" when some chunk boundary falls strictly inside it):
+
+| corpus | `size` | rows | rows longer than `size` | `table` cuts | `recursive` cuts | `sentence` cuts |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| goods PDFs (30% table chars) | 200 | 2641 | 147 | 147 (5.6%) | 150 (5.7%) | 318 (12.0%) |
+| goods PDFs | 800 | 2641 | 2 | 2 (0.1%) | 2 (0.1%) | 98 (3.7%) |
+| HR PDFs (7% table chars) | 200 | 2302 | 30 | 30 (1.3%) | 30 (1.3%) | 148 (6.4%) |
+| HR PDFs | 800 | 2302 | 1 | 1 (0.0%) | 1 (0.0%) | 63 (2.7%) |
+| quickstart PDF (2.7% table chars) | 800 | 61 | 8 | 8 (13.1%) | 8 (13.1%) | 12 (19.7%) |
+
+`table` cuts EXACTLY the rows that exceed `size` and nothing else -- the guarantee holds by
+construction. The finding that decides the recommendation is the `recursive` column: the pinned
+splitter's separator list is paragraph -> LINE -> word -> character, and a markdown table row IS a
+line, so `recursive` already lands on row boundaries and cuts at most three rows more than the
+theoretical minimum on any corpus here. The strategy's row guarantee is therefore worth ~0 against
+`recursive` on these corpora and 2.7-8.8 percentage points of row integrity against `sentence`.
+
+### Retrieval evidence
+
+CUDA host (2026-08-16), `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence
+NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95% confidence, seed 13. Reports,
+configs, stores, and per-item vectors under `$DATA_DIR/table-aware-chunking/<run>/`
+(`20260816T-goods`, `20260816T-pdf-accepted`).
+
+95-item drafted goods ledger (`size` 200 / overlap 30; 24 of its 95 items have a gold span inside
+a table row):
+
+| strategy | recall@10 | MRR | recall delta vs `recursive` | reading |
+| --- | ---: | ---: | --- | --- |
+| `recursive` (baseline) | 0.695 | 0.465 | -- | -- |
+| `table` | 0.695 | 0.465 | +0.000 [+0.000, +0.000], 0/0/95 | flat |
+| `sentence` | 0.632 | 0.465 | -0.063 [-0.137, +0.000], 2/8/85 | flat |
+
+40-item accepted quickstart-PDF goldset (`size` 800 / overlap 120; a literature corpus, 2.7% table
+characters):
+
+| strategy | recall@10 | MRR | recall delta vs `recursive` | reading |
+| --- | ---: | ---: | --- | --- |
+| `recursive` (baseline) | 0.925 | 0.852 | -- | -- |
+| `table` | 0.925 | 0.831 | +0.000 [+0.000, +0.000], 0/0/40 | flat |
+| `sentence` | 0.925 | 0.808 | +0.000 [-0.075, +0.075], 1/1/38 | flat |
+
+Per-question-type slices ([question-type
+slices](retrieval-metrics.md#question-type-slices)) on the numeric and comparative rows, which is
+where tables carry the answers:
+
+| corpus | slice | n | `recursive` | `table` | `sentence` |
+| --- | --- | ---: | ---: | ---: | ---: |
+| goods | numeric | 4 | 0.750 / 0.583 | 0.750 / 0.583 | 0.500 / 0.500 |
+| goods | comparative | 2 | 0.500 / 0.500 | 0.500 / 0.500 | 0.500 / 0.500 |
+| goods | multi-hop | 35 | 0.657 / 0.415 | 0.657 / 0.413 | 0.657 / 0.477 |
+| quickstart PDF | numeric | 8 | 0.875 / 0.781 | 0.875 / 0.674 | 1.000 / 0.750 |
+| quickstart PDF | comparative | 2 | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 |
+
+Verdict: **RETAIN `recursive`; `table` ships as an opt-in strategy, adopted nowhere by default.**
+`table` reproduces `recursive`'s recall to three decimals on every row and every slice of both
+corpora at a +/-0.000 measurement floor, and costs one rank position on one item per corpus (MRR
+-0.001 goods, -0.021 quickstart; both flat). The incumbent rows reproduce their recorded numbers
+exactly (`recursive` 0.695 / `sentence` 0.632 on goods), so the comparison is against the recorded
+state, not a re-tuned one. Two reasons the null result is not a null strategy: the guarantee is
+structural rather than incidental (`recursive`'s row alignment is a side effect of one separator in
+a pinned third-party splitter, and nothing measures it per build), and `table_header_span` is
+information no other strategy produces.
+
+Why recall could not move here, stated plainly: `recall@k` credits an item when a retrieved chunk
+OVERLAPS a gold span by a single character (`chunk_hits_span`,
+[retrieval metrics](retrieval-metrics.md)), so a chunk that cuts a table row mid-way still scores a
+hit with half a row. Row integrity changes what the model READS, not whether the metric fires --
+which is why the two corpora agree that recall is invariant while the row-cut census differs by up
+to 171 rows. Reading that difference needs an evidence-intactness metric the retrieval side does
+not have yet.
 
 ## `size` Is A Hard Cap On Every Strategy
 

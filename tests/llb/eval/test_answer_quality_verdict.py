@@ -105,8 +105,16 @@ def test_coverage_columns_are_recomputed_from_the_bundles_retrieval_sidecar(tmp_
         _retrieval_record("q0", 1) + _retrieval_record("q1", 2), encoding="utf-8"
     )
     coverage = read_case_coverage(tmp_path, 10)
-    assert coverage["q0"] == {"all_spans_at_k": 0.0, "span_coverage": 0.5}
-    assert coverage["q1"] == {"all_spans_at_k": 1.0, "span_coverage": 1.0}
+    assert coverage["q0"] == {
+        "all_spans_at_k": 0.0,
+        "span_coverage": 0.5,
+        "context_chars": 10.0,
+    }
+    assert coverage["q1"] == {
+        "all_spans_at_k": 1.0,
+        "span_coverage": 1.0,
+        "context_chars": 20.0,
+    }
     enriched = with_coverage([_row("q0", 1.0)], coverage)
     assert enriched[0]["all_spans_at_k"] == 0.0
     assert enriched[0]["objective_score"] == 1.0
@@ -132,7 +140,13 @@ def test_a_second_hop_carried_by_a_collapsed_duplicate_counts_as_covered(tmp_pat
         ],
     }
     (tmp_path / "retrieval.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
-    assert read_case_coverage(tmp_path, 10)["q0"] == {"all_spans_at_k": 1.0, "span_coverage": 1.0}
+    assert read_case_coverage(tmp_path, 10)["q0"] == {
+        "all_spans_at_k": 1.0,
+        "span_coverage": 1.0,
+        # One SERVED record, so the context bill counts it once however many documents it stands
+        # for -- the collapsed occurrences restore coverage, never context.
+        "context_chars": 10.0,
+    }
 
 
 def test_a_bundle_without_the_sidecar_keeps_its_rows_unchanged(tmp_path: Path):

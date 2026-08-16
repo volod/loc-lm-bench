@@ -12,7 +12,7 @@ FINAL_SPLIT = "final"
 
 STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
 
-EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late"]
+EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late", "table"]
 
 RETRIEVAL_MODES = ["flat", "parent_child", "hybrid"]
 

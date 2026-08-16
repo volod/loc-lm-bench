@@ -258,6 +258,13 @@ deterministic Monte Carlo tail with the plus-one correction. Each `PairedCompari
   bounds, resample count, seed convention, and the exact sign-test ledger are unchanged. Archived
   aggregate-only blocks without a calibrated p retain their historical reading until a
   vector-backed audit can rebuild them.
+- `regresses()` is the mirrored reading `separates()` structurally cannot give. The calibrated test
+  is ONE-SIDED by construction ("candidate ahead"), so it can never state a LOSS -- and a lane that
+  buys one slice by paying for another has to be able to say so. A loss is therefore read off the
+  paired interval (`delta.hi < 0`), the same fallback an uncalibrated archived block gets, and it
+  carries the same minimum-evidence gate, so a loss resting on three differing items is not
+  reported as one either. Its first consumer is the budget-conversion cost scan
+  ([GraphRAG](../graphrag-backend/answer-quality-evidence.md#the-retrieval-budget-dimension)).
 - The three-state adoption reading (`answer` / `rank only` / `neither`) calibrates its objective
   and reciprocal-rank vectors separately while preserving objective-first order. Directional
   query-robustness rows test both sign-flip directions and persist the p for the observed direction.

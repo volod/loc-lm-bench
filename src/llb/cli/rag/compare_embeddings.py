@@ -1,10 +1,12 @@
 """Embedder bake-off command (`compare-embeddings`): rank encoders on one gold set."""
 
+import os
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import typer
 
+from llb.core import env
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
@@ -31,6 +33,36 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     METRIC_RECALL,
 )
 from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
+
+if TYPE_CHECKING:
+    from llb.rag.candidate_screen import SkippedCandidate
+
+
+def _resolve_roster(
+    models: str, allow_remote_code: bool
+) -> tuple[list[str], list["SkippedCandidate"]]:
+    """Screen the requested roster into candidates to build plus visibly declined entries.
+
+    An id with no declared query/passage convention exits the run (scoring it would guess a format
+    and understate the encoder); a candidate needing `trust_remote_code` is declined unless the
+    operator opted in, and the opt-in is exported process-wide -- like `LLB_EMBED_DEVICE`, because
+    the store build, the lazy reload behind `retrieve()`, and the throughput profiler each
+    construct their own `Embedder` and all three must agree.
+    """
+    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
+    from llb.rag.embedding_bakeoff_roster import UnregisteredCandidateError, screen_candidates
+
+    roster = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_LOCAL_CANDIDATES
+    try:
+        local_models, skipped = screen_candidates(roster, allow_remote_code=allow_remote_code)
+    except UnregisteredCandidateError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    for row in skipped:
+        typer.echo(f"[compare-embeddings] skipping {row['model']}: {row['detail']}", err=True)
+    if allow_remote_code:
+        os.environ[env.LLB_TRUST_REMOTE_CODE] = "1"
+    return local_models, skipped
 
 
 @app.command("compare-embeddings")
@@ -60,6 +92,12 @@ def compare_embeddings_cmd(
     ),
     yes: bool = typer.Option(
         False, "--yes", help="skip the interactive egress consent prompt for --api-model"
+    ),
+    allow_remote_code: bool = typer.Option(
+        False,
+        "--allow-remote-code",
+        help="opt into candidates that ship their own modelling code (trust_remote_code), e.g. "
+        "gte-multilingual / jina-embeddings-v3; without it those rows are SKIPPED and recorded",
     ),
     noise_floor: bool = typer.Option(
         False,
@@ -153,7 +191,6 @@ def compare_embeddings_cmd(
     from llb.goldset.schema import load_goldset
     from llb.prep.frontier_telemetry import ProvenanceLog
     from llb.rag.embedding_bakeoff import run_bakeoff
-    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_power import prepare_embedding_power, resolve_embedding_power
     from llb.rag.encoder_throughput import ThroughputProfile
 
@@ -167,7 +204,7 @@ def compare_embeddings_cmd(
     if split:
         items = [it for it in items if it.split == split]
     bakeoff_items = [(it.question, spans_as_dicts(it)) for it in items]
-    local_models = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_LOCAL_CANDIDATES
+    local_models, skipped = _resolve_roster(models, allow_remote_code)
 
     _, run_ts = new_run_timestamp()
     run_dir = cfg.data_dir / "compare-embeddings" / run_ts
@@ -215,6 +252,7 @@ def compare_embeddings_cmd(
             profiles_out=throughput_profiles,
         ),
         item_ids=[item.id for item in items],
+        skipped=skipped,
         api_model=api_model,
         build_api=api_store_builder(cfg, stores_dir, egress_log, max_usd),
         data_classification=data_classification,

@@ -12,9 +12,20 @@ from llb.rag.chunking.spans import (
     validate_chunking,
 )
 from llb.rag.chunking.structure import heading_spans, markdown_spans, page_aligned_spans
+from llb.rag.chunking.table import table_spans
 
 PURE_STRATEGIES = ("fixed", "sentence")
-STRATEGIES = ("fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late")
+STRATEGIES = (
+    "fixed",
+    "sentence",
+    "recursive",
+    "markdown",
+    "semantic",
+    "page",
+    "heading",
+    "late",
+    "table",
+)
 
 
 def chunk_spans(
@@ -52,6 +63,8 @@ def _strategy_spans(
         return markdown_spans(text, size, overlap)
     if strategy == "heading":
         return heading_spans(text, size, overlap)
+    if strategy == "table":
+        return table_spans(text, size, overlap)
     plain = _plain_strategy_spans(text, strategy, size, overlap, embedder, page_spans)
     return [(s, e, {}) for s, e in plain]
 

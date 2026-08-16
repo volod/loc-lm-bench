@@ -19,13 +19,14 @@ question you have.
 | --- | --- | --- |
 | Enter | [Configuration and command path](rag-core/run-path.md) | How a run is configured and invoked, the standalone closed-service runner, and scoring an answer log produced elsewhere |
 | Index | [Retrieval store and lifecycle](rag-core/retrieval-store.md) | Store layout, duplicate-chunk collapse, near-duplicate residue and the collapse tiers, and refreshing a store against a changed corpus |
-| Chunk | [Chunking strategies](rag-core/chunking.md) | Which splitter to build with, the paired `sentence`-versus-`recursive` re-read, and why `size` is a hard cap on every strategy |
+| Chunk | [Chunking strategies](rag-core/chunking.md) | Which splitter to build with, the paired `sentence`-versus-`recursive` re-read, what table-aware chunking guarantees that `recursive` already achieved, and why `size` is a hard cap on every strategy |
 | Embed | [Embedder conventions and bake-off](rag-core/embedders.md) | Per-family query/passage conventions, the bake-off lane and its verdict, encoder throughput, cheap-GPU rosters, and the context budget |
 | Retrieve | [Hybrid retrieval](rag-core/hybrid-retrieval.md) | Dense + BM25 + RRF, the fusion-weight verdict re-read two ways, and what apostrophe-variant tokenization is worth |
 | Retrieve | [Graph-vector fusion](rag-core/graph-vector-fusion.md) | Span identity, candidate depth, and question-type routing across the fused lane |
 | Re-rank | [Reranking, context order, and query-side processing](rag-core/rerank-and-query.md) | Cross-encoder reranking, context ordering, Ukrainian query preparation, HyDE and decomposition |
+| Re-rank | [Reranker bake-off](rag-core/reranker-bakeoff.md) | Which cross-encoder to run, what it buys in first-hit rank, and what it costs in latency and VRAM beside the generator |
 | Generate | [Generation graph and scoring](rag-core/scoring.md) | The generation graph, the headline objective's verbosity confound, its decomposition and declared ranking policy, groundedness and citation metrics |
-| Measure | [Retrieval metrics](rag-core/retrieval-metrics.md) | Recall@k / MRR by source span, the paired lane verdict, and the measurement floor |
+| Measure | [Retrieval metrics](rag-core/retrieval-metrics.md) | Recall@k / MRR by source span, the paired lane verdict, the per-question-type slices, and the measurement floor |
 | Persist | [Backends, persistence, and execution](rag-core/persistence-and-execution.md) | Backend seam, the persisted retrieval record, executor, durability, and the RAG-config sweep grid |
 
 ## Reading a verdict

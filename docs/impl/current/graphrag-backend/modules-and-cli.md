@@ -71,6 +71,13 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   every row per question-type slice, `stats.py` is the paired bootstrap plus exact sign test,
   `verdict.py` is the adopt-or-reject rule, and `report.py` renders the Markdown artifact.
 
+`src/llb/rag/multihop_probe/`
+: The per-hop retrievability probe that diagnoses a stuck `all-spans@k` (see
+  [retrieval budget evidence](retrieval-budget-evidence.md#the-per-hop-probe-lane)). `probe.py`
+  ranks each labeled span by the item's question and by its own text and builds the per-budget
+  coverage curve, `diagnose.py` turns those ranks into a per-item budget/query/unreachable
+  classification and the slice explanation, and `report.py` renders the Markdown artifact.
+
 `src/llb/rag/fusion_calibration/`
 : The held-out sidecar-free router calibration. It parses the deterministic threshold grid,
   evaluates routing error and paired retrieval deltas on tuning, freezes one policy before final
@@ -84,6 +91,13 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   `coverage.py` recomputes the multi-span coverage columns from each bundle's `retrieval.jsonl`,
   `compare.py` is the pure per-slice comparison (reusing the fusion-evidence bootstrap),
   `verdict.py` decides answer-gain versus retrieval-only, and `report.py` renders the artifact.
+  `budgets.py` adds the retrieval-BUDGET dimension: it expands the lane selection into
+  `(lane x top_k)` cells labelled `<row>#k<budget>`, which `lanes.py` parses back, and names each
+  raised cell's pairing against the same row at the smallest budget. `conversion.py` decides those
+  pairings with the same `judge_lane`, adds the cost scan over the non-focus slices, and
+  `report_budgets.py` renders the section. `coverage.py` also reports `context_chars`, the served
+  context measured from the sidecar offsets, so a budget's coverage is always readable beside its
+  price.
 
 ## Retrieval Strategies
 
@@ -111,6 +125,8 @@ llb compare-retrieval --graph-weight 0.3 --k 10 --out report.json
 llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
+llb compare-answer-quality --from-comparison <sweep>/comparison.json --budgets 10,50
+llb probe-multihop-hops --budgets 10,25,50 --retrieval-backend faiss --out-dir <dir>
 ```
 
 `RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, `graph_weight`

@@ -115,6 +115,25 @@ def test_compare_reports_question_type_slices_without_retrieving_twice():
     assert "slice multi-hop (n=1)" in rendered
 
 
+def test_focus_slices_are_reported_and_empty_ones_are_named_not_scored():
+    store = _FakeStore([_chunk("d1", 0, 10)])
+    report = compare_retrieval(
+        {"faiss": store},
+        [*_items(), *_items()],
+        k=5,
+        slice_labels=["numeric", "factoid"],
+    )
+    # every focus slice is in the JSON, so a zero reads as "this corpus labels none"
+    assert {"numeric", "comparative", "multi-hop"} <= set(report["slices"])
+    assert report["slices"]["numeric"]["n"] == 1
+    assert report["slices"]["comparative"]["n"] == 0
+    rendered = format_comparison(report)
+    assert "slice numeric (n=1)" in rendered
+    assert "slice factoid (n=1)" in rendered
+    assert "slice comparative (n=0)" not in rendered
+    assert "slices with no labeled item: comparative, multi-hop" in rendered
+
+
 def test_compare_rejects_misaligned_slice_labels():
     import pytest
 

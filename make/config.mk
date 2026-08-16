@@ -206,6 +206,15 @@ FUSION_BOOTSTRAP_RESAMPLES ?=
 FUSION_HIDE_ROUTING_SIDECAR ?=
 FUSION_HEURISTIC_LONG_QUESTION_WORDS ?=
 FUSION_HEURISTIC_MIN_LINKED_ENTITIES ?=
+# Per-hop multi-hop retrievability probe (probe-multihop-hops): the budget grid the all-spans@k
+# curve is read at (the SMALLEST is the operating budget the diagnosis is stated against), how
+# deep a labeled span is searched for before a query counts as unable to reach it, and the lane
+# to probe when it is not the one the config names. Empty knobs fall back to the command defaults.
+HOP_PROBE_BUDGETS ?=
+HOP_PROBE_DEPTH ?=
+HOP_PROBE_BACKEND ?=
+HOP_PROBE_STRATEGY ?=
+HOP_PROBE_OUT_DIR ?=
 # Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
 # evaluate only the frozen policy on the held-out final split.
 ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20
@@ -224,6 +233,10 @@ ANSWER_QUALITY_LANES ?=
 FUSION_COMPARISON ?=
 ANSWER_QUALITY_LIMIT ?=
 ANSWER_QUALITY_OUT_DIR ?=
+# Retrieval budgets every lane is scored at, smallest first (e.g. 10,50). Empty scores the
+# config's own top_k once; a second budget adds the reading that says whether a budget-driven
+# coverage gain converts into answers, and what the extra context costs.
+ANSWER_QUALITY_BUDGETS ?=
 # Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
 INCLUDE_DRAFTED ?=
 # Embedder adoption bar (compare-embedder-adoption): the two encoders, each with the data root
@@ -246,6 +259,25 @@ EMBED_ENCODER_MIN_WARM ?= 3
 EMBED_ENCODER_MAX_WARM ?= 10
 EMBED_ENCODER_MAX_WARM_SECONDS ?= 180
 EMBED_ENCODER_COMPARE_CPU ?=
+# Opt into bake-off candidates that ship their own modelling code (trust_remote_code), e.g.
+# Alibaba-NLP/gte-multilingual-base and jinaai/jina-embeddings-v3. Only the literal 1 enables it;
+# without it those roster rows are SKIPPED and the reason is recorded in the report.
+EMBED_ALLOW_REMOTE_CODE ?=
+# Reranker bake-off (compare-rerankers): the incumbent cross-encoder every candidate is paired
+# against, the roster (empty = the default UA candidate set), and the cost side of the choice.
+# RERANK_GENERATOR_VRAM_MB declares how much VRAM the generator holds while serving; without it the
+# footprints are still measured and the fit gate does not run. Only the literal 1 enables
+# RERANK_ALLOW_REMOTE_CODE, without which the jina / gte candidates are SKIPPED and recorded.
+RERANK_BASELINE ?= BAAI/bge-reranker-v2-m3
+RERANK_MODELS ?=
+RERANK_ADOPTION_BARS ?=
+RERANK_ALLOW_REMOTE_CODE ?=
+RERANK_BATCH_SIZE ?=
+RERANK_DTYPE ?=
+RERANK_GENERATOR_VRAM_MB ?=
+RERANK_RESAMPLES ?=
+RERANK_CONFIDENCE ?=
+COMPARE_RERANKERS_OUT ?=
 ADOPTION_TOP_KS ?= 10,3
 ADOPTION_RERANKERS ?= off,on
 ADOPTION_LIMIT ?=

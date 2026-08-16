@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from llb.core.config import RunConfig
+from llb.eval.answer_quality.budgets import split_budget_label
 from llb.eval.answer_quality.models import LaneSpec
 from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
@@ -37,19 +38,31 @@ DEPTH_MARKER = "/d"
 
 
 def parse_lane_label(label: str) -> LaneSpec:
-    """Turn a vector, graph, fixed-fused, or routed-fused row label into a `LaneSpec`."""
-    text = label.strip()
+    """Turn a vector, graph, fixed-fused, or routed-fused row label into a `LaneSpec`.
+
+    An optional `#k<budget>` suffix scores the row at that retrieval budget instead of the
+    config's own, which is what lets a budget sweep's cell labels round-trip.
+    """
+    row, budget = split_budget_label(label.strip())
+    spec = _parse_row_label(row)
+    if budget is None:
+        return spec
+    return spec._replace(label=label.strip(), top_k=budget)
+
+
+def _parse_row_label(text: str) -> LaneSpec:
+    """The sweep row label alone, with no retrieval budget attached."""
     if text == VECTOR_ROW:
         return LaneSpec(label=text, retrieval_backend=BACKEND_VECTOR)
     if text.startswith(GRAPH_ROW_PREFIX):
         strategy = text[len(GRAPH_ROW_PREFIX) :]
         if not strategy:
-            raise ValueError(f"graph lane label needs a strategy, got {label!r}")
+            raise ValueError(f"graph lane label needs a strategy, got {text!r}")
         return LaneSpec(text, BACKEND_GRAPH, retrieval_strategy=strategy)
     is_routed = text.startswith(ROUTED_ROW_PREFIX)
     if not text.startswith(FUSED_ROW_PREFIX) and not is_routed:
         raise ValueError(
-            f"unknown lane label {label!r}: expected {VECTOR_ROW!r}, "
+            f"unknown lane label {text!r}: expected {VECTOR_ROW!r}, "
             f"{GRAPH_ROW_PREFIX}<strategy>, or "
             f"{FUSED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>], or "
             f"{ROUTED_ROW_PREFIX}<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]"
@@ -59,26 +72,26 @@ def parse_lane_label(label: str) -> LaneSpec:
     merge_ratio = SPAN_MERGE_MIN_RATIO
     if MERGE_RATIO_MARKER in body:
         body, _, ratio_token = body.partition(MERGE_RATIO_MARKER)
-        merge_ratio = _merge_ratio(ratio_token, label)
+        merge_ratio = _merge_ratio(ratio_token, text)
     identity = DEFAULT_SPAN_IDENTITY
     if IDENTITY_MARKER in body:
         body, _, identity_token = body.partition(IDENTITY_MARKER)
         try:
             identity = resolve_span_identity(identity_token)
         except ValueError as exc:
-            raise ValueError(f"{exc} in lane label {label!r}") from None
+            raise ValueError(f"{exc} in lane label {text!r}") from None
     depth: int | None = None
     if DEPTH_MARKER in body:
         body, _, depth_token = body.partition(DEPTH_MARKER)
-        depth = _positive_int(depth_token, label, "candidate depth")
+        depth = _positive_int(depth_token, text, "candidate depth")
     strategy, marker, weight_token = body.partition("@")
     if not marker or not strategy:
-        raise ValueError(f"fused lane label needs <strategy>@<weight>, got {label!r}")
+        raise ValueError(f"fused lane label needs <strategy>@<weight>, got {text!r}")
     return LaneSpec(
         text,
         BACKEND_FUSED,
         retrieval_strategy=strategy,
-        graph_weight=_weight(weight_token, label),
+        graph_weight=_weight(weight_token, text),
         graph_fusion_candidates=depth,
         graph_fusion_span_identity=identity,
         graph_fusion_span_merge_ratio=merge_ratio,
@@ -158,4 +171,6 @@ def lane_config(config: RunConfig, lane: LaneSpec, *, run_name_prefix: str) -> R
         values["retrieval_strategy"] = lane.retrieval_strategy
     if lane.graph_weight is not None:
         values["graph_weight"] = lane.graph_weight
+    if lane.top_k is not None:
+        values["top_k"] = lane.top_k
     return RunConfig.model_validate(values)

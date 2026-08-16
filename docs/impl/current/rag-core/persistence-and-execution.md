@@ -29,7 +29,11 @@ Parquet is used when `pyarrow` is available; JSONL is the portable fallback. The
 in a hidden sibling directory and atomically renamed when canonical files are complete. MLflow
 mirroring runs after canonical persistence and is best-effort.
 
-Per-case score rows record `retrieval_hit` and `first_hit_rank`. `retrieval.jsonl` stores bounded
+Per-case score rows record `retrieval_hit` and `first_hit_rank`, and `prompt_tokens` whenever the
+backend reported one -- the prompt the model actually consumed, which is what lets a lane comparing
+two context sizes tell a served context from one silently truncated to the window. It is optional
+rather than defaulted to zero, so a backend that reports no usage is distinguishable from a run
+whose prompts were empty. `retrieval.jsonl` stores bounded
 retrieved chunk text plus source-span coordinates for miss analysis and observability;
 `src/llb/executor/cases.py` constructs both the persisted records and the in-process retrieval
 pairs used by aggregate metrics and judge records.

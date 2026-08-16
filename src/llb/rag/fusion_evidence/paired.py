@@ -131,6 +131,20 @@ def separates(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDEN
     return clears and reaches_reporting_level(discordant_pairs(comparison), confidence)
 
 
+def regresses(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> bool:
+    """Whether the BASELINE is ahead by an interval clear of zero, on enough differing items.
+
+    `separates` reads the calibrated sign-flip p, which is one-sided by construction ("candidate
+    ahead"), so it can never state a LOSS -- and a lane that BUYS one slice by paying for another
+    has to be able to say so. The loss is therefore read off the paired interval, the same
+    fallback an uncalibrated archived block gets, mirrored; it carries the same minimum-evidence
+    gate, so a loss resting on three differing items is not reported as one either.
+    """
+    return comparison["delta"]["hi"] < 0.0 and reaches_reporting_level(
+        discordant_pairs(comparison), confidence
+    )
+
+
 def reading_of(comparison: PairedComparison, confidence: float = DEFAULT_CONFIDENCE) -> str:
     """Return the separated, insufficient-evidence, or flat reading."""
     calibrated = "randomization_p" in comparison and randomization_separates(

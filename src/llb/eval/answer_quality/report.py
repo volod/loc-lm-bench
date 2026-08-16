@@ -9,11 +9,14 @@ from collections.abc import Mapping
 
 from llb.eval.answer_quality.models import (
     METRIC_ALL_SPANS,
+    METRIC_CONTEXT_CHARS,
     METRIC_OBJECTIVE,
+    METRIC_PROMPT_TOKENS,
     METRIC_RETRIEVAL_HIT,
     METRIC_SPAN_COVERAGE,
     METRIC_TOKEN_F1,
     AnswerQualityReport,
+    LaneReport,
 )
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.evidence_gate import (
@@ -24,6 +27,7 @@ from llb.rag.fusion_evidence.stability import (
 )
 from llb.rag.fusion_evidence.stats import format_interval
 from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
+from llb.eval.answer_quality.report_budgets import budget_section
 from llb.eval.answer_quality.report_routing import routing_outcomes
 
 _HEADERS = {
@@ -32,6 +36,8 @@ _HEADERS = {
     METRIC_RETRIEVAL_HIT: "recall@k",
     METRIC_ALL_SPANS: "all-spans@k",
     METRIC_SPAN_COVERAGE: "span coverage",
+    METRIC_CONTEXT_CHARS: "context chars",
+    METRIC_PROMPT_TOKENS: "prompt tokens",
 }
 
 
@@ -76,11 +82,27 @@ def _metric_table(
     return lines
 
 
+def _reading_blocks(report: AnswerQualityReport) -> list[tuple[str, LaneReport]]:
+    """Every block a paired reading was taken in, keyed by what it is a reading OF.
+
+    A budget sweep's cross readings decide the conversion verdict, so they belong in the same
+    minimum-evidence count and the same boundary table as the lanes -- a reading that drives a
+    verdict and is invisible to the artifact's own audit of its readings is the failure mode both
+    sections exist to prevent.
+    """
+    blocks: list[tuple[str, LaneReport]] = sorted(report["lanes"].items())
+    blocks += [
+        (f"{label} vs {reading['base_lane']}", reading)
+        for label, reading in sorted(report.get("cross_readings", {}).items())
+    ]
+    return blocks
+
+
 def _gate_summary(report: AnswerQualityReport) -> list[str]:
     """How many of this comparison's paired readings the minimum-evidence gate relabeled."""
     comparisons = [
         comparison
-        for lane in report["lanes"].values()
+        for _, lane in _reading_blocks(report)
         for slice_report in (lane["overall"], *lane["slices"].values())
         for comparison in slice_report["paired_vs_baseline"].values()
     ]
@@ -91,17 +113,17 @@ def _gate_summary(report: AnswerQualityReport) -> list[str]:
 def _boundary_section(report: AnswerQualityReport) -> list[str]:
     """How close each lane's FOCUS-slice objective and coverage readings sit to the cut.
 
-    Those are the two readings `_judge` cuts its four outcomes from, so they are the two whose
+    Those are the two readings `judge_lane` cuts its four outcomes from, so they are the two whose
     knife-edge rows would otherwise print as settled results.
     """
     focus = report["focus_slice"]
     baseline = report["baseline"]
     metrics = (METRIC_OBJECTIVE, report["verdict"]["coverage_metric"])
     rows = []
-    for label in sorted(report["lanes"]):
+    for label, block in _reading_blocks(report):
         if label == baseline:
             continue
-        slice_report = report["lanes"][label]["slices"].get(focus)
+        slice_report = block["slices"].get(focus)
         if slice_report is None:
             continue
         for metric in metrics:
@@ -165,6 +187,30 @@ def _lane_list(report: AnswerQualityReport) -> list[str]:
     return lines
 
 
+def _unanswered_section(report: AnswerQualityReport) -> list[str]:
+    """Cases a lane never answered, which every metric column would otherwise hide.
+
+    A timeout or a backend error scores zero exactly like a wrong answer, so a lane whose context
+    grew until its requests stopped fitting the request timeout reads as a lane whose ANSWERS got
+    worse. Those are different findings and the artifact has to be able to tell them apart.
+    """
+    affected = {
+        label: lane["not_ok"] for label, lane in sorted(report["lanes"].items()) if lane["not_ok"]
+    }
+    if not affected:
+        return []
+    return [
+        "### Cases the model never answered",
+        "",
+        "These score zero like a wrong answer and are indistinguishable from one in every column",
+        "below. Read any slice containing them as carrying that many missing answers, not that many",
+        "bad ones.",
+        "",
+        *(f"- `{label}`: {count} of {report['n']} not `ok`" for label, count in affected.items()),
+        "",
+    ]
+
+
 def format_report(
     report: AnswerQualityReport,
     *,
@@ -175,7 +221,7 @@ def format_report(
     verdict = report["verdict"]
     meta = dict(metadata or {})
     lines = [f"# {title}", ""]
-    for key in ("model", "backend", "split", "grounding", "goldset"):
+    for key in ("model", "backend", "split", "top_k", "grounding", "goldset"):
         if key in meta:
             lines.append(f"- {key}: `{meta[key]}`")
     lines += [
@@ -190,7 +236,9 @@ def format_report(
     lines += _lane_list(report)
     lines.append("")
     lines += _gate_summary(report)
+    lines += _unanswered_section(report)
     lines += _boundary_section(report)
+    lines += budget_section(report)
     lines += _lane_decisions(report)
     lines += routing_outcomes(report)
     lines += _metric_table(

@@ -20,6 +20,11 @@ class CaseScoreRow(TypedDict):
     latency_s: float
     completion_tokens: int
     answer_preview: str
+    # The prompt the backend actually consumed, in the model's own units. Present only when the
+    # backend reports it, so a lane that compares context sizes can tell a measured prompt from a
+    # missing measurement -- and a run whose context was silently truncated to the served window
+    # from one that fit.
+    prompt_tokens: NotRequired[int]
     semantic: NotRequired[float]
     judge_score: NotRequired[float]
     retrieve_latency_s: NotRequired[float]

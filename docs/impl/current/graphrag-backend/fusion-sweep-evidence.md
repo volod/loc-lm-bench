@@ -151,7 +151,9 @@ What the run establishes:
   multi-hop slice at recall 0.686, but its `all-spans@10` is 0.057: it retrieves BOTH hops for 2 of
   35 two-hop questions. No row in the sweep exceeds 0.086 (3 of 35). At k=10 multi-hop evidence
   coverage is essentially unsolved on this corpus by every backend, fused or not -- which is the
-  measurement the flat comparison could not produce.
+  measurement the flat comparison could not produce. `k=10` is the binding clause: the same grid
+  re-scored at k=25 and k=50 lifts every row ([retrieval budget
+  evidence](retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
 - **The best fused row is `global_community` at a LOW graph weight**, not the 0.3 default and not
   `local_khop`. It gains multi-hop recall +0.086 [0.000, 0.200] (3 wins, 0 losses, 32 ties, sign
   test p=0.250) and overall recall +0.042 to +0.053, so it does not trade factoid ranking away.

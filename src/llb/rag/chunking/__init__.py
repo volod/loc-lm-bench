@@ -27,12 +27,17 @@ Strategies:
   - late       late chunking: spans are IDENTICAL to `sentence` (so any retrieval delta
                isolates the embedding effect), but vectors are pooled from whole-document
                token embeddings (`llb.rag.late_encoding`) instead of per-chunk encoding
+  - table      table-aware: a chunk boundary never falls inside a markdown table ROW; a table
+               that fits `size` is ONE chunk with its nearest heading breadcrumb, a longer one
+               splits between row blocks and every block records the header row's offsets in
+               `metadata.table_header_span`; non-table text routes through `recursive`
 
 Submodules (import from the specific one you need -- there is no re-export surface):
   - `spans`      primitive fixed/sentence span helpers and shared validation
   - `recursive`  the pinned langchain recursive splitter lane
   - `cap`        the shared `size`-cap fallback split reused by every strategy
   - `structure`  markdown / heading / page structure-aware strategies + page sidecar lookup
+  - `table`      the markdown-table-aware strategy (row-aligned boundaries + header spans)
   - `semantic`   native semantic chunking
   - `dispatch`   the `STRATEGIES` registry and the `chunk_spans` dispatcher
   - `corpus`     `iter_docs` / `chunk_text` / `chunk_corpus` / `summarize` over a corpus tree

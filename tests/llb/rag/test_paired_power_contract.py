@@ -12,8 +12,8 @@ from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.rag.embedding_bakeoff_models import BuiltStore
 from llb.rag.fusion_evidence.models import EvidenceItem
 
-BASELINE = "base"
-CANDIDATE = "candidate"
+BASELINE = "intfloat/multilingual-e5-base"
+CANDIDATE = "BAAI/bge-m3"
 METRIC = "recall_at_k"
 
 

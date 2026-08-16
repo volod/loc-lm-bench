@@ -17,6 +17,11 @@ satisfies by returning only one of its hops; on single-span items all three metr
 The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
 retrieval gain is distinguished from a partial hit.
 
+When `all_spans_at_k` is stuck and no ranking knob moves it, `probe-multihop-hops` says why: it
+ranks each labeled span by the item's own question and again by the span's own text, and classifies
+every item as budget-limited, query-limited, or unreachable ([retrieval budget
+evidence](../graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane)).
+
 Span matching is occurrence-aware: a chunk that collapsed byte-identical copies ([duplicate chunk
 collapse](retrieval-store.md#duplicate-chunk-collapse)) hits a span labeled at ANY place its text
 appears, so indexing a repeated passage once neither loses nor invents a hit.
@@ -54,6 +59,30 @@ Rendering is isolated in `retrieval_comparison_report.py`, and the decision is i
 retrieval, persisted item ids/vectors, recall and MRR adoption rules, baseline validation, ASCII
 rendering, and the CLI JSON artifact. The full RAG suite runs independently; its reranker latency
 test no longer imports a fixture through a nonexistent `tests` package.
+
+## Question-Type Slices
+
+An aggregate recall row cannot say WHICH questions a change helped, and a chunking change is
+exactly the kind that helps one slice and hurts another. `compare-retrieval` therefore reports a
+per-question-type breakdown beside the aggregate: every lane is scored again on the items carrying
+each label, from the SAME retrieval pass (no second retrieval, so the slices cost nothing).
+
+The labels are not in the gold set -- a `GoldItem` has no question type -- they live in the draft
+bundle's sidecars, and `src/llb/rag/question_types.py` is the one place that knows where those sit:
+`needle_items.jsonl` (ontology-assisted drafting) and `item_provenance.jsonl` (the external-draft
+import lane), each looked up beside the gold set and one level up when the gold set is an accepted
+ledger under `accepted/`. The two are JOINED, nearest sidecar first, so a bundle carrying either one
+(or both) slices the same way; a gold set with neither reports no slices at all instead of an
+invented label.
+
+`FOCUS_SLICES` (`src/llb/rag/compare_models.py`) -- `numeric`, `comparative`, `multi-hop` -- are
+always present in the JSON report even at `n=0`, so a reader can tell "this corpus labels no
+numeric question" from "nobody looked". The ASCII rendering scores only the non-empty slices and
+names the empty ones on one line, because printing a zero-item slice's zeros would read as a
+measured result. Those three are the slices a chunking change is read on: in converted Ukrainian
+PDFs the numeric and comparative answers live in tables ([table-aware
+chunking](chunking.md#table-aware-chunking)), and a multi-hop answer needs every span carried at
+once.
 
 ## Measurement Floor (`--noise-floor`)
 

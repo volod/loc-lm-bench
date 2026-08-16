@@ -121,7 +121,10 @@ What the run establishes:
   +0.011 to +0.063 overall.
 - **`all-spans@10` still does not move.** The best row carries BOTH hops for 3 of 35 two-hop
   questions (0.086), the same ceiling every earlier row hit. Fusion improves WHICH single hop is
-  retrieved and how the pool ranks; it does not solve two-hop coverage at k=10.
+  retrieved and how the pool ranks; it does not solve two-hop coverage at k=10. That ceiling is a
+  property of the BUDGET, not of the ranking: the same rows re-scored at k=25 and k=50 move
+  together ([retrieval budget
+  evidence](retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
 - **The weight optimum shifted with the policy.** Under `exact` the best row was `global_community`
   at weight 0.10; under `overlap` it is weight 0.30 -- unsurprising once a graph vote reinforces a
   chunk instead of displacing it, since a graph candidate no longer costs a result seat.

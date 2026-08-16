@@ -45,6 +45,19 @@ compare-graph-fusion: ## Sweep graph fusion with paired evidence (GOLDSET= GRAPH
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
+probe-multihop-hops: ## Diagnose a stuck all-spans@k: budget, query, or unreachable (GOLDSET= SPLIT= HOP_PROBE_BUDGETS=10,25,50 HOP_PROBE_DEPTH= HOP_PROBE_BACKEND= HOP_PROBE_STRATEGY= FUSION_FOCUS_SLICE= FUSION_BOOTSTRAP_RESAMPLES= HOP_PROBE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main probe-multihop-hops $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(HOP_PROBE_BUDGETS),--budgets "$(HOP_PROBE_BUDGETS)",) \
+		$(if $(HOP_PROBE_DEPTH),--probe-depth $(HOP_PROBE_DEPTH),) \
+		$(if $(HOP_PROBE_BACKEND),--retrieval-backend "$(HOP_PROBE_BACKEND)",) \
+		$(if $(HOP_PROBE_STRATEGY),--retrieval-strategy "$(HOP_PROBE_STRATEGY)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(HOP_PROBE_OUT_DIR),--out-dir "$(HOP_PROBE_OUT_DIR)",)
+
 calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tuning, and score held-out final (GOLDSET= ROUTING_LONG_WORD_GRID= ROUTING_ENTITY_GRID= ROUTING_TUNING_SPLIT= ROUTING_FINAL_SPLIT= ROUTING_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
@@ -59,7 +72,7 @@ calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tun
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(ROUTING_OUT_DIR),--out-dir "$(ROUTING_OUT_DIR)",)
 
-compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
+compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= ANSWER_QUALITY_BUDGETS=10,50 FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-answer-quality $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -67,6 +80,7 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		$(if $(ANSWER_QUALITY_LANES),--lanes "$(ANSWER_QUALITY_LANES)",) \
 		$(if $(FUSION_COMPARISON),--from-comparison "$(FUSION_COMPARISON)",) \
+		$(if $(ANSWER_QUALITY_BUDGETS),--budgets "$(ANSWER_QUALITY_BUDGETS)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(ANSWER_QUALITY_LIMIT),--limit $(ANSWER_QUALITY_LIMIT),) \
@@ -95,13 +109,14 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 COMPARE_EMBEDDINGS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
 COMPARE_EMBEDDINGS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
-compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
+compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(COMPARE_EMBEDDINGS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_EMBEDDINGS_SPLIT_ARG) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
 		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
+		$(if $(filter 1,$(EMBED_ALLOW_REMOTE_CODE)),--allow-remote-code,) \
 		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
 		$(if $(EMBED_CONFIDENCE),--confidence $(EMBED_CONFIDENCE),) \
 		$(if $(EMBED_POWER_REFERENCE),--power-reference "$(EMBED_POWER_REFERENCE)",) \
@@ -119,6 +134,29 @@ compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSE
 			--encoder-max-warm-seconds "$(EMBED_ENCODER_MAX_WARM_SECONDS)" \
 			$(if $(filter 1,$(EMBED_ENCODER_COMPARE_CPU)),--encoder-compare-cpu,),) \
 		$(if $(EMBED_API_MODEL),--api-model "$(EMBED_API_MODEL)" --data-classification "$(EMBED_DATA_CLASSIFICATION)" $(if $(EMBED_MAX_USD),--max-usd $(EMBED_MAX_USD),),)
+
+COMPARE_RERANKERS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_RERANKERS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-rerankers: ## Rank cross-encoder rerankers on one pool with paired evidence + cost (CONFIG= or GOLDSET=; CORPUS= RERANK_MODELS= RERANK_BASELINE= RERANK_CANDIDATES= RERANK_ADOPTION_BARS=recall_at_k[,mrr] RERANK_ALLOW_REMOTE_CODE=1 RERANK_GENERATOR_VRAM_MB= RERANK_BATCH_SIZE= RERANK_DTYPE= NOISE_FLOOR=1; needs ".[rag]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-rerankers $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(COMPARE_RERANKERS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_RERANKERS_SPLIT_ARG) \
+		$(if $(CORPUS),--corpus-root "$(CORPUS)",) \
+		$(if $(RERANK_MODELS),--models "$(RERANK_MODELS)",) \
+		$(if $(RERANK_CANDIDATES),--rerank-candidates $(RERANK_CANDIDATES),) \
+		$(if $(RERANK_BASELINE),--baseline "$(RERANK_BASELINE)",) \
+		$(if $(RERANK_ADOPTION_BARS),--adoption-bars "$(RERANK_ADOPTION_BARS)",) \
+		$(if $(filter 1,$(RERANK_ALLOW_REMOTE_CODE)),--allow-remote-code,) \
+		$(if $(RERANK_GENERATOR_VRAM_MB),--generator-vram-mb $(RERANK_GENERATOR_VRAM_MB),) \
+		$(if $(RERANK_BATCH_SIZE),--batch-size $(RERANK_BATCH_SIZE),) \
+		$(if $(RERANK_DTYPE),--dtype "$(RERANK_DTYPE)",) \
+		$(if $(RERANK_RESAMPLES),--resamples $(RERANK_RESAMPLES),) \
+		$(if $(RERANK_CONFIDENCE),--confidence $(RERANK_CONFIDENCE),) \
+		$(if $(NOISE_FLOOR),--noise-floor,) \
+		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
+		$(if $(COMPARE_RERANKERS_OUT),--out "$(COMPARE_RERANKERS_OUT)",)
 
 compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

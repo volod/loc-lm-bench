@@ -50,6 +50,11 @@ make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"    # 0 == reranker-off cell
 llb tune --reranker BAAI/bge-reranker-v2-m3 ...       # adds on/off + candidate-depth axes
 ```
 
+WHICH cross-encoder to run is a measured choice, not a pin: `compare-rerankers` ranks candidates on
+one shared candidate pool with the paired verdict plus the latency and VRAM columns a reranker is
+actually chosen on -- see [Reranker bake-off](reranker-bakeoff.md), which also records why
+`BAAI/bge-reranker-v2-m3` remains the default.
+
 `compare-retrieval --reranker <id>` adds a `<row>+rerank` twin per compared row (the oracle-doc
 headroom row excepted), so pre/post-rerank recall@k / MRR compare through the one
 `evaluate_retrieval` metric, with mean per-query retrieve/rerank latency echoed per rerank row.

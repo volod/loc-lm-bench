@@ -28,6 +28,7 @@ from llb.rag.embedding_bakeoff_selection import adjust_bakeoff_selection
 
 from _embedding_bakeoff_uncertainty_helpers import (
     BASELINE,
+    CLI_CANDIDATE,
     _HitSetStore,
     _questions,
     _vectors,
@@ -168,7 +169,7 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
     )
     stores = {
         BASELINE: _HitSetStore(set(_questions(20)[:4])),
-        "cand": _HitSetStore(set(_questions(20)[:14])),
+        CLI_CANDIDATE: _HitSetStore(set(_questions(20)[:14])),
     }
     monkeypatch.setattr(
         "llb.cli.rag.compare_embeddings.local_store_builder",
@@ -186,7 +187,7 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
             "--corpus-root",
             str(corpus),
             "--models",
-            f"{BASELINE},cand",
+            f"{BASELINE},{CLI_CANDIDATE}",
             "--k",
             "1",
             "--baseline",
@@ -200,6 +201,9 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
     assert report["uncertainty"]["baseline"] == BASELINE
-    assert report["verdict"]["decision"] == DECISION_ADOPT and report["verdict"]["model"] == "cand"
-    row = next(r for r in report["candidates"] if r["model"] == "cand")
+    assert (
+        report["verdict"]["decision"] == DECISION_ADOPT
+        and report["verdict"]["model"] == CLI_CANDIDATE
+    )
+    row = next(r for r in report["candidates"] if r["model"] == CLI_CANDIDATE)
     assert row["paired_vs_baseline"]["metrics"][METRIC_RECALL]["wins"] == 10

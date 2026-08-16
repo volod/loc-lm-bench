@@ -7,7 +7,14 @@ question-type slice, so a measured coverage gain is either confirmed as an answe
 recorded as a retrieval-only effect.
 """
 
+from llb.eval.answer_quality.budgets import (
+    budget_label,
+    conversion_baselines,
+    expand_budget_lanes,
+    split_budget_label,
+)
 from llb.eval.answer_quality.compare import compare_answer_quality
+from llb.eval.answer_quality.conversion import budget_conversion
 from llb.eval.answer_quality.lanes import (
     lane_config,
     lane_labels_from_comparison,
@@ -21,11 +28,16 @@ from llb.eval.answer_quality.run import run_answer_quality
 __all__ = [
     "FOCUS_SLICE",
     "LaneSpec",
+    "budget_conversion",
+    "budget_label",
     "compare_answer_quality",
+    "conversion_baselines",
+    "expand_budget_lanes",
     "format_report",
     "lane_config",
     "lane_labels_from_comparison",
     "parse_lane_label",
     "parse_lanes",
     "run_answer_quality",
+    "split_budget_label",
 ]

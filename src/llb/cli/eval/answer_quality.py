@@ -46,6 +46,14 @@ def compare_answer_quality_cmd(
     focus_slice: Optional[str] = typer.Option(
         None, help="question type the verdict is decided on (default: multi-hop)"
     ),
+    budgets: Optional[str] = typer.Option(
+        None,
+        "--budgets",
+        help="comma-separated retrieval budgets (`top_k`) to score EVERY lane at, smallest "
+        "first, e.g. `10,50`. Each raised-budget cell is also read against the same lane at the "
+        "first budget, which is what says whether a retrieval-budget coverage gain converts into "
+        "answers. Omitted, the config's own top_k is scored once",
+    ),
     resamples: int = typer.Option(DEFAULT_RESAMPLES, min=0, help="bootstrap resamples"),
     confidence: float = typer.Option(DEFAULT_CONFIDENCE, min=0.5, max=0.999, help="CI level"),
     seed: int = typer.Option(DEFAULT_SEED, help="bootstrap resampling seed"),
@@ -73,6 +81,8 @@ def compare_answer_quality_cmd(
         run_answer_quality,
     )
 
+    from llb.eval.retrieval_budgets import parse_top_ks
+
     cfg = load_config(config, model=model, backend=backend, goldset_path=goldset)
     try:
         selection = (
@@ -81,6 +91,7 @@ def compare_answer_quality_cmd(
             else lanes
         )
         specs = parse_lanes(selection)
+        scored_budgets = parse_top_ks(budgets) if budgets else []
     except (OSError, ValueError) as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -102,6 +113,7 @@ def compare_answer_quality_cmd(
         splits=splits,
         limit=limit,
         focus_slice=focus_slice or FOCUS_SLICE,
+        budgets=scored_budgets,
         resamples=resamples,
         confidence=confidence,
         seed=seed,
@@ -114,4 +126,10 @@ def compare_answer_quality_cmd(
         if verdict["reason"]
         else f"[compare-answer-quality] {verdict['decision']}"
     )
+    conversion = run.report.get("budget_conversion")
+    if conversion is not None:
+        typer.echo(
+            f"[compare-answer-quality] budget conversion {conversion['decision']}: "
+            f"{conversion['reason']}"
+        )
     typer.echo(f"[compare-answer-quality] report -> {run.paths['report']}")
