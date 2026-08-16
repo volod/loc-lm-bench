@@ -76,39 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### multihop-budget-answer-conversion
-
-The multi-hop coverage ceiling is now diagnosed as a BUDGET limit, and the headroom is large: the
-same rows re-scored at k=50 lift the vector lane's multi-hop `all-spans@k` from 0.057 to 0.229 and
-the best fused row to 0.657, with no retrieval-side cost
-([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
-Nothing yet says a served k=50 makes ANSWERS better, and two measured facts argue it might not:
-five times the chunks is five times the context, and the graph-side share of that coverage arrives
-as ~86-character entity mentions rather than as readable chunks. Score the same multi-hop items end
-to end at the shipped budget and at the diagnosed one, on the vector lane and on the k=50 sweep
-winner, and record whether the coverage converts, stalls, or costs the factoid slice the way the
-`overlap` identity did. A negative result is the useful one: it would mean multi-hop coverage is
-recoverable in retrieval but not deliverable to this generator at this context length, which points
-at a compression or two-stage-context step rather than at a larger k.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the answer-quality lane and its lane-label parser
-  ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md)), and the recorded budget
-  evidence for the compared rows.
-- User-visible outcome: the operator learns whether raising the retrieval budget on multi-hop
-  questions buys better answers or only better retrieval numbers, before paying the context bill.
-- Scope boundary: in scope -- the end-to-end comparison at two budgets, the per-slice answer
-  reading, and the recorded conversion verdict. Out of scope -- changing the shipped `top_k`, a
-  context-compression step, and any re-reading of the drafted ledger's verdicts.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-answer-quality` per budget with the lanes named by the k=50 sweep's
-  `comparison.json` on the CUDA host; CI covers the comparison over committed run bundles.
-- Acceptance gates: `make ci` green; the report carries the per-slice answer metrics at both
-  budgets with their paired intervals, and states whether the retrieval gain converted.
-- Documentation target: the answer-quality evidence page of
-  [GraphRAG](current/graphrag-backend.md).
-
 #### multihop-query-decomposition-conversion
 
 The per-hop probe names a second, smaller population the budget cannot reach: 8 of 35 two-hop items
@@ -469,6 +436,40 @@ Measure it on the numeric and comparative slices, where the header is what the a
 - Documentation target: the table-aware chunking section of
   [RAG core](current/rag-core/chunking.md#table-aware-chunking) and the context-order section of
   [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
+
+#### answer-quality-recompare-from-bundles (optional)
+
+An answer-quality comparison costs hours of generation and is then locked to the report format it
+was rendered under: a later improvement to the artifact -- a new column, a new section, a corrected
+reading -- cannot reach a recorded run without paying for every generation again, and a heavy
+budget sweep is the worst case
+([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#the-retrieval-budget-dimension)).
+Nothing about that is necessary: the comparison is pure over the per-case rows, every lane's run
+bundles are recorded in its own `comparison.json`, and the lane runner is already an injection
+point. Add a `--from-bundles <comparison.json>` path that resolves each lane's recorded run dirs
+per split instead of running one, refuses a bundle set whose configs no longer match the recorded
+lanes, and re-renders the artifact with no model call. The same seam is what `make
+audit-paired-readings` uses for the inference-side re-read
+([RAG core](current/rag-core/paired-verdicts.md#randomization-calibrated-paired-readings)), so the
+two should agree on how a recorded lane is reconstituted.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: CLEAR
+- Dependencies: none. The lane's `run_lane` injection point and the `run_dirs` recorded per lane in
+  `comparison.json` ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md)).
+- User-visible outcome: the operator can re-render a recorded comparison under an improved report
+  without re-running the generations it was measured with.
+- Scope boundary: in scope -- resolving recorded bundles per (lane, split), the mismatch refusal,
+  and the re-render. Out of scope -- re-scoring answers, editing a recorded bundle, and any change
+  to what the comparison computes.
+- Data and artifact paths: the recorded run's own
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Execution path: `make compare-answer-quality` with the new flag; CI covers resolution, the
+  mismatch refusal, and re-render equality over committed fixture bundles.
+- Acceptance gates: `make ci` green; re-rendering a recorded comparison with an unchanged report
+  format reproduces its `comparison.json` byte-identically apart from the metadata timestamp.
+- Documentation target: the answer-quality evidence page of
+  [GraphRAG](current/graphrag-backend.md).
 
 ### Answer scoring -- `answer-scoring`
 

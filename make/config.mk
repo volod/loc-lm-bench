@@ -233,6 +233,10 @@ ANSWER_QUALITY_LANES ?=
 FUSION_COMPARISON ?=
 ANSWER_QUALITY_LIMIT ?=
 ANSWER_QUALITY_OUT_DIR ?=
+# Retrieval budgets every lane is scored at, smallest first (e.g. 10,50). Empty scores the
+# config's own top_k once; a second budget adds the reading that says whether a budget-driven
+# coverage gain converts into answers, and what the extra context costs.
+ANSWER_QUALITY_BUDGETS ?=
 # Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
 INCLUDE_DRAFTED ?=
 # Embedder adoption bar (compare-embedder-adoption): the two encoders, each with the data root

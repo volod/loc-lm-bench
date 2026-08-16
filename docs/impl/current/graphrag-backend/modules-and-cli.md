@@ -91,6 +91,13 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   `coverage.py` recomputes the multi-span coverage columns from each bundle's `retrieval.jsonl`,
   `compare.py` is the pure per-slice comparison (reusing the fusion-evidence bootstrap),
   `verdict.py` decides answer-gain versus retrieval-only, and `report.py` renders the artifact.
+  `budgets.py` adds the retrieval-BUDGET dimension: it expands the lane selection into
+  `(lane x top_k)` cells labelled `<row>#k<budget>`, which `lanes.py` parses back, and names each
+  raised cell's pairing against the same row at the smallest budget. `conversion.py` decides those
+  pairings with the same `judge_lane`, adds the cost scan over the non-focus slices, and
+  `report_budgets.py` renders the section. `coverage.py` also reports `context_chars`, the served
+  context measured from the sidecar offsets, so a budget's coverage is always readable beside its
+  price.
 
 ## Retrieval Strategies
 
@@ -118,6 +125,7 @@ llb compare-retrieval --graph-weight 0.3 --k 10 --out report.json
 llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
+llb compare-answer-quality --from-comparison <sweep>/comparison.json --budgets 10,50
 llb probe-multihop-hops --budgets 10,25,50 --retrieval-backend faiss --out-dir <dir>
 ```
 

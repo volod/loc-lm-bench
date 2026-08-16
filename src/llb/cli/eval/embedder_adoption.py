@@ -85,11 +85,8 @@ def compare_embedder_adoption_cmd(
     `$DATA_DIR/run-eval/`; only the comparison is new.
     """
     from llb.eval.embedder_adoption.models import EmbedderLane
-    from llb.eval.embedder_adoption.cells import (
-        build_cells,
-        parse_rerankers,
-        parse_top_ks,
-    )
+    from llb.eval.embedder_adoption.cells import build_cells, parse_rerankers
+    from llb.eval.retrieval_budgets import parse_top_ks
     from llb.eval.embedder_adoption.report import format_summary
     from llb.eval.embedder_adoption.run import run_adoption_bar_sweep
 

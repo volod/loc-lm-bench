@@ -153,6 +153,15 @@ comparisons meaningful without changing gold labels. A retrieval-side component 
 a stated bar, not on a raw metric win: a rank-quality gain that no configuration can convert into a
 delivered answer does not justify the swap.
 
+The same bar governs a retrieval CONFIGURATION change, not only a component swap. Raising the
+retrieval budget can lift coverage with no ranking change at all, so it is read the same way: the
+identical items are scored end to end at the shipped budget and at the raised one, and the reading
+states whether the extra evidence reached the answers, stopped at retrieval, or reached them while
+lowering another question type's. Because a larger budget is not free, the served context size is
+reported beside the coverage it bought. The boundary: this measures a budget, it does not choose
+one. No default moves on the strength of the measurement alone, and the context size is reported
+rather than gated -- what a context is worth is a deployment decision the evidence informs.
+
 ## Graph Retrieval and Ontology
 
 GraphRAG is a retrieval lane, scored against the same source-span metric as the vector lanes so the

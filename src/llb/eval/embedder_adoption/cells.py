@@ -19,25 +19,6 @@ RERANKER_OFF = "off"
 RERANKER_ON = "on"
 
 
-def parse_top_ks(spec: str) -> list[int]:
-    """Parse `10,3` into retrieval budgets, de-duplicated in the order given."""
-    values: list[int] = []
-    for token in (t.strip() for t in spec.split(",")):
-        if not token:
-            continue
-        try:
-            budget = int(token)
-        except ValueError:
-            raise ValueError(f"top_k must be an integer, got {token!r}") from None
-        if budget < 1:
-            raise ValueError(f"top_k must be at least 1, got {budget}")
-        if budget not in values:
-            values.append(budget)
-    if not values:
-        raise ValueError("name at least one top_k budget")
-    return values
-
-
 def parse_rerankers(spec: str) -> list[str | None]:
     """Parse `off,on` (or an explicit cross-encoder id) into reranker settings, `None` == off."""
     from llb.rag.rerank import DEFAULT_RERANKER

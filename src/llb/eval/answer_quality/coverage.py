@@ -24,6 +24,22 @@ from llb.rag.retrieval_records import record_as_chunk
 RETRIEVAL_FILENAME = "retrieval.jsonl"
 METRIC_ALL_SPANS = "all_spans_at_k"
 METRIC_SPAN_COVERAGE = "span_coverage"
+METRIC_CONTEXT_CHARS = "context_chars"
+
+
+def _context_chars(records: list[JsonObject], k: int) -> float:
+    """Characters the served context carried: the summed span of the top-k retrieved records.
+
+    Measured from the offsets rather than from the persisted `text_preview`, which is truncated.
+    A coverage number is only readable beside the context it was bought with, and this is that
+    price in the one unit both a chunk lane and a graph-mention lane are comparable in.
+    """
+    return float(
+        sum(
+            max(0, int(record.get("char_end", 0)) - int(record.get("char_start", 0)))
+            for record in records[:k]
+        )
+    )
 
 
 def _as_chunks(records: list[JsonObject]) -> list[ChunkRecord]:
@@ -55,11 +71,13 @@ def read_case_coverage(run_dir: Path, k: int) -> dict[str, dict[str, float]]:
             if not line.strip():
                 continue
             record = json.loads(line)
-            retrieved = _as_chunks(list(record.get("retrieved") or []))
+            records = list(record.get("retrieved") or [])
+            retrieved = _as_chunks(records)
             spans = _as_spans(list(record.get("gold_spans") or []))
             coverage[str(record["item_id"])] = {
                 METRIC_ALL_SPANS: all_spans_at_k(retrieved, spans, k),
                 METRIC_SPAN_COVERAGE: span_coverage_at_k(retrieved, spans, k),
+                METRIC_CONTEXT_CHARS: _context_chars(records, k),
             }
     return coverage
 

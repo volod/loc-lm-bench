@@ -104,6 +104,8 @@ def score_case(
         "completion_tokens": usage.get("completion_tokens", 0),
         "answer_preview": (answer or "")[:280],
     }
+    if usage.get("prompt_tokens"):
+        row["prompt_tokens"] = int(usage["prompt_tokens"])
     if "semantic" in corr:
         row["semantic"] = corr["semantic"]
     if "retrieve_latency_s" in state:

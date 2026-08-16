@@ -16,7 +16,9 @@ from pathlib import Path
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
+from llb.eval.answer_quality.budgets import conversion_baselines, expand_budget_lanes
 from llb.eval.answer_quality.compare import CaseRows, compare_answer_quality
+from llb.eval.answer_quality.conversion import budget_conversion
 from llb.eval.answer_quality.coverage import read_case_coverage, with_coverage
 from llb.eval.answer_quality.lanes import lane_config
 from llb.eval.answer_quality.models import FOCUS_SLICE, AnswerQualityReport, LaneSpec
@@ -98,7 +100,9 @@ def score_lanes(
         lane_dirs: list[str] = []
         for split, items in items_by_split.items():
             scores = run_lane(config_for_lane, items, split)
-            coverage = read_case_coverage(scores.parent, config.top_k)
+            # The lane's OWN budget: a budget sweep's cells differ in exactly this, so reading
+            # every cell's coverage at the base config's `top_k` would erase the thing measured.
+            coverage = read_case_coverage(scores.parent, config_for_lane.top_k)
             lane_rows.extend(with_coverage(list(read_case_rows(scores)), coverage))
             lane_dirs.append(str(scores.parent))
         rows[lane.label] = lane_rows
@@ -113,6 +117,7 @@ def run_answer_quality(
     splits: Sequence[str] = ("final",),
     limit: int | None = None,
     focus_slice: str = FOCUS_SLICE,
+    budgets: Sequence[int] = (),
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     seed: int = DEFAULT_SEED,
@@ -122,6 +127,11 @@ def run_answer_quality(
 ) -> AnswerQualityRun:
     """Score the selected items under every lane and persist the per-slice comparison.
 
+    `budgets` turns the run into a `(lane x top_k)` sweep: every row is scored at every named
+    retrieval budget and each raised-budget cell is additionally read against the SAME row at the
+    smallest one, which is the reading that says whether a retrieval-budget coverage gain converts
+    into answers. An empty selection leaves the config's own `top_k` alone.
+
     `verified_only=False` grounds the comparison on a DRAFTED ledger, which is what makes it
     readable beside a retrieval sweep measured on the same drafted set; the grounding is recorded
     in every artifact so the two can never be confused.
@@ -130,25 +140,38 @@ def run_answer_quality(
         raise ValueError("the comparison needs a baseline lane and at least one candidate lane")
     if not splits:
         raise ValueError("name at least one gold split to score")
+    cells = expand_budget_lanes(lanes, budgets) if budgets else list(lanes)
+    cross = conversion_baselines(lanes, budgets) if budgets else {}
     items_by_split = select_items(config, splits, limit, verified_only)
     rows, run_dirs = score_lanes(
         config,
-        lanes,
+        cells,
         items_by_split,
         run_lane=run_lane or eval_lane_runner(verified_only=verified_only),
     )
     report = compare_answer_quality(
         rows,
         load_question_types(config.goldset_path),
-        baseline=lanes[0].label,
+        baseline=cells[0].label,
         run_dirs=run_dirs,
         focus_slice=focus_slice,
+        cross_baselines=cross,
         resamples=resamples,
         confidence=confidence,
         seed=seed,
     )
+    if cross:
+        report["budget_conversion"] = budget_conversion(
+            report["cross_readings"],
+            budgets=budgets,
+            focus_slice=focus_slice,
+            coverage=report["verdict"]["coverage_metric"],
+            confidence=confidence,
+        )
     target = Path(out_dir) if out_dir is not None else default_out_dir(config)
-    paths = write_artifacts(report, target, metadata=_metadata(config, splits, verified_only))
+    metadata = _metadata(config, splits, verified_only)
+    metadata["top_k"] = ",".join(str(budget) for budget in budgets) if budgets else config.top_k
+    paths = write_artifacts(report, target, metadata=metadata)
     return AnswerQualityRun(report, target, paths)
 
 

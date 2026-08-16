@@ -107,7 +107,7 @@ def decide(
         return verdict
     decisions: dict[str, LaneDecision] = {}
     for label in sorted(candidates):
-        decision, reason = _judge(
+        decision, reason = judge_lane(
             candidates[label], label, baseline, focus_slice, coverage, confidence
         )
         decisions[label] = {"decision": decision, "reason": reason}
@@ -127,7 +127,7 @@ def _focus_n(lanes: dict[str, LaneReport], baseline: str, focus_slice: str) -> i
     return slice_report["n"] if slice_report else 0
 
 
-def _judge(
+def judge_lane(
     lane: LaneReport,
     label: str,
     baseline: str,
@@ -135,7 +135,12 @@ def _judge(
     coverage_metric: str,
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> tuple[str, str]:
-    """The `(decision, reason)` for one candidate lane against the baseline."""
+    """The `(decision, reason)` for one candidate lane against the lane it is read against.
+
+    Public because a budget sweep reads the same row at two budgets against each other rather than
+    against the report baseline, and that comparison must reach the SAME four outcomes with the
+    same calibrated test -- a second verdict vocabulary would make the artifact unreadable.
+    """
     paired_objective = _focus_paired(lane, focus_slice, METRIC_OBJECTIVE)
     paired_coverage = _focus_paired(lane, focus_slice, coverage_metric)
     objective = paired_objective["delta"]
