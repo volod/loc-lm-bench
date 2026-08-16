@@ -1,5 +1,7 @@
 """tooling benchmark tooling residuals -- per-argument tolerance, native FC caller, MCP specs, BFCL adapter."""
 
+import pytest
+
 from llb.bench import mcp_server
 from llb.bench import tooling as bench_tooling
 from llb.bench import tooling_protocol
@@ -169,6 +171,32 @@ def test_mcp_specs_match_catalog_source():
     specs = mcp_server.mcp_tool_specs(CATALOG)
     for spec, tool in zip(specs, CATALOG.values()):
         assert spec["inputSchema"] == tool["parameters"]  # same single source of truth
+
+
+def test_mcp_transport_refuses_an_unsupported_sdk_major():
+    """mcp 2.x replaced the low-level Server API this transport is built on, so it is refused
+    by name rather than failing later with an AttributeError inside a decorator."""
+    assert mcp_server.installed_sdk_major("1.28.1") == mcp_server.SUPPORTED_MCP_MAJOR
+    mcp_server.require_supported_sdk("1.28.1")  # the locked major passes
+
+    with pytest.raises(SystemExit) as excinfo:
+        mcp_server.require_supported_sdk("2.0.0")
+
+    message = str(excinfo.value)
+    assert "2.0.0" in message and mcp_server.MCP_EXTRA_HINT in message
+
+
+@pytest.mark.heavy_env
+def test_mcp_tool_descriptor_builds_under_the_installed_sdk():
+    """`Tool.model_validate` keeps the descriptor authoritative across the `inputSchema` ->
+    `input_schema` rename: it is the field name in mcp 1.x and the validation alias in 2.x."""
+    types = pytest.importorskip("mcp.types")
+
+    tool = types.Tool.model_validate(mcp_server.mcp_tool_specs(CATALOG)[0])
+
+    assert tool.name == "get_weather"
+    schema = getattr(tool, "inputSchema", None) or getattr(tool, "input_schema", None)
+    assert schema == CATALOG["get_weather"]["parameters"]
 
 
 # --- BFCL adapter --------------------------------------------------------------------------

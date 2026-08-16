@@ -32,6 +32,12 @@ def _fake_toolchain(tmp_path: Path) -> tuple[Path, Path]:
         f"""#!/usr/bin/env bash
 set -eu
 printf '%s\n' "$*" >> "$UV_LOG"
+# The lock constraint lives in a temp dir the installer deletes on exit, so copy it out while it
+# still exists -- that content is what the drift guard is actually asserted on.
+for arg in "$@"; do
+  if [ -n "${{copy_next:-}}" ]; then cp "$arg" "$UV_CONSTRAINT_COPY"; copy_next=; fi
+  if [ "$arg" = "--constraint" ]; then copy_next=1; fi
+done
 if [ "$1 $2" = "cache dir" ]; then
   echo /shared/uv-cache
 elif [ "$1" = "build" ]; then
@@ -116,6 +122,7 @@ def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path)
         "PROJECT_ROOT": str(tmp_path),
         "DATA_DIR": str(data_dir),
         "UV_LOG": str(uv_log),
+        "UV_CONSTRAINT_COPY": str(tmp_path / "constraint.txt"),
         "VLLM_SPEC": "vllm==1.2.3",
     }
 
@@ -126,6 +133,11 @@ def test_prebuilt_vllm_uses_uv_shared_cache_without_project_wheelhouse(tmp_path)
     assert "pip install" in calls
     assert "--only-binary :all: vllm==1.2.3" in calls
     assert not (data_dir / "wheels").exists()
+    # vLLM's requirements are unpinned where uv.lock is not, so the install runs under a
+    # lock-derived constraint file (llb.build.lock_guard) -- otherwise the resolver is free to
+    # upgrade a package `make ci` type-checks against.
+    constraint = (tmp_path / "constraint.txt").read_text(encoding="utf-8").split()
+    assert any(line.startswith("numpy==") for line in constraint), constraint
 
 
 @pytest.mark.skipif(
@@ -184,6 +196,7 @@ cuda = _Cuda()
         "PROJECT_ROOT": str(tmp_path),
         "DATA_DIR": str(data_dir),
         "UV_LOG": str(uv_log),
+        "UV_CONSTRAINT_COPY": str(tmp_path / "constraint.txt"),
         "VLLM_SOURCE_DIR": str(source_dir),
     }
 

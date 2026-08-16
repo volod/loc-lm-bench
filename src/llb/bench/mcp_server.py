@@ -11,8 +11,20 @@ inputSchema), unit-tested without the dependency. `build_mcp_server` lazily impo
 (an opt-in extra, kept out of the base install) and builds a low-level server whose `list_tools`
 returns the catalog and whose `call_tool` echoes the call (the catalog is CALL-ONLY here -- tool
 EXECUTION is the agentic sandbox, not this transport).
+
+SDK major: this transport targets `mcp` 1.x, the version `uv.lock` pins (the `[mcp]` extra carries
+the matching `<2` bound). mcp 2.x is not a rename to absorb -- it REPLACES the low-level server
+API this module is built on: `Server.list_tools()` / `Server.call_tool()` no longer exist, tool
+registration moved to `add_request_handler` / the new `MCPServer`, and `Tool` renamed `inputSchema`
+to `input_schema` (keeping the old spelling only as a validation alias). Carrying two server
+implementations for an opt-in transport nothing else in the benchmark line depends on is not worth
+its maintenance, so `build_mcp_server` REFUSES an unsupported major with a named error instead of
+failing with an `AttributeError` inside a decorator. The one place the rename does reach --
+building a `Tool` from a descriptor -- goes through `model_validate`, so the descriptor dict stays
+the single source under either spelling.
 """
 
+import importlib.metadata as metadata
 import json
 import logging
 from pathlib import Path
@@ -21,6 +33,9 @@ from typing import Any
 from llb.core.contracts.benchmarks import ToolDef
 
 _LOG = logging.getLogger(__name__)
+
+SUPPORTED_MCP_MAJOR = 1
+MCP_EXTRA_HINT = 'uv pip install -e ".[mcp]"'
 
 
 def mcp_tool_specs(catalog: dict[str, ToolDef]) -> list[dict[str, Any]]:
@@ -43,6 +58,22 @@ def load_catalog(path: Path | str) -> dict[str, ToolDef]:
     return catalog
 
 
+def installed_sdk_major(version: str) -> int:
+    """Major of an installed `mcp` version string (`"1.28.1"` -> 1)."""
+    return int(version.split(".", 1)[0])
+
+
+def require_supported_sdk(version: str) -> None:
+    """Refuse an `mcp` major this transport was not built against, with the fix in the message."""
+    major = installed_sdk_major(version)
+    if major != SUPPORTED_MCP_MAJOR:
+        raise SystemExit(
+            f"ERROR: the MCP transport targets mcp {SUPPORTED_MCP_MAJOR}.x and found {version}. "
+            f"mcp {major}.x does not carry the low-level Server tool decorators this transport is "
+            f"built on. Install the locked SDK: {MCP_EXTRA_HINT}"
+        )
+
+
 def build_mcp_server(catalog: dict[str, ToolDef], *, name: str = "loc-lm-bench-tools") -> Any:
     """Build a low-level MCP `Server` exposing the catalog (lazy `mcp` import; opt-in extra)."""
     try:
@@ -50,22 +81,18 @@ def build_mcp_server(catalog: dict[str, ToolDef], *, name: str = "loc-lm-bench-t
         from mcp.types import TextContent, Tool
     except ImportError as exc:  # pragma: no cover - exercised only with the optional dep
         raise SystemExit(
-            'ERROR: the MCP transport needs the [mcp] extra. Run: uv pip install -e ".[mcp]"'
+            f"ERROR: the MCP transport needs the [mcp] extra. Run: {MCP_EXTRA_HINT}"
         ) from exc
+    require_supported_sdk(metadata.version("mcp"))
 
     specs = mcp_tool_specs(catalog)
     server: Any = Server(name)
 
     @server.list_tools()
     async def _list_tools() -> list[Any]:
-        return [
-            Tool(
-                name=spec["name"],
-                description=spec["description"],
-                inputSchema=spec["inputSchema"],
-            )
-            for spec in specs
-        ]
+        # `model_validate` keeps the descriptor dict authoritative: `inputSchema` is the field name
+        # under 1.x and the validation alias under 2.x, so neither spelling is hard-coded here.
+        return [Tool.model_validate(spec) for spec in specs]
 
     @server.call_tool()
     async def _call_tool(tool_name: str, arguments: dict[str, Any]) -> list[Any]:

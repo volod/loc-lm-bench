@@ -236,6 +236,24 @@ llb adapt-bfcl --functions-file <functions> --answers-file <answers> --out <bund
 
 Argument matching supports exact, contains, fuzzy, numeric tolerance, and one-of forms.
 
+### The MCP transport targets one SDK major
+
+`serve-tools-mcp` is built on the `mcp` 1.x low-level server -- the `@server.list_tools()` /
+`@server.call_tool()` decorators -- and the `[mcp]` extra pins `mcp>=1.2,<2` to say so. mcp 2.x is
+not a rename to absorb: `Server` no longer carries those decorators at all (registration moved to
+`add_request_handler` and the new `MCPServer`), and `Tool` renamed `inputSchema` to `input_schema`,
+keeping the old spelling only as a validation alias. Carrying two server implementations for an
+opt-in transport nothing else in the benchmark line depends on was judged not worth its
+maintenance, so `build_mcp_server` calls `require_supported_sdk` and refuses an unsupported major
+with a named error instead of failing with an `AttributeError` inside a decorator.
+
+The one place the rename does reach is building a `Tool` from a catalog descriptor, and that goes
+through `Tool.model_validate(spec)`: the descriptor dict stays the single source under either
+spelling, and it type-checks under both majors (the keyword form `Tool(inputSchema=...)` is a mypy
+`call-arg` error under 2.x). The `<2` bound is what keeps a future `uv lock` from resolving a major
+this transport cannot serve; the install-side half of the same problem -- vLLM pulling an unpinned
+`mcp` past the lock -- is in [Overview](overview.md#the-vllm-install-respects-uvlock).
+
 ## Agentic
 
 Modules:

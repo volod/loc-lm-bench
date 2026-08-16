@@ -63,6 +63,9 @@ VLLM_SOURCE_DIR = "VLLM_SOURCE_DIR"
 VLLM_BUILD_REQUIREMENTS = "VLLM_BUILD_REQUIREMENTS"
 REBUILD_VLLM_WHEEL = "REBUILD_VLLM_WHEEL"
 MAX_JOBS = "MAX_JOBS"
+# vLLM's requirements are mostly unpinned, so its install can upgrade a package uv.lock pins and
+# `make ci` type-checks against: refuse (default) | report | off (llb.build.lock_guard).
+VLLM_LOCK_GUARD = "LLB_VLLM_LOCK_GUARD"
 
 # Keys that must appear as active assignments in .env.example (not comment-only).
 DOCUMENTED_ENV_VARS = (

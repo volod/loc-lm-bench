@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from llb.build import lock_guard
 from llb.core import env
 from llb.core.paths import PROJECT_ROOT, resolve_data_dir, resolve_project_path
 
@@ -38,7 +39,7 @@ def _reject_implicit_source_spec(spec: str) -> None:
         )
 
 
-def _install_prebuilt(python: Path, spec: str) -> None:
+def _install_prebuilt(python: Path, spec: str, constraint: Path | None) -> None:
     _reject_implicit_source_spec(spec)
     _LOG.info("[build-vllm] mode: prebuilt")
     _LOG.info("[build-vllm] uv shared cache: %s", _uv_cache_dir())
@@ -50,6 +51,7 @@ def _install_prebuilt(python: Path, spec: str) -> None:
             "install",
             "--python",
             str(python),
+            *lock_guard.constraint_args(constraint),
             "--only-binary",
             ":all:",
             spec,
@@ -85,14 +87,25 @@ def _require_clean_git_checkout(source_dir: Path) -> str:
     return _git_output(source_dir, "rev-parse", "--short=12", "HEAD")
 
 
-def _install_build_requirements(python: Path, source_dir: Path) -> None:
+def _install_build_requirements(python: Path, source_dir: Path, constraint: Path | None) -> None:
     configured = os.environ.get(env.VLLM_BUILD_REQUIREMENTS)
     requirements = Path(configured) if configured else source_dir / "requirements" / "build.txt"
     if not requirements.is_absolute():
         requirements = PROJECT_ROOT / requirements
     if requirements.is_file():
         _LOG.info("[build-vllm] installing build requirements through uv: %s", requirements)
-        _run(["uv", "pip", "install", "--python", str(python), "-r", str(requirements)])
+        _run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(python),
+                *lock_guard.constraint_args(constraint),
+                "-r",
+                str(requirements),
+            ]
+        )
     else:
         _LOG.info("[build-vllm] no build requirements file found; using active environment")
 
@@ -142,10 +155,10 @@ def _build_source_wheel(python: Path, source_dir: Path, wheel_dir: Path) -> list
     return _cached_source_wheels(wheel_dir)
 
 
-def _install_from_checkout(python: Path, source_value: str) -> None:
+def _install_from_checkout(python: Path, source_value: str, constraint: Path | None) -> None:
     source_dir = _resolve_source_dir(source_value)
     revision = _require_clean_git_checkout(source_dir)
-    _install_build_requirements(python, source_dir)
+    _install_build_requirements(python, source_dir, constraint)
     abi_key = _source_abi_key()
     wheel_dir = resolve_data_dir() / "wheels" / f"{SOURCE_PACKAGE}_{abi_key}_git{revision}"
     wheel_dir.mkdir(parents=True, exist_ok=True)
@@ -175,6 +188,7 @@ def _install_from_checkout(python: Path, source_value: str) -> None:
             "install",
             "--python",
             str(python),
+            *lock_guard.constraint_args(constraint),
             "--only-binary",
             ":all:",
             str(wheels[0]),
@@ -201,10 +215,16 @@ def _report_install() -> None:
 def main() -> int:
     python = Path(sys.executable)
     source_dir = os.environ.get(env.VLLM_SOURCE_DIR)
-    if source_dir:
-        _install_from_checkout(python, source_dir)
-    else:
-        _install_prebuilt(python, os.environ.get(env.VLLM_SPEC, DEFAULT_VLLM_SPEC))
+    # vLLM's unpinned requirements overlap packages uv.lock pins, so the install runs under a
+    # lock-derived constraint and the environment is re-checked afterwards (llb.build.lock_guard).
+    mode = lock_guard.guard_mode()
+    before = lock_guard.snapshot(mode)
+    with lock_guard.lock_constraint(mode, before) as constraint:
+        if source_dir:
+            _install_from_checkout(python, source_dir, constraint)
+        else:
+            _install_prebuilt(python, os.environ.get(env.VLLM_SPEC, DEFAULT_VLLM_SPEC), constraint)
+    lock_guard.enforce(mode, before)
     _report_install()
     _run_sampler_preflight()
     _LOG.info("[build-vllm] active attention backend is reported at serve time")

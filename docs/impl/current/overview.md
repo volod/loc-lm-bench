@@ -221,6 +221,45 @@ target before it estimates and confirms the full draft runtime. Model selection 
 prompt, so an approved unattended run proceeds with `QUICKSTART_ASSUME_YES=1`. Benchmark, manual
 local, and `frontier` `litellm` routes remain explicit overrides.
 
+### The vLLM install respects uv.lock
+
+`make venv` syncs the lock and THEN installs vLLM, whose own requirements are mostly unpinned, so
+the second step was free to upgrade a package the first step had just pinned. Six of vLLM's
+requirements are packages this project also declares (`mcp`, `numpy`, `openai`, `psutil`,
+`pydantic`, `pyyaml`), and the one that actually moved is `mcp`: no `make venv` extra installs it,
+vLLM requires it with no specifier, so the install pulled the newest major -- `mcp` 2.0.0 over the
+1.28.1 the lock resolves. `mypy` then failed on `src/llb/bench/mcp_server.py`, which reads like a
+source bug and is a dependency resolution, and `make ci` stayed red until someone repaired the venv
+by hand.
+
+`llb.build.lock_guard` closes that at the point of drift. `llb.build.lock_reader` answers the three
+inputs -- which packages `pyproject.toml` declares, which versions `uv.lock` resolved for each, and
+which of those the interpreter holds -- and the guard turns them into a uv `--constraint` file that
+every `uv pip install` in `llb.build.vllm` runs under. A package is constrained only to versions the
+lock actually carries: an exact pin when the environment already holds a locked version or the lock
+carries exactly one, and the closed range the lock spans when conflicting extras forked it (`mcp` is
+1.26.0 under the crewai extra and 1.28.1 elsewhere, so the constraint is `>=1.26.0,<=1.28.1` --
+which excludes 2.x without evaluating an extra marker to guess which fork this venv is).
+
+After the install the environment is re-read and compared with a pre-install snapshot, because the
+two kinds of drift are different findings. A package this install MOVED off the lock fails the
+install by default; a package that was already off the lock is a hand-installed extra's leftover
+(`.[review]`, `.[pdf-quality]`, `.[finetune]` legitimately live in this venv) and is logged as a
+warning naming the package, so an unrelated drift never fails someone's vLLM install.
+`LLB_VLLM_LOCK_GUARD` sets the cost of a caused drift: `refuse` (default), `report`, or `off`. The
+one failure the constraint introduces -- a future vLLM needing a version the lock lacks -- is
+reported with its remedy (`uv lock --upgrade-package <name>`, then commit the lock).
+
+Measured on the 16 GiB CUDA host (2026-08-16): the same clean-venv resolution installs `mcp==2.0.0`
+unconstrained and `mcp==1.28.1` under the 48-package lock constraint, and a real `make build-vllm`
+reports `the vLLM install moved nothing off uv.lock`. Coverage is
+`tests/llb/build/test_lock_guard.py` (constraint planning, drift attribution, all three guard
+modes) plus a `--constraint` assertion in `tests/llb/build/test_build_helper.py`.
+
+The paired decision on the SDK itself is recorded with the transport in
+[Category suite](category-benchmark-suite.md#tooling): the `[mcp]` extra now carries a `<2` bound,
+because mcp 2.x replaces the low-level server API rather than renaming a field.
+
 Host-specific acceptance procedures and serving constraints live in
 [Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
 

@@ -76,33 +76,37 @@ Take the first task of the earliest group that still has one; see
 
 ### Reproducible environment -- `reproducible-environment`
 
-#### venv-pins-the-mcp-version-vllm-pulls-in (optional)
+#### hand-installed-extras-drift-the-venv-off-the-lock (optional)
 
-`make venv` installs the lockfile and then `scripts/build_vllm.sh` installs vLLM, whose `mcp`
-requirement is unpinned -- so a rebuild on a CUDA host today resolves `mcp` 2.0.0 over the 1.28.1
-the lock pins, and `mypy` fails on `src/llb/bench/mcp_server.py` because 2.x renamed `Tool`'s
-`inputSchema` to `input_schema`. `make ci` is red until the venv is corrected by hand, which is the
-wrong place to discover it: the failure looks like a source bug and is a dependency resolution. Fix
-it where the drift happens -- have the vLLM install respect the locked `mcp` (a constraint on that
-install, or a re-sync afterwards) -- and decide separately whether `mcp_server.py` should support
-both APIs, since a host that genuinely needs vLLM's `mcp` will hit the same rename.
+The vLLM install now respects `uv.lock` ([overview](current/overview.md#the-vllm-install-respects-uvlock)),
+and running that guard surfaced the same failure class one step over: a hand-installed extra
+(`uv pip install -e ".[review]"`, `.[pdf-quality]`, `.[finetune]`) re-resolves the whole
+requirement set unpinned, so it upgrades packages `uv sync` had just pinned. On this dev box that
+is currently five packages, and one of them is `ruff` (0.15.20 installed against 0.15.18 locked) --
+a formatter whose output the `dev` extra pins EXACTLY on purpose, so a local `make ci` is now
+running a different linter than GitHub CI, which is the split verdict the pin exists to prevent.
+Give the extra installs the same treatment: a `make install-extras EXTRAS=<groups>` target (or the
+equivalent uv invocation the docs point at) that installs through the lock's constraints instead of
+a free resolution, plus a check that names any declared package sitting off the lock.
 
 - Serves: `reproducible-environment` -- [Reproducible environment](../design/spec.md#reproducible-environment)
 - Agent status: CLEAR
-- Dependencies: none. `scripts/build_vllm.sh` is the install step, `uv.lock` is the pin
-  (`mcp` 1.28.1 outside the crewai extra), and `src/llb/bench/mcp_server.py` is the caller.
-- User-visible outcome: a fresh `make venv` leaves `make ci` green without a manual `uv pip install`.
-- Scope boundary: in scope -- the constraint (or post-install re-sync), a check that the resolved
-  `mcp` matches the lock, and the compatibility decision for the two `Tool` signatures. Out of scope
-  -- upgrading the lock to `mcp` 2.x as part of this task and changing what vLLM version is
-  installed.
-- Execution path: one `make venv` on the CUDA host followed by `make ci`; no GPU work beyond the
-  install itself.
-- Acceptance gates: `make venv` from a removed `.venv` followed by `make ci` is green with no
-  manual step; the resolved `mcp` version is asserted against the lock, or the caller works under
-  both signatures.
-- Documentation target: the environment section of
-  [host validation](current/host-validation.md).
+- Dependencies: none. Reuse `llb.build.lock_reader` and `llb.build.lock_guard` wholesale -- the
+  constraint planner and the drift report already take a lock index and a declared-name set, and
+  neither is vLLM-specific.
+- User-visible outcome: installing an optional extra stops silently changing which linter, judge
+  client, or trainer version the host runs, so a local `make ci` verdict keeps matching CI's.
+- Scope boundary: in scope -- the constrained install path for extras, the off-lock report, and
+  the docs that currently tell an operator to run a bare `uv pip install -e ".[...]"`. Out of scope
+  -- adding these extras to the default `make venv` set, moving hardware-matched packages
+  (vLLM/torch/flash-attn/marker/unsloth) into the lock, and changing any pin.
+- Execution path: `uv pip install` of one extra on the CUDA host before and after, comparing the
+  declared-package versions against the lock; CI covers the constrained-install argument assembly
+  and the report over fixture locks.
+- Acceptance gates: `make ci` green; installing an extra leaves every declared package at a version
+  `uv.lock` carries, and the five currently-drifted packages on this host are named and resolved
+  by the documented command rather than by hand.
+- Documentation target: the setup surface in [overview](current/overview.md).
 
 ### Retrieval evidence -- `retrieval-evidence`
 
