@@ -6,7 +6,7 @@
 	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
 	compare-adoption-screen compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
-	probe-context-position analyze-misses
+	probe-context-position probe-multihop-hops analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

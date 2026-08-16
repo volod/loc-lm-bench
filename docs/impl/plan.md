@@ -76,42 +76,71 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### multihop-both-hops-ceiling
+#### multihop-budget-answer-conversion
 
-Every fused row measured so far -- every weight, both depths, both identity policies -- retrieves
-BOTH hops for at most 3 of 35 two-hop questions (`all-spans@10` <= 0.086), while single-hop recall
-moves freely between 0.686 and 0.800
-([GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#span-identity-evidence)). That
-ceiling is invariant to every ranking knob the lane exposes, which means it is probably not a
-ranking problem: either the second hop's chunk is not retrievable for the question's own wording (a
-query problem, addressable by decomposition), or it is not reachable at k=10 at all (a budget
-problem). Diagnose which: measure `all-spans@k` as a function of k (say 10 / 25 / 50) on the same
-items, and measure the per-hop retrievability of each labeled span when queried on its own. Record
-which of the two explanations the corpus supports, because they lead to opposite fixes.
-
-A third lead is already measured and worth folding into the k sweep: shrinking the CHUNK moves the
-ceiling where no ranking knob could, the vector baseline's multi-hop `all-spans@10` running 0.057 ->
-0.086 -> 0.114 as the chunking goes from `recursive@800/120` to `sentence@200` to `recursive@200/30`
-([GraphRAG](current/graphrag-backend/span-and-depth-evidence.md#does-the-pin-survive-a-smaller-chunk-size))
--- which points at the budget explanation, since k=10 buys more distinct spans when a span is
-smaller. Overall recall falls at the same time, so treat it as a diagnostic, not a recommendation.
+The multi-hop coverage ceiling is now diagnosed as a BUDGET limit, and the headroom is large: the
+same rows re-scored at k=50 lift the vector lane's multi-hop `all-spans@k` from 0.057 to 0.229 and
+the best fused row to 0.657, with no retrieval-side cost
+([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
+Nothing yet says a served k=50 makes ANSWERS better, and two measured facts argue it might not:
+five times the chunks is five times the context, and the graph-side share of that coverage arrives
+as ~86-character entity mentions rather than as readable chunks. Score the same multi-hop items end
+to end at the shipped budget and at the diagnosed one, on the vector lane and on the k=50 sweep
+winner, and record whether the coverage converts, stalls, or costs the factoid slice the way the
+`overlap` identity did. A negative result is the useful one: it would mean multi-hop coverage is
+recoverable in retrieval but not deliverable to this generator at this context length, which points
+at a compression or two-stage-context step rather than at a larger k.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `all_spans_at_k` / `span_coverage_at_k` in `src/llb/rag/retrieval.py`,
-  the sweep lane, and the existing query-decomposition step in
-  [RAG core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing).
-- User-visible outcome: the operator learns whether multi-hop evidence coverage is limited by the
-  retrieval budget or by the query, instead of tuning ranking knobs that provably cannot move it.
-- Scope boundary: in scope -- the k sweep, the per-hop probe, and a written diagnosis. Out of scope
-  -- building a new decomposition strategy before the diagnosis names it, and any ranking-policy
-  change.
+- Dependencies: none. Reuse the answer-quality lane and its lane-label parser
+  ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md)), and the recorded budget
+  evidence for the compared rows.
+- User-visible outcome: the operator learns whether raising the retrieval budget on multi-hop
+  questions buys better answers or only better retrieval numbers, before paying the context bill.
+- Scope boundary: in scope -- the end-to-end comparison at two budgets, the per-slice answer
+  reading, and the recorded conversion verdict. Out of scope -- changing the shipped `top_k`, a
+  context-compression step, and any re-reading of the drafted ledger's verdicts.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-graph-fusion RAG_K=<k>` per budget plus a per-hop retrieval probe
-  on the CUDA host; CI covers the per-hop probe over fake lane stores.
-- Acceptance gates: `make ci` green; the report carries `all-spans@k` per budget and the per-hop
-  hit rate, and states which explanation the measurement supports.
-- Documentation target: the graph-vector fusion evidence section of
+- Execution path: `make compare-answer-quality` per budget with the lanes named by the k=50 sweep's
+  `comparison.json` on the CUDA host; CI covers the comparison over committed run bundles.
+- Acceptance gates: `make ci` green; the report carries the per-slice answer metrics at both
+  budgets with their paired intervals, and states whether the retrieval gain converted.
+- Documentation target: the answer-quality evidence page of
+  [GraphRAG](current/graphrag-backend.md).
+
+#### multihop-query-decomposition-conversion
+
+The per-hop probe names a second, smaller population the budget cannot reach: 8 of 35 two-hop items
+whose missing hop is absent from the pool at ANY depth under the question, while the same span's own
+text ranks it at 10 or better
+([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
+That is exactly the shape decomposition is supposed to fix, and the repo already ships a
+`decompose` query-prep step whose recorded A/B moved retrieval by +0.013
+([RAG core](current/rag-core/rerank-and-query.md#hyde-and-decomposition-evidence)) -- measured on a
+whole gold set, never on this population. Re-run the probe with `query_prep=decompose` on the
+multi-hop slice and report how many of those 8 items it converts, and whether it costs the 19
+budget-limited items anything. If the existing step converts few of them, the probe's per-hop ranks
+are the input to deciding what a hop-targeted decomposition would have to do differently.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `probe-multihop-hops`
+  ([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane)) and the
+  `decompose` step in
+  [RAG core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing); the
+  probe currently ranks the raw question, so the step has to be wired into its retrieval call.
+- User-visible outcome: the operator learns whether turning decomposition on recovers the hops a
+  bigger budget cannot, with the item count it recovers rather than a whole-set average.
+- Scope boundary: in scope -- driving the probe through the existing query-prep pipeline, the
+  per-diagnosis conversion counts, and the recorded reading. Out of scope -- a new decomposition
+  prompt or strategy, and changing the shipped `query_prep` default.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: `make probe-multihop-hops` with the query-prep step enabled, against a local
+  model on the CUDA host; CI covers the wiring with a fake generator and fake lane stores.
+- Acceptance gates: `make ci` green; the report states how many `query`-diagnosed items the step
+  converts and what it costs the other diagnoses.
+- Documentation target: the retrieval budget and per-hop evidence page of
   [GraphRAG](current/graphrag-backend.md).
 
 #### cross-lingual-query-lane

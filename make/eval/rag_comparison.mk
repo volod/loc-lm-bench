@@ -45,6 +45,19 @@ compare-graph-fusion: ## Sweep graph fusion with paired evidence (GOLDSET= GRAPH
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
+probe-multihop-hops: ## Diagnose a stuck all-spans@k: budget, query, or unreachable (GOLDSET= SPLIT= HOP_PROBE_BUDGETS=10,25,50 HOP_PROBE_DEPTH= HOP_PROBE_BACKEND= HOP_PROBE_STRATEGY= FUSION_FOCUS_SLICE= FUSION_BOOTSTRAP_RESAMPLES= HOP_PROBE_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main probe-multihop-hops $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(HOP_PROBE_BUDGETS),--budgets "$(HOP_PROBE_BUDGETS)",) \
+		$(if $(HOP_PROBE_DEPTH),--probe-depth $(HOP_PROBE_DEPTH),) \
+		$(if $(HOP_PROBE_BACKEND),--retrieval-backend "$(HOP_PROBE_BACKEND)",) \
+		$(if $(HOP_PROBE_STRATEGY),--retrieval-strategy "$(HOP_PROBE_STRATEGY)",) \
+		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(HOP_PROBE_OUT_DIR),--out-dir "$(HOP_PROBE_OUT_DIR)",)
+
 calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tuning, and score held-out final (GOLDSET= ROUTING_LONG_WORD_GRID= ROUTING_ENTITY_GRID= ROUTING_TUNING_SPLIT= ROUTING_FINAL_SPLIT= ROUTING_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \

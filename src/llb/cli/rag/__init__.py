@@ -13,6 +13,7 @@ from llb.cli.rag import (  # noqa: F401
     fusion_evidence,
     graph_index,
     index,
+    multihop_probe,
     refresh,
     validate,
 )

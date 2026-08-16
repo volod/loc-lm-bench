@@ -206,6 +206,15 @@ FUSION_BOOTSTRAP_RESAMPLES ?=
 FUSION_HIDE_ROUTING_SIDECAR ?=
 FUSION_HEURISTIC_LONG_QUESTION_WORDS ?=
 FUSION_HEURISTIC_MIN_LINKED_ENTITIES ?=
+# Per-hop multi-hop retrievability probe (probe-multihop-hops): the budget grid the all-spans@k
+# curve is read at (the SMALLEST is the operating budget the diagnosis is stated against), how
+# deep a labeled span is searched for before a query counts as unable to reach it, and the lane
+# to probe when it is not the one the config names. Empty knobs fall back to the command defaults.
+HOP_PROBE_BUDGETS ?=
+HOP_PROBE_DEPTH ?=
+HOP_PROBE_BACKEND ?=
+HOP_PROBE_STRATEGY ?=
+HOP_PROBE_OUT_DIR ?=
 # Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
 # evaluate only the frozen policy on the held-out final split.
 ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20

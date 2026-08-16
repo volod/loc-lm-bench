@@ -423,7 +423,7 @@ Generated artifacts must stay under `DATA_DIR`.
 | RAG retrieval | `build-index`, `build-graph`, `refresh-index`, `validate-retrieval`, `build-query-glossary` |
 | Retrieval evidence | `compare-retrieval`, `compare-embeddings`, `compare-vector-stores`, `compare-graph-fusion`, `calibrate-fusion-routing`, `compare-context-strategies`, `compare-answer-quality` |
 | RAG scoring | `run-eval`, `sweep`, `tune`, `joint-search`, `pipeline`, `screen-public`, `board`, `recommend`, `mlflow-ui` |
-| Diagnostics | `analyze-misses`, `probe-context-position`, `bench-query-robustness`, `score-external-rag` |
+| Diagnostics | `analyze-misses`, `probe-context-position`, `probe-multihop-hops`, `bench-query-robustness`, `score-external-rag` |
 | Fine-tuning and adapters | `export-finetune-set`, `finetune-hparams`, `finetune-adapter`, `finetune-compat`, `self-improve`, `distill`, `finetune-campaign`, `register-adapter`, `list-adapters`, `serve-adapter`, `gc-adapters` |
 | Backends | `prep-models`, `list-models`, `resolve-models`, `preflight-vllm`, `build-vllm`, `build-llamacpp` |
 | Category suites | `bench-security`, `bench-*`, `bench-chain-context`, `bench-composite`, `composite-headline` |

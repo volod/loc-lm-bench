@@ -17,6 +17,11 @@ satisfies by returning only one of its hops; on single-span items all three metr
 The graph-vector fusion evidence lane reports all three side by side, which is how a multi-hop
 retrieval gain is distinguished from a partial hit.
 
+When `all_spans_at_k` is stuck and no ranking knob moves it, `probe-multihop-hops` says why: it
+ranks each labeled span by the item's own question and again by the span's own text, and classifies
+every item as budget-limited, query-limited, or unreachable ([retrieval budget
+evidence](../graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane)).
+
 Span matching is occurrence-aware: a chunk that collapsed byte-identical copies ([duplicate chunk
 collapse](retrieval-store.md#duplicate-chunk-collapse)) hits a span labeled at ANY place its text
 appears, so indexing a repeated passage once neither loses nor invents a hit.

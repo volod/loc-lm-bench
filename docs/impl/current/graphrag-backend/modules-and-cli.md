@@ -71,6 +71,13 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   every row per question-type slice, `stats.py` is the paired bootstrap plus exact sign test,
   `verdict.py` is the adopt-or-reject rule, and `report.py` renders the Markdown artifact.
 
+`src/llb/rag/multihop_probe/`
+: The per-hop retrievability probe that diagnoses a stuck `all-spans@k` (see
+  [retrieval budget evidence](retrieval-budget-evidence.md#the-per-hop-probe-lane)). `probe.py`
+  ranks each labeled span by the item's question and by its own text and builds the per-budget
+  coverage curve, `diagnose.py` turns those ranks into a per-item budget/query/unreachable
+  classification and the slice explanation, and `report.py` renders the Markdown artifact.
+
 `src/llb/rag/fusion_calibration/`
 : The held-out sidecar-free router calibration. It parses the deterministic threshold grid,
   evaluates routing error and paired retrieval deltas on tuning, freezes one policy before final
@@ -111,6 +118,7 @@ llb compare-retrieval --graph-weight 0.3 --k 10 --out report.json
 llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
+llb probe-multihop-hops --budgets 10,25,50 --retrieval-backend faiss --out-dir <dir>
 ```
 
 `RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, `graph_weight`
