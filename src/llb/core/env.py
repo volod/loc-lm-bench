@@ -72,6 +72,11 @@ VLLM_LOCK_GUARD = "LLB_VLLM_LOCK_GUARD"
 # same guard, same three modes -- refuse (default) | report | off (llb.build.extras).
 EXTRAS_LOCK_GUARD = "LLB_EXTRAS_LOCK_GUARD"
 
+# `make venv` when the system python was patched under `.venv`: uv REPLACES an environment whose
+# recorded `pyvenv.cfg` version moved, discarding the hardware-matched vLLM/torch stack. Same three
+# modes -- refuse (default) | report | off (llb.build.venv_state).
+VENV_STALE_GUARD = "LLB_VENV_STALE_GUARD"
+
 # Keys that must appear as active assignments in .env.example (not comment-only).
 DOCUMENTED_ENV_VARS = (
     DATA_DIR,

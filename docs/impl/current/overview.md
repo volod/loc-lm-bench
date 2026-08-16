@@ -320,6 +320,91 @@ which lives in a dedicated environment; it installs lock-exactly with
 [CrewAI harness](../../guides/benchmarking/crewai-harness.md)), and `make lock-drift` reads the
 project `.venv` only.
 
+### `make venv` says reuse or rebuild
+
+Both guards above protect what is IN the venv; this one protects the venv itself. `make venv`
+printed `reusing .venv -- updating deps` whenever `.venv/bin/python` existed, and `uv sync
+--inexact` leaves packages the lock does not name alone -- but neither holds once the SYSTEM
+interpreter the venv points at is patched underneath it. `pyvenv.cfg` records `version_info` at
+creation time and never again, so an OS python upgrade leaves the recorded version behind the real
+one, and uv then calls the environment stale and REPLACES it. Measured here: `uv sync --inexact
+--frozen --dry-run` reports `Would replace project environment at: .venv` and 140 packages to
+download, where a venv whose recorded version still matches reports `Would use`. The replacement
+installs the lock's `torch` 2.12.1 (CUDA 13) over the 2.11.0 (CUDA 12) vLLM 0.24.0 requires. On a
+CUDA host the `VENV_INSTALL_VLLM=auto` step afterwards pins torch back, so the damage is a silent
+full reinstall; with `VENV_INSTALL_VLLM=0`, or on a host that skips that step, the venv is left
+holding a torch its vLLM cannot use while the target reported a reuse.
+
+`llb.build.venv_interpreter` reads the fact -- what `pyvenv.cfg` recorded, which interpreter `home`
+resolves to now, and what that interpreter's version actually is -- and `llb.build.venv_state` turns
+it into the plan `make venv` announces BEFORE syncing: `create`, `reuse`, `rebuild`, or `unchecked`.
+A rebuild is priced in the packages the sync will not put back, which is a different question from
+`lock_guard.find_drift`: that one asks whether a DECLARED package sits off the lock, while a replace
+also drops everything the lock never carried (vLLM, flashinfer, the CUDA wheels). The hardware-matched
+names are listed and the rest counted. Three consequences follow the plan:
+
+- **the message is honest** -- `REBUILDING ... records python 3.13.14; /usr/bin/python3.13 is now
+  3.13.15` instead of `reusing`;
+- **the vLLM reinstall stops being skippable** -- a sync that moved the stack forces
+  `scripts/build_vllm.sh` afterwards, `VENV_INSTALL_VLLM=0` included, because that flag was set for
+  an environment the sync no longer leaves in place;
+- **an unrequested rebuild is refused** -- `LLB_VENV_STALE_GUARD` takes the same `refuse` (default)
+  `| report | off` as the other two guards, and `RECREATE_VENV=1` is the explicit "yes, replace it".
+
+**A REUSE moves the stack too, and that is the case running it found.** `--inexact` promises only
+not to REMOVE what the lock does not name; a package INSIDE the resolution is still installed at the
+locked version, and `torch` is inside it (`rag` -> sentence-transformers). Measured here on a venv
+that was not stale at all: `make venv VENV_INSTALL_VLLM=0` reported `reusing` and downgraded
+`torch` 2.13.0 -> 2.12.1 under a vLLM 0.27.1 that needs 2.13.0. So the plan prices a reuse as well,
+over the packages the lock also carries, and forces the reinstall on the same rule. The two actions
+put different things at stake, and the pricing says so: a rebuild loses everything (including what
+the lock never carried -- vLLM, flashinfer, the CUDA wheels), while a reuse only re-pins what the
+lock names.
+
+A rebuild has a third bucket the first run missed: a package can match the lock exactly and still
+not come back, because `uv sync` installs the extras it was ASKED for. `bitsandbytes` 0.49.2 matched
+`uv.lock` and vanished in the measured rebuild -- only `[finetune]` declares it, and `make venv`'s
+default extras do not include that group. Those are now named separately, with the
+`make install-extras EXTRAS=<group>` that restores them. Transitive-only packages stay out of reach
+without resolving the lock's graph, so the line names what an operator installed on purpose rather
+than claiming to enumerate every casualty.
+
+The refusal has to be actionable, so it names the cheap way out first. Within one `major.minor` a
+CPython patch release keeps the ABI tag (`cp313`) and the `site-packages` layout, so the venv is
+ALREADY running the patched interpreter through its `bin/python` symlink and every compiled wheel in
+it still loads -- only the recorded string is behind. `make venv-restamp` records the truth and the
+whole stack stands. A MINOR move is a different environment (new stdlib, new layout, unloadable
+extensions), so the restamp is refused there and the rebuild is the only answer -- the venv is built
+against the SYSTEM interpreter by design (a managed interpreter is out of scope), so that residual
+case remains a real rebuild.
+
+`make venv` now delegates the whole lifecycle to `scripts/setup_venv.sh` (plan, then sync, then the
+vLLM step), which also rejects an unusable `VENV_INSTALL_VLLM` before the sync rather than after it.
+A planner that cannot run at all logs one line and lets uv decide, because `make venv` is the
+command an operator runs to repair a half-broken venv.
+
+Measured on the 16 GiB CUDA host (2026-08-16): `.venv` recorded python 3.13.14 against a patched
+`/usr/bin/python3.13` at 3.13.15, and `make venv` refused, naming `flashinfer-python 0.6.12`,
+`torch 2.11.0 -> 2.12.1`, `torchaudio 2.11.0`, `torchvision 0.26.0 -> 0.27.1`, `vllm 0.24.0`, and
+91 more -- while uv's own dry run agreed (`Would replace`).
+
+The rebuild was then accepted and run for real (`make venv RECREATE_VENV=1 VENV_INSTALL_VLLM=0`):
+uv downloaded 140 packages, the forced vLLM step ran despite `=0`, and the venv came back with
+`vllm` 0.27.1 and `torch` 2.13.0+cu130 -- the torch that vLLM pinned, not the lock's 2.12.1.
+`VLLM_SPEC` is unpinned, so the reinstall takes the newest vLLM (0.24.0 -> 0.27.1 here) and its
+torch with it. `make lock-drift` reported `every declared package matches uv.lock`, `make ci` was
+green (3479 passed), and a served smoke request on the rebuilt stack answered in Ukrainian:
+`llb run-eval --backend vllm --model google/gemma-4-E4B-it-qat-w4a16-ct --limit 1` at 64.4 tok/s,
+peak VRAM 15893 MB, served ctx 8192, retrieval recall@5 = 1.000. The two findings above -- the
+`bitsandbytes` bucket and the reuse-side re-pin -- both came out of that run rather than out of
+review. Coverage is
+`tests/llb/build/test_venv_interpreter.py` (the recorded-vs-running comparison, the restamp and its
+minor-move refusal) and `tests/llb/build/test_venv_state.py` (the four actions, rebuild and reuse
+pricing, the unsynced-extra bucket, the refusal and its remedies, and end-to-end runs of
+`scripts/setup_venv.sh` against a fake `uv` proving the refusal happens before any sync, that
+`VENV_INSTALL_VLLM=0` is obeyed when the sync moves nothing, and that it is overridden when the
+sync moves the stack).
+
 Host-specific acceptance procedures and serving constraints live in
 [Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).
 

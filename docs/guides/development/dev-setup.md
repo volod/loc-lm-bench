@@ -21,8 +21,25 @@ reproduce. Two consequences:
 - Editing dependencies in `pyproject.toml` makes the next `make venv` refresh `uv.lock`.
   **Commit the updated lock**: CI syncs `--locked` and fails on a stale one.
   `make venv VENV_LOCKED=1` reproduces that failure locally instead of relocking.
-- `--inexact` leaves packages the lock does not name in place, so vLLM/torch (installed by
-  `scripts/build_vllm.sh`) and any separately installed extra survive a re-run.
+- `--inexact` leaves packages the lock does not name in place, so vLLM and any separately installed
+  extra survive a re-run. It is **not** a promise about `torch`: torch IS in the lock's resolution
+  (via sentence-transformers), so every sync installs the LOCKED torch over the one vLLM pinned.
+  `make venv` says so and reinstalls vLLM afterwards to put it back -- `VENV_INSTALL_VLLM=0`
+  included, since a skipped reinstall leaves a torch the serving stack cannot use.
+
+**`make venv` states which it is doing: reuse or rebuild.** `.venv/pyvenv.cfg` records the python
+version at creation time, so an OS upgrade (say 3.13.14 -> 3.13.15) leaves it behind the real one,
+and uv then treats the environment as stale and REPLACES it -- discarding vLLM, flashinfer, and the
+CUDA wheels, and putting the lock's torch back instead of the one vLLM pinned. `make venv` checks
+that before syncing and refuses a rebuild nobody asked for, naming what it would discard:
+
+    make venv-restamp          # patched python, same 3.x line: record it and keep the stack
+    make venv RECREATE_VENV=1  # accept the rebuild (the vLLM reinstall is then forced)
+
+Prefer the restamp: a CPython patch release keeps the ABI, so the venv already runs the new
+interpreter and only its recorded version is stale. A MINOR move (3.13 -> 3.14) is refused there --
+that venv really does need rebuilding. `LLB_VENV_STALE_GUARD=report` syncs anyway and `=off` skips
+the check; a rebuild that discarded vLLM reinstalls it even under `VENV_INSTALL_VLLM=0`.
 
 **Add an extra with `make install-extras`, never a bare `uv pip install`.** uv's pip interface has
 no lockfile, so `uv pip install -e ".[review]"` re-resolves the WHOLE requirement set and takes the

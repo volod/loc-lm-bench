@@ -5,6 +5,10 @@ stays about the DECISION: which packages this project declares (`declared_names`
 the lock resolved for each (`lock_index`), and which of those the interpreter currently has
 (`installed_versions`). Nothing here evaluates a marker or a specifier -- a package the lock forked
 across conflicting extras simply reports both versions, and the guard decides what to do with that.
+
+`venv_versions` answers the same "what is installed" question about a venv ON DISK rather than the
+running interpreter, which is what `llb.build.venv_state` needs: it reads a venv uv is about to
+replace, from a process that is not running inside it.
 """
 
 import importlib
@@ -16,6 +20,8 @@ from pathlib import Path
 
 LOCK_FILENAME = "uv.lock"
 PYPROJECT_FILENAME = "pyproject.toml"
+SITE_PACKAGES_GLOB = "lib/python*/site-packages"
+DIST_INFO_SUFFIX = ".dist-info"
 # `declared_groups` keys are extra names; the base dependency list is not an extra, so it needs a
 # key no `[project.optional-dependencies]` group can collide with.
 BASE_GROUP = "(base)"
@@ -114,4 +120,21 @@ def installed_versions(names: Iterable[str]) -> dict[str, str]:
             found[name] = metadata.version(name)
         except metadata.PackageNotFoundError:
             continue
+    return found
+
+
+def venv_versions(venv_dir: Path) -> dict[str, str]:
+    """Every distribution a venv on disk holds, read from its `*.dist-info` directory names.
+
+    Deliberately a filesystem read rather than an interpreter call: the caller is deciding whether
+    that venv is about to be REPLACED, so it must work from outside it and must not depend on the
+    venv's own python still running. A wheel escapes `-`, `_`, and `.` in its name to `_` before
+    joining it to the version, so the last hyphen is always the split point.
+    """
+    found: dict[str, str] = {}
+    for site_packages in sorted(venv_dir.glob(SITE_PACKAGES_GLOB)):
+        for entry in site_packages.glob(f"*{DIST_INFO_SUFFIX}"):
+            name, separator, version = entry.name[: -len(DIST_INFO_SUFFIX)].rpartition("-")
+            if separator and version:
+                found[canonical_name(name)] = version
     return found
