@@ -22,7 +22,22 @@ reproduce. Two consequences:
   **Commit the updated lock**: CI syncs `--locked` and fails on a stale one.
   `make venv VENV_LOCKED=1` reproduces that failure locally instead of relocking.
 - `--inexact` leaves packages the lock does not name in place, so vLLM/torch (installed by
-  `scripts/build_vllm.sh`) and any hand-installed extra survive a re-run.
+  `scripts/build_vllm.sh`) and any separately installed extra survive a re-run.
+
+**Add an extra with `make install-extras`, never a bare `uv pip install`.** uv's pip interface has
+no lockfile, so `uv pip install -e ".[review]"` re-resolves the WHOLE requirement set and takes the
+newest version each specifier admits -- on a clean venv the `dev` extra alone lands ten declared
+packages off the lock, `ruff` and `mypy` among them, which is the split verdict the pins exist to
+prevent. `make install-extras` runs the same install under a `uv.lock`-derived constraint:
+
+    make install-extras EXTRAS=review,pdf-quality   # add extras, held to uv.lock
+    make lock-drift                                 # name anything already off the lock
+
+`make lock-drift` prints each off-lock package with the extra that declares it and the single
+`make install-extras EXTRAS=...` that puts them all back; it exits non-zero when anything drifted,
+and `LLB_EXTRAS_LOCK_GUARD=report` downgrades that to a warning while deliberately testing an
+upgrade. Only packages `pyproject.toml` declares are constrained -- vLLM/torch stay exactly where
+`scripts/build_vllm.sh` put them, since they are hardware-matched and trail the lock on purpose.
 
 `make venv` resolves uv's package link mode per host. If this checkout and uv's shared cache are on
 different devices, it sets `UV_LINK_MODE=copy` to avoid failed cross-device hardlinks; otherwise it
@@ -140,7 +155,7 @@ CrewAI remains a dedicated environment because its pins conflict with the dev/RA
 helpers used by that path: `poppler-utils`, `libmagic-dev`, `tesseract-ocr`, `tesseract-ocr-eng`,
 and `tesseract-ocr-ukr`. Install the Python extra on transform hosts with:
 
-    uv pip install --link-mode copy --python .venv/bin/python -e ".[pdf-quality]"
+    make install-extras EXTRAS=pdf-quality
 
 Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Install
 `marker-pdf` only in the dedicated CUDA transform environment when benchmarking it explicitly.

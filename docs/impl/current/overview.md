@@ -164,7 +164,10 @@ make ci
 ```
 
 `make venv` creates `.venv`, installs the editable package with extras, and seeds `.env` from
-`.env.example`. GitHub CI uses the lighter dev dependency set and does not require GPU services.
+`.env.example`. Adding an extra afterwards goes through `make install-extras EXTRAS=<groups>` and
+never a bare `uv pip install`, and `make lock-drift` names anything already off the lock (see
+[An extras install respects uv.lock](#an-extras-install-respects-uvlock)).
+GitHub CI uses the lighter dev dependency set and does not require GPU services.
 `scripts/shared/common.sh` resolves `UV_LINK_MODE` adaptively: when uv's cache and this checkout
 are on different devices it exports `copy`, otherwise it leaves uv's default link mode in place.
 The Quick Start guide keeps each Make wrapper annotated with command purpose, default inputs,
@@ -243,8 +246,8 @@ which excludes 2.x without evaluating an extra marker to guess which fork this v
 
 After the install the environment is re-read and compared with a pre-install snapshot, because the
 two kinds of drift are different findings. A package this install MOVED off the lock fails the
-install by default; a package that was already off the lock is a hand-installed extra's leftover
-(`.[review]`, `.[pdf-quality]`, `.[finetune]` legitimately live in this venv) and is logged as a
+install by default; a package that was already off the lock is an earlier install's leftover (see
+[An extras install respects uv.lock](#an-extras-install-respects-uvlock)) and is logged as a
 warning naming the package, so an unrelated drift never fails someone's vLLM install.
 `LLB_VLLM_LOCK_GUARD` sets the cost of a caused drift: `refuse` (default), `report`, or `off`. The
 one failure the constraint introduces -- a future vLLM needing a version the lock lacks -- is
@@ -259,6 +262,63 @@ modes) plus a `--constraint` assertion in `tests/llb/build/test_build_helper.py`
 The paired decision on the SDK itself is recorded with the transport in
 [Category suite](category-benchmark-suite.md#tooling): the `[mcp]` extra now carries a `<2` bound,
 because mcp 2.x replaces the low-level server API rather than renaming a field.
+
+### An extras install respects uv.lock
+
+Running that guard surfaced the same failure class one step over. A hand-installed optional extra
+went through a bare `uv pip install -e ".[review]"`, and uv's pip interface has NO lockfile: it
+re-resolves the whole requirement set and takes the newest version each specifier admits. Measured
+on a clean venv, the `dev` extra alone lands **ten** declared packages off the lock -- `ruff`
+0.16.3 against 0.15.18, `mypy` 2.3.1 against 2.1.0, plus `numpy`, `openai`, `typer`,
+`huggingface-hub`, `anyio`, `pymupdf4llm`, `pymarkdownlnt`, and `textual`. Two of those are the
+linter and the type checker `make ci` runs, and the `dev` extra pins them EXACTLY on purpose, so a
+local `make ci` verdict stops matching GitHub CI's -- which is what the pins exist to prevent.
+
+`llb.build.extras` gives the extras install the vLLM treatment. `make install-extras EXTRAS=<groups>`
+assembles `uv pip install --python <venv> --constraint <lock-derived> -e ".[<groups>]"`, so the
+resolution is held to versions `uv.lock` carries, and re-checks the environment afterwards. Nothing
+in it is extras-specific beyond the `.[a,b]` requirement: `llb.build.lock_guard` grew a `Guard`
+record carrying the three strings that differ per caller (what the install calls itself, which
+variable relaxes it, the command that repairs it), and the constraint planner, drift report, and
+`refuse | report | off` modes are shared with the vLLM path. `LLB_EXTRAS_LOCK_GUARD` is the extras
+guard's variable; the vLLM one keeps `LLB_VLLM_LOCK_GUARD`, so relaxing one never relaxes the other.
+
+Only DECLARED packages are constrained, and that boundary is load-bearing rather than incidental:
+this host's `torch` is 2.11.0 (what vLLM 0.24.0 pinned) while the lock resolves 2.12.1, so a lock
+that reached past `pyproject.toml` would replace the hardware-matched torch on every extras
+install. A constrained `.[finetune]` install leaves torch untouched and moves only the declared
+packages.
+
+`make lock-drift` is the report half. `uv.lock` says which version each declared package should be
+at, and `pyproject.toml` says which extra declares it, so the report names both plus the single
+command that resolves the whole set:
+
+```text
+5 declared package(s) sit off uv.lock:
+  ruff 0.15.20 is off the lock (pinned: 0.15.18) -- declared by dev
+  textual 8.2.8 is off the lock (pinned: 8.2.7) -- declared by dev,review
+  ...
+put them back with: make install-extras EXTRAS=dev,finetune,prep,rag,review
+```
+
+It exits non-zero on drift; `LLB_EXTRAS_LOCK_GUARD=report` downgrades that while an upgrade is
+deliberately being tested.
+
+Measured on the 16 GiB CUDA host (2026-08-16): the host carried five off-lock declared packages
+(`deepeval` 4.0.7/4.0.6, `litellm` 1.90.0/1.89.3, `ruff` 0.15.20/0.15.18, `textual` 8.2.8/8.2.7,
+`trl` 1.8.0/1.7.1). The printed command resolved all five in one install -- no hand-editing, no
+package named twice -- and left `torch` 2.11.0, `vllm` 0.24.0, and `flashinfer-python` 0.6.12 in
+place. `make lock-drift` now reports `every declared package matches uv.lock`. Coverage is
+`tests/llb/build/test_extras.py`: argument assembly, the group-ownership report, the guard-mode
+exit codes, an unknown-extra refusal that never reaches uv, an end-to-end run of
+`scripts/install_extras.sh` against a fake `uv`, and a repo-level assertion that this venv's
+declared packages all sit on the lock.
+
+The one extra outside this path is `[crewai]`, which pyproject declares as a CONFLICTING extra and
+which lives in a dedicated environment; it installs lock-exactly with
+`UV_PROJECT_ENVIRONMENT=<dir> uv sync --frozen --extra crewai` (see
+[CrewAI harness](../../guides/benchmarking/crewai-harness.md)), and `make lock-drift` reads the
+project `.venv` only.
 
 Host-specific acceptance procedures and serving constraints live in
 [Host validation](host-validation.md) and [Platform matrix](platform-vector-matrix.md).

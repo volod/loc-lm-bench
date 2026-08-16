@@ -67,6 +67,11 @@ MAX_JOBS = "MAX_JOBS"
 # `make ci` type-checks against: refuse (default) | report | off (llb.build.lock_guard).
 VLLM_LOCK_GUARD = "LLB_VLLM_LOCK_GUARD"
 
+# Optional-extras install (`make install-extras`) and the off-lock report (`make lock-drift`).
+# uv's pip interface has no lockfile, so an extra install re-resolves the whole requirement set:
+# same guard, same three modes -- refuse (default) | report | off (llb.build.extras).
+EXTRAS_LOCK_GUARD = "LLB_EXTRAS_LOCK_GUARD"
+
 # Keys that must appear as active assignments in .env.example (not comment-only).
 DOCUMENTED_ENV_VARS = (
     DATA_DIR,

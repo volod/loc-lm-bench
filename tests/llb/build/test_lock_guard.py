@@ -166,8 +166,9 @@ def test_lock_constraint_explains_a_uv_resolution_failure(project, caplog):
         with lock_guard.lock_constraint(lock_guard.GUARD_REFUSE, {}, root=project):
             raise subprocess.CalledProcessError(1, ["uv", "pip", "install"])
 
-    assert lock_guard.CONFLICT_HINT in caplog.text
-    assert "uv lock --upgrade-package" in lock_guard.CONFLICT_HINT
+    hint = lock_guard.conflict_hint(lock_guard.VLLM_GUARD)
+    assert hint in caplog.text
+    assert "uv lock --upgrade-package" in hint and env.VLLM_LOCK_GUARD in hint
 
 
 def test_lock_constraint_is_skipped_when_the_guard_is_off(project):

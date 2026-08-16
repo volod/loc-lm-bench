@@ -16,6 +16,9 @@ from pathlib import Path
 
 LOCK_FILENAME = "uv.lock"
 PYPROJECT_FILENAME = "pyproject.toml"
+# `declared_groups` keys are extra names; the base dependency list is not an extra, so it needs a
+# key no `[project.optional-dependencies]` group can collide with.
+BASE_GROUP = "(base)"
 
 # PEP 508 requirement text ends the project name at the first extra, specifier, marker, or URL.
 _NAME_END = re.compile(r"[\[<>=!~;\s@]")
@@ -33,17 +36,27 @@ def _requirement_name(spec: str) -> str:
     return canonical_name(_NAME_END.split(spec, maxsplit=1)[0])
 
 
+def declared_groups(pyproject_path: Path) -> dict[str, set[str]]:
+    """Which requirement group declares each package: the base list plus one entry per extra.
+
+    `declared_names` is the union and is what the constraint and the drift check work on. The
+    split matters only to a REPORT: an off-lock package is put back by re-installing the group
+    that declares it, so naming the group turns "ruff is off the lock" into a command to run.
+    """
+    project = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))["project"]
+    groups = {BASE_GROUP: {_requirement_name(spec) for spec in project.get("dependencies", [])}}
+    for name, specs in project.get("optional-dependencies", {}).items():
+        groups[name] = {_requirement_name(spec) for spec in specs}
+    return groups
+
+
 def declared_names(pyproject_path: Path) -> set[str]:
     """Every package this project declares: base dependencies plus every optional-extra group.
 
     That set -- not vLLM's dependency tree -- is what `make ci` type-checks and tests against, so
     it is exactly what must not move underneath the venv.
     """
-    project = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))["project"]
-    specs = list(project.get("dependencies", []))
-    for group in project.get("optional-dependencies", {}).values():
-        specs.extend(group)
-    return {_requirement_name(spec) for spec in specs}
+    return set().union(*declared_groups(pyproject_path).values())
 
 
 def lock_index(lock_path: Path) -> dict[str, set[str]]:

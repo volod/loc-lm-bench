@@ -9,7 +9,7 @@ CrewAI is an opt-in extra; this guide is the host-only validation how-to plus th
 
 ## At a glance
 
-    1. install the extra        uv pip install -e ".[crewai]"      [dedicated env: pins conflict]
+    1. install the extra        uv sync --extra crewai             [dedicated env: pins conflict]
     2. scripted validation      the no-model snippet in section 2  [gate: tool call + answer OK]
     3. real benchmark cell      llb bench-agentic --harness crewai --backend ollama --model <tag>
     4. compare harnesses        bench-agentic for loop/langgraph/crewai -> bench-agentic-compare
@@ -22,12 +22,20 @@ only variable. Re-run the scripted validation after any CrewAI upgrade.
 
 The CrewAI harness is pinned to the 1.x line and validated on `crewai==1.15.0`:
 
-    uv pip install -e ".[crewai]"
+    UV_PROJECT_ENVIRONMENT=.venv-crewai uv sync --frozen --extra crewai
 
 The base install and `make ci` never import CrewAI; only this extra pulls it. Install it in a
 dedicated environment rather than combining it with `[dev]`, `[rag]`, `[rag-chroma]`, or
 `[rag-lancedb]`: upstream CrewAI pins older shared dependencies than those lanes. If you upgrade
 past 1.x, re-run the validation below -- CrewAI's custom-LLM and tool APIs change across majors.
+
+This is the one extra that does NOT go through `make install-extras` (see
+[dev setup](../development/dev-setup.md)). That target constrains a `uv pip install` into the
+project `.venv`, and `crewai` is declared as a CONFLICTING extra, so the lock resolves it in its
+own fork (`mcp==1.26.0` there against `1.28.1` everywhere else). `uv sync` into a separate
+`UV_PROJECT_ENVIRONMENT` installs that fork verbatim -- lock-exact, with no free resolution and
+nothing to constrain -- and keeps the conflicting pins out of the venv `make ci` runs in.
+`make lock-drift` therefore does not cover this environment; it reads the project `.venv` only.
 
 ## 2. Validate the real crew on a host
 
@@ -136,7 +144,7 @@ Record the prompt-system id on the run (`run_agentic(..., prompt_system=<id>)`) 
 
 ## 6. Troubleshooting
 
-- "needs the [crewai] extra" -> `uv pip install -e ".[crewai]"`.
+- "needs the [crewai] extra" -> `UV_PROJECT_ENVIRONMENT=.venv-crewai uv sync --frozen --extra crewai`.
 - The crew never calls a tool -> the candidate did not emit CrewAI's `Action:` / `Action Input:`
   ReAct format; use a tool-capable instruct model, or confirm the scripted check above still passes
   (a format/version drift shows up there first).

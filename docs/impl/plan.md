@@ -76,37 +76,47 @@ Take the first task of the earliest group that still has one; see
 
 ### Reproducible environment -- `reproducible-environment`
 
-#### hand-installed-extras-drift-the-venv-off-the-lock (optional)
+#### make-venv-recreates-the-venv-when-the-system-python-is-patched
 
-The vLLM install now respects `uv.lock` ([overview](current/overview.md#the-vllm-install-respects-uvlock)),
-and running that guard surfaced the same failure class one step over: a hand-installed extra
-(`uv pip install -e ".[review]"`, `.[pdf-quality]`, `.[finetune]`) re-resolves the whole
-requirement set unpinned, so it upgrades packages `uv sync` had just pinned. On this dev box that
-is currently five packages, and one of them is `ruff` (0.15.20 installed against 0.15.18 locked) --
-a formatter whose output the `dev` extra pins EXACTLY on purpose, so a local `make ci` is now
-running a different linter than GitHub CI, which is the split verdict the pin exists to prevent.
-Give the extra installs the same treatment: a `make install-extras EXTRAS=<groups>` target (or the
-equivalent uv invocation the docs point at) that installs through the lock's constraints instead of
-a free resolution, plus a check that names any declared package sitting off the lock.
+`make venv` claims to be idempotent -- it prints `reusing .venv -- updating deps` whenever
+`.venv/bin/python` exists, and `uv sync --inexact` is documented as leaving vLLM/torch and any
+separately installed package in place. Neither holds once the SYSTEM interpreter the venv points at
+is patched underneath it. `.venv/pyvenv.cfg` records `version_info` at creation time, and this venv
+was built against `home = /usr/bin`, so an OS python upgrade leaves the recorded version behind the
+real one; uv then decides the environment is stale and REPLACES it. `uv sync --inexact --frozen`
+against this checkout's `.venv` reports `Would replace project environment at: .venv` and 159
+packages to install (a venv whose recorded version still matches reports `Would use` instead), and
+the lock's `torch` is 2.12.1 with a CUDA 13 wheel set against the 2.11.0 / CUDA 12 stack vLLM 0.24.0
+requires. On a CUDA host the `VENV_INSTALL_VLLM=auto` step reinstalls vLLM afterwards and pins torch
+back, so the damage is a silent full reinstall; with `VENV_INSTALL_VLLM=0`, or on any host that
+skips that step, the venv is left holding a torch the serving stack does not match while `make venv`
+reported a reuse. Detect the mismatch before syncing, and make `make venv` say which of the two it
+is about to do -- reuse or rebuild -- so a rebuild that discards the hardware-matched stack is a
+stated step rather than a surprise, and the vLLM reinstall is not skippable when one happened.
 
 - Serves: `reproducible-environment` -- [Reproducible environment](../design/spec.md#reproducible-environment)
 - Agent status: CLEAR
-- Dependencies: none. Reuse `llb.build.lock_reader` and `llb.build.lock_guard` wholesale -- the
-  constraint planner and the drift report already take a lock index and a declared-name set, and
-  neither is vLLM-specific.
-- User-visible outcome: installing an optional extra stops silently changing which linter, judge
-  client, or trainer version the host runs, so a local `make ci` verdict keeps matching CI's.
-- Scope boundary: in scope -- the constrained install path for extras, the off-lock report, and
-  the docs that currently tell an operator to run a bare `uv pip install -e ".[...]"`. Out of scope
-  -- adding these extras to the default `make venv` set, moving hardware-matched packages
-  (vLLM/torch/flash-attn/marker/unsloth) into the lock, and changing any pin.
-- Execution path: `uv pip install` of one extra on the CUDA host before and after, comparing the
-  declared-package versions against the lock; CI covers the constrained-install argument assembly
-  and the report over fixture locks.
-- Acceptance gates: `make ci` green; installing an extra leaves every declared package at a version
-  `uv.lock` carries, and the five currently-drifted packages on this host are named and resolved
-  by the documented command rather than by hand.
-- Documentation target: the setup surface in [overview](current/overview.md).
+- Dependencies: none. Reuse the lock/environment readers in `llb.build.lock_reader` and the guard
+  vocabulary in `llb.build.lock_guard` ([overview](current/overview.md#an-extras-install-respects-uvlock));
+  the check itself is `pyvenv.cfg`'s `version_info` against the interpreter's own version.
+- User-visible outcome: an operator running `make venv` on a host whose OS python was patched
+  learns that the venv is about to be rebuilt -- and does not end up with a torch their vLLM
+  cannot use while the target printed `reusing`.
+- Scope boundary: in scope -- the staleness detection, an honest reuse-or-rebuild message, forcing
+  the vLLM reinstall when a rebuild happened, and a refusal (overridable) when a rebuild would
+  discard a hardware-matched stack the run was not asked to replace. Out of scope -- pinning torch
+  in `uv.lock`, moving vLLM/flash-attn into pyproject extras, and building the venv against a
+  managed rather than a system interpreter.
+- Execution path: `uv sync --inexact --frozen --dry-run` against a venv with a matching
+  `pyvenv.cfg` and one with a stale one, comparing `Would use` against `Would replace`; CI covers
+  the staleness predicate over written `pyvenv.cfg` fixtures -- no uv call, no GPU.
+- Acceptance gates: `make ci` green; on this host `make venv` either reuses the venv or states
+  that it is rebuilding it and names the packages the rebuild discards; a rebuild leaves
+  `torch` at the version the installed vLLM requires, verified with `make lock-drift` clean and
+  `nvidia-smi` plus one served smoke request.
+- Documentation target: the setup surface in [overview](current/overview.md) and the
+  `uv sync --inexact` promise in
+  [dev setup](../guides/development/dev-setup.md).
 
 ### Retrieval evidence -- `retrieval-evidence`
 

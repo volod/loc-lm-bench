@@ -2,7 +2,8 @@
 ##@ Development
 
 .PHONY: \
-	demo-eval mlflow board recommend acceptance-gate-audit venv apt-deps test test-fast format \
+	demo-eval mlflow board recommend acceptance-gate-audit venv install-extras lock-drift \
+	apt-deps test test-fast format \
 	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -88,6 +89,17 @@ venv: ## Create/update .venv from uv.lock + extras + vLLM on CUDA hosts; VENV_IN
 	  *) echo "ERROR: VENV_INSTALL_VLLM must be auto, 1, or 0 (got $(VENV_INSTALL_VLLM))" >&2; exit 2 ;; \
 	esac
 	@bash -c 'source "$(PROJECT_ROOT)/scripts/shared/common.sh"; llb_ensure_env || true'
+
+# A bare `uv pip install -e ".[review]"` re-resolves the WHOLE requirement set (uv's pip interface
+# has no lockfile), so it upgrades packages `uv sync` had just pinned -- ruff and mypy included,
+# which is how a local `make ci` starts disagreeing with GitHub CI. These two run that install under
+# a uv.lock-derived constraint and name whatever is still off the lock (llb.build.extras).
+install-extras: ## Install optional extras under the uv.lock constraint (EXTRAS=review,pdf-quality)
+	@command -v uv >/dev/null 2>&1 || { echo "ERROR: uv not found -- install from https://docs.astral.sh/uv/"; exit 1; }
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash "$(PROJECT_ROOT)/scripts/install_extras.sh" --extras "$(EXTRAS)"
+
+lock-drift: ## Name every declared package whose installed version is off uv.lock
+	@UV_LINK_MODE="$(UV_LINK_MODE)" bash "$(PROJECT_ROOT)/scripts/install_extras.sh" --check
 
 apt-deps: ## Install apt packages (APT_PROFILE=production|dev|all; SKIP_APT=1 to skip; APT_DRY_RUN=1 to list only)
 	@SKIP_APT="$(SKIP_APT)" APT_DRY_RUN="$(APT_DRY_RUN)" bash "$(PROJECT_ROOT)/scripts/install_apt_deps.sh" "$(APT_PROFILE)"
