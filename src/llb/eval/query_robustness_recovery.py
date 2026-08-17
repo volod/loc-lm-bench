@@ -25,10 +25,12 @@ def _with_recovery(
         metric,
         objective_recovery=metric.objective_score - raw.objective_score,
         recall_recovery=metric.recall_at_k - raw.recall_at_k,
+        mrr_recovery=metric.mrr - raw.mrr,
         changed=replace(
             metric.changed,
             objective_recovery=metric.changed.objective_score - raw.changed.objective_score,
             recall_recovery=metric.changed.recall_at_k - raw.changed.recall_at_k,
+            mrr_recovery=metric.changed.mrr - raw.changed.mrr,
             comparisons={
                 **metric.changed.comparisons,
                 **recovery_comparisons(

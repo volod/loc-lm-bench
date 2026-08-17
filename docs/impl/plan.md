@@ -78,76 +78,31 @@ Take the first task of the earliest group that still has one; see
 
 #### multihop-query-decomposition-conversion
 
-The per-hop probe names a second, smaller population the budget cannot reach: 8 of 35 two-hop items
-whose missing hop is absent from the pool at ANY depth under the question, while the same span's own
-text ranks it at 10 or better
-([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
-That is exactly the shape decomposition is supposed to fix, and the repo already ships a
-`decompose` query-prep step whose recorded A/B moved retrieval by +0.013
-([RAG core](current/rag-core/rerank-and-query.md#hyde-and-decomposition-evidence)) -- measured on a
-whole gold set, never on this population. Re-run the probe with `query_prep=decompose` on the
-multi-hop slice and report how many of those 8 items it converts, and whether it costs the 19
-budget-limited items anything. If the existing step converts few of them, the probe's per-hop ranks
-are the input to deciding what a hop-targeted decomposition would have to do differently.
+The exact 95-item ledger that defines the original 8 query and 19 budget cohorts is absent from the
+host; the paired lane and the non-identical fresh replay are described in
+[GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#query-decomposition-conversion-evidence).
+Recover that ledger from an archival copy, or recreate it byte-for-byte from its provenance, then
+run the paired `decompose` probe against its 35-item multi-hop slice so conversion is attributable
+to the original cohorts.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `probe-multihop-hops`
-  ([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane)) and the
-  `decompose` step in
-  [RAG core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing); the
-  probe currently ranks the raw question, so the step has to be wired into its retrieval call.
-- User-visible outcome: the operator learns whether turning decomposition on recovers the hops a
-  bigger budget cannot, with the item count it recovers rather than a whole-set average.
-- Scope boundary: in scope -- driving the probe through the existing query-prep pipeline, the
-  per-diagnosis conversion counts, and the recorded reading. Out of scope -- a new decomposition
-  prompt or strategy, and changing the shipped `query_prep` default.
+- Agent status: BLOCKED BY MISSING ARTIFACT
+- Dependencies: an archival copy of the original `goods-draft/goldset.jsonl` and its question-type
+  sidecar, or a byte-identical recreation that first reproduces 95 total items, 35 multi-hop items,
+  the 1,099-chunk store, and the raw 2/19/8/6 diagnosis split.
+- User-visible outcome: the operator learns how many of the ORIGINAL query-diagnosed items generic
+  decomposition recovers and what it costs the original budget-diagnosed cohort.
+- Scope boundary: in scope -- artifact recovery, the raw identity gate, the paired run, and its
+  reading. Out of scope -- substituting a newly drafted cohort, a new decomposition prompt or
+  strategy, and changing the shipped `query_prep` default.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make probe-multihop-hops` with the query-prep step enabled, against a local
-  model on the CUDA host; CI covers the wiring with a fake generator and fake lane stores.
-- Acceptance gates: `make ci` green; the report states how many `query`-diagnosed items the step
-  converts and what it costs the other diagnoses.
+- Execution path: restore the bundle, rebuild its matched store, run the raw identity probe, then
+  run `make probe-multihop-hops QUERY_PREP=decompose` against the local CUDA model.
+- Acceptance gates: the raw probe reproduces the recorded slice before the paired result is read;
+  `make ci` is green; the report states conversion for the 8 original query items and cost to the
+  19 original budget items.
 - Documentation target: the retrieval budget and per-hop evidence page of
   [GraphRAG](current/graphrag-backend.md).
-
-#### cross-lingual-query-lane
-
-The query-robustness lane perturbs CHARACTERS -- transliteration, apostrophe variants, mixed script,
-keyboard typos ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark))
--- and never changes the LANGUAGE of the query. Ukrainian deployments routinely receive Russian and
-code-switched questions against a Ukrainian corpus, and the repo already treats Russian as a
-first-class second language on the security side, where a model that refuses in Ukrainian and
-complies in Russian is a measured finding
-([category suite](current/category-benchmark-suite.md)). Retrieval and answering have no equivalent.
-Add a query-language lane: a committed Russian and mixed UA/RU variant of an existing gold set's
-QUESTIONS with the gold spans and documents unchanged (so retrieval is scored by the same
-source-span metric), then report recall@k, MRR, and answer quality per language against the
-Ukrainian baseline.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the variant-class seam in `src/llb/eval/query_robustness_variants.py`,
-  the lane runner, and the per-class reporting; the drafted variants ride the existing
-  drafted-grounding rules until a reviewer accepts them.
-- User-visible outcome: an operator learns whether their Ukrainian RAG stack answers a Russian
-  question about a Ukrainian document, and whether the loss is in retrieval or in generation.
-- Scope boundary: in scope -- the committed variant fixture, the language lane, the per-language
-  retrieval and answer reporting, and a mitigation reading (does query normalization or translation
-  in `query_prep` recover the loss). Out of scope -- multilingual corpora, translating the CORPUS,
-  a translation model in the shipped query path before the measurement supports it, and any change
-  to the security lane's Russian probes.
-- Data and artifact paths: `samples/goldsets/<fixture>_ru/` for the committed variants;
-  `$DATA_DIR/query-robustness/<run>/` for the lane output.
-- Execution path: `make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed`
-  on the CUDA host; CI covers variant generation, the unchanged-span invariant, and the per-language
-  report over fixtures.
-- Acceptance gates: `make ci` green; every variant item keeps its gold spans byte-identical and
-  passes `validate-goldset`; the report carries recall@k and answer quality per language with paired
-  intervals against the Ukrainian baseline; the reading states whether the loss is retrieval-side or
-  answer-side, and the fixture is marked drafted until a reviewer accepts it.
-- Documentation target: the query-robustness section of
-  [evaluation rigor](current/rigor-board-judge.md) and the query-side processing section of
-  [RAG core](current/rag-core.md).
 
 #### retrieved-evidence-intactness-metric
 
@@ -1893,6 +1848,36 @@ on a corpus whose facts differ by one number.
   the fragile count, and the human's false-merge reading.
 - Documentation target:
   [RAG core](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers).
+
+#### cross-lingual-query-fixture-review (optional)
+
+Review the Russian and UA/RU questions in the committed cross-language overlay for linguistic
+naturalness and semantic equivalence to each paired Ukrainian question, then either accept the
+whole overlay or keep it diagnostic-only with corrected draft rows. The diagnostic lane and its
+current evidence are described in [evaluation
+rigor](current/rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane).
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: HUMAN-GATED
+- Dependencies: none in code. Human step that gates completion: a Ukrainian/Russian reviewer reads
+  every UA/RU/RU triplet and confirms that both variants preserve the question's factual intent,
+  named entities, numbers, and answer target.
+- User-visible outcome: the language overlay either becomes accepted evidence or remains clearly
+  drafted with a complete list of rows requiring correction.
+- Scope boundary: in scope -- linguistic/semantic review, corrections, and one uniform review-state
+  transition. Out of scope -- changing source spans or answers, translating the corpus, adding new
+  languages, and changing query-prep defaults.
+- Data and artifact paths: `samples/goldsets/ua_squad_postedited_v1_ru/goldset.jsonl`; a review may
+  change all rows together to `provenance: human-verified` / `verified: true` only after every row
+  passes.
+- Execution path: compare each overlay pair with its id-matched Ukrainian row, correct rejected
+  questions, run `make validate-goldset` against the original corpus, then re-run
+  `make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed`.
+- Acceptance gates: every triplet has a reviewer decision; all accepted rows preserve the exact
+  non-question payload; the fixture has one uniform review state; validation and the paired CUDA
+  rerun are green; the current evidence page records the reviewed result.
+- Documentation target: the cross-lingual section of
+  [evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane).
 
 ### Answer scoring -- `answer-scoring`
 

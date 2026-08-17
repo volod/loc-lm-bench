@@ -189,6 +189,12 @@ def test_only_the_focus_slice_is_laddered_into_the_item_ledger_but_every_slice_i
     assert report["overall"]["curve"][0]["all_spans_at_k"]["mean"] == 0.5
 
 
+def test_an_empty_focus_slice_is_rejected_instead_of_reporting_every_item_covered():
+    factoid = EvidenceItem("f-1", "q1", [_span("d1", "f-1-a")], "factoid")
+    with pytest.raises(ValueError, match="probe focus slice is empty: multi-hop"):
+        _probe(_ByQuery({}), [factoid])
+
+
 def test_each_budget_is_retrieved_at_that_budget_and_the_depth_covers_the_widest_one():
     item = _two_hop("mh-1", "q")
     store = _ByQuery({"q": [_chunk("d1")], "mh-1-a": [_chunk("d1")], "mh-1-b": [_chunk("d2")]})

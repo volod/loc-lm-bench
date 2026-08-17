@@ -134,6 +134,68 @@ and the per-edit audit's ambiguous nearest-vocabulary choices show that typo cor
 a model/corpus A/B before activation. The report's shared-hit generation delta separates that
 answer-side effect from missing evidence.
 
+## Cross-Lingual Query Lane
+
+The robustness benchmark also accepts committed question-language classes, separate from character
+noise. `language_ru` asks a drafted Russian version of each Ukrainian question;
+`language_mixed` asks a deterministic UA/RU code-switched version. The paired Ukrainian item still
+owns the reference answer, source document, split, and byte-identical source spans. The committed
+overlay is `samples/goldsets/ua_squad_postedited_v1_ru/goldset.jsonl`: 162 unverified rows over 81
+Ukrainian-dominant final questions. One English question mislabeled `lang: uk` in the source fixture
+is excluded rather than treated as the Ukrainian baseline. The overlay passes `validate-goldset`
+against the original corpus and remains `frontier-drafted` / `verified: false` pending language
+review.
+
+`src/llb/eval/query_robustness_languages.py` owns fixture inference, the invariant that only id,
+language, question, provenance, and review state may differ, deterministic mixed-query composition,
+uniform drafted/verified state, and the benchmark-only exact translation adapter. Language classes
+run under `off`, `normalize`, and `translate_to_uk`. The last lane replaces the query with its paired
+Ukrainian source question for retrieval only; generation still sees Russian or mixed text. It is an
+upper bound that locates the loss, not a translation model or a shipped query-prep step. The general
+robustness report now includes MRR and paired MRR intervals/recoveries beside recall and objective
+for every class.
+
+Run it with:
+
+```bash
+make bench-query-robustness MODEL=<m> BACKEND=<b> \
+  GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+  CORPUS=samples/goldsets/ua_squad_postedited_v1/corpus \
+  QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed
+```
+
+CUDA-host evidence (2026-08-17): RTX PRO 3000 Blackwell 12 GiB,
+`hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` through Ollama,
+`intfloat/multilingual-e5-base`, k=10, 96 answer tokens, seed 13, 2,000 paired bootstrap resamples,
+and n=81. All 486 language cases completed with zero errors. The clean baseline scored objective
+0.4844, recall@10 0.9753, and MRR 0.8363.
+
+| Language | Retrieval prep | Objective | Recall@10 | MRR |
+| --- | --- | ---: | ---: | ---: |
+| Russian | `off` | 0.4210 | 0.9877 | 0.8377 |
+| Russian | `normalize` | 0.4064 | 0.9877 | 0.8386 |
+| Russian | `translate_to_uk` | 0.4347 | 0.9753 | 0.8363 |
+| UA/RU mixed | `off` | 0.4739 | 0.9506 | 0.8158 |
+| UA/RU mixed | `normalize` | 0.4491 | 0.9630 | 0.8098 |
+| UA/RU mixed | `translate_to_uk` | 0.4352 | 0.9753 | 0.8363 |
+
+The Russian loss is answer-side, not retrieval-side: raw Russian retrieval is at least the clean
+level, while objective is -0.0633 and shared-hit generation delta is -0.0681. Exact Ukrainian
+retrieval reproduces clean recall and MRR but leaves objective -0.0497. The raw Russian objective
+reading is indistinguishable but borderline; normalization is a settled degradation at -0.0780 and
+does not change recall. For mixed queries, raw retrieval loses 0.0247 recall and 0.0205 MRR, while
+objective is only -0.0105 and all three raw deltas are indistinguishable. Exact Ukrainian retrieval
+restores recall/MRR but DEGRADES objective by 0.0387 against raw mixed. Therefore neither
+normalization nor unconditional retrieval translation is supported as a default. The stack already
+retrieves Russian well; a future mitigation should target answer-language behavior and must be
+tested independently from retrieval translation.
+
+Artifacts:
+`$DATA_DIR/query-robustness/20260817T114944.878514Z-520175273d85/`; clean baseline:
+`$DATA_DIR/run-eval/20260817T112544.907869Z-ff6ece00b522/`. Focused fixture, lane, report, MRR, and
+translation-upper-bound coverage lives in
+`tests/llb/eval/test_query_robustness_languages.py`, alongside the existing robustness tests.
+
 ## Ukrainian Security Adaptation
 
 The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to

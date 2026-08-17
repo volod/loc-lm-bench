@@ -45,8 +45,19 @@ READING_INDISTINGUISHABLE = "indistinguishable"
 
 OBJECTIVE_DELTA = "objective_delta"
 RECALL_DELTA = "recall_delta"
+MRR_DELTA = "mrr_delta"
 OBJECTIVE_RECOVERY = "objective_recovery"
 RECALL_RECOVERY = "recall_recovery"
+MRR_RECOVERY = "mrr_recovery"
+
+
+def _reciprocal_rank(row: dict[str, Any]) -> float:
+    if "reciprocal_rank" in row:
+        return float(row["reciprocal_rank"])
+    rank = row.get("first_hit_rank")
+    if rank:
+        return 1.0 / int(rank)
+    return float(row.get("retrieval_hit", 0.0)) if "first_hit_rank" not in row else 0.0
 
 
 def _reading(
@@ -135,6 +146,12 @@ def delta_comparisons(
             index_sets,
             confidence,
         ),
+        MRR_DELTA: directional_comparison(
+            [_reciprocal_rank(row) for row in rows],
+            [_reciprocal_rank(row) for row in baselines],
+            index_sets,
+            confidence,
+        ),
     }
 
 
@@ -149,4 +166,5 @@ def recovery_comparisons(
     return {
         OBJECTIVE_RECOVERY: comparisons[OBJECTIVE_DELTA],
         RECALL_RECOVERY: comparisons[RECALL_DELTA],
+        MRR_RECOVERY: comparisons[MRR_DELTA],
     }

@@ -10,6 +10,9 @@
   across four documents "converted" with four different apostrophes, measuring what
   apostrophe-variant tokenization buys when index and query disagree ([its
   README](apostrophe_variants_uk/README.md)).
+- `ua_squad_postedited_v1_ru/` is the drafted query-only Russian and UA/RU overlay for the 81
+  Ukrainian-dominant final questions in `ua_squad_postedited_v1/`; gold spans and documents remain
+  unchanged, and every overlay row stays unverified pending language review.
 
 Committed fixtures must be deterministic, independently attributable, structurally validated,
 and usable without network access. Runtime downloads, generated drafts, private corpora, and

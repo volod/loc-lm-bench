@@ -215,6 +215,10 @@ HOP_PROBE_DEPTH ?=
 HOP_PROBE_BACKEND ?=
 HOP_PROBE_STRATEGY ?=
 HOP_PROBE_OUT_DIR ?=
+# Query-prep inputs are shared by validate-retrieval and the paired per-hop probe.
+QUERY_PREP ?=
+QUERY_PREP_MODEL ?=
+QUERY_PREP_BACKEND ?=
 # Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
 # evaluate only the frozen policy on the held-out final split.
 ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20
@@ -304,6 +308,7 @@ QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
 QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
 QUERY_ROBUSTNESS_CLASSES ?=
+LANGUAGE_FIXTURE ?=
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml

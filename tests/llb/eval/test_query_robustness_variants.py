@@ -23,6 +23,7 @@ from llb.eval.query_robustness_variants import (
     generate_variant,
     parse_variant_classes,
 )
+from llb.eval.query_robustness_languages import LANGUAGE_VARIANT_CLASSES
 from llb.rag.fusion_evidence.stats import bootstrap_index_sets
 
 
@@ -45,6 +46,8 @@ def test_signed_delta_stability_marks_a_degradation_near_miss_as_borderline():
 @pytest.mark.parametrize("variant_class", ALL_VARIANT_CLASSES)
 def test_variants_are_seeded_deterministic_and_non_identity(variant_class: str):
     kwargs = {"item_id": "q1", "seed": 17, "typo_rate": 0.1}
+    if variant_class in LANGUAGE_VARIANT_CLASSES:
+        kwargs["language_variants"] = {("q1", variant_class): "Другой вопрос?"}
     first = generate_variant(APOSTROPHE_QUESTION, variant_class, **kwargs)
     assert first == generate_variant(APOSTROPHE_QUESTION, variant_class, **kwargs)
     assert first != APOSTROPHE_QUESTION

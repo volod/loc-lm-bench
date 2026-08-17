@@ -45,7 +45,7 @@ compare-graph-fusion: ## Sweep graph fusion with paired evidence (GOLDSET= GRAPH
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(FUSION_OUT_DIR),--out-dir "$(FUSION_OUT_DIR)",)
 
-probe-multihop-hops: ## Diagnose a stuck all-spans@k: budget, query, or unreachable (GOLDSET= SPLIT= HOP_PROBE_BUDGETS=10,25,50 HOP_PROBE_DEPTH= HOP_PROBE_BACKEND= HOP_PROBE_STRATEGY= FUSION_FOCUS_SLICE= FUSION_BOOTSTRAP_RESAMPLES= HOP_PROBE_OUT_DIR=)
+probe-multihop-hops: ## Diagnose/convert a stuck all-spans@k (GOLDSET= SPLIT= HOP_PROBE_BUDGETS=10,25,50 QUERY_PREP= QUERY_PREP_MODEL= QUERY_PREP_BACKEND=ollama HOP_PROBE_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main probe-multihop-hops $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -54,6 +54,9 @@ probe-multihop-hops: ## Diagnose a stuck all-spans@k: budget, query, or unreacha
 		$(if $(HOP_PROBE_DEPTH),--probe-depth $(HOP_PROBE_DEPTH),) \
 		$(if $(HOP_PROBE_BACKEND),--retrieval-backend "$(HOP_PROBE_BACKEND)",) \
 		$(if $(HOP_PROBE_STRATEGY),--retrieval-strategy "$(HOP_PROBE_STRATEGY)",) \
+		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
+		$(if $(QUERY_PREP_MODEL),--query-prep-model "$(QUERY_PREP_MODEL)",) \
+		$(if $(QUERY_PREP_BACKEND),--query-prep-backend "$(QUERY_PREP_BACKEND)",) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(HOP_PROBE_OUT_DIR),--out-dir "$(HOP_PROBE_OUT_DIR)",)

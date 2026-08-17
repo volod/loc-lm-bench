@@ -9,7 +9,7 @@ reaches it at any depth (a QUERY problem, fixed by decomposition), or nothing re
 Those lead to opposite fixes, so the probe names which one the corpus supports.
 """
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord as SourceSpanRecord
 from llb.rag.compare_models import Retriever as Retriever  # the one `.retrieve` seam, re-used
@@ -81,6 +81,7 @@ class ItemProbe(TypedDict):
     limiting_rank: int | None
     min_budget: int | str
     diagnosis: str
+    query_prep: NotRequired[dict[str, object]]
 
 
 class BudgetReport(TypedDict):
@@ -129,6 +130,43 @@ class MultiHopProbeReport(TypedDict):
     overall: SliceProbe
     slices: dict[str, SliceProbe]
     items: list[ItemProbe]
+
+
+class DiagnosisCohortConversion(TypedDict):
+    """Prepared-vs-raw outcomes for items sharing one RAW-query diagnosis."""
+
+    n: int
+    all_spans_before: int
+    all_spans_after: int
+    all_spans_gained: int
+    all_spans_lost: int
+    span_coverage_before: float
+    span_coverage_after: float
+    span_coverage_improved: int
+    span_coverage_tied: int
+    span_coverage_regressed: int
+    newly_reachable_at_depth: int
+    no_longer_reachable_at_depth: int
+
+
+class QueryPrepConversion(TypedDict):
+    """Per-diagnosis conversion and cost at the operating retrieval budget."""
+
+    focus_slice: str
+    n: int
+    operating_budget: int
+    cohorts: dict[str, DiagnosisCohortConversion]
+    transitions: dict[str, dict[str, int]]
+
+
+class MultiHopQueryPrepReport(TypedDict):
+    """The raw and prepared probes plus their paired per-item conversion reading."""
+
+    query_prep_steps: list[str]
+    baseline: MultiHopProbeReport
+    prepared: MultiHopProbeReport
+    conversion: QueryPrepConversion
+    endpoint: NotRequired[dict[str, str]]
 
 
 def parse_budgets(spec: str) -> tuple[int, ...]:
