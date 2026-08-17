@@ -7,6 +7,7 @@ from pathlib import Path
 
 from llb.core.fsutil import atomic_write_text
 from llb.eval.query_robustness import RobustnessResult
+from llb.eval.query_robustness_languages import LANGUAGE_VARIANT_CLASSES
 from llb.rag.fusion_evidence.stability import format_reading
 from llb.rag.fusion_evidence.stats import format_interval
 from llb.rag.fusion_evidence.paired import PairedComparison
@@ -20,7 +21,7 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         dict.fromkeys(lane.variant_class for lane in result.lanes)
     )
     lines = [
-        "# Ukrainian query robustness benchmark",
+        "# Ukrainian RAG query robustness benchmark",
         "",
         f"- model: `{metadata['model']}`",
         f"- backend: `{metadata['backend']}`",
@@ -31,33 +32,64 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         f"- clean baseline: `{metadata['clean_run_dir']}`",
         f"- clean objective: {result.clean_objective:.4f}",
         f"- clean recall@k: {result.clean_recall:.4f}",
+        f"- clean MRR: {result.clean_mrr:.4f}",
         f"- paired bootstrap: {result.resamples} resamples at {result.confidence * 100:g}%",
         "",
         "Variant rows are probe-only and live in `robustness.jsonl`; they never enter the clean",
         "run's `scores.jsonl` or correctness aggregates. Generation delta is measured only on",
-        "items where both the clean and noisy lane retrieved gold evidence.",
-        "Mitigation lanes are isolated: `normalize` inverts only attributable noise, while",
-        "`normalize,typos` adds corpus-vocabulary correction under the Ukrainian morphology",
-        "guard, so vocabulary-correction risk is read apart from normalization recovery.",
-        "Noise classes are one mechanism each, so a recovery is attributable: `apostrophe_variant`",
-        "re-types apostrophes only and `mixed_script` substitutes homoglyphs only. The combined",
-        "`apostrophe_mixed_script` class runs only when it is requested explicitly.",
-        "Recovery columns are measured against the `off` lane of the same noise class.",
-        "",
-        "| Class | Mitigation | N | Errors | Objective | Obj delta | Recall | Recall delta | Shared hits | Generation delta | Obj recovery | Recall recovery |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "items where both the clean and variant lane retrieved gold evidence.",
     ]
+    lines.extend(_method_notes(classes, metadata))
+    lines.extend(
+        [
+            "Recovery columns are measured against the `off` lane of the same noise class.",
+            "",
+            "| Class | Mitigation | N | Errors | Objective | Obj delta | Recall | Recall delta | MRR | MRR delta | Shared hits | Generation delta | Obj recovery | Recall recovery | MRR recovery |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     for lane in result.lanes:
         lines.append(
             f"| {lane.variant_class} | `{lane.mitigation}` | {lane.n} | "
             f"{lane.errors} | {lane.objective_score:.4f} | {lane.objective_delta:+.4f} | "
-            f"{lane.recall_at_k:.4f} | {lane.recall_delta:+.4f} | {lane.shared_hit_n} | "
+            f"{lane.recall_at_k:.4f} | {lane.recall_delta:+.4f} | {lane.mrr:.4f} | "
+            f"{lane.mrr_delta:+.4f} | {lane.shared_hit_n} | "
             f"{lane.generation_delta_on_shared_hits:+.4f} | {lane.objective_recovery:+.4f} | "
-            f"{lane.recall_recovery:+.4f} |"
+            f"{lane.recall_recovery:+.4f} | {lane.mrr_recovery:+.4f} |"
         )
     lines.extend(_uncertainty_section(result))
     lines.extend(_affected_section(result))
     return "\n".join(lines) + "\n"
+
+
+def _method_notes(classes: tuple[str, ...], metadata: Mapping[str, object]) -> list[str]:
+    notes: list[str] = []
+    if any(name not in LANGUAGE_VARIANT_CLASSES for name in classes):
+        notes.extend(
+            [
+                "Character-noise classes isolate one mechanism each. `normalize` only inverts",
+                "attributable noise; `normalize,typos` adds guarded corpus-vocabulary correction.",
+                "The combined `apostrophe_mixed_script` class runs only when explicitly requested.",
+            ]
+        )
+    if metadata.get("language_fixture"):
+        excluded = metadata.get("language_baseline_excluded_ids", [])
+        if not isinstance(excluded, list | tuple):
+            raise TypeError("language_baseline_excluded_ids metadata must be a sequence")
+        excluded_text = ", ".join(f"`{str(item_id)}`" for item_id in excluded) or "none"
+        notes.extend(
+            [
+                "Language questions come from the committed fixture at "
+                f"`{metadata['language_fixture']}` and remain "
+                f"`{metadata['language_fixture_status']}`.",
+                "`translate_to_uk` is a benchmark-only exact paired retrieval upper bound: it",
+                "replaces the drafted query with its source Ukrainian question for retrieval,",
+                "while generation still receives the Russian or code-switched question. It is",
+                "not a shipped translator.",
+                f"Non-Ukrainian questions excluded from the paired baseline: {excluded_text}.",
+            ]
+        )
+    return notes
 
 
 def _uncertainty_section(result: RobustnessResult) -> list[str]:
@@ -132,20 +164,22 @@ def _affected_section(result: RobustnessResult) -> list[str]:
         + ", ".join(f"`{name}` {count}" for name, count in sorted(untouched.items()))
         + ".",
         "",
-        "| Class | Mitigation | Changed N | Objective | Obj delta | Recall | Recall delta | Obj recovery | Recall recovery |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Class | Mitigation | Changed N | Objective | Obj delta | Recall | Recall delta | MRR | MRR delta | Obj recovery | Recall recovery | MRR recovery |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for lane in result.lanes:
         changed = lane.changed
         if not changed.n:
             # a class that perturbed nothing measured nothing; zeros here would read as a result
-            lines.append(f"| {lane.variant_class} | `{lane.mitigation}` | 0 |" + " - |" * 6)
+            lines.append(f"| {lane.variant_class} | `{lane.mitigation}` | 0 |" + " - |" * 9)
             continue
         lines.append(
             f"| {lane.variant_class} | `{lane.mitigation}` | {changed.n} | "
             f"{changed.objective_score:.4f} | {changed.objective_delta:+.4f} | "
             f"{changed.recall_at_k:.4f} | {changed.recall_delta:+.4f} | "
-            f"{changed.objective_recovery:+.4f} | {changed.recall_recovery:+.4f} |"
+            f"{changed.mrr:.4f} | {changed.mrr_delta:+.4f} | "
+            f"{changed.objective_recovery:+.4f} | {changed.recall_recovery:+.4f} | "
+            f"{changed.mrr_recovery:+.4f} |"
         )
     lines.extend(
         [

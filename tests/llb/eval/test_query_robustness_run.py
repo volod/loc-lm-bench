@@ -97,7 +97,10 @@ def _assert_report_content(report: str) -> None:
     assert "## Paired uncertainty by noise class" in report
     assert "p_positive" in report
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | changed |" not in report
-    assert f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 0 | - | - | - | - | - | - |" in report
+    assert (
+        f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 0 | - | - | - | - | - | - | - | - | - |"
+        in report
+    )
 
 
 def _assert_uncertainty_payload(lanes: dict[tuple[str, str], LaneMetrics]) -> None:
@@ -180,9 +183,10 @@ def test_items_a_class_cannot_perturb_are_reported_apart_from_the_affected_subse
     assert "## Affected items only" in report
     assert f"`{APOSTROPHE_VARIANT}` 1" in report
     assert (
-        f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 1 | 0.0000 | -1.0000 | 0.0000 | -1.0000 |"
+        f"| {APOSTROPHE_VARIANT} | `{LANE_OFF.id}` | 1 | 0.0000 | -1.0000 | 0.0000 | "
+        "-1.0000 | 0.0000 | -1.0000 |"
     ) in report
     assert (
         f"| {APOSTROPHE_VARIANT} | `{LANE_NORMALIZE.id}` | 1 | 1.0000 | +0.0000 | 1.0000 "
-        "| +0.0000 | +1.0000 | +1.0000 |"
+        "| +0.0000 | 1.0000 | +0.0000 | +1.0000 | +1.0000 | +1.0000 |"
     ) in report

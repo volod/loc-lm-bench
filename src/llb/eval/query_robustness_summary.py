@@ -4,10 +4,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from llb.eval.query_robustness import (
-    MITIGATION_LANES,
     LaneMetrics,
     RobustnessResult,
     SubsetMetrics,
+    mitigation_lanes_for_class,
 )
 from llb.eval.query_robustness_recovery import add_recovery
 from llb.eval.query_robustness_uncertainty import delta_comparisons
@@ -22,6 +22,15 @@ def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _reciprocal_rank(row: Mapping[str, Any]) -> float:
+    if "reciprocal_rank" in row:
+        return float(row["reciprocal_rank"])
+    rank = row.get("first_hit_rank")
+    if rank:
+        return 1.0 / int(rank)
+    return float(row.get("retrieval_hit", 0.0)) if "first_hit_rank" not in row else 0.0
+
+
 def _changed_metrics(
     rows: list[dict[str, Any]],
     clean: Mapping[str, Mapping[str, Any]],
@@ -33,13 +42,16 @@ def _changed_metrics(
     changed = [row for row in rows if bool(row.get("variant_changed", True))]
     objective = _mean([float(row["objective_score"]) for row in changed])
     recall = _mean([float(row["retrieval_hit"]) for row in changed])
+    mrr = _mean([_reciprocal_rank(row) for row in changed])
     baselines = [dict(clean[str(row["item_id"])]) for row in changed]
     return SubsetMetrics(
         n=len(changed),
         objective_score=objective,
         recall_at_k=recall,
+        mrr=mrr,
         objective_delta=objective - _mean([float(row["objective_score"]) for row in baselines]),
         recall_delta=recall - _mean([float(row["retrieval_hit"]) for row in baselines]),
+        mrr_delta=mrr - _mean([_reciprocal_rank(row) for row in baselines]),
         comparisons=delta_comparisons(
             changed,
             baselines,
@@ -56,6 +68,7 @@ def _lane_metrics(
     clean: Mapping[str, Mapping[str, Any]],
     clean_objective: float,
     clean_recall: float,
+    clean_mrr: float,
     *,
     resamples: int,
     confidence: float,
@@ -63,6 +76,7 @@ def _lane_metrics(
 ) -> LaneMetrics:
     objective = _mean([float(row["objective_score"]) for row in rows])
     recall = _mean([float(row["retrieval_hit"]) for row in rows])
+    mrr = _mean([_reciprocal_rank(row) for row in rows])
     shared = [
         row
         for row in rows
@@ -77,8 +91,10 @@ def _lane_metrics(
         errors=sum(str(row.get("status", "ok")) != "ok" for row in rows),
         objective_score=objective,
         recall_at_k=recall,
+        mrr=mrr,
         objective_delta=objective - clean_objective,
         recall_delta=recall - clean_recall,
+        mrr_delta=mrr - clean_mrr,
         shared_hit_n=len(shared),
         generation_delta_on_shared_hits=_mean(
             [
@@ -124,7 +140,7 @@ def _group_rows(
 
 def _clean_baseline(
     rows: list[dict[str, Any]], clean_rows: Sequence[Mapping[str, Any]]
-) -> tuple[dict[str, Mapping[str, Any]], list[str], float, float]:
+) -> tuple[dict[str, Mapping[str, Any]], list[str], float, float, float]:
     clean = {str(row["item_id"]): row for row in clean_rows}
     item_ids = list(dict.fromkeys(str(row["item_id"]) for row in rows))
     missing = [item_id for item_id in item_ids if item_id not in clean]
@@ -132,7 +148,8 @@ def _clean_baseline(
         raise ValueError(f"clean baseline is missing item ids: {missing[:3]}")
     clean_objective = _mean([float(clean[item_id]["objective_score"]) for item_id in item_ids])
     clean_recall = _mean([float(clean[item_id]["retrieval_hit"]) for item_id in item_ids])
-    return clean, item_ids, clean_objective, clean_recall
+    clean_mrr = _mean([_reciprocal_rank(clean[item_id]) for item_id in item_ids])
+    return clean, item_ids, clean_objective, clean_recall, clean_mrr
 
 
 def summarize_query_robustness(
@@ -146,11 +163,11 @@ def summarize_query_robustness(
 ) -> RobustnessResult:
     """Rebuild every aggregate and its paired annotation from persisted per-case rows."""
     classes = tuple(variant_classes)
-    clean, item_ids, clean_objective, clean_recall = _clean_baseline(rows, clean_rows)
+    clean, item_ids, clean_objective, clean_recall, clean_mrr = _clean_baseline(rows, clean_rows)
     grouped = {
         (variant_class, lane.id): _group_rows(rows, item_ids, variant_class, lane.id)
         for variant_class in classes
-        for lane in MITIGATION_LANES
+        for lane in mitigation_lanes_for_class(variant_class)
     }
     metrics = [
         _lane_metrics(
@@ -160,12 +177,13 @@ def summarize_query_robustness(
             clean,
             clean_objective,
             clean_recall,
+            clean_mrr,
             resamples=resamples,
             confidence=confidence,
             seed=seed,
         )
         for variant_class in classes
-        for lane in MITIGATION_LANES
+        for lane in mitigation_lanes_for_class(variant_class)
     ]
     with_recovery = add_recovery(
         metrics,
@@ -178,6 +196,7 @@ def summarize_query_robustness(
         rows,
         clean_objective,
         clean_recall,
+        clean_mrr,
         with_recovery,
         classes,
         resamples,

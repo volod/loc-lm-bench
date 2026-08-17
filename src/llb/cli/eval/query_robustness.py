@@ -47,6 +47,10 @@ def bench_query_robustness_cmd(
             f"{','.join(VARIANT_CLASSES)} (add {APOSTROPHE_MIXED_SCRIPT} for the combined class)"
         ),
     ),
+    language_fixture: Optional[Path] = typer.Option(
+        None,
+        help="drafted language-variant goldset; defaults to the baseline's <name>_ru sibling",
+    ),
     top_k: Optional[int] = typer.Option(None, "--top-k", help="retrieved chunks per query"),
     max_tokens: Optional[int] = typer.Option(
         None, help="maximum answer tokens per clean or noisy case"
@@ -78,6 +82,7 @@ def bench_query_robustness_cmd(
             typo_rate=typo_rate,
             variant_classes=classes,
             progress=typer.echo,
+            language_fixture=language_fixture,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

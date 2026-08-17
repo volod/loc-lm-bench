@@ -104,45 +104,6 @@ to the original cohorts.
 - Documentation target: the retrieval budget and per-hop evidence page of
   [GraphRAG](current/graphrag-backend.md).
 
-#### cross-lingual-query-lane
-
-The query-robustness lane perturbs CHARACTERS -- transliteration, apostrophe variants, mixed script,
-keyboard typos ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark))
--- and never changes the LANGUAGE of the query. Ukrainian deployments routinely receive Russian and
-code-switched questions against a Ukrainian corpus, and the repo already treats Russian as a
-first-class second language on the security side, where a model that refuses in Ukrainian and
-complies in Russian is a measured finding
-([category suite](current/category-benchmark-suite.md)). Retrieval and answering have no equivalent.
-Add a query-language lane: a committed Russian and mixed UA/RU variant of an existing gold set's
-QUESTIONS with the gold spans and documents unchanged (so retrieval is scored by the same
-source-span metric), then report recall@k, MRR, and answer quality per language against the
-Ukrainian baseline.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the variant-class seam in `src/llb/eval/query_robustness_variants.py`,
-  the lane runner, and the per-class reporting; the drafted variants ride the existing
-  drafted-grounding rules until a reviewer accepts them.
-- User-visible outcome: an operator learns whether their Ukrainian RAG stack answers a Russian
-  question about a Ukrainian document, and whether the loss is in retrieval or in generation.
-- Scope boundary: in scope -- the committed variant fixture, the language lane, the per-language
-  retrieval and answer reporting, and a mitigation reading (does query normalization or translation
-  in `query_prep` recover the loss). Out of scope -- multilingual corpora, translating the CORPUS,
-  a translation model in the shipped query path before the measurement supports it, and any change
-  to the security lane's Russian probes.
-- Data and artifact paths: `samples/goldsets/<fixture>_ru/` for the committed variants;
-  `$DATA_DIR/query-robustness/<run>/` for the lane output.
-- Execution path: `make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed`
-  on the CUDA host; CI covers variant generation, the unchanged-span invariant, and the per-language
-  report over fixtures.
-- Acceptance gates: `make ci` green; every variant item keeps its gold spans byte-identical and
-  passes `validate-goldset`; the report carries recall@k and answer quality per language with paired
-  intervals against the Ukrainian baseline; the reading states whether the loss is retrieval-side or
-  answer-side, and the fixture is marked drafted until a reviewer accepts it.
-- Documentation target: the query-robustness section of
-  [evaluation rigor](current/rigor-board-judge.md) and the query-side processing section of
-  [RAG core](current/rag-core.md).
-
 #### retrieved-evidence-intactness-metric
 
 `recall@k` credits an item as soon as a retrieved chunk OVERLAPS a gold span by ONE character
@@ -1887,6 +1848,36 @@ on a corpus whose facts differ by one number.
   the fragile count, and the human's false-merge reading.
 - Documentation target:
   [RAG core](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers).
+
+#### cross-lingual-query-fixture-review (optional)
+
+Review the Russian and UA/RU questions in the committed cross-language overlay for linguistic
+naturalness and semantic equivalence to each paired Ukrainian question, then either accept the
+whole overlay or keep it diagnostic-only with corrected draft rows. The diagnostic lane and its
+current evidence are described in [evaluation
+rigor](current/rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane).
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: HUMAN-GATED
+- Dependencies: none in code. Human step that gates completion: a Ukrainian/Russian reviewer reads
+  every UA/RU/RU triplet and confirms that both variants preserve the question's factual intent,
+  named entities, numbers, and answer target.
+- User-visible outcome: the language overlay either becomes accepted evidence or remains clearly
+  drafted with a complete list of rows requiring correction.
+- Scope boundary: in scope -- linguistic/semantic review, corrections, and one uniform review-state
+  transition. Out of scope -- changing source spans or answers, translating the corpus, adding new
+  languages, and changing query-prep defaults.
+- Data and artifact paths: `samples/goldsets/ua_squad_postedited_v1_ru/goldset.jsonl`; a review may
+  change all rows together to `provenance: human-verified` / `verified: true` only after every row
+  passes.
+- Execution path: compare each overlay pair with its id-matched Ukrainian row, correct rejected
+  questions, run `make validate-goldset` against the original corpus, then re-run
+  `make bench-query-robustness QUERY_ROBUSTNESS_CLASSES=language_ru,language_mixed`.
+- Acceptance gates: every triplet has a reviewer decision; all accepted rows preserve the exact
+  non-question payload; the fixture has one uniform review state; validation and the paired CUDA
+  rerun are green; the current evidence page records the reviewed result.
+- Documentation target: the cross-lingual section of
+  [evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane).
 
 ### Answer scoring -- `answer-scoring`
 

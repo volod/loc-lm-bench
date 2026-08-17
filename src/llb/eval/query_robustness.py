@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from llb.eval.query_robustness_languages import LANGUAGE_VARIANT_CLASSES
 from llb.eval.query_robustness_variants import generate_variant, resolve_variant_classes
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.stats import (
@@ -15,14 +16,7 @@ from llb.rag.fusion_evidence.paired import PairedComparison
 
 @dataclass(frozen=True)
 class MitigationLane:
-    """One query-prep configuration every noise class is measured under.
-
-    Splitting `normalize` from `normalize,typos` isolates the two mechanisms: normalization only
-    inverts noise it can attribute (transliteration, homoglyphs, apostrophes), while the typos
-    step additionally rewrites tokens to corpus surfaces, which is the step that carries
-    vocabulary-correction risk. Reading them apart is what tells an operator whether a recovery
-    came from safe normalization or from a correction they may not want on their corpus.
-    """
+    """One query-prep configuration a variant class is measured under."""
 
     id: str
     steps: tuple[str, ...]
@@ -37,6 +31,15 @@ LANE_OFF = MitigationLane("off", (), False)
 LANE_NORMALIZE = MitigationLane("normalize", ("normalize",), False)
 LANE_NORMALIZE_TYPOS = MitigationLane("normalize,typos", ("normalize", "typos"), True)
 MITIGATION_LANES: tuple[MitigationLane, ...] = (LANE_OFF, LANE_NORMALIZE, LANE_NORMALIZE_TYPOS)
+LANE_TRANSLATE = MitigationLane("translate_to_uk", ("fixture_translate",), False)
+
+
+def mitigation_lanes_for_class(variant_class: str) -> tuple[MitigationLane, ...]:
+    """Use an exact paired translation upper bound only for query-language variants."""
+    if variant_class in LANGUAGE_VARIANT_CLASSES:
+        return (LANE_OFF, LANE_NORMALIZE, LANE_TRANSLATE)
+    return MITIGATION_LANES
+
 
 QueryExecutor = Callable[[GoldItem, str, MitigationLane], Mapping[str, Any]]
 Progress = Callable[[str], None]
@@ -44,22 +47,18 @@ Progress = Callable[[str], None]
 
 @dataclass(frozen=True)
 class SubsetMetrics:
-    """Lane metrics restricted to the items a noise class actually perturbed.
-
-    A single-mechanism class is a no-op on any question that carries none of its trigger
-    characters -- `apostrophe_variant` cannot perturb a question without an apostrophe. Pooling
-    those untouched items back into the lane mean drags every delta toward zero and makes a real
-    effect on a handful of items unreadable, so the affected subset is measured separately
-    against the SAME items' clean baseline.
-    """
+    """Lane metrics restricted to items the variant generator actually changed."""
 
     n: int
     objective_score: float
     recall_at_k: float
+    mrr: float
     objective_delta: float
     recall_delta: float
+    mrr_delta: float
     objective_recovery: float = 0.0
     recall_recovery: float = 0.0
+    mrr_recovery: float = 0.0
     comparisons: dict[str, PairedComparison] = field(default_factory=dict)
 
 
@@ -71,13 +70,16 @@ class LaneMetrics:
     errors: int
     objective_score: float
     recall_at_k: float
+    mrr: float
     objective_delta: float
     recall_delta: float
+    mrr_delta: float
     shared_hit_n: int
     generation_delta_on_shared_hits: float
     changed: SubsetMetrics
     objective_recovery: float = 0.0
     recall_recovery: float = 0.0
+    mrr_recovery: float = 0.0
     comparisons: dict[str, PairedComparison] = field(default_factory=dict)
 
 
@@ -86,6 +88,7 @@ class RobustnessResult:
     rows: list[dict[str, Any]]
     clean_objective: float
     clean_recall: float
+    clean_mrr: float
     lanes: tuple[LaneMetrics, ...]
     variant_classes: tuple[str, ...] = ()
     resamples: int = DEFAULT_RESAMPLES
@@ -101,6 +104,7 @@ def _probe_row(
     *,
     seed: int,
     typo_rate: float,
+    language_variants: Mapping[tuple[str, str], str] | None,
 ) -> dict[str, Any]:
     variant = generate_variant(
         item.question,
@@ -108,6 +112,7 @@ def _probe_row(
         item_id=item.id,
         seed=seed,
         typo_rate=typo_rate,
+        language_variants=dict(language_variants) if language_variants is not None else None,
     )
     row = {
         "probe": True,
@@ -128,6 +133,11 @@ def _probe_row(
     }
     row["objective_delta"] = float(row["objective_score"]) - float(clean_row["objective_score"])
     row["recall_delta"] = float(row["retrieval_hit"]) - float(clean_row["retrieval_hit"])
+    rank = row.get("first_hit_rank")
+    clean_rank = clean_row.get("first_hit_rank")
+    row["reciprocal_rank"] = 1.0 / int(rank) if rank else 0.0
+    row["clean_reciprocal_rank"] = 1.0 / int(clean_rank) if clean_rank else 0.0
+    row["mrr_delta"] = row["reciprocal_rank"] - row["clean_reciprocal_rank"]
     return row
 
 
@@ -140,6 +150,7 @@ def _evaluate_lane(
     *,
     seed: int,
     typo_rate: float,
+    language_variants: Mapping[tuple[str, str], str] | None,
     progress: Progress | None,
     completed: int,
     total: int,
@@ -155,6 +166,7 @@ def _evaluate_lane(
                 execute,
                 seed=seed,
                 typo_rate=typo_rate,
+                language_variants=language_variants,
             )
         )
         count = completed + offset
@@ -197,6 +209,7 @@ def evaluate_query_robustness(
     progress: Progress | None = None,
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
+    language_variants: Mapping[tuple[str, str], str] | None = None,
 ) -> RobustnessResult:
     """Run every noisy class under every mitigation lane; clean rows stay external baseline rows."""
     classes = resolve_variant_classes(variant_classes)
@@ -205,10 +218,10 @@ def evaluate_query_robustness(
     if missing:
         raise ValueError(f"clean baseline is missing item ids: {missing[:3]}")
     all_rows: list[dict[str, Any]] = []
-    total = len(items) * len(classes) * len(MITIGATION_LANES)
+    total = len(items) * sum(len(mitigation_lanes_for_class(name)) for name in classes)
     completed = 0
     for variant_class in classes:
-        for lane in MITIGATION_LANES:
+        for lane in mitigation_lanes_for_class(variant_class):
             lane_rows = _evaluate_lane(
                 items,
                 variant_class,
@@ -217,6 +230,7 @@ def evaluate_query_robustness(
                 execute,
                 seed=seed,
                 typo_rate=typo_rate,
+                language_variants=language_variants,
                 progress=progress,
                 completed=completed,
                 total=total,

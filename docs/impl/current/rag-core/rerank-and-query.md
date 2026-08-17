@@ -265,6 +265,22 @@ noise classes are one mechanism each (`transliteration`, `apostrophe_variant`, `
 `keyboard_typos`), so what a mitigation lane recovers is attributable to the noise it inverts rather
 than blended across two mechanisms at once.
 
+### Cross-language query processing evidence
+
+The same benchmark now measures Russian and UA/RU code-switched questions against unchanged
+Ukrainian corpus evidence. The committed overlay, strict unchanged-gold loader, per-language
+recall/MRR/objective report, and CUDA result are documented in
+[evaluation rigor](../rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane).
+`normalize` remains a character repair mechanism; it is not a language translator. The
+`translate_to_uk` robustness lane is an exact fixture-pair retrieval upper bound and is deliberately
+absent from `QUERY_PREP_STEPS`, so it cannot silently become a production query transformation.
+
+The measured result does not support adding translation to the shipped query path. Raw Russian
+retrieval already matches the Ukrainian baseline, and exact Ukrainian retrieval does not remove the
+answer-quality loss. Mixed-query translation restores a small retrieval loss but makes objective
+worse than raw mixed. Query-language mitigation therefore remains off by default; the next useful
+work is answer-language behavior, not a retrieval translator.
+
 Durable evidence (2026-07-09, `intfloat/multilingual-e5-base`, flat FAISS over
 `samples/goldsets/ip_regulation_uk/corpus`, k=5):
 

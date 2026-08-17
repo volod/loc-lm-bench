@@ -36,7 +36,7 @@ analyze-verbosity: ## Compare fixed-item RAG bundles under F1, recall, found-rat
 		$(foreach dir,$(RUN_DIRS),--run-dir "$(dir)") \
 		$(if $(VERBOSITY_OUT),--out-dir "$(VERBOSITY_OUT)",)
 
-bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / normalize,typos lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT= QUERY_ROBUSTNESS_CLASSES=)
+bench-query-robustness: ## Noisy/language queries vs clean RAG and mitigation lanes (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT= QUERY_ROBUSTNESS_LIMIT= QUERY_ROBUSTNESS_CLASSES= LANGUAGE_FIXTURE=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-query-robustness --model "$(MODEL)" --backend "$(BACKEND)" \
@@ -44,6 +44,7 @@ bench-query-robustness: ## Noisy UA queries vs clean RAG, off / normalize / norm
 		--top-k $(RAG_K) --typo-rate $(QUERY_ROBUSTNESS_TYPO_RATE) \
 		--max-tokens $(QUERY_ROBUSTNESS_MAX_TOKENS) \
 		$(if $(QUERY_ROBUSTNESS_CLASSES),--variant-classes "$(QUERY_ROBUSTNESS_CLASSES)",) \
+		$(if $(LANGUAGE_FIXTURE),--language-fixture "$(LANGUAGE_FIXTURE)",) \
 		$(if $(QUERY_ROBUSTNESS_LIMIT),--limit $(QUERY_ROBUSTNESS_LIMIT),)
 
 probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= PROBE_K= SPLIT= LIMIT=)

@@ -11,10 +11,21 @@ from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import (
     MITIGATION_LANES,
+    LANE_TRANSLATE,
     MitigationLane,
     QueryExecutor,
     RobustnessResult,
     evaluate_query_robustness,
+    mitigation_lanes_for_class,
+)
+from llb.eval.query_robustness_languages import (
+    FixtureTranslationPrep,
+    LANGUAGE_VARIANT_CLASSES,
+    fixture_translation_queries,
+    infer_language_fixture,
+    language_fixture_status,
+    load_language_variants,
+    select_ukrainian_baseline,
 )
 from llb.eval.query_robustness_report import write_robustness_artifacts
 from llb.eval.query_robustness_variants import resolve_variant_classes
@@ -36,14 +47,27 @@ class QueryRobustnessRun:
     paths: Mapping[str, str]
 
 
-def make_query_executor(config: RunConfig, store: Any, launcher: Any) -> QueryExecutor:
+def make_query_executor(
+    config: RunConfig,
+    store: Any,
+    launcher: Any,
+    translation_queries: Mapping[str, str] | None = None,
+    lanes: Sequence[MitigationLane] | None = None,
+) -> QueryExecutor:
     """Build one graph lane per mitigation configuration over one injected store/endpoint pair."""
     options = _score_options(config)
 
     def build(lane: MitigationLane) -> Any:
-        lane_config = config.with_overrides(
-            query_prep=list(lane.steps), query_prep_typo_guard=lane.typo_guard
-        )
+        query_prep: Any | None
+        if lane == LANE_TRANSLATE:
+            if translation_queries is None:
+                raise ValueError("translation lane requires a paired language fixture")
+            query_prep = FixtureTranslationPrep(translation_queries)
+        else:
+            lane_config = config.with_overrides(
+                query_prep=list(lane.steps), query_prep_typo_guard=lane.typo_guard
+            )
+            query_prep = build_query_prep(lane_config, store, launcher) if lane.steps else None
         return eval_graph.build_rag_graph(
             store,
             launcher,
@@ -52,11 +76,14 @@ def make_query_executor(config: RunConfig, store: Any, launcher: Any) -> QueryEx
             config.temperature,
             config.request_timeout_s,
             context_order=config.context_order,
-            query_prep=build_query_prep(lane_config, store, launcher) if lane.steps else None,
+            query_prep=query_prep,
             cited=config.cited_answers,
         )
 
-    apps = {lane.id: build(lane) for lane in MITIGATION_LANES}
+    selected_lanes = lanes or (
+        MITIGATION_LANES + ((LANE_TRANSLATE,) if translation_queries is not None else ())
+    )
+    apps = {lane.id: build(lane) for lane in selected_lanes}
 
     def execute(item: GoldItem, question: str, lane: MitigationLane) -> Mapping[str, Any]:
         state = eval_graph.run_case(apps[lane.id], question, spans_as_dicts(item))
@@ -88,6 +115,7 @@ def run_query_robustness(
     variant_classes: Sequence[str] | None = None,
     progress: Callable[[str], None] | None = None,
     emit_clean: bool = True,
+    language_fixture: Path | None = None,
 ) -> QueryRobustnessRun:
     """Persist an ordinary clean run, then the isolated noisy probe bundle."""
     if not 0 < typo_rate <= 1:
@@ -97,6 +125,22 @@ def run_query_robustness(
     items = _select_eval_items(baseline_config, None, split, limit)
     if not items:
         raise SystemExit(f"no verified '{split}' items in {baseline_config.goldset_path}")
+    language_classes = tuple(name for name in classes if name in LANGUAGE_VARIANT_CLASSES)
+    excluded_language_baseline_ids: list[str] = []
+    if language_classes:
+        items, excluded_language_baseline_ids = select_ukrainian_baseline(items)
+        if not items:
+            raise SystemExit("no Ukrainian-dominant baseline questions for the query-language lane")
+    fixture_path = language_fixture or infer_language_fixture(baseline_config.goldset_path)
+    language_variants = (
+        load_language_variants(fixture_path, items, language_classes) if language_classes else {}
+    )
+    translation_queries = fixture_translation_queries(language_variants, items) or None
+    lanes = tuple(
+        dict.fromkeys(
+            lane for variant_class in classes for lane in mitigation_lanes_for_class(variant_class)
+        )
+    )
     clean = run_eval(
         baseline_config,
         items=items,
@@ -109,7 +153,9 @@ def run_query_robustness(
     store = _load_store(baseline_config)
     launcher = _make_launcher(baseline_config)
     with launcher as backend:
-        execute = make_query_executor(baseline_config, store, backend)
+        execute = make_query_executor(
+            baseline_config, store, backend, translation_queries, lanes=lanes
+        )
         result = evaluate_query_robustness(
             items,
             clean_rows,
@@ -118,6 +164,7 @@ def run_query_robustness(
             typo_rate=typo_rate,
             variant_classes=classes,
             progress=progress,
+            language_variants=language_variants,
         )
 
     _, stamp = new_run_timestamp()
@@ -130,6 +177,11 @@ def run_query_robustness(
         "typo_rate": typo_rate,
         "variant_classes": list(classes),
         "clean_run_dir": clean_run_dir,
+        "language_fixture": str(fixture_path) if language_classes else None,
+        "language_fixture_status": (
+            language_fixture_status(fixture_path) if language_classes else None
+        ),
+        "language_baseline_excluded_ids": excluded_language_baseline_ids,
     }
     paths = write_robustness_artifacts(result, out_dir, metadata)
     return QueryRobustnessRun(result, clean_run_dir, out_dir, paths)

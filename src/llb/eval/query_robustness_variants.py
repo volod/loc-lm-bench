@@ -5,6 +5,7 @@ import math
 import random
 from collections.abc import Sequence
 
+from llb.eval.query_robustness_languages import LANGUAGE_VARIANT_CLASSES
 from llb.rag.query_prep.normalize import cyrillic_to_latin
 from llb.scoring.security_cases import CYRILLIC_TO_LATIN_CONFUSABLES
 
@@ -20,7 +21,7 @@ KEYBOARD_TYPOS = "keyboard_typos"
 # whenever the homoglyph half dominates.
 VARIANT_CLASSES = (TRANSLITERATION, APOSTROPHE_VARIANT, MIXED_SCRIPT, KEYBOARD_TYPOS)
 COMBINED_VARIANT_CLASSES = (APOSTROPHE_MIXED_SCRIPT,)
-ALL_VARIANT_CLASSES = VARIANT_CLASSES + COMBINED_VARIANT_CLASSES
+ALL_VARIANT_CLASSES = VARIANT_CLASSES + COMBINED_VARIANT_CLASSES + LANGUAGE_VARIANT_CLASSES
 
 APOSTROPHE_NOISE = ("`", "‘", "’", "ʼ")
 _APOSTROPHES = frozenset(("'", *APOSTROPHE_NOISE))
@@ -109,6 +110,7 @@ def generate_variant(
     item_id: str,
     seed: int,
     typo_rate: float,
+    language_variants: dict[tuple[str, str], str] | None = None,
 ) -> str:
     """Generate one stable noisy query for an item and noise class.
 
@@ -118,6 +120,10 @@ def generate_variant(
     """
     if not 0 <= typo_rate <= 1:
         raise ValueError("typo_rate must be between 0 and 1")
+    if variant_class in LANGUAGE_VARIANT_CLASSES:
+        if language_variants is None or (item_id, variant_class) not in language_variants:
+            raise ValueError(f"missing committed {variant_class} question for item {item_id!r}")
+        return language_variants[(item_id, variant_class)]
     if variant_class == TRANSLITERATION:
         return cyrillic_to_latin(question)
     if variant_class == KEYBOARD_TYPOS:
