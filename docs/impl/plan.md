@@ -78,35 +78,29 @@ Take the first task of the earliest group that still has one; see
 
 #### multihop-query-decomposition-conversion
 
-The per-hop probe names a second, smaller population the budget cannot reach: 8 of 35 two-hop items
-whose missing hop is absent from the pool at ANY depth under the question, while the same span's own
-text ranks it at 10 or better
-([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)).
-That is exactly the shape decomposition is supposed to fix, and the repo already ships a
-`decompose` query-prep step whose recorded A/B moved retrieval by +0.013
-([RAG core](current/rag-core/rerank-and-query.md#hyde-and-decomposition-evidence)) -- measured on a
-whole gold set, never on this population. Re-run the probe with `query_prep=decompose` on the
-multi-hop slice and report how many of those 8 items it converts, and whether it costs the 19
-budget-limited items anything. If the existing step converts few of them, the probe's per-hop ranks
-are the input to deciding what a hop-targeted decomposition would have to do differently.
+The exact 95-item ledger that defines the original 8 query and 19 budget cohorts is absent from the
+host; the paired lane and the non-identical fresh replay are described in
+[GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#query-decomposition-conversion-evidence).
+Recover that ledger from an archival copy, or recreate it byte-for-byte from its provenance, then
+run the paired `decompose` probe against its 35-item multi-hop slice so conversion is attributable
+to the original cohorts.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `probe-multihop-hops`
-  ([GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane)) and the
-  `decompose` step in
-  [RAG core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing); the
-  probe currently ranks the raw question, so the step has to be wired into its retrieval call.
-- User-visible outcome: the operator learns whether turning decomposition on recovers the hops a
-  bigger budget cannot, with the item count it recovers rather than a whole-set average.
-- Scope boundary: in scope -- driving the probe through the existing query-prep pipeline, the
-  per-diagnosis conversion counts, and the recorded reading. Out of scope -- a new decomposition
-  prompt or strategy, and changing the shipped `query_prep` default.
+- Agent status: BLOCKED BY MISSING ARTIFACT
+- Dependencies: an archival copy of the original `goods-draft/goldset.jsonl` and its question-type
+  sidecar, or a byte-identical recreation that first reproduces 95 total items, 35 multi-hop items,
+  the 1,099-chunk store, and the raw 2/19/8/6 diagnosis split.
+- User-visible outcome: the operator learns how many of the ORIGINAL query-diagnosed items generic
+  decomposition recovers and what it costs the original budget-diagnosed cohort.
+- Scope boundary: in scope -- artifact recovery, the raw identity gate, the paired run, and its
+  reading. Out of scope -- substituting a newly drafted cohort, a new decomposition prompt or
+  strategy, and changing the shipped `query_prep` default.
 - Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make probe-multihop-hops` with the query-prep step enabled, against a local
-  model on the CUDA host; CI covers the wiring with a fake generator and fake lane stores.
-- Acceptance gates: `make ci` green; the report states how many `query`-diagnosed items the step
-  converts and what it costs the other diagnoses.
+- Execution path: restore the bundle, rebuild its matched store, run the raw identity probe, then
+  run `make probe-multihop-hops QUERY_PREP=decompose` against the local CUDA model.
+- Acceptance gates: the raw probe reproduces the recorded slice before the paired result is read;
+  `make ci` is green; the report states conversion for the 8 original query items and cost to the
+  19 original budget items.
 - Documentation target: the retrieval budget and per-hop evidence page of
   [GraphRAG](current/graphrag-backend.md).
 

@@ -74,9 +74,11 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
 `src/llb/rag/multihop_probe/`
 : The per-hop retrievability probe that diagnoses a stuck `all-spans@k` (see
   [retrieval budget evidence](retrieval-budget-evidence.md#the-per-hop-probe-lane)). `probe.py`
-  ranks each labeled span by the item's question and by its own text and builds the per-budget
-  coverage curve, `diagnose.py` turns those ranks into a per-item budget/query/unreachable
-  classification and the slice explanation, and `report.py` renders the Markdown artifact.
+  ranks each labeled span by the item's question and by its own text, `aggregate.py` builds the
+  per-budget slice curves, and `diagnose.py` turns ranks into the per-item
+  budget/query/unreachable classification. `prepared.py` reuses one query-prep result across every
+  depth, `conversion.py` pairs outcomes by raw diagnosis, and `report.py` plus
+  `conversion_report.py` render the raw and paired ASCII artifacts.
 
 `src/llb/rag/fusion_calibration/`
 : The held-out sidecar-free router calibration. It parses the deterministic threshold grid,
@@ -127,6 +129,7 @@ llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --budgets 10,50
 llb probe-multihop-hops --budgets 10,25,50 --retrieval-backend faiss --out-dir <dir>
+llb probe-multihop-hops --query-prep decompose --query-prep-model <model> --out-dir <dir>
 ```
 
 `RunConfig` carries `retrieval_backend`, `retrieval_strategy`, `graph_khop_depth`, `graph_weight`

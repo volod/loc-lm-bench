@@ -38,16 +38,30 @@ report says which of the two each table is.
 ```bash
 make probe-multihop-hops CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> SPLIT= \
   HOP_PROBE_BACKEND=faiss HOP_PROBE_BUDGETS=10,25,50 HOP_PROBE_DEPTH=200
+make probe-multihop-hops CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> SPLIT= \
+  HOP_PROBE_BACKEND=faiss HOP_PROBE_BUDGETS=10,25,50 HOP_PROBE_DEPTH=200 \
+  QUERY_PREP=decompose QUERY_PREP_MODEL=<local-model> QUERY_PREP_BACKEND=ollama
 llb probe-multihop-hops --config <cfg> --budgets 10,25,50 --probe-depth 200 \
   --retrieval-backend faiss --focus-slice multi-hop --out-dir <dir>
 ```
 
 `HOP_PROBE_BACKEND` / `HOP_PROBE_STRATEGY` probe a different lane than the config names, so the
-vector baseline and a fused row are measured through one command. Artifacts are `probe.json`,
-`report.md`, and `run_config.json`. The code is `src/llb/rag/multihop_probe/` (`probe.py` retrieves,
-`diagnose.py` classifies, `report.py` renders) behind `src/llb/cli/rag/multihop_probe.py`; the
-whole lane runs on the `.retrieve(question, k)` seam, so
-`tests/llb/rag/test_multihop_hop_probe.py` drives it with fake stores.
+vector baseline and a fused row are measured through one command. `QUERY_PREP` adds a paired raw
+and prepared lane. Only focus-slice items are sent to the model, one generated plan is reused at
+every compared budget and the deep pass, and span-text controls remain raw. The paired report
+counts conversion and regression by the RAW diagnosis cohort, which prevents an item from changing
+the population whose cost it contributes to.
+
+Artifacts are `probe.json`, `report.md`, and `run_config.json`; full generated decomposition text
+and subqueries stay in JSON while the Markdown ledger records their count. The code is
+`src/llb/rag/multihop_probe/`: `probe.py` retrieves, `aggregate.py` builds slice reports,
+`prepared.py` drives the reusable query plan, `diagnose.py` classifies, `conversion.py` pairs the
+cohorts, and the two report modules render ASCII Markdown. The CLI shares model-endpoint resolution
+with `validate-retrieval` through `src/llb/cli/rag/query_prep_endpoint.py`. Fake stores and a fake
+generator cover the lane in `tests/llb/rag/test_multihop_query_prep_probe.py` and
+`tests/llb/rag/test_multihop_query_prep_cli.py`. Both raw and paired commands now fail before
+loading a store when the requested focus slice is empty, rather than reporting zero failures as
+full coverage.
 
 ## Is the both-hops ceiling a budget or a query problem?
 
@@ -130,6 +144,47 @@ drafted:
   own-text rank 20 and the fifth sits at 53, past the operating budget even under the ideal query.
 - **`recall@k` never saw any of this.** At k=10 the same slice reports recall 0.686 -- the flat
   metric is satisfied by one hop of two.
+
+## Query decomposition conversion evidence
+
+CUDA-host evidence from 2026-08-17 is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260817T-query-decomposition-conversion/`. The matched
+recursive/hybrid E5-base store reproduces the corpus-side build exactly: 1,139 chunks before
+duplicate collapse and 1,099 indexed chunks after it. The paired run uses the existing
+`decompose` step, MamayLM-Gemma-3-12B-IT-v2.0 GGUF on Ollama at a 4,096-token context, k=10/25/50,
+and depth 200. It generates one bounded plan for each of 34 focus items and reuses that plan for
+all four retrieval calls.
+
+The original 95-item runtime ledger was no longer on the host. A provenance-matched replay used
+the same five documents, July implementation, 12B model, seed 13, 16,384-token drafting context,
+and deterministic settings, but failed the identity gate: extraction produced 274 entities and
+238 facts, then retained 79 items (34 multi-hop), instead of the recorded 255/242 and 95/35. The
+legacy bundle omitted its per-item type sidecar, so the replay artifact carries a derived
+`item_provenance.jsonl` that labels only its 34 structurally named `-mhop-` rows; it does not alter
+questions or spans. The raw replay therefore measures a NEW cohort and is not substituted for the
+historical eight query-diagnosed items.
+
+The fresh raw cohort diagnoses 2 covered, 25 budget, 6 query, and 1 unreachable item. The existing
+decomposition converts NONE of the 6 query-diagnosed items to all-spans at k=10. It makes one of
+the six fully reachable in the depth-200 pass, but that item remains below the operating cutoff.
+Its cost to the 25 raw budget-diagnosed items is two covered-span-share regressions; two improve
+and 21 tie, while three lose full reachability by depth 200. It also loses one operating-budget
+success from the raw covered cohort.
+
+| fresh multi-hop slice (n=34) | k=10 | k=25 | k=50 |
+| --- | ---: | ---: | ---: |
+| raw `all-spans@k` | 0.059 | 0.206 | 0.206 |
+| `decompose` `all-spans@k` | 0.029 | 0.235 | 0.294 |
+| raw span coverage | 0.441 | 0.544 | 0.559 |
+| `decompose` span coverage | 0.426 | 0.559 | 0.603 |
+
+The negative result is cutoff-specific and actionable: generic decomposition improves deeper
+coverage, but does not recover the diagnosed k=10 population and introduces operating-budget
+regressions. It does not license enabling the step by default. No prompt, retrieval strategy, or
+shipped `query_prep` default changed. `raw-replay/` carries the raw gate; `decompose-replay/`
+carries the paired JSON, Markdown, and endpoint fingerprint; `replayed-goods-draft/` and
+`store-data/` retain the rejected draft replay and matched store. Attribution to the original
+8 query and 19 budget items remains an exact-ledger replay requirement.
 
 ### What the k=50 coverage is actually made of
 

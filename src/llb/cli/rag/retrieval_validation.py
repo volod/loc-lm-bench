@@ -9,8 +9,11 @@ from typing import Any
 import typer
 
 from llb.cli.helpers import load_config
+from llb.cli.rag.query_prep_endpoint import (
+    parse_query_prep_steps,
+    resolve_query_prep_endpoint,
+)
 
-MODEL_QUERY_PREP_STEPS = frozenset({"rewrite", "hyde", "decompose"})
 RETRIEVAL_RECALL_GATE = 0.8
 
 
@@ -33,10 +36,6 @@ class RetrievalValidationRequest:
     query_prep_model: str | None
     query_prep_backend: str | None
     out: Path | None
-
-
-def _parse_query_prep_steps(value: str | None) -> list[str]:
-    return [step.strip() for step in value.split(",") if step.strip()] if value else []
 
 
 def _load_validation_inputs(
@@ -67,21 +66,16 @@ def _load_validation_inputs(
 def _model_endpoint(
     cfg: Any, request: RetrievalValidationRequest, steps: list[str]
 ) -> tuple[Any, Any, dict[str, str] | None]:
-    from llb.executor.runner_backend import _make_launcher
-
-    model_steps = MODEL_QUERY_PREP_STEPS.intersection(steps)
-    if model_steps and request.query_prep_model is None:
-        typer.echo("[error] model-backed query prep needs --query-prep-model", err=True)
+    try:
+        return resolve_query_prep_endpoint(
+            cfg,
+            steps,
+            model=request.query_prep_model,
+            backend=request.query_prep_backend,
+        )
+    except ValueError as exc:
+        typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2)
-    endpoint_cfg = cfg.with_overrides(
-        model=request.query_prep_model,
-        backend=request.query_prep_backend or ("ollama" if request.query_prep_model else None),
-    )
-    launcher = _make_launcher(endpoint_cfg) if model_steps else None
-    endpoint = (
-        {"model": endpoint_cfg.model, "backend": endpoint_cfg.backend} if model_steps else None
-    )
-    return endpoint_cfg, launcher, endpoint
 
 
 def _score_retrieval(
@@ -112,7 +106,7 @@ def run_retrieval_validation(request: RetrievalValidationRequest) -> None:
     from llb.executor.runner_retrieval import build_query_prep
     from llb.rag.query_prep.pipeline import QueryPrep
 
-    steps = _parse_query_prep_steps(request.query_prep)
+    steps = parse_query_prep_steps(request.query_prep)
     cfg, store, ab_items = _load_validation_inputs(request, steps)
     endpoint_cfg, launcher, endpoint = _model_endpoint(cfg, request, steps)
     launcher_context = launcher if launcher is not None else nullcontext(None)

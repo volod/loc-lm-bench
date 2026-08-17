@@ -6,8 +6,9 @@ by the item's own question at a deep pool, once by the span's own text -- and re
 `all-spans@k` curve over a budget grid against those ranks. The outcome is a named explanation
 (budget, query, or unreachable), because the two lead to opposite fixes.
 
-Entry point: `probe_multihop_hops` (pure, fake-store testable); `format_probe_report` renders the
-Markdown artifact.
+Entry points: `probe_multihop_hops` diagnoses raw retrieval;
+`compare_multihop_query_prep` pairs that diagnosis with one prepared plan per focus item and
+counts conversions by the raw cohort. Both paths are pure and fake-store testable.
 """
 
 from llb.rag.multihop_probe.models import (
@@ -24,8 +25,11 @@ from llb.rag.multihop_probe.models import (
     EXPLANATION_UNREACHABLE,
     EvidenceItem,
     MultiHopProbeReport,
+    MultiHopQueryPrepReport,
     parse_budgets,
 )
+from llb.rag.multihop_probe.conversion_report import format_query_prep_probe_report
+from llb.rag.multihop_probe.prepared import compare_multihop_query_prep
 from llb.rag.multihop_probe.probe import probe_multihop_hops
 from llb.rag.multihop_probe.report import format_probe_report
 
@@ -43,7 +47,10 @@ __all__ = [
     "EXPLANATION_UNREACHABLE",
     "EvidenceItem",
     "MultiHopProbeReport",
+    "MultiHopQueryPrepReport",
+    "compare_multihop_query_prep",
     "format_probe_report",
+    "format_query_prep_probe_report",
     "parse_budgets",
     "probe_multihop_hops",
 ]

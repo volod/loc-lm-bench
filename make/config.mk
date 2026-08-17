@@ -215,6 +215,10 @@ HOP_PROBE_DEPTH ?=
 HOP_PROBE_BACKEND ?=
 HOP_PROBE_STRATEGY ?=
 HOP_PROBE_OUT_DIR ?=
+# Query-prep inputs are shared by validate-retrieval and the paired per-hop probe.
+QUERY_PREP ?=
+QUERY_PREP_MODEL ?=
+QUERY_PREP_BACKEND ?=
 # Sidecar-free fusion-router calibration: tune these policy grids on the named tuning split, then
 # evaluate only the frozen policy on the held-out final split.
 ROUTING_LONG_WORD_GRID ?= 10,12,14,16,18,20

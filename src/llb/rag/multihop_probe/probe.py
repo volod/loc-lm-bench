@@ -10,26 +10,22 @@ from collections.abc import Callable, Sequence
 
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.fusion_evidence.models import FOCUS_SLICE
-from llb.rag.fusion_evidence.slices import slice_indexes
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
-    bootstrap_index_sets,
-    bootstrap_interval,
 )
-from llb.rag.multihop_probe.diagnose import diagnose_item, item_min_budget, slice_diagnosis
+from llb.rag.multihop_probe.aggregate import assemble_probe_report
+from llb.rag.multihop_probe.diagnose import diagnose_item, item_min_budget
 from llb.rag.multihop_probe.models import (
     DEFAULT_BUDGETS,
     DEFAULT_PROBE_DEPTH,
-    BudgetReport,
     EvidenceItem,
     HopOutcome,
     ItemBudgetOutcome,
     ItemProbe,
     MultiHopProbeReport,
     Retriever,
-    SliceProbe,
     SourceSpanRecord,
 )
 from llb.rag.retrieval import (
@@ -40,11 +36,23 @@ from llb.rag.retrieval import (
 )
 
 
+QuestionRetrieve = Callable[[int], list[ChunkRecord]]
+
+
+def _raw_question_retriever(store: Retriever, question: str) -> QuestionRetrieve:
+    def retrieve(k: int) -> list[ChunkRecord]:
+        return store.retrieve(question, k)
+
+    return retrieve
+
+
 def _hop(
-    store: Retriever, span: SourceSpanRecord, index: int, deep: list[ChunkRecord], depth: int
+    span: SourceSpanRecord,
+    index: int,
+    deep: list[ChunkRecord],
+    span_query_rank: int | None,
 ) -> HopOutcome:
-    """One labeled span ranked by the item's question and, as a control, by its own text."""
-    own = store.retrieve(span["text"], depth)
+    """One labeled span ranked by the item query plan and by its raw-text control."""
     return {
         "span_index": index,
         "doc_id": span["doc_id"],
@@ -52,17 +60,24 @@ def _hop(
         "char_end": span["char_end"],
         "n_chars": span["char_end"] - span["char_start"],
         "question_rank": first_hit_rank(deep, [span]),
-        "span_query_rank": first_hit_rank(own, [span]),
+        "span_query_rank": span_query_rank,
     }
 
 
+def _span_query_ranks(
+    store: Retriever, spans: Sequence[SourceSpanRecord], depth: int
+) -> list[int | None]:
+    """Raw span-text controls; query prep must never transform these favorable control queries."""
+    return [first_hit_rank(store.retrieve(span["text"], depth), [span]) for span in spans]
+
+
 def _item_budgets(
-    store: Retriever, item: EvidenceItem, budgets: Sequence[int]
+    item: EvidenceItem, budgets: Sequence[int], retrieve_question: QuestionRetrieve
 ) -> list[ItemBudgetOutcome]:
     """The item's coverage curve, retrieved once per budget so each point is what k really buys."""
     outcomes: list[ItemBudgetOutcome] = []
     for k in budgets:
-        hits = store.retrieve(item.question, k)
+        hits = retrieve_question(k)
         coverage = span_coverage_at_k(hits, item.spans, k)
         outcomes.append(
             {
@@ -77,86 +92,41 @@ def _item_budgets(
 
 
 def _probe_item(
-    store: Retriever, item: EvidenceItem, budgets: Sequence[int], depth: int
+    item: EvidenceItem,
+    budgets: Sequence[int],
+    depth: int,
+    retrieve_question: QuestionRetrieve,
+    span_query_ranks: Sequence[int | None],
+    *,
+    query_prep: dict[str, object] | None = None,
 ) -> ItemProbe:
-    deep = store.retrieve(item.question, depth)
-    hops = [_hop(store, span, index, deep, depth) for index, span in enumerate(item.spans)]
+    deep = retrieve_question(depth)
+    hops = [
+        _hop(span, index, deep, span_query_ranks[index]) for index, span in enumerate(item.spans)
+    ]
     ranks = [hop["question_rank"] for hop in hops]
     limiting = None if any(rank is None for rank in ranks) else max(rank or 0 for rank in ranks)
-    return {
+    probe: ItemProbe = {
         "item_id": item.item_id,
         "question": item.question,
         "question_type": item.question_type,
         "n_spans": len(item.spans),
         "hops": hops,
-        "budgets": _item_budgets(store, item, budgets),
+        "budgets": _item_budgets(item, budgets, retrieve_question),
         "limiting_rank": limiting,
         "min_budget": item_min_budget(limiting, budgets, depth),
         "diagnosis": diagnose_item(hops, budgets[0]),
     }
+    if query_prep is not None:
+        probe["query_prep"] = query_prep
+    return probe
 
 
-def _question_rank(hop: HopOutcome) -> int | None:
-    return hop["question_rank"]
-
-
-def _span_query_rank(hop: HopOutcome) -> int | None:
-    return hop["span_query_rank"]
-
-
-def _hop_hit_rate(
-    probes: Sequence[ItemProbe], k: int, rank_of: Callable[[HopOutcome], int | None]
-) -> float:
-    """Share of LABELED SPANS (not items) whose rank under one query form is within k."""
-    ranks = [rank_of(hop) for probe in probes for hop in probe["hops"]]
-    if not ranks:
-        return 0.0
-    return sum(1 for rank in ranks if rank is not None and rank <= k) / len(ranks)
-
-
-def _mean(values: list[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def _budget_report(
-    probes: Sequence[ItemProbe],
-    position: int,
-    index_sets: list[list[int]],
-    confidence: float,
-) -> BudgetReport:
-    """One budget's aggregate over one slice; the curve carries the interval, the rest are means."""
-    outcomes = [probe["budgets"][position] for probe in probes]
-    k = outcomes[0]["k"] if outcomes else 0
-    all_spans = [outcome["all_spans_at_k"] for outcome in outcomes]
-    return {
-        "k": k,
-        "n": len(probes),
-        "all_spans_at_k": bootstrap_interval(all_spans, index_sets, confidence),
-        "span_coverage": _mean([outcome["span_coverage"] for outcome in outcomes]),
-        "recall_at_k": _mean([outcome["recall_at_k"] for outcome in outcomes]),
-        "hop_hit_rate": _hop_hit_rate(probes, k, _question_rank),
-        "span_query_hop_hit_rate": _hop_hit_rate(probes, k, _span_query_rank),
-    }
-
-
-def _slice_probe(
-    probes: Sequence[ItemProbe],
-    budgets: Sequence[int],
-    depth: int,
-    resamples: int,
-    confidence: float,
-    seed: int,
-) -> SliceProbe:
-    index_sets = bootstrap_index_sets(len(probes), resamples, seed)
-    return {
-        "n": len(probes),
-        "n_hops": sum(probe["n_spans"] for probe in probes),
-        "curve": [
-            _budget_report(probes, position, index_sets, confidence)
-            for position in range(len(budgets))
-        ],
-        "diagnosis": slice_diagnosis(probes, budgets, depth),
-    }
+def _ordered_budgets(budgets: Sequence[int]) -> tuple[int, ...]:
+    ordered = tuple(sorted(dict.fromkeys(int(k) for k in budgets)))
+    if not ordered:
+        raise ValueError("at least one retrieval budget is required")
+    return ordered
 
 
 def probe_multihop_hops(
@@ -177,32 +147,30 @@ def probe_multihop_hops(
     budget the diagnosis is stated against). `probe_depth` is how deep a hop is searched for
     before the question counts as unable to reach it -- always at least the largest budget.
     """
-    ordered = tuple(sorted(dict.fromkeys(int(k) for k in budgets)))
-    if not ordered:
-        raise ValueError("at least one retrieval budget is required")
+    ordered = _ordered_budgets(budgets)
     depth = max(probe_depth, ordered[-1])
-    probes = [_probe_item(store, item, ordered, depth) for item in items]
-    grouped = slice_indexes([item.question_type for item in items], focus_slice)
-    return {
-        "lane": lane,
-        "focus_slice": focus_slice,
-        "budgets": list(ordered),
-        "probe_depth": depth,
-        "confidence": confidence,
-        "resamples": resamples,
-        "seed": seed,
-        "n_items": len(probes),
-        "overall": _slice_probe(probes, ordered, depth, resamples, confidence, seed),
-        "slices": {
-            name: _slice_probe(
-                [probes[position] for position in positions],
+    if not any(item.question_type == focus_slice for item in items):
+        raise ValueError(f"probe focus slice is empty: {focus_slice}")
+    probes = []
+    for item in items:
+        retrieve_question = _raw_question_retriever(store, item.question)
+        probes.append(
+            _probe_item(
+                item,
                 ordered,
                 depth,
-                resamples,
-                confidence,
-                seed,
+                retrieve_question,
+                _span_query_ranks(store, item.spans, depth),
             )
-            for name, positions in grouped.items()
-        },
-        "items": [probe for probe in probes if probe["question_type"] == focus_slice],
-    }
+        )
+    return assemble_probe_report(
+        probes,
+        items,
+        budgets=ordered,
+        depth=depth,
+        focus_slice=focus_slice,
+        lane=lane,
+        resamples=resamples,
+        confidence=confidence,
+        seed=seed,
+    )
