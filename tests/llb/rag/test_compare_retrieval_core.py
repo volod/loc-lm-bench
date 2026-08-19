@@ -11,6 +11,7 @@ from llb.rag.compare_rows import (
     duplicate_census,
     format_comparison,
 )
+from llb.rag.duplicates import KEPT_BY_REQUEST, KEPT_BY_STRATEGY
 
 
 from _compare_retrieval_helpers import (
@@ -91,13 +92,82 @@ def test_duplicate_census_reads_only_stores_with_build_meta():
         "faiss": _MetaStore([_chunk("d1", 0, 10)], stats),
         "graph/local_khop": _FakeStore([_chunk("d1", 0, 10)]),  # no meta -> no census row
     }
-    census = duplicate_census(stores)
+    census, kept = duplicate_census(stores)
     assert set(census) == {"faiss"}
+    assert kept == {}  # it collapsed, so there is no reason to report
     report = compare_retrieval(stores, _items(), k=5)
     report["duplicates"] = census
     rendered = format_comparison(report)
     assert "1 intra-document, 0 cross-document" in rendered
+    assert "3 indexed (1 collapsed)" in rendered
     assert rendered.isascii()
+
+
+def test_census_says_all_copies_are_indexed_when_the_store_kept_them():
+    """A `late` store -- or `--keep-duplicate-chunks` -- MEASURES its repeats and indexes them all."""
+    stats = {
+        "n": 4,
+        "unique": 3,
+        "collapsed": 1,
+        "duplicate_chunks": 2,
+        "duplicate_share": 0.5,
+        "groups": 1,
+        "largest_group": 2,
+        "intra_document_groups": 1,
+        "cross_document_groups": 0,
+    }
+    stores = {
+        "late": _MetaStore([_chunk("d1", 0, 10)], stats, collapse_duplicates=False, strategy="late")
+    }
+    census, kept = duplicate_census(stores)
+    assert kept == {"late": KEPT_BY_STRATEGY}
+    report = compare_retrieval(stores, _items(), k=5)
+    report["duplicates"] = census
+    report["duplicates_kept"] = kept
+    rendered = format_comparison(report)
+    assert f"all 4 indexed ({KEPT_BY_STRATEGY})" in rendered
+    assert "3 indexed (1 collapsed)" not in rendered
+    assert rendered.isascii()
+
+
+def test_census_separates_an_operator_request_from_the_strategy_rule():
+    """`--keep-duplicate-chunks` on a text-only strategy reads as the request it was."""
+    stats = {
+        "n": 4,
+        "unique": 3,
+        "collapsed": 1,
+        "duplicate_chunks": 2,
+        "duplicate_share": 0.5,
+        "groups": 1,
+        "largest_group": 2,
+        "intra_document_groups": 1,
+        "cross_document_groups": 0,
+    }
+    stores = {
+        "faiss": _MetaStore(
+            [_chunk("d1", 0, 10)], stats, collapse_duplicates=False, strategy="recursive"
+        )
+    }
+    _, kept = duplicate_census(stores)
+    assert kept == {"faiss": KEPT_BY_REQUEST}
+
+
+def test_census_of_an_artifact_recorded_before_the_key_still_reads_as_collapsed():
+    report = compare_retrieval({"faiss": _FakeStore([_chunk("d1", 0, 10)])}, _items(), k=5)
+    report["duplicates"] = {
+        "faiss": {
+            "n": 4,
+            "unique": 3,
+            "collapsed": 1,
+            "duplicate_chunks": 2,
+            "duplicate_share": 0.5,
+            "groups": 1,
+            "largest_group": 2,
+            "intra_document_groups": 1,
+            "cross_document_groups": 0,
+        }
+    }
+    assert "3 indexed (1 collapsed)" in format_comparison(report)
 
 
 def test_compare_reports_question_type_slices_without_retrieving_twice():

@@ -140,10 +140,12 @@ def _diagnostic_lines(report: ComparisonReport, width: int) -> list[str]:
         from llb.rag.noise_floor_report import format_noise_floor
 
         lines.extend(format_noise_floor(floor))
+    kept = report.get("duplicates_kept", {})
     for label, stats in report.get("duplicates", {}).items():
         from llb.rag.duplicates import format_duplicate_stats
 
-        lines.append(f"  {label.ljust(width)}   {format_duplicate_stats(stats)}")
+        line = format_duplicate_stats(stats, kept.get(label))
+        lines.append(f"  {label.ljust(width)}   {line}")
     lines.extend(_slice_lines(report, width))
     return lines
 

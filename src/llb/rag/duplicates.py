@@ -137,8 +137,44 @@ def duplicate_occurrences(chunk: ChunkRecord) -> list[DuplicateOccurrence]:
     return cast(list[DuplicateOccurrence], copies) if isinstance(copies, list) else []
 
 
-def format_duplicate_stats(stats: DuplicateStats, collapsed: bool = True) -> str:
-    """One ASCII line for a build summary (AGENTS.md: ASCII-only)."""
+# Collapse rests on one assumption: a chunk's vector is a pure function of its TEXT, so two
+# byte-identical chunks embed identically and indexing one of them loses nothing. `late` breaks it
+# -- its vectors are mean-pooled from WHOLE-DOCUMENT token embeddings, so the same passage at two
+# document positions carries two DIFFERENT vectors, and dropping one would discard exactly the
+# document context the strategy exists to add. The incremental refresh already refuses text-keyed
+# row reuse for the same reason; `build_store_parts` applies this rule on the build path.
+TEXT_INDEPENDENT_VECTOR_STRATEGIES = ("late",)
+
+# Why a store indexed every copy instead of collapsing. The two cases read differently to an
+# operator: one is a request, the other is a property of the strategy that makes collapse LOSSY.
+KEPT_BY_REQUEST = "--keep-duplicate-chunks; identical text ties exactly, broken by chunk_id"
+KEPT_BY_STRATEGY = "the strategy pools document context, so identical text does NOT tie"
+
+
+def collapse_is_lossless(strategy: str) -> bool:
+    """Whether byte-identical chunks of `strategy` are guaranteed to embed to the same vector."""
+    return strategy not in TEXT_INDEPENDENT_VECTOR_STRATEGIES
+
+
+def kept_duplicates_reason(meta: object, requested: bool = False) -> str | None:
+    """Why a built store indexed every copy, or None when it collapsed them.
+
+    `requested` is the operator's `--keep-duplicate-chunks`; the strategy reason wins because it
+    holds whether or not the flag was passed.
+    """
+    strategy = meta.get("strategy", "") if isinstance(meta, dict) else ""
+    if not collapse_is_lossless(str(strategy)):
+        return KEPT_BY_STRATEGY
+    return KEPT_BY_REQUEST if requested else None
+
+
+def format_duplicate_stats(stats: DuplicateStats, kept_reason: str | None = None) -> str:
+    """One ASCII line for a build summary (AGENTS.md: ASCII-only).
+
+    `kept_reason` is None for a store that COLLAPSED its duplicates, and otherwise the reason it
+    indexed every copy (`KEPT_BY_REQUEST` / `KEPT_BY_STRATEGY`) -- the stats are measured either
+    way, so the line has to say which of the two it is describing.
+    """
     sameness = TIER_SAMENESS.get(stats.get("tier", TIER_EXACT), TIER_SAMENESS[TIER_EXACT])
     measured = (
         f"duplicates: {stats['duplicate_chunks']}/{stats['n']} chunks "
@@ -146,12 +182,9 @@ def format_duplicate_stats(stats: DuplicateStats, collapsed: bool = True) -> str
         f"{stats['groups']} groups{_census_clause(stats)}, "
         f"largest {stats['largest_group']} copies"
     )
-    if collapsed:
+    if kept_reason is None:
         return f"{measured} -> {stats['unique']} indexed ({stats['collapsed']} collapsed)"
-    return (
-        f"{measured} -> all {stats['n']} indexed (--keep-duplicate-chunks; "
-        f"identical text ties exactly, broken by chunk_id)"
-    )
+    return f"{measured} -> all {stats['n']} indexed ({kept_reason})"
 
 
 def _occurrence(chunk: ChunkRecord, survivor_text: str) -> DuplicateOccurrence:

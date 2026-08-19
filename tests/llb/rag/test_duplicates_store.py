@@ -16,7 +16,12 @@ from llb.rag.refresh.store_refresh import refresh_vector_store, stored_vectors
 from llb.rag.retrieval import recall_at_k
 from llb.rag.store import RagStore
 
-from refresh_helpers import CountingEmbedder, retrieval_ids, write_corpus
+from refresh_helpers import (
+    CountingEmbedder,
+    TokenLevelEmbedder,
+    retrieval_ids,
+    write_corpus,
+)
 from test_duplicates import (
     FIXTURE,
     FIXTURE_CHUNKS,
@@ -242,3 +247,67 @@ def test_coarse_tier_refresh_reembeds_the_copy_that_becomes_the_survivor(tmp_pat
         np.asarray(stored_vectors(rebuilt.index)),
     )
     assert retrieval_ids(result.new_store, DUP_QUESTIONS) == retrieval_ids(rebuilt, DUP_QUESTIONS)
+
+
+# `late` spans are the `sentence` packer's, so at size 80 the repeated boilerplate SENTENCE is its
+# own chunk in every document -- the byte-identical repeat the collapse would otherwise merge.
+LATE_BOILERPLATE = "Цей документ підготовлено відповідно до вимог чинного законодавства України."
+V1_LATE_DOCS = {
+    "a.md": f"{LATE_BOILERPLATE}\n\nНасос подає двісті кубічних метрів на годину.\n",
+    "b.md": f"{LATE_BOILERPLATE}\n\nКомпресор дає сім кубічних метрів на хвилину.\n",
+    "c.md": f"{LATE_BOILERPLATE}\n\nВентилятор дає дванадцять тисяч обертів.\n",
+}
+# b.md is edited and d.md added, both still repeating the boilerplate a.md carries.
+V2_LATE_DOCS = {
+    "a.md": V1_LATE_DOCS["a.md"],
+    "b.md": f"{LATE_BOILERPLATE}\n\nКомпресор дає вісім кубічних метрів на хвилину.\n",
+    "c.md": V1_LATE_DOCS["c.md"],
+    "d.md": f"{LATE_BOILERPLATE}\n\nТурбіна дає сорок мегават на добу.\n",
+}
+LATE_SIZE, LATE_OVERLAP = 80, 0
+
+
+def _late_store(corpus) -> RagStore:
+    return RagStore.build(corpus, "late", LATE_SIZE, LATE_OVERLAP, embedder=TokenLevelEmbedder())
+
+
+def test_late_strategy_keeps_its_duplicates_because_its_vectors_are_not_text_only(tmp_path):
+    """`late` pools whole-document context, so two identical passages carry DIFFERENT vectors.
+
+    Collapsing them would index one and drop the other's document context -- the only thing the
+    strategy adds -- so the build downgrades the request and records what it did.
+    """
+    corpus = write_corpus(tmp_path / "corpus", V1_LATE_DOCS)
+    late = _late_store(corpus)
+
+    assert late.meta["collapse_duplicates"] is False
+    # nothing was dropped: every chunk the corpus produced is indexed with its own vector
+    assert late.meta["n_indexed"] == late.meta["duplicates"]["n"] == len(late.chunks)
+    # the stats are still MEASURED, so what the repeats cost stays visible in meta and census
+    assert late.meta["duplicates"]["duplicate_chunks"] == 3  # the boilerplate in all three docs
+    assert late.meta["duplicates"]["collapsed"] == 2
+    # the same repeats under a text-only strategy still collapse
+    sentence = RagStore.build(
+        corpus, "sentence", LATE_SIZE, LATE_OVERLAP, embedder=TokenLevelEmbedder()
+    )
+    assert sentence.meta["collapse_duplicates"] is True
+    assert sentence.meta["duplicates"]["collapsed"] == 2
+    assert sentence.meta["n_indexed"] == late.meta["n_indexed"] - 2
+
+
+def test_late_refresh_still_matches_a_rebuild_without_collapse(tmp_path):
+    """The refresh reads `collapse_duplicates` back from the meta, so it follows the downgrade."""
+    corpus = write_corpus(tmp_path / "corpus", V1_LATE_DOCS)
+    index_dir = tmp_path / "rag"
+    _late_store(corpus).save(index_dir)
+    write_corpus(corpus, V2_LATE_DOCS)
+
+    result = refresh_vector_store(index_dir, corpus, embedder=TokenLevelEmbedder(), timestamp="T")
+    rebuilt = _late_store(corpus)
+    assert result.new_store is not None
+    assert result.new_store.meta["collapse_duplicates"] is False
+    assert result.new_store.chunks == rebuilt.chunks
+    np.testing.assert_array_equal(
+        np.asarray(stored_vectors(result.new_store.index)),
+        np.asarray(stored_vectors(rebuilt.index)),
+    )

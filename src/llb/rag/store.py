@@ -94,7 +94,9 @@ class RagStore:
         every copy indexed, which only changes the index budget and the tie rate -- the measured
         duplicate stats land in the store meta either way. `duplicate_tier` selects WHEN two texts
         count as the same passage (`llb.rag.duplicate_tiers`); only the default `exact` tier is
-        loss-free.
+        loss-free. A strategy whose vector is NOT a pure function of its text (`late`) keeps its
+        duplicates whatever is requested, and the meta records what the build actually did
+        (`collapse_is_lossless` in `llb.rag.store_build`).
         """
         parts = build_store_parts(
             corpus_root,

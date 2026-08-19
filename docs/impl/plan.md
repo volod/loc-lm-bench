@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### chunker-bake-off-under-the-size-cap (optional)
-
-Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The
-recorded winner (`sentence`, +0.022 recall@10 over `recursive`) was scored on stores that still
-contained oversized units, and the unit-packing strategies are exactly the ones the cap changes:
-their chunk counts rise and their long table/heading spans are now split
-([RAG core](current/rag-core/chunking.md#chunking-strategies)). The ranking may hold, invert, or collapse
-into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
-the same k and record whether the `sentence` recommendation survives. A second reason to re-run:
-those stores also predate exact-duplicate chunk collapse, which changes the chunk counts per
-strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the goods rows and drove
-that corpus's floor to zero ([RAG core](current/rag-core/retrieval-store.md#duplicate-chunk-collapse)).
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: use the paired verdict in
-  [RAG core](current/rag-core/retrieval-metrics.md#paired-lane-uncertainty-and-verdict), because the
-  recorded winner's margin is smaller than one item on the sets involved. Reuse `make
-  compare-retrieval` with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own
-  floor ([RAG core](current/rag-core/retrieval-metrics.md#measurement-floor---noise-floor)).
-- User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
-  `size` the operator asked for.
-- Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
-  verdict on the `sentence` recommendation. Out of scope -- new strategies and tuning `size`.
-- Data and artifact paths: the existing per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,late,
-  markdown,semantic GOLDSET=<quickstart accepted goldset> NOISE_FLOOR=1` on the CUDA host; no new
-  CI coverage.
-- Acceptance gates: `make ci` green; the report covers all seven strategies at the recorded k and
-  states whether the recorded winner still wins by more than the measurement floor.
-- Documentation target: the chunking-strategies evidence in [RAG core](current/rag-core.md).
-
 #### normalize-casefold-dense-lane-cost (optional)
 
 Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item

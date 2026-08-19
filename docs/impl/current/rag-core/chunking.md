@@ -29,6 +29,9 @@ The `src/llb/rag/chunking/` package implements every strategy behind one seam in
   consecutive encoder windows, e5-base: 512 tokens). Needs a token-level local embedder
   (`Embedder.passage_token_offsets` / `encode_passage_tokens`); flat mode only -- `RagStore.build`
   refuses `parent_child`; a chunk no token overlapped falls back to per-chunk encoding, logged.
+  It is also the one strategy whose store KEEPS its byte-identical duplicates, because its vector
+  is not a pure function of its text ([duplicate chunk
+  collapse](retrieval-store.md#duplicate-chunk-collapse));
 - `table`: markdown-table-aware -- a chunk boundary never falls inside a table ROW; a table that
   fits `size` is ONE chunk carrying its nearest heading breadcrumb, a longer one splits between
   row blocks and every block records the header row's SOURCE offsets in
@@ -74,8 +77,11 @@ pinned e5-base, k=10, non-saturated):
 | `late` | 0.886 | 0.576 |
 | `markdown` | 0.818 | 0.703 |
 
-Winner for this corpus: `sentence` (+0.022 recall@10 over the `recursive` default at equal MRR)
--- apply with `make build-index CHUNK_STRATEGY=sentence`. Important comparisons are `page` vs
+Winner at the time, for this corpus: `sentence` (+0.022 recall@10 over the `recursive` default at
+equal MRR). **That recommendation no longer holds** -- see the [re-read under the `size`
+cap](#seven-strategy-re-read-under-the-size-cap), which scored the same seven strategies after the
+cap and duplicate collapse landed and retains `recursive` on both available corpora. Important
+comparisons on the recorded rows are `page` vs
 `recursive` at -0.046 recall --
 page-aligned packing LOSES to plain recursive splitting even on a sidecar-bearing corpus (page
 boundaries cut mid-topic in these scanned-manual PDFs), so `page`'s value is page-provenance
@@ -90,6 +96,83 @@ still contained oversized units, and its 44-item set puts one item at 0.023 reca
 [measurement floor](retrieval-metrics.md#measurement-floor---noise-floor) lane exists to make
 visible.
 
+## Seven-Strategy Re-Read Under The `size` Cap
+
+CUDA host (2026-08-19), `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,
+late,markdown,semantic NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95%
+confidence, seed 13. Configs, reports, per-strategy stores, and per-item vectors under
+`$DATA_DIR/chunker-bakeoff-size-cap/` (`goods.yaml` -> `20260819T-goods/`, `pdf-accepted.yaml` ->
+`20260819T-pdf-accepted/`).
+
+The recorded 44-item accepted item set is no longer on disk, but the five-PDF CORPUS it was scored
+on is -- it is the goods corpus -- so the re-read runs on both of the sets the repo still has:
+
+- the 95-item drafted goods ledger over that SAME five-PDF corpus at `size` 200 / `overlap` 30,
+  which is the closer read on whether the recorded ranking inverted;
+- the 40-item human-accepted quickstart-PDF goldset at `size` 800 / `overlap` 120, the closest
+  available ACCEPTED item set, on a one-document literature corpus.
+
+95-item drafted goods ledger, five-PDF corpus (the recorded bake-off's own corpus):
+
+| strategy | recall@10 | MRR | cover@10 | intact@10 | recall delta vs `recursive` | reading |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `page` | **0.705** | **0.468** | 0.569 | 0.511 | +0.011 [-0.021, +0.053], 2/1/92 | flat |
+| `recursive` (baseline) | 0.695 | 0.465 | 0.575 | 0.516 | -- | -- |
+| `heading` | 0.695 | 0.457 | 0.572 | 0.516 | +0.000 [-0.042, +0.042], 2/2/91 | flat |
+| `markdown` | 0.663 | 0.441 | 0.548 | 0.489 | -0.032 [-0.074, +0.011], 1/4/90 | flat |
+| `semantic` | 0.653 | 0.459 | 0.535 | 0.463 | -0.042 [-0.105, +0.011], 2/6/87 | flat |
+| `sentence` | 0.632 | 0.465 | 0.501 | 0.426 | -0.063 [-0.137, +0.000], 2/8/85 | flat |
+| `late` | 0.347 | 0.191 | 0.294 | 0.242 | -0.347 [-0.463, -0.232], 6/39/50 | regressed |
+
+40-item accepted quickstart-PDF goldset, literature corpus:
+
+| strategy | recall@10 | MRR | cover@10 | intact@10 | recall delta vs `recursive` | reading |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `recursive` (baseline) | 0.925 | **0.852** | 0.925 | 0.900 | -- | -- |
+| `heading` | 0.925 | 0.840 | 0.925 | 0.900 | +0.000 [+0.000, +0.000], 0/0/40 | flat |
+| `sentence` | 0.925 | 0.808 | 0.925 | 0.850 | +0.000 [-0.075, +0.075], 1/1/38 | flat |
+| `semantic` | 0.925 | 0.738 | 0.903 | 0.825 | +0.000 [-0.075, +0.075], 1/1/38 | flat |
+| `page` | 0.900 | 0.835 | 0.871 | 0.850 | -0.025 [-0.075, +0.000], 0/1/39 | flat |
+| `markdown` | 0.900 | 0.826 | 0.900 | 0.875 | -0.025 [-0.075, +0.000], 0/1/39 | flat |
+| `late` | 0.850 | 0.657 | 0.850 | 0.775 | -0.075 [-0.175, +0.000], 0/3/37 | flat |
+
+Verdict: **the `sentence` recommendation does NOT survive; `recursive` is the chunker on both
+corpora**, which is also what the tool's own paired verdict decided on each run (RETAIN
+`recursive`). Nothing is left of the +0.022 win. On the recorded bake-off's own corpus `sentence`
+is now LAST of the six non-`late` strategies at -0.063 recall against `recursive`, and it is the
+only lane there that separates from `recursive` on anything -- it loses span characters and
+whole-span delivery on intervals clear of zero ([the intactness
+re-read](#the-intactness-re-read-of-the-same-three-chunkers) reads the same rows). On the accepted
+literature goldset it merely TIES on recall and trails by 0.044 MRR. `recursive` is the shipped
+default, so nothing has to change to act on this -- `make build-index CHUNK_STRATEGY=sentence` is
+the recommendation that is withdrawn.
+
+Both corpora measure a recall@10 / MRR floor of +/-0.000 (64 replicates), so no row here is being
+read below the noise the corpus can resolve. What limits the reading is the ITEM SET, not the
+floor: on goods every non-`late` lane's paired interval touches zero, so the 0.073-wide spread
+between `page` and `sentence` is a point ordering the 95 items cannot separate.
+
+Two rows moved enough to state on their own:
+
+- `page` inverted. The recorded table put it 0.046 BELOW `recursive`; on the five-PDF corpus it is
+  now the point-estimate leader at +0.011. The paired reading is flat, MRR cannot override an
+  unresolved recall ledger, and `page` still loses 0.025 recall on the literature goldset, so the
+  standing reading is unchanged -- `page`'s value is page-provenance display, not retrieval
+  quality -- but it is no longer a lane that demonstrably costs recall.
+- `late` collapsed on goods: 0.347 recall@10, the only `regressed` reading on either corpus, at
+  spans IDENTICAL to `sentence`'s. Late document-context pooling does not merely blur retrieval at
+  `size=200` on a corpus with a 1.1 MB manual, it halves it. The literature goldset at `size=800`
+  reproduces the recorded picture instead (0.850, flat), so the strategy stays what it was: a
+  prove-it-per-corpus option, never a default.
+
+A build defect this re-run surfaced, fixed before the recorded rows were taken: duplicate collapse
+was running on `late` stores, dropping 1360 of 5019 goods chunks whose position-dependent vectors
+are the entire product of the strategy ([duplicate chunk
+collapse](retrieval-store.md#duplicate-chunk-collapse) now carries the rule). Fixing it did NOT
+rescue the row -- `late` scores 0.347 recall@10 with the copies collapsed and 0.347 with all 5019
+indexed (MRR 0.196 -> 0.191) -- so the collapse was not what sank `late` here. It is recorded
+because the fixed build is what these tables were measured on.
+
 ## Paired re-read of `sentence` versus `recursive`
 
 CUDA-host re-read (2026-07-28), pinned e5-base, k=10, size 200 / overlap 30, 2000 paired
@@ -103,8 +186,9 @@ Against the named `recursive` baseline, `sentence` has recall delta -0.063
 [-0.137, +0.000], with a 2/8/85 win/loss/tie ledger; its calibrated reading is flat. Its MRR
 delta is -0.000 [-0.062, +0.062], 12/18/65, also flat. The verdict retains `recursive`: it is the
 point-estimate leader and the available item set does not separate the two chunkers under paired
-sampling. This result applies to the capped goods stores; the older seven-strategy accepted-PDF
-ranking remains a separate forward re-run because that exact accepted item set is unavailable.
+sampling. This result applies to the capped goods stores; the [seven-strategy re-read
+above](#seven-strategy-re-read-under-the-size-cap) reaches the same verdict with all seven lanes
+scored on the same corpus.
 
 ## Table-Aware Chunking
 

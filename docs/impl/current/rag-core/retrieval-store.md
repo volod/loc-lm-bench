@@ -80,6 +80,16 @@ How it works:
 - Collapse is EXACT-only (byte-identical text) and keeps the FIRST copy in build order, so the
   surviving record is deterministic across rebuilds. Near-duplicate DOCUMENTS remain the corpus
   conflict lane's question ([data prep](../data-prep.md)).
+- Collapse applies only where a chunk's vector is a PURE FUNCTION OF ITS TEXT, which is the
+  premise the paragraph above states. The `late` strategy breaks it: its vectors are mean-pooled
+  from whole-document token embeddings, so the same passage at two document positions carries two
+  DIFFERENT vectors and dropping one would discard exactly the document context the strategy
+  exists to add. `collapse_is_lossless` (`src/llb/rag/store_build.py`) names the rule,
+  `build_store_parts` downgrades `collapse_duplicates` to False for such a strategy and logs it,
+  and the meta records what the build actually did -- so the incremental refresh, which reads
+  `collapse_duplicates` back from the meta, follows without a second rule. The duplicate stats are
+  still measured, so a `late` store still reports what its repeats cost. The refresh path already
+  refused text-keyed row reuse for `late` for the same reason; this is that rule on the build path.
 - Each dropped copy is kept on the survivor as additive `metadata.duplicate_occurrences` -- its
   whole chunk record minus the (identical) text, so offsets, ids, and page/governance metadata
   survive -- plus `metadata.duplicate_count`. Every surviving chunk and every recorded occurrence
@@ -152,8 +162,11 @@ Tests: `tests/llb/rag/test_duplicates.py` (collapse, occurrence metadata, offset
 the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span matching at every
 occurrence, exact expansion, the tie-break, and the parent expansion) and
 `tests/llb/rag/test_duplicates_store.py` (index budget, retrievability of every copy's place, the
-fragility drop measured through `measure_noise_floor`, and refresh-equals-rebuild when the
-survivor's document is deleted) -- fake hashed-BoW embedder, no GPU.
+fragility drop measured through `measure_noise_floor`, refresh-equals-rebuild when the survivor's
+document is deleted, and the `late` exception -- every repeat indexed, the stats still measured,
+a text-only strategy on the same corpus still collapsing, and the refresh following the recorded
+flag) -- fake hashed-BoW and token-level embedders, no GPU. `collapse_is_lossless` itself is
+covered in `tests/llb/rag/test_chunking_strategies.py`.
 
 ### Near-Duplicate Residue And The Collapse Tiers
 

@@ -145,9 +145,11 @@ def compare_retrieval_cmd(
         confidence=confidence,
         seed=seed,
     )
-    census = duplicate_census(stores)
+    census, census_kept = duplicate_census(stores)
     if census:
         report["duplicates"] = census
+        if census_kept:
+            report["duplicates_kept"] = census_kept
     if noise_floor:
         from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
 

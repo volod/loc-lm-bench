@@ -13,12 +13,15 @@ from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.duplicates import (
     COUNT_KEY,
+    KEPT_BY_REQUEST,
+    KEPT_BY_STRATEGY,
     OCCURRENCES_KEY,
     collapse_duplicate_chunks,
     duplicate_occurrences,
     duplicate_stats,
     expand_duplicate_chunks,
     format_duplicate_stats,
+    kept_duplicates_reason,
     occurrence_spans,
 )
 from llb.rag.retrieval import chunk_hits_span, recall_at_k
@@ -186,9 +189,20 @@ def test_format_duplicate_stats_reports_both_dispositions():
     assert "largest 3 copies" in collapsed
     assert "6 indexed (6 collapsed)" in collapsed
     assert "0 intra-document, 3 cross-document" in collapsed
-    kept = format_duplicate_stats(stats, collapsed=False)
+    kept = format_duplicate_stats(stats, KEPT_BY_REQUEST)
     assert "all 12 indexed" in kept
     assert "chunk_id" in kept  # the tie-break the operator gets instead
+    by_strategy = format_duplicate_stats(stats, KEPT_BY_STRATEGY)
+    assert "all 12 indexed" in by_strategy
+    assert "does NOT tie" in by_strategy  # a `late` store gets no tie-break, it gets no tie
+
+
+def test_kept_duplicates_reason_names_the_rule_that_applied():
+    assert kept_duplicates_reason({"strategy": "recursive"}) is None
+    assert kept_duplicates_reason({"strategy": "recursive"}, requested=True) == KEPT_BY_REQUEST
+    # the strategy rule holds whether or not the operator asked
+    assert kept_duplicates_reason({"strategy": "late"}) == KEPT_BY_STRATEGY
+    assert kept_duplicates_reason({"strategy": "late"}, requested=True) == KEPT_BY_STRATEGY
 
 
 def test_duplicate_stats_split_intra_from_cross_document():

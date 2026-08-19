@@ -64,4 +64,10 @@ class ComparisonReport(TypedDict):
     verdict: "RetrievalComparisonVerdict"
     slices: NotRequired[dict[str, ComparisonSlice]]
     duplicates: NotRequired[dict[str, "DuplicateStats"]]
+    # Why a censused store indexed every copy, for the lanes that did not collapse. A store built
+    # with `--keep-duplicate-chunks`, or under a strategy whose vector is not a pure function of
+    # its text (`late`), indexes every copy, and the census line must say which of the two it is.
+    # A lane absent from this map collapsed -- as does every lane of an artifact recorded before
+    # the key existed.
+    duplicates_kept: NotRequired[dict[str, str]]
     noise_floor: NotRequired["NoiseFloorReport"]

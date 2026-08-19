@@ -248,3 +248,11 @@ def test_build_chunking_comparison_builds_flat_store_per_strategy(monkeypatch, t
     assert list(stores) == ["page", "heading"]
     assert stores["page"].saved_to == tmp_path / "page"
     assert stores["heading"].saved_to == tmp_path / "heading"
+
+
+def test_collapse_is_lossless_only_for_text_only_vector_strategies():
+    """`late` is the one strategy whose vector is not a pure function of its chunk text."""
+    from llb.rag.duplicates import collapse_is_lossless
+
+    assert not collapse_is_lossless("late")
+    assert all(collapse_is_lossless(s) for s in STRATEGIES if s != "late")

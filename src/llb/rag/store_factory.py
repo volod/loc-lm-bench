@@ -1,5 +1,6 @@
 """Build the immutable components consumed by :class:`llb.rag.store.RagStore`."""
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.prep.corpus_fingerprints import corpus_doc_fingerprints, corpus_fingerprint
 from llb.prep.corpus_governance import GOVERNANCE_FIELDS
 from llb.rag.duplicate_tiers import TIER_EXACT
+from llb.rag.duplicates import collapse_is_lossless
 from llb.rag.embedding import Embedder
 from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.lexical import Lemmatizer
@@ -16,6 +18,8 @@ from llb.rag.lexical_index import LexicalIndex
 from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.store_build import MODE_HYBRID, _indexed_units, _validate_build_params
 from llb.rag.vector_index import RAG_BACKEND_FAISS, VectorIndex, build_vector_index
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -43,8 +47,21 @@ def build_store_parts(
     collapse_duplicates: bool = True,
     duplicate_tier: str = TIER_EXACT,
 ) -> StoreParts:
-    """Chunk, annotate, encode, and index a corpus."""
+    """Chunk, annotate, encode, and index a corpus.
+
+    `collapse_duplicates` is DOWNGRADED to False for a strategy whose vector is not a pure
+    function of its text (`collapse_is_lossless`), and the meta records the effective value, so
+    an incremental refresh -- which reads `collapse_duplicates` back from the meta -- keeps
+    matching a from-scratch rebuild.
+    """
     _validate_build_params(mode, strategy, child_size)
+    if collapse_duplicates and not collapse_is_lossless(strategy):
+        log.info(
+            "[rag] strategy %s pools document context -- keeping duplicate chunks "
+            "(collapse would discard position-dependent vectors)",
+            strategy,
+        )
+        collapse_duplicates = False
     resolved_embedder = embedder if embedder is not None else Embedder(embedding_model)
     embedding_model = getattr(resolved_embedder, "model_name", embedding_model)
     indexed, parents, duplicates = _indexed_units(

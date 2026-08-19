@@ -32,6 +32,16 @@ def _items() -> list[tuple[str, list[SourceSpanRecord]]]:
 class _MetaStore(_FakeStore):
     """A store that also carries build meta, like a real `RagStore`."""
 
-    def __init__(self, hits: list[ChunkRecord], duplicates: dict) -> None:
+    def __init__(
+        self,
+        hits: list[ChunkRecord],
+        duplicates: dict,
+        collapse_duplicates: bool = True,
+        strategy: str = "recursive",
+    ) -> None:
         super().__init__(hits)
-        self.meta = {"duplicates": duplicates}
+        self.meta = {
+            "duplicates": duplicates,
+            "collapse_duplicates": collapse_duplicates,
+            "strategy": strategy,
+        }
