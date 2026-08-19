@@ -1,11 +1,9 @@
-"""GraphRAG backend residual 3 -- graph-vs-FAISS retrieval comparison core (`llb.rag.compare`).
+"""`compare-retrieval` CLI wiring: the question-type sidecar join and the persisted paired report.
 
 Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lightweight CI install
-(no FAISS, no DuckDB, no GPU). The CLI wiring (`compare-retrieval`) layers real stores on top.
+(no FAISS, no DuckDB, no GPU). The scoring core is covered in `test_compare_retrieval_core.py` and
+the backend command in `test_compare_vector_stores_cli.py`.
 """
-
-from llb.cli.rag.compare_stores import _compare_vector_corpus_root
-
 
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 
@@ -21,19 +19,6 @@ from _compare_retrieval_helpers import (
     _FakeStore,
     _chunk,
 )
-
-
-def test_compare_vector_stores_infers_sibling_corpus(tmp_path):
-    root = tmp_path / "bundle"
-    corpus = root / "corpus"
-    corpus.mkdir(parents=True)
-    goldset = root / "goldset.jsonl"
-    goldset.write_text("", encoding="utf-8")
-
-    assert _compare_vector_corpus_root(goldset, None) == corpus
-    explicit = tmp_path / "other-corpus"
-    assert _compare_vector_corpus_root(goldset, explicit) == explicit
-    assert _compare_vector_corpus_root(tmp_path / "missing" / "goldset.jsonl", None) is None
 
 
 def test_question_type_labels_find_parent_sidecar_for_accepted_ledger(tmp_path):
@@ -116,65 +101,6 @@ def test_question_type_map_omits_duplicate_question_text_with_conflicting_labels
         encoding="utf-8",
     )
     assert load_question_types_by_question(goldset) == {"unique": "comparative"}
-
-
-def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypatch):
-    """The backend lane reads the same floor as `compare-retrieval` (`--noise-floor`)."""
-    import json
-
-    from typer.testing import CliRunner
-
-    from llb.main import app
-
-    goldset = tmp_path / "goldset.jsonl"
-    dump_goldset(
-        [
-            GoldItem(
-                id="a",
-                question="питання",
-                reference_answer="x",
-                source_doc_id="d1",
-                source_spans=[
-                    SourceSpan(doc_id="d1", char_start=0, char_end=10, text="0123456789")
-                ],
-                provenance="ontology-drafted",
-                split="final",
-            )
-        ],
-        goldset,
-    )
-    tied = [
-        {**_chunk("d2", 20, 30), "retrieval_score": 0.5},
-        {**_chunk("d1", 0, 10), "retrieval_score": 0.5},
-    ]
-    monkeypatch.setattr(
-        "llb.rag.comparison_builders.build_vector_store_comparison",
-        lambda cfg, backends: {name: _FakeStore(tied) for name in backends},
-    )
-    out = tmp_path / "report.json"
-    result = CliRunner().invoke(
-        app,
-        [
-            "compare-vector-stores",
-            "--goldset",
-            str(goldset),
-            "--backends",
-            "faiss,chroma",
-            "--k",
-            "1",
-            "--noise-floor",
-            "--noise-floor-replicates",
-            "16",
-            "--out",
-            str(out),
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "noise floor" in result.output
-    floor = json.loads(out.read_text(encoding="utf-8"))["noise_floor"]
-    assert set(floor["lanes"]) == {"faiss", "chroma"}
-    # Both backends rank the same tie, so neither is distinguished from the other.
-    assert floor["floor_recall_at_k"] > 0.0 and floor["margin"]["clears_floor"] is False
 
 
 def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, monkeypatch):

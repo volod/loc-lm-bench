@@ -7,7 +7,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.cli.rag.compare_stores import _compare_vector_corpus_root
+from llb.cli.rag.compare_stores import _compare_vector_corpus_root, resolve_paired_baseline
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
@@ -213,16 +213,13 @@ def _comparison_baseline(
     strategies: str | None,
     hybrid: bool,
 ) -> str:
-    """Resolve a stable, mode-aware baseline before any item is retrieved."""
-    if requested is not None:
-        if requested not in stores:
-            raise ValueError(
-                f"paired baseline lane `{requested}` was not scored; choose one of "
-                f"{', '.join(stores)}"
-            )
-        return requested
-    preferred = ["dense"] if hybrid else ["recursive"] if strategies else ["faiss"]
-    return next((lane for lane in preferred if lane in stores), next(iter(stores)))
+    """Resolve a stable, mode-aware baseline before any item is retrieved.
+
+    Each mode has its own incumbent -- the shipped retrieval path of that comparison -- and the
+    resolution/validation itself is shared with `compare-vector-stores`.
+    """
+    preferred = ("dense",) if hybrid else ("recursive",) if strategies else ("faiss",)
+    return resolve_paired_baseline(stores, requested, preferred)
 
 
 def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:

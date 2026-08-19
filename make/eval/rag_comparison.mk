@@ -242,11 +242,21 @@ compare-adoption-screen: ## What does deciding the reranker question for ONE mod
 		$(if $(ADOPTION_SCREEN_TARGET),--target $(ADOPTION_SCREEN_TARGET),) \
 		$(if $(ADOPTION_SCREEN_OUT),--out-dir "$(ADOPTION_SCREEN_OUT)",)
 
-compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
+# With CONFIG= the YAML owns the gold set and the split, so the defaults are forwarded only when
+# the caller actually set them -- otherwise a config-targeted backend comparison would silently
+# score the DEFAULT goldset against the config's corpus. Same rule as compare-embeddings.
+COMPARE_STORES_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_STORES_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) with paired evidence (CONFIG= or GOLDSET=; VECTOR_BACKENDS= VECTOR_BASELINE= VECTOR_RESAMPLES= VECTOR_CONFIDENCE= VECTOR_SEED= NOISE_FLOOR=1 NOISE_FLOOR_REPLICATES= COMPARE_STORES_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-vector-stores $(if $(CONFIG),--config "$(CONFIG)",) \
-		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(COMPARE_STORES_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_STORES_SPLIT_ARG) \
 		$(if $(VECTOR_BACKENDS),--backends "$(VECTOR_BACKENDS)",) \
+		$(if $(VECTOR_BASELINE),--baseline "$(VECTOR_BASELINE)",) \
+		$(if $(VECTOR_RESAMPLES),--resamples $(VECTOR_RESAMPLES),) \
+		$(if $(VECTOR_CONFIDENCE),--confidence $(VECTOR_CONFIDENCE),) \
+		$(if $(VECTOR_SEED),--seed $(VECTOR_SEED),) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_STORES_OUT),--out "$(COMPARE_STORES_OUT)",)

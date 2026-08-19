@@ -366,6 +366,28 @@ def test_intactness_columns_separate_two_lanes_recall_calls_equal():
     assert paired["span_char_coverage_at_k"]["delta"]["mean"] == -0.5
 
 
+def test_two_lanes_that_score_every_item_alike_are_named_identical_not_merely_flat():
+    """The vector-backend case: a zero-discordance ledger settles the comparison for good."""
+    questions = [f"q{index}" for index in range(20)]
+    spans = [{"doc_id": "d1", "char_start": 0, "char_end": 10, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    hits = {question: [_chunk("d1", 0, 10)] for question in questions}
+
+    report = compare_retrieval(
+        {"chroma": _QuestionStore(dict(hits)), "faiss": _QuestionStore(dict(hits))},
+        items,
+        k=1,
+        baseline="faiss",
+    )
+
+    # `chroma` leads only because the label sort has to return something.
+    assert report["best_recall"] == "chroma"
+    verdict = report["verdict"]
+    assert verdict["decision"] == "retain" and verdict["lane"] == "faiss"
+    assert "itemwise identical to `faiss` on every scored metric over 20 items" in verdict["reason"]
+    assert "no larger item set could separate the two lanes" in verdict["reason"]
+
+
 def test_intactness_never_decides_the_verdict():
     """Only recall (or itemwise-identical recall plus MRR) may adopt; intactness reports only."""
     questions = [f"q{index}" for index in range(12)]

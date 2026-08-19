@@ -96,9 +96,17 @@ shared across all lanes and both metrics. The JSON report keeps those blocks on 
 `backends` row and the aligned vectors in `paired_items`, so a weight or candidate comparison can
 be re-read without retrieving again.
 
+`compare-vector-stores` rides the same lane over the vector backends -- same paired columns, same
+shared draw, same verdict -- so a backend swap is decided exactly the way an embedder swap is; its
+knobs, artifacts, and measured readings are in [platform
+matrix](../platform-vector-matrix.md#paired-backend-evidence). Both commands resolve their
+incumbent through one shared `resolve_paired_baseline` in `src/llb/cli/rag/compare_stores.py`.
+
 Baseline selection is mode-aware: `recursive` for a chunker comparison when present, `dense` for
-hybrid, `faiss` for built backend comparisons, otherwise the first scored lane. Override it with
-`--baseline` / `RETRIEVAL_BASELINE=`. `--resamples`, `--confidence`, and `--seed` have matching
+hybrid, `faiss` for built backend comparisons and for `compare-vector-stores`, otherwise the first
+scored lane. Override it with `--baseline` / `RETRIEVAL_BASELINE=` (`VECTOR_BASELINE=` on the
+backend lane); a named lane the run did not score exits 2 rather than pairing against a different
+row. `--resamples`, `--confidence`, and `--seed` have matching
 `RETRIEVAL_RESAMPLES=`, `RETRIEVAL_CONFIDENCE=`, and `RETRIEVAL_SEED=` make variables. With
 `CONFIG=`, the make alias now leaves the config's goldset and split intact unless the operator
 explicitly overrides `GOLDSET=` or `SPLIT=`.
@@ -108,8 +116,13 @@ existing recall -> MRR -> label order, then applies the standard paired evidence
 Westfall-Young lane x metric family adjustment. A positive separated recall delta may adopt the
 winner. MRR may adopt only when recall is identical on every paired item; it cannot hide an
 unresolved recall tradeoff. Disabling resampling marks the readings `unmeasured` and can never
-produce ADOPT. Otherwise the verdict retains the baseline. `dense+oracle-doc` and the lexical-only
-diagnostic row remain visible with paired columns but cannot receive ADOPT.
+produce ADOPT. Otherwise the verdict retains the baseline. One retain case states more than "the
+gap did not separate": when the winner's ledger has zero wins AND zero losses on EVERY scored
+metric, the verdict says the two lanes are itemwise identical, so the point-estimate lead is label
+order and no larger item set could separate them -- a settled comparison rather than an unresolved
+one. That is the routine reading of an invariant seam such as the vector backends.
+`dense+oracle-doc` and the lexical-only diagnostic row remain visible with paired columns but
+cannot receive ADOPT.
 Rendering is isolated in `retrieval_comparison_report.py`, and the decision is isolated in
 `retrieval_comparison_uncertainty.py`. One rendering rule the intactness columns forced: the shared
 `reading_of` vocabulary is ONE-SIDED (it asks whether the candidate separated), so a lane the

@@ -76,32 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### vector-store-bake-off-paired-uncertainty (optional)
-
-`compare-vector-stores` still ranks backends on a point estimate plus the measurement floor, the
-one reading the embedder bake-off already carries: its `best (recall@k)` line is label order when
-the backends tie ([platform matrix](current/platform-vector-matrix.md#embedding-bake-off)), and
-nothing states how large a backend difference the item set could even resolve. Give it the same
-paired lane -- per-item metric vectors against a baseline backend, shared resample index sets, the
-delta interval and win/loss/tie ledger per row, and an adopt-or-retain verdict -- so a backend swap
-is decided the same way an embedder swap now is.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes
-  metric vectors, not embedder rows) and the store seam in `src/llb/cli/rag/compare_stores.py`.
-- User-visible outcome: the operator learns whether a vector-backend difference is real or is the
-  order the labels happened to sort in.
-- Scope boundary: in scope -- the paired columns, the verdict, and a re-run on both scored
-  corpora. Out of scope -- new backends and any change to the retrieval metrics.
-- Data and artifact paths: the existing `$DATA_DIR/compare-vector-stores/<run>/` layout.
-- Execution path: `make compare-vector-stores NOISE_FLOOR=1` on the CUDA host; CI covers the
-  interval columns over fake stores.
-- Acceptance gates: `make ci` green; every backend row carries a paired delta interval against the
-  baseline backend and the report states adopt or retain.
-- Documentation target: the vector-store section of
-  [platform matrix](current/platform-vector-matrix.md).
-
 #### fusion-answer-quality-second-model (optional)
 
 Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
