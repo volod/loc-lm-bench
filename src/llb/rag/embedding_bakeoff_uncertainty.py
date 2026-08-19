@@ -34,7 +34,12 @@ from llb.rag.fusion_evidence.paired import (
     PairedComparison,
     paired_comparison,
 )
-from llb.rag.retrieval import recall_at_k, reciprocal_rank
+from llb.rag.retrieval import (
+    recall_at_k,
+    reciprocal_rank,
+    span_char_coverage_at_k,
+    span_intact_at_k,
+)
 
 if TYPE_CHECKING:
     from llb.rag.fusion_evidence.selection import SelectionAdjustment
@@ -42,7 +47,12 @@ if TYPE_CHECKING:
 # Metric keys, identical to the `CandidateResult` field names so a row and its interval line up.
 METRIC_RECALL = "recall_at_k"
 METRIC_MRR = "mrr"
-METRICS = (METRIC_RECALL, METRIC_MRR)
+# The intactness pair (`llb.rag.retrieval`): recall@k credits a one-character overlap, so these
+# two carry the axis a CHUNKING change moves. They ride the same vectors and the same shared
+# resample draw, so every lane reports them at no extra retrieval cost.
+METRIC_SPAN_COVERAGE = "span_char_coverage_at_k"
+METRIC_SPAN_INTACT = "span_intact_at_k"
+METRICS = (METRIC_RECALL, METRIC_MRR, METRIC_SPAN_COVERAGE, METRIC_SPAN_INTACT)
 
 # The incumbent the deltas are measured against: the shipped `RunConfig.embedding_model`. A swap
 # recommendation is a statement about replacing THIS row, so it is the natural baseline.
@@ -106,10 +116,12 @@ class BakeoffVerdict(TypedDict):
 
 
 def item_vectors(pairs: list[RetrievalPair], k: int) -> MetricVectors:
-    """Per-item recall@k and reciprocal rank from ONE retrieval pass (means match the row)."""
+    """Per-item `METRICS` values from ONE retrieval pass (their means match the scored row)."""
     return {
         METRIC_RECALL: [recall_at_k(hits, spans, k) for hits, spans in pairs],
         METRIC_MRR: [reciprocal_rank(hits[:k], spans) for hits, spans in pairs],
+        METRIC_SPAN_COVERAGE: [span_char_coverage_at_k(hits, spans, k) for hits, spans in pairs],
+        METRIC_SPAN_INTACT: [span_intact_at_k(hits, spans, k) for hits, spans in pairs],
     }
 
 
@@ -125,6 +137,8 @@ def paired_rows(
 
     Returns an empty mapping when the baseline was not scored in this run: there is nothing to be
     paired against, and inventing a different reference row would silently change the question.
+    A metric absent from either side is skipped rather than raising, so a persisted artifact
+    recorded before a metric existed still re-reads (`llb.rag.paired_reading_audit_artifacts`).
     """
     reference = vectors.get(baseline)
     if reference is None:
@@ -139,6 +153,7 @@ def paired_rows(
                     candidate[metric], reference[metric], index_sets, confidence
                 )
                 for metric in METRICS
+                if metric in candidate and metric in reference
             },
         }
         for model, candidate in vectors.items()

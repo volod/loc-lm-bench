@@ -214,8 +214,63 @@ OVERLAPS a gold span by a single character (`chunk_hits_span`,
 [retrieval metrics](retrieval-metrics.md)), so a chunk that cuts a table row mid-way still scores a
 hit with half a row. Row integrity changes what the model READS, not whether the metric fires --
 which is why the two corpora agree that recall is invariant while the row-cut census differs by up
-to 171 rows. Reading that difference needs an evidence-intactness metric the retrieval side does
-not have yet.
+to 171 rows. The re-read below asks the same question on the axis that can see it.
+
+### The intactness re-read of the same three chunkers
+
+CUDA host (2026-08-19), the SAME command, corpora, `size`/`overlap`, k, seed, and resample count
+as the rows above, re-scored once [evidence
+intactness](retrieval-metrics.md#evidence-intactness-span_char_coveragek--span_intactk) existed.
+Reports, configs, stores, and per-item vectors under
+`$DATA_DIR/table-aware-chunking/20260819T-goods-intactness/` and
+`.../20260819T-pdf-accepted-intactness/`. Recall@10 and MRR reproduce the recorded rows
+BIT-IDENTICALLY on both corpora (the metrics are additive; `recursive` 0.694737 / 0.465155 on
+goods, 0.925000 / 0.852321 on the accepted PDF goldset), so this is the recorded state re-read,
+not a re-measured one.
+
+| corpus | strategy | recall@10 | MRR | cover@10 | intact@10 | coverage delta vs `recursive` | intact delta vs `recursive` |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| goods (95) | `recursive` | 0.695 | 0.465 | 0.575 | 0.516 | -- | -- |
+| goods (95) | `table` | 0.695 | 0.465 | 0.575 | 0.516 | +0.000 [+0.000, +0.000], 0/0/95, flat | +0.000 [+0.000, +0.000], 0/0/95, flat |
+| goods (95) | `sentence` | 0.632 | 0.465 | 0.501 | 0.426 | -0.074 [-0.140, -0.017], 5/16/74, regressed | -0.089 [-0.168, -0.021], 3/13/79, regressed |
+| PDF (40) | `recursive` | 0.925 | 0.852 | 0.925 | 0.900 | -- | -- |
+| PDF (40) | `table` | 0.925 | 0.831 | 0.925 | 0.900 | +0.000 [+0.000, +0.000], 0/0/40, flat | +0.000 [+0.000, +0.000], 0/0/40, flat |
+| PDF (40) | `sentence` | 0.925 | 0.808 | 0.925 | 0.850 | +0.000 [-0.075, +0.075], 2/1/37, flat | -0.050 [-0.150, +0.050], 1/3/36, flat |
+
+**Row-aligned chunking does NOT separate from `recursive` on intactness at the reached sample
+size, and the reason is that the two lanes are itemwise IDENTICAL.** `table` reproduces
+`recursive`'s coverage and intactness to six decimals on both corpora with a `0/0/n` win/loss/tie
+ledger -- not a small difference inside a wide interval, but zero items on which the two differ.
+That closes the question the recorded verdict left open: the row-cut census gap of up to 171 rows
+does not reach the top-10 evidence of a single gold item, because `recursive`'s separator list
+already ends its chunks on line boundaries and a markdown row IS a line
+([row integrity](#row-integrity-what-the-strategy-guarantees-and-what-recursive-already-achieved)).
+The RETAIN verdict above is unchanged and now rests on the axis designed to move it.
+
+The pair is not insensitive -- it is the only axis on which this comparison separates anything at
+all. On goods, `sentence` reads flat against `recursive` on recall (-0.063, interval touching
+zero) and flat on MRR (-0.000), yet loses 0.074 of span characters and 0.089 of whole-span
+delivery on intervals clear of zero. In plain terms: `sentence` finds the same evidence at
+statistically the same rate and hands the model visibly less of it. That is the separation the
+recorded chunker re-read could not state. On the 40-item PDF goldset nothing separates on any of
+the four columns, which is the expected reading of a literature corpus at 2.7% table characters.
+
+Intactness by question type on goods (`recursive`, the shipped chunker) is the other operator-
+visible fact this re-read produced:
+
+| slice | n | recall@10 | cover@10 | intact@10 |
+| --- | ---: | ---: | ---: | ---: |
+| factoid | 40 | 0.700 | 0.667 | 0.650 |
+| procedural | 14 | 0.786 | 0.706 | 0.357 |
+| multi-hop | 35 | 0.657 | 0.401 | 0.400 |
+| numeric | 4 | 0.750 | 0.750 | 0.750 |
+| comparative | 2 | 0.500 | 0.500 | 0.500 |
+
+The procedural row is the one to read: recall says the evidence is found for 0.786 of those items
+and coverage says 0.706 of its characters arrive, but only 0.357 of the spans arrive in ONE chunk.
+Procedural answers on this corpus live in multi-line steps that `size=200` splits, so the model
+reassembles half of them from fragments. No chunker in this comparison changes that, and no metric
+in the repo could show it before.
 
 ## `size` Is A Hard Cap On Every Strategy
 

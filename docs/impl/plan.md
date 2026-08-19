@@ -76,47 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### retrieved-evidence-intactness-metric
-
-`recall@k` credits an item as soon as a retrieved chunk OVERLAPS a gold span by ONE character
-(`chunk_hits_span` in `src/llb/rag/retrieval.py`), so no retrieval metric in the repo can see
-whether the evidence arrived INTACT -- a chunk that cuts a table row in half scores the identical
-hit as one carrying the whole row, which is why a chunker that provably never cuts a row
-reproduces `recursive` to three decimals on a corpus where 24 of 95 items have gold evidence inside
-a table row ([RAG core](current/rag-core/chunking.md#retrieval-evidence)). Add the intactness pair
-beside recall@k / MRR: `span_char_coverage@k` (the share of each gold span's characters the top-k
-carries, averaged per item) and `span_intact@k` (1.0 only when some SINGLE retrieved chunk carries
-a span whole). Both are pure functions of the same (retrieved, spans) pairs every lane already
-builds, so every comparison lane gets them for free, and every chunker row in the repo becomes
-re-readable on the axis a chunking change actually moves.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `covered_span_count` / `span_coverage_at_k` in
-  `src/llb/rag/retrieval.py` (the multi-span refinements are the same shape one level up), the
-  metric-vector seam in `src/llb/rag/embedding_bakeoff_uncertainty.py` so the new columns get
-  paired intervals unchanged, and the slice reporting in `src/llb/rag/compare.py`.
-- User-visible outcome: an operator can tell "the evidence was retrieved" from "the evidence was
-  retrieved whole", which is the difference between a chunk the model can answer from and a
-  fragment it cannot.
-- Scope boundary: in scope -- the two metrics, their per-lane and per-slice columns, their paired
-  intervals, and a re-read of the recorded chunker rows. Out of scope -- changing what `recall@k`
-  means or which metric ranks the leaderboard, answer-side coverage (that is
-  `answer-side-span-coverage-metric`), and any chunker recommendation change before the re-read
-  supports one.
-- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` and
-  `$DATA_DIR/llb/rag/<strategy>/` comparison layout; no new roots.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence NOISE_FLOOR=1`
-  on both scored corpora on the CUDA host; CI covers both metrics over fixtures (span carried
-  whole, span split across two chunks, span partly retrieved, span missed).
-- Acceptance gates: `make ci` green; recall@k and MRR reproduce their recorded values
-  bit-identically on both corpora (the metrics are additive); the report carries both new columns
-  per lane and per slice with paired intervals; the re-read states whether row-aligned chunking
-  separates from `recursive` on intactness at the reached sample size, including recording that it
-  does not.
-- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the
-  table-aware chunking evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
-
 #### remote-code-encoder-load-contract (optional)
 
 Two roster candidates an operator would genuinely shortlist cannot be scored at all:
@@ -397,6 +356,41 @@ two should agree on how a recorded lane is reconstituted.
   format reproduces its `comparison.json` byte-identically apart from the metadata timestamp.
 - Documentation target: the answer-quality evidence page of
   [GraphRAG](current/graphrag-backend.md).
+
+#### fragmented-evidence-delivery-lever (optional)
+
+With the shipped `recursive` chunker on the 95-item goods corpus, `procedural` items retrieve 0.706
+of their gold-span characters but only 0.357 of their spans arrive inside ONE chunk, and no
+chunking strategy in the comparison moves either number ([RAG
+core](current/rag-core/chunking.md#the-intactness-re-read-of-the-same-three-chunkers)). So on a
+whole question type the model is reassembling a procedure from fragments, and the operator has no
+lever registered against that. Measure the two candidate levers on `span_intact@k` with the items
+held fixed: raising `size` for the affected slice, and stitching CONTIGUOUS retrieved chunks of the
+same document back into one context block at assembly time (the second is free of an index rebuild
+and does not change what was retrieved, only what the model reads). Report which one converts
+fragments into whole spans, at what cost in served context characters, and whether either changes
+recall@k at all -- a lever that only reflows the same evidence should not.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `span_intact_at_k` / `span_char_coverage_at_k` in
+  `src/llb/rag/retrieval.py`, the per-slice reporting in `src/llb/rag/compare.py`, and the paired
+  lane machinery both already ride.
+- User-visible outcome: when the intactness columns show evidence arriving in pieces, the operator
+  has a measured lever rather than only a diagnosis.
+- Scope boundary: in scope -- the stitching step, a `size` reading on the affected slice, their
+  intactness deltas with paired intervals, and the served-context cost beside them. Out of scope --
+  changing the default chunker or `size`, answer-side measurement, and any ranking change (stitching
+  must not reorder or add evidence).
+- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` comparison layout.
+- Execution path: `make compare-retrieval` on the goods corpus on the CUDA host; CI covers stitching
+  over fixtures (two adjacent chunks merged, two non-adjacent left alone, chunks from different
+  documents left alone, offsets still exact after a merge).
+- Acceptance gates: `make ci` green; recall@k is unchanged by stitching on every lane (it reflows,
+  it does not retrieve); the report states whether either lever raises `span_intact@k` on the
+  procedural slice by an interval clear of zero, including recording that neither does.
+- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the chunking
+  evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
 
 ### Answer scoring -- `answer-scoring`
 

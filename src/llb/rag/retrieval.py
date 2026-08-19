@@ -1,7 +1,10 @@
 """Retrieval quality metrics by SOURCE-SPAN overlap (pure Python).
 
 A retrieved chunk is a HIT for a gold item when it covers the same document and its
-character range overlaps any of the item's labeled source spans. Anchoring on char
+character range overlaps any of the item's labeled source spans. Overlap is deliberately
+generous, so the module also reports the INTACTNESS pair -- `span_char_coverage_at_k` and
+`span_intact_at_k` -- which say how much of the span arrived and whether one chunk carried
+it whole. Anchoring on char
 offsets (not chunk ids) means the metric survives chunk_size / strategy changes during
 tuning -- it measures the embedding + retrieval config, not the chunk policy.
 
@@ -87,14 +90,109 @@ def all_spans_at_k(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], 
     return 1.0 if span_coverage_at_k(retrieved, spans, k) == 1.0 else 0.0
 
 
-def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
-    """Aggregate recall@k and MRR over (retrieved, gold_spans) pairs.
+def _place_span_overlap(place: SourceSpanRecord, span: SourceSpanRecord) -> tuple[int, int] | None:
+    """The character range a retrieved place and a gold span share, or None when they share none."""
+    if place["doc_id"] != span["doc_id"]:
+        return None
+    start = max(place["char_start"], span["char_start"])
+    end = min(place["char_end"], span["char_end"])
+    return (start, end) if start < end else None
 
-    Returns {n, k, recall_at_k, mrr}. Empty input yields zeros.
+
+def _union_length(intervals: list[tuple[int, int]]) -> int:
+    """Total length of the UNION of `[start, end)` ranges, so overlapping chunks count once."""
+    total = 0
+    reach: int | None = None
+    for start, end in sorted(intervals):
+        lower = start if reach is None else max(start, reach)
+        if end > lower:
+            total += end - lower
+        if reach is None or end > reach:
+            reach = end
+    return total
+
+
+def span_char_coverage(retrieved: list[ChunkRecord], span: SourceSpanRecord) -> float:
+    """Share of ONE gold span's characters the retrieved chunks carry between them (0.0-1.0).
+
+    A degenerate span (no characters) has nothing to carry and scores 0.0, which is also what
+    `chunk_hits_span` reports for it -- the pair never disagrees about the same span.
+    """
+    length = span["char_end"] - span["char_start"]
+    if length <= 0:
+        return 0.0
+    pieces = [
+        overlap
+        for chunk in retrieved
+        for place in occurrence_spans(chunk)
+        if (overlap := _place_span_overlap(place, span)) is not None
+    ]
+    return _union_length(pieces) / length
+
+
+def span_carried_whole(retrieved: list[ChunkRecord], span: SourceSpanRecord) -> bool:
+    """True when a SINGLE retrieved chunk contains the whole gold span, boundaries included."""
+    if span["char_end"] <= span["char_start"]:
+        return False
+    return any(
+        place["doc_id"] == span["doc_id"]
+        and place["char_start"] <= span["char_start"]
+        and place["char_end"] >= span["char_end"]
+        for chunk in retrieved
+        for place in occurrence_spans(chunk)
+    )
+
+
+def span_char_coverage_at_k(
+    retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int
+) -> float:
+    """Mean per-span character coverage of the top-k (1.0 when the item labels no span).
+
+    `recall_at_k` fires on a ONE-character overlap, so it cannot tell a chunk carrying a whole
+    table row from one carrying half of it. This is the graded reading of the same top-k: how
+    much of the evidence actually arrived.
+    """
+    if not spans:
+        return 1.0
+    top = retrieved[:k]
+    return sum(span_char_coverage(top, span) for span in spans) / len(spans)
+
+
+def span_intact_at_k(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord], k: int) -> float:
+    """Share of the item's spans that some SINGLE top-k chunk carries whole (1.0 with no spans).
+
+    The strict companion to `span_char_coverage_at_k`: a span reassembled from two adjacent
+    chunks is fully COVERED but not INTACT, and a model reading a cut table row sees the
+    difference even though every character is somewhere in the context.
+    """
+    if not spans:
+        return 1.0
+    top = retrieved[:k]
+    return sum(1.0 for span in spans if span_carried_whole(top, span)) / len(spans)
+
+
+def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
+    """Aggregate the four top-k readings over (retrieved, gold_spans) pairs.
+
+    Returns {n, k, recall_at_k, mrr, span_char_coverage_at_k, span_intact_at_k}: whether the
+    evidence was found, how early, how much of it arrived, and whether one chunk carried it
+    whole. Empty input yields zeros.
     """
     n = len(per_item)
     if n == 0:
-        return {"n": 0, "k": k, "recall_at_k": 0.0, "mrr": 0.0}
-    recall = sum(recall_at_k(r, s, k) for r, s in per_item) / n
-    mrr = sum(reciprocal_rank(r, s) for r, s in per_item) / n
-    return {"n": n, "k": k, "recall_at_k": recall, "mrr": mrr}
+        return {
+            "n": 0,
+            "k": k,
+            "recall_at_k": 0.0,
+            "mrr": 0.0,
+            "span_char_coverage_at_k": 0.0,
+            "span_intact_at_k": 0.0,
+        }
+    return {
+        "n": n,
+        "k": k,
+        "recall_at_k": sum(recall_at_k(r, s, k) for r, s in per_item) / n,
+        "mrr": sum(reciprocal_rank(r, s) for r, s in per_item) / n,
+        "span_char_coverage_at_k": sum(span_char_coverage_at_k(r, s, k) for r, s in per_item) / n,
+        "span_intact_at_k": sum(span_intact_at_k(r, s, k) for r, s in per_item) / n,
+    }

@@ -143,9 +143,15 @@ def test_the_verdict_swaps_to_a_candidate_that_clears_both_bars():
     verdict = report["verdict"]
     assert verdict["decision"] == "adopt" and verdict["model"] == CANDIDATE
     assert set(verdict["cleared"][CANDIDATE]) == {"recall_at_k", "mrr"}
-    # Both bars are on by default in this lane, and each row carries both paired readings.
+    # Both bars are on by default in this lane, and each row carries every paired metric --
+    # the two bars plus the intactness pair, which is reported but never gates adoption.
     assert report["uncertainty"]["bars"] == ["recall_at_k", "mrr"]
-    assert set(_row(report, CANDIDATE)["paired_vs_baseline"]["metrics"]) == {"recall_at_k", "mrr"}
+    assert set(_row(report, CANDIDATE)["paired_vs_baseline"]["metrics"]) == {
+        "recall_at_k",
+        "mrr",
+        "span_char_coverage_at_k",
+        "span_intact_at_k",
+    }
 
 
 def test_a_baseline_the_run_did_not_score_leaves_the_verdict_undecided():

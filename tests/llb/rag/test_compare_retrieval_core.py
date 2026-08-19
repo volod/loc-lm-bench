@@ -187,8 +187,18 @@ def test_compare_keeps_item_vectors_and_adopts_a_paired_recall_winner_from_one_p
     assert report["paired_items"][0] == {
         "item_id": "item-0",
         "lanes": {
-            "recursive": {"recall_at_k": 0.0, "mrr": 0.0},
-            "sentence": {"recall_at_k": 1.0, "mrr": 1.0},
+            "recursive": {
+                "recall_at_k": 0.0,
+                "mrr": 0.0,
+                "span_char_coverage_at_k": 0.0,
+                "span_intact_at_k": 0.0,
+            },
+            "sentence": {
+                "recall_at_k": 1.0,
+                "mrr": 1.0,
+                "span_char_coverage_at_k": 1.0,
+                "span_intact_at_k": 1.0,
+            },
         },
     }
     assert report["verdict"]["decision"] == "adopt"
@@ -251,3 +261,92 @@ def test_disabling_resampling_cannot_turn_a_point_lead_into_adopt():
     assert report["verdict"]["decision"] == "retain"
     assert "unmeasured" in report["verdict"]["reason"]
     assert "unmeasured" in format_comparison(report)
+
+
+def test_intactness_columns_separate_two_lanes_recall_calls_equal():
+    """A lane that cuts every gold span in half ties on recall and loses on intactness."""
+    questions = [f"q{index}" for index in range(12)]
+    spans = [{"doc_id": "d1", "char_start": 40, "char_end": 60, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    whole = _QuestionStore({question: [_chunk("d1", 0, 100)] for question in questions})
+    cut = _QuestionStore({question: [_chunk("d1", 0, 50)] for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": whole, "sentence": cut},
+        items,
+        k=5,
+        slice_labels=["numeric"] * len(questions),
+        baseline="recursive",
+    )
+
+    assert report["backends"]["recursive"]["recall_at_k"] == 1.0
+    assert report["backends"]["sentence"]["recall_at_k"] == 1.0  # recall cannot see the cut
+    assert report["backends"]["recursive"]["span_char_coverage_at_k"] == 1.0
+    assert report["backends"]["recursive"]["span_intact_at_k"] == 1.0
+    assert report["backends"]["sentence"]["span_char_coverage_at_k"] == 0.5
+    assert report["backends"]["sentence"]["span_intact_at_k"] == 0.0
+    # the slice carries the same pair, scored from the same retrieval pass
+    numeric = report["slices"]["numeric"]["backends"]
+    assert numeric["sentence"]["span_intact_at_k"] == 0.0
+    assert numeric["recursive"]["span_intact_at_k"] == 1.0
+    # and the paired block reads the difference the recall block calls flat
+    paired = report["backends"]["sentence"]["paired_vs_baseline"]["metrics"]
+    assert paired["recall_at_k"]["delta"]["mean"] == 0.0
+    assert paired["span_intact_at_k"]["delta"]["mean"] == -1.0
+    assert paired["span_char_coverage_at_k"]["delta"]["mean"] == -0.5
+
+
+def test_intactness_never_decides_the_verdict():
+    """Only recall (or itemwise-identical recall plus MRR) may adopt; intactness reports only."""
+    questions = [f"q{index}" for index in range(12)]
+    spans = [{"doc_id": "d1", "char_start": 40, "char_end": 60, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    whole = _QuestionStore({question: [_chunk("d1", 0, 100)] for question in questions})
+    cut = _QuestionStore({question: [_chunk("d1", 0, 50)] for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": cut, "sentence": whole}, items, k=5, baseline="recursive"
+    )
+
+    assert report["verdict"]["decision"] == "retain"
+    assert report["verdict"]["lane"] == "recursive"
+    adjustment = report["verdict"]["selection_adjustment"]
+    assert adjustment["family_size"] == 2  # 1 candidate lane x 2 verdict bars, no intactness
+
+
+def test_the_report_renders_the_intactness_columns_and_their_paired_block():
+    report = compare_retrieval(
+        {
+            "recursive": _FakeStore([_chunk("d1", 0, 100)]),
+            "sentence": _FakeStore([_chunk("d1", 0, 5)]),
+        },
+        [("питання", [{"doc_id": "d1", "char_start": 0, "char_end": 10, "text": "g"}])],
+        k=5,
+        slice_labels=["numeric"],
+        baseline="recursive",
+    )
+    rendered = format_comparison(report)
+    assert "cover@k intact@k" in rendered
+    assert "coverage delta [lo, hi]" in rendered and "intact delta [lo, hi]" in rendered
+    assert rendered.isascii()
+    # the slice block reuses the same four columns
+    slice_row = [line for line in rendered.splitlines() if line.startswith("    sentence")]
+    assert slice_row and slice_row[0].split()[1:] == ["1.000", "1.000", "0.500", "0.000"]
+
+
+def test_a_separated_loss_is_named_regressed_not_flat():
+    """`reading_of` is one-sided, so a lane the baseline beats must not print `flat`."""
+    questions = [f"q{index}" for index in range(12)]
+    spans = [{"doc_id": "d1", "char_start": 40, "char_end": 60, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    whole = _QuestionStore({question: [_chunk("d1", 0, 100)] for question in questions})
+    cut = _QuestionStore({question: [_chunk("d1", 0, 50)] for question in questions})
+
+    report = compare_retrieval(
+        {"recursive": whole, "sentence": cut}, items, k=5, baseline="recursive"
+    )
+    intact = report["backends"]["sentence"]["paired_vs_baseline"]["metrics"]["span_intact_at_k"]
+    assert intact["delta"]["hi"] < 0.0
+    rendered = format_comparison(report)
+    sentence_rows = [line for line in rendered.splitlines() if line.startswith("  sentence   ")]
+    assert any("regressed" in line for line in sentence_rows)

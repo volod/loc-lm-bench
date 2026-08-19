@@ -56,6 +56,13 @@ class RetrievalMetrics(TypedDict):
     k: int
     recall_at_k: float
     mrr: float
+    # Evidence INTACTNESS, the pair recall@k cannot see: recall fires on a one-character overlap,
+    # so `span_char_coverage_at_k` reports how much of each gold span the top-k actually carries
+    # and `span_intact_at_k` how often ONE chunk carries a span whole (see `llb.rag.retrieval`).
+    # `evaluate_retrieval` always emits both; they are optional ONLY so a run manifest recorded
+    # before the pair existed still validates and still re-reads.
+    span_char_coverage_at_k: NotRequired[float]
+    span_intact_at_k: NotRequired[float]
 
 
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
