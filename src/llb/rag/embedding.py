@@ -21,6 +21,11 @@ from typing import Any
 
 from llb.core import env
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
+from llb.rag.encoder_precision import (
+    DTYPE_AUTO,
+    load_model_kwargs,
+    normalize_dtype,
+)
 from llb.rag.embedding_families import (
     FAMILY_UNKNOWN,
     EmbeddingConvention,
@@ -50,10 +55,12 @@ class Embedder:
         device: str | None = None,
         *,
         trust_remote_code: bool | None = None,
+        dtype: str | None = None,
     ):
         self.model_name = model_name
         self._device = device
         self._trust_remote_code = trust_remote_code
+        self._dtype = dtype
         self._model = None
 
     @property
@@ -71,6 +78,24 @@ class Embedder:
         `LLB_EMBED_DEVICE` env knob, else `None` (sentence-transformers auto-selects)."""
         return self._device or os.environ.get(env.LLB_EMBED_DEVICE) or None
 
+    def _resolve_dtype(self) -> str:
+        """Declared load precision: constructor arg wins, else the `LLB_EMBED_DTYPE` env knob.
+
+        `auto` (the default) inherits each checkpoint's uploaded precision, which is what every
+        recorded reading was taken at; a declared value makes precision a controlled variable
+        across a mixed roster (`llb.rag.encoder_precision`).
+        """
+        return normalize_dtype(self._dtype or os.environ.get(env.LLB_EMBED_DTYPE))
+
+    def effective_dtype(self) -> str | None:
+        """The precision the loaded weights actually hold (None before the model is loaded)."""
+        if self._model is None:
+            return None
+        try:
+            return str(next(self._model.parameters()).dtype).removeprefix("torch.")
+        except (StopIteration, AttributeError):  # a fake or parameter-free embedder in tests
+            return None
+
     def _resolve_remote_code(self) -> bool:
         """Whether repo-supplied modelling code may run: constructor arg wins, else the env knob."""
         if self._trust_remote_code is not None:
@@ -84,6 +109,10 @@ class Embedder:
         un-opted-in load is refused here rather than silently running downloaded code.
         """
         convention = self.convention
+        dtype = self._resolve_dtype()
+        kwargs: dict[str, Any] = {}
+        if dtype != DTYPE_AUTO:
+            kwargs["model_kwargs"] = load_model_kwargs(dtype)
         if convention.family == FAMILY_UNKNOWN:
             _LOG.warning(
                 "[embedding] no registered query/passage convention for %s -- encoding with NO "
@@ -92,7 +121,7 @@ class Embedder:
                 self.model_name,
             )
         if not convention.trust_remote_code:
-            return {}
+            return kwargs
         if not self._resolve_remote_code():
             raise SystemExit(
                 f"ERROR: {self.model_name} ships its own modelling code and needs "
@@ -105,7 +134,8 @@ class Embedder:
             "opted in explicitly",
             self.model_name,
         )
-        return {"trust_remote_code": True}
+        kwargs["trust_remote_code"] = True
+        return kwargs
 
     def _load(self) -> Any:
         if self._model is None:
@@ -122,6 +152,15 @@ class Embedder:
                 self.model_name, device=self._resolve_device(), **self._load_kwargs()
             )
         return self._model
+
+    def loaded_model(self) -> Any:
+        """The loaded SentenceTransformer, for a caller that must make the model's OWN call.
+
+        The card-parity probe (`llb.rag.encoder_card_probe`) is the reason this exists: for a card
+        that publishes a runnable snippet instead of numbers, the reference is that snippet run on
+        these weights, and the snippet calls sentence-transformers directly.
+        """
+        return self._load()
 
     def encode_passages(self, texts: list[str]) -> Any:
         """Embed corpus chunks. Returns a float32 (n, dim) numpy array, L2-normalized."""

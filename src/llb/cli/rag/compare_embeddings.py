@@ -34,27 +34,44 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 )
 from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 
+# Module level so the gate is one patchable seam for the fake-store CLI tests; the probe itself
+# defers every heavy import, exactly like `llb.rag.embedding`.
+from llb.rag.encoder_card_probe import probe_encoder_card
+
 if TYPE_CHECKING:
     from llb.rag.candidate_screen import SkippedCandidate
 
 
 def _resolve_roster(
-    models: str, allow_remote_code: bool
+    models: str, allow_remote_code: bool, dtype: str
 ) -> tuple[list[str], list["SkippedCandidate"]]:
     """Screen the requested roster into candidates to build plus visibly declined entries.
 
     An id with no declared query/passage convention exits the run (scoring it would guess a format
     and understate the encoder); a candidate needing `trust_remote_code` is declined unless the
-    operator opted in, and the opt-in is exported process-wide -- like `LLB_EMBED_DEVICE`, because
-    the store build, the lazy reload behind `retrieve()`, and the throughput profiler each
-    construct their own `Embedder` and all three must agree.
+    operator opted in, and a candidate whose repository code targets a transformers major this
+    interpreter is not lands in the legacy pass (`llb.rag.model_stack`). Both the opt-in and the
+    declared precision are exported process-wide -- like `LLB_EMBED_DEVICE`, because the store
+    build, the lazy reload behind `retrieve()`, the card-parity probe, and the throughput profiler
+    each construct their own `Embedder` and all four must agree.
     """
     from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
     from llb.rag.embedding_bakeoff_roster import UnregisteredCandidateError, screen_candidates
+    from llb.rag.encoder_precision import DTYPE_AUTO, UnsupportedDtypeError, normalize_dtype
+    from llb.rag.model_stack import installed_transformers_major
 
     roster = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_LOCAL_CANDIDATES
     try:
-        local_models, skipped = screen_candidates(roster, allow_remote_code=allow_remote_code)
+        resolved_dtype = normalize_dtype(dtype)
+    except UnsupportedDtypeError as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    try:
+        local_models, skipped = screen_candidates(
+            roster,
+            allow_remote_code=allow_remote_code,
+            transformers_major=installed_transformers_major(),
+        )
     except UnregisteredCandidateError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -62,6 +79,8 @@ def _resolve_roster(
         typer.echo(f"[compare-embeddings] skipping {row['model']}: {row['detail']}", err=True)
     if allow_remote_code:
         os.environ[env.LLB_TRUST_REMOTE_CODE] = "1"
+    if resolved_dtype != DTYPE_AUTO:
+        os.environ[env.LLB_EMBED_DTYPE] = resolved_dtype
     return local_models, skipped
 
 
@@ -98,6 +117,13 @@ def compare_embeddings_cmd(
         "--allow-remote-code",
         help="opt into candidates that ship their own modelling code (trust_remote_code), e.g. "
         "gte-multilingual / jina-embeddings-v3; without it those rows are SKIPPED and recorded",
+    ),
+    encoder_dtype: str = typer.Option(
+        "auto",
+        "--encoder-dtype",
+        help="load EVERY candidate at this precision (auto|float32|float16|bfloat16). `auto` keeps "
+        "each checkpoint's uploaded dtype, which is what reproduces the recorded rows; declare one "
+        "to make the throughput column a model comparison instead of a checkpoint comparison",
     ),
     noise_floor: bool = typer.Option(
         False,
@@ -204,7 +230,7 @@ def compare_embeddings_cmd(
     if split:
         items = [it for it in items if it.split == split]
     bakeoff_items = [(it.question, spans_as_dicts(it)) for it in items]
-    local_models, skipped = _resolve_roster(models, allow_remote_code)
+    local_models, skipped = _resolve_roster(models, allow_remote_code, encoder_dtype)
 
     _, run_ts = new_run_timestamp()
     run_dir = cfg.data_dir / "compare-embeddings" / run_ts
@@ -251,6 +277,7 @@ def compare_embeddings_cmd(
             power_reader=power_reader,
             profiles_out=throughput_profiles,
         ),
+        card_parity=probe_encoder_card,
         item_ids=[item.id for item in items],
         skipped=skipped,
         api_model=api_model,

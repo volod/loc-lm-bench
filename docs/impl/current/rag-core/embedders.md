@@ -62,7 +62,13 @@ splits the roster two ways:
   `report.json` as a `skipped[]` entry and in `report.md` under "Roster entries not scored" -- so a
   declined row reads as declined, never as beaten. The rest of the roster still ranks.
 
-Every scored row now also carries the `family` it was scored under and, when repo code ran,
+A third check joins those two once the caller declares which stack it is on: a candidate whose
+repository code targets a different transformers major is SKIPPED with the pin it needs and the
+target that provides it ([the legacy transformers
+pass](stack-and-card-parity.md#the-legacy-transformers-pass)).
+
+Every scored row now also carries the `family` it was scored under, the precision it was measured
+at, its [card-parity verdict](stack-and-card-parity.md#the-card-parity-gate), and, when repo code ran,
 `trust_remote_code: true`; `report.md` prints both plus a peak-VRAM column fed from the
 `--encoder-throughput` decomposition.
 
@@ -291,40 +297,40 @@ checkpoints differ in precision -- measured with `SentenceTransformer(...)` defa
 
 So `e5-large-instruct` running 3.4x `e5-large` (272.6 vs 79.9 warm c/s) at the same parameter count
 and dimension is a PRECISION difference in the published weights, not a faster model, and its peak
-VRAM is nonetheless the roster's highest (5077 MB). `Qwen3-Embedding-0.6B` is the slowest row on
+VRAM is nonetheless the roster's highest (5077 MB). Precision is now a DECLARED knob rather than an
+inherited one (`--encoder-dtype` / `EMBED_DTYPE=`), and the re-read at a declared float32 settles
+the caveat: the two rows land at 79.3 against 78.2 warm chunks/s, a 1.4% difference
+([what a declared float32 does to the throughput
+column](stack-and-card-parity.md#what-a-declared-float32-does-to-the-throughput-column)).
+Every encoder row states the precision it was measured at, and the card's when the two differ.
+
+`Qwen3-Embedding-0.6B` is the slowest row on
 both corpora (~50 c/s) despite being a 0.6B model: its 32,768-token window dominates. And the
 `lang-uk` paraphrase model's 128-token window is the mechanical reason its collapse is worst on the
 PDF corpus, whose 800-character chunks are truncated hard. Every candidate's peak VRAM stayed under
 5.1 GiB with `Embedder.release()` between candidates, so all seven fit the 16 GiB host beside a
 served generator.
 
-### The two remote-code candidates do not run on the pinned stack
+### The two remote-code candidates are scored in the legacy transformers pass
 
-`Alibaba-NLP/gte-multilingual-base` and `jinaai/jina-embeddings-v3` were declined by default and
-then attempted explicitly (`make compare-embeddings ... MODELS=<id> EMBED_ALLOW_REMOTE_CODE=1`).
-Neither can be scored on this repo's pinned `transformers 5.12.1` / `torch 2.13.0+cu130` /
-`sentence-transformers 5.6.0`; both remote-code repositories target the transformers 4.x API:
+`Alibaba-NLP/gte-multilingual-base` and `jinaai/jina-embeddings-v3` cannot be scored on this repo's
+pinned `transformers 5.12.1`: both remote-code repositories target the transformers 4.x API, so
+jina raises `AttributeError: 'XLMRobertaLoRA' object has no attribute 'all_tied_weights_keys'` at
+load, and gte loads but returns embeddings that do not reproduce its own card, because 5.x
+materializes its non-persistent `position_ids` buffer as uninitialized memory and `rope_cos[...]`
+gathers out of bounds. That is a PACKAGING fact, so the screen routes both rows to the
+[legacy pass](stack-and-card-parity.md#the-legacy-transformers-pass) rather than failing the run,
+and both are scored there against a reproducing `e5-base` baseline -- gte at `-0.024` recall and
+jina at `+0.008` with an interval spanning zero, neither changing the recommendation
+([the four unscorable rows](stack-and-card-parity.md#what-the-four-unscorable-rows-measure)).
 
-- **`jinaai/jina-embeddings-v3` fails at LOAD**: `AttributeError: 'XLMRobertaLoRA' object has no
-  attribute 'all_tied_weights_keys'`, raised from `transformers/modeling_utils.py`
-  `_move_missing_keys_from_meta_to_device`. The repo's `modeling_xlm_roberta.py` overrides
-  `from_pretrained` and defines only the older `_tied_weights_keys`.
-- **`Alibaba-NLP/gte-multilingual-base` loads but is BROKEN**: transformers 5.x materializes the
-  remote code's non-persistent `position_ids` buffer as uninitialized memory (observed values on the
-  order of `-6.5e16`), so `rope_cos[position_ids]` indexes out of bounds -- an `IndexError` on CPU
-  and a CUDA device-side assert on GPU. Repairing the buffer by hand
-  (`position_ids.copy_(torch.arange(n))`) makes it run but does NOT make it correct: its card's
-  reference similarities are `[[0.3017, 0.7504, 0.3203]]` and the repaired model returns
-  `[[0.738, 0.676, 0.598]]`, so something further down its attention/unpadding path is also wrong.
-  It is recorded as unscorable rather than scored on numbers that do not reproduce its card.
-
-The two candidates that DO run were checked against their cards' documented reference similarities
-through the registered conventions before scoring, which is what makes their rows readable:
-`multilingual-e5-large-instruct` reproduces `[[0.9193, 0.6758], [0.7038, 0.9213]]` to within 0.0005,
-and `Qwen3-Embedding-0.6B` reproduces `[[0.7646, 0.1414], [0.1355, 0.6000]]` to within 0.0051
-(fp/device noise). A CUDA device-side assert poisons the process's CUDA context, so a failing
-candidate deliberately FAILS the run rather than being caught and skipped -- continuing would score
-every later candidate on a corrupted context.
+Every scored candidate now clears a [card-parity gate](stack-and-card-parity.md#the-card-parity-gate)
+before a store is built for it, which is what makes a row readable: `multilingual-e5-large-instruct`
+reproduces `[[0.9193, 0.6758], [0.7038, 0.9213]]` to 0.0001 and `Qwen3-Embedding-0.6B` reproduces
+`[[0.7646, 0.1414], [0.1355, 0.6000]]` to 0.0036, both on the pinned stack; `gte-multilingual-base`
+reproduces `[[0.3017, 0.7504, 0.3203]]` exactly once its repository code has the transformers it
+targets. A CUDA device-side assert poisons the process's CUDA context, so a candidate that fails
+the gate is refused BEFORE its store is built rather than scored on numbers that do not reproduce.
 
 ## Blackwell sub-base encoder roster (e5-small)
 

@@ -351,6 +351,8 @@ fingerprint guard, and the opt-in Cohere API-row egress gate.
 ```bash
 make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10 NOISE_FLOOR=1
 make compare-embeddings GOLDSET=... EMBED_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
+make compare-embeddings GOLDSET=... EMBED_DTYPE=float32         # one declared precision for every row
+make compare-embeddings-legacy CONFIG=<run.yaml>                # the transformers 4.x scoring pass
 llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 --noise-floor \
   --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-small,\
 intfloat/multilingual-e5-large,BAAI/bge-m3 \
@@ -361,9 +363,12 @@ make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOP
 The default roster is nine ids: the four incumbents, the current multilingual retrieval generation
 (`multilingual-e5-large-instruct`, `gte-multilingual-base`, `jina-embeddings-v3`,
 `Qwen3-Embedding-0.6B`), and the paraphrase/STS control. A candidate with no declared query/passage
-convention fails the run before any store is built, and a `trust_remote_code` candidate is skipped
-with its reason recorded unless `EMBED_ALLOW_REMOTE_CODE=1`
-([RAG core](rag-core/embedders.md#roster-screening)).
+convention fails the run before any store is built, a `trust_remote_code` candidate is skipped with
+its reason recorded unless `EMBED_ALLOW_REMOTE_CODE=1`
+([RAG core](rag-core/embedders.md#roster-screening)), and a candidate whose repository code targets
+a different transformers major is routed to `compare-embeddings-legacy`. Every scored candidate
+must reproduce its own model card before a store is built for it
+([RAG core](rag-core/stack-and-card-parity.md)).
 
 Every candidate row carries a PAIRED delta interval against `--baseline` plus the win/loss/tie
 ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
@@ -401,10 +406,14 @@ call: on a 16,380 MiB RTX 4060 Ti both corpora still verdict **RETAIN `e5-base`*
 `multilingual-e5-large-instruct` tying `bge-m3` on the fixture (+0.012, 3 wins / 0 losses) and
 losing an item on the PDF corpus, and `Qwen3-Embedding-0.6B` tying the baseline on one corpus and
 sitting below it on the other. Peak VRAM across the seven scored candidates stayed under 5.1 GiB.
-`gte-multilingual-base` and `jina-embeddings-v3` could not be scored at all -- their remote code
-targets the transformers 4.x API and breaks on the pinned 5.12.1. Full tables, the checkpoint-dtype
-caveat on the throughput column, and the two failure diagnoses are in
-[RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16).
+`gte-multilingual-base` and `jina-embeddings-v3` are scored in the transformers 4.x
+[legacy pass](rag-core/stack-and-card-parity.md#the-legacy-transformers-pass) instead, and neither
+changes the call either: gte sits `-0.024` recall below the incumbent and jina `+0.008` with an
+interval spanning zero, at 2.1x its peak VRAM. The 3.4x throughput lead of
+`multilingual-e5-large-instruct` turns out to be its float16 upload -- at a declared
+`EMBED_DTYPE=float32` it lands within 1.4% of `e5-large`. Full tables are in
+[RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16) and
+[the scoring stack and card-parity gate](rag-core/stack-and-card-parity.md).
 
 ## Reranker Bake-off
 
@@ -418,6 +427,7 @@ row, the per-candidate process isolation, and the full tables.
 make compare-rerankers GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus SPLIT= RAG_K=10 \
   NOISE_FLOOR=1 RERANK_GENERATOR_VRAM_MB=<mb>   # declares the budget the fit gate reads
 make compare-rerankers GOLDSET=... RERANK_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
+make compare-rerankers-legacy GOLDSET=... CORPUS=... SPLIT=      # the transformers 4.x scoring pass
 make run-eval MODEL=<m> RERANKER=BAAI/bge-reranker-v2-m3        # apply a chosen reranker
 ```
 
@@ -428,7 +438,10 @@ ties it on recall and sits 0.017 MRR below at twice the latency, and `mxbai-rera
 it on both bars with intervals that exclude zero on the 250-item fixture. What the reranker buys is
 first-hit RANK -- against no reranking, +0.094 MRR `[+0.063, +0.127]` but only +0.020 recall@10 --
 for ~530-600 ms per query and a ~4.5 GiB scoring peak, which fits beside the generator on this host.
-`jina-reranker-v2-base-multilingual` and `gte-multilingual-reranker-base` could not be scored at
-all: their remote code targets the transformers 4.x API and breaks on the pinned 5.12.1, the same
-packaging hole the encoder roster hit. Full tables and the two failure diagnoses are in
-[RAG core](rag-core/reranker-bakeoff.md#what-the-bake-off-measured-2026-08-16-cuda-host).
+`jina-reranker-v2-base-multilingual` and `gte-multilingual-reranker-base` are scored in the
+transformers 4.x [legacy pass](rag-core/stack-and-card-parity.md#the-legacy-transformers-pass), the
+same packaging hole the encoder roster hit. Both are below the incumbent on both bars on the
+fixture, but at ~7x lower latency (73 and 80 ms per query against 546) and about a third of its
+resident VRAM -- a latency/quality frontier, not a swap candidate. Full tables are in
+[RAG core](rag-core/reranker-bakeoff.md#what-the-bake-off-measured-2026-08-16-cuda-host) and
+[the scoring stack and card-parity gate](rag-core/stack-and-card-parity.md#the-two-rerankers).

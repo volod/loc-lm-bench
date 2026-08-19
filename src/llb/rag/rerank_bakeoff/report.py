@@ -15,6 +15,7 @@ from llb.rag.bakeoff_report_sections import (
     boundary_section,
     gate_summary,
     paired_cells,
+    card_parity_section,
     skipped_section,
     verdict_lines,
 )
@@ -98,6 +99,8 @@ def _header_lines(report: RerankBakeoffReport) -> list[str]:
         f"- fixed retrieval: encoder `{report['embedding_model']}`, chunking `{report['chunking']}`,"
         f" candidate pool {report['pool_depth']} (every candidate re-sorts the SAME pool)",
         f"- rerank batch size: {report['batch_size']}",
+        f"- load precision: {report.get('dtype') or 'auto'} "
+        "(auto keeps each checkpoint's own; latency and VRAM are comparable only at a shared one)",
     ]
     if (headroom := report.get("headroom")) is not None:
         lines.append(
@@ -178,6 +181,7 @@ def render_markdown(report: RerankBakeoffReport) -> str:
     lines += ["", *verdict_lines(report, call_word="SWAP TO")]
     lines += _recommendation(report)
     lines += skipped_section(report.get("skipped") or [], title="Candidates not scored")
+    lines += card_parity_section(report["candidates"])
     lines += gate_summary(report["candidates"], confidence)
     lines += boundary_section(
         report["candidates"],

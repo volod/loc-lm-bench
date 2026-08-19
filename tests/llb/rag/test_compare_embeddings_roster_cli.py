@@ -1,8 +1,13 @@
 """`compare-embeddings` roster screening end to end (fake stores; no FAISS, GPU, or network).
 
-The bake-off's own guard rail: an unregistered candidate fails the run, and a candidate that needs
-`trust_remote_code` is declined VISIBLY -- it lands in `report.json` as a skipped roster entry
-rather than quietly making the table one row shorter.
+The bake-off's own guard rail, in three parts: an unregistered candidate fails the run, a candidate
+that needs `trust_remote_code` is declined VISIBLY, and a candidate whose repository code targets a
+transformers major this interpreter is not is routed to the legacy scoring pass. All three land in
+`report.json` as skipped roster entries rather than quietly making the table one row shorter.
+
+The transformers major is injected here rather than read from the host: which candidates a run can
+score is a property of the environment, and a test that only passes on one of the two environments
+this repo deliberately maintains would be testing the host.
 """
 
 import json
@@ -14,7 +19,12 @@ from llb.cli.app import app
 from llb.core import env
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.rag.embedding import remote_code_opt_in
-from llb.rag.candidate_screen import SKIP_REMOTE_CODE
+from llb.rag.candidate_screen import SKIP_LEGACY_STACK, SKIP_REMOTE_CODE
+from llb.rag.card_parity import unpublished_result
+from llb.rag.model_stack import (
+    PINNED_TRANSFORMERS_MAJOR,
+    REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
+)
 from llb.rag.embedding_bakeoff_models import BuiltStore
 
 from _embedding_bakeoff_uncertainty_helpers import BASELINE, _HitSetStore, _questions
@@ -66,7 +76,17 @@ def _fake_builder(monkeypatch, hit_questions):
         return build
 
     monkeypatch.setattr("llb.cli.rag.compare_embeddings.local_store_builder", builder)
+    # The card gate loads a model; these fake-store runs assert screening, not parity.
+    monkeypatch.setattr(
+        "llb.cli.rag.compare_embeddings.probe_encoder_card",
+        lambda model, **_kwargs: unpublished_result(model),
+    )
     return built
+
+
+def _on_stack(monkeypatch, major: int) -> None:
+    """Pretend this interpreter holds that transformers major (pinned pass vs legacy pass)."""
+    monkeypatch.setattr("llb.rag.model_stack.installed_transformers_major", lambda: major)
 
 
 def _invoke(corpus, goldset, out, models, *extra):
@@ -121,6 +141,28 @@ def test_remote_code_candidate_is_skipped_and_recorded_without_the_opt_in(
     assert REMOTE_CODE_MODEL not in {row["model"] for row in report["candidates"]}
 
 
+def test_a_candidate_needing_the_legacy_transformers_is_routed_not_run(
+    tmp_path, monkeypatch, goldset_paths
+):
+    """Opted in, on the PINNED stack: the row is still not scored, and says which pass scores it.
+
+    This is the failure the routing exists to prevent -- on transformers 5.x this candidate raises
+    at load, and its sibling `gte-multilingual-base` does something worse: it loads and returns
+    numbers that do not reproduce its own card.
+    """
+    corpus, goldset = goldset_paths
+    monkeypatch.setenv(env.LLB_TRUST_REMOTE_CODE, "")
+    _on_stack(monkeypatch, PINNED_TRANSFORMERS_MAJOR)
+    built = _fake_builder(monkeypatch, _questions(8)[:4])
+    out = tmp_path / "report.md"
+    result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_MODEL}", "--allow-remote-code")
+    assert result.exit_code == 0, result.output
+    assert built == [BASELINE]
+    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert [row["reason"] for row in report["skipped"]] == [SKIP_LEGACY_STACK]
+    assert "compare-embeddings-legacy" in report["skipped"][0]["detail"]
+
+
 def test_allow_remote_code_builds_the_candidate_and_arms_the_process_knob(
     tmp_path, monkeypatch, goldset_paths
 ):
@@ -128,6 +170,9 @@ def test_allow_remote_code_builds_the_candidate_and_arms_the_process_knob(
     # setenv (not delenv) so monkeypatch records the pre-state and REMOVES the knob the command
     # sets below -- a leaked opt-in would silently arm every later test in the session.
     monkeypatch.setenv(env.LLB_TRUST_REMOTE_CODE, "")
+    # The legacy pass is where this candidate's repository code runs, so that is the stack the
+    # scored-row assertions below belong on.
+    _on_stack(monkeypatch, REQUIRED_TRANSFORMERS_MAJOR_LEGACY)
     built = _fake_builder(monkeypatch, _questions(8)[:4])
     out = tmp_path / "report.md"
     result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_MODEL}", "--allow-remote-code")

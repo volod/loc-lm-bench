@@ -24,6 +24,7 @@ Pure and dependency-free: no torch, no network.
 from dataclasses import dataclass
 
 from llb.rag.embedding_families import RETRIEVAL_TASK
+from llb.rag.model_stack import REQUIRED_TRANSFORMERS_MAJOR_LEGACY
 
 FAMILY_BGE_RERANKER = "bge-reranker"
 FAMILY_JINA_RERANKER_V2 = "jina-reranker-v2"
@@ -43,12 +44,17 @@ class RerankConvention:
     applies (None when the pair is scored bare); it is recorded for the report and for the operator,
     never re-typed into the call, so a card change cannot leave this table quietly disagreeing with
     the weights. `source` is the card the entry was read from.
+
+    `requires_transformers_major` is the transformers major that repository code targets, when it
+    targets one this repo does not pin -- a PACKAGING fact that routes the row to the legacy
+    scoring pass instead of failing the run (`llb.rag.model_stack`).
     """
 
     family: str
     source: str
     trust_remote_code: bool = False
     default_prompt: str | None = None
+    requires_transformers_major: int | None = None
 
 
 # family id -> its documented convention. Every entry cites the card it was read from.
@@ -63,12 +69,17 @@ CONVENTIONS: dict[str, RerankConvention] = {
         source="https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual",
         # Ships its own XLM-RoBERTa flash implementation as repository code.
         trust_remote_code=True,
+        # That code imports `create_position_ids_from_input_ids`, which transformers 5.x removed.
+        requires_transformers_major=REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
     ),
     FAMILY_GTE_RERANKER: RerankConvention(
         family=FAMILY_GTE_RERANKER,
         source="https://huggingface.co/Alibaba-NLP/gte-multilingual-reranker-base",
         # `auto_map` points at Alibaba-NLP/new-impl modelling code.
         trust_remote_code=True,
+        # Same uninitialized `position_ids` buffer as the gte encoder: an out-of-bounds rope
+        # gather that reports IndexError on CPU and a device-side assert on CUDA.
+        requires_transformers_major=REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
     ),
     FAMILY_MXBAI_RERANK_V2: RerankConvention(
         family=FAMILY_MXBAI_RERANK_V2,

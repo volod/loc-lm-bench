@@ -15,6 +15,7 @@ from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
 from llb.rag.candidate_screen import SkippedCandidate
+from llb.rag.card_parity import CardParityResult
 from llb.rag.encoder_throughput import HostThroughputSummary, ThroughputProfile
 from llb.rag.embedding_bakeoff_uncertainty import (
     BakeoffVerdict,
@@ -64,7 +65,9 @@ class BuiltStore:
 
     `store` exposes `.retrieve(question, k) -> list[ChunkRecord]` and `.meta` (dim / n_indexed /
     embedding_model). `cost_usd` is set only for the API row. `throughput_profile` is set when
-    `compare-embeddings` runs the cold/warm encoder decomposition.
+    `compare-embeddings` runs the cold/warm encoder decomposition. `dtype` is the precision the
+    weights were actually held at, read off the loaded encoder -- without it the throughput column
+    compares checkpoints rather than models (`llb.rag.encoder_precision`).
     """
 
     store: Any
@@ -74,6 +77,7 @@ class BuiltStore:
     device: str | None = None
     cost_usd: float | None = None
     throughput_profile: ThroughputProfile | None = None
+    dtype: str | None = None
 
 
 # embedding_model -> BuiltStore. The CLI binds the heavy real builder; tests inject a fake.
@@ -101,6 +105,14 @@ class CandidateResult(TypedDict):
     index_bytes: int
     device: NotRequired[str]
     cost_usd: NotRequired[float]
+    # The precision this row was MEASURED at, and the precision its publisher uploaded. Two rows
+    # at different precisions are not comparable on chunks/s, so the column states both rather
+    # than leaving the reader to assume one.
+    dtype: NotRequired[str]
+    published_dtype: NotRequired[str]
+    # Did this candidate reproduce its own model card before it was ranked? A row scored without
+    # the check says so (`no_reference_declared`) rather than reading as verified.
+    card_parity: NotRequired[CardParityResult]
     # True when this row was scored with repository-supplied modelling code executing.
     trust_remote_code: NotRequired[bool]
     # Cold/warm encoder decomposition (optional; present when --encoder-throughput ran).

@@ -5,6 +5,7 @@ from llb.rag.bakeoff_report_sections import (
 )
 from llb.rag.bakeoff_report_sections import (
     boundary_section,
+    card_parity_section,
     gate_summary,
     paired_cells,
     skipped_section,
@@ -28,6 +29,21 @@ def _peak_vram_mb(row: CandidateResult) -> str:
     profile = row.get("throughput_profile")
     peak = profile.get("peak_vram_mb") if profile else None
     return f"{peak:.0f}" if peak else _NO_PAIRED_CELL
+
+
+def _dtype_cell(row: CandidateResult) -> str:
+    """The precision the row was MEASURED at, marked when it differs from the published one.
+
+    Without it the chunks/s column compares checkpoints: a half-precision upload outruns a float32
+    one at identical parameter count and dimension, which is a packaging fact, not a model fact.
+    """
+    measured = row.get("dtype")
+    published = row.get("published_dtype")
+    if measured is None:
+        return published or _NO_PAIRED_CELL
+    if published and published != measured:
+        return f"{measured} (card {published})"
+    return measured
 
 
 def _family_cell(row: CandidateResult) -> str:
@@ -116,12 +132,12 @@ def render_markdown(report: BakeoffReport) -> str:
         lines.append(f"- adoption bar(s): {', '.join(settings.get('bars') or [BAR_RECALL])}")
     lines += [
         "",
-        "| model | family | kind | recall@k | MRR | dim | indexed | chunks/s | size (MB) "
+        "| model | family | kind | dtype | recall@k | MRR | dim | indexed | chunks/s | size (MB) "
         "| peak VRAM (MB) | cost (USD) "
         f"| recall delta vs {baseline or 'baseline'} | w/l/t | sign p | rand p "
         "| recall reading |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: "
-        "| ---: | ---: | :-: |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: "
+        "| :-: | ---: | ---: | :-: |",
     ]
     for row in sorted(
         report["candidates"], key=lambda c: (-c["recall_at_k"], -c["mrr"], c["model"])
@@ -130,7 +146,7 @@ def render_markdown(report: BakeoffReport) -> str:
         size_mb = row["index_bytes"] / BYTES_PER_MB
         delta, ledger, sign_p, randomization_p, reading = _paired_cells(row)
         lines.append(
-            f"| `{row['model']}` | {_family_cell(row)} | {row['kind']} "
+            f"| `{row['model']}` | {_family_cell(row)} | {row['kind']} | {_dtype_cell(row)} "
             f"| {row['recall_at_k']:.3f} | {row['mrr']:.3f} "
             f"| {row['dim']} | {row['n_indexed']} | {_throughput(row):.1f} | {size_mb:.2f} "
             f"| {_peak_vram_mb(row)} | {cost} "
@@ -144,6 +160,7 @@ def render_markdown(report: BakeoffReport) -> str:
         "",
     ]
     lines += _skipped_section(report)
+    lines += card_parity_section(report["candidates"])
     lines += _gate_summary(report)
     lines += _boundary_section(report)
     lines += _floor_section(report)

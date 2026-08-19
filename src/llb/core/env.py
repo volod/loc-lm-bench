@@ -20,6 +20,12 @@ LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
 # is REFUSED rather than executing downloaded code implicitly (llb.rag.embedding).
 LLB_TRUST_REMOTE_CODE = "LLB_TRUST_REMOTE_CODE"
 
+# Load precision every `Embedder` in the process uses: auto | float32 | float16 | bfloat16.
+# `auto` keeps whatever precision the publisher uploaded, which differs across checkpoints and
+# makes an encoder throughput column incomparable -- a declared value makes it a controlled
+# variable (llb.rag.encoder_precision).
+LLB_EMBED_DTYPE = "LLB_EMBED_DTYPE"
+
 # Hugging Face downloads (gated models and datasets)
 HF_TOKEN = "HF_TOKEN"
 GITHUB_TOKEN = "GITHUB_TOKEN"

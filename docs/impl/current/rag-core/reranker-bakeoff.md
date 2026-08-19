@@ -172,14 +172,25 @@ of its ranking is decided by noise rather than by relevance.
 - **A cheaper candidate is not a cheaper option.** `mxbai-rerank-base-v2` is the smallest and among
   the fastest, and it is measurably WORSE than the incumbent on both bars on the fixture while
   carrying the widest measurement floor of any row.
-- **Two of five candidates could not be scored at all, for a PACKAGING reason.** Both remote-code
-  entries fail against the pinned stack: `jinaai/jina-reranker-v2-base-multilingual` raises
-  `ImportError: cannot import name 'create_position_ids_from_input_ids' from
+- **The two remote-code candidates are scored in a separate pass, and both are cheaper than the
+  incumbent rather than better.** Neither runs against the pinned transformers 5.12.1:
+  `jinaai/jina-reranker-v2-base-multilingual` raises `ImportError: cannot import name
+  'create_position_ids_from_input_ids' from
   transformers.models.xlm_roberta.modeling_xlm_roberta`, and
   `Alibaba-NLP/gte-multilingual-reranker-base` indexes its rope tables with an uninitialized
-  `position_ids` buffer (`rope_cos[position_ids]`), which is an out-of-bounds gather -- a CPU load
-  reports `IndexError`, CUDA reports a device-side assert. This is the SAME failure class the
-  encoder roster refresh recorded for `jina-embeddings-v3` and `gte-multilingual-base`
-  ([embedders](embedders.md#the-two-remote-code-candidates-do-not-run-on-the-pinned-stack)): both
-  vendors target the transformers 4.x API, the repo pins 5.12.1, and the hole is packaging, not
-  quality.
+  `position_ids` buffer -- an out-of-bounds gather that reports `IndexError` on CPU and a
+  device-side assert on CUDA. Both vendors target the transformers 4.x API, so both rows are routed
+  to the [legacy pass](stack-and-card-parity.md#the-legacy-transformers-pass) and scored there,
+  each reproducing its own card first. On the 250-item fixture they sit BELOW the incumbent on both
+  bars (jina MRR `-0.037 [-0.064, -0.013]`, gte recall `-0.016 [-0.032, -0.004]`) while costing
+  ~7x less per query and about a third of its resident VRAM, so what they add is a
+  latency/quality frontier rather than a swap candidate ([the two
+  rerankers](stack-and-card-parity.md#the-two-rerankers)).
+  This is the SAME failure class the encoder roster recorded for `jina-embeddings-v3` and
+  `gte-multilingual-base`
+  ([embedders](embedders.md#the-two-remote-code-candidates-are-scored-in-the-legacy-transformers-pass)).
+- **Every scored candidate reproduces its own model card before it is ranked.** A cross-encoder that
+  loads and returns wrong scores is not a slower option, it is an unreadable row, so the lane runs
+  each card's own documented example on the loaded scorer and refuses a mismatch before the pass
+  ([the card-parity gate](stack-and-card-parity.md#the-card-parity-gate)). The report prints the
+  verdict per row, and `RERANK_DTYPE=` is now recorded in the header beside the batch size.

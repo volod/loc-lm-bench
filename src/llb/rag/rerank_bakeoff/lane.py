@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from llb.rag.candidate_screen import SkippedCandidate
+from llb.rag.card_parity import blocks_scoring, parity_skip_row
 from llb.rag.embedding_bakeoff import paired_item_ledger
 from llb.rag.embedding_bakeoff_models import BakeoffItem
 from llb.rag.embedding_bakeoff_uncertainty import (
@@ -37,6 +38,8 @@ from llb.rag.embedding_bakeoff_uncertainty import (
     MetricVectors,
     item_vectors,
 )
+from llb.rag.rerank_bakeoff.cards import check_rerank_card
+from llb.rag.rerank_bakeoff.families import resolve_convention
 from llb.rag.rerank_bakeoff.readings import attach_uncertainty, measure_rerank_floor
 from llb.rag.rerank_bakeoff.fit import (
     fit_verdict,
@@ -129,6 +132,7 @@ def run_rerank_bakeoff(
     batch_size: int,
     candidates: Sequence[str],
     load_scorer: ScorerLoader,
+    dtype: str | None = None,
     item_ids: Sequence[str] | None = None,
     skipped: Sequence[SkippedCandidate] = (),
     headroom: VramHeadroom | None = None,
@@ -144,8 +148,11 @@ def run_rerank_bakeoff(
 
     `pools` is one candidate pool per item in retrieval order, retrieved once at `pool_depth`; each
     candidate re-sorts it, so the rows differ only by the cross-encoder. A candidate that cannot be
-    loaded, or whose resident footprint exceeds the declared headroom, lands in `skipped` WITH its
-    measurement rather than vanishing from the table.
+    loaded, whose resident footprint exceeds the declared headroom, or that does not reproduce its
+    own model card lands in `skipped` WITH its measurement rather than vanishing from the table.
+
+    The card check runs on the LOADED scorer, before the pass: loading is not evidence a candidate
+    can be ranked, reproducing its card is (`llb.rag.rerank_bakeoff.cards`).
     """
     if len(pools) != len(items):
         raise ValueError("the reranker bake-off needs one candidate pool per scored item")
@@ -160,6 +167,12 @@ def run_rerank_bakeoff(
         loaded, refusal = load_candidate(model, load_scorer, headroom)
         if loaded is None:
             declined.append(refusal)  # type: ignore[arg-type]
+            continue
+        parity = check_rerank_card(model, loaded.scorer)
+        if blocks_scoring(parity):
+            _LOG.warning("[compare-rerankers] %s failed card parity: %s", model, parity["detail"])
+            declined.append(parity_skip_row(parity, resolve_convention(model).family))
+            loaded.release()
             continue
         try:
             finished = rerank_pass(pools, items, loaded.scorer, label=model)
@@ -180,6 +193,7 @@ def run_rerank_bakeoff(
             loaded=loaded,
             peak_vram_mb=peak,
             fits_headroom=fit_verdict(peak, headroom),
+            card_parity=parity,
         )
         loaded.release()
 
@@ -196,6 +210,8 @@ def run_rerank_bakeoff(
         "best_first_hit": best_by(scored.rows, METRIC_MRR),
         "paired_items": paired_item_ledger(scored.vectors, len(items), item_ids),
     }
+    if dtype is not None:
+        report["dtype"] = dtype
     if declined:
         report["skipped"] = declined
     if headroom is not None:

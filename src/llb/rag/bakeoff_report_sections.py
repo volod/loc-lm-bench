@@ -1,9 +1,10 @@
 """Report sections shared by the bake-off lanes (embedder, reranker).
 
-Every bake-off publishes the same four things beside its own quality columns: the paired delta cells
-per row, the minimum-evidence gate summary, how close each row sits to the adoption cut, and the
-adopt-or-retain (keep-or-swap) sentence. Those sections read `paired_vs_baseline` / `verdict` /
-`skipped`, none of which is specific to what was ranked -- so they live here once and each lane's
+Every bake-off publishes the same five things beside its own quality columns: the paired delta cells
+per row, the minimum-evidence gate summary, how close each row sits to the adoption cut, the
+adopt-or-retain (keep-or-swap) sentence, and whether each scored row reproduced its own model card.
+Those sections read `paired_vs_baseline` / `verdict` / `skipped` / `card_parity`, none of which is
+specific to what was ranked -- so they live here once and each lane's
 renderer supplies only the columns that ARE specific to it.
 
 Row and report are typed as plain mappings on purpose: the two lanes have different `TypedDict`s
@@ -99,6 +100,37 @@ def skipped_section(
     lines += [
         f"| `{row['model']}` | {row['family']} | {_one_line(row['detail'])} |" for row in skipped
     ]
+    return [*lines, ""]
+
+
+def card_parity_section(
+    rows: Sequence[Mapping[str, Any]], *, title: str = "Model-card parity"
+) -> list[str]:
+    """Whether each scored row reproduced its own card before it was ranked.
+
+    A row that ran and was never checked is not the same fact as a row that reproduced its card, so
+    the status column prints both -- and a reader who wants to know why a lead is trustworthy can
+    see which rows were verified against a published number and which were taken on trust.
+    """
+    checked = [row for row in rows if row.get("card_parity")]
+    if not checked:
+        return []
+    lines = [
+        f"## {title}",
+        "",
+        "| model | status | mode | worst delta | tolerance | card |",
+        "| --- | --- | --- | ---: | ---: | --- |",
+    ]
+    for row in checked:
+        parity = row["card_parity"]
+        worst = parity.get("max_abs_diff")
+        lines.append(
+            f"| `{row['model']}` | {parity['status']} | {parity['mode']} "
+            f"| {worst:.4f} | {parity['tolerance']:.4f} | {parity['source'] or '-'} |"
+            if worst is not None
+            else f"| `{row['model']}` | {parity['status']} | {parity['mode']} | - | - "
+            f"| {parity['source'] or '-'} |"
+        )
     return [*lines, ""]
 
 

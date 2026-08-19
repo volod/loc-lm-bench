@@ -22,7 +22,10 @@ _REGISTRY_MODULE = "llb.rag.embedding_families"
 
 
 def screen_candidates(
-    models: Sequence[str], *, allow_remote_code: bool = False
+    models: Sequence[str],
+    *,
+    allow_remote_code: bool = False,
+    transformers_major: int | None = None,
 ) -> tuple[list[str], list[SkippedCandidate]]:
     """Split the encoder roster into candidates to build and candidates skipped with a reason."""
     return screen_roster(
@@ -33,4 +36,5 @@ def screen_candidates(
         subject="an encoder",
         convention_label="query/passage convention",
         allow_remote_code=allow_remote_code,
+        transformers_major=transformers_major,
     )

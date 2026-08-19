@@ -26,6 +26,12 @@ from typing import Any, Callable
 
 from llb.core.contracts.rag import RetrievalPair
 from llb.rag.candidate_screen import SkippedCandidate
+from llb.rag.card_parity import (
+    CardParityResult,
+    blocks_scoring,
+    parity_skip_row,
+    unpublished_result,
+)
 from llb.rag.embedding_bakeoff_models import (
     BakeoffItem,
     BakeoffReport,
@@ -34,6 +40,7 @@ from llb.rag.embedding_bakeoff_models import (
     StoreBuilder,
 )
 from llb.rag.embedding_families import resolve_convention
+from llb.rag.encoder_precision import published_dtype
 from llb.rag.embedding_bakeoff_uncertainty import (
     DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
@@ -66,7 +73,11 @@ def score_candidate(
 
 
 def score_pairs(
-    model: str, built: BuiltStore, pairs: list[RetrievalPair], k: int
+    model: str,
+    built: BuiltStore,
+    pairs: list[RetrievalPair],
+    k: int,
+    parity: CardParityResult | None = None,
 ) -> CandidateResult:
     """Shape one candidate row from an already-retrieved pass (so the pass is never repeated)."""
     metrics = evaluate_retrieval(pairs, k)
@@ -85,6 +96,13 @@ def score_pairs(
         "embed_seconds": round(built.embed_seconds, 3),
         "index_bytes": int(built.index_bytes),
     }
+    if parity is not None:
+        result["card_parity"] = parity
+    if built.dtype is not None:
+        result["dtype"] = built.dtype
+    declared = published_dtype(model)
+    if declared is not None:
+        result["published_dtype"] = declared
     if convention.trust_remote_code:
         result["trust_remote_code"] = True
     if built.device is not None:
@@ -148,10 +166,10 @@ class _ScoredCandidates:
     stores: dict[str, Any] = field(default_factory=dict)
     vectors: dict[str, MetricVectors] = field(default_factory=dict)
 
-    def score(self, model: str, built: BuiltStore) -> None:
+    def score(self, model: str, built: BuiltStore, parity: CardParityResult | None = None) -> None:
         """Retrieve once for this candidate, keep its row, vectors, and store, then free weights."""
         pairs = retrieve_pairs(built.store, self.items, self.k)
-        self.rows.append(score_pairs(model, built, pairs, self.k))
+        self.rows.append(score_pairs(model, built, pairs, self.k, parity))
         self.vectors[model] = item_vectors(pairs, self.k)
         self.stores[model] = built.store
         # Free encoder weights after the retrieval pass; noise-floor / later reads reload lazily.
@@ -183,6 +201,7 @@ def run_bakeoff(
     corpus_root: str,
     local_models: list[str],
     build_local: StoreBuilder,
+    card_parity: Callable[[str], CardParityResult] | None = None,
     item_ids: Sequence[str] | None = None,
     skipped: Sequence[SkippedCandidate] = (),
     api_model: str | None = None,
@@ -215,13 +234,26 @@ def run_bakeoff(
     `skipped` carries roster entries the caller screened out before any build
     (`llb.rag.embedding_bakeoff_roster`); they ride into the report so a run that ranks fewer
     candidates than the roster names states which are missing and why.
+
+    `card_parity` is the gate a candidate has to clear before a store is built for it: loading is
+    not evidence that a model can be ranked, reproducing its own card is
+    (`llb.rag.encoder_cards`). A candidate that runs and does not reproduce its card joins
+    `skipped` with the diagnosis instead of contributing a number nobody can read. Left unbound,
+    every row records `no_reference_declared` -- which is what the fake-store tests want, and what
+    an operator must be able to tell apart from "checked and reproduced".
     """
     if item_ids is not None and len(item_ids) != len(items):
         raise ValueError("the embedder paired ledger needs one item id per scored item")
     scored = _ScoredCandidates(k=k, items=items)
+    declined = list(skipped)
     for model in local_models:
+        parity = card_parity(model) if card_parity is not None else unpublished_result(model)
+        if blocks_scoring(parity):
+            _LOG.warning("[compare-embeddings] %s failed card parity: %s", model, parity["detail"])
+            declined.append(parity_skip_row(parity, resolve_convention(model).family))
+            continue
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
-        scored.score(model, build_local(model))
+        scored.score(model, build_local(model), parity)
     if api_lane_enabled(api_model, data_classification, consent):
         assert api_model is not None and build_api is not None  # narrowed by the gate
         _LOG.info("[compare-embeddings] building API candidate (CORPUS EGRESS): %s", api_model)
@@ -235,8 +267,8 @@ def run_bakeoff(
         "best_recall": best_recall(scored.rows),
         "paired_items": paired_item_ledger(scored.vectors, len(items), item_ids),
     }
-    if skipped:
-        report["skipped"] = list(skipped)
+    if declined:
+        report["skipped"] = declined
     _attach_uncertainty(
         report,
         scored.vectors,

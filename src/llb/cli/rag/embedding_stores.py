@@ -75,6 +75,10 @@ def local_store_builder(
         store.save(out_dir)
         resolve = getattr(store.embedder, "_resolve_device", None)
         device = resolve() if callable(resolve) else None
+        # Read the precision the weights are actually held at BEFORE releasing them: a row's
+        # throughput is only comparable beside the dtype it was measured at.
+        read_dtype = getattr(store.embedder, "effective_dtype", None)
+        dtype = read_dtype() if callable(read_dtype) else None
         # Release build weights before the cold/warm profile so peak VRAM is per-candidate,
         # not stacked across the bake-off roster (retrieve() lazy-reloads when scoring).
         release = getattr(store.embedder, "release", None)
@@ -97,6 +101,7 @@ def local_store_builder(
             embed_seconds=embed_seconds,
             index_bytes=_dir_size_bytes(out_dir),
             device=device,
+            dtype=dtype,
             throughput_profile=profile,
         )
 

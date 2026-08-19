@@ -23,6 +23,8 @@ loader refuses it unless explicitly opted into.
 from dataclasses import dataclass, field
 from typing import Mapping
 
+from llb.rag.model_stack import REQUIRED_TRANSFORMERS_MAJOR_LEGACY
+
 # The retrieval task description both instruct-style families put in front of a query. Same
 # sentence on both model cards, so it is one constant rather than two copies that can drift.
 RETRIEVAL_TASK = "Given a web search query, retrieve relevant passages that answer the query"
@@ -54,6 +56,10 @@ class EmbeddingConvention:
     documents (jina-v3's task adapter); an empty mapping is the common case. `source` is the model
     card the prefixes were read off, and `trust_remote_code` records that the family ships its
     forward pass as repository code.
+
+    `requires_transformers_major` is the transformers major that repository code targets, when it
+    targets one this repo does not pin. It is a PACKAGING fact about the candidate, so the screen
+    routes the row to the legacy scoring pass rather than letting it fail (`llb.rag.model_stack`).
     """
 
     family: str
@@ -63,6 +69,7 @@ class EmbeddingConvention:
     query_kwargs: Mapping[str, str] = field(default_factory=dict)
     passage_kwargs: Mapping[str, str] = field(default_factory=dict)
     trust_remote_code: bool = False
+    requires_transformers_major: int | None = None
 
     @property
     def symmetric(self) -> bool:
@@ -100,6 +107,9 @@ CONVENTIONS: dict[str, EmbeddingConvention] = {
         # Card's sentence-transformers usage encodes queries and documents in ONE bare
         # `model.encode(input_texts)` call: no instruction on either side.
         trust_remote_code=True,
+        # Its remote code materializes a non-persistent `position_ids` buffer the 5.x loader leaves
+        # uninitialized, so the model loads and gathers its rope tables out of bounds.
+        requires_transformers_major=REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
     ),
     FAMILY_JINA_V3: EmbeddingConvention(
         family=FAMILY_JINA_V3,
@@ -112,6 +122,9 @@ CONVENTIONS: dict[str, EmbeddingConvention] = {
         query_kwargs={"task": "retrieval.query"},
         passage_kwargs={"task": "retrieval.passage"},
         trust_remote_code=True,
+        # Its `XLMRobertaLoRA` overrides `from_pretrained` and defines only the 4.x
+        # `_tied_weights_keys`, so a 5.x load raises before the first encode.
+        requires_transformers_major=REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
     ),
     FAMILY_QWEN3_EMBEDDING: EmbeddingConvention(
         family=FAMILY_QWEN3_EMBEDDING,

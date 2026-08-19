@@ -36,7 +36,7 @@ def test_render_markdown_has_table_and_recommendation():
         build_local=_fixed_builder(_FakeStore([_chunk("d1", 0, 10)])),
     )
     md = render_markdown(report)
-    assert "| model | family | kind | recall@k |" in md
+    assert "| model | family | kind | dtype | recall@k |" in md
     # The point-estimate leader is reported as such; the RECOMMENDATION is the paired verdict
     # (see tests/llb/rag/test_embedding_bakeoff_uncertainty.py).
     assert "Point-estimate leader" in md and "Verdict:" in md

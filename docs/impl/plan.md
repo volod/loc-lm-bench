@@ -76,69 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### remote-code-encoder-load-contract (optional)
-
-Two roster candidates an operator would genuinely shortlist cannot be scored at all:
-`jinaai/jina-embeddings-v3` raises `AttributeError: 'XLMRobertaLoRA' object has no attribute
-'all_tied_weights_keys'` at load, and `Alibaba-NLP/gte-multilingual-base` loads but returns
-embeddings that do not reproduce its own model card, because transformers 5.x leaves its
-remote code's non-persistent `position_ids` buffer uninitialized ([RAG
-core](current/rag-core/embedders.md#the-two-remote-code-candidates-do-not-run-on-the-pinned-stack)).
-Both repositories target the transformers 4.x API and the repo pins 5.12.1, so the encoder roster
-has a hole that is a PACKAGING fact, not a quality one. Give the bake-off a way to score them:
-either an `[encoders-legacy]` optional extra pinning a compatible transformers for a separate
-scoring pass, or a non-remote-code load path per candidate, whichever the two models actually admit
--- and gate whichever route on a card-parity check, because gte is the case that proves a candidate
-can RUN and still be wrong.
-
-The RERANKER roster has the same hole from the same cause, so the load route must cover both
-rosters rather than only the encoders: `jinaai/jina-reranker-v2-base-multilingual` raises
-`ImportError: cannot import name 'create_position_ids_from_input_ids'` against
-`transformers.models.xlm_roberta`, and `Alibaba-NLP/gte-multilingual-reranker-base` gathers its rope
-tables with an uninitialized `position_ids` buffer -- an out-of-bounds index that reports
-`IndexError` on CPU and a device-side assert on CUDA
-([RAG core](current/rag-core/reranker-bakeoff.md#what-this-establishes)). Two of the five reranker
-candidates are therefore unranked for a packaging reason, and the same `[encoders-legacy]`-style
-pinned pass (or non-remote-code load path) is what would score them.
-
-Fold in the second confound the roster surfaced: the published checkpoints differ in PRECISION
-(`multilingual-e5-large-instruct` ships float16, `Qwen3-Embedding-0.6B` bfloat16, every incumbent
-float32), so warm chunks/s is not comparable across rows as a model property -- the instruct
-variant's 3.4x lead over `e5-large` at identical parameter count and dimension is its dtype ([RAG
-core](current/rag-core/embedders.md#read-the-throughput-column-with-the-checkpoint-dtype)). Add a
-declared per-candidate dtype so precision is a controlled variable and the throughput column can be
-read as a recommendation.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the convention registries and the `trust_remote_code` opt-in in
-  `src/llb/rag/embedding_families.py` / `src/llb/rag/embedding.py` and
-  `src/llb/rag/rerank_bakeoff/families.py`, plus the shared roster screening in
-  `src/llb/rag/candidate_screen.py` (a candidate that cannot load already has a skip row to land
-  in, and the reranker lane already isolates each candidate in its own process).
-- User-visible outcome: the Ukrainian encoder and reranker rankings cover every candidate an
-  operator would shortlist rather than only the ones whose publisher tracked the pinned
-  transformers, and the throughput column compares encoders at a stated precision instead of at
-  whatever each publisher uploaded.
-- Scope boundary: in scope -- the compatibility route for the two named encoders and the two named
-  rerankers, a card-parity check before a candidate is scored, the declared dtype knob, and a re-run
-  of the affected rows. Out of scope -- unpinning or upgrading the repo-wide transformers version
-  for the SHIPPED path, vendoring or patching third-party modelling code into `src/`, and any change
-  to the verdict bars.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` and
-  `$DATA_DIR/compare-rerankers/<run>/` layouts.
-- Execution path: `make compare-embeddings EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` and `make
-  compare-rerankers RERANK_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` on the CUDA host once the load route
-  exists; CI covers the card-parity check and the dtype resolution over fake encoders -- no
-  download, no GPU.
-- Acceptance gates: `make ci` green; each of the two encoders and each of the two rerankers is
-  either scored with its card reference behavior reproduced, or recorded as unscorable with the
-  diagnosis and the pin that would be required; the previously scored rows reproduce their recorded
-  numbers; every encoder row states the dtype it was measured at.
-- Documentation target: the embedder sections of [RAG core](current/rag-core/embedders.md), the
-  [reranker bake-off](current/rag-core/reranker-bakeoff.md), and
-  [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
-
 #### chunker-bake-off-under-the-size-cap (optional)
 
 Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The

@@ -35,11 +35,16 @@ def _resolve_roster(
     """Screen the requested roster into candidates to load plus visibly declined entries."""
     from llb.rag.candidate_screen import UnregisteredCandidateError
     from llb.rag.rerank_bakeoff.models import DEFAULT_RERANK_CANDIDATES_ROSTER
+    from llb.rag.model_stack import installed_transformers_major
     from llb.rag.rerank_bakeoff.roster import screen_rerankers
 
     roster = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_RERANK_CANDIDATES_ROSTER
     try:
-        candidates, skipped = screen_rerankers(roster, allow_remote_code=allow_remote_code)
+        candidates, skipped = screen_rerankers(
+            roster,
+            allow_remote_code=allow_remote_code,
+            transformers_major=installed_transformers_major(),
+        )
     except UnregisteredCandidateError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -218,6 +223,7 @@ def compare_rerankers_cmd(
         batch_size=batch_size,
         candidates=candidates,
         load_scorer=load_scorer,
+        dtype=dtype,
         item_ids=[item.id for item in items],
         skipped=skipped,
         headroom=_headroom(generator_vram_mb, vram_reserve_mb),

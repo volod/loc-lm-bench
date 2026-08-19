@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.candidate_screen import SkippedCandidate
+from llb.rag.card_parity import CardParityResult
 from llb.rag.embedding_bakeoff_uncertainty import (
     BakeoffVerdict,
     PairedRow,
@@ -132,6 +133,9 @@ class RerankCandidateResult(TypedDict):
     fits_headroom: NotRequired[bool]  # peak footprint inside the declared budget
     trust_remote_code: NotRequired[bool]
     default_prompt: NotRequired[str]
+    # Did this candidate reproduce its own model card before it was ranked? A row scored without
+    # the check says so (`no_reference_declared`) rather than reading as verified.
+    card_parity: NotRequired[CardParityResult]
     # Paired percentile-bootstrap delta against the incumbent reranker over shared resample index
     # sets -- the reading that says whether a point-estimate lead is a ranking or an item set.
     paired_vs_baseline: NotRequired[PairedRow]
@@ -148,6 +152,9 @@ class RerankBakeoffReport(TypedDict):
     chunking: str
     pool_depth: int
     batch_size: int
+    # The load precision every candidate was held at (`auto` keeps each checkpoint's own), so two
+    # runs' latency and VRAM columns are comparable only when this line matches.
+    dtype: NotRequired[str]
     candidates: list[RerankCandidateResult]
     best_recall: str | None
     best_first_hit: str | None
