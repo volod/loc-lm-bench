@@ -22,9 +22,9 @@ The lane ranks every labeled span TWICE and reads the coverage curve against tho
 Each item is then classified by its WORST hop, at the smallest compared budget (the operating
 budget):
 
-| diagnosis | what the ranks show | the fix it points at |
+| diagnosis | what it reads | the fix it points at |
 | --- | --- | --- |
-| `covered` | every hop is within the operating budget | none |
+| `covered` | the retrieval AT the operating budget carried every labeled span | none |
 | `budget` | every hop is reachable by the question, below the cut | a larger k, or a second pass |
 | `query` | a hop the question never reaches, that its own text reaches at the operating budget | query decomposition |
 | `unreachable` | a hop no query form reaches at the operating budget | chunking or the index, not ranking |
@@ -34,6 +34,19 @@ The counted diagnoses name one explanation per slice (`budget`, `query`, `unreac
 by cutting one deep pass -- because a hybrid dense/lexical lane re-fuses its candidate pool per
 requested depth, so the top 10 of a depth-200 pass is not the top 10 of a k=10 retrieval. The
 report says which of the two each table is.
+
+**`covered` is the served outcome, not a deep-pass rank.** The same re-fusion that separates the
+histogram from the curve also separates them item by item, in both directions: a hop can sit
+inside the deep pass's top 10 and outside a k=10 retrieval, or the reverse. `diagnose_item` in
+`src/llb/rag/multihop_probe/diagnose.py` therefore takes the item's measured `all-spans@k` at the
+operating budget and lets that alone decide `covered`, so the diagnosis ledger and the coverage
+curve can never disagree about which items were served; the other three diagnoses stay rank-based,
+because they answer "what would fix the miss", which is a question about depth rather than about
+the cut. Reading `covered` off the deep ranks instead had counted one factoid item covered that a
+k=10 retrieval missed (the 95-item ledger is 45/34/9/7, not 46/33/9/7) and, on the paired lane,
+had swapped two multi-hop items between `covered` and `budget` against what k=10 actually
+returned. Three fake-store cases in `tests/llb/rag/test_multihop_hop_probe.py` pin both directions
+of the divergence and the ledger/curve agreement.
 
 ```bash
 make probe-multihop-hops CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> SPLIT= \
@@ -147,44 +160,64 @@ drafted:
 
 ## Query decomposition conversion evidence
 
-CUDA-host evidence from 2026-08-17 is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260817T-query-decomposition-conversion/`. The matched
-recursive/hybrid E5-base store reproduces the corpus-side build exactly: 1,139 chunks before
-duplicate collapse and 1,099 indexed chunks after it. The paired run uses the existing
-`decompose` step, MamayLM-Gemma-3-12B-IT-v2.0 GGUF on Ollama at a 4,096-token context, k=10/25/50,
-and depth 200. It generates one bounded plan for each of 34 focus items and reuses that plan for
-all four retrieval calls.
+CUDA-host evidence from 2026-08-19 is under
+`$DATA_DIR/graph-vector-fusion-multihop/20260819T-query-decomposition-conversion/`. It answers the
+question against the ORIGINAL cohorts, so conversion is attributable to the same 8 query-diagnosed
+and 19 budget-diagnosed items the [budget reading](#is-the-both-hops-ceiling-a-budget-or-a-query-problem)
+above diagnosed.
 
-The original 95-item runtime ledger was no longer on the host. A provenance-matched replay used
-the same five documents, July implementation, 12B model, seed 13, 16,384-token drafting context,
-and deterministic settings, but failed the identity gate: extraction produced 274 entities and
-238 facts, then retained 79 items (34 multi-hop), instead of the recorded 255/242 and 95/35. The
-legacy bundle omitted its per-item type sidecar, so the replay artifact carries a derived
-`item_provenance.jsonl` that labels only its 34 structurally named `-mhop-` rows; it does not alter
-questions or spans. The raw replay therefore measures a NEW cohort and is not substituted for the
-historical eight query-diagnosed items.
+The 95-item ledger it runs on is the shared draft bundle at
+`$DATA_DIR/graph-vector-fusion-multihop/goods-draft/`: `goldset.jsonl` carries the 95 items and
+`needle_items.jsonl` is its question-type sidecar (40 factoid, 35 multi-hop, 14 procedural,
+4 numeric, 2 comparative). The matched store is the one the measurement-floor re-read built,
+`.../20260724T-noise-floor/llb/rag/` -- recursive/hybrid, E5-base, 1,139 chunks before duplicate
+collapse and 1,099 indexed after it. Neither needed recovery or recreation; the bundle is not
+per-run, so it sits beside the runs rather than inside one.
 
-The fresh raw cohort diagnoses 2 covered, 25 budget, 6 query, and 1 unreachable item. The existing
-decomposition converts NONE of the 6 query-diagnosed items to all-spans at k=10. It makes one of
-the six fully reachable in the depth-200 pass, but that item remains below the operating cutoff.
-Its cost to the 25 raw budget-diagnosed items is two covered-span-share regressions; two improve
-and 21 tie, while three lose full reachability by depth 200. It also loses one operating-budget
-success from the raw covered cohort.
+**The raw identity gate passed before the paired result was read.** `raw-identity/report.md`
+reproduces `20260816T-hop-probe/report.md` byte for byte, including the multi-hop diagnosis split
+of 2 covered, 19 budget, 8 query, 6 unreachable and the curve 0.057 / 0.200 / 0.229. `raw/` is the
+same probe re-read after `covered` was anchored to the served retrieval: the multi-hop slice is
+unchanged, and only the whole-set and factoid ledgers move (45/34/9/7 and 31/8/1/0).
 
-| fresh multi-hop slice (n=34) | k=10 | k=25 | k=50 |
+The paired run uses the existing `decompose` step, MamayLM-Gemma-3-12B-IT-v2.0 GGUF Q4_K_M on
+Ollama at a 4,096-token context, k=10/25/50, and depth 200. It generates one bounded plan
+(3 or 4 subqueries) for each of the 35 multi-hop items and reuses that plan for all four retrieval
+calls; span-text controls stay raw. The lane is deterministic at temperature 0: re-running it
+after the diagnosis fix reproduced every generated plan, subquery count, and rank, and moved only
+the two diagnosis labels the fix was for.
+
+**Result: generic decomposition converts NONE of the 8 original query-diagnosed items at the
+operating budget, and costs the 19 original budget-diagnosed items nothing there.**
+
+| original raw cohort | n | all-spans@10 before -> after | span coverage before -> after | coverage +/=/- | deep reachability +/- |
+| --- | ---: | :-: | :-: | :-: | :-: |
+| covered | 2 | 2 -> 2 | 1.000 -> 1.000 | 0 / 2 / 0 | +0 / -0 |
+| budget | 19 | 0 -> 0 | 0.316 -> 0.342 | 1 / 18 / 0 | +0 / -0 |
+| query | 8 | 0 -> 0 | 0.250 -> 0.312 | 1 / 7 / 0 | +2 / -0 |
+| unreachable | 6 | 0 -> 0 | 0.500 -> 0.500 | 0 / 6 / 0 | +0 / -0 |
+
+Two of the eight query items (`pdf-4c313c0e6619.md-mhop-10`, `pdf-6d8c2128b330.md-mhop-54`) become
+`budget` -- decomposition does reach a hop the raw question never reached at depth 200 -- but both
+land past k=10, so neither converts. Nothing regresses at the operating budget in any cohort: no
+item loses all-spans@10 and no item loses covered-span share.
+
+| multi-hop slice (n=35) | k=10 | k=25 | k=50 |
 | --- | ---: | ---: | ---: |
-| raw `all-spans@k` | 0.059 | 0.206 | 0.206 |
-| `decompose` `all-spans@k` | 0.029 | 0.235 | 0.294 |
-| raw span coverage | 0.441 | 0.544 | 0.559 |
-| `decompose` span coverage | 0.426 | 0.559 | 0.603 |
+| raw `all-spans@k` | 0.057 | 0.200 | 0.229 |
+| `decompose` `all-spans@k` | 0.057 | 0.171 | 0.286 |
+| raw span coverage | 0.371 | 0.514 | 0.543 |
+| `decompose` span coverage | 0.400 | 0.486 | 0.586 |
 
-The negative result is cutoff-specific and actionable: generic decomposition improves deeper
-coverage, but does not recover the diagnosed k=10 population and introduces operating-budget
-regressions. It does not license enabling the step by default. No prompt, retrieval strategy, or
-shipped `query_prep` default changed. `raw-replay/` carries the raw gate; `decompose-replay/`
-carries the paired JSON, Markdown, and endpoint fingerprint; `replayed-goods-draft/` and
-`store-data/` retain the rejected draft replay and matched store. Attribution to the original
-8 query and 19 budget items remains an exact-ledger replay requirement.
+The curve says where the effect actually lands: the gain is deeper than the budget an operator
+serves. At k=50 decomposition adds two items and 0.043 of span coverage; at k=25 it LOSES one item
+(0.200 -> 0.171); at k=10 it is a tie on all-spans and worth 0.029 of coverage share. That is a
+negative result for the diagnosed population and it does not license enabling the step by default.
+No prompt, retrieval strategy, or shipped `query_prep` default changed. `run_config.yaml` is the
+probed lane, `raw-identity/` the byte-identical gate, `raw/` the re-anchored raw reading,
+`decompose/` the paired JSON, Markdown, and endpoint fingerprint, and
+`decompose-deep-rank-diagnosis/` the same paired run read under the pre-fix rule, retained because
+it is the evidence for the diagnosis anchor described above.
 
 ### What the k=50 coverage is actually made of
 

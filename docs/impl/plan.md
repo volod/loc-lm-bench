@@ -76,34 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### multihop-query-decomposition-conversion
-
-The exact 95-item ledger that defines the original 8 query and 19 budget cohorts is absent from the
-host; the paired lane and the non-identical fresh replay are described in
-[GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#query-decomposition-conversion-evidence).
-Recover that ledger from an archival copy, or recreate it byte-for-byte from its provenance, then
-run the paired `decompose` probe against its 35-item multi-hop slice so conversion is attributable
-to the original cohorts.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: BLOCKED BY MISSING ARTIFACT
-- Dependencies: an archival copy of the original `goods-draft/goldset.jsonl` and its question-type
-  sidecar, or a byte-identical recreation that first reproduces 95 total items, 35 multi-hop items,
-  the 1,099-chunk store, and the raw 2/19/8/6 diagnosis split.
-- User-visible outcome: the operator learns how many of the ORIGINAL query-diagnosed items generic
-  decomposition recovers and what it costs the original budget-diagnosed cohort.
-- Scope boundary: in scope -- artifact recovery, the raw identity gate, the paired run, and its
-  reading. Out of scope -- substituting a newly drafted cohort, a new decomposition prompt or
-  strategy, and changing the shipped `query_prep` default.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: restore the bundle, rebuild its matched store, run the raw identity probe, then
-  run `make probe-multihop-hops QUERY_PREP=decompose` against the local CUDA model.
-- Acceptance gates: the raw probe reproduces the recorded slice before the paired result is read;
-  `make ci` is green; the report states conversion for the 8 original query items and cost to the
-  19 original budget items.
-- Documentation target: the retrieval budget and per-hop evidence page of
-  [GraphRAG](current/graphrag-backend.md).
-
 #### retrieved-evidence-intactness-metric
 
 `recall@k` credits an item as soon as a retrieved chunk OVERLAPS a gold span by ONE character

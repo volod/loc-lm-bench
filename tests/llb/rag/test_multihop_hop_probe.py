@@ -223,3 +223,83 @@ def test_budget_grid_parsing_sorts_deduplicates_and_rejects_a_non_budget():
     for bad in ("", "0", "k", "10,-5"):
         with pytest.raises(ValueError):
             parse_budgets(bad)
+
+
+class _ByDepth:
+    """A store that re-fuses its ranking per requested depth, the way a hybrid lane does.
+
+    `hits` maps (query, k) -> ranking. A hybrid dense/lexical store re-scores its candidate pool
+    against the depth it is asked for, so the top 10 of a deep pass is NOT the top 10 of a k=10
+    retrieval -- in either direction. Only that behavior separates a diagnosis anchored to the
+    operating-budget retrieval from one anchored to the deep-pass ranks.
+    """
+
+    def __init__(self, hits: dict[tuple[str, int], list[ChunkRecord]]) -> None:
+        self.hits = hits
+
+    def retrieve(self, query: str, k: int) -> list[ChunkRecord]:
+        return self.hits.get((query, k), [])[:k]
+
+
+def _controls(item: EvidenceItem, depth: int) -> dict[tuple[str, int], list[ChunkRecord]]:
+    """Span-text controls that reach their own span at rank 1 in the deep pass."""
+    return {(span["text"], depth): [_chunk(span["doc_id"])] for span in item.spans}
+
+
+def test_a_hop_the_deep_pass_ranks_inside_k_but_the_k_retrieval_misses_is_not_covered():
+    """The deep pass is not what the operator is served: `covered` follows the retrieval AT k."""
+    item = _two_hop("mh-1", "q")
+    store = _ByDepth(
+        {
+            ("q", 200): [_chunk("d1"), _chunk("d2")],  # both hops inside the deep top 10
+            ("q", 10): [_chunk("d1")],  # the served retrieval carries one
+            ("q", 25): [_chunk("d1"), _chunk("d2")],
+            ("q", 50): [_chunk("d1"), _chunk("d2")],
+            **_controls(item, 200),
+        }
+    )
+    report = _probe(store, [item])
+    probe = report["items"][0]
+    assert probe["budgets"][0]["all_spans_at_k"] == 0.0
+    assert probe["diagnosis"] == DIAGNOSIS_BUDGET  # a wider k does carry it, so that is the fix
+    assert report["slices"]["multi-hop"]["diagnosis"]["failing_items"] == 1
+
+
+def test_a_hop_the_deep_pass_ranks_past_k_but_the_k_retrieval_carries_is_covered():
+    item = _two_hop("mh-1", "q")
+    store = _ByDepth(
+        {
+            ("q", 200): [_chunk("d1"), *_filler(28), _chunk("d2")],  # second hop at rank 30
+            ("q", 10): [_chunk("d1"), _chunk("d2")],  # the served retrieval carries both
+            ("q", 25): [_chunk("d1"), _chunk("d2")],
+            ("q", 50): [_chunk("d1"), _chunk("d2")],
+            **_controls(item, 200),
+        }
+    )
+    report = _probe(store, [item])
+    assert report["items"][0]["diagnosis"] == DIAGNOSIS_COVERED
+    assert report["slices"]["multi-hop"]["diagnosis"]["failing_items"] == 0
+
+
+def test_the_covered_row_of_the_diagnosis_table_always_equals_the_curve():
+    """The two halves of the report cannot contradict each other for any lane."""
+    items = [_two_hop(f"mh-{i}", f"q{i}") for i in range(2)]
+    hits: dict[tuple[str, int], list[ChunkRecord]] = {
+        ("q0", 200): [_chunk("d1"), _chunk("d2")],
+        ("q0", 10): [_chunk("d1")],
+        ("q1", 200): [_chunk("d1"), *_filler(28), _chunk("d2")],
+        ("q1", 10): [_chunk("d1"), _chunk("d2")],
+    }
+    for item in items:
+        hits.update(_controls(item, 200))
+    report = _probe(_ByDepth(hits), items)
+    covered = {probe["item_id"] for probe in report["items"] if probe["diagnosis"] == "covered"}
+    served = {
+        probe["item_id"]
+        for probe in report["items"]
+        if probe["budgets"][0]["all_spans_at_k"] == 1.0
+    }
+    assert covered == served == {"mh-1"}  # the deep pass would have named mh-0 instead
+    slice_probe = report["slices"]["multi-hop"]
+    assert slice_probe["diagnosis"]["counts"]["covered"] == 1
+    assert slice_probe["curve"][0]["all_spans_at_k"]["mean"] == 0.5
