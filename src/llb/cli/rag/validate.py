@@ -45,6 +45,12 @@ def validate_retrieval(
         help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
         "unchanged (an inflection is not a misspelling)",
     ),
+    query_prep_dense_case: bool = typer.Option(
+        False,
+        "--query-prep-dense-case",
+        help="normalize step: send the raw question's capitalization to the CASE-SENSITIVE dense "
+        "encoder while the lexical lane keeps the casefolded text",
+    ),
     query_prep_ab: bool = typer.Option(
         False,
         "--query-prep-ab",
@@ -72,6 +78,7 @@ def validate_retrieval(
         query_prep=query_prep,
         query_glossary=query_glossary,
         query_prep_typo_guard=query_prep_typo_guard,
+        query_prep_dense_case=query_prep_dense_case,
         query_prep_ab=query_prep_ab,
         query_prep_model=query_prep_model,
         query_prep_backend=query_prep_backend,

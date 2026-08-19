@@ -19,6 +19,7 @@ from llb.rag.query_prep.base import (
     QueryPrepResult,
     Rewriter,
 )
+from llb.rag.query_prep.casing import restore_query_case
 from llb.rag.query_prep.decompose import apply_decompose
 from llb.rag.query_prep.glossary import Glossary, apply_glossary
 from llb.rag.query_prep.hyde import apply_hyde
@@ -39,6 +40,7 @@ def _validate_steps(
     known_word: KnownWordProbe | None,
     context: VocabularyContext | None,
     plausible: PlausibilityProbe | None,
+    dense_case: bool,
 ) -> None:
     """Validate the ordered step contract and all dependency wiring."""
     unknown = [step for step in ordered if step not in QUERY_PREP_STEPS]
@@ -72,6 +74,9 @@ def _validate_steps(
     for optional_dependency, required_step, message in optional_dependencies:
         if optional_dependency is not None and required_step not in ordered:
             raise ValueError(message)
+    if dense_case and STEP_NORMALIZE not in ordered:
+        # Only 'normalize' folds case, so the dense-case lane has nothing to restore without it.
+        raise ValueError("the dense-case lane needs the 'normalize' step")
 
 
 @dataclass
@@ -92,6 +97,7 @@ class QueryPrep:
     known_word: KnownWordProbe | None = None
     context: VocabularyContext | None = None
     plausible: PlausibilityProbe | None = None
+    dense_case: bool = False
 
     @classmethod
     def build(
@@ -106,6 +112,7 @@ class QueryPrep:
         known_word: KnownWordProbe | None = None,
         context: VocabularyContext | None = None,
         plausible: PlausibilityProbe | None = None,
+        dense_case: bool = False,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
@@ -119,6 +126,7 @@ class QueryPrep:
             known_word=known_word,
             context=context,
             plausible=plausible,
+            dense_case=dense_case,
         )
         return cls(
             steps=ordered,
@@ -130,6 +138,7 @@ class QueryPrep:
             known_word=known_word,
             context=context,
             plausible=plausible,
+            dense_case=dense_case,
         )
 
     def process(self, query: str) -> QueryPrepResult:
@@ -171,6 +180,9 @@ class QueryPrep:
                 assert self.decomposer is not None  # guaranteed by build()
                 subqueries, step_edits, decomposition = apply_decompose(current, self.decomposer)
             edits.extend(step_edits)
+        # The lexical lane keeps the folded text; the case-sensitive dense lane gets the user's
+        # capitalization back when the option is on and the fold actually cost something.
+        dense_processed = restore_query_case(query, current) if self.dense_case else current
         return QueryPrepResult(
             raw=query,
             processed=current,
@@ -181,4 +193,5 @@ class QueryPrep:
             decomposition=decomposition,
             subqueries=subqueries,
             normalize_gate=normalize_gate,
+            dense_processed=dense_processed if dense_processed != current else None,
         )

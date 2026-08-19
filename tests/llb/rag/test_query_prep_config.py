@@ -80,6 +80,24 @@ def test_config_language_gate_needs_normalize_step():
         RunConfig().with_overrides(query_prep=["typos"], query_prep_language_gate=True)
 
 
+def test_build_query_prep_dense_case_reaches_the_pipeline():
+    from llb.core.config import RunConfig
+    from llb.executor.runner_retrieval import build_query_prep
+
+    store = RecordingStore([{"doc_id": "a", "text": "кобзар", "char_start": 0, "char_end": 1}])
+    cfg = RunConfig().with_overrides(query_prep=["normalize"], query_prep_dense_case=True)
+    pipeline = build_query_prep(cfg, store, None)
+    assert pipeline.dense_case is True
+    assert pipeline.process("Хто написав Кобзар?").dense_query == "Хто написав Кобзар?"
+
+
+def test_config_dense_case_needs_normalize_step():
+    from llb.core.config import RunConfig
+
+    with pytest.raises(ValueError, match="query_prep_dense_case"):
+        RunConfig().with_overrides(query_prep=["typos"], query_prep_dense_case=True)
+
+
 def test_build_query_prep_glossary_needs_path():
     from llb.core.config import RunConfig
     from llb.executor.runner_retrieval import build_query_prep

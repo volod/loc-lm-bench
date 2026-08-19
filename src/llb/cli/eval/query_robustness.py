@@ -51,6 +51,13 @@ def bench_query_robustness_cmd(
         None,
         help="drafted language-variant goldset; defaults to the baseline's <name>_ru sibling",
     ),
+    dense_case: bool = typer.Option(
+        False,
+        "--dense-case",
+        help="mitigated lanes only: send the raw question's capitalization to the CASE-SENSITIVE "
+        "dense encoder while the lexical lane keeps the casefolded text "
+        "(normalize-casefold-dense-lane-cost A/B)",
+    ),
     top_k: Optional[int] = typer.Option(None, "--top-k", help="retrieved chunks per query"),
     max_tokens: Optional[int] = typer.Option(
         None, help="maximum answer tokens per clean or noisy case"
@@ -83,6 +90,7 @@ def bench_query_robustness_cmd(
             variant_classes=classes,
             progress=typer.echo,
             language_fixture=language_fixture,
+            dense_case=dense_case,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)

@@ -36,12 +36,13 @@ def cumulative_pipelines(
     decomposer: QueryGenerator | None = None,
     known_word: KnownWordProbe | None = None,
     plausible: PlausibilityProbe | None = None,
+    dense_case: bool = False,
 ) -> list[tuple[str, "QueryPrep"]]:
     """`baseline` (no steps) then one pipeline per cumulative prefix (`+normalize`, `+typos`, ...).
 
     The A/B report scores each stage so a per-step marginal retrieval delta is attributable. Every
     prefix reuses the same resolved dependencies (`known_word` only binds to prefixes that include
-    the typos step; `plausible` only to prefixes that include the normalize step).
+    the typos step; `plausible` and `dense_case` only to prefixes that include the normalize step).
     """
     ordered = tuple(steps)
     stages: list[tuple[str, QueryPrep]] = [(AB_BASELINE_LABEL, QueryPrep.build(()))]
@@ -56,6 +57,7 @@ def cumulative_pipelines(
             decomposer=decomposer,
             known_word=known_word if STEP_TYPOS in prefix else None,
             plausible=plausible if STEP_NORMALIZE in prefix else None,
+            dense_case=dense_case and STEP_NORMALIZE in prefix,
         )
         stages.append((f"+{ordered[index - 1]}", pipeline))
     return stages

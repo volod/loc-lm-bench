@@ -65,7 +65,9 @@ def make_query_executor(
             query_prep = FixtureTranslationPrep(translation_queries)
         else:
             lane_config = config.with_overrides(
-                query_prep=list(lane.steps), query_prep_typo_guard=lane.typo_guard
+                query_prep=list(lane.steps),
+                query_prep_typo_guard=lane.typo_guard,
+                query_prep_dense_case=lane.dense_case,
             )
             query_prep = build_query_prep(lane_config, store, launcher) if lane.steps else None
         return eval_graph.build_rag_graph(
@@ -98,6 +100,7 @@ def _baseline_config(config: RunConfig) -> RunConfig:
         run_name="query-robustness-clean",
         query_prep=[],
         query_prep_typo_guard=False,
+        query_prep_dense_case=False,
         insufficient_context_probes=0,
         judge_model=None,
         score_semantic=False,
@@ -116,6 +119,7 @@ def run_query_robustness(
     progress: Callable[[str], None] | None = None,
     emit_clean: bool = True,
     language_fixture: Path | None = None,
+    dense_case: bool = False,
 ) -> QueryRobustnessRun:
     """Persist an ordinary clean run, then the isolated noisy probe bundle."""
     if not 0 < typo_rate <= 1:
@@ -138,7 +142,9 @@ def run_query_robustness(
     translation_queries = fixture_translation_queries(language_variants, items) or None
     lanes = tuple(
         dict.fromkeys(
-            lane for variant_class in classes for lane in mitigation_lanes_for_class(variant_class)
+            lane
+            for variant_class in classes
+            for lane in mitigation_lanes_for_class(variant_class, dense_case=dense_case)
         )
     )
     clean = run_eval(
@@ -165,6 +171,7 @@ def run_query_robustness(
             variant_classes=classes,
             progress=progress,
             language_variants=language_variants,
+            dense_case=dense_case,
         )
 
     _, stamp = new_run_timestamp()
@@ -175,6 +182,7 @@ def run_query_robustness(
         "split": split,
         "seed": baseline_config.seed,
         "typo_rate": typo_rate,
+        "query_prep_dense_case": dense_case,
         "variant_classes": list(classes),
         "clean_run_dir": clean_run_dir,
         "language_fixture": str(fixture_path) if language_classes else None,

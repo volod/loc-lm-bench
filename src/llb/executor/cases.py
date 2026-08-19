@@ -115,6 +115,8 @@ def score_case(
     if "query_processed" in state:
         row["query_processed"] = str(state["query_processed"])
         row["query_corrections"] = int(state.get("query_corrections", 0))
+    if "query_dense" in state:
+        row["query_dense"] = str(state["query_dense"])
     if "query_hypothetical_answer" in state:
         row["query_hypothetical_answer"] = str(state["query_hypothetical_answer"])
     if "query_decomposition" in state:

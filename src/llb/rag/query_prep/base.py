@@ -105,6 +105,16 @@ class QueryPrepResult:
     decomposition: str | None = None
     subqueries: tuple[str, ...] = ()
     normalize_gate: LanguageGate | None = None
+    dense_processed: str | None = None
+
+    @property
+    def dense_query(self) -> str:
+        """Query text for the case-sensitive dense lane.
+
+        `processed` is the folded text the lexical lane matches on; when the dense-case option
+        re-cased it, the dense lane gets the re-cased form instead (see `query_prep.casing`).
+        """
+        return self.dense_processed if self.dense_processed is not None else self.processed
 
     @property
     def changed(self) -> bool:
@@ -118,6 +128,10 @@ class QueryPrepResult:
                 edit.step not in {STEP_HYDE, STEP_DECOMPOSE} for edit in self.edits
             ),
         }
+        if self.dense_processed is not None:
+            # Only present when the dense lane actually diverged from the lexical text, so an
+            # ordinary run's provenance is unchanged and the A/B can attribute every divergence.
+            out["query_dense"] = self.dense_processed
         if self.normalize_gate is not None and not self.normalize_gate.transliterate:
             # Only surfaced when the gate actually suppressed transliteration, so a normal run's
             # provenance is unchanged and an operator sees exactly why a foreign query passed

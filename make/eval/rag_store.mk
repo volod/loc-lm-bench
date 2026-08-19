@@ -69,6 +69,7 @@ validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PR
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
+		$(if $(QUERY_PREP_DENSE_CASE),--query-prep-dense-case,) \
 		$(if $(QUERY_PREP_MODEL),--query-prep-model "$(QUERY_PREP_MODEL)",) \
 		$(if $(QUERY_PREP_BACKEND),--query-prep-backend "$(QUERY_PREP_BACKEND)",) \
 		$(if $(QUERY_PREP_AB),--query-prep-ab,) \

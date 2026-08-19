@@ -309,6 +309,9 @@ QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
 QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
 QUERY_ROBUSTNESS_CLASSES ?=
 LANGUAGE_FIXTURE ?=
+# Dense-lane casing (normalize-casefold-dense-lane-cost): set to 1 to keep the raw question's
+# capitalization on the case-sensitive dense encoder; the lexical lane stays casefolded.
+QUERY_PREP_DENSE_CASE ?=
 # Lost-in-the-middle probe (rerank-context-order): fixed context size for probe-context-position.
 PROBE_K ?= 5
 MODELS_MANIFEST ?= $(PROJECT_ROOT)/samples/configs/models_uk.yaml

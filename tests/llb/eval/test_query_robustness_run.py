@@ -22,6 +22,7 @@ from llb.eval.query_robustness import (
     LaneMetrics,
     RobustnessResult,
     evaluate_query_robustness,
+    mitigation_lanes_for_class,
 )
 from llb.eval.query_robustness_report import write_robustness_artifacts
 from llb.eval.query_robustness_run import make_query_executor
@@ -92,6 +93,9 @@ def _write_probe_artifacts(result: RobustnessResult, out: Path) -> str:
 
 
 def _assert_report_content(report: str) -> None:
+    # Lane ids are identical with and without dense-lane casing, so the header states which run
+    # this report is -- otherwise the two are indistinguishable side by side.
+    assert "- dense-lane casing: off" in report
     assert f"| {APOSTROPHE_VARIANT} | `{LANE_NORMALIZE.id}` |" in report
     assert f"| {MIXED_SCRIPT} | `{LANE_NORMALIZE.id}` |" in report
     assert "## Paired uncertainty by noise class" in report
@@ -190,3 +194,74 @@ def test_items_a_class_cannot_perturb_are_reported_apart_from_the_affected_subse
         f"| {APOSTROPHE_VARIANT} | `{LANE_NORMALIZE.id}` | 1 | 1.0000 | +0.0000 | 1.0000 "
         "| +0.0000 | 1.0000 | +0.0000 | +1.0000 | +1.0000 | +1.0000 |"
     ) in report
+
+
+class CaseSensitiveStore(FakeStore):
+    """A dense store that only matches the question's ORIGINAL capitalization.
+
+    The real e5 encoder is case-sensitive by degrees; this fake makes the same property exact so
+    the dense-case lane's effect is a hit or a miss rather than a score wobble.
+    """
+
+    def __init__(self, *questions: str) -> None:
+        super().__init__(*questions)
+        self.questions = set(questions or (_item().question,))
+
+    def retrieve(self, question: str, k: int) -> list[dict[str, object]]:
+        return [self.chunk] if question in self.questions else []
+
+
+def test_dense_case_lane_flags_only_the_mitigated_lanes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("llb.rag.lexical.load_uk_word_probe", lambda: lambda _token: False)
+    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
+    item = _item()
+    store = CaseSensitiveStore(item.question)
+    lanes = mitigation_lanes_for_class(APOSTROPHE_VARIANT, dense_case=True)
+    executor = make_query_executor(
+        RunConfig(top_k=1, max_tokens=16), store, FakeEndpoint(), lanes=lanes
+    )
+    clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
+    result = evaluate_query_robustness(
+        [item],
+        clean_rows,
+        executor,
+        seed=13,
+        typo_rate=0.1,
+        variant_classes=[APOSTROPHE_VARIANT],
+        dense_case=True,
+    )
+
+    flags = {row["mitigation"]: row["mitigation_dense_case"] for row in result.rows}
+    assert flags == {LANE_OFF.id: False, LANE_NORMALIZE.id: True, LANE_NORMALIZE_TYPOS.id: True}
+    # The lane ids are unchanged, so a dense-case report reads cell for cell against a folded one.
+    assert [lane.id for lane in lanes] == [lane.id for lane in MITIGATION_LANES]
+
+
+def test_dense_case_lane_recovers_the_hit_casefolding_costs(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("llb.rag.lexical.load_uk_word_probe", lambda: lambda _token: False)
+    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
+    item = _item()
+    clean_rows = [{"item_id": item.id, "objective_score": 1.0, "retrieval_hit": 1.0}]
+
+    def recall(dense_case: bool) -> float:
+        lanes = mitigation_lanes_for_class(APOSTROPHE_VARIANT, dense_case=dense_case)
+        executor = make_query_executor(
+            RunConfig(top_k=1, max_tokens=16),
+            CaseSensitiveStore(item.question),
+            FakeEndpoint(),
+            lanes=lanes,
+        )
+        result = evaluate_query_robustness(
+            [item],
+            clean_rows,
+            executor,
+            seed=13,
+            typo_rate=0.1,
+            variant_classes=[APOSTROPHE_VARIANT],
+            dense_case=dense_case,
+        )
+        return {lane.mitigation: lane for lane in result.lanes}[LANE_NORMALIZE.id].recall_at_k
+
+    # The class perturbs nothing in this question, so the fold is the ONLY thing the lane changes.
+    assert recall(False) == 0.0
+    assert recall(True) == 1.0

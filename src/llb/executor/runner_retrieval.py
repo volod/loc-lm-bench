@@ -122,6 +122,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             known_word=known_word,
             context=context,
             plausible=plausible,
+            dense_case=config.query_prep_dense_case,
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None

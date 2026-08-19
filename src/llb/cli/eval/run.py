@@ -149,6 +149,12 @@ def run_eval_cmd(
         help="typos step: leave an OOV token pymorphy3 knows as a valid Ukrainian word form "
         "unchanged (an inflection is not a misspelling)",
     ),
+    query_prep_dense_case: bool = typer.Option(
+        False,
+        "--query-prep-dense-case",
+        help="normalize step: send the raw question's capitalization to the CASE-SENSITIVE dense "
+        "encoder while the lexical lane keeps the casefolded text",
+    ),
     score_semantic: Optional[bool] = typer.Option(
         None,
         "--score-semantic/--no-score-semantic",

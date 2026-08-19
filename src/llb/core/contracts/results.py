@@ -31,6 +31,7 @@ class CaseScoreRow(TypedDict):
     rerank_latency_s: NotRequired[float]
     query_processed: NotRequired[str]
     query_corrections: NotRequired[int]
+    query_dense: NotRequired[str]
     query_hypothetical_answer: NotRequired[str]
     query_decomposition: NotRequired[str]
     query_subqueries: NotRequired[list[str]]

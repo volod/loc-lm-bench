@@ -21,10 +21,21 @@ class MitigationLane:
     id: str
     steps: tuple[str, ...]
     typo_guard: bool
+    dense_case: bool = False
 
     @property
     def mitigated(self) -> bool:
         return bool(self.steps)
+
+    def with_dense_case(self, dense_case: bool) -> "MitigationLane":
+        """The same lane with the dense-case option flipped; the `off` lane never carries it.
+
+        The lane id is deliberately unchanged so a dense-case run's report is comparable cell for
+        cell against the folded-dense run it is being read against.
+        """
+        if not dense_case or not self.mitigated or self == LANE_TRANSLATE:
+            return self
+        return MitigationLane(self.id, self.steps, self.typo_guard, True)
 
 
 LANE_OFF = MitigationLane("off", (), False)
@@ -34,11 +45,16 @@ MITIGATION_LANES: tuple[MitigationLane, ...] = (LANE_OFF, LANE_NORMALIZE, LANE_N
 LANE_TRANSLATE = MitigationLane("translate_to_uk", ("fixture_translate",), False)
 
 
-def mitigation_lanes_for_class(variant_class: str) -> tuple[MitigationLane, ...]:
+def mitigation_lanes_for_class(
+    variant_class: str, *, dense_case: bool = False
+) -> tuple[MitigationLane, ...]:
     """Use an exact paired translation upper bound only for query-language variants."""
-    if variant_class in LANGUAGE_VARIANT_CLASSES:
-        return (LANE_OFF, LANE_NORMALIZE, LANE_TRANSLATE)
-    return MITIGATION_LANES
+    lanes = (
+        (LANE_OFF, LANE_NORMALIZE, LANE_TRANSLATE)
+        if variant_class in LANGUAGE_VARIANT_CLASSES
+        else MITIGATION_LANES
+    )
+    return tuple(lane.with_dense_case(dense_case) for lane in lanes)
 
 
 QueryExecutor = Callable[[GoldItem, str, MitigationLane], Mapping[str, Any]]
@@ -122,6 +138,7 @@ def _probe_row(
         "mitigated": lane.mitigated,
         "mitigation_steps": list(lane.steps),
         "mitigation_typo_guard": lane.typo_guard,
+        "mitigation_dense_case": lane.dense_case,
         "seed": seed,
         "typo_rate": typo_rate,
         "clean_question": item.question,
@@ -210,6 +227,7 @@ def evaluate_query_robustness(
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     language_variants: Mapping[tuple[str, str], str] | None = None,
+    dense_case: bool = False,
 ) -> RobustnessResult:
     """Run every noisy class under every mitigation lane; clean rows stay external baseline rows."""
     classes = resolve_variant_classes(variant_classes)
@@ -218,10 +236,12 @@ def evaluate_query_robustness(
     if missing:
         raise ValueError(f"clean baseline is missing item ids: {missing[:3]}")
     all_rows: list[dict[str, Any]] = []
-    total = len(items) * sum(len(mitigation_lanes_for_class(name)) for name in classes)
+    total = len(items) * sum(
+        len(mitigation_lanes_for_class(name, dense_case=dense_case)) for name in classes
+    )
     completed = 0
     for variant_class in classes:
-        for lane in mitigation_lanes_for_class(variant_class):
+        for lane in mitigation_lanes_for_class(variant_class, dense_case=dense_case):
             lane_rows = _evaluate_lane(
                 items,
                 variant_class,

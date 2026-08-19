@@ -167,6 +167,12 @@ class RunConfigFields(BaseModel):
     # (`what does the` -> `wгат доес тге`). Off by default so per-token transliteration stays the
     # explicit baseline; needs the 'normalize' step.
     query_prep_language_gate: bool = False
+    # Dense-lane casing for the 'normalize' step (normalize-casefold-dense-lane-cost): when on, the
+    # processed query is re-cased from the raw question before it reaches the CASE-SENSITIVE dense
+    # encoder, while the lexical lane keeps the folded text its index matches on. Casefolding is a
+    # lexical matching convention the dense side never asked for. Off by default so the folded
+    # dense query stays the explicit baseline; needs the 'normalize' step.
+    query_prep_dense_case: bool = False
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

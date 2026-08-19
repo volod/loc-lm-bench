@@ -28,6 +28,7 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         f"- split: `{metadata['split']}`",
         f"- seed: {metadata['seed']}",
         f"- keyboard/homoglyph rate: {typo_rate:.3f}",
+        f"- dense-lane casing: {'on' if metadata.get('query_prep_dense_case') else 'off'}",
         f"- noise classes: {', '.join(f'`{name}`' for name in classes)}",
         f"- clean baseline: `{metadata['clean_run_dir']}`",
         f"- clean objective: {result.clean_objective:.4f}",

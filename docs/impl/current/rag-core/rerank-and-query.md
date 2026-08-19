@@ -156,6 +156,23 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   question untouched while a romanized-Ukrainian query with a dropped soft sign (`yakist rishennya
   sudu`, 2/3 plausible) still clears the threshold and transliterates. Off by default so per-token
   transliteration stays the explicit baseline.
+
+  An opt-in **dense-lane casing** option (normalize-casefold-dense-lane-cost;
+  `RunConfig.query_prep_dense_case` / `--query-prep-dense-case`, refused at config validation
+  unless the `normalize` step is present) stops the casefold at the lexical lane. Casefolding is a
+  MATCHING-side convention the BM25 index asked for (`llb.rag.lexical.normalize_token` folds both
+  sides), but the dense encoder is case-sensitive and never asked for it, so on an otherwise clean
+  query the fold is a pure cost. With the option on, `query_prep/casing.py` transfers the raw
+  question's capitalization back onto the processed text and `retrieve_prepared` routes that
+  re-cased string to the dense lane while the lexical lane keeps the folded `processed` text. The
+  transfer is CASE ONLY -- a token-sequence diff (`difflib`) aligns raw and processed tokens, and
+  each aligned token is re-cased without replacing a single character, so apostrophe unification,
+  transliteration, typo repair, and appended glossary forms all survive. Equal-length substitutions
+  align too, which is what carries `Kyiv` -> `київ` -> `Київ` and restores a short Latin acronym
+  (`NP`) the step folds to `np`; insertions with no raw counterpart keep the case the step
+  produced. The divergence is recorded per case as `query_dense` (only when the two lanes differ)
+  in `scores.jsonl` and the durability journal. Off by default so the folded dense query stays the
+  explicit baseline.
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
   set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
@@ -223,7 +240,8 @@ Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` 
 `normalize` | `typos` | `glossary` | `rewrite` | `hyde` | `decompose`;
 unknown/duplicated steps rejected at config validation), `query_glossary_path`,
 `query_prep_typo_guard` (refused at config validation unless the `typos` step is present), and
-`query_prep_language_gate` (refused at config validation unless the `normalize` step is present).
+`query_prep_language_gate` and `query_prep_dense_case` (both refused at config validation unless
+the `normalize` step is present).
 
 Commands:
 
@@ -231,10 +249,11 @@ Commands:
 make build-query-glossary BUNDLE=<draft dir>            # -> <bundle>/query_glossary.json
 make run-eval MODEL=<m> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json>
 make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize,typos,glossary QUERY_GLOSSARY=<json> QUERY_PREP_AB=1
+make validate-retrieval GOLDSET=<gs> QUERY_PREP=normalize QUERY_PREP_AB=1 QUERY_PREP_DENSE_CASE=1
 make validate-retrieval CONFIG=<yaml> GOLDSET=<gs> QUERY_PREP=hyde,decompose \
   QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 \
   QUERY_PREP_OUT=<report.json>
-make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs>
+make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs> [QUERY_PREP_DENSE_CASE=1]
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
@@ -254,7 +273,11 @@ deduplication, runner resolver dependency wiring, provenance mapping including t
 same-replacement case, per-kind surface distance, refusal of an incompatible nearest neighbor,
 restoration of the romanization-compatible form, the short-token length lock and the
 transliteration exemption from it, unresolved-tie refusal, context-driven candidate choice, and
-both morphology preferences), `tests/llb/rag/test_store.py` (split hybrid
+both morphology preferences), `tests/llb/rag/test_query_prep_dense_case.py` (case-pattern
+transfer without character replacement, the dense/lexical split reaching the store seam, the
+recovered acronym, capitalization carried onto a corrected token, the exact no-op on an
+already-lowercase query, glossary insertions left folded, subquery lanes untouched, and the
+normalize-step dependency), `tests/llb/rag/test_store.py` (split hybrid
 queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
 plus config validation in `tests/llb/core/test_config.py`.
 
