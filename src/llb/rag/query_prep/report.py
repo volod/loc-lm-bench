@@ -63,6 +63,24 @@ def cumulative_pipelines(
     return stages
 
 
+def _ab_case(result: Any, retrieved: list[Any], spans: list[Any], k: int) -> dict[str, Any]:
+    """One item's A/B row: the query text this stage produced plus where its gold evidence landed.
+
+    `first_hit_rank` is None when nothing hit, so a stage's pooled recall@k / MRR move is
+    attributable to the items that actually moved -- without it, a lane that recovers one item
+    while pushing another down reads as a single averaged number.
+    """
+    from llb.rag.retrieval import first_hit_rank
+
+    rank = first_hit_rank(retrieved, spans)
+    return {
+        "question": result.raw,
+        **result.provenance(),
+        "retrieval_hit": float(rank is not None and rank <= k),
+        "first_hit_rank": rank,
+    }
+
+
 def query_prep_ab_report(
     items: list[AbItem],
     retrieve: RetrieveFn,
@@ -82,15 +100,17 @@ def query_prep_ab_report(
         prepared = [(pipeline.process(question), spans) for question, spans in items]
         pairs = [(retrieve(result, k), spans) for result, spans in prepared]
         metrics = evaluate_retrieval(pairs, k)
+        cases = [
+            _ab_case(result, retrieved, spans, k)
+            for (result, spans), (retrieved, _) in zip(prepared, pairs)
+        ]
         row: dict[str, Any] = {
             "stage": label,
             "recall_at_k": metrics["recall_at_k"],
             "mrr": metrics["mrr"],
             "delta_recall": 0.0 if prev is None else metrics["recall_at_k"] - prev["recall_at_k"],
             "delta_mrr": 0.0 if prev is None else metrics["mrr"] - prev["mrr"],
-            "cases": [
-                {"question": result.raw, **result.provenance()} for result, _spans in prepared
-            ],
+            "cases": cases,
         }
         rows.append(row)
         prev = {"recall_at_k": metrics["recall_at_k"], "mrr": metrics["mrr"]}

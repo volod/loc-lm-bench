@@ -172,7 +172,10 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   (`NP`) the step folds to `np`; insertions with no raw counterpart keep the case the step
   produced. The divergence is recorded per case as `query_dense` (only when the two lanes differ)
   in `scores.jsonl` and the durability journal. Off by default so the folded dense query stays the
-  explicit baseline.
+  explicit baseline -- but the measured verdict is to TURN IT ON with the step: cased dense text
+  puts the `normalize` lane at or above the unmitigated lane on every noise class and at the clean
+  ceiling on three of four, against a 0.0062 MRR give-back on one question
+  ([evaluation rigor](../rigor-board-judge/robustness-benchmarks.md#dense-lane-casing-evidence)).
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
   set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
@@ -257,7 +260,10 @@ make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs> [QUERY_PREP_DENSE
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
-with per-step recall@k / MRR deltas. Model steps use `--query-prep-model` and
+with per-step recall@k / MRR deltas. Every stage also records, per case, the query text it produced
+plus `retrieval_hit` and `first_hit_rank` (`None` on a miss), so a pooled delta is attributable to
+the items that actually moved -- a stage that recovers one item while pushing another down reads as
+one averaged number without it. Model steps use `--query-prep-model` and
 `--query-prep-backend`; their completions and parsed subqueries are embedded per case in the JSON
 report. Endpoint generators cache a question within one cumulative run, avoiding duplicate model
 calls while preserving fixed-temperature results.
@@ -267,7 +273,8 @@ romanization, Latin acronym preservation, Damerau-Levenshtein transposition, typ
 never touches in-vocabulary, short, or cross-kind tokens + long-token distance 2 + deterministic
 tie-break, deterministic alias expansion + glossary
 build/round-trip, rewrite off-by-default, exact no-op when the lane is off, pipeline ordering +
-dependency validation, A/B per-step delta over a fake store, retrieve-node raw-preservation and
+dependency validation, A/B per-step delta and per-case hit/rank attribution over a fake store,
+retrieve-node raw-preservation and
 processed-query wiring, HyDE dense/lexical separation, decomposition parsing/bounds/RRF span
 deduplication, runner resolver dependency wiring, provenance mapping including the ambiguous
 same-replacement case, per-kind surface distance, refusal of an incompatible nearest neighbor,

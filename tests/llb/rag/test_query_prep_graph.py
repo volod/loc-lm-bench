@@ -34,6 +34,21 @@ def test_ab_report_attributes_per_step_delta():
     assert "query-prep A/B" in format_query_prep_ab(report)
 
 
+def test_ab_report_cases_attribute_the_pooled_delta_to_the_items_that_moved():
+    # Rank 1 for the transliterated query, rank 6 (outside k=5) for the raw one: the same item
+    # carries the whole recall delta, and its case rows say so.
+    def retrieve(result, k):
+        gold = {"doc_id": "d", "char_start": 0, "char_end": 5}
+        filler = [{"doc_id": "d", "char_start": 100 + i, "char_end": 101 + i} for i in range(5)]
+        return [gold, *filler] if "закон" in result.processed else [*filler, gold]
+
+    items = [("zakon", [{"doc_id": "d", "char_start": 0, "char_end": 5}])]
+    report = query_prep_ab_report(items, retrieve, 5, cumulative_pipelines([STEP_NORMALIZE]))
+    baseline, normalize = (row["cases"][0] for row in report["stages"])
+    assert (baseline["retrieval_hit"], baseline["first_hit_rank"]) == (0.0, 6)
+    assert (normalize["retrieval_hit"], normalize["first_hit_rank"]) == (1.0, 1)
+
+
 def test_retrieve_node_uses_processed_query_and_preserves_raw():
     chunks = [{"doc_id": "a", "text": "закон україни", "char_start": 0, "char_end": 13}]
     store = RecordingStore(chunks)

@@ -125,7 +125,7 @@ Verdict per mechanism, re-read on the split classes:
   affected-items table shows all 6 perturbed questions at 1.0000; the lost item is
   `570d4e6cb3d812140066d66d`, the untranslated ENGLISH question the class never touched. That is
   the normalization step acting on an otherwise clean query -- the cost the opt-in language gate
-  and the forward `normalize-casefold-dense-lane-cost` task address.
+  and the dense-lane casing measured below both address.
 
 Mitigation verdict (unchanged): do not make the combined `normalize,typos` lane a universal
 default. It is a strong model-specific option -- it restores all retrieval loss on every class and
@@ -133,6 +133,90 @@ improves transliteration for both models -- but MamayLM's keyboard-objective reg
 and the per-edit audit's ambiguous nearest-vocabulary choices show that typo correction still needs
 a model/corpus A/B before activation. The report's shared-hit generation delta separates that
 answer-side effect from missing evidence.
+
+### Dense-Lane Casing Evidence
+
+The `normalize` lane's recall cost is the CASEFOLD reaching the case-sensitive dense encoder, and
+routing case-preserved text to the dense lane removes it. The mechanism (`--query-prep-dense-case`
+/ `QUERY_PREP_DENSE_CASE=1`, lexical lane unchanged) is documented in [RAG
+core](../rag-core/rerank-and-query.md#query-side-processing-uk-query-processing).
+
+CUDA-host A/B (2026-08-19): RTX 4060 Ti 16 GiB, Ollama,
+`hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M`, `intfloat/multilingual-e5-base`,
+the committed `ua_squad_postedited_v1` final split (n=82), seed 13, 8 percent character noise,
+k=10, 96 answer tokens, the four default classes. Two back-to-back full benchmark runs on one host,
+folded then dense-cased, each 984 probe cases with zero errors; the folded run reproduces the
+2026-07-24 recall table cell for cell, which is the control that nothing else moved. Both runs share
+a clean baseline of objective 0.4747, recall@10 0.9756, MRR 0.8383. The `off` lane never carries the
+option, so its column is the same measurement in both runs.
+
+Recall@10 per class (clean ceiling 0.9756):
+
+| Class | `off` | `normalize` folded | `normalize` dense-case | `normalize,typos` folded | `normalize,typos` dense-case |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `transliteration` | 0.7195 | 0.9634 | 0.9756 | 0.9634 | 0.9756 |
+| `apostrophe_variant` | 0.9756 | 0.9634 | 0.9756 | 0.9634 | 0.9756 |
+| `mixed_script` | 0.9634 | 0.9634 | 0.9756 | 0.9634 | 0.9756 |
+| `keyboard_typos` | 0.9268 | 0.9024 | 0.9268 | 0.9634 | 0.9512 |
+
+**The acceptance question is answered: casefolding WAS the cause.** With the dense lane cased, the
+`normalize` lane no longer retrieves below the `off` lane on any class, and on three of the four it
+reaches the clean ceiling exactly (`recall_delta` 0.000 against clean). The paired reading for the
+`apostrophe_variant` and `mixed_script` recoveries is `indistinguishable` at n=82 -- one item is one
+item -- but the direction is now identical in every class and the mechanism is exact rather than
+statistical, which is what the clean-query A/B below settles.
+
+Per item, over the 656 lane-item retrieval cells (4 classes x 2 mitigated lanes x 82 items), 9 flip
+miss -> hit and 2 flip hit -> miss. Eight of the nine gains are one question,
+`570d4e6cb3d812140066d66d`, the untranslated ENGLISH item every class carries: the fold plus
+per-token transliteration mangles it out of the top 10 in every mitigated lane, and restoring the
+capitals on `Premier`, `Victoria`, and `Legislative Assembly` brings it back -- that is all eight
+mitigated cells, one per class per lane. The ninth is a Ukrainian question under keyboard noise
+(`5706074552bb8914006897d4`, `normalize` lane), where the same restored capitals carry a query the
+step could not otherwise repair. The two losses are
+both in the `normalize,typos` lane under keyboard noise
+(`57106d2fb654c5140001f8ef`, `571095a8a58dae1900cd6a76`), and re-processing them shows the case
+transfer did exactly its job -- it capitalized the sentence-initial token and nothing else. They are
+encoder wobble on a query that is already noise-corrupted AND vocabulary-rewritten, in the one lane
+this benchmark already declines to make a default; `recall_recovery` there stays
+`indistinguishable`.
+
+MRR moves both ways and is the honest cost: on the `normalize` lane the dense lane gains on
+`transliteration` (0.8156 -> 0.8176) and `keyboard_typos` (0.6938 -> 0.7235) and loses 0.0062 on
+`apostrophe_variant` and `mixed_script` (0.8313 -> 0.8251). Objective follows retrieval loosely and
+stays within decoding wobble (`normalize` lane: 0.3763 -> 0.3729, 0.4903 -> 0.4746,
+0.4641 -> 0.4774, 0.4375 -> 0.4425).
+
+The clean-query A/B isolates that MRR trade with no noise at all
+(`make validate-retrieval ... QUERY_PREP=normalize QUERY_PREP_AB=1 [QUERY_PREP_DENSE_CASE=1]`,
+n=82, k=10):
+
+| Lane | recall@10 | d(recall) vs baseline | MRR | d(MRR) vs baseline |
+| --- | ---: | ---: | ---: | ---: |
+| `baseline` (no query prep) | 0.9756 | +0.0000 | 0.8383 | +0.0000 |
+| `+normalize` folded | 0.9634 | -0.0122 | 0.8313 | -0.0070 |
+| `+normalize` dense-case | 0.9756 | +0.0000 | 0.8251 | -0.0132 |
+
+The A/B report's per-case `first_hit_rank` attributes both numbers: 7 of 82 items move rank at all,
+the recall delta is entirely `570d4e6cb3d812140066d66d` (rank 1 clean, MISS folded, rank 6
+dense-cased), and 0.0061 of the 0.0062 MRR the dense lane gives up is a single Ukrainian question
+the fold happens to lift from rank 2 to rank 1. Buying one rank on one question is a property of
+this encoder on that item; dropping a question out of the top 10 is a mechanism.
+
+**Verdict: adopt the dense lane wherever the `normalize` step is on.** It is recorded as opt-in
+rather than flipped to a default for one reason -- every `normalize`-lane number recorded above and
+in the 2026-07-24 evidence is a FOLDED reading, and a silent default would change what those
+readings mean. Turn it on with the step (`QUERY_PREP=normalize QUERY_PREP_DENSE_CASE=1`); leave it
+off only to reproduce a folded baseline.
+
+Artifacts: folded `$DATA_DIR/query-robustness/20260819T142700.448675Z-1f153f14ba5d/` (clean baseline
+`$DATA_DIR/run-eval/20260819T134855.282489Z-dd0ed2c3162c/`), dense-cased
+`$DATA_DIR/query-robustness/20260819T150241.558709Z-e114c0a4525c/` (clean baseline
+`$DATA_DIR/run-eval/20260819T142702.513006Z-a77aa5be363c/`), and the four clean-query A/B reports
+plus their `summary.md` in
+`$DATA_DIR/query-robustness/20260819T140213.064476Z-c231ef43769c-dense-case-clean-ab/`. Each
+`report.md` header carries a `dense-lane casing: on|off` line, since the lane ids are deliberately
+identical in both runs so the two reports read cell for cell.
 
 ## Cross-Lingual Query Lane
 

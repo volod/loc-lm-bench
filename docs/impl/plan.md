@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### normalize-casefold-dense-lane-cost (optional)
-
-Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
-final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
-noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
-the lane ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark)).
-The split noise classes sharpen the diagnosis: on the `apostrophe_variant` class the `normalize`
-lane loses an item (0.9756 -> 0.9634 recall@10) even though the affected-items table shows all 6
-perturbed questions retrieved perfectly in every lane -- the loss is on questions the noise class
-never touched, so it is the mitigation step acting on an otherwise clean query, not a failed
-repair. Casefolding is a lexical-side convention that the dense side never asked for. Measure
-whether the processed query should stay cased on the dense lane while the lexical lane keeps the
-folded text -- the `retrieve_queries` seam already carries separate dense and lexical text.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the split dense/lexical query seam in
-  `src/llb/rag/query_prep/retrieval.py` and `RagStore.retrieve_queries`.
-- User-visible outcome: the operator stops paying dense recall for a normalization step whose
-  only job was to make matching safer.
-- Scope boundary: in scope -- routing case-preserved text to the dense lane, the A/B, and the
-  adopt-or-reject verdict. Out of scope -- changing the embedder, the lexical normalization, and
-  the transliteration table.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
-- Execution path: `make bench-query-robustness` on the CUDA host with and without the change; CI
-  covers the dense/lexical text split over a fake store.
-- Acceptance gates: `make ci` green; the report shows the `normalize` lane no longer retrieving
-  below the `off` lane on any noise class, or records that casefolding is not the cause.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing and the robustness
-  evidence in [evaluation rigor](current/rigor-board-judge.md).
-
 #### restoration-constraint-threshold-sweep (optional)
 
 The restoration constraints ship with three unswept design constants: the surface-compatibility
