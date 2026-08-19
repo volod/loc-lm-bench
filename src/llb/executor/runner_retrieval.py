@@ -94,6 +94,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         STEP_TYPOS,
     )
     from llb.rag.query_prep.pipeline import QueryPrep
+    from llb.rag.query_prep.restore_policy import RestorationPolicy
 
     steps = list(config.query_prep)
     if not steps:
@@ -123,6 +124,11 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             context=context,
             plausible=plausible,
             dense_case=config.query_prep_dense_case,
+            restoration_policy=RestorationPolicy(
+                surface_max_distance=config.query_prep_surface_max_distance,
+                ambiguous_token_max_chars=config.query_prep_ambiguous_max_chars,
+                rank_order=config.query_prep_restore_rank,
+            ),
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None

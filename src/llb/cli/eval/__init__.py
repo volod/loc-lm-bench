@@ -13,6 +13,7 @@ from llb.cli.eval import (  # noqa: F401
     judge,
     paired_reading_audit,
     query_robustness,
+    restoration_sweep,
     run,
     screen,
     verbosity,

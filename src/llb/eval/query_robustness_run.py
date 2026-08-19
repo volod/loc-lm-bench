@@ -7,7 +7,7 @@ from typing import Any
 
 from llb.bench.common import new_run_timestamp
 from llb.board.io import read_case_rows
-from llb.core.config import RunConfig
+from llb.core.config import RESTORATION_DEFAULTS, RunConfig, restoration_fields
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness import (
     MITIGATION_LANES,
@@ -34,6 +34,7 @@ from llb.executor.runner import run_eval
 from llb.executor.runner_backend import _make_launcher
 from llb.executor.runner_retrieval import _load_store, build_query_prep
 from llb.executor.runner_setup import _score_options, _select_eval_items
+from llb.rag.query_prep.base import STEP_TYPOS
 from llb.goldset.schema import GoldItem
 
 METHOD = "query-robustness"
@@ -53,9 +54,16 @@ def make_query_executor(
     launcher: Any,
     translation_queries: Mapping[str, str] | None = None,
     lanes: Sequence[MitigationLane] | None = None,
+    restoration: Mapping[str, Any] | None = None,
 ) -> QueryExecutor:
-    """Build one graph lane per mitigation configuration over one injected store/endpoint pair."""
+    """Build one graph lane per mitigation configuration over one injected store/endpoint pair.
+
+    `restoration` carries the run's restoration constants
+    (restoration-constraint-threshold-sweep) into the lanes that keep the `typos` step; a lane
+    without that step resets them, because the constants are inert -- and refused -- there.
+    """
     options = _score_options(config)
+    constants = dict(restoration or RESTORATION_DEFAULTS)
 
     def build(lane: MitigationLane) -> Any:
         query_prep: Any | None
@@ -68,6 +76,7 @@ def make_query_executor(
                 query_prep=list(lane.steps),
                 query_prep_typo_guard=lane.typo_guard,
                 query_prep_dense_case=lane.dense_case,
+                **(constants if STEP_TYPOS in lane.steps else RESTORATION_DEFAULTS),
             )
             query_prep = build_query_prep(lane_config, store, launcher) if lane.steps else None
         return eval_graph.build_rag_graph(
@@ -97,6 +106,7 @@ def make_query_executor(
 def _baseline_config(config: RunConfig) -> RunConfig:
     values = config.model_dump()
     values.update(
+        **RESTORATION_DEFAULTS,
         run_name="query-robustness-clean",
         query_prep=[],
         query_prep_typo_guard=False,
@@ -160,7 +170,12 @@ def run_query_robustness(
     launcher = _make_launcher(baseline_config)
     with launcher as backend:
         execute = make_query_executor(
-            baseline_config, store, backend, translation_queries, lanes=lanes
+            baseline_config,
+            store,
+            backend,
+            translation_queries,
+            lanes=lanes,
+            restoration=restoration_fields(config),
         )
         result = evaluate_query_robustness(
             items,
@@ -183,6 +198,7 @@ def run_query_robustness(
         "seed": baseline_config.seed,
         "typo_rate": typo_rate,
         "query_prep_dense_case": dense_case,
+        "restoration_constants": restoration_fields(config),
         "variant_classes": list(classes),
         "clean_run_dir": clean_run_dir,
         "language_fixture": str(fixture_path) if language_classes else None,

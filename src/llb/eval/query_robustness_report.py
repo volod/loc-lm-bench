@@ -11,6 +11,7 @@ from llb.eval.query_robustness_languages import LANGUAGE_VARIANT_CLASSES
 from llb.rag.fusion_evidence.stability import format_reading
 from llb.rag.fusion_evidence.stats import format_interval
 from llb.rag.fusion_evidence.paired import PairedComparison
+from llb.rag.query_prep.restore_policy import DEFAULT_RESTORATION_POLICY, RestorationPolicy
 
 
 def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> str:
@@ -29,6 +30,7 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
         f"- seed: {metadata['seed']}",
         f"- keyboard/homoglyph rate: {typo_rate:.3f}",
         f"- dense-lane casing: {'on' if metadata.get('query_prep_dense_case') else 'off'}",
+        f"- restoration constraints: {_restoration_label(metadata)}",
         f"- noise classes: {', '.join(f'`{name}`' for name in classes)}",
         f"- clean baseline: `{metadata['clean_run_dir']}`",
         f"- clean objective: {result.clean_objective:.4f}",
@@ -61,6 +63,19 @@ def render_report(result: RobustnessResult, metadata: Mapping[str, object]) -> s
     lines.extend(_uncertainty_section(result))
     lines.extend(_affected_section(result))
     return "\n".join(lines) + "\n"
+
+
+def _restoration_label(metadata: Mapping[str, object]) -> str:
+    """The run's restoration constants, so two sweep settings' reports read against each other."""
+    constants = metadata.get("restoration_constants")
+    if not isinstance(constants, Mapping):
+        return f"`{DEFAULT_RESTORATION_POLICY.label}`"
+    policy = RestorationPolicy(
+        surface_max_distance=int(constants["query_prep_surface_max_distance"]),
+        ambiguous_token_max_chars=int(constants["query_prep_ambiguous_max_chars"]),
+        rank_order=str(constants["query_prep_restore_rank"]),
+    )
+    return f"`{policy.label}`"
 
 
 def _method_notes(classes: tuple[str, ...], metadata: Mapping[str, object]) -> list[str]:

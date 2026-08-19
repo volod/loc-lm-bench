@@ -25,6 +25,10 @@ from llb.rag.query_prep.glossary import Glossary, apply_glossary
 from llb.rag.query_prep.hyde import apply_hyde
 from llb.rag.query_prep.normalize import apply_normalize, language_gate
 from llb.rag.query_prep.restore import VocabularyContext, normalization_provenance
+from llb.rag.query_prep.restore_policy import (
+    DEFAULT_RESTORATION_POLICY,
+    RestorationPolicy,
+)
 from llb.rag.query_prep.rewrite import apply_rewrite
 from llb.rag.query_prep.typos import apply_typos
 
@@ -41,6 +45,7 @@ def _validate_steps(
     context: VocabularyContext | None,
     plausible: PlausibilityProbe | None,
     dense_case: bool,
+    restoration_policy: RestorationPolicy,
 ) -> None:
     """Validate the ordered step contract and all dependency wiring."""
     unknown = [step for step in ordered if step not in QUERY_PREP_STEPS]
@@ -70,6 +75,11 @@ def _validate_steps(
         (known_word, STEP_TYPOS, "the typo morphology guard needs the 'typos' step"),
         (context, STEP_TYPOS, "the query-context index needs the 'typos' step"),
         (plausible, STEP_NORMALIZE, "the normalize language gate needs the 'normalize' step"),
+        (
+            restoration_policy if restoration_policy != DEFAULT_RESTORATION_POLICY else None,
+            STEP_TYPOS,
+            "a non-default restoration policy needs the 'typos' step",
+        ),
     )
     for optional_dependency, required_step, message in optional_dependencies:
         if optional_dependency is not None and required_step not in ordered:
@@ -98,6 +108,7 @@ class QueryPrep:
     context: VocabularyContext | None = None
     plausible: PlausibilityProbe | None = None
     dense_case: bool = False
+    restoration_policy: RestorationPolicy = DEFAULT_RESTORATION_POLICY
 
     @classmethod
     def build(
@@ -113,6 +124,7 @@ class QueryPrep:
         context: VocabularyContext | None = None,
         plausible: PlausibilityProbe | None = None,
         dense_case: bool = False,
+        restoration_policy: RestorationPolicy = DEFAULT_RESTORATION_POLICY,
     ) -> "QueryPrep":
         """Validate step names and their required dependencies, then build the pipeline."""
         ordered = tuple(steps)
@@ -127,6 +139,7 @@ class QueryPrep:
             context=context,
             plausible=plausible,
             dense_case=dense_case,
+            restoration_policy=restoration_policy,
         )
         return cls(
             steps=ordered,
@@ -139,6 +152,7 @@ class QueryPrep:
             context=context,
             plausible=plausible,
             dense_case=dense_case,
+            restoration_policy=restoration_policy,
         )
 
     def process(self, query: str) -> QueryPrepResult:
@@ -166,6 +180,7 @@ class QueryPrep:
                     known_word=self.known_word,
                     provenance=normalization_provenance(edits),
                     context=self.context,
+                    policy=self.restoration_policy,
                 )
             elif step == STEP_GLOSSARY:
                 assert self.glossary is not None  # guaranteed by build()

@@ -308,6 +308,12 @@ QUERY_ROBUSTNESS_LIMIT ?=
 QUERY_ROBUSTNESS_TYPO_RATE ?= 0.08
 QUERY_ROBUSTNESS_MAX_TOKENS ?= 96
 QUERY_ROBUSTNESS_CLASSES ?=
+# Restoration-constraint sweep grid (restoration-constraint-threshold-sweep). One factor at a
+# time by default; SWEEP_FULL_GRID=1 measures the whole product instead.
+SWEEP_SURFACE_DISTANCES ?= 0,1
+SWEEP_SHORT_CUTOFFS ?= 3,4,5
+SWEEP_RANK_ORDERS ?= morphology,context
+SWEEP_FULL_GRID ?=
 LANGUAGE_FIXTURE ?=
 # Dense-lane casing (normalize-casefold-dense-lane-cost): set to 1 to keep the raw question's
 # capitalization on the case-sensitive dense encoder; the lexical lane stays casefolded.

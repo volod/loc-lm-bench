@@ -18,6 +18,10 @@ from llb.rag.query_prep.restore import (
     VocabularyContext,
     select_restoration,
 )
+from llb.rag.query_prep.restore_policy import (
+    DEFAULT_RESTORATION_POLICY,
+    RestorationPolicy,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -72,6 +76,7 @@ def apply_typos(
     known_word: KnownWordProbe | None = None,
     provenance: Mapping[str, TokenProvenance] | None = None,
     context: VocabularyContext | None = None,
+    policy: RestorationPolicy = DEFAULT_RESTORATION_POLICY,
 ) -> tuple[str, list[QueryEdit]]:
     """Correct out-of-vocabulary word tokens to their nearest SAFE in-vocabulary neighbor.
 
@@ -89,7 +94,8 @@ def apply_typos(
     `provenance` carries each normalized token back to the noisy form the user actually typed
     (`restore.normalization_provenance` over the normalize step's edits) and `context` is the
     corpus co-occurrence index; both constrain WHICH candidate may be chosen, and either can veto
-    the correction entirely. See `restore` for the constraint order.
+    the correction entirely. See `restore` for the constraint order, and `restore_policy` for the
+    three constants `policy` sets on it.
     """
     from llb.rag.lexical import _TOKEN_RE
 
@@ -117,6 +123,7 @@ def apply_typos(
             known_word=known_word,
             context=context,
             anchors=anchors,
+            policy=policy,
         )
         if correction is None or correction == token:
             return raw

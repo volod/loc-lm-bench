@@ -214,8 +214,12 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
      signal above, the token is left unchanged instead of being resolved alphabetically.
 
   The constraints are always on inside the `typos` step (they only ever refuse or reorder a
-  correction, never add one) and need no new knob; the morphology signal rides on the same opt-in
-  probe as the guard, and the context index is built in the same pass as the vocabulary.
+  correction, never add one); the morphology signal rides on the same opt-in probe as the guard,
+  and the context index is built in the same pass as the vocabulary. How conservative each of them
+  is -- the surface budget, the short-token cutoff, and which ranking signal goes first -- is a
+  `RestorationPolicy` (`query_prep/restore_policy.py`) rather than three literals, so the constants
+  can be swept, pinned with evidence, and overridden per corpus. The shipped values are the ones
+  measured in [the sweep below](#restoration-constraint-sweep-restoration-constraint-threshold-sweep).
 - `glossary` -- alias/glossary expansion. When the query mentions a known term (or a surzhyk /
   transliterated alias) the entry's other surface forms are APPENDED (the raw query is preserved),
   so retrieval catches the spelling the corpus actually uses. Sourced from a `query_glossary.json`
@@ -244,7 +248,14 @@ Knobs (all `RunConfig` fields, hence in the manifest fingerprint): `query_prep` 
 unknown/duplicated steps rejected at config validation), `query_glossary_path`,
 `query_prep_typo_guard` (refused at config validation unless the `typos` step is present), and
 `query_prep_language_gate` and `query_prep_dense_case` (both refused at config validation unless
-the `normalize` step is present).
+the `normalize` step is present), and the three restoration constants
+`query_prep_surface_max_distance` (0), `query_prep_ambiguous_max_chars` (4) and
+`query_prep_restore_rank` (`morphology` | `context`), all three refused unless the `typos` step is
+present. A lane config that DROPS the `typos` step resets the three to their shipped values
+(`RESTORATION_DEFAULTS` in `src/llb/core/config.py`), which is what lets one
+`bench-query-robustness` run carry a swept setting into its `normalize,typos` lane while its clean
+baseline and its `normalize` lane stay at the default; the run's report header states the setting
+it ran.
 
 Commands:
 
@@ -257,6 +268,8 @@ make validate-retrieval CONFIG=<yaml> GOLDSET=<gs> QUERY_PREP=hyde,decompose \
   QUERY_PREP_MODEL=<m> QUERY_PREP_BACKEND=ollama QUERY_PREP_AB=1 \
   QUERY_PREP_OUT=<report.json>
 make bench-query-robustness MODEL=<m> BACKEND=<b> GOLDSET=<gs> [QUERY_PREP_DENSE_CASE=1]
+make bench-query-robustness CONFIG=<yaml with the restoration constants> MODEL=<m> BACKEND=<b>
+make sweep-restoration-constraints [GOLDSET=<gs> CORPUS=<dir> QUERY_PREP_DENSE_CASE=1 SWEEP_FULL_GRID=1]
 ```
 
 The `validate-retrieval --query-prep-ab` A/B report scores `baseline` then each cumulative step
@@ -280,7 +293,18 @@ deduplication, runner resolver dependency wiring, provenance mapping including t
 same-replacement case, per-kind surface distance, refusal of an incompatible nearest neighbor,
 restoration of the romanization-compatible form, the short-token length lock and the
 transliteration exemption from it, unresolved-tie refusal, context-driven candidate choice, and
-both morphology preferences), `tests/llb/rag/test_query_prep_dense_case.py` (case-pattern
+both morphology preferences),
+`tests/llb/rag/test_query_prep_restore_policy.py` (every swept setting's selection over the
+committed candidate fixture `tests/fixtures/restoration_candidates.json`, that each fixture case is
+decided by ONE constant, the policy reaching the typos step through the pipeline, the step
+dependency, and the refused out-of-range value),
+`tests/llb/eval/test_restoration_sweep_audit.py` (the one-factor and full grids, noisy/clean token
+alignment and its refusal to judge a mismatched sequence, the correct/wrong/unaligned labels, a
+refusal counted as a missed opportunity rather than a wrong edit, and summable counts),
+`tests/llb/eval/test_restoration_sweep_run.py` (every setting measured on every class against
+shared reference lanes over an injected store, determinism, the published bundle, and the
+adopt/expose/pin decision on synthetic readings),
+`tests/llb/rag/test_query_prep_dense_case.py` (case-pattern
 transfer without character replacement, the dense/lexical split reaching the store seam, the
 recovered acronym, capitalization carried onto a corrected token, the exact no-op on an
 already-lowercase query, glossary insertions left folded, subquery lanes untouched, and the
@@ -294,6 +318,107 @@ rigor](../rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-
 noise classes are one mechanism each (`transliteration`, `apostrophe_variant`, `mixed_script`,
 `keyboard_typos`), so what a mitigation lane recovers is attributable to the noise it inverts rather
 than blended across two mechanisms at once.
+
+### Restoration constraint sweep (restoration-constraint-threshold-sweep)
+
+`llb sweep-restoration-constraints` / `make sweep-restoration-constraints` measures what the three
+conservative constants above cost. For each setting it runs the `normalize,typos` lane (morphology
+guard on) over the same seeded noise classes the robustness benchmark uses and reports RETRIEVAL
+plus a per-edit precision audit; `$DATA_DIR/restoration-sweep/<run>/` holds `report.md`,
+`settings.jsonl`, `edit_audit.jsonl`, and `metadata.json`.
+
+It is retrieval-only and one factor at a time. Retrieval-only because the constants decide which
+corpus surface a query token is rewritten to, which is a retrieval move -- and because the sweep's
+reference lanes reproduce the full benchmark's retrieval cells exactly (below), a setting costs a
+store pass instead of a model run. One factor at a time because a per-constant verdict has to be
+attributable; `SWEEP_FULL_GRID=1` measures the product instead, and only one-factor settings carry
+a verdict. Three lanes that never consult the constraints -- `clean`, `off`, `normalize` -- are
+measured once and bound every setting, and retrieval is memoized per (dense, lexical) query pair:
+two settings differ on a handful of tokens across a whole split, so the 1,312 lane-item retrievals
+of a five-setting two-class run over 82 items collapse to 520 distinct store calls.
+
+The audit is what separates "recovered the user's word" from "rewrote the question into something
+the corpus happens to contain". Because every noisy query is generated from a clean one, aligning
+the normalized noisy tokens with the normalized clean ones gives each correction a REFERENCE: it is
+`correct` when it restored that token, `wrong` when it produced another, and `unaligned` when the
+two token sequences do not correspond (the audit then refuses to judge rather than guessing). The
+same alignment supplies the denominator retrieval cannot: an OPPORTUNITY is a token the noise made
+out-of-vocabulary whose clean form the corpus does contain, so `restoration recall` is the share of
+recoverable tokens the constraints actually recovered. Implementation:
+`src/llb/eval/restoration_sweep.py` (the grid and the per-setting pass),
+`restoration_sweep_lanes.py` (paired readings +
+retrieval cache), `restoration_sweep_audit.py` (alignment + labels), `restoration_sweep_verdict.py`
+(the pin/adopt/expose rule), `restoration_sweep_report.py`, `restoration_sweep_run.py`, and
+`src/llb/cli/eval/restoration_sweep.py`.
+
+The verdict rule is stated once and applied to all three constants: **pin** when no alternative
+retrieved more (the conservative default costs no recoverable recall), **adopt** when an
+alternative separates on paired recall without raising the wrong-correction share (the default IS
+costing recall), **expose** when it gains recall but does not separate at this item count or buys
+the gain with more wrong corrections (a real but corpus-dependent trade, so it stays a knob).
+
+CUDA-host evidence (2026-08-19): RTX 4060 Ti 16 GiB, `intfloat/multilingual-e5-base`, flat FAISS
+over the committed `ua_squad_postedited_v1` corpus, the full final split (n=82), k=10, seed 13, 8
+percent character noise, classes `transliteration` and `keyboard_typos` (the two the typo lane
+exists to repair; the apostrophe and homoglyph classes are already fully inverted by `normalize` on
+this encoder). Two runs: the folded lane and the recommended dense-cased lane.
+
+The control first: the sweep's reference lanes and default setting reproduce the benchmark's
+retrieval table cell for cell -- folded `off` 0.7195 / 0.9268, `normalize` 0.9634 / 0.9024,
+`normalize,typos` 0.9634 / 0.9634; dense-cased `normalize` 0.9756 / 0.9268, `normalize,typos`
+0.9756 / 0.9512 ([evaluation
+rigor](../rigor-board-judge/robustness-benchmarks.md#dense-lane-casing-evidence)). Nothing about
+the lane changed when generation was dropped.
+
+Folded lane, pooled over both classes (164 paired readings):
+
+| Setting | Recall@10 | Paired delta vs default | Corrections | Wrong | Wrong share | Restoration recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `surface=0,short=4,rank=morphology` (default) | 0.9634 | - | 289 | 29 | 0.1003 | 0.8442 |
+| `surface=1,short=4,rank=morphology` | 0.9756 | +0.0122 `flat` (2/0/162) | 299 | 39 | 0.1304 | 0.8442 |
+| `surface=0,short=3,rank=morphology` | 0.9634 | +0.0000 (0/0/164) | 290 | 30 | 0.1034 | 0.8442 |
+| `surface=0,short=5,rank=morphology` | 0.9634 | +0.0000 (0/0/164) | 289 | 29 | 0.1003 | 0.8442 |
+| `surface=0,short=4,rank=context` | 0.9634 | +0.0000 (0/0/164) | 289 | 29 | 0.1003 | 0.8442 |
+
+Under the dense-cased lane every alternative is 0/0/164. The relaxed surface budget's entire folded
+gain is ONE question counted once per class -- `570d4e6cb3d812140066d66d`, the untranslated ENGLISH
+item the fold plus per-token transliteration mangles out of the top 10 -- and at budget 1 the typo
+step "corrects" that mangled text into Ukrainian words that happen to retrieve the right chunk. The
+dense-lane casing recovers the same question by not breaking it in the first place, which is why
+the gain disappears there. The extra wrong corrections do not disappear with it.
+
+The one setting the folded lane favored was then re-read end to end through
+`bench-query-robustness` with the same model, seed, and lane: it retrieves the extra item and the
+answers do not follow ([evaluation
+rigor](../rigor-board-judge/robustness-benchmarks.md#relaxed-restoration-budget-end-to-end)).
+
+**Verdict: pin all three; the knobs stay for a corpus that wants the trade.**
+
+- `surface_max_distance` = 0 (`expose` folded, `pin` dense-cased). Relaxing to 1 buys one question
+  in the folded lane and nothing at all in the recommended one, and both readings are `flat` -- while
+  it makes ten more wrong corrections, eight of them in the `transliteration` class where the exact
+  budget makes ZERO (`тге` -> `те` rewrites the English "the" into a Ukrainian word, `хугеноти` ->
+  `гугеноти`, `правител` -> `правителі` where the user typed `правитель`). Exact surface
+  compatibility is what buys that class's perfect precision, so it is pinned.
+- `ambiguous_token_max_chars` = 4 (`pin`). A cutoff of 3 adds exactly one correction on this split
+  and it is wrong (`типц` -> `тип` where the user typed `типу`); a cutoff of 5 changes nothing at
+  all here, because no five-character token in this split has a length-changing candidate or an
+  unresolved tie. The default is measured, and the 5 side of it is untested rather than confirmed.
+- `rank_order` = `morphology` (`pin`). Context-first changes exactly two picks out of 289: one
+  win (`чаму` -> `часу`, the typed word) and one loss (`сає` -> `сан` instead of `має`). Recall and
+  the wrong count are identical; pooled MRR moves +0.0030, which is exactly those two picks. There
+  is no evidence for reordering the signals.
+
+Artifacts: folded `$DATA_DIR/restoration-sweep/20260819T170934.639293Z-c19fcb509e24/`,
+dense-cased `$DATA_DIR/restoration-sweep/20260819T171023.498781Z-09973ef3e2c5/`. Each carries
+`report.md`, `settings.jsonl` (per setting per class plus a pooled row), `edit_audit.jsonl` (every
+correction with its reference and label), and `metadata.json`.
+
+Reading the audit, all 29 of the default setting's wrong corrections are genuinely not the token
+the user typed, so the automated label and a human reading agree on 29 of 29. The share splits in a
+way the constants cannot fix: 19 of the 29 have a reference the corpus vocabulary does not contain,
+so no correct choice existed and the honest alternative is refusal, not a better pick. Only 10 of
+289 corrections (3.5 percent) picked a wrong surface when the right one was available.
 
 ### Cross-language query processing evidence
 

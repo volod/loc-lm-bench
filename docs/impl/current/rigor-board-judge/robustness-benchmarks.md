@@ -132,7 +132,12 @@ default. It is a strong model-specific option -- it restores all retrieval loss 
 improves transliteration for both models -- but MamayLM's keyboard-objective regression persists
 and the per-edit audit's ambiguous nearest-vocabulary choices show that typo correction still needs
 a model/corpus A/B before activation. The report's shared-hit generation delta separates that
-answer-side effect from missing evidence.
+answer-side effect from missing evidence. Those ambiguous choices are now counted rather than
+described: `make sweep-restoration-constraints` labels every correction against the clean token the
+noise came from and reports the wrong share per restoration setting ([RAG
+core](../rag-core/rerank-and-query.md#restoration-constraint-sweep-restoration-constraint-threshold-sweep)).
+Each run's `report.md` header also states the restoration setting it ran, so two settings' reports
+read cell for cell.
 
 ### Dense-Lane Casing Evidence
 
@@ -217,6 +222,32 @@ plus their `summary.md` in
 `$DATA_DIR/query-robustness/20260819T140213.064476Z-c231ef43769c-dense-case-clean-ab/`. Each
 `report.md` header carries a `dense-lane casing: on|off` line, since the lane ids are deliberately
 identical in both runs so the two reports read cell for cell.
+
+### Relaxed Restoration Budget, End To End
+
+The restoration constants the `typos` step applies are `RunConfig` fields, so one benchmark run can
+carry a swept setting: `make bench-query-robustness CONFIG=<yaml> ...` with
+`query_prep_surface_max_distance: 1`. The lanes that do not run the step -- the clean baseline and
+`off` / `normalize` -- reset the constants to their shipped values, so only the `normalize,typos`
+column moves and the run stays comparable with every recorded default-constant run. Each report's
+header states the setting it ran.
+
+CUDA-host run (2026-08-19, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M, Ollama, folded lane, seed 13, k=10,
+8 percent noise, `transliteration` + `keyboard_typos`, 492 probe cases, zero errors): the `off` and
+`normalize` columns reproduce the 2026-07-24 run to four decimals (transliteration objective 0.2497
+raw / 0.3763 normalized; keyboard 0.4451 / 0.4375), which is the control that the setting reached
+the typo lane and nothing else.
+
+At budget 1 the `normalize,typos` lane retrieves one extra item per class (recall@10 0.9756 on both,
+against 0.9634 at the shipped budget) and the answers do not follow: objective is 0.3357 on
+transliteration (0.3320 recorded at budget 0, +0.0037) and 0.4376 on keyboard typos (0.4340,
++0.0036), both decoding-wobble scale, both still below the clean 0.4747, and transliteration still
+below the `normalize`-only lane's 0.3763. The retrieval sweep's ledger for the same setting is ten
+additional wrong corrections ([RAG
+core](../rag-core/rerank-and-query.md#restoration-constraint-sweep-restoration-constraint-threshold-sweep)),
+so the end-to-end reading agrees with the sweep: keep the exact surface budget. Artifact:
+`$DATA_DIR/query-robustness/20260819T171103.933023Z-a5e94ffc6ffd/`; clean baseline:
+`$DATA_DIR/run-eval/20260819T165101.093894Z-8d63efec70c7/`.
 
 ## Cross-Lingual Query Lane
 

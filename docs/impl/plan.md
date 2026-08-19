@@ -76,33 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### restoration-constraint-threshold-sweep (optional)
-
-The restoration constraints ship with three unswept design constants: the surface-compatibility
-budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
-ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
-context ([RAG
-core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing)). Each was
-chosen to be conservative, and nothing measures what the conservatism costs: a budget of 1 admits a
-token that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words
-stay untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and
-the edit-precision audit per setting, and pin each value with evidence or expose it.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `select_restoration` in `src/llb/rag/query_prep/restore.py` and the
-  robustness lanes.
-- User-visible outcome: the operator knows whether the safe defaults are costing recoverable
-  recall, instead of trusting three hand-picked constants.
-- Scope boundary: in scope -- the sweep, the per-setting edit audit, and a pin-or-expose verdict
-  per constant. Out of scope -- new constraint signals and a learned ranker.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
-- Execution path: `make bench-query-robustness` per setting on the CUDA host; CI covers each
-  setting's selection decisions over committed candidate fixtures.
-- Acceptance gates: `make ci` green; the report states recall and the share of corrections a human
-  reading of the audit calls wrong, per setting, with an explicit verdict per constant.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
 #### vector-store-bake-off-paired-uncertainty (optional)
 
 `compare-vector-stores` still ranks backends on a point estimate plus the measurement floor, the

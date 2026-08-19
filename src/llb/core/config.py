@@ -28,6 +28,11 @@ from llb.core.config_validation import (
 )
 
 from llb.core.config_fields import RunConfigFields
+from llb.rag.query_prep.restore_policy import (
+    AMBIGUOUS_TOKEN_MAX_CHARS,
+    RANK_MORPHOLOGY,
+    SURFACE_MAX_DISTANCE,
+)
 
 
 def _validate_scorer_policy(config: RunConfigFields) -> None:
@@ -44,6 +49,30 @@ def _validate_scorer_policy(config: RunConfigFields) -> None:
         raise ValueError("scorer_egress_consent can only be set when scorer_policy is frontier")
     if config.frontier_max_usd is not None or config.frontier_max_calls is not None:
         raise ValueError("frontier budgets can only be set when scorer_policy is frontier")
+
+
+# The restoration constants are inert without the step they constrain, so they are refused there --
+# and a lane config that DROPS the 'typos' step (a mitigation lane, a clean baseline) resets them
+# to these shipped values rather than carrying a setting that no longer applies.
+RESTORATION_DEFAULTS: dict[str, Any] = {
+    "query_prep_surface_max_distance": SURFACE_MAX_DISTANCE,
+    "query_prep_ambiguous_max_chars": AMBIGUOUS_TOKEN_MAX_CHARS,
+    "query_prep_restore_rank": RANK_MORPHOLOGY,
+}
+
+
+def restoration_fields(config: RunConfigFields) -> dict[str, Any]:
+    """This config's restoration constants, for a lane config that keeps the 'typos' step."""
+    return {name: getattr(config, name) for name in RESTORATION_DEFAULTS}
+
+
+def _validate_restoration_policy(config: RunConfigFields) -> None:
+    """The restoration constants only mean anything inside the step they constrain."""
+    if "typos" in config.query_prep:
+        return
+    for field, default in RESTORATION_DEFAULTS.items():
+        if getattr(config, field) != default:
+            raise ValueError(f"{field} needs the 'typos' step in query_prep")
 
 
 class RunConfig(RunConfigFields):
@@ -85,6 +114,7 @@ class RunConfig(RunConfigFields):
             raise ValueError("query_prep_language_gate needs the 'normalize' step in query_prep")
         if self.query_prep_dense_case and "normalize" not in self.query_prep:
             raise ValueError("query_prep_dense_case needs the 'normalize' step in query_prep")
+        _validate_restoration_policy(self)
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         _validate_scorer_policy(self)

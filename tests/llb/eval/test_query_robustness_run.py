@@ -13,7 +13,7 @@ from _query_robustness_helpers import (
     build_fake_graph,
 )
 
-from llb.core.config import RunConfig
+from llb.core.config import RunConfig, restoration_fields
 from llb.eval.query_robustness import (
     LANE_NORMALIZE,
     LANE_NORMALIZE_TYPOS,
@@ -265,3 +265,38 @@ def test_dense_case_lane_recovers_the_hit_casefolding_costs(monkeypatch: pytest.
     # The class perturbs nothing in this question, so the fold is the ONLY thing the lane changes.
     assert recall(False) == 0.0
     assert recall(True) == 1.0
+
+
+def test_a_swept_restoration_setting_reaches_the_typo_lane_and_no_other(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A non-default restoration constant is refused in a lane without the step it constrains."""
+    from llb.eval.query_robustness_run import _baseline_config
+    from llb.rag.query_prep.restore_policy import DEFAULT_RESTORATION_POLICY
+
+    built: list[tuple[tuple[str, ...], int]] = []
+
+    def _record(config, store, launcher):
+        built.append((tuple(config.query_prep), config.query_prep_ambiguous_max_chars))
+        return None
+
+    monkeypatch.setattr("llb.eval.graph.build_rag_graph", build_fake_graph)
+    monkeypatch.setattr("llb.eval.query_robustness_run.build_query_prep", _record)
+    config = RunConfig(
+        top_k=1,
+        max_tokens=16,
+        query_prep=["normalize", "typos"],
+        query_prep_ambiguous_max_chars=3,
+    )
+    # the clean baseline drops the whole lane, so it may not carry the constant either
+    assert _baseline_config(config).query_prep_ambiguous_max_chars == (
+        DEFAULT_RESTORATION_POLICY.ambiguous_token_max_chars
+    )
+    make_query_executor(
+        _baseline_config(config),
+        FakeStore(),
+        FakeEndpoint(),
+        restoration=restoration_fields(config),
+    )
+    assert (("normalize", "typos"), 3) in built
+    assert (("normalize",), DEFAULT_RESTORATION_POLICY.ambiguous_token_max_chars) in built

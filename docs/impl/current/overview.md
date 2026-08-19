@@ -421,7 +421,7 @@ Generated artifacts must stay under `DATA_DIR`.
 | Verification and review | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-adjudicate`, `verify-accept`, `review` (`make review-workbench`) |
 | Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score`, `judge-experiment`, `frontier-judge-agreement` |
 | RAG retrieval | `build-index`, `build-graph`, `refresh-index`, `validate-retrieval`, `build-query-glossary` |
-| Retrieval evidence | `compare-retrieval`, `compare-embeddings`, `compare-vector-stores`, `compare-graph-fusion`, `calibrate-fusion-routing`, `compare-context-strategies`, `compare-answer-quality` |
+| Retrieval evidence | `compare-retrieval`, `compare-embeddings`, `compare-vector-stores`, `compare-graph-fusion`, `calibrate-fusion-routing`, `compare-context-strategies`, `compare-answer-quality`, `sweep-restoration-constraints` |
 | RAG scoring | `run-eval`, `sweep`, `tune`, `joint-search`, `pipeline`, `screen-public`, `board`, `recommend`, `mlflow-ui` |
 | Diagnostics | `analyze-misses`, `probe-context-position`, `probe-multihop-hops`, `bench-query-robustness`, `score-external-rag` |
 | Fine-tuning and adapters | `export-finetune-set`, `finetune-hparams`, `finetune-adapter`, `finetune-compat`, `self-improve`, `distill`, `finetune-campaign`, `register-adapter`, `list-adapters`, `serve-adapter`, `gc-adapters` |

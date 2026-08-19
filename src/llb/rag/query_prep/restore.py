@@ -10,7 +10,7 @@ This module supplies the three signals that constrain that choice:
 
 - **Surface compatibility** (hard filter). The token carries the noisy form it came from plus the
   normalization edit `kind`; a candidate survives only when re-applying that same lossy transform
-  to it reproduces the typed form within `SURFACE_MAX_DISTANCE`. Romanizing `суть` gives back the
+  to it reproduces the typed form within the policy's surface budget. Romanizing `суть` gives the
   typed `sut`; romanizing `суд` gives `sud`, so `суд` is refused instead of silently swapping the
   word. A token whose noise normalization already fully explains therefore keeps vocabulary
   correction from acting on it at all.
@@ -21,6 +21,10 @@ This module supplies the three signals that constrain that choice:
 
 When those signals still leave two candidates indistinguishable and the token is short enough for
 the choice to be a coin flip, the restoration is refused rather than guessed.
+
+How conservative each of those is -- the surface budget, the short-token cutoff, and which of the
+two ranking signals goes first -- is a `RestorationPolicy` (`restore_policy`), so the constants can
+be swept and pinned rather than trusted.
 """
 
 import logging
@@ -38,22 +42,15 @@ from llb.rag.query_prep.base import (
 from llb.rag.query_prep.distance import damerau_levenshtein
 from llb.rag.query_prep.normalization_tables import LATIN_TO_UKRAINIAN_CONFUSABLES
 from llb.rag.query_prep.normalize import cyrillic_to_latin
+from llb.rag.query_prep.restore_policy import (
+    DEFAULT_RESTORATION_POLICY,
+    RestorationPolicy,
+)
 
 _LOG = logging.getLogger(__name__)
 
-# A candidate must reproduce the typed surface EXACTLY under the reversed transform. The lossy
-# part of romanization (dropped soft sign / apostrophe) is what leaves several corpus surfaces
-# compatible at all; anything beyond that is a different word, not a restoration of this one.
-SURFACE_MAX_DISTANCE = 0
 # Ukrainian inflection is suffixal, so the final characters carry the case/number the user typed.
 MORPH_SUFFIX_CHARS = 2
-# At or below this length a distance-1 neighborhood is dense with unrelated function words, so an
-# otherwise-unresolved tie is refused instead of broken alphabetically, and an insertion/deletion
-# candidate is refused outright: at three or four characters, dropping or adding a letter yields a
-# DIFFERENT short word (`якв` -> `кв`, `зто` -> `то`) rather than a repair of this one. Only a
-# transliteration provenance licenses a short length change, because that is exactly the character
-# romanization is known to have dropped (the soft sign and the apostrophe).
-AMBIGUOUS_TOKEN_MAX_CHARS = 4
 # Rarest in-vocabulary query tokens used as context anchors (rarest first = most discriminative).
 CONTEXT_MAX_ANCHORS = 8
 
@@ -92,12 +89,16 @@ def _fold_homoglyphs(text: str) -> str:
     return "".join(LATIN_TO_UKRAINIAN_CONFUSABLES.get(char, char) for char in text)
 
 
-def surface_distance(candidate: str, provenance: TokenProvenance) -> int:
+def surface_distance(
+    candidate: str,
+    provenance: TokenProvenance,
+    max_distance: int = DEFAULT_RESTORATION_POLICY.surface_max_distance,
+) -> int:
     """Edit distance between the candidate's re-noised surface and the token as typed.
 
-    Bounded by `SURFACE_MAX_DISTANCE`, so the return value is only meaningful as
-    `<= SURFACE_MAX_DISTANCE` (compatible) or above it (a different word). An unknown edit kind
-    imposes no constraint.
+    Bounded by `max_distance` (the policy's surface budget), so the return value is only
+    meaningful as `<= max_distance` (compatible) or above it (a different word). An unknown edit
+    kind imposes no constraint.
     """
     if provenance.kind == KIND_TRANSLITERATE:
         left = cyrillic_to_latin(candidate).replace(_SEPARATORS, "")
@@ -107,7 +108,7 @@ def surface_distance(candidate: str, provenance: TokenProvenance) -> int:
         right = _fold_homoglyphs(provenance.noisy)
     else:
         return 0
-    return damerau_levenshtein(left, right, SURFACE_MAX_DISTANCE)
+    return damerau_levenshtein(left, right, max_distance)
 
 
 @dataclass(frozen=True)
@@ -154,11 +155,14 @@ def _rank_key(
     known_word: KnownWordProbe | None,
     context: VocabularyContext | None,
     anchors: Sequence["frozenset[int]"],
+    policy: RestorationPolicy,
 ) -> tuple[int, int, int, int, str]:
-    """Ordering key: edit distance, then morphology, then local context, then a stable tie-break."""
+    """Ordering key: edit distance, the two ranking signals in policy order, then a tie-break."""
     known_penalty = 0 if known_word is None or known_word(candidate) else 1
     suffix_penalty = 0 if candidate[-MORPH_SUFFIX_CHARS:] == token[-MORPH_SUFFIX_CHARS:] else 1
     cooccurrence = context.cooccurrence(candidate, anchors) if context is not None else 0
+    if policy.context_first:
+        return (distance, -cooccurrence, known_penalty, suffix_penalty, candidate)
     return (distance, known_penalty, suffix_penalty, -cooccurrence, candidate)
 
 
@@ -166,13 +170,15 @@ def _compatible_candidates(
     token: str,
     candidates: Sequence[tuple[int, str]],
     provenance: TokenProvenance | None,
+    policy: RestorationPolicy,
 ) -> tuple[list[tuple[int, str]], bool]:
+    budget = policy.surface_max_distance
     compatible = [
         (distance, candidate)
         for distance, candidate in candidates
-        if provenance is None or surface_distance(candidate, provenance) <= SURFACE_MAX_DISTANCE
+        if provenance is None or surface_distance(candidate, provenance, budget) <= budget
     ]
-    short = len(token.replace(_SEPARATORS, "")) <= AMBIGUOUS_TOKEN_MAX_CHARS
+    short = len(token.replace(_SEPARATORS, "")) <= policy.ambiguous_token_max_chars
     allows_resize = provenance is not None and provenance.kind == KIND_TRANSLITERATE
     if short and not allows_resize:
         compatible = [pair for pair in compatible if len(pair[1]) == len(token)]
@@ -213,6 +219,7 @@ def select_restoration(
     known_word: KnownWordProbe | None = None,
     context: VocabularyContext | None = None,
     anchors: Sequence["frozenset[int]"] = (),
+    policy: RestorationPolicy = DEFAULT_RESTORATION_POLICY,
 ) -> str | None:
     """The best `(distance, candidate)` under the restoration constraints, or None when unsafe.
 
@@ -220,13 +227,13 @@ def select_restoration(
     every candidate would resize a short token, or the survivors are indistinguishable on every
     signal and the token is short enough that an alphabetical tie-break would be a guess.
     """
-    compatible, short = _compatible_candidates(token, candidates, provenance)
+    compatible, short = _compatible_candidates(token, candidates, provenance, policy)
     if not compatible:
         _log_incompatible(token, candidates, provenance)
         return None
     ranked = sorted(
         (
-            _rank_key(token, distance, candidate, known_word, context, anchors)
+            _rank_key(token, distance, candidate, known_word, context, anchors, policy)
             for distance, candidate in compatible
         )
     )
