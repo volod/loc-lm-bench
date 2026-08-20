@@ -135,11 +135,11 @@ make bench-agentic-context-compact-window-elision-transfer
 | What | Where |
 | --- | --- |
 | Shipped bound, exact transcript renderer, and evidence-only entry-aware trim | `src/llb/bench/agentic/context_summary.py` |
-| Generic deterministic task probe | `src/llb/bench/agentic_memory_boundary_probe.py` |
-| Trigger-matched base runner and live byte eligibility | `src/llb/bench/agentic_memory_window_elision.py` |
-| Head/middle/tail tasks and independent span placement | `src/llb/bench/agentic_memory_window_elision_tasks.py` |
-| Transfer design and model-free gates | `src/llb/bench/agentic_memory_window_elision_transfer_design.py` |
-| Two-family runner and conditional prototype | `src/llb/bench/agentic_memory_window_elision_transfer.py` |
-| Per-stratum, transfer, and prototype readings | `src/llb/bench/agentic_memory_window_elision_transfer_reading.py` |
-| Persistence and command | `src/llb/bench/agentic_memory_window_elision_transfer_report.py`, `src/llb/cli/bench/category_agentic_memory_window_elision_transfer.py` |
-| Deterministic contracts | `tests/llb/bench/test_agentic_memory_window_elision.py`, `tests/llb/bench/test_agentic_memory_window_elision_transfer.py` |
+| Generic deterministic task probe | `src/llb/bench/memory/boundary/probe.py` |
+| Trigger-matched base runner and live byte eligibility | `src/llb/bench/memory/window_elision/run.py` |
+| Head/middle/tail tasks and independent span placement | `src/llb/bench/memory/window_elision/tasks.py` |
+| Transfer design and model-free gates | `src/llb/bench/memory/window_elision/transfer_design.py` |
+| Two-family runner and conditional prototype | `src/llb/bench/memory/window_elision/transfer.py` |
+| Per-stratum, transfer, and prototype readings | `src/llb/bench/memory/window_elision/transfer_reading.py` |
+| Persistence and command | `src/llb/bench/memory/window_elision/transfer_report.py`, `src/llb/cli/bench/memory/window_elision_transfer.py` |
+| Deterministic contracts | `tests/llb/bench/memory/test_agentic_memory_window_elision.py`, `tests/llb/bench/memory/test_agentic_memory_window_elision_transfer.py` |

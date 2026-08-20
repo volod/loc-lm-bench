@@ -126,7 +126,7 @@ def topic_of(question: str, provenance_row: JsonObject | None) -> str:
     ]
     if not candidates:
         return DEFAULT_QUESTION_TYPE
-    from llb.rag.lexical import ukrainian_lemma
+    from llb.rag.vector_store.lexical import ukrainian_lemma
 
     return ukrainian_lemma(max(candidates, key=len))
 

@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
-from llb.prep.frontier_telemetry import LLMComplete
+from llb.prep.frontier.telemetry import LLMComplete
 from llb.scoring.judge.scorer import extract_scores
 from llb.scoring.judge.template import UA_ANSWER_RELEVANCY_STEPS, UA_FAITHFULNESS_STEPS
 from llb.scoring.policy.errors import BudgetExceeded

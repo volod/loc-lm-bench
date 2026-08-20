@@ -10,7 +10,7 @@ generous `top_k` with room in the context budget, ranking earlier changes nothin
 This lane measures it END TO END. Each CELL is one retrieval configuration (`top_k` x reranker);
 inside a cell the two encoders are scored on the IDENTICAL items and paired against each other, so
 the answer-side delta per cell is what decides whether the bake-off gets a second, scoped adoption
-bar (`llb.rag.embedding_bakeoff_uncertainty.BAR_FIRST_HIT`) or keeps recall@k as its sole bar.
+bar (`llb.rag.embedding_bakeoff.uncertainty.BAR_FIRST_HIT`) or keeps recall@k as its sole bar.
 """
 
 from collections.abc import Sequence

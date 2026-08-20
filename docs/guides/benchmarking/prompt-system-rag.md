@@ -156,8 +156,8 @@ Each policy writes its own run bundle under `$DATA_DIR/chain-context/<timestamp>
 policy, the `prompt_system_ids`, and the `chain_set_digest`. The command prints a policy-ranked
 board (final-answer correctness with bootstrap CIs) and a recommendation naming the winning policy;
 `llb recommend` renders a "Context policy" section per model. Context assembly per policy per step
-is unit-tested over a fake endpoint (`tests/llb/bench/test_chain_context.py`), so the comparison is
-provable without a GPU.
+is unit-tested over a fake endpoint (`tests/llb/bench/chain_context/test_chain_context.py`), so the
+comparison is provable without a GPU.
 
 ### CUDA evidence (RTX 4060 Ti 16 GB)
 

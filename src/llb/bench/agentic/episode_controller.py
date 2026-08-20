@@ -22,7 +22,7 @@ from llb.bench.agentic.loop_policy import (
 from llb.bench.common import LLMChat, LLMComplete
 from llb.core.contracts.benchmarks import ToolDef
 from llb.core.contracts.common import ChatMessage
-from llb.scoring.tool_calls import ToolCallParse, parse_tool_call_detailed
+from llb.scoring.tooling.tool_calls import ToolCallParse, parse_tool_call_detailed
 
 
 @dataclass(frozen=True, slots=True)

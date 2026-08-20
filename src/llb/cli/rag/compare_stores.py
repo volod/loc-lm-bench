@@ -71,10 +71,10 @@ def compare_vector_stores_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval
-    from llb.rag.compare_rows import format_comparison
-    from llb.rag.comparison_builders import build_vector_store_comparison
-    from llb.rag.vector_index import RAG_BACKEND_FAISS
+    from llb.rag.comparison.run import compare_retrieval
+    from llb.rag.comparison.rows import format_comparison
+    from llb.rag.comparison.builders import build_vector_store_comparison
+    from llb.rag.vector_store.vector_index import RAG_BACKEND_FAISS
 
     cfg = load_config(
         config,
@@ -103,7 +103,7 @@ def compare_vector_stores_cmd(
         seed=seed,
     )
     if noise_floor:
-        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES, measure_noise_floor
 
         report["noise_floor"] = measure_noise_floor(
             stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES

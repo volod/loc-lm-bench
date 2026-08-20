@@ -5,7 +5,7 @@ from typing import Any
 
 from llb.eval import common as eval_common
 from llb.scoring.correctness import answer_correctness
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     ABSTENTION_MARKERS,
     ANSWER_FIELD_CANDIDATES,
     DEFAULT_SOURCE_LIMIT,
@@ -21,8 +21,8 @@ from llb.scoring.external_rag_common import (
     _as_int,
     _string,
 )
-from llb.scoring.external_rag_source_map import SourceMap
-from llb.scoring.external_rag_sources import audit_row_sources
+from llb.scoring.external_rag.source_map import SourceMap
+from llb.scoring.external_rag.sources import audit_row_sources
 
 
 def score_records(

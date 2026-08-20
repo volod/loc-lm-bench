@@ -35,10 +35,10 @@ untouched items drags every delta toward zero (a total retrieval loss on 6 items
 every lane over the perturbed items, against the SAME items' clean baseline, with an untouched
 count per class; a lane whose class perturbed nothing is dashed out rather than shown as zeros.
 
-Implementation is split across `src/llb/eval/query_robustness_variants.py` (seeded generators and
+Implementation is split across `src/llb/eval/query_robustness/variants.py` (seeded generators and
 class selection), `query_robustness.py` (lane definitions, per-case joins, lane and affected-subset
-metrics), `query_robustness_run.py` (clean baseline, store, endpoint, and per-lane graph wiring),
-`query_robustness_report.py` (atomic report/JSONL publication), and
+metrics), `query_robustness/run.py` (clean baseline, store, endpoint, and per-lane graph wiring),
+`query_robustness/report.py` (atomic report/JSONL publication), and
 `src/llb/cli/eval/query_robustness.py`.
 `tests/llb/eval/test_query_robustness.py` drives a fake endpoint and fake store through all twelve
 default lanes using the graph module's pure-node seam, so the base `[dev]` GitHub environment does
@@ -54,12 +54,12 @@ and alphabetic/numeric candidate separation, plus the ambiguity-aware restoratio
 documented in [RAG core](../rag-core/rerank-and-query.md#query-side-processing-uk-query-processing).
 
 Every per-class delta now carries paired uncertainty rather than a point-only sign.
-`query_robustness_uncertainty.py` reads three states at the reporting confidence and neighbouring
+`query_robustness/uncertainty.py` reads three states at the reporting confidence and neighbouring
 90% / 97.5% conventions: `improved`, `degraded`, or `indistinguishable`. It reports the same
 interval, win/loss/tie ledger, exact sign-test p, `p_positive`, and `(borderline)` qualifier for
 lane-versus-clean deltas and mitigation-versus-`off` recoveries, both pooled and affected-only.
 Either directional claim also needs enough differing items for the exact sign test to reach the
-level. `query_robustness_summary.py` rebuilds all of that directly from `robustness.jsonl` plus the
+level. `query_robustness/summary.py` rebuilds all of that directly from `robustness.jsonl` plus the
 clean case rows, which makes a recorded run re-renderable without another model call.
 
 The 2026-07-24 MamayLM and Lapa artifacts were re-rendered through that seam with 2,000 resamples,
@@ -261,7 +261,7 @@ is excluded rather than treated as the Ukrainian baseline. The overlay passes `v
 against the original corpus and remains `frontier-drafted` / `verified: false` pending language
 review.
 
-`src/llb/eval/query_robustness_languages.py` owns fixture inference, the invariant that only id,
+`src/llb/eval/query_robustness/languages.py` owns fixture inference, the invariant that only id,
 language, question, provenance, and review state may differ, deterministic mixed-query composition,
 uniform drafted/verified state, and the benchmark-only exact translation adapter. Language classes
 run under `off`, `normalize`, and `translate_to_uk`. The last lane replaces the query with its paired
@@ -313,10 +313,10 @@ translation-upper-bound coverage lives in
 
 ## Ukrainian Security Adaptation
 
-The security benchmark (`src/llb/bench/security.py`, `src/llb/scoring/security.py`) is adapted to
-the Ukrainian, bilingual reality of locally-served UA models. The adaptation lives in the pieces
-that decide the scores, so a Ukrainian-language decline is never miscounted as compliance and a
-Cyrillic-echoed leak is never missed.
+The security benchmark (`src/llb/bench/security/run.py`, `src/llb/scoring/security/run.py`) is
+adapted to the Ukrainian, bilingual reality of locally-served UA models. The adaptation lives in the
+pieces that decide the scores, so a Ukrainian-language decline is never miscounted as compliance and
+a Cyrillic-echoed leak is never missed.
 
 - **Refusal lexicon (UA + RU).** `is_refusal` (`src/llb/eval/common.py`) matches high-precision,
   first-person UA refusals (`не можу`, `не зможу`, `не буду`, `не в змозі`, `відмовляюся`,
@@ -345,7 +345,7 @@ Seed cases are tagged with `lang` (`uk` / `ru` / `en`) and, for attacks, `attrs.
 (`language_switch` / `homoglyph`).
 
 - **Cross-language consistency (Module 6).** `cross_language_consistency`
-  (`src/llb/scoring/security.py`) compares matched-prompt groups — the SAME behavior posed in
+  (`src/llb/scoring/security/run.py`) compares matched-prompt groups — the SAME behavior posed in
   several languages, linked by an `xlang_group` id — as a separate outcome from ASR. For every
   group posed in >=2 languages it checks whether the model's refuse/answer decision is the same
   across languages; `consistency` is the fraction of groups treated equivalently and

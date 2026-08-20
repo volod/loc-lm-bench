@@ -15,13 +15,13 @@ know which lane it is rendering.
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.embedding_bakeoff.uncertainty import (
     BARS,
     DEFAULT_CONFIDENCE,
     PairedRow,
     bar_stability,
 )
-from llb.rag.embedding_bakeoff_verdict import DECISION_ADOPT
+from llb.rag.embedding_bakeoff.verdict import DECISION_ADOPT
 from llb.rag.fusion_evidence.evidence_gate import evidence_gate_summary
 from llb.rag.fusion_evidence.paired import format_randomization_p, gated_readings
 from llb.rag.fusion_evidence.stability import boundary_table, format_reading

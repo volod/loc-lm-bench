@@ -6,7 +6,7 @@ from llb.executor.isolation import (
     run_sweep,
 )
 from llb.executor.vram import VERDICT_BASELINE_SHIFT, VERDICT_RECLAIMED, VramNotReclaimed
-from test_isolation import cfg, gpu
+from tests.llb.executor.test_isolation import cfg, gpu
 
 
 def test_isolate_cell_reclaimed_runs_work_and_cools_down():

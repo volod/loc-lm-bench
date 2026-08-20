@@ -28,14 +28,14 @@ carried, so a retrieval miss can be read against the document the operator expec
 Misses are clustered by document (`source_doc_id`), topic, and question type, with per-key miss
 rates computed over ALL scored cases of that key. Labels come from the goldset's
 `item_provenance.jsonl` sidecar when the draft pipeline emitted one (`question_type` / `topic`);
-otherwise a deterministic UA/EN interrogative heuristic types the question and the longest
-content token stands in for the topic -- lemmatized through the hybrid-retrieval lemma normalizer
-(`llb.rag.lexical.ukrainian_lemma`), so Ukrainian case forms of one topic land in a single cluster
-instead of splitting across inflections. Recommendations are ranked by the miss count they
-address and rendered from `board.miss.*` prompt templates: raise/lower `top_k`, change
-chunking, add prompt-system dictionary terms for a dominant generation-miss cluster, try the
-named alternative model (cited with its measured objective from comparable sibling bundles --
-same split and case count), review refusals / artifacts / judge disagreements.
+otherwise a deterministic UA/EN interrogative heuristic types the question and the longest content
+token stands in for the topic -- lemmatized through the hybrid-retrieval lemma normalizer
+(`llb.rag.vector_store.lexical.ukrainian_lemma`), so Ukrainian case forms of one topic land in a
+single cluster instead of splitting across inflections. Recommendations are ranked by the miss count
+they address and rendered from `board.miss.*` prompt templates: raise/lower `top_k`, change
+chunking, add prompt-system dictionary terms for a dominant generation-miss cluster, try the named
+alternative model (cited with its measured objective from comparable sibling bundles -- same split
+and case count), review refusals / artifacts / judge disagreements.
 
 Probe mode (`--probe-top-k 3,8` / `PROBE_TOP_K=3,8`) re-runs ONLY the miss subset at each
 alternative retrieval depth through the normal durable `run_eval` (same recorded config; only

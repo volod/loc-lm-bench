@@ -6,7 +6,7 @@ from pathlib import Path
 
 from llb.scoring.external_rag.records import ensure_human_fields, load_jsonl, write_jsonl
 from llb.scoring.external_rag.run import score_external_rag_file
-from llb.scoring.external_rag_common import DEFAULT_SOURCE_LIMIT, ExternalRagResult
+from llb.scoring.external_rag.common import DEFAULT_SOURCE_LIMIT, ExternalRagResult
 from llb.scoring.external_rag_session.handlers import (
     _emit_final_result,
     _handle_completion_screen,

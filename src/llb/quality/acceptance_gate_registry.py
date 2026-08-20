@@ -246,7 +246,7 @@ DECLARATIONS = (
     ),
     GateDeclaration(
         "cutoff-cli-search-budget",
-        "src/llb/cli/bench/knowledge_cutoff.py",
+        "src/llb/cli/bench/knowledge_cutoff/run.py",
         "optuna_trials",
         "resource_cap",
         "200",
@@ -255,7 +255,7 @@ DECLARATIONS = (
     ),
     GateDeclaration(
         "cutoff-ua-cli-search-budget",
-        "src/llb/cli/bench/knowledge_cutoff_ua.py",
+        "src/llb/cli/bench/knowledge_cutoff/ua.py",
         "optuna_trials",
         "resource_cap",
         "200",

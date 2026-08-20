@@ -8,15 +8,15 @@ the DECLARATION, which must not depend on which arithmetic a real study happens 
 
 import pytest
 
-from llb.bench.agentic_published_value_derivation import DERIVED_FROM, ValueKey
-from llb.bench.agentic_published_value_operations import (
+from llb.bench.published_value.derivation import DERIVED_FROM, ValueKey
+from llb.bench.published_value.operations.registry import (
     DERIVATION_OPERATIONS,
     OPERATION,
     DerivationInputs,
     DerivationOperation,
     DerivedValue,
 )
-from llb.bench.agentic_published_value_readings import READING, READING_POINT_TOLERANCE
+from llb.bench.published_value.readings import READING, READING_POINT_TOLERANCE
 
 MEASURED = "measured_form"
 DERIVED = "derived_form"

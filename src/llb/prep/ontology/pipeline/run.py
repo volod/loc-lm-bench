@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from llb.goldset.schema import GoldItem, Split
 from llb.goldset.splits import assign_splits
-from llb.prep.frontier_telemetry import DraftBudgetExceeded
+from llb.prep.frontier.telemetry import DraftBudgetExceeded
 from llb.prep.ontology.constants import (
     DEFAULT_MAX_ITEMS,
     DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
@@ -17,17 +17,17 @@ from llb.prep.ontology.constants import (
     DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
     DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
 )
-from llb.prep.ontology.dedup import QuestionEmbedder
-from llb.prep.ontology.endpoint import build_completers
-from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointLogs, EndpointPlan
-from llb.prep.ontology.extract import (
+from llb.prep.ontology.extraction.dedup import QuestionEmbedder
+from llb.prep.ontology.endpoints.client import build_completers
+from llb.prep.ontology.endpoints.config import EndpointCompleters, EndpointLogs, EndpointPlan
+from llb.prep.ontology.extraction.run import (
     ExtractionAdapter,
     LLMExtractionAdapter,
     extract_corpus,
 )
-from llb.prep.ontology.induce import induce_ontology
-from llb.prep.ontology.inventory import inventory_corpus
-from llb.prep.ontology.journal import ExtractionJournal
+from llb.prep.ontology.extraction.induce import induce_ontology
+from llb.prep.ontology.coverage.inventory import inventory_corpus
+from llb.prep.ontology.coverage.journal import ExtractionJournal
 from llb.prep.ontology.models import DraftSeed, ItemLabels
 from llb.prep.ontology.pipeline.bundle import (
     _load_retrieval_store,

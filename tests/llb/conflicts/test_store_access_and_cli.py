@@ -15,9 +15,9 @@ from typer.testing import CliRunner
 from llb.cli.app import app
 from llb.conflicts.constants import FINDINGS_FILE, REPORT_FILE, SUMMARY_FILE
 from llb.conflicts.store_access import load_store_view
-from llb.rag.store import RagStore
+from llb.rag.vector_store.store import RagStore
 
-from conflict_helpers import DOC_2021, DOC_2021_COPY, FIXTURE_CORPUS
+from tests.llb.conflicts.conflict_helpers import DOC_2021, DOC_2021_COPY, FIXTURE_CORPUS
 
 pytestmark = pytest.mark.heavy_env
 

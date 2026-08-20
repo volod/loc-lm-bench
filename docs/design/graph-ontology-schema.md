@@ -14,16 +14,17 @@ rank **objective-only** (recall@k / MRR / objective correctness rank regardless 
 (the stratified human sample-verify of any `verified=true` item) remains a separate gate.
 
 - Executable form -- the closed node vocabulary:
-  [`src/llb/prep/ontology/entity_types.py`](../../src/llb/prep/ontology/entity_types.py) (the 13
-  canonical types, the synonym map, `normalize_entity_type`).
+  [`src/llb/prep/ontology/extraction/entity_types.py`](../../src/llb/prep/ontology/extraction/entity_types.py)
+  (the 13 canonical types, the synonym map, `normalize_entity_type`).
 - Executable form -- extraction + grounding:
-  [`src/llb/prep/ontology/extract.py`](../../src/llb/prep/ontology/extract.py) (the vocabulary is
-  injected into `extraction_prompt` and enforced in `_entities`) +
-  [`src/llb/prep/ontology/grounding.py`](../../src/llb/prep/ontology/grounding.py) (exact spans) +
-  [`src/llb/prep/ontology/spacy_adapter.py`](../../src/llb/prep/ontology/spacy_adapter.py)
+  [`src/llb/prep/ontology/extraction/run.py`](../../src/llb/prep/ontology/extraction/run.py) (the
+  vocabulary is injected into `extraction_prompt` and enforced in `_entities`) +
+  [`src/llb/prep/ontology/extraction/grounding.py`](../../src/llb/prep/ontology/extraction/grounding.py)
+  (exact spans) +
+  [`src/llb/prep/ontology/endpoints/spacy_adapter.py`](../../src/llb/prep/ontology/endpoints/spacy_adapter.py)
   (the opt-in spaCy NER path, mapped through the same normalizer).
 - Executable form -- the constrained ontology:
-  [`src/llb/prep/ontology/induce.py`](../../src/llb/prep/ontology/induce.py) +
+  [`src/llb/prep/ontology/extraction/induce.py`](../../src/llb/prep/ontology/extraction/induce.py) +
   [`src/llb/prep/ontology/constants.py`](../../src/llb/prep/ontology/constants.py) (caps +
   confidence weights).
 - Executable form -- the graph backend:

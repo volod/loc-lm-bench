@@ -1,6 +1,6 @@
 """Per-reranker card references: the scores a candidate must reproduce before it can be ranked.
 
-Same gate as the encoder side (`llb.rag.encoder_cards`), one stage later and with one extra
+Same gate as the encoder side (`llb.rag.encoders.cards`), one stage later and with one extra
 wrinkle: cross-encoder cards print their reference in whichever space their own snippet uses. The
 gte card calls the model through transformers and prints RAW LOGITS; the jina card calls its own
 `compute_score` helper and prints SIGMOID probabilities. sentence-transformers' `CrossEncoder`
@@ -16,7 +16,7 @@ Pure apart from the injected scorer: the tables and the arithmetic have no torch
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from llb.rag.card_parity import (
+from llb.rag.encoders.card_parity import (
     TRANSFORM_SIGMOID,
     CardExpectation,
     CardParityResult,

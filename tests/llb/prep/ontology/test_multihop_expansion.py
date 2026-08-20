@@ -6,7 +6,7 @@ import json
 import pytest
 
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
-from llb.prep.ontology.endpoint_config import (
+from llb.prep.ontology.endpoints.config import (
     EndpointCompleters,
     EndpointConfig,
     EndpointPlan,
@@ -22,7 +22,7 @@ from llb.prep.ontology.pipeline.expansion import (
     reused_extractions,
 )
 from llb.prep.ontology.pipeline.run import draft_goldset
-from ontology_yield_helpers import CHAIN_DOC, _chain_endpoint
+from tests.llb.prep.ontology.ontology_yield_helpers import CHAIN_DOC, _chain_endpoint
 
 
 def _doc(text: str) -> DocRecord:

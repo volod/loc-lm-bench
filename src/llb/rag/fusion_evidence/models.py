@@ -12,14 +12,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord
-from llb.rag.compare_models import (
+from llb.rag.comparison.models import (
     Retriever as Retriever,
 )  # the one `.retrieve` seam, re-used not re-declared
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
+from llb.rag.fusion.spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
 
 if TYPE_CHECKING:  # imported lazily: the floor is opt-in and costs an extra pass per row
-    from llb.rag.noise_floor_models import NoiseFloorReport
+    from llb.rag.noise_floor.models import NoiseFloorReport
     from llb.rag.fusion_evidence.selection import SelectionAdjustment
 
 # The slice the lane is built to measure; other question types still report as context slices.

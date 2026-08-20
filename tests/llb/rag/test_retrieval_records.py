@@ -7,7 +7,7 @@ and the list stays bounded however often the corpus repeats a passage.
 """
 
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
-from llb.rag.duplicates import collapse_duplicate_chunks
+from llb.rag.duplicates.collapse import collapse_duplicate_chunks
 from llb.rag.retrieval import chunk_hits_any, recall_at_k
 from llb.rag.retrieval_records import (
     RETRIEVED_OCCURRENCE_LIMIT,

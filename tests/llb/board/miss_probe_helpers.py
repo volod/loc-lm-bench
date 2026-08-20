@@ -6,7 +6,12 @@ from llb.board.miss_analysis.model import (
     MissRecord,
 )
 from llb.goldset.schema import GoldItem
-from miss_analysis_helpers import _all_class_rows, _goldset, _score_row, _write_bundle
+from tests.llb.board.miss_analysis_helpers import (
+    _all_class_rows,
+    _goldset,
+    _score_row,
+    _write_bundle,
+)
 
 
 def _probe_manifest(tmp_path: Path) -> dict:

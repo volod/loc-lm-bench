@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.conflicts.vectorops import VectorSet
+from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.contracts.rag import ChunkRecord
 from llb.core.store_generations import resolve_store_dir
-from llb.rag.store_build import CHUNKS_FILE, META_FILE
-from llb.rag.store_io import _read_jsonl
-from llb.rag.vector_index import RAG_BACKEND_FAISS, load_vector_index
+from llb.rag.vector_store.build import CHUNKS_FILE, META_FILE
+from llb.rag.vector_store.io import _read_jsonl
+from llb.rag.vector_store.vector_index import RAG_BACKEND_FAISS, load_vector_index
 
 
 @dataclass

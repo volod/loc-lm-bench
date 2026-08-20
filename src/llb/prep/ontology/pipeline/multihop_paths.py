@@ -3,14 +3,14 @@
 from collections.abc import Sequence
 
 from llb.graph.model import KnowledgeGraph
-from llb.prep.ontology.graph_paths import (
+from llb.prep.ontology.drafting.graph_paths import (
     iter_bridge_pair_seeds,
     iter_two_hop_seeds,
     walk_chain_paths,
     walk_two_hop_paths,
 )
 from llb.prep.ontology.models import MultiHopSeed
-from llb.prep.ontology.path_strata import PathStratumTargets, select_stratified_paths
+from llb.prep.ontology.drafting.path_strata import PathStratumTargets, select_stratified_paths
 
 SpanPair = tuple[tuple[str, int, int], tuple[str, int, int]]
 

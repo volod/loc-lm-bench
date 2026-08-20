@@ -1,4 +1,11 @@
-"""Focused common backend implementation."""
+"""The `complete` a benchmark category calls, over whichever endpoint the run chose.
+
+Three shapes of adapter, one driver. `local_*` talks to an OpenAI-compatible endpoint somebody
+else is running; `launcher_*` talks to a backend launcher this process started; `complete_all`
+drives a sequence of prompts with a progress heartbeat. `drive_with_backend` picks between the
+endpoint paths and, for a VRAM-owning backend, runs the whole workload under the shared isolation
+contract. A `ThroughputMeter` threaded through any of them accumulates real generation rate.
+"""
 
 import logging
 import time
@@ -178,6 +185,27 @@ def complete_all(
     return outputs
 
 
+def _run_under(
+    launcher: BackendLauncher,
+    run: Callable[[LLMComplete], _R],
+    cfg: RunConfig,
+    *,
+    max_tokens: int,
+    meter: ThroughputMeter | None,
+) -> _R:
+    """Run the whole workload inside one launcher's lifetime -- the shape every path below shares."""
+    with launcher:
+        return run(
+            launcher_complete(
+                launcher,
+                max_tokens=max_tokens,
+                temperature=cfg.temperature,
+                timeout=cfg.request_timeout_s,
+                meter=meter,
+            )
+        )
+
+
 def drive_with_backend(
     cfg: RunConfig,
     run: Callable[[LLMComplete], _R],
@@ -196,32 +224,21 @@ def drive_with_backend(
     honors the SAME isolation contract as the RAG sweep. When a `meter` is given it accumulates
     real generation throughput across the run's model calls (either endpoint path).
     """
-    ollama_num_ctx = (cfg.max_model_len or cfg.context_budget) if cfg.backend == "ollama" else None
+    is_ollama = cfg.backend == "ollama"
+    num_ctx = (cfg.max_model_len or cfg.context_budget) if is_ollama else None
+    seed = cfg.seed if is_ollama else None
     if base_url is not None:
-        # When the caller supplied --base-url pointing at an Ollama /v1 endpoint AND a
-        # num_ctx is declared, route through the native launcher on that same host so
-        # num_ctx is reliably honoured.  Ollama's OpenAI-compat layer silently ignores
-        # extra_body.options.num_ctx on some builds.
-        if ollama_num_ctx and _is_ollama_base_url(base_url, cfg.ollama_host):
+        # When the caller supplied --base-url pointing at an Ollama /v1 endpoint AND a num_ctx is
+        # declared, route through the native launcher on that same host so num_ctx is reliably
+        # honoured. Ollama's OpenAI-compat layer silently ignores extra_body.options.num_ctx on
+        # some builds.
+        if num_ctx and _is_ollama_base_url(base_url, cfg.ollama_host):
             from llb.backends.ollama import OllamaLauncher
             from llb.backends.served_window import native_root
 
-            launcher = OllamaLauncher(
-                cfg.model,
-                host=native_root(base_url),
-                num_ctx=ollama_num_ctx,
-                seed=cfg.seed if cfg.backend == "ollama" else None,
-            )
-            with launcher:
-                return run(
-                    launcher_complete(
-                        launcher,
-                        max_tokens=max_tokens,
-                        temperature=cfg.temperature,
-                        timeout=cfg.request_timeout_s,
-                        meter=meter,
-                    )
-                )
+            host = native_root(base_url)
+            launcher = OllamaLauncher(cfg.model, host=host, num_ctx=num_ctx, seed=seed)
+            return _run_under(launcher, run, cfg, max_tokens=max_tokens, meter=meter)
         return run(
             local_complete(
                 cfg.model,
@@ -230,51 +247,25 @@ def drive_with_backend(
                 temperature=cfg.temperature,
                 timeout=cfg.request_timeout_s,
                 meter=meter,
-                num_ctx=ollama_num_ctx,
-                seed=cfg.seed if cfg.backend == "ollama" else None,
+                num_ctx=num_ctx,
+                seed=seed,
             )
         )
-    if cfg.backend == "ollama":
+    if is_ollama:
         # Native /api/chat (not OpenAI /v1): only the native options payload reliably honors
         # num_ctx, which is what stops Ollama's silent 4096 default from truncating prompts.
         from llb.backends.ollama import OllamaLauncher
 
-        launcher = OllamaLauncher(
-            cfg.model,
-            host=cfg.ollama_host,
-            num_ctx=ollama_num_ctx,
-            seed=cfg.seed,
-        )
-        with launcher:
-            return run(
-                launcher_complete(
-                    launcher,
-                    max_tokens=max_tokens,
-                    temperature=cfg.temperature,
-                    timeout=cfg.request_timeout_s,
-                    meter=meter,
-                )
-            )
+        started = OllamaLauncher(cfg.model, host=cfg.ollama_host, num_ctx=num_ctx, seed=cfg.seed)
+        return _run_under(started, run, cfg, max_tokens=max_tokens, meter=meter)
 
+    # A VRAM-owning backend (vllm / llamacpp) we start ourselves, under the isolation contract.
     from llb.executor.isolation import isolate_cell
     from llb.executor.runner_backend import _make_launcher
 
     owned = _make_launcher(cfg, log_dir=cfg.data_dir / "llb" / "logs")
-
-    def work() -> _R:
-        with owned:
-            return run(
-                launcher_complete(
-                    owned,
-                    max_tokens=max_tokens,
-                    temperature=cfg.temperature,
-                    timeout=cfg.request_timeout_s,
-                    meter=meter,
-                )
-            )
-
     result, _outcome = isolate_cell(
-        work,
+        lambda: _run_under(owned, run, cfg, max_tokens=max_tokens, meter=meter),
         backend=cfg.backend,
         vram_reader=vram_reader,
         pid_usage_reader=pid_usage_reader,

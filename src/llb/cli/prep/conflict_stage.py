@@ -43,7 +43,7 @@ def recompute_conflict_stage_cmd(
     """Re-read which stage each audited run lost an orderable document pair at."""
     import json
 
-    from llb.conflicts.report_stage_replay import (
+    from llb.conflicts.report.stage_replay import (
         budget_line,
         replay_line,
         replay_report,
@@ -77,8 +77,8 @@ def _entry(
     import json
 
     from llb.conflicts.constants import FINDINGS_FILE, SUMMARY_FILE
-    from llb.conflicts.stage_replay import replay_entry
-    from llb.conflicts.store_identity import identity_entry
+    from llb.conflicts.bundle.stage_replay import replay_entry
+    from llb.conflicts.bundle.store_identity import identity_entry
 
     summary_path = path / SUMMARY_FILE if path.is_dir() else path
     if not summary_path.is_file():

@@ -176,8 +176,8 @@ In this repo: `src/llb/screen/public.py` (two never-cross-ranked tracks: logprob
 
 Learn to distinguish model safety from application security, define the attacker and protected
 assets, and measure failures without giving a model access to real secrets or destructive tools.
-The current security benchmark code lives in `src/llb/bench/security.py`,
-`src/llb/scoring/security.py`, and `src/llb/prep/security_*`; see the
+The current security benchmark code lives in `src/llb/bench/security/run.py`,
+`src/llb/scoring/security/run.py`, and `src/llb/prep/security_*`; see the
 [security learning path](learning-path-security.md).
 
 - Threat modeling: start with the

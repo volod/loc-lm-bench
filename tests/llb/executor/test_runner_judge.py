@@ -4,7 +4,7 @@ import pytest
 from llb.backends.base import ChatResult
 from llb.core.config import RunConfig
 from llb.executor.runner import run_eval
-from test_runner import DOC, FakeLauncher, FakeStore, _runner_fn, gold_item
+from tests.llb.executor.test_runner import DOC, FakeLauncher, FakeStore, _runner_fn, gold_item
 
 
 def test_run_eval_wires_trusted_judge_and_persists_scores(tmp_path):

@@ -16,8 +16,8 @@ from llb.prep.ontology.constants import (
     EXTRACTION_JOURNAL_META_KIND,
     METHOD_DIR,
 )
-from llb.prep.ontology.endpoint_config import EndpointPlan
-from llb.prep.ontology.journal import ExtractionJournal
+from llb.prep.ontology.endpoints.config import EndpointPlan
+from llb.prep.ontology.coverage.journal import ExtractionJournal
 from llb.prep.ontology.pipeline.settings import DraftSettings
 
 _TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"

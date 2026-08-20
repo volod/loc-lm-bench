@@ -31,7 +31,7 @@ import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from llb.rag.lexical import tokenize
+from llb.rag.vector_store.lexical import tokenize
 from llb.rag.query_prep.base import (
     KIND_HOMOGLYPH,
     KIND_TRANSLITERATE,

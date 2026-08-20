@@ -6,7 +6,7 @@ from llb.core.config import RunConfig
 from llb.eval import common
 from llb.executor import runner_retrieval
 from llb.executor.runner import run_eval
-from test_runner import FakeLauncher, gold_item
+from tests.llb.executor.test_runner import FakeLauncher, gold_item
 
 
 def test_run_eval_scores_only_verified_items(tmp_path):
@@ -58,7 +58,9 @@ def test_load_store_refuses_embedder_mismatch(tmp_path, monkeypatch):
     class _FakeStore:
         meta = {"embedding_model": "BAAI/bge-m3"}
 
-    monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
+    monkeypatch.setattr(
+        "llb.rag.vector_store.store.RagStore.load", classmethod(lambda cls, d: _FakeStore())
+    )
     cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
     with pytest.raises(SystemExit, match="embedder mismatch"):
         runner_retrieval._load_store(cfg)
@@ -68,6 +70,8 @@ def test_load_store_accepts_matching_embedder(tmp_path, monkeypatch):
     class _FakeStore:
         meta = {"embedding_model": "intfloat/multilingual-e5-base"}
 
-    monkeypatch.setattr("llb.rag.store.RagStore.load", classmethod(lambda cls, d: _FakeStore()))
+    monkeypatch.setattr(
+        "llb.rag.vector_store.store.RagStore.load", classmethod(lambda cls, d: _FakeStore())
+    )
     cfg = RunConfig(data_dir=tmp_path, embedding_model="intfloat/multilingual-e5-base")
     assert isinstance(runner_retrieval._load_store(cfg), _FakeStore)

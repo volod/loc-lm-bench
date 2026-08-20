@@ -45,10 +45,10 @@ and asserts its `tok/s` reaches both the board `ModelResult` and the persisted m
 
 Modules:
 
-- `src/llb/scoring/text_analysis.py`;
+- `src/llb/scoring/text_analysis/run.py`;
 - `src/llb/bench/text_analysis/`;
-- `src/llb/prep/text_analysis_corpus.py`;
-- `src/llb/prep/chat_corpus.py`.
+- `src/llb/prep/corpus/text_analysis.py`;
+- `src/llb/prep/corpus/chat.py`.
 
 The schema is documented in `docs/design/text-analysis-schema.md`. Planted labels carry stable
 ids, values, aliases, grounding offsets, attributes, and a kind. Objective sub-tasks include
@@ -76,11 +76,11 @@ Real and synthetic bundles are reported separately through the runner's `synthet
 
 Modules:
 
-- `src/llb/scoring/security.py`;
-- `src/llb/bench/security.py`;
-- `src/llb/prep/security_sources.py`;
-- `src/llb/prep/security_planter.py`;
-- `src/llb/prep/security_derive.py`.
+- `src/llb/scoring/security/run.py`;
+- `src/llb/bench/security/run.py`;
+- `src/llb/prep/security/sources.py`;
+- `src/llb/prep/security/planter.py`;
+- `src/llb/prep/security/derive.py`.
 
 Security cases use structured detectors instead of a safety classifier:
 
@@ -132,7 +132,7 @@ llb derive-security-cases --bundle <draft-bundle> --out <cases.json>
 llb derive-security-worksheet --cases <cases.json> --out <verify_sample.csv>
 ```
 
-`derive-security-cases` (module `security_derive.py`, `make derive-security-cases BUNDLE=<dir>`)
+`derive-security-cases` (module `security/derive.py`, `make derive-security-cases BUNDLE=<dir>`)
 reads a `prepare-goldset` draft bundle's `ontology.json` + `extraction.jsonl` and derives
 corpus-specific content-safety cases from the corpus's own grounded entities -- deterministically,
 with no model/network/GPU. Three case kinds come out, each carrying an EXACT corpus span
@@ -214,8 +214,8 @@ data-exfiltration ASR `1.000`) -- it emits the planted marker rather than declin
 
 Modules:
 
-- `src/llb/scoring/tooling.py`;
-- `src/llb/bench/tooling.py`;
+- `src/llb/scoring/tooling/run.py`;
+- `src/llb/bench/tooling/run.py`;
 - `src/llb/bench/mcp_server.py`;
 - `src/llb/prep/tooling_sources.py`.
 
@@ -260,7 +260,7 @@ Modules:
 
 - `src/llb/bench/tool_world.py`;
 - `src/llb/bench/agentic/`;
-- `src/llb/bench/agentic_tasks.py`;
+- `src/llb/bench/agentic/tasks.py`;
 - `src/llb/bench/harness/`.
 
 The agentic suite runs deterministic tasks in a sandboxed world: mock filesystem, mock key-value
@@ -293,7 +293,7 @@ bundles are documented in
 
 ## Summarization
 
-`src/llb/bench/summarization.py` scores reference coverage by pinned-embedder cosine between
+`src/llb/bench/summarization/run.py` scores reference coverage by pinned-embedder cosine between
 reference sentences and candidate summary sentences. ROUGE is not used because the product cares
 about semantic coverage in Ukrainian text, not lexical overlap alone.
 The runner separates summary generation, coverage scoring, optional faithfulness judging, board
@@ -307,7 +307,7 @@ Optional faithfulness uses the same gated judge side-channel as other free-form 
 
 ## Structured Output
 
-`src/llb/scoring/structured.py` and `src/llb/bench/structured.py` score JSON conformance and field
+`src/llb/scoring/structured/run.py` and `src/llb/bench/structured.py` score JSON conformance and field
 accuracy. Schemas are built with Pydantic, including nested objects and arrays. Field comparison
 supports case-insensitive strings, numeric tolerances, fuzzy or contains strings, and unordered
 arrays.
@@ -334,7 +334,7 @@ not as a replacement for task-specific objective metrics.
 
 ## Composite Headline
 
-`src/llb/scoring/composite_builder.py` builds a guarded category composite only when required
+`src/llb/scoring/composite/builder.py` builds a guarded category composite only when required
 category tiers exist for a model, each has reloadable per-case objective scores, and every run is
 stamped with verified data.
 

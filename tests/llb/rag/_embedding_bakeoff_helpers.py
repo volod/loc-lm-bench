@@ -1,4 +1,4 @@
-"""Embedding bake-off core (`llb.rag.embedding_bakeoff`).
+"""Embedding bake-off core (`llb.rag.embedding_bakeoff.run`).
 
 Pure: fake stores expose the `.retrieve` + `.meta` seam and a fake store-builder stands in for the
 heavy FAISS build, so scoring, ranking, the consent/open-data gate, and report shaping run in the
@@ -9,8 +9,8 @@ from llb.core.contracts.rag import (
     ChunkRecord,
     SourceSpanRecord,
 )
-from llb.rag.embedding_bakeoff import run_bakeoff
-from llb.rag.embedding_bakeoff_models import BuiltStore
+from llb.rag.embedding_bakeoff.run import run_bakeoff
+from llb.rag.embedding_bakeoff.models import BuiltStore
 
 
 class _FakeStore:

@@ -197,7 +197,7 @@ def run_accept(
             )
         _LOG.info("[verify] wrote %d accepted item(s) -> %s", n, out_dir / GOLDSET_FILENAME)
         _LOG.info(
-            "[verify] flip via the ledger: python -m llb.prep.ingest_squad "
+            "[verify] flip via the ledger: python -m llb.prep.squad.ingest "
             "--squad-json <source> --verified-goldset %s",
             out_dir / GOLDSET_FILENAME,
         )

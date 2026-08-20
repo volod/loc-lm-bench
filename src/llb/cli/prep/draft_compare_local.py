@@ -23,10 +23,10 @@ def draft_compare_local_cmd(
     timeout: float = typer.Option(900.0, min=1.0),
 ) -> None:
     """Compare GPU-adaptive Qwen and Gemma models sequentially on one Ollama host."""
-    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
-    from llb.prep.ontology.endpoint_config import DEFAULT_LOCAL_BASE_URL, EndpointConfig
-    from llb.prep.ontology.local_compare import compare_local_drafters
-    from llb.prep.ontology.local_compare_models import select_local_compare_models
+    from llb.prep.ontology.endpoints.builder import EndpointConfigBuilder
+    from llb.prep.ontology.endpoints.config import DEFAULT_LOCAL_BASE_URL, EndpointConfig
+    from llb.prep.ontology.compare.local import compare_local_drafters
+    from llb.prep.ontology.compare.local_models import select_local_compare_models
 
     if not corpus_root.is_dir():
         cli_error(f"corpus root not found: {corpus_root}")
@@ -77,7 +77,7 @@ def draft_compare_analyze_cmd(
     ),
 ) -> None:
     """Print lane metrics, deltas, execution order, and human-review progress."""
-    from llb.prep.ontology.compare_analysis import (
+    from llb.prep.ontology.compare.analysis import (
         comparison_statistics,
         format_comparison_statistics,
         load_comparison,

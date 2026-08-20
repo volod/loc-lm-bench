@@ -3,16 +3,16 @@
 from pathlib import Path
 
 from llb.inference.serving_selection import GpuTierInfo
-from llb.prep.ontology.compare_analysis import comparison_statistics, format_comparison_statistics
-from llb.prep.ontology.compare_gate import finalize_comparison
-from llb.prep.ontology.endpoint_config import EndpointCompleters, EndpointConfig
+from llb.prep.ontology.compare.analysis import comparison_statistics, format_comparison_statistics
+from llb.prep.ontology.compare.gate import finalize_comparison
+from llb.prep.ontology.endpoints.config import EndpointCompleters, EndpointConfig
 from llb.goldset.verify_base import load_worksheet, write_worksheet_rows
-from llb.prep.ontology.local_compare import compare_local_drafters
-from llb.prep.ontology.local_compare_models import (
+from llb.prep.ontology.compare.local import compare_local_drafters
+from llb.prep.ontology.compare.local_models import (
     LOCAL_COMPARE_PROFILES,
     select_local_compare_models,
 )
-from tests.llb.prep.ontology.test_ontology_draft import DOC1, DOC2, fake_endpoint
+from tests.llb.prep.ontology.drafting.test_ontology_draft import DOC1, DOC2, fake_endpoint
 
 
 def _corpus(tmp_path: Path) -> Path:

@@ -38,7 +38,7 @@ Rewriter = Callable[[str], str]
 QueryGenerator = Callable[[str], str]
 
 # Injected morphology probe for the typos step's opt-in guard: True when the token is a known
-# valid Ukrainian word form (pymorphy3 `word_is_known`; `llb.rag.lexical.load_uk_word_probe`).
+# valid Ukrainian word form (pymorphy3 `word_is_known`; `llb.rag.vector_store.lexical.load_uk_word_probe`).
 KnownWordProbe = Callable[[str], bool]
 
 # Injected plausibility probe for the normalize step's language gate: True when a decoded

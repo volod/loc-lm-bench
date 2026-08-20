@@ -14,7 +14,7 @@ and never needs a server.
 import logging
 
 from llb.graph.model import KnowledgeGraph
-from llb.prep.frontier_telemetry import LLMComplete
+from llb.prep.frontier.telemetry import LLMComplete
 from llb.prompts.registry import render_text
 
 _LOG = logging.getLogger(__name__)

@@ -60,7 +60,7 @@ ledgers, and calibrated readings on every lane the bake-off, the reranker lane, 
 columns and as a second paired-delta block under the recall/MRR one.
 
 What they deliberately do NOT do: they never rank the leaderboard and never decide a verdict.
-`VERDICT_BARS` in `src/llb/rag/retrieval_comparison_uncertainty.py` stays `(recall_at_k, mrr)` and
+`VERDICT_BARS` in `src/llb/rag/comparison/uncertainty.py` stays `(recall_at_k, mrr)` and
 the bake-off's adoption `BARS` are unchanged, so the Westfall-Young selection family is the same
 size it was and every recorded adopt-or-retain call reproduces. They also say nothing about
 whether an ANSWER used the evidence -- that is answer-side coverage, a separate measurement.
@@ -78,17 +78,17 @@ and `sentence` -- flat against `recursive` on recall and MRR -- loses span chara
 delivery on intervals clear of zero. That is the pair earning its place: the only axis on which
 that comparison separates anything.
 
-Tests: `tests/llb/rag/test_retrieval.py` (span carried whole, span split across two chunks,
-span partly retrieved, span missed, overlapping chunks counted once, the per-span average, the
-`k` cutoff, collapsed-duplicate occurrences, the no-span case, and the aggregate) and
-`tests/llb/rag/test_compare_retrieval_core.py` (two lanes that tie on recall and separate on
-intactness, per-slice columns, the paired block, the unchanged selection family, and the ASCII
+Tests: `tests/llb/rag/test_retrieval.py` (span carried whole, span split across two chunks, span
+partly retrieved, span missed, overlapping chunks counted once, the per-span average, the `k`
+cutoff, collapsed-duplicate occurrences, the no-span case, and the aggregate) and
+`tests/llb/rag/comparison/test_compare_retrieval_core.py` (two lanes that tie on recall and separate
+on intactness, per-slice columns, the paired block, the unchanged selection family, and the ASCII
 rendering).
 
 ## Paired lane uncertainty and verdict
 
 `compare-retrieval` now derives both aggregate rows and per-item vectors from one retrieval pass
-per item per lane (`src/llb/rag/compare.py`). It reuses
+per item per lane (`src/llb/rag/comparison/run.py`). It reuses
 `embedding_bakeoff_uncertainty.item_vectors` / `paired_rows`, so every lane carries recall@k and
 MRR deltas against one named baseline, a percentile interval, win/loss/tie ledger, calibrated
 randomization reading, and neighbouring-confidence stability. One seeded bootstrap index set is
@@ -123,8 +123,8 @@ order and no larger item set could separate them -- a settled comparison rather 
 one. That is the routine reading of an invariant seam such as the vector backends.
 `dense+oracle-doc` and the lexical-only diagnostic row remain visible with paired columns but
 cannot receive ADOPT.
-Rendering is isolated in `retrieval_comparison_report.py`, and the decision is isolated in
-`retrieval_comparison_uncertainty.py`. One rendering rule the intactness columns forced: the shared
+Rendering is isolated in `comparison/report.py`, and the decision is isolated in
+`comparison/uncertainty.py`. One rendering rule the intactness columns forced: the shared
 `reading_of` vocabulary is ONE-SIDED (it asks whether the candidate separated), so a lane the
 baseline beats by an interval clear of zero used to print `flat`, which reads as "nothing to see".
 The report now names that case `regressed`, using the existing `paired.regresses` predicate with
@@ -150,7 +150,7 @@ ledger under `accepted/`. The two are JOINED, nearest sidecar first, so a bundle
 (or both) slices the same way; a gold set with neither reports no slices at all instead of an
 invented label.
 
-`FOCUS_SLICES` (`src/llb/rag/compare_models.py`) -- `numeric`, `comparative`, `multi-hop` -- are
+`FOCUS_SLICES` (`src/llb/rag/comparison/models.py`) -- `numeric`, `comparative`, `multi-hop` -- are
 always present in the JSON report even at `n=0`, so a reader can tell "this corpus labels no
 numeric question" from "nobody looked". The ASCII rendering scores only the non-empty slices and
 names the empty ones on one line, because printing a zero-item slice's zeros would read as a
@@ -162,8 +162,8 @@ once.
 ## Measurement Floor (`--noise-floor`)
 
 `recall@k` / `MRR` are reported to three decimals, and the floor under those decimals is a
-property of the CORPUS, not zero by default. `src/llb/rag/noise_floor.py` measures it (and
-`src/llb/rag/noise_floor_report.py` renders the one ASCII and one Markdown block every lane below
+property of the CORPUS, not zero by default. `src/llb/rag/noise_floor/measure.py` measures it (and
+`src/llb/rag/noise_floor/report.py` renders the one ASCII and one Markdown block every lane below
 shares):
 `NOISE_FLOOR=1` (`--noise-floor`, `NOISE_FLOOR_REPLICATES=` / `--noise-floor-replicates` to change
 the replicate count) retrieves a `3k` candidate pool once per lane, perturbs every candidate score
@@ -292,14 +292,14 @@ chunks tie for a reason collapse does not remove (a backend that rounds its scor
 whose link relevance saturates, or lexical fusion producing equal RRF sums) will report a non-zero
 band again.
 
-The floor is opt-in, so every existing comparison row is unchanged when it is not asked for.
-Tests: `tests/llb/rag/test_noise_floor.py` (zero floor on separated scores, a full 0.0-1.0 band
+The floor is opt-in, so every existing comparison row is unchanged when it is not asked for. Tests:
+`tests/llb/rag/noise_floor/test_noise_floor.py` (zero floor on separated scores, a full 0.0-1.0 band
 when the cut sits on a tie, the fragility count, per-lane seeding and reproducibility, the
-unscored-lane skip, the margin reading and its MRR tie-break, the candidate-pool seam, and the
-ASCII rendering), plus each lane's own wiring in `tests/llb/rag/test_embedding_bakeoff.py`,
+unscored-lane skip, the margin reading and its MRR tie-break, the candidate-pool seam, and the ASCII
+rendering), plus each lane's own wiring in `tests/llb/rag/test_embedding_bakeoff.py`,
 `tests/llb/rag/test_compare_retrieval.py` (the `compare-vector-stores` CLI over injected stores),
-and `tests/llb/rag/test_fusion_evidence.py` (per-row and focus-slice floors, and that the pool
-seam keeps the ranking the sweep published) -- all over fake stores, no FAISS, no GPU.
+and `tests/llb/rag/test_fusion_evidence.py` (per-row and focus-slice floors, and that the pool seam
+keeps the ranking the sweep published) -- all over fake stores, no FAISS, no GPU.
 
 The default store retrieves dense-only (cosine over the pinned E5 embedding). Measured against the
 gate, dense-only passes on the committed fixture (`recall@10=0.980`) but falls short on the real

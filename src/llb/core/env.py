@@ -17,13 +17,13 @@ LLB_EMBED_DEVICE = "LLB_EMBED_DEVICE"
 
 # Opt-in to `trust_remote_code` for encoders that ship their forward pass as repository code
 # (e.g. `Alibaba-NLP/gte-multilingual-base`, `jinaai/jina-embeddings-v3`). Unset -> such a model
-# is REFUSED rather than executing downloaded code implicitly (llb.rag.embedding).
+# is REFUSED rather than executing downloaded code implicitly (llb.rag.encoders.embedder).
 LLB_TRUST_REMOTE_CODE = "LLB_TRUST_REMOTE_CODE"
 
 # Load precision every `Embedder` in the process uses: auto | float32 | float16 | bfloat16.
 # `auto` keeps whatever precision the publisher uploaded, which differs across checkpoints and
 # makes an encoder throughput column incomparable -- a declared value makes it a controlled
-# variable (llb.rag.encoder_precision).
+# variable (llb.rag.encoders.precision).
 LLB_EMBED_DTYPE = "LLB_EMBED_DTYPE"
 
 # Hugging Face downloads (gated models and datasets)
@@ -31,7 +31,7 @@ HF_TOKEN = "HF_TOKEN"
 GITHUB_TOKEN = "GITHUB_TOKEN"
 
 # Pytest no-GPU guard for the non-slow tier: refuse (default) | report | off. `report` keeps the
-# finding visible without failing the build; `off` disables the check (llb.quality.gpu_guard).
+# finding visible without failing the build; `off` disables the check (llb.quality.gpu_guard.guard).
 GPU_GUARD = "LLB_GPU_GUARD"
 
 # Pytest no-download guard for the non-slow tier: refuse (default) | report | off. The guard

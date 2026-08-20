@@ -52,7 +52,7 @@ def mcp_tool_specs(catalog: dict[str, ToolDef]) -> list[dict[str, Any]]:
 
 def load_catalog(path: Path | str) -> dict[str, ToolDef]:
     """Load a tooling bundle's tool catalog (reusing the bench-tooling loader)."""
-    from llb.bench.tooling import load_catalog_file
+    from llb.bench.tooling.run import load_catalog_file
 
     catalog, _cases = load_catalog_file(path)
     return catalog

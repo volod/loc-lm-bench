@@ -15,7 +15,7 @@ returns.
 """
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.fusion import fuse_lane_hits, lane_agreement, lane_depth
+from llb.rag.fusion.fuse import fuse_lane_hits, lane_agreement, lane_depth
 from llb.rag.fusion_evidence.models import (
     GRAPH_ROW_PREFIX,
     VECTOR_ROW,
@@ -23,13 +23,13 @@ from llb.rag.fusion_evidence.models import (
     fused_row_label,
     routed_row_label,
 )
-from llb.rag.fusion_routing import (
+from llb.rag.fusion.routing import (
     DEFAULT_HEURISTIC_POLICY,
     HeuristicPolicy,
     QuestionTypeRouter,
     RoutingDecision,
 )
-from llb.rag.fusion_spans import (
+from llb.rag.fusion.spans import (
     DEFAULT_SPAN_IDENTITY,
     SPAN_MERGE_MIN_RATIO,
     merges_spans,
@@ -162,7 +162,7 @@ def build_sweep_rows(
     than two identical ones under different labels.
 
     `pool_depth` only widens what each lane CACHES, for the measurement floor's candidate pool
-    (`llb.rag.noise_floor`). No row's ranking can move with it: every row still asks its lanes for
+    (`llb.rag.noise_floor.measure`). No row's ranking can move with it: every row still asks its lanes for
     its own depth, and a lane's top-d is the prefix of its top-d' for any d' > d.
     """
     depths = tuple(dict.fromkeys(lane_depth(depth, k) for depth in candidates)) or (k,)

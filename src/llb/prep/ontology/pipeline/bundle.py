@@ -23,15 +23,15 @@ from llb.prep.ontology.constants import (
     PROVENANCE_FILENAME,
     PROVENANCE_KIND,
 )
-from llb.prep.ontology.draft import draft_prompt
-from llb.prep.ontology.endpoint_config import EndpointPlan, endpoint_provenance
-from llb.prep.ontology.extract import extraction_prompt
+from llb.prep.ontology.drafting.run import draft_prompt
+from llb.prep.ontology.endpoints.config import EndpointPlan, endpoint_provenance
+from llb.prep.ontology.extraction.run import extraction_prompt
 from llb.prep.ontology.models import DocRecord, DraftSeed
-from llb.prep.ontology.needles import NeedleRetriever
+from llb.prep.ontology.drafting.needles import NeedleRetriever
 from llb.prep.ontology.pipeline.settings import PipelineResult
 
 if TYPE_CHECKING:
-    from llb.prep.ontology.endpoint_config import EndpointLogs
+    from llb.prep.ontology.endpoints.config import EndpointLogs
 from llb.prep.ontology.pipeline.bundle_logging import _LOG, _log_calibration_gates
 
 
@@ -72,7 +72,7 @@ def _prompt_fingerprints() -> dict[str, str]:
         evidence={"doc_id": "<doc>", "char_start": 0, "char_end": 1, "text": "x"},  # type: ignore[arg-type]
     )
     from llb.prep.ontology.models import MultiHopSeed, MultiHopStep
-    from llb.prep.ontology.multi_hop import multi_hop_prompt
+    from llb.prep.ontology.drafting.multi_hop import multi_hop_prompt
 
     placeholder_step = MultiHopStep(
         subject="<a>",
@@ -178,7 +178,7 @@ def _provenance(
 def _load_retrieval_store(index_dir: Path | str | None) -> NeedleRetriever | None:
     if index_dir is None:
         return None
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     return RagStore.load(index_dir)
 

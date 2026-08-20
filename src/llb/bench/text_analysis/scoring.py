@@ -17,8 +17,8 @@ from llb.core.contracts.judging import JudgeInputRecord, JudgeScore
 from llb.core.contracts.benchmarks import TextAnalysisCaseRow
 from llb.eval.common import EMPTY, MALFORMED, OK
 from llb.eval.map_reduce import run_map_reduce_text
-from llb.scoring import text_analysis as ta
-from llb.scoring import text_analysis_labels as labels
+from llb.scoring.text_analysis import run as ta
+from llb.scoring.text_analysis import labels
 from llb.scoring.leaderboard import bootstrap_mean_ci
 
 _LOG = logging.getLogger(__name__)

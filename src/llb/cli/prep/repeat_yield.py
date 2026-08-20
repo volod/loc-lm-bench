@@ -55,7 +55,7 @@ def audit_repeat_yield_cmd(
     from llb.prep.pdf.repeat_corpus import REPEAT_REPORT_NAME, strip_corpus_repeats
     from llb.prep.pdf.repeat_yield import Retriever, audit_repeat_yield, format_yield_report
     from llb.prep.pdf.repeats import DEFAULT_MIN_REPEATS, REPEAT_DROP
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     cfg = load_config(
         config,

@@ -104,8 +104,8 @@ Pipeline stages:
 
 1. `inventory.py`: read `.md` and `.txt` files, keep corpus-relative ids, hashes, and section
    boundaries.
-2. `extract.py`: extract entities, aliases, claims, events, and subject-relation-object facts with
-   grounded evidence spans.
+2. `extraction/run.py`: extract entities, aliases, claims, events, and subject-relation-object facts
+   with grounded evidence spans.
 3. `entity_types.py`: normalize to the closed 13-type vocabulary used by the graph schema.
 4. `induce.py`: aggregate extracted types and relations into an ontology candidate.
 5. `coverage.py`: select seeds across entity, relation, section, and difficulty strata --
@@ -236,7 +236,7 @@ llb prepare-goldset-draft --corpus-root <dir> --model <model> \
 
 ## spaCy Adapter And Long Documents
 
-`src/llb/prep/ontology/spacy_adapter.py` implements the Python-native NER adapter over spaCy
+`src/llb/prep/ontology/endpoints/spacy_adapter.py` implements the Python-native NER adapter over spaCy
 `uk_core_news` models. It is opt-in and lazy-imported. The adapter maps labels through the same
 closed vocabulary as LLM extraction.
 

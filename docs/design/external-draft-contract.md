@@ -121,7 +121,7 @@ missing or non-open sidecar aborts before any bundle is written. Merge multi-ser
 ## 5. Artifact C -- security cases JSON (works today)
 
 Import/run: `make bench-security SECURITY_CASES=<cases.json> SECURITY_MODEL=<m>
-SECURITY_BACKEND=<b>`. Schema: `src/llb/scoring/security.py` (`SecurityCase.from_record`);
+SECURITY_BACKEND=<b>`. Schema: `src/llb/scoring/security/run.py` (`SecurityCase.from_record`);
 committed example: `samples/benchmarks/security_cases_uk.json`.
 
 ```json

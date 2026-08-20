@@ -27,15 +27,15 @@ The first matrix asks whether any obvious construction supplies unrelated pairs.
 
 The implementation is split by responsibility:
 
-- `null_research_geometry.py` reconstructs the semantic tier's exact content filter and centering
+- `null_research/geometry.py` reconstructs the semantic tier's exact content filter and centering
   space, scores Cartesian cross-corpus controls, builds deterministic token/sentence permutations,
   and reduces held-out document pairs to their maximum chunk cosine.
-- `null_research_evaluation.py` resolves null tails, reports Wilson 95% intervals, evaluates the
+- `null_research/evaluation.py` resolves null tails, reports Wilson 95% intervals, evaluates the
   planted document-pair closure, fits the labelled comparison, and measures HR/goods transfer.
   Small permutation corpora automatically receive enough shuffles for at least 20 expected tail
   observations; this prevents sample size from deciding the fixture verdict.
-- `null_research_candidates.py`, `null_research_initial.py`, `null_research.py`, and
-  `null_research_report.py` apply the gates, orchestrate all candidates, and write `summary.json`
+- `null_research/candidates.py`, `generations/initial.py`, `null_research/run.py`, and
+  `report/render.py` apply the gates, orchestrate all candidates, and write `summary.json`
   plus `report.md`. Typer wiring is in `src/llb/cli/prep/conflict_null_research.py`; deterministic
   coverage is in `tests/llb/conflicts/test_null_research.py`.
 - `VectorSet.cross_similarities` scores two separately stored corpora without inventing document
@@ -107,23 +107,23 @@ the forward plan before considering another default.
 `research-conflict-nulls GENERATION=next` replaces the initial candidates with four hypotheses
 motivated by their failure modes:
 
-- `null_research_matching.py` matches two controls from each of a general and domain-oriented
+- `controls/matching.py` matches two controls from each of a general and domain-oriented
   Ukrainian reference bank on log length, numeric density, heading depth, lexical entropy,
   punctuation density, and affinity to the target encoder mean. A two-fold diagonal linear
   classifier and maximum standardized mean difference test whether the matched rows are still
-  identifiable by corpus; `null_research_controls.py` assembles their clustered score payload.
-- `null_research_advanced.py` evaluates the raw matched scores and a local residual geometry that
+  identifiable by corpus; `controls/matched.py` assembles their clustered score payload.
+- `generations/advanced.py` evaluates the raw matched scores and a local residual geometry that
   subtracts each source chunk's matched-control median. It counts unique target/reference texts as
   effective units rather than treating their Cartesian rows as independent.
-- `null_research_fdr.py` searches for the least strict nonempty threshold whose expected false rows
+- `statistics/fdr.py` searches for the least strict nonempty threshold whose expected false rows
   fit below a Wilson upper bound over source-cluster exceedances. It reports the lane as
   unidentified instead of silently selecting an empty threshold.
-- `null_research_counterfactuals.py` creates exact-span capitalized-argument, quantity/date, and
+- `controls/counterfactuals.py` creates exact-span capitalized-argument, quantity/date, and
   modality edits, embeds each changed passage on CUDA, and writes hashes plus edit offsets to
   `counterfactual_traces.jsonl`. These controls are explicitly ineligible as an independent null
   until a separate relation verifier proves their semantic role: a changed quantity or modality
   can be a true contradiction that the conflict detector should retain.
-- `null_research_nextgen.py` shares the controls across candidates and applies the original fixture,
+- `generations/nextgen.py` shares the controls across candidates and applies the original fixture,
   HR-recovery, and goods-flood gates plus exchangeability, effective-tail, simulation-coverage, and
   semantic-eligibility gates. Deterministic coverage is in
   `tests/llb/conflicts/test_null_research.py`; the Make target exposes
@@ -213,28 +213,28 @@ inference, and a claim-tier precision fallback.
 question: what would a usable operating point require, and is the null even identifiable? Six lanes
 share one control bank and one rank baseline.
 
-- `null_research_feasibility.py` converts the operator's affordable candidate list into the per-pair
+- `statistics/feasibility.py` converts the operator's affordable candidate list into the per-pair
   tail it implies, then into the number of INDEPENDENT control observations that tail needs. A lane
   whose bank cannot reach that number is reported infeasible before any threshold is fitted.
-- `null_research_propensity.py` and `null_research_balance.py` replace nearest-neighbour matching
+- `controls/propensity.py` and `controls/balance.py` replace nearest-neighbour matching
   with cross-fitted ridge-logistic propensity weighting over the structural covariates plus
   encoder-neighbourhood covariates (affinity to the target cloud, leading principal directions).
   Every reference chunk is used ONCE with a trimmed odds weight, so its effective sample size is a
   meaningful quantity, and the model is refitted leave-one-domain-out to score a domain it never saw.
-- `null_research_mixture.py` anchors the related component with non-cosine evidence (word 5-gram
+- `statistics/mixture.py` anchors the related component with non-cosine evidence (word 5-gram
   Jaccard/containment over comparable chunks) and the null component with the weighted control bank,
   then enumerates every (null shift, related mass) mixture the corpus's independent units cannot
   distinguish from the observed distribution.
-- `null_research_geometries.py` re-expresses each corpus and its controls in a whitened space and in
+- `controls/geometries.py` re-expresses each corpus and its controls in a whitened space and in
   a space with the three leading directions stripped, and reports per-pair baseline recovery, since a
   rescaled space's absolute cosines are not comparable to the shipped threshold.
-- `null_research_roles.py` asks the host-fit Ukrainian model what each traced control edit actually
+- `controls/roles.py` asks the host-fit Ukrainian model what each traced control edit actually
   IS, closing the second generation's open question about whether those controls are nulls at all.
-- `null_research_precision.py` ranks the candidate rows exactly as the semantic tier would,
+- `statistics/precision.py` ranks the candidate rows exactly as the semantic tier would,
   adjudicates them, calibrates the adjudicator against the planted fixture's frozen relations, and
   reports precision with a two-way clustered lower bound.
-- `null_research_clusters.py` holds both two-way resamplers; `null_research_third.py` orchestrates
-  the lanes and `null_research_report_third.py` renders their sections.
+- `statistics/clusters.py` holds both two-way resamplers; `generations/third.py` orchestrates
+  the lanes and `report/third.py` renders their sections.
 
 Run it with the same evidence stores plus an adjudicating model:
 

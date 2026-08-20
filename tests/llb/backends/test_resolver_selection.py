@@ -8,7 +8,14 @@ from llb.backends.resolver import (
 from llb.backends.resolver_report import format_resolution
 from llb.backends.resolver_sources import candidate_sources
 from llb.core.contracts.models import ModelSpec
-from test_resolver import ALL_AVAILABLE, BIG, HOST_RAM, HOST_VRAM, MISTRAL_MULTI, SMALL
+from tests.llb.backends.test_resolver import (
+    ALL_AVAILABLE,
+    BIG,
+    HOST_RAM,
+    HOST_VRAM,
+    MISTRAL_MULTI,
+    SMALL,
+)
 
 
 def test_resolve_all_and_format():

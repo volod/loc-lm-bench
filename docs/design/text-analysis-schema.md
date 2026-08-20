@@ -6,7 +6,7 @@ Status: **APPROVED**
 
 This is proposal text analysis; a human sign-off (human decision, item text-analysis sign-off) is provided.
 
-- Executable form: [`src/llb/scoring/text_analysis.py`](../../src/llb/scoring/text_analysis.py)
+- Executable form: [`src/llb/scoring/text_analysis/run.py`](../../src/llb/scoring/text_analysis/run.py)
   (taxonomy, planted-label model, matching engine) + the `PlantedLabelRecord` / `SubtaskScore`
   contracts in
   [`src/llb/core/contracts/benchmarks.py`](../../src/llb/core/contracts/benchmarks.py).
@@ -159,7 +159,7 @@ Planted `topic` labels `T1="економіка"`, `T2="енергетика"`; c
 
 This is the human gate. Nothing about it requires running a GPU.
 
-1. **Read** this document plus `src/llb/scoring/text_analysis.py` (the engine is short and the
+1. **Read** this document plus `src/llb/scoring/text_analysis/run.py` (the engine is short and the
    tests in `tests/llb/scoring/test_text_analysis.py` show the exact credit behavior). Run the
    tests if you want to see the numbers move:
 

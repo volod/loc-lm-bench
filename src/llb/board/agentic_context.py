@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from llb.bench.agentic_context_report import METHOD
+from llb.bench.context_policy.report import METHOD
 from llb.board.io import read_case_series
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.results import BoardRow

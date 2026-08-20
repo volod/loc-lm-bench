@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from llb.prep.frontier import (
+from llb.prep.frontier.client import (
     build_drafted_items,
     ground_span,
     parse_json_block,
     prepare_goldset,
 )
-from llb.prep.frontier_synthetic import prepare_synthetic_corpus
-from llb.prep.frontier_telemetry import ProvenanceLog
+from llb.prep.frontier.synthetic import prepare_synthetic_corpus
+from llb.prep.frontier.telemetry import ProvenanceLog
 
 DOC = "Київ є столицею України. Дніпро тече через місто."
 

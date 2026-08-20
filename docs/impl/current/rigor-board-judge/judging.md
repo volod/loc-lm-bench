@@ -105,7 +105,7 @@ steps; see the `frontier-judge-authorization` task in [plan.md](../../plan.md).
 
 ## Frontier Prep Utilities
 
-`src/llb/prep/frontier.py` contains GPU-free Litellm-backed utilities that emit unverified review
+`src/llb/prep/frontier/client.py` contains GPU-free Litellm-backed utilities that emit unverified review
 material:
 
 - `prepare_goldset`: drafts question, answer, and exact source span triples from real documents;

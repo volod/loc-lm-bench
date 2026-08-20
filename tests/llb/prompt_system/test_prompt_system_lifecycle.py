@@ -17,7 +17,7 @@ from llb.prompt_system.template import (
     GRAPH_NONE,
     TemplateFields,
 )
-from test_prompt_system import SAMPLE_CORPUS, _corpus, _two_tasks
+from tests.llb.prompt_system.test_prompt_system import SAMPLE_CORPUS, _corpus, _two_tasks
 
 
 def test_review_transitions_and_roundtrip(tmp_path):

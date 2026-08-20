@@ -39,8 +39,9 @@ nothing to constrain -- and keeps the conflicting pins out of the venv `make ci`
 
 ## 2. Validate the real crew on a host
 
-The fake-crew unit tests (`tests/llb/bench/test_harness.py`) cover the Episode adaptation with no dependency.
-This step validates the live CrewAI integration (the LLM adapter, tool execution, ReAct parsing).
+The fake-crew unit tests (`tests/llb/bench/harness/test_harness.py`) cover the Episode adaptation
+with no dependency. This step validates the live CrewAI integration (the LLM adapter, tool
+execution, ReAct parsing).
 
 Fast scripted check (no model, no GPU) -- the candidate `complete` returns CrewAI ReAct turns and the
 shipped `run_real_crew` must execute the tool against the shared world and capture the final answer:

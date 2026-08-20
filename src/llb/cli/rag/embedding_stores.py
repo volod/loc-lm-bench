@@ -8,19 +8,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Sequence
 
 from llb.cli.rag.compare_stores import _dir_size_bytes
-from llb.rag.encoder_throughput import (
+from llb.rag.encoders.throughput import (
     DEFAULT_MAX_WARM_PASSES,
     DEFAULT_MAX_WARM_SECONDS,
     DEFAULT_MIN_WARM_PASSES,
     DEFAULT_TARGET_RELATIVE_PRECISION,
     ThroughputProfile,
 )
-from llb.rag.encoder_throughput_profile import profile_local_embedder
+from llb.rag.encoders.throughput_profile import profile_local_embedder
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
-    from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.rag.embedding_bakeoff_models import StoreBuilder
+    from llb.prep.frontier.telemetry import ProvenanceLog
+    from llb.rag.embedding_bakeoff.models import StoreBuilder
 
 _LOG = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ def local_store_builder(
     chunk texts and attaches the primary-device profile to the `BuiltStore`. Extra device profiles
     (e.g. CPU beside CUDA) append to `profiles_out` for the host summary.
     """
-    from llb.rag.embedding_bakeoff_models import BuiltStore, slugify_model
-    from llb.rag.store import RagStore
+    from llb.rag.embedding_bakeoff.models import BuiltStore, slugify_model
+    from llb.rag.vector_store.store import RagStore
 
     options = throughput or EncoderThroughputOptions()
 
@@ -155,9 +155,9 @@ def api_store_builder(
     cfg: "RunConfig", stores_dir: Path, log: "ProvenanceLog", max_usd: Optional[float]
 ) -> "StoreBuilder":
     """Build and persist the API-embedded store while recording its cost."""
-    from llb.rag.api_embedder import ApiEmbedder, litellm_embed
-    from llb.rag.embedding_bakeoff_models import KIND_API, BuiltStore, slugify_model
-    from llb.rag.store import RagStore
+    from llb.rag.encoders.api import ApiEmbedder, litellm_embed
+    from llb.rag.embedding_bakeoff.models import KIND_API, BuiltStore, slugify_model
+    from llb.rag.vector_store.store import RagStore
 
     def build(model: str) -> "BuiltStore":
         embedder = ApiEmbedder(model, litellm_embed(model, log=log, max_usd=max_usd))

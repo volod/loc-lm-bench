@@ -20,7 +20,7 @@ def bench_composite_cmd(
 ) -> None:
     """Render the guarded category composite headline from persisted category runs."""
     from llb.board.categories import load_category_composite
-    from llb.scoring.composite_format import format_composite_issues, format_composite_rows
+    from llb.scoring.composite.format import format_composite_issues, format_composite_rows
 
     cfg = load_config(None)
     rows, issues = load_category_composite(
@@ -86,10 +86,10 @@ def bench_chain_context_cmd(
     ),
 ) -> None:
     """Rank context-management policies for one fixed model over a verified chain set."""
-    from llb.bench.chain_context import ChainContextRun, load_chains_file, run_chain_context
+    from llb.bench.chain_context.run import ChainContextRun, load_chains_file, run_chain_context
     from llb.bench.common import LLMComplete
     from llb.bench.common_backend import drive_with_backend
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     cfg = load_config(None, model=model, backend=backend, max_model_len=max_model_len)
     chain_set = load_chains_file(chains)

@@ -17,7 +17,7 @@ cap arm measures overflow rescue rather than cost.
 The gap is bounded, because the STEP BUDGET bounds it. An episode runs at most `max_steps` steps, so
 at most `max_steps - 1` transcript entries can stand behind its last prompt; perfect play uses
 `depth + 1` of those steps, and whatever remains is what an imperfect controller can spend.
-`src/llb/bench/agentic_memory_worst_case_probe.py` walks the same deterministic world with a
+`src/llb/bench/memory/worst_case_probe.py` walks the same deterministic world with a
 controller that spends ALL of it, which prices the gap exactly with no model and no GPU.
 
 ## Which imperfect walk is the worst one
@@ -65,13 +65,13 @@ is one price per wasted step and nothing else:
 
 So a study that widens its step budget to give a slow controller more room widens the head-room its
 guards must carry by exactly the same arithmetic; `margin_scaling` in
-`src/llb/bench/agentic_memory_two_fold_reading.py` re-reads it per design rather than quoting the
+`src/llb/bench/memory/two_fold/reading.py` re-reads it per design rather than quoting the
 number, and CI asserts the rate is one value across the read budgets.
 
 ## What design validation does with it
 
 `validate_surface_cells` certifies every predeclared guard against the margin-narrowed band
-(`imperfect_play_guard_band` in `src/llb/bench/agentic_memory_fold_step_ladder.py`). The two bounds
+(`imperfect_play_guard_band` in `src/llb/bench/memory/fold_step/ladder.py`). The two bounds
 take DIFFERENT peaks, because the conservative side of each is a different walk:
 
 - **cap must fit for the controller that actually runs**, so the lower bound is the WORST-CASE peak.
@@ -92,7 +92,7 @@ places a guard just above the perfect-play peak is told why that is not enough.
 
 ## What the run bundles say the model actually spent
 
-The probe prices what the budget ALLOWS; `src/llb/bench/agentic_memory_extra_steps.py` reads what a
+The probe prices what the budget ALLOWS; `src/llb/bench/memory/extra_steps.py` reads what a
 served model DID. Every compact-versus-cap bundle persists one case row per episode carrying its
 `n_steps`, so the extra steps beyond perfect play are already on disk and need no run to recover.
 `analyze_surface` attaches them per cell (`observed_extra_steps` per policy arm, plus
@@ -234,20 +234,20 @@ make bench-agentic-context-compact-repeated-fold
 
 | What | Where |
 | --- | --- |
-| Stalling controller, worst-case sequence / fold-input probe, `cap_peak_margin` | `src/llb/bench/agentic_memory_worst_case_probe.py` |
-| Controller seam on the perfect-play probes | `src/llb/bench/agentic_memory_boundary_probe.py` |
-| `imperfect_play_guard_band`, `guard_is_cap_fitting_under_imperfect_play` | `src/llb/bench/agentic_memory_fold_step_ladder.py` |
-| The validation change and `depth_cap_peak_margin` | `src/llb/bench/agentic_memory_boundary_surface_cells.py` |
-| Per-depth margin and per-cell observed steps in the analysis | `src/llb/bench/agentic_memory_boundary_surface.py` |
-| Margin lines in the rendered surface | `src/llb/bench/agentic_memory_boundary_surface_report.py` |
-| Observed extra steps read out of the run bundles | `src/llb/bench/agentic_memory_extra_steps.py` |
-| Worst-case bound-invariance verdict and its roll-up | `src/llb/bench/agentic_memory_cap_audit.py` |
-| Controller seam on the audit replay | `src/llb/bench/agentic_policy_change_replay.py`, `src/llb/bench/agentic_policy_change_audit.py`, `src/llb/bench/agentic_policy_change_tasks.py` |
-| Two-fold fixture contract and geometry probe | `src/llb/bench/agentic_memory_two_fold_fixture.py`, `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` |
-| Two-fold audit rows, margin scaling, and the validity reading | `src/llb/bench/agentic_memory_two_fold_reading.py` |
-| Repeated-fold completion design and compact-only runner | `src/llb/bench/agentic_memory_repeated_fold_design.py`, `src/llb/bench/agentic_memory_repeated_fold_completion.py` |
-| Completion/mechanism readings, report, and command | `src/llb/bench/agentic_memory_repeated_fold_reading.py`, `src/llb/bench/agentic_memory_repeated_fold_report.py`, `src/llb/cli/bench/category_agentic_memory_repeated_fold.py` |
-| Tests | `tests/llb/bench/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/test_agentic_memory_repeated_fold_completion.py` |
+| Stalling controller, worst-case sequence / fold-input probe, `cap_peak_margin` | `src/llb/bench/memory/worst_case_probe.py` |
+| Controller seam on the perfect-play probes | `src/llb/bench/memory/boundary/probe.py` |
+| `imperfect_play_guard_band`, `guard_is_cap_fitting_under_imperfect_play` | `src/llb/bench/memory/fold_step/ladder.py` |
+| The validation change and `depth_cap_peak_margin` | `src/llb/bench/memory/boundary/surface_cells.py` |
+| Per-depth margin and per-cell observed steps in the analysis | `src/llb/bench/memory/boundary/surface.py` |
+| Margin lines in the rendered surface | `src/llb/bench/memory/boundary/surface_report.py` |
+| Observed extra steps read out of the run bundles | `src/llb/bench/memory/extra_steps.py` |
+| Worst-case bound-invariance verdict and its roll-up | `src/llb/bench/memory/cap_audit.py` |
+| Controller seam on the audit replay | `src/llb/bench/policy_change/replay.py`, `src/llb/bench/policy_change/audit.py`, `src/llb/bench/policy_change/tasks.py` |
+| Two-fold fixture contract and geometry probe | `src/llb/bench/memory/two_fold/fixture.py`, `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` |
+| Two-fold audit rows, margin scaling, and the validity reading | `src/llb/bench/memory/two_fold/reading.py` |
+| Repeated-fold completion design and compact-only runner | `src/llb/bench/memory/repeated_fold/design.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
+| Completion/mechanism readings, report, and command | `src/llb/bench/memory/repeated_fold/reading.py`, `src/llb/bench/memory/repeated_fold/report.py`, `src/llb/cli/bench/memory/repeated_fold.py` |
+| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py` |
 
 The geometry, readings, gate, persistence, and marker ablation use deterministic fakes in `make ci`;
 the completion values above come from the named CUDA run.

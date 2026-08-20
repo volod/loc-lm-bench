@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from llb.scoring.external_rag.records import human_reviewed_count, is_human_scored
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_FIELD,
     HUMAN_DECISION_PARTIAL,

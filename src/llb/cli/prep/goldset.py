@@ -16,7 +16,7 @@ def prepare_goldset_cmd(
     out: Path = typer.Option(..., help="output gold set JSONL (items are verified=false)"),
 ) -> None:
     """Draft review-ready (question, answer, exact span) gold items from a corpus via a frontier LLM."""
-    from llb.prep.frontier import prepare_goldset
+    from llb.prep.frontier.client import prepare_goldset
 
     items = prepare_goldset(corpus_root, model=model, n_per_doc=n_per_doc, out_path=out)
     typer.echo(
@@ -58,8 +58,8 @@ def prepare_synthetic_corpus_cmd(
         raise typer.Exit(code=2)
 
     if text_analysis:
-        from llb.prep.chat_corpus import prepare_synthetic_chat_corpus
-        from llb.prep.text_analysis_corpus import DEFAULT_KINDS, prepare_text_analysis_corpus
+        from llb.prep.corpus.chat import prepare_synthetic_chat_corpus
+        from llb.prep.corpus.text_analysis import DEFAULT_KINDS, prepare_text_analysis_corpus
 
         chosen = tuple(k.strip() for k in kinds.split(",") if k.strip()) if kinds else DEFAULT_KINDS
         builder = prepare_synthetic_chat_corpus if chat else prepare_text_analysis_corpus
@@ -81,7 +81,7 @@ def prepare_synthetic_corpus_cmd(
         )
         return
 
-    from llb.prep.frontier_synthetic import prepare_synthetic_corpus
+    from llb.prep.frontier.synthetic import prepare_synthetic_corpus
 
     docs, items = prepare_synthetic_corpus(
         topics, planter_model=planter, judge_model=judge, n_labels=n_labels, out_dir=out_dir
@@ -113,8 +113,8 @@ def ingest_chat_corpus_cmd(
 ) -> None:
     """category expansion chat-period: ingest a REAL chat corpus, draft grounded labels LOCALLY (no egress)."""
     from llb.bench.common_backend import local_complete
-    from llb.prep.chat_corpus import ingest_chat_corpus, load_chat_conversations
-    from llb.prep.text_analysis_corpus import DEFAULT_KINDS
+    from llb.prep.corpus.chat import ingest_chat_corpus, load_chat_conversations
+    from llb.prep.corpus.text_analysis import DEFAULT_KINDS
 
     conversations = load_chat_conversations(chat_file)
     if not conversations:
@@ -151,7 +151,7 @@ def cross_check_goldset_cmd(
     import json
 
     from llb.goldset.schema import load_goldset
-    from llb.prep.cross_check import (
+    from llb.prep.goldset.cross_check import (
         cross_check_goldset,
         load_doc_texts,
         second_frontier_verify,

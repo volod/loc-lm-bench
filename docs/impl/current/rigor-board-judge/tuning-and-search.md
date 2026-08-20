@@ -84,7 +84,7 @@ on the final split. Reports land under `$DATA_DIR/tune/<run>/` as `pareto.json` 
 Additional search knobs in this mode:
 
 - **Embedder** -- categorical over the bake-off shortlist
-  (`DEFAULT_LOCAL_CANDIDATES` in `src/llb/rag/embedding_bakeoff.py`); override with
+  (`DEFAULT_LOCAL_CANDIDATES` in `src/llb/rag/embedding_bakeoff/run.py`); override with
   `--embedders a,b` or pass `--embedders ""` to keep the pinned model. The per-study
   `StoreRegistry` (`src/llb/optimize/store_registry.py`) rebuilds when the embedder or
   chunking fingerprint changes, and never reuses a store across different embedders.

@@ -11,7 +11,7 @@ from llb.prep.ontology.constants import (
     MULTI_HOP_NEAR_DUP_ANSWER_COSINE_THRESHOLD,
     NEAR_DUP_COSINE_THRESHOLD,
 )
-from llb.prep.ontology.inventory import inventory_corpus
+from llb.prep.ontology.coverage.inventory import inventory_corpus
 from llb.prep.ontology.language import is_ukrainian_dominant
 from llb.prep.ontology.pipeline.expansion import labeled_multi_hop_ids
 

@@ -5,15 +5,15 @@ from pathlib import Path
 from llb.scoring.external_rag.records import load_jsonl
 from llb.scoring.external_rag.score import score_records
 from llb.scoring.external_rag.worksheet import write_csv
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     DEFAULT_SOURCE_LIMIT,
     ExternalRagPaths,
     ExternalRagResult,
 )
-from llb.scoring.external_rag_report import write_report
-from llb.scoring.external_rag_source_map import load_source_map
-from llb.scoring.external_rag_sources import summarize_source_audit
-from llb.scoring.external_rag_summary import summarize
+from llb.scoring.external_rag.report import write_report
+from llb.scoring.external_rag.source_map import load_source_map
+from llb.scoring.external_rag.sources import summarize_source_audit
+from llb.scoring.external_rag.summary import summarize
 
 
 def score_external_rag_file(

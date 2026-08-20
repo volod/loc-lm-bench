@@ -2,7 +2,7 @@
 # Create/refresh the LEGACY ENCODER virtualenv: the second scoring environment for the bake-offs.
 #
 # Four roster candidates ship their forward pass as repository code written against the
-# transformers 4.x API (src/llb/rag/model_stack.py). The repo pins transformers 5.x for the
+# transformers 4.x API (src/llb/rag/encoders/model_stack.py). The repo pins transformers 5.x for the
 # shipped path, and on that stack two of them raise at load while two load and return numbers that
 # do not reproduce their own model card -- so the rows are a PACKAGING hole in the ranking, not a
 # quality result. This venv holds the `[encoders-legacy]` extra (transformers<5 beside the same

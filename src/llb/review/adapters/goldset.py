@@ -175,7 +175,7 @@ class DraftCompareAdapter(GoldsetVerifyAdapter):
     kind = "draft-compare"
 
     def __init__(self, comparison: Path | str) -> None:
-        from llb.prep.ontology.compare_gate import comparison_worksheets
+        from llb.prep.ontology.compare.gate import comparison_worksheets
 
         value = Path(comparison)
         report = value / "comparison.json" if value.is_dir() else value

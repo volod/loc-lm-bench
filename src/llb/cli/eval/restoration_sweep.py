@@ -7,8 +7,8 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.eval.query_robustness_variants import parse_variant_classes
-from llb.eval.restoration_sweep import SWEEP_VARIANT_CLASSES, policy_grid
+from llb.eval.query_robustness.variants import parse_variant_classes
+from llb.eval.restoration_sweep.grid import SWEEP_VARIANT_CLASSES, policy_grid
 from llb.rag.query_prep.restore_policy import (
     AMBIGUOUS_TOKEN_MAX_CHARS,
     RESTORATION_RANK_ORDERS,
@@ -77,7 +77,7 @@ def sweep_restoration_constraints_cmd(
     ),
 ) -> None:
     """Sweep the typo step's restoration constants; report recall + edit precision per setting."""
-    from llb.eval.restoration_sweep_run import run_and_publish_sweep
+    from llb.eval.restoration_sweep.run import run_and_publish_sweep
 
     try:
         classes = (

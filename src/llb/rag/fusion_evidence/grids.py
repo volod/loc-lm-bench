@@ -5,7 +5,7 @@ worth a row, this one turns the operator's comma-separated text into those axes 
 value the fusion knobs cannot honor -- so the CLI never has to validate a knob itself.
 """
 
-from llb.rag.fusion_spans import (
+from llb.rag.fusion.spans import (
     SPAN_IDENTITIES,
     resolve_merge_ratio,
     resolve_span_identity,

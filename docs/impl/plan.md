@@ -195,7 +195,7 @@ recall@k at all -- a lever that only reflows the same evidence should not.
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `span_intact_at_k` / `span_char_coverage_at_k` in
-  `src/llb/rag/retrieval.py`, the per-slice reporting in `src/llb/rag/compare.py`, and the paired
+  `src/llb/rag/retrieval.py`, the per-slice reporting in `src/llb/rag/comparison/run.py`, and the paired
   lane machinery both already ride.
 - User-visible outcome: when the intactness columns show evidence arriving in pieces, the operator
   has a measured lever rather than only a diagnosis.
@@ -224,7 +224,7 @@ prose, and groundedness re-segments the answer into "sentence-ish claims" by pun
 ([RAG core](current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
 The repo already validates typed model output with Pydantic -- but only inside the structured-output
 BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
-the completion satisfies it (`src/llb/scoring/structured_schema.py`); nothing on the answer path an
+the completion satisfies it (`src/llb/scoring/structured/schema.py`); nothing on the answer path an
 operator would actually ship is typed. Two consequences: the measured citation gap is unreadable
 (the durable 3B run scored citation validity 0.000 because the model mostly did not cite at all, a
 FORMAT failure scored as a grounding failure), and there is nowhere for a semantic validator to
@@ -239,7 +239,7 @@ status rather than being scored as a wrong answer.
 - Agent status: RUN NEEDED
 - Dependencies: none, and it must land before `ontology-validated-answer-gate` (which validates the
   object this task defines). Reuse `build_model` / `parse_output` / `is_conformant` in
-  `src/llb/scoring/structured_schema.py` wholesale (they take a field schema, not a benchmark case),
+  `src/llb/scoring/structured/schema.py` wholesale (they take a field schema, not a benchmark case),
   the status taxonomy and `format_context` numbering in `src/llb/eval/common.py`, the claim
   segmentation and citation parsing in `src/llb/scoring/groundedness.py`, and the
   `eval.rag.cited_answer` template as the envelope prompt's starting point.
@@ -432,14 +432,14 @@ reproducible (pinned sampler / seeded backend options) if the backend allows it.
 
 The induced ontology is a type INVENTORY, not a set of constraints: `induce_ontology` emits entity
 and relation types with counts, confidence, and examples under the `MAX_ENTITY_TYPES` /
-`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/induce.py`, `models.py`), and nothing in that
-artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact` creates
-a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the fact, and
-the approved schema states that rule outright ("no grounded fact is dropped",
-[graph ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one
-patent has two different durations, that one work has two exclusive owners, or that one entity is
-both `PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts
-into gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
+`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/extraction/induce.py`, `models.py`), and nothing
+in that artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact`
+creates a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the
+fact, and the approved schema states that rule outright ("no grounded fact is dropped", [graph
+ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one patent
+has two different durations, that one work has two exclusive owners, or that one entity is both
+`PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts into
+gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
 validation architecture: an AXIOM layer over the closed vocabulary and the induced relations --
 functional and inverse-functional properties (at most one object per subject, and vice versa),
 `domain`/`range` type constraints per relation, disjoint entity-type pairs, symmetry/asymmetry/
@@ -458,10 +458,10 @@ checker. That keeps OWL semantics as the reference without letting a reasoner in
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: RUN NEEDED
 - Dependencies: none in code. Reuse the closed vocabulary and `normalize_entity_type` in
-  `src/llb/prep/ontology/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
+  `src/llb/prep/ontology/extraction/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
   models in `src/llb/prep/ontology/models.py`, the caps and confidence blend in
   `src/llb/prep/ontology/constants.py`, the fact ingestion seam in `src/llb/graph/build.py`, and the
-  violation-report renderer pattern from `src/llb/conflicts/report.py`.
+  violation-report renderer pattern from `src/llb/conflicts/report/render.py`.
 - User-visible outcome: a corpus ledger whose logical inconsistencies are visible and named before
   they become gold questions or retrieved evidence, and a constraint set an operator can read,
   version, and hand to a domain expert.
@@ -512,7 +512,7 @@ declining the hard items looks like a win.
 - Dependencies: `typed-rag-answer-envelope` (the typed object to validate) and
   `ontology-axiom-layer` (the axioms to validate it against); enabling an axiom at answer time also
   needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than defaulted.
-  Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff_uncertainty.py` and
+  Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff/uncertainty.py` and
   `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
   `compare-answer-quality`, and the ledger lookup in `src/llb/graph/retrieval.py`.
 - User-visible outcome: an operator learns whether semantic validation of RAG answers is worth its
@@ -838,11 +838,11 @@ fail, refuse, or invent a date for it.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance_coverage.py` is the
+- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance/coverage.py` is the
   count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
   is, and `document_pair_orderability` beside it is the same input again -- report both, since a
   corpus dated end to end with one shared edition is orderable by neither;
-  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
+  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus/governance.py` are
   where ingestion already holds the same fields.
 - User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
   they are still ingesting it, not two commands and one GPU run later.
@@ -860,22 +860,23 @@ fail, refuse, or invent a date for it.
 
 #### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
 
-`tree_is_reusable` (`src/llb/conflicts/tree_refresh.py`) documents itself as the rule that stops a
-tree built under one encoder from being queried under another, and nothing in `src/` calls it: the
-only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
+`tree_is_reusable` (`src/llb/conflicts/semantic_tree/refresh.py`) documents itself as the rule that
+stops a tree built under one encoder from being queried under another, and nothing in `src/` calls
+it: the only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
 `prepare_projected_index`'s `source_fingerprint`, which hashes the encoder, the dimension, the
 centering flag, the corpus fingerprint, the store manifest, and the whole chunk table into one
 value, so it is strictly stronger AND covers only the PROJECTED path -- the full-space path builds a
-fresh tree every run and reuses nothing. Two live functions describing one gate is how a later change
-gets made in the wrong place. Decide which it is: delete the unused one and say the fingerprint is
-the gate, or make it the cheap pre-check the full-space path is missing and give that path a
-persisted tree to reuse.
+fresh tree every run and reuses nothing. Two live functions describing one gate is how a later
+change gets made in the wrong place. Decide which it is: delete the unused one and say the
+fingerprint is the gate, or make it the cheap pre-check the full-space path is missing and give that
+path a persisted tree to reuse.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`tree_node.py`) are one side,
-  `_source_fingerprint` / `prepare_projected_index` (`src/llb/conflicts/projected_index.py`) the
-  other, and `_active_tree` (`semantic_run.py`) is the full-space path that persists nothing.
+- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`semantic_tree/node.py`) are one side,
+  `_source_fingerprint` / `prepare_projected_index`
+  (`src/llb/conflicts/semantic_tree/projected_index.py`) the other, and `_active_tree`
+  (`semantic_run.py`) is the full-space path that persists nothing.
 - User-visible outcome: one documented rule for when a persisted tree may be reused, in the place
   the reuse actually happens.
 - Scope boundary: in scope -- the verdict, the deletion or the wiring, and the test that follows it.
@@ -903,8 +904,8 @@ something the ordering cannot move.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `finding_id` (`src/llb/conflicts/hashing.py`) is already the content-addressed
-  row identity and `group_summaries` (`group_artifact.py`) is where a group's member list is built;
+- Dependencies: none. `finding_id` (`src/llb/conflicts/tiers/hashing.py`) is already the content-addressed
+  row identity and `group_summaries` (`grouping/artifact.py`) is where a group's member list is built;
   the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
   join on it within a run.
 - User-visible outcome: an operator can tell whether the decision they triaged last week is the
@@ -933,8 +934,8 @@ approximation of it.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking;
-  `group_summaries` in `group_artifact.py` builds the sidecar from `findings.jsonl` rows, so the
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking;
+  `group_summaries` in `grouping/artifact.py` builds the sidecar from `findings.jsonl` rows, so the
   rank must be computable from rows alone to keep the sidecar derivable without the report.
   `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
   carry it, so the sidecar must reuse it rather than add a third implementation.
@@ -963,9 +964,9 @@ that never reorders anything is not worth a column.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking and
-  `shared_unit_indices` in `src/llb/conflicts/granularity.py` is the chain length; the ranking must
-  stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking and
+  `shared_unit_indices` in `src/llb/conflicts/grouping/granularity.py` is the chain length; the
+  ranking must stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
 - User-visible outcome: the first decision the report offers is the one that actually costs the most,
   not the one with the most rows.
 - Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
@@ -996,9 +997,10 @@ it is a floor.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `_document_stage` and `REPORT_STAGE_ORDER` in
-  `src/llb/conflicts/governance_stage.py` are the classes and their order; `orderable_document_pairs`
-  in `governance_coverage.py` is the denominator and is already counted without enumerating pairs.
+- Dependencies: none. `document_stage` and `REPORT_STAGE_ORDER` in
+  `src/llb/conflicts/governance/stage_rule.py` are the classes and their order;
+  `orderable_document_pairs` in `governance/coverage.py` is the denominator and is already counted
+  without enumerating pairs.
 - User-visible outcome: an operator learns whether the named knob recovers most of what the run
   lost or one pair of it.
 - Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
@@ -1026,8 +1028,8 @@ costs in the units the reading is quoted in.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/stage_replay.py` is the set
-  and `documents_of` beside it carries the ordering fields; `compare_editions`
+- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/bundle/stage_replay.py` is
+  the set and `documents_of` beside it carries the ordering fields; `compare_editions`
   (`governance.py`) is the orderability test the coverage already uses.
 - User-visible outcome: an operator lowering the candidate budget learns whether it costs evidence
   or only noise.
@@ -1089,7 +1091,7 @@ list or become the `size_counts` histogram it is already recorded beside.
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
 - Dependencies: none. `finding_granularity` and `quoted_group_split`
-  (`src/llb/conflicts/granularity.py`) build the block, `record_fold.py` is the gate every other
+  (`src/llb/conflicts/grouping/granularity.py`) build the block, `bundle/fold.py` is the gate every other
   fold in the bundle is held to, and `schema_version` inside the block is the migration seam.
 - User-visible outcome: a bundle's size tracks its corpus and its run parameters, instead of the
   number of rows the adjudicator happened to return.
@@ -1118,7 +1120,7 @@ conflicts lost if any. The scorer must stay injectable, and a corpus where the o
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: reuse `null_research_cross_encoder.py` (pair scoring batched by left passage,
+- Dependencies: reuse `controls/cross_encoder.py` (pair scoring batched by left passage,
   calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
   artifacts are current behavior in [conflict
   detection](current/data-prep/conflict-detection.md#effort-tiers).
@@ -1152,7 +1154,7 @@ record that the gate's job is a floor rather than a ranking.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/conflicts/claim_calibration.py`, its heading-addressed probe
+- Dependencies: none. Reuse `src/llb/conflicts/claim/calibration.py`, its heading-addressed probe
   format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
   offset-exact and pass the existing corpus-unchanged assertion.
 - User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
@@ -1219,9 +1221,9 @@ it on a corpus that saturates the list at an operating cosine, and record the bu
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
 - Dependencies: none. `--max-candidate-record-pairs` and the recorded `cap` are current behavior;
-  `CandidateRecord.of` in `src/llb/conflicts/candidate_record.py` is where the collapse happens and
-  `covered_to_rank` is the ratio's numerator. The corpus is the missing input: it needs many
-  near-duplicate documents, not a lowered threshold.
+  `CandidateRecord.of` in `src/llb/conflicts/bundle/candidate_record.py` is where the collapse
+  happens and `covered_to_rank` is the ratio's numerator. The corpus is the missing input: it needs
+  many near-duplicate documents, not a lowered threshold.
 - User-visible outcome: an operator on a duplicate-heavy corpus learns whether the shipped cap still
   answers the budgets they ask, instead of inheriting a number priced on a synthetic density.
 - Scope boundary: in scope -- one natively dense corpus, its ranks-per-pair ratio at several caps,
@@ -1311,7 +1313,7 @@ instead of 2 of 9 (22.2%)
 ([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
 The share is a count of the one relation the policies part on, so it inherits the adjudicator's
 sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
-(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
+(`EndpointConfig` in `src/llb/prep/ontology/endpoints/config.py`). Audit one corpus N times at the
 shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
 two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
 honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
@@ -1620,7 +1622,7 @@ on a corpus whose facts differ by one number.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: HUMAN-GATED
-- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicate_residue.py` for
+- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicates/residue.py` for
   the clustering and the sampler, and `collapse_duplicate_chunks` for the merge itself. Human step
   that gates completion: a reviewer reads the sampled merges at the candidate threshold and calls
   the false-merge rate acceptable or not.

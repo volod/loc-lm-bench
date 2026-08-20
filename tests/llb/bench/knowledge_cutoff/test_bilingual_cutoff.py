@@ -1,7 +1,12 @@
 import json
 
 import pytest
-from bilingual_cutoff_helpers import accept_all, event, loaded_events, translation
+from tests.llb.bench.knowledge_cutoff.bilingual_cutoff_helpers import (
+    accept_all,
+    event,
+    loaded_events,
+    translation,
+)
 from llb.bench.knowledge_cutoff.translation_artifacts import WORKSHEET_FILENAME
 from llb.bench.knowledge_cutoff.translation_models import parse_translation
 from llb.bench.knowledge_cutoff.translation_workflow import draft_translation_bundle

@@ -27,7 +27,7 @@ from llb.prep.ontology.constants import (
     PROMPT_DICTIONARY_FILENAME,
 )
 from llb.prep.ontology.models import DocExtraction, DocRecord, ItemLabels, OntologyCandidate
-from llb.prep.ontology.needles import NeedleRetriever
+from llb.prep.ontology.drafting.needles import NeedleRetriever
 
 CORPUS_REQUIRED_GATES = ("nonzero_grounded_extractions", "nonzero_draft_items")
 PDF_REQUIRED_GATE = "has_citation_valid_needles"

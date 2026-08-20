@@ -7,7 +7,7 @@ from typing import Any
 from llb.executor.cases import spans_as_dicts
 from llb.goldset.schema import load_goldset
 from llb.rag.retrieval import evaluate_retrieval
-from llb.rag.store import RagStore
+from llb.rag.vector_store.store import RagStore
 
 
 @dataclass(frozen=True, slots=True)

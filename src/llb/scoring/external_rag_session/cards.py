@@ -9,7 +9,7 @@ from llb.scoring.external_rag.score import (
     score_records,
     source_list,
 )
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_FIELD,

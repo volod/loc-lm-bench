@@ -25,7 +25,7 @@ from llb.core.contracts.results import BoardRow
 from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.core.contracts.benchmarks import StructuredCaseRow
 from llb.prompts.registry import render_text
-from llb.scoring import structured
+from llb.scoring.structured import run as structured
 from llb.scoring.aggregate import TIER_STRUCTURED
 from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
 

@@ -18,8 +18,8 @@ relation table, and the findings list still read as N independent results.
 Every count the audit prints now carries the distinct units it rests on:
 `report.md`'s headline line, every row of its relation table, the findings section, the CLI summary,
 and `summary.json` (`finding_census`, plus `relation_census` beside the unchanged `relations`
-counts). `src/llb/conflicts/census.py` computes the census and the grouping;
-`src/llb/conflicts/report_findings.py` renders the grouped findings section.
+counts). `src/llb/conflicts/grouping/census.py` computes the census and the grouping;
+`src/llb/conflicts/report/findings.py` renders the grouped findings section.
 
 - **Unit.** The CHUNK each side of a finding rests on, falling back to its document for the `hash`
   and `lexical` tiers, which compare whole documents and carry no chunk.
@@ -37,7 +37,7 @@ counts). `src/llb/conflicts/census.py` computes the census and the grouping;
 - **Ranked by stake, named by file order.** The two are deliberately separate. A group's ID comes
   from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` share, so it
   never moves. The decision TABLE is ordered by `stake_key`
-  (`src/llb/conflicts/report_findings.py`): `to decide` rows first, then rows, then top score, then
+  (`src/llb/conflicts/report/findings.py`): `to decide` rows first, then rows, then top score, then
   the id. `G3` leading the table is therefore a ranking, not a renumbering, and the row table below
   it stays in the file's order -- the order a resolution lane consumes.
 - **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
@@ -173,10 +173,10 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
   without a policy.
 
 **The layering decision.** The projection needs the resolution vocabulary and the report must not
-have it, so it is composed ABOVE both layers: `src/llb/conflicts/policy_projection.py` imports
+have it, so it is composed ABOVE both layers: `src/llb/conflicts/resolution/projection.py` imports
 `resolution_policy`, the CLI calls it and puts the plain JSON result on
-`AuditResult.policy_projection`, and `report.py` / `report_findings.py` / `report_projection.py`
-render data they never derive -- `report_projection.py` owns every way a projected count is allowed
+`AuditResult.policy_projection`, and `report.py` / `report/findings.py` / `report/projection.py`
+render data they never derive -- `report/projection.py` owns every way a projected count is allowed
 to appear, so the headline, the columns, and the prose cannot drift apart. `conflicts.report*`
 therefore still imports nothing from `conflicts.resolution_*`, which `test_policy_projection.py`
 asserts by discovering every `report*.py` and reading its import lines rather than by convention --
@@ -315,7 +315,7 @@ corpus on this host that reports a zero is the second case, so the audit reports
 beside the delta rather than leaving an operator to read "the choice is free here" off a run that
 could not have said anything else.
 
-`src/llb/conflicts/governance_coverage.py` counts it at the three levels it can be missing at,
+`src/llb/conflicts/governance/coverage.py` counts it at the three levels it can be missing at,
 using `compare_editions` -- the same orderability test that promotes a dated contradiction to
 `superseded_by`, so the precondition cannot drift from the thing it is a precondition for:
 
@@ -336,7 +336,7 @@ The middle count is what names the STAGE a run lost an orderable pair at, and it
 level exists: two corpora an operator would fix in opposite ways used to print the same structural
 line. `orderable_document_pairs` is derived from the distinct ordering KEYS rather than by
 enumerating pairs -- inclusion-exclusion over the date-key and version-key multisets
-(`document_pair_orderability`, with `edition_key` in `src/llb/conflicts/governance.py` as the
+(`document_pair_orderability`, with `edition_key` in `src/llb/conflicts/governance/editions.py` as the
 shared key function) -- so a corpus of thousands of documents stays off a quadratic path. The unit
 test pins that count against enumerating `compare_editions` over every pair of every corpus
 drawable from a governance pool covering present, absent, blank, shared, and unparseable fields.
@@ -460,10 +460,12 @@ Surfacing the corpus-side counts at ingestion time -- where the third reading sa
 
 #### Which stage lost the orderable pair
 
-The reading above names RETRIEVAL, and RETRIEVAL is four knobs at once. `governance_stage.py` picks
+The reading above names RETRIEVAL, and RETRIEVAL is four knobs at once. The stage attribution picks
 between them on ONE pair -- an orderable document pair no returned row joins -- with the stage read
-off what the run already recorded. Nothing here re-runs detection, moves a threshold, or looks at a
-pair the corpus cannot order.
+off what the run already recorded. Three modules: `governance/stage_rule.py` (the stage vocabulary
+and which stage one pair stopped at), `governance/stage_search.py` (which lost pair is named), and
+`governance/stage.py` (the attribution payload and its sentence). Nothing here re-runs detection,
+moves a threshold, or looks at a pair the corpus cannot order.
 
 | stage | what places it there | the one knob |
 | --- | --- | --- |
@@ -512,7 +514,7 @@ orderable pair it could have -- nothing is printed and nothing is invented. The 
 is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's chunks, the tier's
 comparable ordinals, and the hash tier's settled copies; below the semantic tier it is `None`, and
 that absence IS the `effort` reading (with no stage to be earliest, corpus order is the whole rule
-there). `DocumentChunks` lives in `src/llb/conflicts/document_chunks.py` and is written into
+there). `DocumentChunks` lives in `src/llb/conflicts/bundle/document_chunks.py` and is written into
 `summary.json` so the reading survives the store
 ([recomputing the stage from a finished bundle](#recomputing-the-stage-from-a-finished-bundle));
 `tests/llb/conflicts/test_governance_stage.py` pins each stage, the earliest-stage rule, its cost
@@ -617,7 +619,7 @@ DIFFERENT question while looking like the same recompute, which is what made thi
 the granularity rules `make compare-conflict-granularity` re-scores from rows alone.
 
 So the run writes both of them down beside the coverage they explain, as
-`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/bundle_record.py` builds it,
+`stage_attribution_inputs` in `summary.json` (`src/llb/conflicts/bundle/record.py` builds it,
 `stage_replay.py` re-reads it;
 `AuditResult.stage_inputs` carries it). The stage was the FIRST reading to get that treatment and is
 no longer the only one: which other questions a finished bundle answers alone, which it refuses, and
@@ -698,7 +700,7 @@ guarantee that, so a re-sorted audit cannot republish a store generation that ch
 ### The `groups.json` sidecar
 
 The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
-`findings.jsonl` (`src/llb/conflicts/group_artifact.py`). Each group carries `group_id`, `rows`,
+`findings.jsonl` (`src/llb/conflicts/grouping/artifact.py`). Each group carries `group_id`, `rows`,
 `finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and `top_score`; the
 document also carries the census and `source_findings_sha256`, which pins it to the exact rows on
 disk and equals the `source_findings_sha256` the resolution plan records.
@@ -752,8 +754,8 @@ audit states which one it quotes and why.
 | `transitive` (quoted) | rows joined by the transitive closure over a shared unit | a PARTITION: every row is in exactly one group, so the sizes sum to the row count |
 | `shared_unit` | one unit that more than one row rests on, plus one group per row that shares no unit | a COVER: a row carrying two shared units joins two groups |
 
-`src/llb/conflicts/granularity.py` computes both (`QUOTED_RULE` names the quoted one, and every
-renderer reads it from there); `report_granularity.py` renders them. Two units that join exactly
+`src/llb/conflicts/grouping/granularity.py` computes both (`QUOTED_RULE` names the quoted one, and every
+renderer reads it from there); `report/granularity.py` renders them. Two units that join exactly
 the same rows are ONE group -- a left and a right chunk that only ever appear together are one
 piece of evidence seen from both ends. Every shared-unit group is a subset of one transitive group
 by construction, so the cover REFINES the partition and the per-group split adds up:

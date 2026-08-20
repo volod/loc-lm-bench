@@ -20,8 +20,8 @@ from llb.bench.text_analysis.model import (
 )
 from llb.bench.text_analysis.persist import persist_text_analysis_run
 from llb.bench.text_analysis.scoring import run_judged_quality, score_doc_batch
-from llb.scoring import text_analysis as ta
-from llb.scoring.text_analysis_similarity import embedder_similarity
+from llb.scoring.text_analysis import run as ta
+from llb.scoring.text_analysis.similarity import embedder_similarity
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS
 
 

@@ -20,7 +20,7 @@ from llb.review.adapters import (
 )
 from llb.review.registry import open_review
 from llb.scoring.external_rag.records import ensure_human_fields, write_jsonl
-from llb.scoring.external_rag_common import HUMAN_DECISION_ACCEPT
+from llb.scoring.external_rag.common import HUMAN_DECISION_ACCEPT
 from llb.scoring.external_rag_session.records import _set_decision as set_external_decision
 
 

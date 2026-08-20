@@ -1,7 +1,7 @@
 """Noise-floor sections for fusion evidence reports."""
 
 from llb.rag.fusion_evidence.models import FusionEvidenceReport
-from llb.rag.noise_floor_report import render_noise_floor_markdown
+from llb.rag.noise_floor.report import render_noise_floor_markdown
 
 
 def floor_section(report: FusionEvidenceReport) -> list[str]:

@@ -58,7 +58,7 @@ def _extraction_adapter(extractor: str, spacy_model: str) -> Any:
     """The opt-in spaCy extraction adapter, or None for the default LLM extractor."""
     if extractor != "spacy":
         return None
-    from llb.prep.ontology.spacy_adapter import SpacyExtractionAdapter
+    from llb.prep.ontology.endpoints.spacy_adapter import SpacyExtractionAdapter
 
     return SpacyExtractionAdapter(model=spacy_model)
 

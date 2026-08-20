@@ -1,35 +1,42 @@
-"""Benchmark category commands, each rendered under its own Tier.
+"""Benchmark commands, grouped by the lane each one drives.
 
-Importing each submodule registers its @app.command handlers on the shared Typer app.
+Importing each submodule registers its @app.command handlers on the shared Typer app, so this
+file is the registration list: `categories` for the non-agentic benchmarks, and one package per
+agentic lane (`context`, `loop`, `memory`, `knowledge_cutoff`) mirroring `llb.bench`.
 """
 
-from llb.cli.bench import (  # noqa: F401
-    category_agentic,
-    category_agentic_compare,
-    category_agentic_controller_authority,
-    category_agentic_loop_feedback_adaptation,
-    category_agentic_loop_feedback_authority,
-    category_agentic_loop_feedback_generalization,
-    category_agentic_loop_feedback_transfer,
-    category_agentic_loop_policy,
-    category_agentic_memory_boundary_surface,
-    category_agentic_memory_crossover_restatement,
-    category_agentic_memory_fold_step,
-    category_agentic_memory_replication,
-    category_agentic_memory_repeated_fold,
-    category_agentic_memory_summary_cap,
-    category_agentic_memory_transfer,
-    category_agentic_memory_trigger_collapse,
-    category_agentic_memory_window_elision,
-    category_agentic_memory_window_elision_transfer,
-    category_agentic_policy_change_audit,
-    category_agentic_compact_vs_cap,
-    category_agentic_context_sweep,
-    category_analysis,
-    category_structured,
-    category_tasks,
-    category_tooling,
-    knowledge_cutoff,
-    knowledge_cutoff_ua,
-    misc,
+from llb.cli.bench import misc  # noqa: F401
+from llb.cli.bench.categories import (  # noqa: F401
+    agentic,
+    agentic_compare,
+    analysis,
+    structured,
+    tasks,
+    tooling,
+)
+from llb.cli.bench.context import (  # noqa: F401
+    compact_vs_cap,
+    context_sweep,
+    policy_change_audit,
+)
+from llb.cli.bench.knowledge_cutoff import run, ua  # noqa: F401
+from llb.cli.bench.loop import (  # noqa: F401
+    controller_authority,
+    feedback_adaptation,
+    feedback_authority,
+    feedback_generalization,
+    feedback_transfer,
+    policy,
+)
+from llb.cli.bench.memory import (  # noqa: F401
+    boundary_surface,
+    crossover_restatement,
+    fold_step,
+    repeated_fold,
+    replication,
+    summary_cap,
+    transfer,
+    trigger_collapse,
+    window_elision,
+    window_elision_transfer,
 )

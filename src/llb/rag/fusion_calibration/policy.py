@@ -2,7 +2,7 @@
 
 from llb.rag.fusion_calibration.models import PolicyResult, PolicySpec, RouteQuality
 from llb.rag.fusion_evidence.stats import bootstrap_ratio
-from llb.rag.fusion_routing import HeuristicPolicy
+from llb.rag.fusion.routing import HeuristicPolicy
 
 
 def route_quality(

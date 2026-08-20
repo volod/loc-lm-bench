@@ -18,7 +18,7 @@ from llb.rag.query_prep.base import (
 from llb.rag.query_prep.glossary import Glossary
 from llb.rag.query_prep.pipeline import QueryPrep
 
-# (question, gold source spans) -- the per-item A/B input (matches `llb.rag.compare.CompareItem`).
+# (question, gold source spans) -- the per-item A/B input (matches `llb.rag.comparison.run.CompareItem`).
 AbItem = tuple[str, list[Any]]
 # A prepared retriever seam: structured query plan + k -> ranked chunk records.
 RetrieveFn = Callable[[Any, int], list[Any]]

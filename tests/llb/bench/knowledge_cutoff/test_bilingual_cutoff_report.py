@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from bilingual_cutoff_helpers import accept_all, loaded_events, translation
+from tests.llb.bench.knowledge_cutoff.bilingual_cutoff_helpers import (
+    accept_all,
+    loaded_events,
+    translation,
+)
 from llb.bench.knowledge_cutoff.paired import load_reviewed_lanes, run_bilingual_cutoff
 from llb.bench.knowledge_cutoff.paired_report import paired_statistics
 from llb.bench.knowledge_cutoff.translation_workflow import draft_translation_bundle

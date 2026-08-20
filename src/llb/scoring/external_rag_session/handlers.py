@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.scoring.external_rag.records import clear_human_fields, write_jsonl
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_NOTES_FIELD,
     ExternalRagResult,

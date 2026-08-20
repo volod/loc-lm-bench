@@ -3,7 +3,7 @@
 from typing import Any, cast
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.lexical import weighted_rrf_fuse
+from llb.rag.vector_store.lexical import weighted_rrf_fuse
 from llb.rag.query_prep.base import QueryPrepResult
 
 

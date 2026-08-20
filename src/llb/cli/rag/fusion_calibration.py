@@ -50,7 +50,7 @@ def calibrate_fusion_routing_cmd(
         parse_thresholds,
         policy_grid,
     )
-    from llb.rag.fusion_spans import resolve_span_identity
+    from llb.rag.fusion.spans import resolve_span_identity
 
     cfg = load_config(config, goldset_path=goldset)
     try:

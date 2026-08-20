@@ -43,12 +43,12 @@ system-prompt candidate. This does not change GraphRAG retrieval or span scoring
 out of retrieved chunks, its graph-store digest and tree knobs are recorded in prompt-system
 provenance, and the candidate is evaluated against its exact no-tree control before pinning.
 
-`src/llb/rag/compare.py`
+`src/llb/rag/comparison/run.py`
 : Compares FAISS, both graph strategies, and both graph-vector fused strategies through the shared
   `.retrieve` seam. When an ontology bundle's `needle_items.jsonl` sidecar is available, the report
   also emits question-type slices, including explicit `comparative` and `multi-hop` rows.
 
-`src/llb/rag/fusion.py`
+`src/llb/rag/fusion/fuse.py`
 : Implements `FusedRetriever`. It queries the vector store (dense or hybrid) and `GraphStore` for
   `lane_depth(graph_fusion_candidates, k)` candidates each, maps both rankings onto one candidate
   set, fuses them with n-way weighted reciprocal-rank fusion, cuts to `k`, and preserves the
@@ -58,7 +58,7 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   weight/depth/identity/threshold sweep can reuse the production rule over cached lane rankings;
   `lane_agreement` counts the candidates both lanes vouch for.
 
-`src/llb/rag/fusion_spans.py`
+`src/llb/rag/fusion/spans.py`
 : The span-identity policies -- `exact` (identical `(doc_id, char_start, char_end)`) and `overlap`
   (fold a graph span into the vector chunk that contains it) -- plus the merge rule, its
   configurable threshold, its invariants, and the `LaneCandidates` view both lanes are ranked over.

@@ -6,7 +6,7 @@
 knowledge-cutoff benchmark against local Ollama, vLLM, llama.cpp, or an already running local
 OpenAI-compatible endpoint. The implementation lives in
 `src/llb/bench/knowledge_cutoff/`, with Typer wiring in
-`src/llb/cli/bench/knowledge_cutoff.py` and Make orchestration in
+`src/llb/cli/bench/knowledge_cutoff/run.py` and Make orchestration in
 `make/eval/knowledge-cutoff.mk`.
 
 The loader accepts an operator JSONL file or the `events`/`train` configuration of
@@ -37,7 +37,7 @@ The source-aligned Ukrainian workflow uses direct owner modules: `translation_mo
 source-bound validation, `translation_artifacts.py` for draft/worksheet/manifest persistence, and
 `translation_workflow.py` for resumable drafting. Review/freeze and paired evaluation live in
 `translation_review.py`, `paired.py`, and `paired_report.py`, with commands in
-`src/llb/cli/bench/knowledge_cutoff_ua.py`. The Make entrypoints are
+`src/llb/cli/bench/knowledge_cutoff/ua.py`. The Make entrypoints are
 `knowledge-cutoff-ua-draft`, `knowledge-cutoff-ua-review`, `knowledge-cutoff-ua-revise`,
 `knowledge-cutoff-ua-validate`, `knowledge-cutoff-ua-freeze`,
 `bench-knowledge-cutoff-bilingual`, and the interactive umbrella target

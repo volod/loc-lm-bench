@@ -1,6 +1,6 @@
 """Ukrainian romanization and mixed-script normalization tables."""
 
-from llb.scoring.security_cases import CYRILLIC_TO_LATIN_CONFUSABLES
+from llb.scoring.security.cases import CYRILLIC_TO_LATIN_CONFUSABLES
 
 CYRILLIC_TO_LATIN: dict[str, str] = {
     "а": "a",

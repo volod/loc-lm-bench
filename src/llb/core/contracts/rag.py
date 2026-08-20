@@ -46,8 +46,10 @@ class RagStoreMeta(TypedDict):
     governance_fields: NotRequired[list[str]]
     doc_fingerprints: NotRequired[dict[str, str]]
     refreshed_from: NotRequired[str]
-    collapse_duplicates: NotRequired[bool]  # duplicate chunk collapse on/off (llb.rag.duplicates)
-    duplicate_tier: NotRequired[str]  # when two texts are one passage (llb.rag.duplicate_tiers)
+    collapse_duplicates: NotRequired[
+        bool
+    ]  # duplicate chunk collapse on/off (llb.rag.duplicates.collapse)
+    duplicate_tier: NotRequired[str]  # when two texts are one passage (llb.rag.duplicates.tiers)
     duplicates: NotRequired[JsonObject]  # its measured DuplicateStats, collapsed or not
 
 
@@ -69,7 +71,7 @@ RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]
 
 
 class RetrievedOccurrence(TypedDict):
-    """One other place a retrieved chunk's text appears (see `llb.rag.duplicates`)."""
+    """One other place a retrieved chunk's text appears (see `llb.rag.duplicates.collapse`)."""
 
     doc_id: str
     char_start: int

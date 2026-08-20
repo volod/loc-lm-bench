@@ -53,14 +53,14 @@ sidecar-bearing PDF corpora, and `table` only differs on corpora carrying markdo
 Chunker comparison: `make compare-retrieval CHUNK_STRATEGIES=page,heading,late,markdown,semantic`
 (`compare-retrieval --strategies ...`) builds one flat FAISS store per strategy over the SAME corpus
 + pinned embedder (persisted under `$DATA_DIR/llb/rag/<strategy>/`) and ranks them by recall@k / MRR
-on the gold set, so the best chunker is demonstrated per corpus, never assumed. Add `NOISE_FLOOR=1`
-to learn how much of a chunker delta the corpus can actually resolve ([measurement
-floor](retrieval-metrics.md#measurement-floor---noise-floor)); the paired delta and verdict are
-always reported as described under [paired lane
-uncertainty](retrieval-metrics.md#paired-lane-uncertainty-and-verdict). Tests:
-`tests/llb/rag/test_chunking_strategies.py` (offset round-trips, page-boundary alignment on the
-committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling math and
-fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
+  on the gold set, so the best chunker is demonstrated per corpus, never assumed. Add
+  `NOISE_FLOOR=1` to learn how much of a chunker delta the corpus can actually resolve ([measurement
+  floor](retrieval-metrics.md#measurement-floor---noise-floor)); the paired delta and verdict are
+  always reported as described under [paired lane
+  uncertainty](retrieval-metrics.md#paired-lane-uncertainty-and-verdict). Tests:
+  `tests/llb/rag/chunking/test_chunking_strategies.py` (offset round-trips, page-boundary alignment
+  on the committed `samples/pdf_pages` sidecar fixture, heading packing/breadcrumbs, late pooling
+  math and fallbacks) plus the pre-existing `test_chunking.py`/`test_page_metadata.py` suites.
 
 Durable evidence, full corpus (2026-07-10, chunking-comparison-full-corpus on the CUDA host,
 outside quick CI): all seven strategies over the verified 44-item quickstart-PDF accepted goldset
@@ -213,13 +213,13 @@ into TABLE regions and everything else:
   `sentence`;
 - in `parent_child` mode a child re-chunks its PARENT'S text, so the header span it finds is
   parent-local; `shifted_metadata` moves it with the child's own offsets (`_build_children` in
-  `src/llb/rag/store_build.py`), because a recorded span that did not move would point at
+  `src/llb/rag/vector_store/build.py`), because a recorded span that did not move would point at
   unrelated text.
 
 `table` is a first-class `RunConfig.strategy` value (`Strategy` in `src/llb/core/config_fields.py`),
 so `make build-index CHUNK_STRATEGY=table`, `CONFIG=` YAML, and the tuner all reach it.
 
-Tests: `tests/llb/rag/test_chunking_table.py` -- registration in `STRATEGIES` and
+Tests: `tests/llb/rag/chunking/test_chunking_table.py` -- registration in `STRATEGIES` and
 `EXTENDED_STRATEGIES`, offset round-trips and the `size` cap at both a splitting and a
 non-splitting size, no boundary inside a row, row-boundary-aligned blocks, the breadcrumb of each
 table's own enclosing heading, header spans that resolve to the real header row, header text never
@@ -418,7 +418,7 @@ a +/-0.000 floor ([measurement floor](retrieval-metrics.md#measurement-floor---n
 rows above are the pre-collapse state of this corpus, kept because they are what the cap verdict was
 measured on.
 
-Tests: `tests/llb/rag/test_chunking.py` covers the cap over the committed
+Tests: `tests/llb/rag/chunking/test_chunking.py` covers the cap over the committed
 `samples/chunking/goods_table_uk.md` fixture (a heading + markdown-table block with no sentence
 terminator, 613 chars) -- every strategy stays within `size`, stays offset-exact, loses no
 non-whitespace character, and the fixture itself is guarded against gaining a terminator.

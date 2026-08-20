@@ -3,7 +3,7 @@
 from llb.eval import common
 from llb.eval import graph
 from llb.executor.cases import ScoreOptions, score_case
-from test_groundedness import _item, _state
+from tests.llb.scoring.test_groundedness import _item, _state
 
 
 def test_build_messages_cited_uses_citation_prompt():

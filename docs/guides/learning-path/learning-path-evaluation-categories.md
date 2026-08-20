@@ -157,7 +157,7 @@ objective floor.
   <https://en.wikipedia.org/wiki/F-score>.
 
 ### In this repo
-`src/llb/scoring/text_analysis.py` (the matcher), the `PlantedLabelRecord` / `SubtaskScore`
+`src/llb/scoring/text_analysis/run.py` (the matcher), the `PlantedLabelRecord` / `SubtaskScore`
 contracts in `src/llb/core/contracts/benchmarks.py`, and the signed-off design at
 [`docs/design/text-analysis-schema.md`](../../design/text-analysis-schema.md). The cosine similarity
 is injected, so the engine is pure and unit-tested without the embedder.
@@ -202,7 +202,7 @@ Profile](https://www.nist.gov/publications/artificial-intelligence-risk-manageme
   deduplicate, pin, license-check, and Ukrainian-adapt.
 
 ### In this repo
-Planned. Reuses `src/llb/eval/`, the planter in `src/llb/prep/frontier.py`,
+Planned. Reuses `src/llb/eval/`, the planter in `src/llb/prep/frontier/client.py`,
 `executor/isolation.py`, the manifest, and confidence-interval reporting under a new security tier.
 Fully objective -- no human dependency -- so it parallelizes with the tool-use category.
 
@@ -403,7 +403,7 @@ per-GPU-class rows as operators get access to new hosts.
 
 ### How to understand it
 These are *generalizations of existing seams*, not new science: per-source quant metadata is the
-seam for multi-backend; the RAG-store interface (`rag/store.py`) is the seam for multi-vector-store;
+seam for multi-backend; the RAG-store interface (`rag/vector_store/store.py`) is the seam for multi-vector-store;
 the KV-cache-aware planner generalizes to other GPU classes; and `run-eval --telemetry` records
 mean power plus quality-per-watt when `nvidia-smi` is reachable. Use the
 [platform matrix guide](../benchmarking/platform-matrix.md) for the runnable backend/power flow.
@@ -417,7 +417,7 @@ mean power plus quality-per-watt when `nvidia-smi` is reachable. Use the
   performance-per-resource is reported defensibly.
 
 ### In this repo
-`src/llb/rag/store.py` (vector-store seam), `src/llb/backends/` (multi-backend),
+`src/llb/rag/vector_store/store.py` (vector-store seam), `src/llb/backends/` (multi-backend),
 `backends/planner.py` (GPU classes), and `backends/telemetry.py` (power telemetry).
 
 ---
@@ -498,7 +498,7 @@ graph-vs-vector and local-vs-global results are comparable.
   [spaCy entity linking](https://spacy.io/usage/linguistic-features#entity-linking) concept page.
 
 ### In this repo
-Planned. A reuse-first store (DuckDB or NetworkX+FAISS) behind `src/llb/rag/store.py`, ingesting
+Planned. A reuse-first store (DuckDB or NetworkX+FAISS) behind `src/llb/rag/vector_store/store.py`, ingesting
 `src/llb/prep/ontology/` extraction, with local-k-hop + global-community retrieval; the eval graph,
 scoring, isolation, and board are reused unchanged.
 

@@ -3,7 +3,7 @@
 from llb.executor.isolation import (
     run_sweep,
 )
-from test_isolation import cfg, gpu
+from tests.llb.executor.test_isolation import cfg, gpu
 
 
 def test_run_sweep_records_cell_failure_and_continues(tmp_path):

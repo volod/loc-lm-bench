@@ -5,7 +5,7 @@ from typing import cast
 
 from llb.goldset.schema import GoldItem
 from llb.prep.ontology.constants import MULTI_HOP_NEAR_DUP_ANSWER_COSINE_THRESHOLD
-from llb.prep.ontology.dedup import QuestionEmbedder
+from llb.prep.ontology.extraction.dedup import QuestionEmbedder
 from llb.prep.ontology.models import ItemLabels
 
 
@@ -60,7 +60,7 @@ def deduplicate_drafts(
     embedder: QuestionEmbedder | None,
 ) -> tuple[list[GoldItem], dict[str, ItemLabels], dict[str, object]]:
     """Apply flat and multi-hop duplicate policies and prune labels for rejected rows."""
-    from llb.prep.ontology.dedup import (
+    from llb.prep.ontology.extraction.dedup import (
         E5QuestionEmbedder,
         NearDuplicateFilter,
         load_prior_items,

@@ -28,7 +28,7 @@ Step-by-step, with the gate each stage must clear (each links to its detailed se
    `[HUMAN]`: `make verify-sample` -> `make verify-review` -> `make verify-accept`.
    Gate: reject rate within `VERIFY_TOLERANCE`; only accepted items may flip.
 5. [Flip via the ledger](#44-flip-via-the-ledger-never-hand-edit-the-boolean):
-   `python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset.jsonl`.
+   `python -m llb.prep.squad.ingest ... --verified-goldset <bundle>/accepted/goldset.jsonl`.
    Never hand-edit the `verified` boolean.
 6. [Calibrate the judge](#5-if-the-run-is-judged-calibrate-the-judge) `[HUMAN, judged runs
    only]`: `make calibration-run` -> `calibration-rate` -> `calibration-score`.
@@ -247,7 +247,7 @@ an accepted-ledger at `$BUNDLE/accepted/` (accepted items, `verified=true`, + th
 **replacement** through the ingester, so a reused id can never certify changed content:
 
 ```
-python -m llb.prep.ingest_squad --squad-json <source> --verified-goldset $BUNDLE/accepted/goldset.jsonl
+python -m llb.prep.squad.ingest --squad-json <source> --verified-goldset $BUNDLE/accepted/goldset.jsonl
 ```
 
 human verification gate is **per-bundle and pull-based**: run it on each bundle as its

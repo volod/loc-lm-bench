@@ -80,7 +80,7 @@ wants, and a key held outside the repo authenticates the operator who ran the re
 than the run, while adding key distribution to a check that must work in a fresh clone with nothing
 configured.
 
-The bytes must also hold together INTERNALLY. `agentic_published_aggregate_consistency.py` binds
+The bytes must also hold together INTERNALLY. `published_value/aggregate_consistency.py` binds
 each supported field pointer to the production arithmetic that created it: an interpolated guard is
 re-run through `depth_surface_row` over the aggregate's scored cells; a fold-step boundary is rebuilt
 through `step_rows` and `depth_fold_row` from its cells, compact share, measured prompt sequence, and
@@ -99,7 +99,7 @@ run of the same study is refused even where its cited field happens to agree -- 
 comparison structurally cannot see.
 
 Growth is bounded rather than open-ended, since these aggregates accumulate with every study that
-adopts the seam. Three policies keep it so, in `agentic_published_value_fixture.py`: a
+adopts the seam. Three policies keep it so, in `published_value/fixture.py`: a
 `MAX_AGGREGATE_BYTES` (256 KiB) per-artifact cap refusing to commit an analysis artifact too big to
 carry -- publish the value out of a narrower one instead; a `MAX_COMMITTED_BYTES` (2 MiB) budget
 across the whole committed tree, asserted in CI so the policy has teeth rather than being advice;
@@ -111,7 +111,7 @@ The pruned tree is SHARED, so "still cites" is the union over every design that 
 values rather than the citations of whichever design a refresh was handed. That distinction is
 invisible with one study and is evidence loss with two: refreshing through either design would
 delete the other study's committed aggregates, and the deletion reads as a clean prune rather than
-as a retirement. `agentic_published_value_registry.py` therefore holds the registry the refresh
+as a retirement. `published_value/registry.py` therefore holds the registry the refresh
 walks -- `PUBLISHED_VALUE_DESIGNS`, one entry per publishing design carrying its in-repo path and
 the reader that names the artifacts its values resolve against, the same shape as
 `AUDITED_DESIGN_PATHS` in the policy audit and for the same reason: two code paths that disagree
@@ -170,7 +170,7 @@ the operator restated it, re-ran the refresh, and met the next -- the loop above
 It now resolves every crossover, collects, and refuses once with all of them named and counted
 against the total (`3/6 published values do not resolve out of the evidence the design cites: ...`),
 so restating a study is one design edit. The accumulator is
-`agentic_published_value_collection.py`, study-agnostic beside the resolver for the same reason: the
+`published_value/collection.py`, study-agnostic beside the resolver for the same reason: the
 next design to publish resolvable values inherits the behavior instead of re-deriving it.
 
 Collecting forces two distinctions that stopping at the first refusal never had to make. The derived
@@ -204,8 +204,8 @@ entirely when the value is measured, so silence is the right default and an empt
 rather than read as "measured". The identity is `(study_kind, depth, form)` -- the form is part of it
 because one study can publish a guard and the boundary of the step it sits in at the same depth, and
 a declaration naming only the depth would be ambiguous exactly where the edge must be exact.
-`agentic_published_value_derivation.py` reads one value's declaration and
-`agentic_published_value_derivation_graph.py` walks the design's whole set, validating every
+`published_value/derivation.py` reads one value's declaration and
+`published_value/derivation_graph.py` walks the design's whole set, validating every
 declaration against the design that publishes the source (a source the design does not publish, a
 value that declares itself, a cycle, and two rows claiming one identity are all refused fail-fast,
 beside the other shape rules); `CollectedRefusals` carries the resulting graph:
@@ -227,7 +227,7 @@ written to agree. So the design names its arithmetic beside its sources, and bot
 "operation": "trigger_over_own_cap_peak"
 ```
 
-`agentic_published_value_operations.py` is the registry the name resolves through -- a table of pure
+`operations/registry.py` is the registry the name resolves through -- a table of pure
 functions in the shape of `PUBLISHED_VALUE_DESIGNS`, each stating how many sources of which FORM it
 is computed over, which of the value's own stated fields it reads (`compact_share`), and whether it
 also reads the figure the value's own aggregate measured (the cap peak). Those are checked against
@@ -252,11 +252,11 @@ the arithmetic: a body reading a stated field it did not declare raised a `KeyEr
 reader got there first rather than refusing the design that failed to state it; a declaration listing
 an input the body never reads made every adopting design carry a number for nothing; and an operation
 no registered design names was arithmetic nobody exercises, where a wrong quotient would sit until
-the first study published out of it. `agentic_published_value_operation_audit.py` closes the loop in
+the first study published out of it. `operations/audit.py` closes the loop in
 CI, on the act of REGISTERING rather than at the first adoption.
 
 It closes it by CALLING each operation, not by reading its source.
-`agentic_published_value_operation_probe.py` builds inputs that answer exactly the declaration and
+`operations/probe.py` builds inputs that answer exactly the declaration and
 nothing else -- a stated mapping holding only the declared fields, a source tuple of only the
 declared length, and a measurement only when `reads_own_measurement` says so -- and every input
 records the operation looking at it (the sources and the measurement are `float` subclasses recording
@@ -287,7 +287,7 @@ shipped `trigger_over_own_cap_peak` declares two points (a half share over a 102
 quarter share over 4096) that differ in every declared input.
 
 The audit also measures the residual the set used to leave silent.
-`agentic_published_value_operation_branches.py` reserves an available `sys.monitoring` tool ID for
+`operations/branches.py` reserves an available `sys.monitoring` tool ID for
 each probe call, enables the `BRANCH` event only on the operation's own compute code object, and
 unions the source/destination arcs reached across the declared set. `OperationRegistryReport`
 carries one `OperationUnreachedBranches` record beside each entry in `checked`: an explicit missed
@@ -302,7 +302,7 @@ of scope: that is a solver, while the probe set remains the readable declaration
 Shipped policy fields are a fourth operation input, separate from sources, stated row fields, and a
 value's own measurement. `DerivationOperation.policy_fields` names the `ContextPolicy` attributes
 the arithmetic reads, and production `apply` supplies the live policy. The registry self-check in
-`agentic_published_value_operation_policy.py` re-runs every probe after perturbing each of the six
+`operations/policy.py` re-runs every probe after perturbing each of the six
 auditable fields with the same plausible neighbour the policy interaction audit uses. A field the
 operation declares must change its `DerivedValue` at some point; a field it does not declare must
 change it at none. Both a missing dependency and an unused one are refusals, so the pin gate can use
@@ -332,7 +332,7 @@ the committed design names both:
 "reading": "rounded_extent_and_membership"
 ```
 
-`agentic_published_value_readings.py` registers the comparison over the design's published
+`published_value/readings.py` registers the comparison over the design's published
 statement. A bound reading validates and normalizes the statement fields, gives equivalent rows a
 stable grouping identity, checks whether the original re-derived values resolve that statement,
 and checks whether one restated value still supports it. Both checks return `holds` plus the phrase
@@ -425,7 +425,7 @@ and the exact declared source that was absent. That reading persists `objective_
 unresolved row contributes no successful reliability result, so a grid with no bracketed crossing
 cannot present an uncomputed quotient as an invariance result. The form, reading, operator, and
 manifest regression is in
-`tests/llb/bench/test_agentic_memory_crossover_restatement_forms.py`; run the standard validation
+`tests/llb/bench/memory/test_agentic_memory_crossover_restatement_forms.py`; run the standard validation
 with `make test`.
 
 ## Implementation map

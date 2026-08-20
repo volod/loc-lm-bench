@@ -18,9 +18,9 @@ make bench-agentic-context-sweep MODEL=<model> BACKEND=<backend> \
   AGENT_CONTEXT_SWEEP_TASKS=<tasks.json> AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=8192
 ```
 
-Core locations: `src/llb/bench/agentic_context_sweep.py` (grids, pairing, verdicts),
-`src/llb/cli/bench/category_agentic_context_sweep.py`, CI span arithmetic in
-`tests/llb/bench/test_agentic_context_sweep.py`. Bundles land under
+Core locations: `src/llb/bench/context_policy/sweep.py` (grids, pairing, verdicts),
+`src/llb/cli/bench/context/context_sweep.py`, CI span arithmetic in
+`tests/llb/bench/context_policy/test_agentic_context_sweep.py`. Bundles land under
 `$DATA_DIR/agentic-context-sweep/<run>/` (one per setting plus a summary manifest).
 
 CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
@@ -67,7 +67,7 @@ make bench-agentic-context-keep-long MODEL=<model> BACKEND=<backend> \
   AGENT_CONTEXT_SWEEP_MAX_MODEL_LEN=8192
 ```
 
-Core locations: `src/llb/bench/agentic_long_transcript.py` (medium-search shrink + synthetic
+Core locations: `src/llb/bench/context_policy/long_transcript.py` (medium-search shrink + synthetic
 pipelines for CI), `make bench-agentic-context-keep-long`, axes filter
 `AGENT_CONTEXT_SWEEP_AXES=keep_last_n`.
 

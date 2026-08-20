@@ -36,17 +36,17 @@ requested depth, so the top 10 of a depth-200 pass is not the top 10 of a k=10 r
 report says which of the two each table is.
 
 **`covered` is the served outcome, not a deep-pass rank.** The same re-fusion that separates the
-histogram from the curve also separates them item by item, in both directions: a hop can sit
-inside the deep pass's top 10 and outside a k=10 retrieval, or the reverse. `diagnose_item` in
+histogram from the curve also separates them item by item, in both directions: a hop can sit inside
+the deep pass's top 10 and outside a k=10 retrieval, or the reverse. `diagnose_item` in
 `src/llb/rag/multihop_probe/diagnose.py` therefore takes the item's measured `all-spans@k` at the
 operating budget and lets that alone decide `covered`, so the diagnosis ledger and the coverage
 curve can never disagree about which items were served; the other three diagnoses stay rank-based,
-because they answer "what would fix the miss", which is a question about depth rather than about
-the cut. Reading `covered` off the deep ranks instead had counted one factoid item covered that a
-k=10 retrieval missed (the 95-item ledger is 45/34/9/7, not 46/33/9/7) and, on the paired lane,
-had swapped two multi-hop items between `covered` and `budget` against what k=10 actually
-returned. Three fake-store cases in `tests/llb/rag/test_multihop_hop_probe.py` pin both directions
-of the divergence and the ledger/curve agreement.
+because they answer "what would fix the miss", which is a question about depth rather than about the
+cut. Reading `covered` off the deep ranks instead had counted one factoid item covered that a k=10
+retrieval missed (the 95-item ledger is 45/34/9/7, not 46/33/9/7) and, on the paired lane, had
+swapped two multi-hop items between `covered` and `budget` against what k=10 actually returned.
+Three fake-store cases in `tests/llb/rag/multihop_probe/test_multihop_hop_probe.py` pin both
+directions of the divergence and the ledger/curve agreement.
 
 ```bash
 make probe-multihop-hops CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> SPLIT= \
@@ -71,10 +71,10 @@ and subqueries stay in JSON while the Markdown ledger records their count. The c
 `prepared.py` drives the reusable query plan, `diagnose.py` classifies, `conversion.py` pairs the
 cohorts, and the two report modules render ASCII Markdown. The CLI shares model-endpoint resolution
 with `validate-retrieval` through `src/llb/cli/rag/query_prep_endpoint.py`. Fake stores and a fake
-generator cover the lane in `tests/llb/rag/test_multihop_query_prep_probe.py` and
-`tests/llb/rag/test_multihop_query_prep_cli.py`. Both raw and paired commands now fail before
-loading a store when the requested focus slice is empty, rather than reporting zero failures as
-full coverage.
+generator cover the lane in `tests/llb/rag/multihop_probe/test_multihop_query_prep_probe.py` and
+`tests/llb/rag/multihop_probe/test_multihop_query_prep_cli.py`. Both raw and paired commands now
+fail before loading a store when the requested focus slice is empty, rather than reporting zero
+failures as full coverage.
 
 ## Is the both-hops ceiling a budget or a query problem?
 

@@ -1,7 +1,7 @@
 """Restore the raw query's letter case onto the processed query for the dense lane.
 
 `normalize` casefolds the WHOLE query because the lexical lane matches on a folded surface form
-(`llb.rag.lexical.normalize_token`), but the dense encoder is case-sensitive: an embedder never
+(`llb.rag.vector_store.lexical.normalize_token`), but the dense encoder is case-sensitive: an embedder never
 asked for the fold, and it pays for it on queries the noise class never touched. The
 `retrieve_queries` seam already carries separate dense and lexical text, so the fold can stay on
 the lexical side alone.
@@ -14,7 +14,7 @@ a restored token differs from the processed token in capitalization and nothing 
 import difflib
 import re
 
-from llb.rag.lexical import _TOKEN_RE
+from llb.rag.vector_store.lexical import _TOKEN_RE
 
 
 def apply_case_pattern(source: str, target: str) -> str:

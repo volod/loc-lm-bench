@@ -4,7 +4,7 @@ from llb.backends.resolver import (
     ResolverProbes,
     resolve,
 )
-from test_resolver import BIG, HOST_RAM, HOST_VRAM, SMALL
+from tests.llb.backends.test_resolver import BIG, HOST_RAM, HOST_VRAM, SMALL
 
 
 def test_resolve_marks_unavailable_source_not_runnable():

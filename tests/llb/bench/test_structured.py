@@ -3,7 +3,7 @@
 import pytest
 
 from llb.bench import structured as bench_st
-from llb.scoring import structured
+from llb.scoring.structured import run as structured
 from llb.scoring.aggregate import TIER_STRUCTURED
 
 SCHEMA = {

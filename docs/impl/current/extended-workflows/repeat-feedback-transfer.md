@@ -12,7 +12,7 @@ paired token/wall cost ceilings. `make bench-agentic-loop-repeat-feedback` runs 
 
 `src/llb/bench/agentic/loop_policy.py` owns the validated feedback variants, while
 `src/llb/bench/agentic/episode.py` records whether a suppressed repeat is followed by a changed
-tool call or final answer. `src/llb/bench/agentic_loop_feedback.py` reports that response rate
+tool call or final answer. `src/llb/bench/loop_feedback/run.py` reports that response rate
 overall and per task family, pairs each localized cell directly against `noop/current`, and admits
 a family-level recommendation only when activation, material separated completion, prompt-token,
 and wall-time gates all pass. Each cell id and manifest includes the feedback variant;
@@ -59,11 +59,11 @@ The eight cell bundles are:
 - Qwen `noop/bilingual`:
   `.data/agentic-loop-policy/20260731T124057.667031Z-a3be207406a8/`
 
-`tests/llb/bench/test_agentic_loop_feedback.py` checks exact grid construction, design validation,
-redirect telemetry, prospective decision gates, rendered reporting, persistence, and the committed
-design/task contract. The run path was also exercised end to end on both predeclared local models.
-Validation on 2026-07-31: `make ci` passed 2,463 tests with 45 opt-in/slow tests deselected, and
-`make lint-md` passed.
+`tests/llb/bench/loop_feedback/test_agentic_loop_feedback.py` checks exact grid construction, design
+validation, redirect telemetry, prospective decision gates, rendered reporting, persistence, and the
+committed design/task contract. The run path was also exercised end to end on both predeclared local
+models. Validation on 2026-07-31: `make ci` passed 2,463 tests with 45 opt-in/slow tests deselected,
+and `make lint-md` passed.
 
 ## Seeded Cross-Family Generalization
 
@@ -80,8 +80,8 @@ flow through both native and OpenAI-compatible Ollama completion paths. The runn
 three-cell family/seed bundle before aggregation; the aggregate records the exact coordinate grid,
 coverage, current and bilingual activation, response rate, completion and paired cost deltas, cell
 manifests, stable family routing, and the global decision. The core analysis and reporting live in
-`src/llb/bench/agentic_loop_feedback_generalization.py` and
-`src/llb/bench/agentic_loop_feedback_generalization_report.py`.
+`src/llb/bench/loop_feedback/generalization.py` and
+`src/llb/bench/loop_feedback/generalization_report.py`.
 
 CUDA-host evidence (2026-07-31), RTX 4060 Ti 16 GB:
 
@@ -104,7 +104,7 @@ therefore remains `current`.
 
 The audit-complete aggregate is
 `.data/agentic-loop-policy/20260731T203955.027095Z-138f43552ed1/manifest.json`; its analysis indexes
-all 24 additive cell manifests. `tests/llb/bench/test_agentic_loop_feedback_generalization.py`
+all 24 additive cell manifests. `tests/llb/bench/loop_feedback/test_agentic_loop_feedback_generalization.py`
 checks the prospective design, exact family/seed grid, coordinate metadata, activation telemetry,
 stable routing, global adoption rule, reporting, and persistence.
 Validation on 2026-07-31: `make ci` passed 2,469 tests with 45 opt-in/slow tests deselected.
@@ -127,10 +127,11 @@ threshold. The registered ASCII notices are:
 
 `make bench-agentic-loop-repeat-feedback-family-adaptation` validates the exact Aya, Mistral, and
 Gemma Ollama roster, notice text and hypotheses, sampling contract, task digest, seed grid, and
-candidate isolation before inference. The implementation lives in
-`src/llb/bench/agentic_loop_feedback_adaptation.py`, its report and persistence layer in
-`src/llb/bench/agentic_loop_feedback_adaptation_report.py`, and its CLI orchestration in
-`src/llb/cli/bench/category_agentic_loop_feedback_adaptation.py`. Each aggregate seed row exposes
+candidate isolation before inference. The prospective contract is validated in
+`src/llb/bench/loop_feedback/adaptation_design.py`, the seeded runs are read in
+`src/llb/bench/loop_feedback/adaptation.py`, its report and persistence layer in
+`src/llb/bench/loop_feedback/adaptation_report.py`, and its CLI orchestration in
+`src/llb/cli/bench/loop/feedback_adaptation.py`. Each aggregate seed row exposes
 coverage, baseline and candidate activation, completion, prompt-cost, wall-cost, and combined-cost
 gate decisions in addition to response and effect values. `src/llb/bench/agentic/episode.py` also
 counts a final answer after a suppressed repeated call as a redirect, including when the
@@ -163,11 +164,11 @@ zero of three, below the declared cross-family threshold. The audit-complete agg
 `.data/agentic-loop-policy/20260801T122638.618382Z-450efe8e5e90/manifest.json`; it indexes all 18
 source cell manifests and carries the explicit per-gate decisions.
 
-`tests/llb/bench/test_agentic_loop_feedback_adaptation.py` checks the immutable design, exact
-wording, family/seed grid, candidate isolation, stable routing, aggregate gate reporting,
-persistence, and an end-to-end fake run. The redirect regression is in
-`tests/llb/bench/test_agentic_loop_policy.py`. Validation on 2026-08-01: `make ci` passed 2,475
-tests with 45 opt-in/slow tests deselected.
+`tests/llb/bench/loop_feedback/test_agentic_loop_feedback_adaptation.py` checks the immutable
+design, exact wording, family/seed grid, candidate isolation, stable routing, aggregate gate
+reporting, persistence, and an end-to-end fake run. The redirect regression is in
+`tests/llb/bench/loop_policy/test_agentic_loop_policy.py`. Validation on 2026-08-01: `make ci`
+passed 2,475 tests with 45 opt-in/slow tests deselected.
 
 ## Task-Family-Neutral Gemma Transfer
 
@@ -190,10 +191,12 @@ increases of 10% for prompt tokens and 20% for wall time. It also refuses the pr
 and any task-specific word in the controller notice before inference.
 
 `make bench-agentic-loop-repeat-feedback-task-family-transfer` runs the fixed
-`6/answer/allow,noop` comparison on the local MamayLM-Gemma 3 12B model. The core validation and
-two-seed decision live in `src/llb/bench/agentic_loop_feedback_transfer.py`; report and aggregate
-persistence live in `src/llb/bench/agentic_loop_feedback_transfer_report.py`; orchestration lives
-in `src/llb/cli/bench/category_agentic_loop_feedback_transfer.py`. Aggregate rows retain baseline
+`6/answer/allow,noop` comparison on the local MamayLM-Gemma 3 12B model. The prospective contract
+(notice wording, fresh ledger, seeds, gates) is validated in
+`src/llb/bench/loop_feedback/transfer_design.py`, shared with the controller-authority
+study; the two-seed decision lives in `src/llb/bench/loop_feedback/transfer.py`; report and aggregate
+persistence live in `src/llb/bench/loop_feedback/transfer_report.py`; orchestration lives
+in `src/llb/cli/bench/loop/feedback_transfer.py`. Aggregate rows retain baseline
 and candidate response, per-family response deltas, the full paired completion comparison, both
 full cost-gate objects, and links to every source cell manifest.
 
@@ -222,12 +225,12 @@ aggregate remains at `.data/agentic-loop-policy/20260801T145005.639616Z-1bdfdb79
 aggregate adds baseline response and the complete paired gate objects from those same source
 cells, with no additional inference.
 
-`tests/llb/bench/test_agentic_loop_feedback_transfer.py` checks the immutable neutral notice and
-hypothesis, fresh digest, balanced ledger, exact seed grid, candidate isolation, three-family and
-two-seed response rule, completion and cost decisions, report persistence, and end-to-end fake
-runs with exact injected episode durations. The wall-cost regression case measures a 1.25-second
-candidate against a 1-second baseline and refuses it at the prospective 20% ceiling. Validation on
-2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
+`tests/llb/bench/loop_feedback/test_agentic_loop_feedback_transfer.py` checks the immutable neutral
+notice and hypothesis, fresh digest, balanced ledger, exact seed grid, candidate isolation,
+three-family and two-seed response rule, completion and cost decisions, report persistence, and
+end-to-end fake runs with exact injected episode durations. The wall-cost regression case measures a
+1.25-second candidate against a 1-second baseline and refuses it at the prospective 20% ceiling.
+Validation on 2026-08-01: `make ci` passed 2,479 tests with 45 opt-in/slow tests deselected.
 
 ## Controller-Authority Gemma Transfer
 
@@ -251,10 +254,10 @@ pairs, and maximum relative increases of 10% for prompt tokens and 20% for wall 
 `make bench-agentic-loop-repeat-feedback-controller-authority-transfer` validates the full
 contract before inference and writes a two-seed aggregate. The immutable notice lives in
 `src/llb/bench/agentic/loop_policy.py`; authority validation and decision wrapping live in
-`src/llb/bench/agentic_loop_feedback_authority.py`; response-versus-completion summaries live in
-`src/llb/bench/agentic_loop_feedback_outcomes.py`; reporting lives in
-`src/llb/bench/agentic_loop_feedback_authority_report.py`; and CLI orchestration shares
-`src/llb/cli/bench/category_agentic_loop_feedback_neutral.py` with the earlier neutral-transfer
+`src/llb/bench/loop_feedback/authority.py`; response-versus-completion summaries live in
+`src/llb/bench/loop_feedback/outcomes.py`; reporting lives in
+`src/llb/bench/loop_feedback/authority_report.py`; and CLI orchestration shares
+`src/llb/cli/bench/loop/feedback_neutral.py` with the earlier neutral-transfer
 lane. Aggregate persistence uses the design's study kind, so authority artifacts cannot be
 mislabelled as the earlier task-family-transfer study.
 
@@ -286,7 +289,7 @@ audit-complete aggregate is
 `$DATA_DIR/agentic-loop-policy/20260801T180932.422116Z-a925598313d9/manifest.json`; it links all six
 source cell manifests and preserves response-versus-completion outcomes per family.
 
-`tests/llb/bench/test_agentic_loop_feedback_authority.py` checks the immutable wording,
+`tests/llb/bench/loop_feedback/test_agentic_loop_feedback_authority.py` checks the immutable wording,
 hypothesis, fresh balanced ledger, seeds, candidate isolation, breadth and paired gates,
 authority-specific study identity, persistence, and an end-to-end fake run. The shared feedback
 tests check per-family redirected completion accounting. Validation on 2026-08-01: `make ci`
@@ -317,9 +320,9 @@ and 20% for wall time.
 Every source cell persists `prompt-snapshots.json`. Analysis pairs the first authority-bearing
 snapshot by task and refuses the run unless the full message content is byte-identical while only
 the final role changes. Runner, analysis, and persistence live in
-`src/llb/bench/agentic_controller_authority_run.py`,
-`src/llb/bench/agentic_controller_authority.py`, and
-`src/llb/bench/agentic_controller_authority_report.py`. The general backend adapter now exposes
+`src/llb/bench/controller_authority/episodes.py`,
+`src/llb/bench/controller_authority/run.py`, and
+`src/llb/bench/controller_authority/report.py`. The general backend adapter now exposes
 typed-message `local_chat` and `launcher_chat` callables alongside the legacy string-prompt
 adapters.
 
@@ -344,7 +347,7 @@ audit-complete aggregate is
 links the four source manifests and all 64 paired snapshot proofs. The negative result is scoped to
 this model and serialization, not a claim that role never matters across model families.
 
-`tests/llb/bench/test_agentic_controller_authority.py` checks exact role-only serialization,
+`tests/llb/bench/controller_authority/test_agentic_controller_authority.py` checks exact role-only serialization,
 fresh-ledger and two-seed validation, balanced family coverage, snapshot refusal, every adoption
 gate, persistence, the committed contract, and an end-to-end fake run.
 Validation on 2026-08-01: `make ci` passed 2,487 tests with 45 opt-in/slow tests deselected, and
@@ -380,7 +383,7 @@ The audit-complete aggregate is
 `$DATA_DIR/agentic-loop-policy/20260802T052500.927860Z-2dd4f2c196c8/manifest.json`; it links four
 source cell manifests, 64 role-only snapshot proofs, and per-cell throughput from 16.21 to 22.26
 tokens/s. Cross-model validation lives beside the base contract in
-`src/llb/bench/agentic_controller_authority_design.py`; the CLI model preflight now queries the
+`src/llb/bench/controller_authority/design.py`; the CLI model preflight now queries the
 configured Ollama host, and the dedicated Make target pins the committed cross-model design and
 ledger.
 Validation on 2026-08-02: `make ci` passed 2,489 tests with 45 opt-in/slow tests deselected, and
@@ -435,11 +438,11 @@ The audit-complete aggregate is
 source manifests, four gate rows, and 128 paired snapshot proofs. Source-cell throughput was
 4.9-5.2 tokens/s for Gemma and 20.2 tokens/s for Qwen.
 
-`tests/llb/bench/test_agentic_controller_preamble.py` checks both backend transforms, the exact
-two-family/two-seed design, snapshot refusal, every gate, and an end-to-end fake run. The existing
-controller-channel tests protect backward compatibility.
-Validation on 2026-08-02: `make ci` passed 2,493 tests with 45 opt-in/slow tests deselected, and
-`make lint-md` passed.
+`tests/llb/bench/controller_authority/test_agentic_controller_preamble.py` checks both backend
+transforms, the exact two-family/two-seed design, snapshot refusal, every gate, and an end-to-end
+fake run. The existing controller-channel tests protect backward compatibility. Validation on
+2026-08-02: `make ci` passed 2,493 tests with 45 opt-in/slow tests deselected, and `make lint-md`
+passed.
 
 CrewAI is optional and lazy-imported. The adapter wraps the candidate completion function as a
 CrewAI LLM, builds tools from the benchmark tool definitions, and disables telemetry/tracing for a

@@ -272,7 +272,7 @@ The llama.cpp launcher first checks the project-managed binary under
 
 ## Vector-Store Seam
 
-`src/llb/rag/vector_index.py` defines the `VectorIndex` protocol and backend dispatch:
+`src/llb/rag/vector_store/vector_index.py` defines the `VectorIndex` protocol and backend dispatch:
 
 ```text
 faiss
@@ -346,9 +346,9 @@ same evidence for every question, so no larger gold set would separate them eith
 names that case explicitly instead of reporting an unresolved measurement.
 
 Modules and tests: `src/llb/cli/rag/compare_stores.py` (command + the shared
-`resolve_paired_baseline`, reused by `compare-retrieval`), `src/llb/rag/compare.py` (scoring +
-paired attachment), `src/llb/rag/retrieval_comparison_uncertainty.py` (the verdict);
-`tests/llb/rag/test_compare_retrieval_cli.py` and `tests/llb/rag/test_compare_retrieval_core.py`
+`resolve_paired_baseline`, reused by `compare-retrieval`), `src/llb/rag/comparison/run.py` (scoring +
+paired attachment), `src/llb/rag/comparison/uncertainty.py` (the verdict);
+`tests/llb/rag/comparison/test_compare_retrieval_cli.py` and `tests/llb/rag/comparison/test_compare_retrieval_core.py`
 cover the columns, the baseline resolution, and the verdict over fake stores.
 
 ### Measured Backend Comparison

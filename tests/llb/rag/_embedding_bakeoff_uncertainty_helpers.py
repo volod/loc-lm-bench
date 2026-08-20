@@ -7,20 +7,20 @@ the report columns all run over fake stores and plain vectors -- no FAISS, no GP
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 
 
-from llb.rag.embedding_bakeoff import run_bakeoff
+from llb.rag.embedding_bakeoff.run import run_bakeoff
 
 
-from llb.rag.embedding_bakeoff_models import BuiltStore
+from llb.rag.embedding_bakeoff.models import BuiltStore
 
 
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.embedding_bakeoff.uncertainty import (
     METRIC_MRR,
     METRIC_RECALL,
 )
 
 
 # Real roster ids, not placeholders: `compare-embeddings` screens its roster against the
-# convention registry (`llb.rag.embedding_bakeoff_roster`), so a CLI-level test has to name
+# convention registry (`llb.rag.embedding_bakeoff.roster`), so a CLI-level test has to name
 # candidates whose query/passage format is actually declared.
 BASELINE = "intfloat/multilingual-e5-base"
 CLI_CANDIDATE = "BAAI/bge-m3"

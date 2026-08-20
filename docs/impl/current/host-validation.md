@@ -183,19 +183,20 @@ boundaries:
 - agent context policy vocabulary, transcript state, and bounded summarization live in
   `bench/agentic/context_policy.py`, `context.py`, and `context_summary.py`;
 - context comparison models/pairing, task-kind analysis, recommendation rendering, and persistence
-  live in `bench/agentic_context_report.py` plus the `_kind`, `_recommendation`, and `_persist`
-  modules;
+  live in `bench/context_policy/report.py` plus the `_kind`, `_recommendation`, and `_persist`
+  modules; `context_policy/report_persist.py` also writes the per-policy bundles
+  (`persist_policy_bundles`), so `agentic_context.py` is the sweep alone;
 - the episode loop delegates prompt/compaction assembly, controller transport/repair, and mutable
   tally state to `agentic/episode_prompt.py`, `episode_controller.py`, and `episode_state.py`;
 - retrieval comparison contracts, resolved settings, and optional output rows live in
-  `rag/compare_models.py`, `compare_settings.py`, and `compare_rows.py`;
+  `rag/comparison/models.py`, `comparison/settings.py`, and `comparison/rows.py`;
 - controller-authority run contracts and snapshot-isolation proof live in
-  `agentic_controller_authority_model.py` and `agentic_controller_authority_snapshot.py`;
-- embedding adoption reason clauses live in `rag/embedding_bakeoff_reason.py`;
+  `controller_authority/model.py` and `controller_authority/snapshot.py`;
+- embedding adoption reason clauses live in `rag/embedding_bakeoff/reason.py`;
 - policy-change replay geometry and design loading live in
-  `bench/agentic_policy_change_geometry.py`;
+  `bench/policy_change/geometry.py`;
 - embedding CLI validation/output persistence and persisted agentic comparison commands live in
-  `cli/rag/compare_embeddings_output.py` and `cli/bench/category_agentic_compare.py`.
+  `cli/rag/compare_embeddings_output.py` and `cli/bench/categories/agentic_compare.py`.
 
 Callers and tests import each symbol from its owning module; the split adds no compatibility
 re-export layer. `scripts/code_quality.sh` now prints production `.py`/`.sh` soft-limit findings
@@ -206,8 +207,8 @@ all at or below 250 lines after the split. Focused regression suites, Ruff, and 
 pass.
 
 The two production modules still above 300 lines are cohesive soft-limit exceptions:
-`quality/gpu_guard_spawn_surface.py` keeps one exhaustive declaration table beside the interpreter
-enumeration that audits it, while `quality/gpu_guard_spawn_reach_coverage.py` keeps the documented
+`quality/gpu_guard/surface.py` keeps one exhaustive declaration table beside the interpreter
+enumeration that audits it, while `quality/gpu_guard/reach/coverage.py` keeps the documented
 stdlib classification partition beside its coverage record and filesystem classifiers. Splitting
 either lookup/classifier family would add navigation without creating an independent functional
 owner. The remaining production findings are within 47 lines of the soft target and stay visible
@@ -247,7 +248,7 @@ an installer entrypoint executes everything that entrypoint does, including prob
 sits in front of.
 
 **So the tier's no-GPU promise is a check now, not a convention.** `tests/conftest.py` wraps every
-test in an autouse guard (`llb.quality.gpu_guard`) that watches this process and denies the device
+test in an autouse guard (`llb.quality.gpu_guard.guard`) that watches this process and denies the device
 to the children of an unmarked test. The watch snapshots two effects before the test and reads them
 again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules` (its first
 sampling call is the JIT build). An unmarked test that flips either one fails at
@@ -312,7 +313,7 @@ a `gpu_env` test's child reads True, and the parent still reads True afterwards.
 mode denies -- `report` exists to let a run through while SAYING what it did, and a denial says
 nothing to anyone. All 3050 non-slow tests pass with it live, so no test's child needed a device.
 
-**The denial covers every spawn entry point, not only `subprocess`.** `llb.quality.gpu_guard_spawn`
+**The denial covers every spawn entry point, not only `subprocess`.** `llb.quality.gpu_guard.spawn`
 owns that half: `spawn_seams()` names each entry point and the replacement installed at it, and
 `denied_children()` is the context the autouse fixture enters. Four argument shapes cover the
 surface -- an entry point that TAKES an environment has it rewritten (`subprocess.Popen`,
@@ -385,7 +386,7 @@ written on.** Both halves above are CPython-specific -- the `os` seams cover the
 because `os.py` builds them in Python, and the multiprocessing coverage depends on the public POSIX
 helper above its private C call -- and a Python upgrade can move either without failing anything,
 since a name the seam set never heard of is indistinguishable from one it deliberately excluded.
-`llb.quality.gpu_guard_spawn_surface` closes that by ENUMERATING the process-starting names the
+`llb.quality.gpu_guard.surface` closes that by ENUMERATING the process-starting names the
 running interpreter exposes (a rule, not a list: every `os` name in the exec / fork / spawn /
 posix_spawn families plus `system` / `popen` / `startfile`, and every public non-exception callable
 of `subprocess`, plus `multiprocessing.util.spawnv_passfds` -- 31 names on Python 3.13) and declaring
@@ -394,7 +395,7 @@ each one in one of four states: a seam
 entry point at all (`subprocess.CompletedProcess`). A delegation is CHECKED rather than believed:
 `delegation_is_live` reads the callable's code object and asks whether the target is still a name it
 resolves at call time, so `os.spawnv` rewritten in C -- or pointed somewhere else -- stops being
-covered loudly. `llb.quality.gpu_guard_spawn_surface_audit` refuses six shapes: an undeclared name, a
+covered loudly. `llb.quality.gpu_guard.surface_audit` refuses six shapes: an undeclared name, a
 delegation the interpreter no longer makes, a delegation chain that ends outside the seam set, a name
 declared a seam that `spawn_seams()` does not patch, a patched seam no declaration names, and -- the
 `multiprocessing` half -- a start method the interpreter offers that is undeclared, or a DEFAULT
@@ -412,7 +413,7 @@ free to call `set_start_method` later.
 **Two broad modules plus one exact helper is the right enumerated surface, and that is a measurement
 now.** Everything else in the stdlib that starts a child was covered only because the helper it
 calls resolves an `os` / `subprocess` name or the exact `multiprocessing` helper -- a sentence, not
-a check. `llb.quality.gpu_guard_spawn_reach` reads the stdlib instead: every `*.py` under the stdlib
+a check. `llb.quality.gpu_guard.reach.scan` reads the stdlib instead: every `*.py` under the stdlib
 root is parsed and its process-starting CALL SITES are resolved through that module's own imports
 (`os.fork`, `from subprocess import Popen`,
 `import os as operating`), against an alphabet taken from the declared surface plus the C modules
@@ -426,7 +427,7 @@ already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` i
 `_posixsubprocess` / `_winapi` starts are reached only from inside the patched `Popen`, and
 `multiprocessing/util.py`, whose low-level start is behind the new public helper seam, and
 `multiprocessing/popen_spawn_win32.py`, which remains the Windows residual.
-`llb.quality.gpu_guard_spawn_reach_audit` refuses a
+`llb.quality.gpu_guard.reach.audit` refuses a
 module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
 mode a source scan invites -- a scan that read NO source, which says where the tree is rather than
 what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read"; the
@@ -438,13 +439,13 @@ module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, whic
 fabricated trees for the cases the host cannot produce (an aliased import, a local helper that merely
 shares a name with a spawn entry point, a file that will not parse, a module reaching past every
 patchable name). The per-file half -- resolving a source buffer's call sites through its own imports
--- is `llb.quality.gpu_guard_spawn_source`, shared by both scans.
+-- is `llb.quality.gpu_guard.spawn_source`, shared by both scans.
 
 **The scan says what it FAILED to read, so the result is about the stdlib rather than about
 whichever files this host shipped.** A file count says how much was read, not what was missed: a
 module that ships without source is never parsed and reports exactly like a module that starts no
 children, so a host could pass having read half the library.
-`llb.quality.gpu_guard_spawn_reach_coverage` measures the reading against `sys.stdlib_module_names`
+`llb.quality.gpu_guard.reach.coverage` measures the reading against `sys.stdlib_module_names`
 -- the interpreter's own list of what its standard library contains -- using the top-level names the
 pass parsed (`SpawnScan.modules_read`), and classifies every declared name no source was read for.
 Most of that list has no `.py` by construction, which is why the classification is the deliverable
@@ -510,7 +511,7 @@ not there; and with a MIXED layout -- part of the library as source on disk, the
 -- files ARE read, so nothing was refused anywhere, an archived `subprocess` was reported `absent`
 ("this host does not ship it", for a module the interpreter imports on demand and which starts
 children), and an archived `multiprocessing/util.pyc` produced no submodule finding at all.
-`llb.quality.gpu_guard_spawn_reach_archive` closes both on the archive's own evidence: `zipfile`
+`llb.quality.gpu_guard.reach.archive` closes both on the archive's own evidence: `zipfile`
 reads the name list -- importing nothing, disassembling no `.pyc` -- and the names become the
 `archived` bucket of the partition plus `archived_submodules` beside `compiled_only_submodules`,
 which `audit_read_coverage` refuses as the same `unread-module` problem. The reading is REFUSED
@@ -535,7 +536,7 @@ source, and it is read rather than refused -- below.
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
 processes, uv, the build scripts), and each was covered only by that same unstated assumption.
-`llb.quality.gpu_guard_spawn_reach_installed.installed_spawn_reaches` reads the venv's site-packages
+`llb.quality.gpu_guard.reach.installed.installed_spawn_reaches` reads the venv's site-packages
 with a narrower alphabet --
 `below_the_seams()`: `posix`, `_posixsubprocess`, `_winapi` -- because a dependency calling
 `subprocess.Popen` says nothing the declaration does not already say, while scanning for the covered
@@ -584,7 +585,7 @@ with no package directory to walk -- a zipped egg, a `--zip-ok` install, any `sy
 is an archive rather than a directory -- was parsed by nothing and reported by nothing, so
 `audit_installed_reach` returned clean for a venv half of which it never opened. That is worse here
 than one tree over, because site-packages is where the packages that start children constantly live.
-`llb.quality.gpu_guard_spawn_reach_installed_archive` reads the archives on the import path --
+`llb.quality.gpu_guard.reach.installed_archive` reads the archives on the import path --
 `sys.path` entries that open as a zip, plus `*.egg` / `*.zip` under the scan root, minus the stdlib's
 own `pythonXY.zip`, which the stdlib half already accounts for and which reporting here would be the
 same finding twice. And the read-or-refuse call the stdlib half deferred is taken the OTHER way,
@@ -616,7 +617,7 @@ file adds other DIRECTORIES to it, and that is not an exotic layout -- it is how
 installed. `__editable__.llb-0.1.0.pth` holds one line, `<repo>/src`, so `llb`'s own modules were
 parsed by neither scan while every dependency around them was held to the question, and the code an
 unmarked test runs the most was the one tree nobody asked it of.
-`llb.quality.gpu_guard_spawn_reach_installed_sites` reads those files with `site.addpackage`'s own
+`llb.quality.gpu_guard.reach.installed_sites` reads those files with `site.addpackage`'s own
 rule -- a line starting with the word `import` plus a space or a tab is CODE the interpreter runs, a
 comment or a blank line is nothing, anything else is a path resolved against the file's directory --
 and `installed_spawn_reaches` folds the resulting trees into the same `SpawnScan` (`SpawnScan.sites`
@@ -634,7 +635,7 @@ file an operator has to open rather than a path that reads like site-packages an
 **Executable `.pth` lines are now resolved or refused, never silently skipped.** Setuptools' common
 flat-layout form writes `import __editable___pkg_finder; __editable___pkg_finder.install()` and
 keeps the exposed names and targets in the generated finder's `MAPPING`. The static decoder in
-`llb.quality.gpu_guard_spawn_reach_installed_finder` parses that exact installer statement and
+`llb.quality.gpu_guard.reach.installed_finder` parses that exact installer statement and
 reads only an `ast.literal_eval`-compatible mapping assignment; it never imports the finder or
 executes either file. Package-directory targets are scanned under their mapped import name, and
 single-file module targets are read directly, so the pass does not expose or scan unrelated
@@ -662,7 +663,7 @@ installed half had only the degenerate end -- an empty read, plus a `files_read`
 is exactly the check the stdlib half outgrew, because a file count says how much was read and not
 what was missed. A dependency installed with its sources stripped is parsed by nothing and reported
 by nothing: the directory-tree twin of the archive case above.
-`llb.quality.gpu_guard_spawn_reach_installed_coverage` weighs the scan against the union of the
+`llb.quality.gpu_guard.reach.installed_coverage` weighs the scan against the union of the
 top-level names `importlib.metadata.packages_distributions()` publishes and the names every
 resolved filesystem entry actually provides. The metadata half is read through
 `importable_top_level_names` because some distributions record a path (`nvidia/cusparselt`,
@@ -916,18 +917,18 @@ together.
 The binary resolution behavior remains covered by
 `tests/llb/quality/test_shell_lint_resolution.py`.
 
-Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count
-report, which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders.
-The maintainability-index section is deliberately a report too. It now scans only `src` and
-`tests`, at grade C by default (`LLB_MI_MIN_GRADE=C`), rather than sweeping the repository root. The
-decision not to add it to `llb_complexity_gate` is evidence-based: the C-only scan is empty, while
-the next band contains one file, `tests/llb/bench/test_agentic_context.py`, at B (10.66). That file
-is large (728 lines, 563 source lines) but regular: Radon finds 48 blocks with average cyclomatic
-complexity A (4.15), and its two highest blocks are only B (10). It is already the kind of volume
-case covered by the soft line target, so making the nearby MI boundary hard would turn that soft
-policy into an indirect gate rather than add an independent complexity signal. Focused coverage in
-`tests/llb/quality/test_maintainability_report.py` pins both the `src tests` arguments and the
-informational exit behavior when Radon prints a C row.
+Everything else in the sweep stays informational -- in particular the `.py`/`.sh` line-count report,
+which backs a target AGENTS.md keeps SOFT on purpose and which has legitimate offenders. The
+maintainability-index section is deliberately a report too. It now scans only `src` and `tests`, at
+grade C by default (`LLB_MI_MIN_GRADE=C`), rather than sweeping the repository root. The decision
+not to add it to `llb_complexity_gate` is evidence-based: the C-only scan is empty, while the next
+band contains one file, `tests/llb/bench/context_policy/test_agentic_context.py`, at B (10.66). That
+file is large (728 lines, 563 source lines) but regular: Radon finds 48 blocks with average
+cyclomatic complexity A (4.15), and its two highest blocks are only B (10). It is already the kind
+of volume case covered by the soft line target, so making the nearby MI boundary hard would turn
+that soft policy into an indirect gate rather than add an independent complexity signal. Focused
+coverage in `tests/llb/quality/test_maintainability_report.py` pins both the `src tests` arguments
+and the informational exit behavior when Radon prints a C row.
 
 The D-grade cyclomatic-complexity cleanup keeps orchestration separate from validation, state
 accumulation, and presentation. Ontology dedup now uses an embedded-candidate value object and
@@ -954,7 +955,7 @@ three patterns doing most of the work:
 - **A named check per contract area.** Every `validate_*_design` is now a sequence of `_check_*`
   calls in the order a reader of the design file meets them (identity, ledger, roster, wording,
   sampling, gates). `validate_channel_authority_design` went from F(54) to a body of nine calls.
-  Typed field reads moved to `bench/agentic_design_fields.py`, so a rule reads as the contract
+  Typed field reads moved to `bench/agentic/design_fields.py`, so a rule reads as the contract
   (`as_int(matrix, "n_tasks") < 6`) instead of as a cast.
 - **A record for what a step accumulates.** `run_episode` was eleven mutable counters threaded
   through one 130-line loop; it is now `_EpisodeTally` (counting plus the one place an episode
@@ -968,8 +969,8 @@ three patterns doing most of the work:
   `_PlacementContext`, leaving a one-line protocol adapter.
 
 Two oversized modules split at their functional seams in the same pass --
-`rag/encoder_throughput.py` into measurement / `_summary` / `_report` / `_profile`, and
-`bench/agentic_context_sweep.py` into `_model` (axes, grids, cells) / `_verdict` (pairing and the
+`rag/encoders/throughput.py` into measurement / `_summary` / `_report` / `_profile`, and
+`bench/context_policy/sweep.py` into `_model` (axes, grids, cells) / `_verdict` (pairing and the
 pin-or-expose cut) / the runner -- with call sites repointed at the real submodule rather than a
 re-export shim.
 

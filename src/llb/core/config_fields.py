@@ -34,7 +34,7 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # Span-identity policy of graph-vector fusion (fusion-span-overlap-identity): when do a graph
 # evidence span and a vector chunk name ONE candidate both lanes vouch for? "exact" requires
 # identical (doc_id, char_start, char_end); "overlap" folds a graph span into the vector chunk
-# that contains it. See `src/llb/rag/fusion_spans.py`.
+# that contains it. See `src/llb/rag/fusion/spans.py`.
 SpanIdentity = Literal["exact", "overlap"]
 # Per-question graph fusion policy. "fixed" applies graph_weight to every question;
 # "question_type" uses a sidecar label when available and a deterministic text fallback.
@@ -51,7 +51,7 @@ RestorationRankOrder = Literal["morphology", "context"]
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
 ContextStrategy = Literal["rag", "closed_book", "long_context"]
-# Duplicate-collapse tier (llb.rag.duplicate_tiers): when do two chunk texts count as ONE
+# Duplicate-collapse tier (llb.rag.duplicates.tiers): when do two chunk texts count as ONE
 # passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
 # coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
 DuplicateTier = Literal["exact", "normalized", "masked"]
@@ -130,7 +130,7 @@ class RunConfigFields(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
-    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates).
+    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates.collapse).
     # "exact" is loss-free; the coarser tiers trade a smaller index and fewer near-ties for
     # merging passages that differ, so they need per-corpus residue evidence before adoption.
     duplicate_tier: DuplicateTier = "exact"

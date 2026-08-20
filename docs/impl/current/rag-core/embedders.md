@@ -5,13 +5,13 @@ Part of the [RAG core](../rag-core.md) area of the
 
 ## The convention registry
 
-Per-family query/passage conventions live in `src/llb/rag/embedding_families.py`: a retrieval-tuned
+Per-family query/passage conventions live in `src/llb/rag/encoders/families.py`: a retrieval-tuned
 encoder scored with the wrong instruction silently loses recall, so `Embedder`
-(`src/llb/rag/embedding.py`) applies each model FAMILY's declared convention. Resolution is an
+(`src/llb/rag/encoders/embedder.py`) applies each model FAMILY's declared convention. Resolution is an
 ORDERED registry, not a chain of substring tests -- `embedding_family` walks a match table whose
 first row whose every substring appears in the lowercased id wins, `resolve_convention` returns the
 `EmbeddingConvention` record, and `apply_query_convention` / `apply_passage_convention` are pure +
-unit-tested (`tests/llb/rag/test_embedding_families.py`). Every entry names the model card its
+unit-tested (`tests/llb/rag/encoders/test_embedding_families.py`). Every entry names the model card its
 prefixes were read from, so a row's format is auditable without reading module history.
 
 | family | models | query side | passage side | notes |
@@ -52,7 +52,7 @@ profiler each construct their own `Embedder` and all three must agree.
 
 ## Roster screening
 
-`screen_candidates` (`src/llb/rag/embedding_bakeoff_roster.py`) runs before any store is built and
+`screen_candidates` (`src/llb/rag/embedding_bakeoff/roster.py`) runs before any store is built and
 splits the roster two ways:
 
 - an id with **no registered convention** RAISES `UnregisteredCandidateError`; the CLI exits 2
@@ -74,7 +74,7 @@ at, its [card-parity verdict](stack-and-card-parity.md#the-card-parity-gate), an
 
 ## The bake-off lane
 
-`llb compare-embeddings` (`src/llb/rag/embedding_bakeoff.py`; `make compare-embeddings`) answers
+`llb compare-embeddings` (`src/llb/rag/embedding_bakeoff/run.py`; `make compare-embeddings`) answers
 "which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
 over the SAME corpus + chunking (each under its own family convention), scores recall@k / MRR by the
 model-independent source-span metric (reusing `evaluate_retrieval`), and reports embed throughput,
@@ -82,7 +82,7 @@ index size, dimension, and device -- ending in the [adopt-or-retain verdict](pai
 which the operator applies via `build-index --embedding-model <winner>` +
 `RunConfig.embedding_model`. Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and
 `report.json` plus one saved store per candidate under `stores/<model-slug>/`.
-`DEFAULT_LOCAL_CANDIDATES` (`src/llb/rag/embedding_bakeoff_models.py`) is nine ids in three bands:
+`DEFAULT_LOCAL_CANDIDATES` (`src/llb/rag/embedding_bakeoff/models.py`) is nine ids in three bands:
 the incumbents (`intfloat/multilingual-e5-base` -- the current default and the paired baseline --
 plus `-small`, `-large`, and `BAAI/bge-m3`), the current multilingual retrieval generation
 (`intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
@@ -90,11 +90,12 @@ plus `-small`, `-large`, and `BAAI/bge-m3`), the current multilingual retrieval 
 `lang-uk/ukr-paraphrase-multilingual-mpnet-base` whose objective differs. The store builder is an
 injectable seam, so
 scoring, ranking, the consent gate, and report shaping are fake-store unit-tested
-(`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network. The lane is four modules:
-`embedding_bakeoff_models.py` (the item/store seams and the row + report shapes every consumer
-reads), `embedding_bakeoff.py` (build, score, rank), `embedding_bakeoff_uncertainty.py` (the paired
-intervals and [the verdict](paired-verdicts.md)), and `embedding_bakeoff_report.py` (ASCII +
-Markdown rendering).
+(`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network. The lane is five modules:
+`embedding_bakeoff/models.py` (the item/store seams and the row + report shapes every consumer
+reads), `embedding_bakeoff/scoring.py` (the retrieval pass, the report row, and the ranking over one
+built store), `embedding_bakeoff/run.py` (drive the roster, the gated API row, and the report),
+`embedding_bakeoff/uncertainty.py` (the paired intervals and [the verdict](paired-verdicts.md)), and
+`embedding_bakeoff/report.py` (ASCII + Markdown rendering).
 
 `NOISE_FLOOR=1` (`--noise-floor`) adds the [measurement floor](retrieval-metrics.md#measurement-floor---noise-floor)
 per candidate to both the ASCII table and `report.md`, ending in the one sentence the
@@ -216,7 +217,7 @@ Reusable knobs: `--encoder-throughput`, `--encoder-precision`, `--encoder-min-wa
 `faster_than_baseline` when the bake-off baseline is set. `Embedder.release()` plus
 `torch.cuda.empty_cache()` runs between candidates so peak VRAM is per-encoder, not stacked.
 CI covers the aggregation with an injected clock and fake encoders
-(`tests/llb/rag/test_encoder_throughput.py`).
+(`tests/llb/rag/encoders/test_encoder_throughput.py`).
 
 ## The refreshed candidate roster (2026-08-16)
 
@@ -418,12 +419,12 @@ prompt exceeds the budget, and multi-objective search samples the budget from
 
 Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
 with, and `_load_store` refuses a run whose `config.embedding_model` differs
-(`store_embedder_mismatch` in `src/llb/rag/store.py`), because a store is embedded and queried by
-one encoder -- a mismatch would silently score the wrong model. A non-default-embedder store runs
-normally with the embedder recorded in the manifest fingerprint.
+(`store_embedder_mismatch` in `src/llb/rag/vector_store/store.py`), because a store is embedded and
+queried by one encoder -- a mismatch would silently score the wrong model. A non-default-embedder
+store runs normally with the embedder recorded in the manifest fingerprint.
 
 Opt-in API row (open corpora only): `--api-model cohere/embed-multilingual-v3.0`
-(`src/llb/rag/api_embedder.py`) embeds the corpus through a hosted API -- full egress, so it is
+(`src/llb/rag/encoders/api.py`) embeds the corpus through a hosted API -- full egress, so it is
 bake-off EVIDENCE ONLY (never usable as `RunConfig.embedding_model` for a scored run), refused
 unless `--data-classification open`, gated on an interactive consent prompt naming the corpus, and
 capped by `--max-usd` (`record_embed_cost` aborts when the running cost crosses the cap). Cohere's

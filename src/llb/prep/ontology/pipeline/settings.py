@@ -28,7 +28,7 @@ from llb.prep.ontology.models import (
     ItemLabels,
     OntologyCandidate,
 )
-from llb.prep.ontology.endpoint_config import EndpointLogs
+from llb.prep.ontology.endpoints.config import EndpointLogs
 
 
 @dataclass

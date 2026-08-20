@@ -7,7 +7,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.eval.query_robustness_variants import (
+from llb.eval.query_robustness.variants import (
     APOSTROPHE_MIXED_SCRIPT,
     VARIANT_CLASSES,
     parse_variant_classes,
@@ -64,7 +64,7 @@ def bench_query_robustness_cmd(
     ),
 ) -> None:
     """Measure clean-to-noisy RAG deltas under the off / normalize / normalize,typos lanes."""
-    from llb.eval.query_robustness_run import run_query_robustness
+    from llb.eval.query_robustness.run import run_query_robustness
 
     try:
         classes = parse_variant_classes(variant_classes) if variant_classes else None

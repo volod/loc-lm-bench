@@ -131,7 +131,7 @@ attributes each step's recall@k / MRR delta before anyone turns the lane on by d
 default (`query_prep` empty is an exact no-op).
 
 The `src/llb/rag/query_prep/` package is a pure, unit-testable pipeline of NAMED steps (no store, model,
-or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
+or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.vector_store.lexical`):
 
 - `normalize` -- matching-side casefold; apostrophe-variant unification (U+2018 / U+2019 /
   U+02BC / grave / ASCII); Latin-typed Ukrainian back to Cyrillic; and safe Latin-look-alike
@@ -158,24 +158,24 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   transliteration stays the explicit baseline.
 
   An opt-in **dense-lane casing** option (normalize-casefold-dense-lane-cost;
-  `RunConfig.query_prep_dense_case` / `--query-prep-dense-case`, refused at config validation
-  unless the `normalize` step is present) stops the casefold at the lexical lane. Casefolding is a
-  MATCHING-side convention the BM25 index asked for (`llb.rag.lexical.normalize_token` folds both
-  sides), but the dense encoder is case-sensitive and never asked for it, so on an otherwise clean
-  query the fold is a pure cost. With the option on, `query_prep/casing.py` transfers the raw
-  question's capitalization back onto the processed text and `retrieve_prepared` routes that
-  re-cased string to the dense lane while the lexical lane keeps the folded `processed` text. The
-  transfer is CASE ONLY -- a token-sequence diff (`difflib`) aligns raw and processed tokens, and
-  each aligned token is re-cased without replacing a single character, so apostrophe unification,
-  transliteration, typo repair, and appended glossary forms all survive. Equal-length substitutions
-  align too, which is what carries `Kyiv` -> `київ` -> `Київ` and restores a short Latin acronym
-  (`NP`) the step folds to `np`; insertions with no raw counterpart keep the case the step
-  produced. The divergence is recorded per case as `query_dense` (only when the two lanes differ)
-  in `scores.jsonl` and the durability journal. Off by default so the folded dense query stays the
-  explicit baseline -- but the measured verdict is to TURN IT ON with the step: cased dense text
-  puts the `normalize` lane at or above the unmitigated lane on every noise class and at the clean
-  ceiling on three of four, against a 0.0062 MRR give-back on one question
-  ([evaluation rigor](../rigor-board-judge/robustness-benchmarks.md#dense-lane-casing-evidence)).
+  `RunConfig.query_prep_dense_case` / `--query-prep-dense-case`, refused at config validation unless
+  the `normalize` step is present) stops the casefold at the lexical lane. Casefolding is a
+  MATCHING-side convention the BM25 index asked for (`llb.rag.vector_store.lexical.normalize_token`
+  folds both sides), but the dense encoder is case-sensitive and never asked for it, so on an
+  otherwise clean query the fold is a pure cost. With the option on, `query_prep/casing.py`
+  transfers the raw question's capitalization back onto the processed text and `retrieve_prepared`
+  routes that re-cased string to the dense lane while the lexical lane keeps the folded `processed`
+  text. The transfer is CASE ONLY -- a token-sequence diff (`difflib`) aligns raw and processed
+  tokens, and each aligned token is re-cased without replacing a single character, so apostrophe
+  unification, transliteration, typo repair, and appended glossary forms all survive. Equal-length
+  substitutions align too, which is what carries `Kyiv` -> `київ` -> `Київ` and restores a short
+  Latin acronym (`NP`) the step folds to `np`; insertions with no raw counterpart keep the case the
+  step produced. The divergence is recorded per case as `query_dense` (only when the two lanes
+  differ) in `scores.jsonl` and the durability journal. Off by default so the folded dense query
+  stays the explicit baseline -- but the measured verdict is to TURN IT ON with the step: cased
+  dense text puts the `normalize` lane at or above the unmitigated lane on every noise class and at
+  the clean ceiling on three of four, against a 0.0062 MRR give-back on one question ([evaluation
+  rigor](../rigor-board-judge/robustness-benchmarks.md#dense-lane-casing-evidence)).
 - `typos` -- deterministic corpus-vocabulary typo tolerance. The token vocabulary is built from
   the indexed corpus (`VocabularyContext.build` over `store.chunks`, whose `.tokens` is the same
   set `build_vocabulary` produces); a query token ABSENT from it is corrected to a nearby
@@ -185,7 +185,7 @@ or `[rag]` extra needed -- it reuses the pure tokenizer in `llb.rag.lexical`):
   token is never "corrected" into a different one. Every correction is logged. An
   opt-in morphology guard (morphology-aware-typo-guard; `RunConfig.query_prep_typo_guard`,
   `--query-prep-typo-guard`, `QUERY_PREP_TYPO_GUARD=1`) additionally skips any OOV token pymorphy3
-  recognizes as a valid Ukrainian word form (`llb.rag.lexical.load_uk_word_probe`): a grammatically
+  recognizes as a valid Ukrainian word form (`llb.rag.vector_store.lexical.load_uk_word_probe`): a grammatically
   valid inflection (`настанові`, `документами`) is not a misspelling and is left for the index+query
   lemmatization lane to match, while genuine misspellings stay unknown to the probe and are still
   corrected. Off by default so the pure edit-distance behavior remains explicitly selectable.
@@ -281,7 +281,7 @@ one averaged number without it. Model steps use `--query-prep-model` and
 report. Endpoint generators cache a question within one cumulative run, avoiding duplicate model
 calls while preserving fixed-temperature results.
 
-Tests: `tests/llb/rag/test_query_prep.py` (apostrophe and mixed-script repair, collision-safe
+Tests: `tests/llb/rag/query_prep/test_query_prep.py` (apostrophe and mixed-script repair, collision-safe
 romanization, Latin acronym preservation, Damerau-Levenshtein transposition, typo correction that
 never touches in-vocabulary, short, or cross-kind tokens + long-token distance 2 + deterministic
 tie-break, deterministic alias expansion + glossary
@@ -294,7 +294,7 @@ same-replacement case, per-kind surface distance, refusal of an incompatible nea
 restoration of the romanization-compatible form, the short-token length lock and the
 transliteration exemption from it, unresolved-tie refusal, context-driven candidate choice, and
 both morphology preferences),
-`tests/llb/rag/test_query_prep_restore_policy.py` (every swept setting's selection over the
+`tests/llb/rag/query_prep/test_query_prep_restore_policy.py` (every swept setting's selection over the
 committed candidate fixture `tests/fixtures/restoration_candidates.json`, that each fixture case is
 decided by ONE constant, the policy reaching the typos step through the pipeline, the step
 dependency, and the refused out-of-range value),
@@ -304,11 +304,11 @@ refusal counted as a missed opportunity rather than a wrong edit, and summable c
 `tests/llb/eval/test_restoration_sweep_run.py` (every setting measured on every class against
 shared reference lanes over an injected store, determinism, the published bundle, and the
 adopt/expose/pin decision on synthetic readings),
-`tests/llb/rag/test_query_prep_dense_case.py` (case-pattern
+`tests/llb/rag/query_prep/test_query_prep_dense_case.py` (case-pattern
 transfer without character replacement, the dense/lexical split reaching the store seam, the
 recovered acronym, capitalization carried onto a corrected token, the exact no-op on an
 already-lowercase query, glossary insertions left folded, subquery lanes untouched, and the
-normalize-step dependency), `tests/llb/rag/test_store.py` (split hybrid
+normalize-step dependency), `tests/llb/rag/vector_store/test_store.py` (split hybrid
 queries), and `tests/llb/executor/test_durable_resume.py` (generated-query journal round trip),
 plus config validation in `tests/llb/core/test_config.py`.
 
@@ -345,10 +345,10 @@ two token sequences do not correspond (the audit then refuses to judge rather th
 same alignment supplies the denominator retrieval cannot: an OPPORTUNITY is a token the noise made
 out-of-vocabulary whose clean form the corpus does contain, so `restoration recall` is the share of
 recoverable tokens the constraints actually recovered. Implementation:
-`src/llb/eval/restoration_sweep.py` (the grid and the per-setting pass),
-`restoration_sweep_lanes.py` (paired readings +
-retrieval cache), `restoration_sweep_audit.py` (alignment + labels), `restoration_sweep_verdict.py`
-(the pin/adopt/expose rule), `restoration_sweep_report.py`, `restoration_sweep_run.py`, and
+`src/llb/eval/restoration_sweep/grid.py` (the grid and the per-setting pass),
+`restoration_sweep/lanes.py` (paired readings +
+retrieval cache), `restoration_sweep/audit.py` (alignment + labels), `restoration_sweep/verdict.py`
+(the pin/adopt/expose rule), `restoration_sweep/report.py`, `restoration_sweep/run.py`, and
 `src/llb/cli/eval/restoration_sweep.py`.
 
 The verdict rule is stated once and applied to all three constants: **pin** when no alternative

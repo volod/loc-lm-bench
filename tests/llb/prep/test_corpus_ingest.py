@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from llb.prep.corpus_ingest import CORPUS_MANIFEST, ingest_corpus
+from llb.prep.corpus.ingest import CORPUS_MANIFEST, ingest_corpus
 from llb.rag.chunking.corpus import chunk_corpus
 
 MD_DOC = "# Розділ\n\n" + ("Це достатньо довгий український документ. " * 20)

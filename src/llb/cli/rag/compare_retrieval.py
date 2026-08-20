@@ -96,8 +96,8 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval
-    from llb.rag.compare_rows import (
+    from llb.rag.comparison.run import compare_retrieval
+    from llb.rag.comparison.rows import (
         add_rerank_rows,
         duplicate_census,
         format_comparison,
@@ -151,7 +151,7 @@ def compare_retrieval_cmd(
         if census_kept:
             report["duplicates_kept"] = census_kept
     if noise_floor:
-        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES, measure_noise_floor
 
         report["noise_floor"] = measure_noise_floor(
             stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
@@ -168,7 +168,7 @@ def _build_compare_stores(
     cfg: Any, strategies: Optional[str], hybrid: bool, compare_items: list[Any]
 ) -> dict[str, Any]:
     """The label -> store map to compare: per-strategy builds, hybrid rows, or built backends."""
-    from llb.rag.comparison_builders import (
+    from llb.rag.comparison.builders import (
         build_chunking_comparison,
         build_hybrid_comparison,
         load_compare_stores,
@@ -224,7 +224,7 @@ def _comparison_baseline(
 
 def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:
     """Return deployable rows only: oracle and lexical diagnostics cannot receive ADOPT."""
-    from llb.rag.compare_models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
+    from llb.rag.comparison.models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
 
     excluded = {ROW_ORACLE_DOC}
     if hybrid:

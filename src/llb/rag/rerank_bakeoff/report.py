@@ -19,7 +19,7 @@ from llb.rag.bakeoff_report_sections import (
     skipped_section,
     verdict_lines,
 )
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.embedding_bakeoff.uncertainty import (
     BAR_FIRST_HIT,
     BAR_RECALL,
     DEFAULT_CONFIDENCE,
@@ -80,7 +80,7 @@ def format_report(report: RerankBakeoffReport) -> str:
     lines.extend(verdict_lines(report, prefix="  ", call_word="SWAP TO"))
     floor = report.get("noise_floor")
     if floor is not None:
-        from llb.rag.noise_floor_report import format_noise_floor
+        from llb.rag.noise_floor.report import format_noise_floor
 
         lines.extend(format_noise_floor(floor))
     return "\n".join(lines)
@@ -208,6 +208,6 @@ def _floor_section(report: RerankBakeoffReport) -> list[str]:
             "state whether the recommended gap is larger than numeric noise.",
             "",
         ]
-    from llb.rag.noise_floor_report import render_noise_floor_markdown
+    from llb.rag.noise_floor.report import render_noise_floor_markdown
 
     return render_noise_floor_markdown(floor)

@@ -12,9 +12,9 @@ answer depends on the prior steps.
 
 Core locations:
 
-- `src/llb/bench/chain_context_policy.py`: policy execution and per-step context assembly;
-- `src/llb/bench/chain_context.py`: run orchestration and persistence;
-- `src/llb/bench/chain_context_report.py`: result contract, provenance projection, digest, and
+- `src/llb/bench/chain_context/policy.py`: policy execution and per-step context assembly;
+- `src/llb/bench/chain_context/run.py`: run orchestration and persistence;
+- `src/llb/bench/chain_context/report.py`: result contract, provenance projection, digest, and
   recommendation rendering;
 - `src/llb/board/chain_context.py`: one-model policy comparison board rows under
   `TIER_CHAIN_CONTEXT` (mirrors `board/harnesses.py`);
@@ -39,15 +39,16 @@ make bench-chain-context CHAIN_CONTEXT_MODEL=<model> CHAIN_CONTEXT_BACKEND=<back
 Retrieval reaches the store through the injectable `Retriever` seam (`retrieve(question, k)`), and
 the model through the same injectable `complete` (prompt -> raw text) every category uses, so the
 exact context assembled per policy per step is unit-tested over a FAKE endpoint with no GPU
-(`tests/llb/bench/test_chain_context.py`). Each step's answer is scored objectively against its
-reference answer (`scoring.correctness` token-F1); the headline is FINAL-answer correctness per
-chain (does the chain end right), with per-step correctness recorded alongside, both with bootstrap
-CIs. Each policy persists its OWN run bundle under `$DATA_DIR/chain-context/<timestamp>/` tagged
-with the policy (mirroring the per-harness agentic bundles); provenance records the policy, the
-`prompt_system_ids` (the role/instruction template ids), and the `chain_set_digest`. Verified-data
-stamping (`--data-verified` + `--verification-ref`) follows the same category-suite gate as the
-other benchmarks. The board loader ranks all policies together, and `llb recommend` gains a
-"Context policy" section naming the best policy per model when bundles exist.
+(`tests/llb/bench/chain_context/test_chain_context.py`). Each step's answer is scored objectively
+against its reference answer (`scoring.correctness` token-F1); the headline is FINAL-answer
+correctness per chain (does the chain end right), with per-step correctness recorded alongside, both
+with bootstrap CIs. Each policy persists its OWN run bundle under
+`$DATA_DIR/chain-context/<timestamp>/` tagged with the policy (mirroring the per-harness agentic
+bundles); provenance records the policy, the `prompt_system_ids` (the role/instruction template
+ids), and the `chain_set_digest`. Verified-data stamping (`--data-verified` + `--verification-ref`)
+follows the same category-suite gate as the other benchmarks. The board loader ranks all policies
+together, and `llb recommend` gains a "Context policy" section naming the best policy per model when
+bundles exist.
 
 CUDA evidence (2026-07-11, RTX 4060 Ti 16 GB): the committed 20-chain fixture (40 steps) run
 through `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama, all four policies in one ~11 min invocation,

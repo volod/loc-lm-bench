@@ -123,7 +123,7 @@ llb score-external-rag --answers <answered-jsonl> --source-map <map.jsonl>
 The sidecar (`.json` list, `.jsonl`, or `.csv`; lives beside the answer log or under
 `$DATA_DIR/external-rag/<system>/`) maps provider keys to corpus locations: each record carries
 `doc_id` (required), optional `char_start`/`char_end`, and at least one of `article_id`, `url`,
-`article_title` (matched in that precedence order). `src/llb/scoring/external_rag_sources.py`
+`article_title` (matched in that precedence order). `src/llb/scoring/external_rag/sources.py`
 implements the audit; `tests/llb/scoring/test_external_rag_sources.py` covers it.
 
 - A mapped source WITH a char range is scored by the same source-span metric as local retrieval

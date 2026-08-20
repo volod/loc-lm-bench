@@ -10,7 +10,7 @@ import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
 
-from llb.rag.lexical import normalize_token, tokenize
+from llb.rag.vector_store.lexical import normalize_token, tokenize
 from llb.rag.query_prep.base import KIND_TYPO, STEP_TYPOS, KnownWordProbe, QueryEdit
 from llb.rag.query_prep.distance import damerau_levenshtein
 from llb.rag.query_prep.restore import (
@@ -97,7 +97,7 @@ def apply_typos(
     the correction entirely. See `restore` for the constraint order, and `restore_policy` for the
     three constants `policy` sets on it.
     """
-    from llb.rag.lexical import _TOKEN_RE
+    from llb.rag.vector_store.lexical import _TOKEN_RE
 
     edits: list[QueryEdit] = []
     origins = provenance or {}

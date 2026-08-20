@@ -6,7 +6,7 @@ Part of the [Data prep](../data-prep.md) area of the
 ## Resumable extraction (interrupt-safe drafting)
 
 Because a full-corpus draft is a multi-hour extraction stage, the bundle carries a per-document,
-per-window extraction journal (`src/llb/prep/ontology/journal.py`). Each completed window appends
+per-window extraction journal (`src/llb/prep/ontology/coverage/journal.py`). Each completed window appends
 one line to `extraction_journal.jsonl` (keyed by `(doc_id, window_index)`, deterministic from
 `split_document`); a settings sidecar `extraction_journal.meta.json` is written at the start of
 extraction and pins the determinism-critical settings (corpus, seed, `max_items`, window size and
@@ -30,9 +30,9 @@ execution path consumes that object directly, so request validation has one entr
 ## Frontier ontology draft lane
 
 The ontology pipeline has explicit extraction and drafting endpoint routes. Immutable route data
-and phase telemetry live in `src/llb/prep/ontology/endpoint_config.py`; validation and construction
-live in `endpoint_builder.py`; local and Litellm transports live in `endpoint.py`; spend/call
-enforcement lives in `src/llb/prep/frontier_telemetry.py`.
+and phase telemetry live in `src/llb/prep/ontology/endpoints/config.py`; validation and construction
+live in `endpoints/builder.py`; local and Litellm transports live in `endpoint.py`; spend/call
+enforcement lives in `src/llb/prep/frontier/telemetry.py`.
 `prepare-goldset-draft` keeps both phases local by default. A frontier run requires all of:
 
 - `DRAFT_ENDPOINT=frontier` (or `--endpoint frontier`);
@@ -60,7 +60,7 @@ call that crosses the cap. A budget stop exits nonzero but leaves `provenance.js
 `status: aborted`, the reason, telemetry, and the extraction journal so the bundle remains
 inspectable and resumable.
 
-`make draft-compare` (`src/llb/prep/ontology/compare.py`) runs local extraction once, selects a
+`make draft-compare` (`src/llb/prep/ontology/compare/run.py`) runs local extraction once, selects a
 bounded deterministic seed set, and drafts those exact seed objects through the local and frontier
 routes. It writes self-contained lane bundles, verification worksheets, and
 `$DATA_DIR/draft-compare/<timestamp>/comparison.json`. The report includes seed fingerprints,
@@ -109,13 +109,13 @@ comparison report fingerprints the shared seeds. No test needs network access or
 ## Sequential local Qwen/Gemma draft comparison
 
 `make local-ua-draft-probe` runs an exact-seed local comparison without data egress. The adaptive
-selection policy in `src/llb/prep/ontology/local_compare_models.py` uses the benchmark GPU-tier
+selection policy in `src/llb/prep/ontology/compare/local_models.py` uses the benchmark GPU-tier
 detector and selects Qwen/Gemma Ollama pairs for 12, 16, 24, and 32 GiB hosts. Explicit model flags
 remain available, but the selected tags must already be installed. The resolved tier, GPU name,
 models, context, and override/profile source are recorded under
 `comparison.json.execution.resource_selection`.
 
-`src/llb/prep/ontology/local_compare.py` enforces sequential residency: unload all Ollama models,
+`src/llb/prep/ontology/compare/local.py` enforces sequential residency: unload all Ollama models,
 run the Qwen baseline extraction and drafts, unload Qwen and wait until absent, run Gemma over the
 same seed objects, then unload again. `ollama_lifecycle.py` turns unload failure into an error rather
 than permitting overlapping model residency. The comparison uses `baseline` and `probe` lane names;

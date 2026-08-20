@@ -83,20 +83,21 @@ hatch, one spawn per candidate cheaper and unsafe for exactly the reason above.
 The two policies a roster needs before anything loads -- REFUSE an id with no declared convention
 (scoring a model under a guessed input format is the one failure a bake-off must not commit) and
 DECLINE `trust_remote_code` unless the operator opted in -- are identical for encoders and
-rerankers, so they live once in `src/llb/rag/candidate_screen.py` and each lane supplies its own
-registry and wording. `llb.rag.embedding_bakeoff_roster` and `llb.rag.rerank_bakeoff.roster` are
-thin. A declined or unloadable candidate lands in `report.json` under `skipped[]` and in `report.md`
-under "Candidates not scored", so a shorter table always says why it is shorter.
+rerankers, so they live once in `src/llb/rag/encoders/candidate_screen.py` and each lane supplies
+its own registry and wording. `llb.rag.embedding_bakeoff.roster` and `llb.rag.rerank_bakeoff.roster`
+are thin. A declined or unloadable candidate lands in `report.json` under `skipped[]` and in
+`report.md` under "Candidates not scored", so a shorter table always says why it is shorter.
 
 Registered reranker families (`rerank_bakeoff/families.py`), each citing the card it was read from:
 `bge-reranker`, `jina-reranker-v2` (remote code), `gte-multilingual-reranker` (remote code),
 `mxbai-rerank-v2`, `qwen3-reranker` (its repo config applies the retrieval-task instruction on the
 query side; the report prints the prompt on the row).
 
-Tests (no download, no GPU): `tests/llb/rag/test_rerank_bakeoff_lane.py` (shared pools, the
-reranker-off row, cost columns, the fit gate, a mid-pass death, the verdict, the floor),
+Tests (no download, no GPU): `tests/llb/rag/rerank_bakeoff/test_rerank_bakeoff_lane.py` (shared
+pools, the reranker-off row, cost columns, the fit gate, a mid-pass death, the verdict, the floor),
 `test_rerank_bakeoff_roster.py`, `test_rerank_bakeoff_report.py`, `test_rerank_bakeoff_worker.py`
-(the child protocol over a stub cross-encoder), `tests/llb/rag/test_compare_rerankers_cli.py`.
+(the child protocol over a stub cross-encoder),
+`tests/llb/rag/rerank_bakeoff/test_compare_rerankers_cli.py`.
 
 ## What the bake-off measured (2026-08-16, CUDA host)
 

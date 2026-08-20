@@ -13,7 +13,7 @@ all?" is a row in the same table rather than a separate run.
 
 Every candidate is also PAIRED against the incumbent over shared resample index sets, and the run
 ends in a keep-or-swap verdict a lead inside its own sampling interval cannot win -- the same
-machinery the embedder bake-off reads (`llb.rag.embedding_bakeoff_uncertainty`), because the
+machinery the embedder bake-off reads (`llb.rag.embedding_bakeoff.uncertainty`), because the
 statistics take metric vectors, not encoders.
 
 Pure and injectable: the model loader is a seam, so scoring, ranking, the fit gate, the paired
@@ -25,11 +25,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.rag.candidate_screen import SkippedCandidate
-from llb.rag.card_parity import blocks_scoring, parity_skip_row
-from llb.rag.embedding_bakeoff import paired_item_ledger
-from llb.rag.embedding_bakeoff_models import BakeoffItem
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.encoders.candidate_screen import SkippedCandidate
+from llb.rag.encoders.card_parity import blocks_scoring, parity_skip_row
+from llb.rag.embedding_bakeoff.scoring import paired_item_ledger
+from llb.rag.embedding_bakeoff.models import BakeoffItem
+from llb.rag.embedding_bakeoff.uncertainty import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,

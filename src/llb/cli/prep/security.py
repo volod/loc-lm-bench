@@ -28,7 +28,7 @@ def adapt_security_set_cmd(
     """security benchmark: adapt a public adversarial set (UA-framed) into SecurityCase records for bench-security."""
     import json as _json
 
-    from llb.prep.security_sources import JAILBREAK_TEMPLATES, adapt_public_set, load_rows
+    from llb.prep.security.sources import JAILBREAK_TEMPLATES, adapt_public_set, load_rows
 
     try:
         cases = adapt_public_set(
@@ -68,7 +68,7 @@ def plant_security_cases_cmd(
     """security benchmark: plant corpus-specific RAG-injection + canary leak cases over a real corpus."""
     import json as _json
 
-    from llb.prep.security_planter import plant_from_corpus
+    from llb.prep.security.planter import plant_from_corpus
 
     try:
         cases = plant_from_corpus(
@@ -114,7 +114,7 @@ def derive_security_cases_cmd(
     from datetime import datetime, timezone
 
     from llb.core.paths import resolve_data_dir
-    from llb.prep.security_derive import derive_from_bundle
+    from llb.prep.security.derive import derive_from_bundle
 
     try:
         cases = derive_from_bundle(
@@ -155,7 +155,7 @@ def derive_security_worksheet_cmd(
     import json as _json
 
     from llb.goldset.verify_base import worksheet_fieldnames, write_worksheet_rows
-    from llb.prep.security_derive import worksheet_rows
+    from llb.prep.security.derive import worksheet_rows
 
     raw = _json.loads(cases.read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not raw:

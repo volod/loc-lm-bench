@@ -27,8 +27,8 @@ from llb.prep.curation.input import (
     question_too_vague,
     references_document_structure,
 )
-from llb.prep.frontier import ground_span
-from llb.prep.ontology.refine import is_circular
+from llb.prep.frontier.client import ground_span
+from llb.prep.ontology.extraction.refine import is_circular
 
 _LOG = logging.getLogger(__name__)
 

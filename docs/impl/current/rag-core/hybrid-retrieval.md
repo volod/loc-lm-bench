@@ -10,7 +10,7 @@ stop losing to semantic-only search.
 
 Modules:
 
-- `src/llb/rag/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo)
+- `src/llb/rag/vector_store/lexical.py` -- pure-Python BM25 (`LexicalIndex`, in-repo)
   over the SAME offset-exact chunks the vector index holds; Ukrainian-aware token normalization
   on the LEXICAL side only (casefold, apostrophe-variant unification U+2019/U+02BC/`` ` ``/`'`,
   punctuation strip). Every apostrophe variant is an IN-WORD character for the token regex, which
@@ -30,7 +30,7 @@ Modules:
   page-metadata join's `metadata.headers` breadcrumb, `metadata.pages` range, and governance
   `metadata.acl_label`; `RagStore.retrieve(question, k, chunk_filter=...)` applies it BEFORE
   fusion/ranking (with a filter the whole index is scanned, so the cut is exact).
-- `src/llb/rag/store.py` -- `mode="hybrid"` builds the lexical index beside the vector index;
+- `src/llb/rag/vector_store/store.py` -- `mode="hybrid"` builds the lexical index beside the vector index;
   fusion runs inside `RagStore.retrieve`, so every dense `VectorIndex` backend
   (FAISS/Chroma/Qdrant/LanceDB) gains hybrid identically. The lexical index persists as
   `lexical_index.json` beside the FAISS artifacts and joins `store_meta.json`
@@ -76,15 +76,15 @@ The lemma normalizer is reused by the miss analysis: `topic_of` in
 `src/llb/board/miss_analysis/classify.py` lemmatizes its heuristic topic key, so Ukrainian case
 forms of one topic collapse into a single cluster instead of splitting across inflections.
 
-Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukrainian orders
-registry (order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask
-for exact terms; the CI regression (`tests/llb/rag/test_hybrid_store.py`) proves hybrid strictly
-beats a signal-free dense ranking there. Tests: `tests/llb/rag/test_lexical.py` (normalization,
-BM25 determinism and tie-breaks, lemma matching, save/load), `tests/llb/rag/test_filters.py`
-(doc/heading/page/ACL predicates), `tests/llb/rag/test_hybrid_store.py` (fusion order, weight
-extremes, filter-before-fusion, refusal paths, config-knob application, byte-identical text), plus
-grid/tuner coverage in
-`tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
+Fixture: `samples/goldsets/exact_terms_uk/` -- a 40-entry near-identical Ukrainian orders registry
+(order numbers, DSTU codes, surnames, amounts; ~41 recursive chunks) whose 8 items ask for exact
+terms; the CI regression (`tests/llb/rag/vector_store/test_hybrid_store.py`) proves hybrid strictly
+beats a signal-free dense ranking there. Tests: `tests/llb/rag/vector_store/test_lexical.py`
+(normalization, BM25 determinism and tie-breaks, lemma matching, save/load),
+`tests/llb/rag/test_filters.py` (doc/heading/page/ACL predicates),
+`tests/llb/rag/vector_store/test_hybrid_store.py` (fusion order, weight extremes,
+filter-before-fusion, refusal paths, config-knob application, byte-identical text), plus grid/tuner
+coverage in `tests/llb/cli/test_cli_models.py` / `tests/llb/optimize/test_tuner.py`.
 
 Durable evidence (2026-07-08, real e5-base stores on the dev host, outside quick CI), via
 `compare-retrieval --hybrid`; the `lexical` column was added by the 2026-07-24 re-read below,
@@ -249,8 +249,8 @@ rigor](../rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-
 SQuAD final split all 6 apostrophe-bearing questions still retrieve their gold evidence at k=10 with
 an unmitigated re-typed apostrophe, so the dense e5 lane is variant-insensitive here and there is
 nothing for normalization to recover. Post-v2 the lexical lane cannot see the class either --
-`llb.rag.lexical.tokenize` unifies every variant, so a re-typed query and the index produce the same
-terms by construction, which IS the fix.
+`llb.rag.vector_store.lexical.tokenize` unifies every variant, so a re-typed query and the index
+produce the same terms by construction, which IS the fix.
 
 ## What the fix is worth when the corpus MIXES variants
 
@@ -266,7 +266,7 @@ Durable evidence (2026-07-24, CUDA host, pinned e5-base, `recursive` 800/120, k=
 duplicate collapse 180 chunks -> 80 indexed, `--noise-floor`; reports under
 `$DATA_DIR/apostrophe-normalizer/mixed-{before,after}/`). Both arms ran the SAME command over the
 SAME corpus, goldset, and seed; the `before` arm ran from a worktree whose ONLY difference is the
-pre-fix `src/llb/rag/lexical.py`:
+pre-fix `src/llb/rag/vector_store/lexical.py`:
 
 | row | v1 recall@10 / MRR | v2 recall@10 / MRR | delta recall@10 |
 | --- | --- | --- | ---: |
@@ -280,10 +280,10 @@ The measurement floor is +/-0.000 recall@10 in both arms, so every delta above c
 orders of magnitude. Three readings:
 
 - **The lexical lane loses exactly the entries written with a punctuation-class variant.** Per
-  variant (measured by `tests/llb/rag/test_apostrophe_variant_fixture.py`, which reproduces the
-  heavy run's 0.500 exactly): U+0027 15/15 and U+02BC 15/15 under BOTH tokenizers, U+2019 0/23 and
-  grave 0/7 under v1 and 23/23 + 7/7 under v2. The v1 misses are TOTAL -- the subject term returns
-  zero BM25 candidates, and boilerplate ties recover none of them.
+  variant (measured by `tests/llb/rag/vector_store/test_apostrophe_variant_fixture.py`, which
+  reproduces the heavy run's 0.500 exactly): U+0027 15/15 and U+02BC 15/15 under BOTH tokenizers,
+  U+2019 0/23 and grave 0/7 under v1 and 23/23 + 7/7 under v2. The v1 misses are TOTAL -- the
+  subject term returns zero BM25 candidates, and boilerplate ties recover none of them.
 - **U+02BC never needed the fix.** It is a Unicode modifier LETTER, so `\w` already kept
   `памʼятка` whole; only U+2019 and the grave accent are punctuation to the regex and split the
   word. The fix's value is variant-specific, which a single "apostrophe support" claim would hide.

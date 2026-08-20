@@ -15,7 +15,7 @@ because that adapter remains an explicitly installed lane.
 
 import numpy as np
 import pytest
-from refresh_helpers import (
+from tests.llb.rag.refresh_helpers import (
     QUESTIONS,
     V1_DOCS,
     V2_DOCS,
@@ -26,7 +26,7 @@ from refresh_helpers import (
 )
 
 from llb.rag.refresh.store_refresh import stored_vectors
-from llb.rag.store import RagStore
+from llb.rag.vector_store.store import RagStore
 
 pytestmark = pytest.mark.heavy_env
 

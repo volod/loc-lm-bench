@@ -24,20 +24,20 @@ from llb.conflicts.constants import (
     TIER_SEMANTIC,
     tiers_up_to,
 )
-from llb.conflicts.bundle_record import RunInputs, stage_attribution_inputs
+from llb.conflicts.bundle.record import RunInputs, stage_attribution_inputs
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
-from llb.conflicts.governance_coverage import governance_coverage
-from llb.conflicts.governance_stage import lost_pair_attribution
-from llb.conflicts.hash_tier import detect_hash_duplicates
-from llb.conflicts.lexical_tier import detect_lexical_near_duplicates
+from llb.conflicts.governance.coverage import governance_coverage
+from llb.conflicts.governance.stage import lost_pair_attribution
+from llb.conflicts.tiers.hash import detect_hash_duplicates
+from llb.conflicts.tiers.lexical import detect_lexical_near_duplicates
 from llb.conflicts.models import AuditResult, Finding, TierStats
-from llb.conflicts.null_distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
-from llb.conflicts.semantic_run import run_semantic_tiers
+from llb.conflicts.calibration.distribution import DEFAULT_NULL_SAMPLE_PAIRS, DEFAULT_NULL_SEED
+from llb.conflicts.tiers.semantic_run import run_semantic_tiers
 from llb.conflicts.store_access import StoreView
-from llb.conflicts.tree import SemanticPrefixTree
+from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.core.contracts.common import JsonObject
 from llb.goldset.schema import GoldItem
-from llb.prep.frontier_telemetry import LLMComplete
+from llb.prep.frontier.telemetry import LLMComplete
 
 _LOG = logging.getLogger(__name__)
 

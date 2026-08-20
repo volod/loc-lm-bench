@@ -1,6 +1,6 @@
 """Registry of per-model INPUT conventions for cross-encoder reranker candidates.
 
-Same failure mode the embedder registry exists to prevent (`llb.rag.embedding_families`), one stage
+Same failure mode the embedder registry exists to prevent (`llb.rag.encoders.families`), one stage
 later: a reranker scored without the instruction its card documents silently loses rank quality, and
 the loss is invisible in a bake-off row -- the candidate simply looks worse than it is. So the
 roster is a declared REGISTRY, not a chain of substring guesses, and every entry names the card it
@@ -23,8 +23,8 @@ Pure and dependency-free: no torch, no network.
 
 from dataclasses import dataclass
 
-from llb.rag.embedding_families import RETRIEVAL_TASK
-from llb.rag.model_stack import REQUIRED_TRANSFORMERS_MAJOR_LEGACY
+from llb.rag.encoders.families import RETRIEVAL_TASK
+from llb.rag.encoders.model_stack import REQUIRED_TRANSFORMERS_MAJOR_LEGACY
 
 FAMILY_BGE_RERANKER = "bge-reranker"
 FAMILY_JINA_RERANKER_V2 = "jina-reranker-v2"
@@ -47,7 +47,7 @@ class RerankConvention:
 
     `requires_transformers_major` is the transformers major that repository code targets, when it
     targets one this repo does not pin -- a PACKAGING fact that routes the row to the legacy
-    scoring pass instead of failing the run (`llb.rag.model_stack`).
+    scoring pass instead of failing the run (`llb.rag.encoders.model_stack`).
     """
 
     family: str

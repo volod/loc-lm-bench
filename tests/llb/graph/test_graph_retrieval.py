@@ -10,7 +10,15 @@ from llb.graph.constants import (
 )
 from llb.graph.retrieval import serialize_subgraph
 from llb.rag import retrieval as span_metric
-from test_graph import TEXT, _answer_span, _build_store, _doc, _extraction, _graph, _span
+from tests.llb.graph.test_graph import (
+    TEXT,
+    _answer_span,
+    _build_store,
+    _doc,
+    _extraction,
+    _graph,
+    _span,
+)
 
 
 @pytest.mark.heavy_env

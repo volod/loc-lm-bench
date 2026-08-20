@@ -18,9 +18,10 @@ lanes they guard are the [embedder bake-off](embedders.md#the-bake-off-lane) and
 
 ## The card-parity gate
 
-`src/llb/rag/card_parity.py` is the shared verdict: the comparison arithmetic, the three states a
-row can be in, and the skip entry a failure produces. Each lane supplies its own reference table --
-`src/llb/rag/encoder_cards.py` and `src/llb/rag/rerank_bakeoff/cards.py` -- and its own probe.
+`src/llb/rag/encoders/card_parity.py` is the shared verdict: the comparison arithmetic, the three
+states a row can be in, and the skip entry a failure produces. Each lane supplies its own reference
+table -- `src/llb/rag/encoders/cards.py` and `src/llb/rag/rerank_bakeoff/cards.py` -- and its own
+probe.
 
 Every reference is the model card's OWN example, run through the query/passage convention this repo
 registered for that family ([embedder conventions](embedders.md#the-convention-registry),
@@ -63,15 +64,15 @@ Both `report.md` files carry a **Model-card parity** table with the status, the 
 worst absolute delta, the tolerance, and the card URL. `report.json` carries the same record on
 each scored row under `card_parity` and on each refused entry under `skipped[]`.
 
-Tests (no download, no GPU): `tests/llb/rag/test_card_parity.py` (the verdict, the transforms, the
-scale, a shape mismatch), `test_encoder_cards.py` and `test_rerank_cards.py` (the gates over
-injected encoders/scorers, including each registry's self-consistency), and
+Tests (no download, no GPU): `tests/llb/rag/encoders/test_card_parity.py` (the verdict, the
+transforms, the scale, a shape mismatch), `test_encoder_cards.py` and `test_rerank_cards.py` (the
+gates over injected encoders/scorers, including each registry's self-consistency), and
 `test_bakeoff_card_gate.py` (the lane statement: a mismatching candidate is never built and never
 scored, and a cleared row carries the verdict that let it in).
 
 ## Declared load precision
 
-`src/llb/rag/encoder_precision.py`. Warm chunks/s is read as a MODEL property, and on a mixed roster
+`src/llb/rag/encoders/precision.py`. Warm chunks/s is read as a MODEL property, and on a mixed roster
 it is not one: the published checkpoints differ in precision, so a half-precision upload outruns a
 float32 one at identical parameter count and dimension. `--encoder-dtype` (Make: `EMBED_DTYPE=`)
 loads EVERY candidate at one declared precision; the default `auto` keeps each checkpoint's own,
@@ -92,7 +93,7 @@ gte-multilingual-base row scored in the legacy pass therefore reads `float32 (ca
 
 ## The legacy transformers pass
 
-`src/llb/rag/model_stack.py` declares the contract; each family's convention record carries
+`src/llb/rag/encoders/model_stack.py` declares the contract; each family's convention record carries
 `requires_transformers_major`, and the shared [roster screen](embedders.md#roster-screening) turns
 that into a third check beside the unregistered-id refusal and the `trust_remote_code` decline. A
 candidate whose repository code targets a major this interpreter is not is SKIPPED with the pin it

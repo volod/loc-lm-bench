@@ -1,7 +1,7 @@
 import pytest
 
-from llb.scoring import text_analysis as ta
-from llb.scoring import text_analysis_labels as ta_labels
+from llb.scoring.text_analysis import run as ta
+from llb.scoring.text_analysis import labels as ta_labels
 
 
 def make_similarity(table):

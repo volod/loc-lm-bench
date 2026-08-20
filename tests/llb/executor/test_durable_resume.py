@@ -7,7 +7,7 @@ from llb.backends.base import ChatResult
 from llb.core.config import RunConfig
 from llb.executor import durability_journal as durability
 from llb.executor.runner import run_eval
-from test_durable_eval import (
+from tests.llb.executor.test_durable_eval import (
     DOC,
     FakeLauncher,
     FakeStore,

@@ -169,7 +169,7 @@ compare-rerankers: ## Rank cross-encoder rerankers on one pool with paired evide
 
 # The LEGACY scoring pass. Four roster candidates ship repository code written against the
 # transformers 4.x API, so on the pinned 5.x stack they are screened out with the pin they need
-# (src/llb/rag/model_stack.py). These two targets run the SAME recipe as their siblings above with
+# (src/llb/rag/encoders/model_stack.py). These two targets run the SAME recipe as their siblings above with
 # `BAKEOFF_PY` pointed at the `[encoders-legacy]` virtualenv under $DATA_DIR, which is where those
 # rows can be scored. Every other variable behaves exactly as it does on the pinned target.
 ENCODERS_LEGACY_PY = $(DATA_DIR)/venvs/encoders-legacy/bin/python

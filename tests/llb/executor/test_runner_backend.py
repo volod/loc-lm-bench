@@ -4,7 +4,7 @@ from llb.backends.base import ChatResult
 from llb.core.config import RunConfig
 from llb.eval import common
 from llb.executor.runner import run_eval
-from test_runner import DOC, FakeLauncher, FakeStore, _runner_fn, gold_item
+from tests.llb.executor.test_runner import DOC, FakeLauncher, FakeStore, _runner_fn, gold_item
 
 
 def test_score_case_records_semantic_with_embedder():

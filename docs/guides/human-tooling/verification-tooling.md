@@ -242,7 +242,7 @@ Then flip the accepted items into your scored gold set **through the ledger** --
 hand-editing the boolean. `verify-accept` prints the exact command:
 
 ```
-python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset.jsonl
+python -m llb.prep.squad.ingest ... --verified-goldset <bundle>/accepted/goldset.jsonl
 ```
 
 The ingester re-adopts those ids by **replacement** (canonical content + grounded spans), which is
@@ -383,7 +383,7 @@ A multi-reviewer bundle's `sample_manifest.json` deliberately cannot serve as a
 - `src/llb/goldset/verify_session/` -- the interactive reviewer (`run_session` + the pure
   `parse_command` / `format_card` / `first_undecided_index` pieces).
 - `src/llb/goldset/validate.py` -- the structural gate (`make validate-goldset`).
-- `src/llb/prep/verified_ledger.py` -- the adoption-by-replacement mechanism behind the flip.
+- `src/llb/prep/goldset/verified_ledger.py` -- the adoption-by-replacement mechanism behind the flip.
 - `tests/llb/goldset/test_goldset_verify.py` -- the strata/sampling/acceptance math, the accepted-ledger
   round-trip through the ledger, and the scripted session loop (no model/endpoint/GPU needed).
 - `tests/llb/goldset/test_verify_adjudication.py` -- hand-computed kappa fixtures, the adjudication draw,

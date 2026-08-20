@@ -83,17 +83,18 @@ row and counted as `n_partially_applicable`); only a cell that declares ALL of t
 collapse cells through the bound half of the change rather than dropping them, which the per-field
 audit could not do.
 
-Core locations are `src/llb/bench/agentic_policy_change_replay.py` (`ReplayedEpisode`, the digest
-over sent prompts plus the refused one, and the per-arm comparison, which takes two whole settings
-maps), the `on_refused_prompt` observer in `src/llb/bench/agentic/episode.py`,
-`src/llb/bench/agentic_policy_change_audit.py`
+Core locations are `src/llb/bench/policy_change/replay_episode.py` (`ReplayedEpisode` and
+the digest over sent prompts plus the refused one) and
+`src/llb/bench/policy_change/replay.py` (the per-arm comparison, which takes two whole
+settings maps), the `on_refused_prompt` observer in `src/llb/bench/agentic/episode.py`,
+`src/llb/bench/policy_change/audit.py`
 (`PolicyChange`, the auditable fields, the per-study cell geometry, and the verdict),
-`src/llb/bench/agentic_policy_change_geometry.py` (geometry readers for cap-fitting and the
-flat-cell lanes), `src/llb/bench/agentic_policy_change_tasks.py` (the per-study task-builder
-seam), `src/llb/bench/agentic_policy_change_audit_report.py`,
-`src/llb/cli/bench/category_agentic_policy_change_audit.py`, and
-`tests/llb/bench/test_agentic_policy_change_audit.py`. The summarize-bound audit
-(`src/llb/bench/agentic_memory_cap_audit.py`) is now ONE use of this mechanism rather than a second
+`src/llb/bench/policy_change/geometry.py` (geometry readers for cap-fitting and the
+flat-cell lanes), `src/llb/bench/policy_change/tasks.py` (the per-study task-builder
+seam), `src/llb/bench/policy_change/audit_report.py`,
+`src/llb/cli/bench/context/policy_change_audit.py`, and
+`tests/llb/bench/policy_change/test_agentic_policy_change_audit.py`. The summarize-bound audit
+(`src/llb/bench/memory/cap_audit.py`) is now ONE use of this mechanism rather than a second
 one: it supplies the elision diagnostic that explains the verdict, and CI asserts the two agree cell
 for cell.
 
@@ -124,10 +125,10 @@ field; audits land under `$DATA_DIR/agentic-policy-change-audit/<run>/`):
 | `compact_share` + `summary_input_cap` | 0.5 -> 0.45, window -> trigger | 15 | 12 | 0 (8 partial) |
 
 The registry is one list (`AUDITED_DESIGN_PATHS` in
-`src/llb/bench/agentic_policy_change_audit.py`), so the CLI audit and the CI pin gate never walk
+`src/llb/bench/policy_change/audit.py`), so the CLI audit and the CI pin gate never walk
 different evidence. Cap-fitting cells still replay both `observation_cap` and `compact` arms over
 the memory-dependent chain; the added lanes each declare their own policy arm(s) and a task builder
-other than the memory-chain one (`src/llb/bench/agentic_policy_change_tasks.py`): fat-observation
+other than the memory-chain one (`src/llb/bench/policy_change/tasks.py`): fat-observation
 pipelines for the constant sweep, medium long-transcript pipelines for keep-long, and seed-shaped
 file/db tasks for the harness rows.
 
@@ -247,26 +248,25 @@ first-divergent steps, so the committed cells are the whole separating set the p
 solver was checked against that scan at depths 8 / 12 / 14 -- every guard it excludes fails to
 separate and every guard it includes separates.
 
-Core locations are `src/llb/bench/agentic_policy_change_interaction_fixture.py` (the fixture
-contract, and the no-model probe of the predeclared geometry),
-`src/llb/bench/agentic_policy_change_interaction.py` (the two readings, and the separation verdict),
-`src/llb/bench/agentic_policy_change_interaction_band.py` (the band solver and its report),
-`src/llb/bench/agentic_policy_change_interaction_terms.py` (the interval vocabulary a condition is
-stated in), `..._conditions.py` (what each pair demands of a guard, including the per-fold elision
-read) and `..._cap.py` (the
-observation cap's own case, which is the one that has to tell a prompt the episode SENDS from a
-prompt the loop merely builds), and the four test modules that ARE the CI assertion --
-`tests/llb/bench/test_agentic_policy_change_interaction.py` for the separation, `..._band.py` for
-the band (including that a multi-fold step answers rather than refusing), `..._couplings.py` for the
-enumeration below, and `..._cap.py` for the discarded-prompt
-arithmetic. All run inside `make ci`, together in about two seconds, with no target of their own.
+Core locations are `src/llb/bench/policy_change/interaction/fixture.py` (the fixture contract, and
+the no-model probe of the predeclared geometry), `src/llb/bench/policy_change/interaction/run.py`
+(the two readings, and the separation verdict), `src/llb/bench/policy_change/interaction/band.py`
+(the band solver and its report), `src/llb/bench/policy_change/interaction/terms.py` (the interval
+vocabulary a condition is stated in), `..._conditions.py` (what each pair demands of a guard,
+including the per-fold elision read) and `..._cap.py` (the observation cap's own case, which is the
+one that has to tell a prompt the episode SENDS from a prompt the loop merely builds), and the four
+test modules that ARE the CI assertion --
+`tests/llb/bench/policy_change/test_agentic_policy_change_interaction.py` for the separation,
+`..._band.py` for the band (including that a multi-fold step answers rather than refusing),
+`..._couplings.py` for the enumeration below, and `..._cap.py` for the discarded-prompt arithmetic.
+All run inside `make ci`, together in about two seconds, with no target of their own.
 
 ```bash
 make ci                       # the separation assertion; a collapsed audit fails here
-.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction.py \
-  tests/llb/bench/test_agentic_policy_change_interaction_band.py \
-  tests/llb/bench/test_agentic_policy_change_interaction_couplings.py \
-  tests/llb/bench/test_agentic_policy_change_interaction_cap.py
+.venv/bin/python -m pytest tests/llb/bench/policy_change/test_agentic_policy_change_interaction.py \
+  tests/llb/bench/policy_change/test_agentic_policy_change_interaction_band.py \
+  tests/llb/bench/policy_change/test_agentic_policy_change_interaction_couplings.py \
+  tests/llb/bench/policy_change/test_agentic_policy_change_interaction_cap.py
 ```
 
 ## One pair separates, and the other fourteen are answered
@@ -391,25 +391,24 @@ fold step 2: nothing separates (caps 800 -> 1600 move step 2's prompt (3904 vs 4
   discards entries 1-1 and entry 2 (9 of 10 moved entries) survives it
 ```
 
-Core locations are `src/llb/bench/agentic_policy_change_interaction_couplings.py` (the enumeration,
-its mechanisms, the one concrete move per field, and the per-field candidate grid the value sweep
-asks with),
-`src/llb/bench/agentic_policy_change_interaction_conditions.py` (the per-pair conditions) and
+Core locations are `src/llb/bench/policy_change/interaction/couplings.py` (the enumeration, its
+mechanisms, the one concrete move per field, and the per-field candidate grid the value sweep asks
+with), `src/llb/bench/policy_change/interaction/conditions.py` (the per-pair conditions) and
 `..._cap.py` (the cap's three cases and the per-entry arithmetic),
-`src/llb/bench/agentic_policy_change_interaction_scan.py` (the replay scan, the candidate-value
-sweep, and its refusal to scan a baseline the per-field arm would not replay), and
-`tests/llb/bench/test_agentic_policy_change_interaction_couplings.py`, which is the assertion: every
-pair enumerated, one pair separating, the two independence claims (`keep_last_n` inert, the head
-share length-preserving) measured on real prompts rather than asserted, and the fourteen other pairs
-silent across the candidate-value grid.
-`tests/llb/bench/test_agentic_policy_change_interaction_cap.py` holds the cap's three cases: the
-shipped geometry's blocked steps stay blocked for the stated reason, the corner's branch is read on
-stated sequences, and the fold-everything count is measured against `compact_state`.
+`src/llb/bench/policy_change/interaction/scan.py` (the replay scan, the candidate-value sweep, and
+its refusal to scan a baseline the per-field arm would not replay), and
+`tests/llb/bench/policy_change/test_agentic_policy_change_interaction_couplings.py`, which is the
+assertion: every pair enumerated, one pair separating, the two independence claims (`keep_last_n`
+inert, the head share length-preserving) measured on real prompts rather than asserted, and the
+fourteen other pairs silent across the candidate-value grid.
+`tests/llb/bench/policy_change/test_agentic_policy_change_interaction_cap.py` holds the cap's three
+cases: the shipped geometry's blocked steps stay blocked for the stated reason, the corner's branch
+is read on stated sequences, and the fold-everything count is measured against `compact_state`.
 
 ```bash
-make ci                       # the enumeration; a new policy constant fails here unpaired
-.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_change_interaction_couplings.py \
-  -m slow                     # the wide replay scan, ~30 s, excluded from `make ci`
+make ci # the enumeration; a new policy constant fails here unpaired .venv/bin/python -m pytest
+tests/llb/bench/policy_change/test_agentic_policy_change_interaction_couplings.py \ -m slow # the
+wide replay scan, ~30 s, excluded from `make ci`
 ```
 
 ## The audit runs in CI, on the act that creates the problem
@@ -467,26 +466,23 @@ policy. CI also asserts that the pinned set is exactly `ContextPolicy`'s constan
 constant is pinned here or the build is red, and that every doc anchor the fixture names still
 resolves.
 
-Core locations are `src/llb/bench/agentic_policy_pin_gate.py` (the fixture reader and the drift
+Core locations are `src/llb/bench/policy_change/pin_gate.py` (the fixture reader and the drift
 check, which passes the full pinned policy into the replay for untouched fields and joins
-invalidated cells to published figures),
-`src/llb/bench/agentic_policy_pin_gate_report.py` (the failure message, which renders its
-re-run scope through the audit's own reporter and lists retired figures),
-`src/llb/bench/agentic_published_value_figures.py` (the study/cell join over registered published
-values, including derived consequences),
-`src/llb/bench/agentic_published_value_operation_scope.py` (the registered-value half of that
-scope), `src/llb/bench/agentic_published_value_operation_policy.py` (the perturbation check that
-makes each operation declaration trustworthy), the shared study registry `AUDITED_DESIGN_PATHS` in
-`src/llb/bench/agentic_policy_change_audit.py` (one registry spanning the three cap-fitting studies,
-the constant sweep, the keep-long lane, and the harness-comparison rows, so the CLI audit and the
-gate can never walk different evidence), `src/llb/bench/agentic_policy_change_tasks.py` (the
-per-study task-builder seam the wider registry needs),
-`src/llb/bench/agentic_policy_change_replay.py` (`_policy`, which prefers pins over design
-`held_fixed` for fields the change does not move), and
-`tests/llb/bench/test_agentic_policy_pin_gate.py`, which is the gate itself -- it runs inside
-`make ci`, with no target of its own.
+invalidated cells to published figures), `src/llb/bench/policy_change/pin_gate_report.py` (the
+failure message, which renders its re-run scope through the audit's own reporter and lists retired
+figures), `src/llb/bench/published_value/figures.py` (the study/cell join over registered published
+values, including derived consequences), `src/llb/bench/published_value/operations/scope.py` (the
+registered-value half of that scope), `src/llb/bench/published_value/operations/policy.py` (the
+perturbation check that makes each operation declaration trustworthy), the shared study registry
+`AUDITED_DESIGN_PATHS` in `src/llb/bench/policy_change/audit.py` (one registry spanning the three
+cap-fitting studies, the constant sweep, the keep-long lane, and the harness-comparison rows, so the
+CLI audit and the gate can never walk different evidence), `src/llb/bench/policy_change/tasks.py`
+(the per-study task-builder seam the wider registry needs), `src/llb/bench/policy_change/replay.py`
+(`_policy`, which prefers pins over design `held_fixed` for fields the change does not move), and
+`tests/llb/bench/policy_change/test_agentic_policy_pin_gate.py`, which is the gate itself -- it runs
+inside `make ci`, with no target of its own.
 
 ```bash
-make ci                       # the gate; a drifted constant fails here with the re-run scope
-.venv/bin/python -m pytest tests/llb/bench/test_agentic_policy_pin_gate.py   # just the gate
+make ci # the gate; a drifted constant fails here with the re-run scope .venv/bin/python -m pytest
+tests/llb/bench/policy_change/test_agentic_policy_pin_gate.py # just the gate
 ```

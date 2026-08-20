@@ -20,7 +20,7 @@ development fixture and must not be presented as a private-corpus benchmark.
 
 `source.json` pins the source digest and selection rule. Regeneration is intentionally strict:
 
-    python -m llb.prep.published_goldset \
+    python -m llb.prep.goldset.published \
       --source /path/to/val.json \
       --out-dir samples/goldsets/ua_squad_postedited_v1
 

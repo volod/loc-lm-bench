@@ -13,7 +13,7 @@ from llb.scoring.aggregate import (
     TIER_TEXT_ANALYSIS,
     TIER_TOOLING,
 )
-from test_board import _write_category_run, _write_full_composite_model
+from tests.llb.board.test_board import _write_category_run, _write_full_composite_model
 
 
 def test_load_category_records_groups_by_tier(tmp_path):

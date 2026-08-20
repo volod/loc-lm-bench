@@ -7,7 +7,7 @@ from llb.prep.ontology.constants import (
     PDF_ONTOLOGY_REPORT_FILENAME,
     PROMPT_DICTIONARY_FILENAME,
 )
-from test_ontology_draft import _draft
+from tests.llb.prep.ontology.drafting.test_ontology_draft import _draft
 
 
 def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):

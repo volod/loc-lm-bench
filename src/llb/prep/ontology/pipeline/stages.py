@@ -12,16 +12,16 @@ from typing import TYPE_CHECKING
 
 from llb.goldset.chains import ChainItem
 from llb.goldset.schema import GoldItem
-from llb.prep.frontier_telemetry import LLMComplete
+from llb.prep.frontier.telemetry import LLMComplete
 from llb.prep.ontology.constants import (
     DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
     DEFAULT_MULTI_HOP_RELATION_PAIR_TARGET,
     DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
 )
-from llb.prep.ontology.coverage import build_seeds, select_seeds
-from llb.prep.ontology.coverage_report import coverage_report
-from llb.prep.ontology.draft import draft_items
-from llb.prep.ontology.induce import ontology_constraints
+from llb.prep.ontology.coverage.sample import build_seeds, select_seeds
+from llb.prep.ontology.coverage.report import coverage_report
+from llb.prep.ontology.drafting.run import draft_items
+from llb.prep.ontology.extraction.induce import ontology_constraints
 from llb.prep.ontology.models import (
     DocExtraction,
     DocRecord,
@@ -29,7 +29,7 @@ from llb.prep.ontology.models import (
     OntologyCandidate,
 )
 from llb.prep.ontology.pipeline.settings import DraftSettings
-from llb.prep.ontology.refine import refine_drafts_labeled
+from llb.prep.ontology.extraction.refine import refine_drafts_labeled
 
 if TYPE_CHECKING:
     from llb.graph.model import KnowledgeGraph
@@ -84,8 +84,8 @@ def _multi_hop_stage(
     `graph` is the injection seam: pass a built `KnowledgeGraph` to skip the store load entirely
     (tests drive the stage with no DuckDB, no store on disk, and no extraction).
     """
-    from llb.prep.ontology.multi_hop import build_multi_hop_items, draft_multi_hop
-    from llb.prep.ontology.path_strata import PathStratumTargets
+    from llb.prep.ontology.drafting.multi_hop import build_multi_hop_items, draft_multi_hop
+    from llb.prep.ontology.drafting.path_strata import PathStratumTargets
     from llb.prep.ontology.pipeline.multihop_paths import select_multi_hop_paths
 
     if graph is None:
@@ -120,8 +120,8 @@ def _chain_stage(
     seed: int,
 ) -> list[ChainItem]:
     """Walk 2-hop graph paths and emit ordered chain-of-questions items."""
-    from llb.prep.ontology.chains import build_chain_items
-    from llb.prep.ontology.graph_paths import walk_chain_paths
+    from llb.prep.ontology.drafting.chains import build_chain_items
+    from llb.prep.ontology.drafting.graph_paths import walk_chain_paths
 
     graph = _load_path_graph(graph_dir, extractions, docs, ontology)
     seeds = walk_chain_paths(graph, max_paths=max_paths, seed=seed)
@@ -132,7 +132,7 @@ def _feedback_adjusted_hint(
     draft_hint: str, rejection_feedback: Path | str
 ) -> tuple[str, dict[str, object]]:
     """Tighten the draft prompt with verify-gate rejection feedback; return the applied block."""
-    from llb.prep.ontology.feedback import (
+    from llb.prep.ontology.extraction.feedback import (
         applied_feedback_block,
         feedback_hint_text,
         feedback_hints,
@@ -205,7 +205,7 @@ def _graph_stages(
         {} if settings.multi_hop and settings.multi_hop_path_stratified else None
     )
     if settings.multi_hop:
-        from llb.prep.ontology.dedup import load_prior_questions
+        from llb.prep.ontology.extraction.dedup import load_prior_questions
         from llb.prep.ontology.pipeline.expansion import prior_multihop_span_pairs
 
         excluded_span_pairs = prior_multihop_span_pairs(settings.dedup_against or [])

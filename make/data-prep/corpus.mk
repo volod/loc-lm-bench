@@ -157,7 +157,7 @@ validate-goldset: ## Validate GOLDSET and/or CHAINS against CORPUS (defaults to 
 
 ingest-squad: ## Ingest local SQuAD QA; matching reviewed ids are verified (SQUAD_JSON=path)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.prep.ingest_squad --squad-json "$(SQUAD_JSON)"
+	$(PY) -m llb.prep.squad.ingest --squad-json "$(SQUAD_JSON)"
 
 external-squad-rag: ## Curate prompt-02 SQuAD exports, import a canonical goldset, validate, and build RAG
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -177,7 +177,7 @@ external-squad-rag: ## Curate prompt-02 SQuAD exports, import a canonical goldse
 	$(PY) -m llb.main curate-drafts "$${inputs[@]}" --kind squad --out "$(SQUAD_DRAFT_CURATED)" \
 	  --corpus-root "$(SQUAD_DRAFT_CORPUS)" $(if $(filter 0,$(SQUAD_DRAFT_SEMANTIC)),--no-semantic-dedup,); \
 	echo "[external-squad-rag] ingest -> $(SQUAD_DRAFT_OUT_DIR)/llb/goldset/$(SQUAD_DRAFT_GOLDSET_NAME)"; \
-	$(PY) -m llb.prep.ingest_squad --squad-json "$(SQUAD_DRAFT_CURATED)" \
+	$(PY) -m llb.prep.squad.ingest --squad-json "$(SQUAD_DRAFT_CURATED)" \
 	  --out-dir "$(SQUAD_DRAFT_OUT_DIR)/llb" --out-name "$(SQUAD_DRAFT_GOLDSET_NAME)"; \
 	echo "[external-squad-rag] validate"; \
 	$(PY) -m llb.goldset.validate --goldset "$(SQUAD_DRAFT_OUT_DIR)/llb/goldset/$(SQUAD_DRAFT_GOLDSET_NAME)" \

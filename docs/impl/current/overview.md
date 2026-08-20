@@ -68,7 +68,7 @@ Current focused package boundaries:
 | Fine-tuning execution | `finetune/trainer.py` for backend orchestration and `training_runtime.py` for PEFT/TRL runtime helpers |
 | Gold verification | `goldset/verify_acceptance*.py`, `verify_card*.py`, `verify_commands.py`, `verify_ref*.py`, `verify_sampling/`, `verify_multi/agreement_metrics.py`, `verify_multi/agreement_report.py`, `verify_multi/consensus.py`, and `verify_session/` |
 | Ontology and PDF preparation | `prep/ontology/pipeline/`, `prep/ontology/artifacts/`, and `prep/pdf/` |
-| Ontology endpoint construction | `prep/ontology/endpoint_config.py` for immutable data and `endpoint_builder.py` for validation/construction |
+| Ontology endpoint construction | `prep/ontology/endpoints/config.py` for immutable data and `endpoints/builder.py` for validation/construction |
 | RAG preparation | `rag/chunking/` and `rag/query_prep/` |
 | External RAG review | `scoring/external_rag/` and `scoring/external_rag_session/` |
 | Judge scoring and rating | `scoring/judge/` and `judge/rate/` |
@@ -81,7 +81,7 @@ below the 250-line soft target. It uses direct owner-module imports rather than 
 facades: knowledge-tree callers select `knowledge_tree_source` or `knowledge_tree_render`, and the
 bilingual cutoff flow selects `translation_models`, `translation_artifacts`, or
 `translation_workflow`. Chain-context result/report projection lives in
-`bench/chain_context_report.py`; benchmark orchestration remains in `bench/chain_context.py`.
+`bench/chain_context/report.py`; benchmark orchestration remains in `bench/chain_context/run.py`.
 Focused tests follow the same behavioral boundaries, including separate joint-search halving,
 schedule, finalist-resume, Optuna-resume, and pick-resume modules. Validation: `make ci` passes
 Ruff formatting/lint, mypy over 558 source files, and 1,477 lightweight tests with 42 slow tests
@@ -94,7 +94,7 @@ reported top-20 list at a domain boundary while leaving `make/config.mk` intact:
   cross-model execution, roster contracts, and property-separation statistics have focused owner
   modules under `eval/embedder_adoption/`;
 - corpus governance metadata and corpus fingerprinting have separate owners in
-  `prep/corpus_governance.py` and `prep/corpus_fingerprints.py`;
+  `prep/corpus/governance.py` and `prep/corpus/fingerprints.py`;
 - paired evidence interpretation lives in `rag/fusion_evidence/paired.py`, separate from bootstrap
   primitives in `rag/fusion_evidence/stats.py`;
 - fourteen catch-all test modules are grouped into behavior-named test files with shared setup in
@@ -127,6 +127,78 @@ over the 250-line soft target are cohesive lanes kept whole on purpose, and
 `scripts/code_quality.sh` lists them so the set stays visible. Validation: `make ci` passes Ruff
 format/lint, mypy over 917 source files, and 2,880 lightweight tests with 60 deselected.
 `scripts/code_quality.sh`, `git diff --check`, and the direct-owner stale-import audit also pass.
+
+The readability pass validated on 2026-08-19 works the next `scripts/code_quality.sh` list from the
+top down, splitting only where a module carried two subjects and leaving flat configuration and
+declaration files (`make/config.mk`, `core/config_fields.py`, `quality/acceptance_gate_registry.py`,
+the Typer option blocks) whole. It takes the reported production maximum from 392 to 302 lines and
+the over-limit count from 58 to 45. Symbols move to one canonical owner and every caller imports
+that owner directly; there are no forwarding exports or compatibility modules.
+
+- Console rendering and pre-run resolution leave their command modules:
+  `cli/prep/conflicts_output.py`, `cli/prep/conflict_null_research_support.py`, and
+  `cli/rag/compare_embeddings_setup.py`.
+- The independent-null research matrix separates dispatch from payload: `conflicts/null_research/run.py`
+  validates a generation and prepares the shared geometries, `null_research/summaries.py` builds the
+  four per-generation records around one envelope and one `ResearchBudget`, and
+  `controls/synthesis_bank.py` assembles a verified control bank.
+- The lost-pair attribution becomes three modules -- `conflicts/governance/stage_rule.py` (stage
+  vocabulary and the per-pair rule), `governance/stage_search.py` (which lost pair is named), and
+  `governance/stage.py` (the payload and its sentence).
+- Scoring one built store moves to `rag/embedding_bakeoff/scoring.py`, leaving
+  `embedding_bakeoff/run.py` as the roster driver.
+- Agentic lanes separate the prospective contract from the reading of its runs
+  (`bench/loop_feedback/transfer_design.py`,
+  `loop_feedback/adaptation_design.py`), the grid from the sweep
+  (`loop_policy/grid.py`), one replayed episode from the arm comparison
+  (`policy_change/replay_episode.py`), the elision solver from the interaction conditions
+  (`interaction/elision.py`), and the per-policy bundle writes into
+  `context_policy/report_persist.py`.
+- The stdlib reach measurement separates on-disk layout evidence
+  (`quality/gpu_guard/reach/layout.py`) from the coverage partition and its report.
+- Three duplicate copies of the paired-delta reader collapse into
+  `bench/loop_feedback/outcomes.py`; `drive_with_backend` in
+  `bench/common_backend.py` and `tune` in `optimize/tuner.py` are decomposed in place; the search
+  space commentary orphaned in `tuner.py` is re-homed onto the constants it describes in
+  `optimize/tuning_space.py`.
+
+Validation: `make ci` passes Ruff format/lint, mypy over 1,105 source files, and 3,743 lightweight
+tests with 50 deselected; `scripts/code_quality.sh` reports no complexity or shell-lint finding.
+
+### Package shape
+
+A package root is a table of contents, so it names SUBJECTS rather than listing every module. The
+subpackage refactor validated on 2026-08-20 applied that to the roots a reader could no longer scan:
+`bench` went from 142 modules in one directory to 6, `conflicts` from 91 to 8, `rag` from 64 to 9.
+Modules keep one canonical owner and every caller imports it directly -- the subpackage `__init__.py`
+holds its docstring and nothing else, so no import path is served by two names.
+
+Inside a subpackage a module drops the prefix its package now carries: `agentic_memory_fold_step.py`
+became `bench/memory/fold_step/run.py`, and `null_research_conformal.py` became
+`conflicts/null_research/statistics/conformal.py`. The rule for reading a path is that each segment
+narrows the subject, and the leaf names the part.
+
+| Package | Root holds | Subpackages |
+| --- | --- | --- |
+| `bench` | the shared model seam and tool world | `agentic` (the loop), `harness`, `context_policy`, `controller_authority`, `loop_policy`, `loop_feedback`, `memory` (10 study packages), `policy_change`, `published_value`, `chain_context`, `security`, `summarization`, `tooling`, `text_analysis`, `knowledge_cutoff` |
+| `conflicts` | the audit entry, its contracts, and store access | `tiers`, `claim`, `semantic_tree`, `calibration`, `governance`, `bundle`, `grouping`, `resolution`, `report`, `null_research` (generations, controls, statistics, report) |
+| `rag` | the source-span metric and the cross-cutting seams | `encoders`, `embedding_bakeoff`, `vector_store`, `chunking`, `query_prep`, `duplicates`, `noise_floor`, `comparison`, `fusion`, `fusion_evidence`, `fusion_calibration`, `refresh`, `rerank_bakeoff`, `multihop_probe`, `paired_reading_audit` |
+| `prep` | ingestion entry points | `corpus`, `frontier`, `security`, `squad`, `goldset`, `ontology` (endpoints, extraction, drafting, coverage, compare), `pdf`, `curation` |
+| `quality` | the repo's own gates | `gpu_guard` (with `reach` for the stdlib and installed scans) |
+| `scoring` | the board, aggregate, and per-signal scorers | `composite`, `structured`, `text_analysis`, `security`, `tooling`, `judge`, `policy`, `external_rag`, `frontier_agreement` |
+| `eval` | the shared lane contracts | `query_robustness`, `restoration_sweep`, `answer_quality`, `context_ablation`, `embedder_adoption` |
+| `cli/bench` | the shared command helpers | `categories`, `context`, `loop`, `memory`, `knowledge_cutoff` |
+
+The test tree mirrors those groups, so the tests for a module sit under the same subject name:
+`tests/llb/bench`, `rag`, `conflicts`, `eval`, `prep`, `prep/ontology`, `quality`, `scoring`,
+`backends`, `board`, `finetune`, and `goldset` are all grouped this way, and shared fixture modules
+stay at the package test root. A test that reads a fixture from another test module imports it by
+its full `tests.llb....` path rather than by bare module name: a bare import only resolves because
+pytest puts the importing file's own directory on `sys.path`, which stops being true as soon as the
+tests are grouped, and the dotted form resolves from anywhere.
+
+Validation: `make ci` passes Ruff format/lint, mypy over 1,174 source files, and 3,743 lightweight
+tests with 50 deselected; `make lint-md`, `lint-doc-links`, and `scripts/code_quality.sh` also pass.
 
 `scripts/quickstart.sh` is the process/configuration entry point and sources functional fragments
 from `scripts/quickstart/`: `helpers`, `model_select`, `pdf_draft`, `serving`, `track_a`, `track_b`,

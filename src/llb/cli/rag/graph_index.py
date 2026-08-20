@@ -8,7 +8,7 @@ from llb.cli.helpers import load_config
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
-    from llb.prep.frontier_telemetry import LLMComplete
+    from llb.prep.frontier.telemetry import LLMComplete
     from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 
 
@@ -105,10 +105,10 @@ def _local_complete(
     output budget and `think=False` disables a reasoning model's hidden thinking (Ollama native),
     so a calibrated reasoning model emits JSON directly.
     """
-    from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.prep.ontology.endpoint import build_complete
-    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
-    from llb.prep.ontology.endpoint_config import ENDPOINT_LOCAL
+    from llb.prep.frontier.telemetry import ProvenanceLog
+    from llb.prep.ontology.endpoints.client import build_complete
+    from llb.prep.ontology.endpoints.builder import EndpointConfigBuilder
+    from llb.prep.ontology.endpoints.config import ENDPOINT_LOCAL
 
     cfg = (
         EndpointConfigBuilder(kind=ENDPOINT_LOCAL, model=model, think=think)
@@ -151,7 +151,7 @@ def _resolve_graph_inputs(
 ) -> "tuple[list[DocExtraction], list[DocRecord], OntologyCandidate | None]":
     """Load (extractions, docs, ontology) from a bundle, explicit paths, or fresh extraction."""
     from llb.graph.ingest import load_bundle, load_extractions
-    from llb.prep.ontology.inventory import inventory_corpus
+    from llb.prep.ontology.coverage.inventory import inventory_corpus
 
     if bundle is not None:
         return load_bundle(bundle)
@@ -159,7 +159,7 @@ def _resolve_graph_inputs(
         docs = inventory_corpus(cfg.corpus_root)
         return load_extractions(extraction), docs, None
     if extract_model is not None:
-        from llb.prep.ontology.extract import LLMExtractionAdapter, extract_corpus
+        from llb.prep.ontology.extraction.run import LLMExtractionAdapter, extract_corpus
 
         docs = inventory_corpus(cfg.corpus_root)
         complete = _local_complete(

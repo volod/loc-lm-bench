@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.scoring.external_rag.records import ensure_human_fields, load_jsonl, write_jsonl
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_FIELD,

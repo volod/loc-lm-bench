@@ -309,7 +309,7 @@ question-answering gold set, every evaluation category, and the graph ontology d
    `verified=true` + their copied corpus) and prints the exact adoption command:
 
    ```
-   python -m llb.prep.ingest_squad ... --verified-goldset <bundle>/accepted/goldset.jsonl
+   python -m llb.prep.squad.ingest ... --verified-goldset <bundle>/accepted/goldset.jsonl
    ```
 
    Canonical-item *replacement* (not a boolean-only flip) is what prevents a reused ID from
@@ -337,18 +337,17 @@ A documented stratified sample passes the four checks and the accepted items are
   matters and how annotator artifacts creep in.
 - Data documentation discipline: **Datasheets for Datasets** (Gebru et al. 2018) --
   <https://arxiv.org/abs/1803.09010> -- record what you sampled, how, and what you accepted.
-- The project's own grounding mechanics: read `src/llb/prep/frontier.py` (`ground_span` /
+- The project's own grounding mechanics: read `src/llb/prep/frontier/client.py` (`ground_span` /
   `build_drafted_items`) so you know what "grounded" already guarantees before you sample.
 
 ### In this repo
-`src/llb/goldset/verify/`, `src/llb/goldset/verify_sampling/`, and
-`src/llb/goldset/verify_session/` (the `make verify-*` sample / review / accept tooling),
-`src/llb/goldset/validate.py` (the structural gate),
-`src/llb/prep/frontier.py` + `src/llb/prep/ontology/` (the drafting + grounding the human sample
-verifies), `src/llb/prep/verified_ledger.py` (the adoption mechanism). The operator walkthrough for
-all three commands -- real-corpus and synthetic bundles -- is the
-[verification-tooling manual](verification-tooling.md); see also the
-[gold-set-from-scratch guide](../data-prep/goldset-from-scratch.md).
+`src/llb/goldset/verify/`, `src/llb/goldset/verify_sampling/`, and `src/llb/goldset/verify_session/`
+(the `make verify-*` sample / review / accept tooling), `src/llb/goldset/validate.py` (the
+structural gate), `src/llb/prep/frontier/client.py` + `src/llb/prep/ontology/` (the drafting +
+grounding the human sample verifies), `src/llb/prep/goldset/verified_ledger.py` (the adoption
+mechanism). The operator walkthrough for all three commands -- real-corpus and synthetic bundles --
+is the [verification-tooling manual](verification-tooling.md); see also the [gold-set-from-scratch
+guide](../data-prep/goldset-from-scratch.md).
 
 ---
 
