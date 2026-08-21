@@ -53,6 +53,8 @@ The primary decision loop covers:
 - host-aware model and context feasibility;
 - objective metrics, calibrated judge diagnostics, throughput, VRAM, and power;
 - corpus self-consistency: which passages contradict each other and which edition supersedes which;
+- record identity: which entity nodes, drafted gold items, and document editions denote the
+  same thing;
 - reproducible sweep, recommendation, and board artifacts.
 
 The project does not try to be a hosted benchmark service, scheduler, model registry, or generic
@@ -140,6 +142,49 @@ A finished audit is an immutable bundle that answers its own questions offline: 
 pair, why a document was excluded, what a smaller candidate budget would have returned, and which
 store it read. Resolution is an overlay with a rollback contract -- the audit proposes, a reviewer
 decides, and the corpus is never silently rewritten.
+
+## Entity Resolution and Record Linkage
+
+Three of this project's record tables carry an IDENTITY that the pipeline currently settles by
+exact string match, and each wrong call costs something downstream. A knowledge-graph entity node
+keys on its normalized name, so "Ivan Franko", "Franko", and an inflected form become three nodes
+that split one entity's mentions, its degree, and its community membership. A drafted gold item is
+kept or dropped as a near-duplicate on one cosine threshold over its question alone. A re-ingested
+document edition counts as a duplicate only when its content hashes match or its shingle overlap
+clears a hand-set cutoff.
+
+These are one problem -- deciding whether two records denote the same thing -- solved three times
+by hand, each time on a single feature with a chosen constant. Probabilistic record linkage
+combines several weak agreement signals into ONE match probability, estimates its parameters
+without labels where none exist and from reviewer labels where they do, and resolves the surviving
+pairwise links into identity clusters. That is what this capability supplies: a single linkage seam
+that graph node identity, gold-item duplication, and document edition identity all address the same
+way, so an operating threshold is READ OFF a precision/recall curve instead of picked.
+
+The confidence contract is narrow, and it is what keeps this capability separable from the conflict
+audit rather than a second entrance to it:
+
+- Linkage answers **"are these two records the same thing"**, never "do these two records
+  contradict each other". The semantic and claim tiers of the conflict audit are untouched by it,
+  and no linkage output may be presented as a conflict verdict.
+- A linkage model estimates its NON-MATCH parameters from randomly drawn record pairs. That
+  construction is sound for identity -- two records drawn at random from a corpus are almost surely
+  not the same record -- and it is precisely what four generations of research showed is
+  unavailable for contradiction ([future research](../impl/future-research.md)). A calibrated
+  linkage probability therefore does NOT reopen the closed per-pair semantic false-positive
+  question, and no report, chart, or CLI string may describe it as though it did.
+- A match probability is publishable together with the labelled set it was scored against. In a
+  domain with no reviewer labels, linkage output is a ranked candidate list on exactly the same
+  terms as the semantic conflict tier's.
+- Linkage PROPOSES an identity cluster and never rewrites a corpus, a gold set, or a stored graph
+  in place. A merge that changes what a later measurement is taken over is adopted on retrieval or
+  review evidence, and the pre-merge artifact is retained so the reading can be redone without it.
+
+The boundary: linkage needs records carrying several weakly correlated fields, and it is not
+applied to a single free-text column -- a passage of prose with no other fields is outside what the
+method can price. It is not a retriever and it does not rank chunks for a query. Chunk-level
+near-duplicate collapse stays where it is, in the retrieval store's collapse tiers, and linkage does
+not replace the exact and normalized hash tiers that already settle the cases they settle for free.
 
 ## Retrieval Before Generation
 
@@ -312,6 +357,8 @@ The implementation favors maintained Python-native components and small project-
 - Typer for the CLI;
 - Pydantic and typed dictionaries for contracts;
 - FAISS plus optional GraphRAG/vector-store backends for retrieval;
+- Splink over the DuckDB backend already required by the graph store, for probabilistic
+  record linkage;
 - Optuna for bounded tuning;
 - MLflow for experiment analysis;
 - DeepEval for calibrated judge execution;
@@ -367,19 +414,20 @@ Four rules settle it, in order:
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 3 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage and intactness reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 4 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
-| 5 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 6 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
-| 7 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 8 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 9 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 10 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 11 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 12 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 13 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 14 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 15 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Plan](../impl/plan.md) |
+| 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage and intactness reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
+| 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
+| 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
+| 9 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 10 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 11 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 12 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 13 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 14 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 15 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 16 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -445,6 +493,8 @@ The system succeeds when an operator can:
 
 - create or ingest a representative Ukrainian gold set and verify it;
 - learn where their corpus contradicts itself, and which edition supersedes which;
+- learn which entity nodes, gold items, and document editions denote the same thing, and at
+  what threshold that was decided;
 - prove the retriever exposes the labeled evidence;
 - identify runnable model/backend configurations for the host;
 - execute comparable final-split runs without manual artifact repair;

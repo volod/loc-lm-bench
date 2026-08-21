@@ -74,6 +74,173 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
+### Entity resolution -- `entity-resolution`
+
+#### record-linkage-seam
+
+Build the project-owned record-linkage seam the three identity decisions below share: a module that
+takes a table of records, a comparison specification, and blocking rules, and returns pairwise match
+probabilities plus identity clusters, with the trained model written into the run bundle so an
+identity decision is reproducible without re-fitting. Splink (MIT, pure Python, 4.0.x) supplies the
+Fellegi-Sunter engine on the DuckDB backend the graph store already requires, so the seam is a thin
+adapter rather than a new algorithm: blocking-rule comparison counting before a run,
+`estimate_u_using_random_sampling` for the non-match parameters, expectation-maximisation for the
+match parameters, `estimate_m_from_pairwise_labels` when a reviewer label table is supplied, and
+`cluster_pairwise_predictions_at_threshold` for the connected-components resolution. The comparison
+level vocabulary is what makes one seam serve three domains: exact match, Levenshtein and
+Jaro-Winkler on names, array intersection on aliases, Jaccard on shingle sets, absolute date
+difference on `effective_date`, and cosine similarity on an embedding column that the project
+already computes.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: CLEAR
+- Dependencies: none. Prerequisite for `gold-item-duplicate-linkage`,
+  `graph-entity-node-resolution`, and `corpus-edition-linkage`; every one of them consumes this
+  seam rather than calling Splink directly.
+- User-visible outcome: an operator can ask "which of these records denote the same thing, and how
+  sure is the model" of any record table the project holds, and can replay the answer from a saved
+  model artifact without re-fitting.
+- Scope boundary: in scope -- `src/llb/linkage/`, a `linkage = ["splink>=4.0,<5"]` optional extra
+  behind a lazy import (base install must not pull it), a typed comparison/blocking specification,
+  the training and clustering calls above, the saved model artifact, and deterministic fixture tests
+  gated with `pytest.importorskip("splink")` as the optional-dependency suites already are. Out of
+  scope -- any domain wiring (the three tasks below own that), the Spark/Athena/Postgres backends,
+  shipping Splink's interactive HTML charts as an artifact (record the numbers behind them instead),
+  and any use of a match probability as a CONFLICT probability, which the capability's confidence
+  contract forbids.
+- Data and artifact paths: `$DATA_DIR/<method>/<run>/linkage/` -- `settings.json` (the comparison
+  and blocking specification), `match_parameters.json` (fitted m/u per comparison level),
+  `blocking_counts.json` (comparisons each blocking rule generates, recorded before the fit),
+  `pairs.jsonl` (pair, match probability, per-level agreement), `clusters.jsonl` (cluster id per
+  record at the run's threshold).
+- Execution path: `uv pip install -e ".[linkage]"`; a low-level `llb link-records` command plus a
+  `make link-records` target carrying a `##` help line; no GPU and no network.
+- Acceptance gates: `make ci` green; the seam's tests run on a committed fixture record table with a
+  known cluster structure and reproduce it at a fixed seed; `make ci-github` stays green with the
+  extra absent; a saved model artifact re-scores the same pairs to identical probabilities.
+- Documentation target: a new `docs/impl/current/entity-resolution.md` area page indexed from
+  [current.md](current.md), plus its row in [the guides index](../guides/README.md).
+
+#### gold-item-duplicate-linkage
+
+Replace the single-threshold near-duplicate suppression on drafted gold items with a linkage model
+over the fields a gold item actually carries. Today a drafted item is dropped when its question's
+E5 cosine against any prior bundle's question clears one constant, with a second constant on the
+answer for multi-hop items; a paraphrase that shares no wording survives, and two genuinely distinct
+questions about one narrow fact are dropped together. The item record has more to say than one
+cosine: question embedding, reference-answer embedding, `source_doc_id`, source-span character
+overlap, question type, and split. Fit those as comparison levels so the drop decision carries a
+match probability and the operating point is a position on a curve rather than a constant, and so
+the drop report can name WHICH agreements drove each rejection.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: CLEAR
+- Dependencies: `record-linkage-seam`. Cross-section block: the labelled operating threshold comes
+  from `entity-merge-labelled-set` under Human-Assisted Tasks, so this task ships the fitted model
+  and a provisional threshold from the unsupervised fit, and the DEFAULT threshold stays where it is
+  until that label set exists. Reuse `deduplicate_drafts` in
+  `src/llb/prep/ontology/pipeline/deduplication.py` and the embedder seam in
+  `src/llb/prep/ontology/extraction/dedup.py` -- the pinned E5 embedder stays the vector source, so
+  "similar" keeps meaning what the retriever sees.
+- User-visible outcome: a drafting run reports each suppressed item with its match probability and
+  the agreements behind it, and a reviewer can move the suppression threshold with the
+  precision/recall consequence visible instead of guessing at a cosine.
+- Scope boundary: in scope -- the comparison specification for gold items, the fit, the enriched
+  drop report, and a shadow mode that scores the model beside the shipped constant without changing
+  which items are dropped. Out of scope -- changing the drafting prompts, changing what a gold item
+  contains, re-deduplicating already-accepted ledgers, and flipping the default suppression policy
+  (that needs the labelled set).
+- Data and artifact paths: the drafting bundle's dedup report gains the per-pair probability and
+  level agreements; the fitted model lands under `<bundle>/linkage/`.
+- Execution path: the existing drafting entrypoint with the shadow lane enabled; fixture coverage
+  uses the deterministic fake embedder the current dedup tests already inject, so no GPU.
+- Acceptance gates: `make ci` green; on the committed drafting fixture the model reproduces every
+  drop the exact-question and cosine tiers make today (a model that loses an obvious duplicate is
+  rejected); the shadow report lists each pair where model and constant disagree, which is the input
+  the human labelling task consumes.
+- Documentation target: the gold-item section of `docs/impl/current/entity-resolution.md`, linked
+  from [chunking and glossary](current/data-prep/chunking-and-glossary.md) drafting notes.
+
+#### graph-entity-node-resolution
+
+Resolve knowledge-graph entity nodes that denote the same entity but do not share a normalized name.
+`_GraphBuilder._ensure_node` keys a node on `_norm(name)` and merges aliases onto an exact key hit,
+which is a full-string equality test: in Ukrainian a surname alone, a full name, an initialed form,
+and an inflected case form key differently, so one entity becomes several nodes and its mentions,
+degree, and community membership split across them. That fragmentation is upstream of every graph
+lane number -- seed linking scores a node by the question tokens it covers, and a node holding a
+third of its own mentions covers proportionally fewer. Link the node table on name distance, alias
+array intersection, entity type, co-occurring document ids, and mention-embedding cosine; cluster
+the survivors; and read the result on the same source-span metric the vector lanes use.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: RUN NEEDED
+- Dependencies: `record-linkage-seam`. Cross-section block: adopting a clustering threshold as the
+  default needs the reviewer merge labels from `entity-merge-labelled-set`. Reuse the graph builder
+  and node model in `src/llb/graph/`, and the graph-vs-vector paired comparison described in
+  [GraphRAG](current/graphrag-backend.md).
+- User-visible outcome: the operator learns whether entity fragmentation is costing the graph lane
+  real recall, and by how much, rather than assuming either way.
+- Scope boundary: in scope -- a post-build resolution pass that produces canonical node clusters as
+  an OVERLAY beside the built graph, a paired graph-lane rerun at the same seed and item set with
+  and without the overlay, and per-threshold readings. Out of scope -- rewriting the stored graph in
+  place, changing the closed node vocabulary or entity typing, merging EDGES or relations, applying
+  the overlay to a shipped store before the paired reading justifies it, and any coreference model.
+- Data and artifact paths: `$DATA_DIR/graph-entity-resolution/<run>/` -- the linkage artifacts, the
+  node-cluster overlay, and the paired lane comparison; the pre-merge graph is retained so the
+  reading can be redone without the overlay.
+- Execution path: build the graph as today, then a `make resolve-graph-entities` target over the
+  built graph, then the existing graph-vs-vector paired comparison per candidate threshold on the
+  CUDA host.
+- Acceptance gates: `make ci` green with fixture coverage on a small planted graph whose correct
+  clustering is known; the paired rerun scores the identical item set at a fixed seed and reports
+  recall at k and MRR with and without the overlay, plus the count of nodes merged and the largest
+  cluster formed; a threshold that lifts no lane metric is recorded as a negative result and the
+  overlay is not adopted.
+- Documentation target: the graph section of `docs/impl/current/entity-resolution.md`, with the lane
+  numbers going to [GraphRAG](current/graphrag-backend.md).
+
+#### corpus-edition-linkage (optional)
+
+Fold the conflict audit's duplicate and subsumption evidence into one calibrated duplicate
+probability per document pair, and cluster the result into edition groups. The hash tier settles
+byte-identical and normalization-equivalent documents for free and stays exactly as it is; what this
+task changes is the lexical tier's two hand-set cutoffs, which decide `duplicate` and `subsumed_by`
+from a single number each with no way to price either. A document pair carries several weakly
+correlated signals -- shingle Jaccard, containment in each direction, title distance, source system,
+and the `effective_date` gap -- and a linkage fit over them yields a probability the audit can rank
+on, plus a connected-components edition group that is the natural unit for a supersession decision.
+This is optional because the hash and lexical tiers already return the pairs a reviewer acts on;
+what the fit adds is a priced ranking and a group, not a new pair.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: RUN NEEDED
+- Dependencies: `record-linkage-seam`. Reuse `shingles`, `jaccard`, `containment`, and
+  `candidate_pairs` in `src/llb/conflicts/tiers/lexical.py` as the feature source and the blocking
+  index, and `compare_editions` in `src/llb/conflicts/governance/editions.py` for the ordering.
+- User-visible outcome: a reviewer sees candidate duplicate documents ranked by a probability scored
+  against a labelled set, grouped into editions of one document rather than listed as loose pairs.
+- Scope boundary: in scope -- the duplicate and subsumption relations only, the edition clustering,
+  and a comparison against the current thresholds on the same corpora. Out of scope -- the semantic
+  and claim tiers, which decide CONTRADICTION and are untouched; presenting a linkage probability as
+  a conflict confidence or as a semantic false-positive rate, which the capability's confidence
+  contract and [future research](future-research.md) both forbid; and changing the audit's candidate
+  budget or its bundle contract.
+- Data and artifact paths: the conflict audit bundle gains a `linkage/` subdirectory; edition groups
+  join the existing decision-group projection.
+- Execution path: the existing audit entrypoint with the linkage lane enabled, over the planted
+  fixture corpus and the two quickstart corpora.
+- Acceptance gates: `make ci` green; on the planted fixture the fit recovers every planted duplicate
+  and subsumption relation the current thresholds recover; the report states, per corpus, how many
+  pairs the two rankings order differently and how many edition groups the clustering forms; a fit
+  that recovers fewer planted relations is recorded as a negative result and not adopted.
+- Documentation target: the corpus section of `docs/impl/current/entity-resolution.md`, with the
+  audit-side effect noted in [conflict detection](current/data-prep/conflict-detection.md).
+
 ### Retrieval evidence -- `retrieval-evidence`
 
 #### fusion-answer-quality-second-model (optional)
@@ -1487,6 +1654,45 @@ say whether a shared-bridge question genuinely needs both facts.
   reviewed ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
+
+### Entity resolution -- `entity-resolution`
+
+#### entity-merge-labelled-set
+
+Produce the reviewer-labelled merge set that turns a linkage probability into an operating point. An
+unsupervised fit ranks pairs and clusters them, but nothing in it says where to cut: the
+confidence contract publishes a match probability only with the labelled set it was scored against,
+so until a human has read a sample of proposed merges there is no defensible default threshold for
+either the graph overlay or the gold-item suppression policy. Sample the proposed merges across the
+probability range -- not only the confident ones, because the threshold lives where the model is
+unsure -- and record same-thing / different-thing / cannot-tell per pair through the review
+workbench, so the decisions land in a ledger like every other human gate.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: HUMAN-GATED
+- Dependencies: `record-linkage-seam`, plus whichever of `graph-entity-node-resolution` and
+  `gold-item-duplicate-linkage` supplies the candidate pairs to label. Human step that gates
+  completion: a Ukrainian-reading reviewer decides each sampled pair. Reuse the adapter pattern in
+  [review workbench](current/review-workbench.md) rather than building a second review surface.
+- User-visible outcome: both linkage domains gain a threshold with a precision and recall attached
+  to it, and the operator can see what a stricter or looser cut would cost.
+- Scope boundary: in scope -- the workbench adapter for merge decisions, a stratified sample across
+  probability bands, the label ledger, the labelled accuracy curve computed from it, and the
+  threshold recommendation that follows. Out of scope -- labelling every candidate pair, labelling
+  CONFLICT relations (a different question with a different adjudicator), and adopting a threshold
+  that the paired retrieval or drafting evidence does not support.
+- Data and artifact paths: `$DATA_DIR/entity-merge-labels/<run>/` -- the sampled pairs, the decision
+  ledger, and the accuracy curve; the ledger is the frozen label set later fits are scored against.
+- Execution path: generate the sample from a linkage run's `pairs.jsonl`, review it in the
+  workbench, then re-score the model against the ledger with the seam's label-based fit and accuracy
+  analysis.
+- Acceptance gates: every sampled pair carries a decision or an explicit cannot-tell; the sample
+  covers each probability band, including the uncertain middle; the curve reports precision and
+  recall at several thresholds with the reviewer cost the sample took; the recommended threshold
+  is stated with what it would merge and what it would leave apart.
+- Documentation target: the labelling section of `docs/impl/current/entity-resolution.md`, with the
+  measured reviewer cost going to [review workbench](current/review-workbench.md).
 
 ### Retrieval evidence -- `retrieval-evidence`
 
