@@ -34,13 +34,18 @@ _CONFIG_OPTIONS = {
     "context_strategy": "context_strategy",
     "query_glossary": "query_glossary_path",
     "query_prep_typo_guard": "query_prep_typo_guard",
+    "query_prep_dense_case": "query_prep_dense_case",
     "score_semantic": "score_semantic",
     "cited_answers": "cited_answers",
     "score_groundedness": "score_groundedness",
     "insufficient_context_probes": "insufficient_context_probes",
     "telemetry": "measure_telemetry",
 }
-_FALSE_MEANS_UNSET = {"scorer_egress_consent", "query_prep_typo_guard"}
+_FALSE_MEANS_UNSET = {
+    "scorer_egress_consent",
+    "query_prep_typo_guard",
+    "query_prep_dense_case",
+}
 
 
 def parse_query_prep(steps: Optional[str]) -> Optional[list[str]]:

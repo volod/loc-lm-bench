@@ -3,8 +3,8 @@
 import random
 
 from llb.conflicts.constants import TIER_SEMANTIC
-from llb.conflicts.null_distribution import NullDistribution
-from llb.conflicts.vectorops import VectorSet
+from llb.conflicts.calibration.distribution import NullDistribution
+from llb.conflicts.semantic_tree.vectorops import VectorSet
 
 
 def _semantic_stats(result):

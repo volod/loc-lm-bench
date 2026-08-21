@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from llb.prep.frontier import ground_span
+from llb.prep.frontier.client import ground_span
 from llb.prep.curation.common import CurationReport
 from llb.prep.curation.input import (
     MAX_ANSWER_CHARS,
@@ -12,7 +12,7 @@ from llb.prep.curation.input import (
     question_too_vague,
     references_document_structure,
 )
-from llb.prep.ontology.refine import is_circular
+from llb.prep.ontology.extraction.refine import is_circular
 
 
 @dataclass

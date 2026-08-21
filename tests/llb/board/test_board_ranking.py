@@ -7,7 +7,7 @@ from llb.board.runs import (
     load_run_records,
     record_from_manifest,
 )
-from test_board import _write_run
+from tests.llb.board.test_board import _write_run
 
 
 def test_record_loads_semantic_and_judge_series(tmp_path):

@@ -5,17 +5,17 @@ building and scoring the candidates is one job, deciding what the resulting numb
 another, and only the second one is statistics.
 
 Both readings are shared machinery pointed at reranker rows: the paired intervals and the verdict
-come from `llb.rag.embedding_bakeoff_uncertainty` (they take metric vectors, not encoders), and the
-floor comes from `llb.rag.noise_floor` -- read here on each lane's OWN rerank scores at a
+come from `llb.rag.embedding_bakeoff.uncertainty` (they take metric vectors, not encoders), and the
+floor comes from `llb.rag.noise_floor.measure` -- read here on each lane's OWN rerank scores at a
 scale-matched jitter, because two cross-encoder heads do not share a score scale.
 """
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llb.rag.embedding_bakeoff_selection import adjust_bakeoff_selection
-from llb.rag.embedding_bakeoff_uncertainty import MetricVectors, paired_rows
-from llb.rag.embedding_bakeoff_verdict import decide_verdict
+from llb.rag.embedding_bakeoff.selection import adjust_bakeoff_selection
+from llb.rag.embedding_bakeoff.uncertainty import MetricVectors, paired_rows
+from llb.rag.embedding_bakeoff.verdict import decide_verdict
 from llb.rag.rerank_bakeoff.models import RerankBakeoffReport
 from llb.rag.rerank_bakeoff.scoring import (
     CandidatePass,
@@ -25,8 +25,8 @@ from llb.rag.rerank_bakeoff.scoring import (
 )
 
 if TYPE_CHECKING:
-    from llb.rag.embedding_bakeoff_models import BakeoffItem
-    from llb.rag.noise_floor_models import NoiseFloorReport
+    from llb.rag.embedding_bakeoff.models import BakeoffItem
+    from llb.rag.noise_floor.models import NoiseFloorReport
 
 # The score key the reranker writes on every kept chunk (`llb.rag.rerank.rerank_chunks`).
 RERANK_SCORE_KEY = "rerank_score"
@@ -88,7 +88,11 @@ def measure_rerank_floor(
     Every lane is perturbed at `DEFAULT_SCORE_JITTER` scaled by its median within-pool score range,
     so a model whose head simply emits bigger numbers does not get a proportionally tighter floor.
     """
-    from llb.rag.noise_floor import DEFAULT_REPLICATES, DEFAULT_SCORE_JITTER, measure_pool_floor
+    from llb.rag.noise_floor.measure import (
+        DEFAULT_REPLICATES,
+        DEFAULT_SCORE_JITTER,
+        measure_pool_floor,
+    )
     from llb.rag.retrieval import evaluate_retrieval
 
     lane_pools = {

@@ -7,7 +7,7 @@ This query-only overlay pairs the 81 Ukrainian-dominant `final` questions in
   `MamayLM-Gemma-3-12B-IT-v2.0` model at temperature zero;
 - `language_mixed`: a deterministic UA/RU code-switch composed from the paired Ukrainian and
   Russian tokens by `compose_mixed_question` in
-  `src/llb/eval/query_robustness_languages.py`, so it differs from both endpoints.
+  `src/llb/eval/query_robustness/languages.py`, so it differs from both endpoints.
 
 The source document, reference answer, source spans, and split are byte-for-byte identical to the
 Ukrainian item. Variant ids append `--language_ru` or `--language_mixed`. Every row is

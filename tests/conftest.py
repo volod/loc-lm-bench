@@ -1,6 +1,6 @@
 """Suite-wide no-GPU and no-download guards for the lightweight tier.
 
-The rationale, escape hatches, and modes live in `llb.quality.gpu_guard` and
+The rationale, escape hatches, and modes live in `llb.quality.gpu_guard.guard` and
 `llb.quality.download_guard`. This module owns the pytest wiring and reporting decisions.
 """
 
@@ -10,7 +10,9 @@ from contextlib import nullcontext
 
 import pytest
 
-from llb.quality import download_guard, gpu_guard, gpu_guard_spawn
+from llb.quality import download_guard
+from llb.quality.gpu_guard import guard as gpu_guard
+from llb.quality.gpu_guard import spawn as gpu_guard_spawn
 
 
 def device_guard_steps(test_id: str, marker_names: Iterable[str]) -> Iterator[None]:

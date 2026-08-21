@@ -2,7 +2,7 @@
 
 The loop rebuilds its prompt from the whole transcript on every step, so one large observation
 grows every later prompt for the rest of the episode. That is a policy choice nobody made; this
-module makes it a POLICY ROW, exactly as `llb.bench.chain_context_policy` does for question chains:
+module makes it a POLICY ROW, exactly as `llb.bench.chain_context.policy` does for question chains:
 
   - ``full``            -- the whole transcript, verbatim (today's behavior, the baseline row);
   - ``observation_cap`` -- every observation trimmed to a char budget, HEAD and TAIL kept with an

@@ -103,7 +103,7 @@ def test_store_registry_disk_cache_skips_second_embed(tmp_path, monkeypatch):
             model = (Path(index_dir) / "store_marker.txt").read_text(encoding="utf-8")
             return SimpleNamespace(embedding_model=model, meta={"embedding_model": model})
 
-    import llb.rag.store as rag_store
+    import llb.rag.vector_store.store as rag_store
 
     monkeypatch.setattr(rag_store, "RagStore", _FakeRagStore)
 

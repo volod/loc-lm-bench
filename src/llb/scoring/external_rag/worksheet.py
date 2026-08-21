@@ -8,7 +8,7 @@ from typing import Any
 from llb.core.contracts.rag import CorrectnessScores
 from llb.core.fsutil import atomic_write_text
 from llb.scoring.external_rag.score import field_value, source_list
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_CORRECTED_ANSWER_FIELD,
     HUMAN_DECISION_FIELD,
     HUMAN_NOTES_FIELD,
@@ -20,7 +20,7 @@ from llb.scoring.external_rag_common import (
     _round,
     _string,
 )
-from llb.scoring.external_rag_source_map import SOURCE_AUDIT_COLUMNS
+from llb.scoring.external_rag.source_map import SOURCE_AUDIT_COLUMNS
 
 
 def write_csv(

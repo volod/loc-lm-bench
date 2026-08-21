@@ -5,7 +5,7 @@ Part of the [RAG core](../rag-core.md) area of the
 
 The floor answers whether a gap is numeric noise; it cannot answer whether the SAME gap survives a
 different draw of questions, and on a 40-item set a "winner" is routinely two questions.
-`src/llb/rag/embedding_bakeoff_uncertainty.py` supplies the second reading, reusing
+`src/llb/rag/embedding_bakeoff/uncertainty.py` supplies the second reading, reusing
 `bootstrap_index_sets` / `paired_comparison` from the fusion sweep
 (`src/llb/rag/fusion_evidence/stats.py` -- they take metric vectors, not fusion rows):
 
@@ -29,7 +29,7 @@ different draw of questions, and on a 40-item set a "winner" is routinely two qu
 - Artifacts: `report.md` (the table gains `recall delta vs <baseline>` / `w/l/t` / `sign p` /
   `recall reading` columns, a boundary table, and the verdict line) plus `report.json` beside it
   with every interval bound and ledger, so a later re-read recomputes from numbers instead of prose.
-- `decide_verdict` and the bar helpers live in `src/llb/rag/embedding_bakeoff_verdict.py`, split
+- `decide_verdict` and the bar helpers live in `src/llb/rag/embedding_bakeoff/verdict.py`, split
   from the paired statistics so the sentence an operator acts on stays separately readable.
 
 Tests: `tests/llb/rag/test_embedding_bakeoff_uncertainty.py` (vector means matching the published
@@ -82,13 +82,12 @@ make compare-graph-fusion GOLDSET=<goldset-jsonl> \
   FUSION_POWER_METRIC=recall_at_k FUSION_MDE=<minimum-gain>
 ```
 
-`tests/llb/rag/test_paired_power.py` covers item-count arithmetic, inverted MDE, and realized-SD
-rechecking.
-`tests/llb/rag/test_paired_power_contract.py` covers both selectors, artifact output, and the
-plan-before-build/retrieval order. The context-specific regression suite remains
-`tests/llb/eval/test_context_ablation_power.py`. Host validation on 2026-07-26 completed
-`make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy model run belongs to
-this delivery.
+`tests/llb/rag/fusion_evidence/test_paired_power.py` covers item-count arithmetic, inverted MDE, and
+realized-SD rechecking. `tests/llb/rag/fusion_evidence/test_paired_power_contract.py` covers both
+selectors, artifact output, and the plan-before-build/retrieval order. The context-specific
+regression suite remains `tests/llb/eval/test_context_ablation_power.py`. Host validation on
+2026-07-26 completed `make ci`: 2,215 passed and 45 opt-in/slow tests were deselected; no heavy
+model run belongs to this delivery.
 
 The repository-wide count audit reuses this distinction between inferential evidence and resource
 budgets. `src/llb/quality/acceptance_gate_registry.py` declares each retained row, trial, finalist,
@@ -132,11 +131,11 @@ shared persisted shape:
   adoption bar reads `answer` / `rank only` / `neither`, so it computes its reading at each of the
   three levels and hands them to `stability_from_readings`, producing the identical
   `ReadingStability` shape ([the scoped first-hit-rank bar](first-hit-rank-adoption.md#the-scoped-first-hit-rank-adoption-bar)).
-- The confidence conventions, metrics, percentile intervals, and row rankings stay unchanged.
-  The separation rule changed from the percentile lower bound to the calibrated p. Tests:
-  `tests/llb/rag/test_paired_stability.py` (the shared annotation, the assembly, the rendering, the
-  clause) and `tests/llb/rag/test_paired_stability_lanes.py` (each of the four lanes qualifying its
-  own verdict).
+- The confidence conventions, metrics, percentile intervals, and row rankings stay unchanged. The
+  separation rule changed from the percentile lower bound to the calibrated p. Tests:
+  `tests/llb/rag/fusion_evidence/test_paired_stability.py` (the shared annotation, the assembly, the
+  rendering, the clause) and `tests/llb/rag/fusion_evidence/test_paired_stability_lanes.py` (each of
+  the four lanes qualifying its own verdict).
 
 The three remaining uncertainty shapes now state their own distance from their actual cut instead
 of borrowing a paired-delta interpretation that does not fit:
@@ -147,12 +146,12 @@ of borrowing a paired-delta interpretation that does not fit:
   a count ratio is not a paired delta. The sidecar-free calibration renders these rows through the
   shared `boundary_table(..., evidence_counts=False)` path.
 - Query robustness is genuinely paired but directional. Its new
-  `query_robustness_uncertainty.py` seam reads `improved` / `degraded` /
+  `query_robustness/uncertainty.py` seam reads `improved` / `degraded` /
   `indistinguishable` at all three levels, gates either directional claim on the exact sign-test
   minimum, and records the ordinary interval / win-loss ledger / `p_positive` shape. Both
   lane-versus-clean deltas and mitigation-versus-off recoveries are computed for all items and the
-  affected subset. `query_robustness_summary.py` can rebuild the aggregates from persisted case
-  rows without executing a model, while `query_robustness_report.py` renders the paired table.
+  affected subset. `query_robustness/summary.py` can rebuild the aggregates from persisted case
+  rows without executing a model, while `query_robustness/report.py` renders the paired table.
 - The measurement floor is not a sampling CI: `clears_floor` compares the leader's fixed recall
   gap with the widest score-jitter band. Its honest continuous signal is therefore `clearance =
   delta - floor` plus `floor_multiple = delta / floor` (or null when the measured floor is zero),
@@ -273,12 +272,11 @@ deterministic Monte Carlo tail with the plus-one correction. Each `PairedCompari
 - Reports render `rand p` beside `sign p`; boundary tables render the decision-driving
   randomization p beside diagnostic `p_positive`. The existing borderline qualifier now compares
   the calibrated reading at 90%, the reporting level, and 97.5%.
-- The maintained null harness is
-  `tests/fixtures/paired_randomization_null.json` plus
-  `tests/llb/rag/test_paired_randomization.py`. It checks the implementation against independent
-  brute-force enumeration and enumerates every null assignment of three committed sparse/skewed
-  fixtures. Their empirical one-sided sizes are 1.5625%, 2.34375%, and 2.34375%, all at or below
-  the nominal 2.5%.
+- The maintained null harness is `tests/fixtures/paired_randomization_null.json` plus
+  `tests/llb/rag/fusion_evidence/test_paired_randomization.py`. It checks the implementation against
+  independent brute-force enumeration and enumerates every null assignment of three committed
+  sparse/skewed fixtures. Their empirical one-sided sizes are 1.5625%, 2.34375%, and 2.34375%, all
+  at or below the nominal 2.5%.
 - `make audit-paired-readings` reconstitutes vector-backed embedder bake-off, adoption-bar, and
   context-ablation artifacts without model calls, lists every comparison reading that changes,
   and restates every artifact verdict. The CUDA-host re-read is under
@@ -322,7 +320,7 @@ marginal and adjusted p. The adoption and bake-off verdicts also preserve their 
 positive cells/candidates in `per_row_answer_cells` / `per_row_cleared`; the existing row tables
 continue to print the calibrated per-row p. Lane adapters live in
 `fusion_evidence/selection_family.py`, `eval/embedder_adoption/verdict.py`, and
-`embedding_bakeoff_selection.py`.
+`embedding_bakeoff/selection.py`.
 
 CUDA-host re-read: `make audit-paired-readings
 PAIRED_READING_AUDIT_OUT=$DATA_DIR/paired-reading-audit/<run>` produced
@@ -355,7 +353,7 @@ PDF corpus. `make compare-embeddings CONFIG=<config>` now lets the config own it
 unless either is explicitly overridden on the make command line; this prevents the repository-wide
 fixture and `final` defaults from silently changing a recorded family.
 
-Coverage is in `tests/llb/rag/test_selection_adjustment.py` plus the fusion, adoption-bar,
+Coverage is in `tests/llb/rag/fusion_evidence/test_selection_adjustment.py` plus the fusion, adoption-bar,
 bake-off-verdict, and paired-reading-audit suites. The shared procedure is checked against an
 independent brute-force family; lane fixtures include a case where every per-row reading clears but
 the family-wise verdict does not. Host validation used an NVIDIA GeForce RTX 4060 Ti (16,380 MiB,

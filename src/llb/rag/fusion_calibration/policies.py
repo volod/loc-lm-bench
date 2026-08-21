@@ -1,6 +1,6 @@
 """Threshold-grid parsing for deterministic fusion routing calibration."""
 
-from llb.rag.fusion_routing import HeuristicPolicy
+from llb.rag.fusion.routing import HeuristicPolicy
 
 
 def policy_grid(

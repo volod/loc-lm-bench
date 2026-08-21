@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from llb.rag.store import RagStore
+from llb.rag.vector_store.store import RagStore
 
 DIM = 64
 

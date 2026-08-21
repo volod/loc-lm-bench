@@ -42,20 +42,6 @@ from llb.optimize.tuner_models import TuneResult, TwoStageResult
 
 OPTUNA_METHOD = "optuna"
 
-# The corpus-chunking additions (page / heading / late / table) join the search space only
-# behind an explicit flag (`tune --extended-chunkers`): `late` re-embeds whole documents per
-# trial, `page` only differs from `recursive` on sidecar-bearing PDF corpora, and `table` only
-# differs on corpora carrying markdown tables, so they are opt-in.
-# Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
-# the per-side candidate depth, sampled only when the trial picked hybrid mode.
-# Rerank search range (rerank-context-order): the candidate pool depth fed into the
-# cross-encoder, sampled only when the trial turned the opt-in reranker on.
-
-# config -> quality on the tuning split, OR (quality, throughput) for the latency tie-break.
-
-
-# Substrings that mark a measured out-of-memory / capacity failure -> prune, do not crash.
-
 
 def make_objective(
     base_config: RunConfig,
@@ -149,11 +135,7 @@ def tune(
             pid_usage_reader=pid_usage_reader,
             gpu_sampler=gpu_sampler,
         )
-    if storage is None and study_name:
-        db_dir = base_config.data_dir / OPTUNA_METHOD
-        db_dir.mkdir(parents=True, exist_ok=True)
-        storage = f"sqlite:///{db_dir / f'{study_name}.db'}"
-
+    storage = _study_storage(base_config, study_name, storage)
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(
         direction="maximize",
@@ -175,6 +157,28 @@ def tune(
         ),
         n_trials=n_trials,
     )
+
+    return _stage_one_result(base_config, study, study_name, storage)
+
+
+def _study_storage(base_config: RunConfig, study_name: str, storage: str | None) -> str | None:
+    """A persistent SQLite study under `$DATA_DIR/optuna/`, so a killed sweep resumes.
+
+    An explicit `storage` wins; `None` with no study name stays in memory, which is what the tests
+    want and what a study nobody intends to resume needs.
+    """
+    if storage is not None or not study_name:
+        return storage
+    db_dir = base_config.data_dir / OPTUNA_METHOD
+    db_dir.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{db_dir / f'{study_name}.db'}"
+
+
+def _stage_one_result(
+    base_config: RunConfig, study: Any, study_name: str, storage: str | None
+) -> TuneResult:
+    """The winning config of a finished study, or a hard failure when nothing completed."""
+    import optuna
 
     states = optuna.trial.TrialState
     complete = [t for t in study.trials if t.state == states.COMPLETE]

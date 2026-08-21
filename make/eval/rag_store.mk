@@ -3,9 +3,11 @@
 .PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
+	venv-encoders-legacy compare-embeddings-legacy compare-rerankers-legacy \
 	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
 	compare-adoption-screen compare-vector-stores run-eval \
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
+	sweep-restoration-constraints \
 	probe-context-position probe-multihop-hops analyze-misses
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
@@ -68,6 +70,7 @@ validate-retrieval: ## RAG recall/MRR; QUERY_PREP=... QUERY_PREP_MODEL= QUERY_PR
 		$(if $(QUERY_PREP),--query-prep "$(QUERY_PREP)",) \
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
+		$(if $(QUERY_PREP_DENSE_CASE),--query-prep-dense-case,) \
 		$(if $(QUERY_PREP_MODEL),--query-prep-model "$(QUERY_PREP_MODEL)",) \
 		$(if $(QUERY_PREP_BACKEND),--query-prep-backend "$(QUERY_PREP_BACKEND)",) \
 		$(if $(QUERY_PREP_AB),--query-prep-ab,) \

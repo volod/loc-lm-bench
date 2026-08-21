@@ -144,7 +144,7 @@ class AuditResult:
         One implementation, because the sidecar's group ids, the projection's group ids, and the
         rows on disk must all be derived from the SAME ordering or they address different groups.
         """
-        from llb.conflicts.census import finding_sort_key
+        from llb.conflicts.grouping.census import finding_sort_key
 
         return [finding.payload() for finding in sorted(self.findings, key=finding_sort_key)]
 
@@ -157,8 +157,8 @@ class AuditResult:
     def summary(self) -> JsonObject:
         # Imported here rather than at module scope: the census reads these models, so the
         # dependency runs one way and this file stays the leaf every conflicts module can import.
-        from llb.conflicts.census import finding_census, relation_census
-        from llb.conflicts.granularity import finding_granularity
+        from llb.conflicts.grouping.census import finding_census, relation_census
+        from llb.conflicts.grouping.granularity import finding_granularity
 
         payload: dict[str, Any] = {
             "effort": self.effort,

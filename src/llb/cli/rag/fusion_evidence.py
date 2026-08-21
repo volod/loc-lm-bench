@@ -141,9 +141,9 @@ def compare_graph_fusion_cmd(
     from llb.rag.fusion_evidence.models import FOCUS_SLICE
     from llb.rag.fusion_evidence.fusion_power import prepare_fusion_power, resolve_fusion_power
     from llb.rag.fusion_evidence.rows import VECTOR_ROW
-    from llb.rag.noise_floor import CANDIDATE_DEPTH_FACTOR
+    from llb.rag.noise_floor.measure import CANDIDATE_DEPTH_FACTOR
     from llb.rag.question_types import load_question_types_by_question
-    from llb.rag.fusion_routing import HeuristicPolicy
+    from llb.rag.fusion.routing import HeuristicPolicy
 
     cfg = load_config(config, goldset_path=goldset)
     try:

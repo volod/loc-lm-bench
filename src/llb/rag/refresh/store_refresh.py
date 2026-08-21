@@ -30,11 +30,11 @@ from llb.core.store_generations import (
     publish_generation,
     resolve_store_dir,
 )
-from llb.prep.corpus_fingerprints import corpus_doc_fingerprints, corpus_fingerprint
-from llb.rag.duplicate_tiers import TIER_EXACT
-from llb.rag.duplicates import expand_duplicate_chunks
-from llb.rag.lexical import Lemmatizer
-from llb.rag.lexical_index import LexicalIndex
+from llb.prep.corpus.fingerprints import corpus_doc_fingerprints, corpus_fingerprint
+from llb.rag.duplicates.tiers import TIER_EXACT
+from llb.rag.duplicates.collapse import expand_duplicate_chunks
+from llb.rag.vector_store.lexical import Lemmatizer
+from llb.rag.vector_store.lexical_index import LexicalIndex
 from llb.rag.refresh.diff import ManifestDiff, diff_fingerprints
 from llb.rag.refresh.lexical_merge import merge_lexical_index
 from llb.rag.refresh.merge import (
@@ -46,16 +46,20 @@ from llb.rag.refresh.merge import (
     text_row_map,
 )
 from llb.rag.refresh.merge_models import MergedUnits
-from llb.rag.store import RagStore
-from llb.rag.store_build import (
+from llb.rag.vector_store.store import RagStore
+from llb.rag.vector_store.build import (
     CHUNKS_FILE,
     LEXICAL_FILE,
     META_FILE,
     MODE_HYBRID,
     PARENTS_FILE,
 )
-from llb.rag.store_io import _read_jsonl
-from llb.rag.vector_index import RAG_BACKEND_FAISS, build_vector_index, load_vector_index
+from llb.rag.vector_store.io import _read_jsonl
+from llb.rag.vector_store.vector_index import (
+    RAG_BACKEND_FAISS,
+    build_vector_index,
+    load_vector_index,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -177,12 +181,12 @@ def refresh_vector_store(
     old_index = load_vector_index(backend, live_dir)
     old_lexical = _load_old_lexical(live_dir, meta)
     if embedder is None:
-        from llb.rag.embedding import Embedder
+        from llb.rag.encoders.embedder import Embedder
 
         embedder = Embedder(str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL)))
 
     # Duplicate collapse is undone before the per-document merge and re-applied after it, so the
-    # merge still sees every document's complete chunk list (`llb.rag.duplicates`).
+    # merge still sees every document's complete chunk list (`llb.rag.duplicates.collapse`).
     merge_chunks, vector_rows = expand_duplicate_chunks(old_chunks)
     new_by_doc, new_parents_by_doc = chunk_changed_docs(corpus_root, diff.changed, meta, embedder)
     # Recover a changed doc's fresh row from any stored chunk with the same text -- valid only

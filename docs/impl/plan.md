@@ -76,254 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### multihop-query-decomposition-conversion
-
-The exact 95-item ledger that defines the original 8 query and 19 budget cohorts is absent from the
-host; the paired lane and the non-identical fresh replay are described in
-[GraphRAG](current/graphrag-backend/retrieval-budget-evidence.md#query-decomposition-conversion-evidence).
-Recover that ledger from an archival copy, or recreate it byte-for-byte from its provenance, then
-run the paired `decompose` probe against its 35-item multi-hop slice so conversion is attributable
-to the original cohorts.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: BLOCKED BY MISSING ARTIFACT
-- Dependencies: an archival copy of the original `goods-draft/goldset.jsonl` and its question-type
-  sidecar, or a byte-identical recreation that first reproduces 95 total items, 35 multi-hop items,
-  the 1,099-chunk store, and the raw 2/19/8/6 diagnosis split.
-- User-visible outcome: the operator learns how many of the ORIGINAL query-diagnosed items generic
-  decomposition recovers and what it costs the original budget-diagnosed cohort.
-- Scope boundary: in scope -- artifact recovery, the raw identity gate, the paired run, and its
-  reading. Out of scope -- substituting a newly drafted cohort, a new decomposition prompt or
-  strategy, and changing the shipped `query_prep` default.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: restore the bundle, rebuild its matched store, run the raw identity probe, then
-  run `make probe-multihop-hops QUERY_PREP=decompose` against the local CUDA model.
-- Acceptance gates: the raw probe reproduces the recorded slice before the paired result is read;
-  `make ci` is green; the report states conversion for the 8 original query items and cost to the
-  19 original budget items.
-- Documentation target: the retrieval budget and per-hop evidence page of
-  [GraphRAG](current/graphrag-backend.md).
-
-#### retrieved-evidence-intactness-metric
-
-`recall@k` credits an item as soon as a retrieved chunk OVERLAPS a gold span by ONE character
-(`chunk_hits_span` in `src/llb/rag/retrieval.py`), so no retrieval metric in the repo can see
-whether the evidence arrived INTACT -- a chunk that cuts a table row in half scores the identical
-hit as one carrying the whole row, which is why a chunker that provably never cuts a row
-reproduces `recursive` to three decimals on a corpus where 24 of 95 items have gold evidence inside
-a table row ([RAG core](current/rag-core/chunking.md#retrieval-evidence)). Add the intactness pair
-beside recall@k / MRR: `span_char_coverage@k` (the share of each gold span's characters the top-k
-carries, averaged per item) and `span_intact@k` (1.0 only when some SINGLE retrieved chunk carries
-a span whole). Both are pure functions of the same (retrieved, spans) pairs every lane already
-builds, so every comparison lane gets them for free, and every chunker row in the repo becomes
-re-readable on the axis a chunking change actually moves.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `covered_span_count` / `span_coverage_at_k` in
-  `src/llb/rag/retrieval.py` (the multi-span refinements are the same shape one level up), the
-  metric-vector seam in `src/llb/rag/embedding_bakeoff_uncertainty.py` so the new columns get
-  paired intervals unchanged, and the slice reporting in `src/llb/rag/compare.py`.
-- User-visible outcome: an operator can tell "the evidence was retrieved" from "the evidence was
-  retrieved whole", which is the difference between a chunk the model can answer from and a
-  fragment it cannot.
-- Scope boundary: in scope -- the two metrics, their per-lane and per-slice columns, their paired
-  intervals, and a re-read of the recorded chunker rows. Out of scope -- changing what `recall@k`
-  means or which metric ranks the leaderboard, answer-side coverage (that is
-  `answer-side-span-coverage-metric`), and any chunker recommendation change before the re-read
-  supports one.
-- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` and
-  `$DATA_DIR/llb/rag/<strategy>/` comparison layout; no new roots.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence NOISE_FLOOR=1`
-  on both scored corpora on the CUDA host; CI covers both metrics over fixtures (span carried
-  whole, span split across two chunks, span partly retrieved, span missed).
-- Acceptance gates: `make ci` green; recall@k and MRR reproduce their recorded values
-  bit-identically on both corpora (the metrics are additive); the report carries both new columns
-  per lane and per slice with paired intervals; the re-read states whether row-aligned chunking
-  separates from `recursive` on intactness at the reached sample size, including recording that it
-  does not.
-- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the
-  table-aware chunking evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
-
-#### remote-code-encoder-load-contract (optional)
-
-Two roster candidates an operator would genuinely shortlist cannot be scored at all:
-`jinaai/jina-embeddings-v3` raises `AttributeError: 'XLMRobertaLoRA' object has no attribute
-'all_tied_weights_keys'` at load, and `Alibaba-NLP/gte-multilingual-base` loads but returns
-embeddings that do not reproduce its own model card, because transformers 5.x leaves its
-remote code's non-persistent `position_ids` buffer uninitialized ([RAG
-core](current/rag-core/embedders.md#the-two-remote-code-candidates-do-not-run-on-the-pinned-stack)).
-Both repositories target the transformers 4.x API and the repo pins 5.12.1, so the encoder roster
-has a hole that is a PACKAGING fact, not a quality one. Give the bake-off a way to score them:
-either an `[encoders-legacy]` optional extra pinning a compatible transformers for a separate
-scoring pass, or a non-remote-code load path per candidate, whichever the two models actually admit
--- and gate whichever route on a card-parity check, because gte is the case that proves a candidate
-can RUN and still be wrong.
-
-The RERANKER roster has the same hole from the same cause, so the load route must cover both
-rosters rather than only the encoders: `jinaai/jina-reranker-v2-base-multilingual` raises
-`ImportError: cannot import name 'create_position_ids_from_input_ids'` against
-`transformers.models.xlm_roberta`, and `Alibaba-NLP/gte-multilingual-reranker-base` gathers its rope
-tables with an uninitialized `position_ids` buffer -- an out-of-bounds index that reports
-`IndexError` on CPU and a device-side assert on CUDA
-([RAG core](current/rag-core/reranker-bakeoff.md#what-this-establishes)). Two of the five reranker
-candidates are therefore unranked for a packaging reason, and the same `[encoders-legacy]`-style
-pinned pass (or non-remote-code load path) is what would score them.
-
-Fold in the second confound the roster surfaced: the published checkpoints differ in PRECISION
-(`multilingual-e5-large-instruct` ships float16, `Qwen3-Embedding-0.6B` bfloat16, every incumbent
-float32), so warm chunks/s is not comparable across rows as a model property -- the instruct
-variant's 3.4x lead over `e5-large` at identical parameter count and dimension is its dtype ([RAG
-core](current/rag-core/embedders.md#read-the-throughput-column-with-the-checkpoint-dtype)). Add a
-declared per-candidate dtype so precision is a controlled variable and the throughput column can be
-read as a recommendation.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the convention registries and the `trust_remote_code` opt-in in
-  `src/llb/rag/embedding_families.py` / `src/llb/rag/embedding.py` and
-  `src/llb/rag/rerank_bakeoff/families.py`, plus the shared roster screening in
-  `src/llb/rag/candidate_screen.py` (a candidate that cannot load already has a skip row to land
-  in, and the reranker lane already isolates each candidate in its own process).
-- User-visible outcome: the Ukrainian encoder and reranker rankings cover every candidate an
-  operator would shortlist rather than only the ones whose publisher tracked the pinned
-  transformers, and the throughput column compares encoders at a stated precision instead of at
-  whatever each publisher uploaded.
-- Scope boundary: in scope -- the compatibility route for the two named encoders and the two named
-  rerankers, a card-parity check before a candidate is scored, the declared dtype knob, and a re-run
-  of the affected rows. Out of scope -- unpinning or upgrading the repo-wide transformers version
-  for the SHIPPED path, vendoring or patching third-party modelling code into `src/`, and any change
-  to the verdict bars.
-- Data and artifact paths: the existing `$DATA_DIR/compare-embeddings/<run>/` and
-  `$DATA_DIR/compare-rerankers/<run>/` layouts.
-- Execution path: `make compare-embeddings EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` and `make
-  compare-rerankers RERANK_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1` on the CUDA host once the load route
-  exists; CI covers the card-parity check and the dtype resolution over fake encoders -- no
-  download, no GPU.
-- Acceptance gates: `make ci` green; each of the two encoders and each of the two rerankers is
-  either scored with its card reference behavior reproduced, or recorded as unscorable with the
-  diagnosis and the pin that would be required; the previously scored rows reproduce their recorded
-  numbers; every encoder row states the dtype it was measured at.
-- Documentation target: the embedder sections of [RAG core](current/rag-core/embedders.md), the
-  [reranker bake-off](current/rag-core/reranker-bakeoff.md), and
-  [platform matrix](current/platform-vector-matrix.md#embedding-bake-off).
-
-#### chunker-bake-off-under-the-size-cap (optional)
-
-Re-run the seven-strategy chunker bake-off now that `size` is a hard cap on every strategy. The
-recorded winner (`sentence`, +0.022 recall@10 over `recursive`) was scored on stores that still
-contained oversized units, and the unit-packing strategies are exactly the ones the cap changes:
-their chunk counts rise and their long table/heading spans are now split
-([RAG core](current/rag-core/chunking.md#chunking-strategies)). The ranking may hold, invert, or collapse
-into a tie, and the current recommendation cannot say which. Score the same accepted goldset at
-the same k and record whether the `sentence` recommendation survives. A second reason to re-run:
-those stores also predate exact-duplicate chunk collapse, which changes the chunk counts per
-strategy and, on a furniture-heavy corpus, the ranking itself -- it moved the goods rows and drove
-that corpus's floor to zero ([RAG core](current/rag-core/retrieval-store.md#duplicate-chunk-collapse)).
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: use the paired verdict in
-  [RAG core](current/rag-core/retrieval-metrics.md#paired-lane-uncertainty-and-verdict), because the
-  recorded winner's margin is smaller than one item on the sets involved. Reuse `make
-  compare-retrieval` with `NOISE_FLOOR=1` so a changed row can also be read against the corpus's own
-  floor ([RAG core](current/rag-core/retrieval-metrics.md#measurement-floor---noise-floor)).
-- User-visible outcome: the per-corpus chunker recommendation rests on stores that respect the
-  `size` the operator asked for.
-- Scope boundary: in scope -- the re-run, the updated table, and an explicit keep-or-change
-  verdict on the `sentence` recommendation. Out of scope -- new strategies and tuning `size`.
-- Data and artifact paths: the existing per-strategy stores under `$DATA_DIR/llb/rag/<strategy>/`.
-- Execution path: `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,late,
-  markdown,semantic GOLDSET=<quickstart accepted goldset> NOISE_FLOOR=1` on the CUDA host; no new
-  CI coverage.
-- Acceptance gates: `make ci` green; the report covers all seven strategies at the recorded k and
-  states whether the recorded winner still wins by more than the measurement floor.
-- Documentation target: the chunking-strategies evidence in [RAG core](current/rag-core.md).
-
-#### normalize-casefold-dense-lane-cost (optional)
-
-Normalization casefolds the whole query, but the dense encoder is case-sensitive: on the 82-item
-final split the `normalize`-only lane retrieves WORSE than no mitigation at all under keyboard
-noise (0.9268 -> 0.9024 recall@10), even though casefolding is supposed to be the safe half of
-the lane ([evaluation rigor](current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark)).
-The split noise classes sharpen the diagnosis: on the `apostrophe_variant` class the `normalize`
-lane loses an item (0.9756 -> 0.9634 recall@10) even though the affected-items table shows all 6
-perturbed questions retrieved perfectly in every lane -- the loss is on questions the noise class
-never touched, so it is the mitigation step acting on an otherwise clean query, not a failed
-repair. Casefolding is a lexical-side convention that the dense side never asked for. Measure
-whether the processed query should stay cased on the dense lane while the lexical lane keeps the
-folded text -- the `retrieve_queries` seam already carries separate dense and lexical text.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the split dense/lexical query seam in
-  `src/llb/rag/query_prep/retrieval.py` and `RagStore.retrieve_queries`.
-- User-visible outcome: the operator stops paying dense recall for a normalization step whose
-  only job was to make matching safer.
-- Scope boundary: in scope -- routing case-preserved text to the dense lane, the A/B, and the
-  adopt-or-reject verdict. Out of scope -- changing the embedder, the lexical normalization, and
-  the transliteration table.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
-- Execution path: `make bench-query-robustness` on the CUDA host with and without the change; CI
-  covers the dense/lexical text split over a fake store.
-- Acceptance gates: `make ci` green; the report shows the `normalize` lane no longer retrieving
-  below the `off` lane on any noise class, or records that casefolding is not the cause.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing and the robustness
-  evidence in [evaluation rigor](current/rigor-board-judge.md).
-
-#### restoration-constraint-threshold-sweep (optional)
-
-The restoration constraints ship with three unswept design constants: the surface-compatibility
-budget (exact, `SURFACE_MAX_DISTANCE = 0`), the short-token cutoff that locks length and refuses
-ties (`AMBIGUOUS_TOKEN_MAX_CHARS = 4`), and the ranking order that puts morphology ahead of local
-context ([RAG
-core](current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing)). Each was
-chosen to be conservative, and nothing measures what the conservatism costs: a budget of 1 admits a
-token that was BOTH transliterated and mistyped, and a cutoff of 3 or 5 moves how many short words
-stay untouched. Sweep them on a corpus where the typo lane is not saturated, report retrieval and
-the edit-precision audit per setting, and pin each value with evidence or expose it.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `select_restoration` in `src/llb/rag/query_prep/restore.py` and the
-  robustness lanes.
-- User-visible outcome: the operator knows whether the safe defaults are costing recoverable
-  recall, instead of trusting three hand-picked constants.
-- Scope boundary: in scope -- the sweep, the per-setting edit audit, and a pin-or-expose verdict
-  per constant. Out of scope -- new constraint signals and a learned ranker.
-- Data and artifact paths: `$DATA_DIR/query-robustness/<run>/`.
-- Execution path: `make bench-query-robustness` per setting on the CUDA host; CI covers each
-  setting's selection decisions over committed candidate fixtures.
-- Acceptance gates: `make ci` green; the report states recall and the share of corrections a human
-  reading of the audit calls wrong, per setting, with an explicit verdict per constant.
-- Documentation target: [RAG core](current/rag-core.md) query-side processing.
-
-#### vector-store-bake-off-paired-uncertainty (optional)
-
-`compare-vector-stores` still ranks backends on a point estimate plus the measurement floor, the
-one reading the embedder bake-off already carries: its `best (recall@k)` line is label order when
-the backends tie ([platform matrix](current/platform-vector-matrix.md#embedding-bake-off)), and
-nothing states how large a backend difference the item set could even resolve. Give it the same
-paired lane -- per-item metric vectors against a baseline backend, shared resample index sets, the
-delta interval and win/loss/tie ledger per row, and an adopt-or-retain verdict -- so a backend swap
-is decided the same way an embedder swap now is.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/rag/embedding_bakeoff_uncertainty.py` wholesale (it takes
-  metric vectors, not embedder rows) and the store seam in `src/llb/cli/rag/compare_stores.py`.
-- User-visible outcome: the operator learns whether a vector-backend difference is real or is the
-  order the labels happened to sort in.
-- Scope boundary: in scope -- the paired columns, the verdict, and a re-run on both scored
-  corpora. Out of scope -- new backends and any change to the retrieval metrics.
-- Data and artifact paths: the existing `$DATA_DIR/compare-vector-stores/<run>/` layout.
-- Execution path: `make compare-vector-stores NOISE_FLOOR=1` on the CUDA host; CI covers the
-  interval columns over fake stores.
-- Acceptance gates: `make ci` green; every backend row carries a paired delta interval against the
-  baseline backend and the report states adopt or retain.
-- Documentation target: the vector-store section of
-  [platform matrix](current/platform-vector-matrix.md).
-
 #### fusion-answer-quality-second-model (optional)
 
 Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
@@ -426,6 +178,41 @@ two should agree on how a recorded lane is reconstituted.
 - Documentation target: the answer-quality evidence page of
   [GraphRAG](current/graphrag-backend.md).
 
+#### fragmented-evidence-delivery-lever (optional)
+
+With the shipped `recursive` chunker on the 95-item goods corpus, `procedural` items retrieve 0.706
+of their gold-span characters but only 0.357 of their spans arrive inside ONE chunk, and no
+chunking strategy in the comparison moves either number ([RAG
+core](current/rag-core/chunking.md#the-intactness-re-read-of-the-same-three-chunkers)). So on a
+whole question type the model is reassembling a procedure from fragments, and the operator has no
+lever registered against that. Measure the two candidate levers on `span_intact@k` with the items
+held fixed: raising `size` for the affected slice, and stitching CONTIGUOUS retrieved chunks of the
+same document back into one context block at assembly time (the second is free of an index rebuild
+and does not change what was retrieved, only what the model reads). Report which one converts
+fragments into whole spans, at what cost in served context characters, and whether either changes
+recall@k at all -- a lever that only reflows the same evidence should not.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: RUN NEEDED
+- Dependencies: none. Reuse `span_intact_at_k` / `span_char_coverage_at_k` in
+  `src/llb/rag/retrieval.py`, the per-slice reporting in `src/llb/rag/comparison/run.py`, and the paired
+  lane machinery both already ride.
+- User-visible outcome: when the intactness columns show evidence arriving in pieces, the operator
+  has a measured lever rather than only a diagnosis.
+- Scope boundary: in scope -- the stitching step, a `size` reading on the affected slice, their
+  intactness deltas with paired intervals, and the served-context cost beside them. Out of scope --
+  changing the default chunker or `size`, answer-side measurement, and any ranking change (stitching
+  must not reorder or add evidence).
+- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` comparison layout.
+- Execution path: `make compare-retrieval` on the goods corpus on the CUDA host; CI covers stitching
+  over fixtures (two adjacent chunks merged, two non-adjacent left alone, chunks from different
+  documents left alone, offsets still exact after a merge).
+- Acceptance gates: `make ci` green; recall@k is unchanged by stitching on every lane (it reflows,
+  it does not retrieve); the report states whether either lever raises `span_intact@k` on the
+  procedural slice by an interval clear of zero, including recording that neither does.
+- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the chunking
+  evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
+
 ### Answer scoring -- `answer-scoring`
 
 #### typed-rag-answer-envelope
@@ -437,7 +224,7 @@ prose, and groundedness re-segments the answer into "sentence-ish claims" by pun
 ([RAG core](current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
 The repo already validates typed model output with Pydantic -- but only inside the structured-output
 BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
-the completion satisfies it (`src/llb/scoring/structured_schema.py`); nothing on the answer path an
+the completion satisfies it (`src/llb/scoring/structured/schema.py`); nothing on the answer path an
 operator would actually ship is typed. Two consequences: the measured citation gap is unreadable
 (the durable 3B run scored citation validity 0.000 because the model mostly did not cite at all, a
 FORMAT failure scored as a grounding failure), and there is nowhere for a semantic validator to
@@ -452,7 +239,7 @@ status rather than being scored as a wrong answer.
 - Agent status: RUN NEEDED
 - Dependencies: none, and it must land before `ontology-validated-answer-gate` (which validates the
   object this task defines). Reuse `build_model` / `parse_output` / `is_conformant` in
-  `src/llb/scoring/structured_schema.py` wholesale (they take a field schema, not a benchmark case),
+  `src/llb/scoring/structured/schema.py` wholesale (they take a field schema, not a benchmark case),
   the status taxonomy and `format_context` numbering in `src/llb/eval/common.py`, the claim
   segmentation and citation parsing in `src/llb/scoring/groundedness.py`, and the
   `eval.rag.cited_answer` template as the envelope prompt's starting point.
@@ -645,14 +432,14 @@ reproducible (pinned sampler / seeded backend options) if the backend allows it.
 
 The induced ontology is a type INVENTORY, not a set of constraints: `induce_ontology` emits entity
 and relation types with counts, confidence, and examples under the `MAX_ENTITY_TYPES` /
-`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/induce.py`, `models.py`), and nothing in that
-artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact` creates
-a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the fact, and
-the approved schema states that rule outright ("no grounded fact is dropped",
-[graph ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one
-patent has two different durations, that one work has two exclusive owners, or that one entity is
-both `PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts
-into gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
+`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/extraction/induce.py`, `models.py`), and nothing
+in that artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact`
+creates a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the
+fact, and the approved schema states that rule outright ("no grounded fact is dropped", [graph
+ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one patent
+has two different durations, that one work has two exclusive owners, or that one entity is both
+`PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts into
+gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
 validation architecture: an AXIOM layer over the closed vocabulary and the induced relations --
 functional and inverse-functional properties (at most one object per subject, and vice versa),
 `domain`/`range` type constraints per relation, disjoint entity-type pairs, symmetry/asymmetry/
@@ -671,10 +458,10 @@ checker. That keeps OWL semantics as the reference without letting a reasoner in
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: RUN NEEDED
 - Dependencies: none in code. Reuse the closed vocabulary and `normalize_entity_type` in
-  `src/llb/prep/ontology/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
+  `src/llb/prep/ontology/extraction/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
   models in `src/llb/prep/ontology/models.py`, the caps and confidence blend in
   `src/llb/prep/ontology/constants.py`, the fact ingestion seam in `src/llb/graph/build.py`, and the
-  violation-report renderer pattern from `src/llb/conflicts/report.py`.
+  violation-report renderer pattern from `src/llb/conflicts/report/render.py`.
 - User-visible outcome: a corpus ledger whose logical inconsistencies are visible and named before
   they become gold questions or retrieved evidence, and a constraint set an operator can read,
   version, and hand to a domain expert.
@@ -725,7 +512,7 @@ declining the hard items looks like a win.
 - Dependencies: `typed-rag-answer-envelope` (the typed object to validate) and
   `ontology-axiom-layer` (the axioms to validate it against); enabling an axiom at answer time also
   needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than defaulted.
-  Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff_uncertainty.py` and
+  Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff/uncertainty.py` and
   `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
   `compare-answer-quality`, and the ledger lookup in `src/llb/graph/retrieval.py`.
 - User-visible outcome: an operator learns whether semantic validation of RAG answers is worth its
@@ -1051,11 +838,11 @@ fail, refuse, or invent a date for it.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance_coverage.py` is the
+- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance/coverage.py` is the
   count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
   is, and `document_pair_orderability` beside it is the same input again -- report both, since a
   corpus dated end to end with one shared edition is orderable by neither;
-  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus_governance.py` are
+  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus/governance.py` are
   where ingestion already holds the same fields.
 - User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
   they are still ingesting it, not two commands and one GPU run later.
@@ -1073,22 +860,23 @@ fail, refuse, or invent a date for it.
 
 #### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
 
-`tree_is_reusable` (`src/llb/conflicts/tree_refresh.py`) documents itself as the rule that stops a
-tree built under one encoder from being queried under another, and nothing in `src/` calls it: the
-only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
+`tree_is_reusable` (`src/llb/conflicts/semantic_tree/refresh.py`) documents itself as the rule that
+stops a tree built under one encoder from being queried under another, and nothing in `src/` calls
+it: the only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
 `prepare_projected_index`'s `source_fingerprint`, which hashes the encoder, the dimension, the
 centering flag, the corpus fingerprint, the store manifest, and the whole chunk table into one
 value, so it is strictly stronger AND covers only the PROJECTED path -- the full-space path builds a
-fresh tree every run and reuses nothing. Two live functions describing one gate is how a later change
-gets made in the wrong place. Decide which it is: delete the unused one and say the fingerprint is
-the gate, or make it the cheap pre-check the full-space path is missing and give that path a
-persisted tree to reuse.
+fresh tree every run and reuses nothing. Two live functions describing one gate is how a later
+change gets made in the wrong place. Decide which it is: delete the unused one and say the
+fingerprint is the gate, or make it the cheap pre-check the full-space path is missing and give that
+path a persisted tree to reuse.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`tree_node.py`) are one side,
-  `_source_fingerprint` / `prepare_projected_index` (`src/llb/conflicts/projected_index.py`) the
-  other, and `_active_tree` (`semantic_run.py`) is the full-space path that persists nothing.
+- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`semantic_tree/node.py`) are one side,
+  `_source_fingerprint` / `prepare_projected_index`
+  (`src/llb/conflicts/semantic_tree/projected_index.py`) the other, and `_active_tree`
+  (`semantic_run.py`) is the full-space path that persists nothing.
 - User-visible outcome: one documented rule for when a persisted tree may be reused, in the place
   the reuse actually happens.
 - Scope boundary: in scope -- the verdict, the deletion or the wiring, and the test that follows it.
@@ -1116,8 +904,8 @@ something the ordering cannot move.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `finding_id` (`src/llb/conflicts/hashing.py`) is already the content-addressed
-  row identity and `group_summaries` (`group_artifact.py`) is where a group's member list is built;
+- Dependencies: none. `finding_id` (`src/llb/conflicts/tiers/hashing.py`) is already the content-addressed
+  row identity and `group_summaries` (`grouping/artifact.py`) is where a group's member list is built;
   the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
   join on it within a run.
 - User-visible outcome: an operator can tell whether the decision they triaged last week is the
@@ -1146,8 +934,8 @@ approximation of it.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking;
-  `group_summaries` in `group_artifact.py` builds the sidecar from `findings.jsonl` rows, so the
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking;
+  `group_summaries` in `grouping/artifact.py` builds the sidecar from `findings.jsonl` rows, so the
   rank must be computable from rows alone to keep the sidecar derivable without the report.
   `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
   carry it, so the sidecar must reuse it rather than add a third implementation.
@@ -1176,9 +964,9 @@ that never reorders anything is not worth a column.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report_findings.py` is the ranking and
-  `shared_unit_indices` in `src/llb/conflicts/granularity.py` is the chain length; the ranking must
-  stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
+- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking and
+  `shared_unit_indices` in `src/llb/conflicts/grouping/granularity.py` is the chain length; the
+  ranking must stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
 - User-visible outcome: the first decision the report offers is the one that actually costs the most,
   not the one with the most rows.
 - Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
@@ -1209,9 +997,10 @@ it is a floor.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `_document_stage` and `REPORT_STAGE_ORDER` in
-  `src/llb/conflicts/governance_stage.py` are the classes and their order; `orderable_document_pairs`
-  in `governance_coverage.py` is the denominator and is already counted without enumerating pairs.
+- Dependencies: none. `document_stage` and `REPORT_STAGE_ORDER` in
+  `src/llb/conflicts/governance/stage_rule.py` are the classes and their order;
+  `orderable_document_pairs` in `governance/coverage.py` is the denominator and is already counted
+  without enumerating pairs.
 - User-visible outcome: an operator learns whether the named knob recovers most of what the run
   lost or one pair of it.
 - Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
@@ -1239,8 +1028,8 @@ costs in the units the reading is quoted in.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
-- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/stage_replay.py` is the set
-  and `documents_of` beside it carries the ordering fields; `compare_editions`
+- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/bundle/stage_replay.py` is
+  the set and `documents_of` beside it carries the ordering fields; `compare_editions`
   (`governance.py`) is the orderability test the coverage already uses.
 - User-visible outcome: an operator lowering the candidate budget learns whether it costs evidence
   or only noise.
@@ -1302,7 +1091,7 @@ list or become the `size_counts` histogram it is already recorded beside.
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: CLEAR
 - Dependencies: none. `finding_granularity` and `quoted_group_split`
-  (`src/llb/conflicts/granularity.py`) build the block, `record_fold.py` is the gate every other
+  (`src/llb/conflicts/grouping/granularity.py`) build the block, `bundle/fold.py` is the gate every other
   fold in the bundle is held to, and `schema_version` inside the block is the migration seam.
 - User-visible outcome: a bundle's size tracks its corpus and its run parameters, instead of the
   number of rows the adjudicator happened to return.
@@ -1331,7 +1120,7 @@ conflicts lost if any. The scorer must stay injectable, and a corpus where the o
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: reuse `null_research_cross_encoder.py` (pair scoring batched by left passage,
+- Dependencies: reuse `controls/cross_encoder.py` (pair scoring batched by left passage,
   calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
   artifacts are current behavior in [conflict
   detection](current/data-prep/conflict-detection.md#effort-tiers).
@@ -1365,7 +1154,7 @@ record that the gate's job is a floor rather than a ranking.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/conflicts/claim_calibration.py`, its heading-addressed probe
+- Dependencies: none. Reuse `src/llb/conflicts/claim/calibration.py`, its heading-addressed probe
   format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
   offset-exact and pass the existing corpus-unchanged assertion.
 - User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
@@ -1432,9 +1221,9 @@ it on a corpus that saturates the list at an operating cosine, and record the bu
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
 - Dependencies: none. `--max-candidate-record-pairs` and the recorded `cap` are current behavior;
-  `CandidateRecord.of` in `src/llb/conflicts/candidate_record.py` is where the collapse happens and
-  `covered_to_rank` is the ratio's numerator. The corpus is the missing input: it needs many
-  near-duplicate documents, not a lowered threshold.
+  `CandidateRecord.of` in `src/llb/conflicts/bundle/candidate_record.py` is where the collapse
+  happens and `covered_to_rank` is the ratio's numerator. The corpus is the missing input: it needs
+  many near-duplicate documents, not a lowered threshold.
 - User-visible outcome: an operator on a duplicate-heavy corpus learns whether the shipped cap still
   answers the budgets they ask, instead of inheriting a number priced on a synthetic density.
 - Scope boundary: in scope -- one natively dense corpus, its ranks-per-pair ratio at several caps,
@@ -1524,7 +1313,7 @@ instead of 2 of 9 (22.2%)
 ([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
 The share is a count of the one relation the policies part on, so it inherits the adjudicator's
 sampling variance undivided, and the endpoint runs at `temperature 0.2` with no seed
-(`EndpointConfig` in `src/llb/prep/ontology/endpoint_config.py`). Audit one corpus N times at the
+(`EndpointConfig` in `src/llb/prep/ontology/endpoints/config.py`). Audit one corpus N times at the
 shipped settings, report the spread of the relation mix and of `moved_share`, and decide between the
 two fixes the spread implies: pin the adjudication call (temperature 0 plus a seed where the backend
 honors one) so a repeat audit is comparable, or quote the share with a run-to-run band. A negative
@@ -1833,7 +1622,7 @@ on a corpus whose facts differ by one number.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: HUMAN-GATED
-- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicate_residue.py` for
+- Dependencies: none. Reuse `measure_duplicate_residue` in `src/llb/rag/duplicates/residue.py` for
   the clustering and the sampler, and `collapse_duplicate_chunks` for the merge itself. Human step
   that gates completion: a reviewer reads the sampled merges at the candidate threshold and calls
   the false-merge rate acceptable or not.

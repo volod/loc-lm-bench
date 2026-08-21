@@ -106,16 +106,21 @@ def _probe_item(
     ]
     ranks = [hop["question_rank"] for hop in hops]
     limiting = None if any(rank is None for rank in ranks) else max(rank or 0 for rank in ranks)
+    curve = _item_budgets(item, budgets, retrieve_question)
     probe: ItemProbe = {
         "item_id": item.item_id,
         "question": item.question,
         "question_type": item.question_type,
         "n_spans": len(item.spans),
         "hops": hops,
-        "budgets": _item_budgets(item, budgets, retrieve_question),
+        "budgets": curve,
         "limiting_rank": limiting,
         "min_budget": item_min_budget(limiting, budgets, depth),
-        "diagnosis": diagnose_item(hops, budgets[0]),
+        "diagnosis": diagnose_item(
+            hops,
+            budgets[0],
+            covered_at_operating_budget=curve[0]["all_spans_at_k"] == 1.0,
+        ),
     }
     if query_prep is not None:
         probe["query_prep"] = query_prep

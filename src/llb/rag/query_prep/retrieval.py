@@ -3,7 +3,7 @@
 from typing import Any, cast
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.lexical import weighted_rrf_fuse
+from llb.rag.vector_store.lexical import weighted_rrf_fuse
 from llb.rag.query_prep.base import QueryPrepResult
 
 
@@ -21,10 +21,11 @@ def retrieve_prepared(
     """Retrieve the prepared plan, fusing HyDE and per-subquery rankings when needed."""
     rankings: list[list[ChunkRecord]] = []
     weights: list[float] = []
+    # `dense_query` is the processed text unless the dense-case lane re-cased it; the lexical lane
+    # always keeps the folded `processed` text its index was built to match.
+    dense = result.dense_query
     if result.subqueries:
-        rankings.append(
-            _retrieve_queries(store, result.processed, result.processed, k, chunk_filter)
-        )
+        rankings.append(_retrieve_queries(store, dense, result.processed, k, chunk_filter))
         weights.append(ORIGINAL_QUERY_RRF_WEIGHT)
         rankings.extend(
             _retrieve_queries(store, query, query, k, chunk_filter) for query in result.subqueries
@@ -46,7 +47,7 @@ def retrieve_prepared(
         if len(rankings) == 1:
             return rankings[0][:k]
         return fuse_ranked_chunks(rankings, k, weights=weights)
-    return _retrieve_queries(store, result.processed, result.processed, k, chunk_filter)
+    return _retrieve_queries(store, dense, result.processed, k, chunk_filter)
 
 
 def _retrieve_queries(

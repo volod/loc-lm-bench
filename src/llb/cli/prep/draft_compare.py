@@ -28,7 +28,7 @@ def draft_compare_review_cmd(
 ) -> None:
     """Interactively review both comparison lanes with the shared human verifier."""
     from llb.review.launch import try_workbench
-    from llb.prep.ontology.compare_gate import comparison_worksheets, worksheet_progress
+    from llb.prep.ontology.compare.gate import comparison_worksheets, worksheet_progress
 
     if order not in ("worksheet", "confidence"):
         cli_error("review order must be worksheet or confidence")
@@ -81,7 +81,7 @@ def draft_compare_finalize_cmd(
     comparison_root: Path = typer.Option(..., help="comparison root containing comparison.json"),
 ) -> None:
     """Refresh reviewed metrics and mechanically check every comparison acceptance gate."""
-    from llb.prep.ontology.compare_gate import finalize_comparison
+    from llb.prep.ontology.compare.gate import finalize_comparison
 
     report_path = _comparison_report(comparison_root)
     try:
@@ -104,7 +104,7 @@ def draft_compare_report_cmd(
     frontier_verification: Path = typer.Option(..., help="reviewed frontier verify_sample.csv"),
 ) -> None:
     """Refresh reviewed accept rates without re-running either model lane."""
-    from llb.prep.ontology.compare import refresh_comparison_acceptance
+    from llb.prep.ontology.compare.run import refresh_comparison_acceptance
 
     for path in (report, local_verification, frontier_verification):
         if not path.is_file():
@@ -144,9 +144,9 @@ def draft_compare_cmd(
     vllm_port: int = typer.Option(8000, min=1, max=65535),
 ) -> None:
     """Draft identical local-extracted seeds locally and through a consented frontier route."""
-    from llb.prep.frontier_telemetry import DraftBudgetExceeded
-    from llb.prep.ontology.compare import compare_drafters
-    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
+    from llb.prep.frontier.telemetry import DraftBudgetExceeded
+    from llb.prep.ontology.compare.run import compare_drafters
+    from llb.prep.ontology.endpoints.builder import EndpointConfigBuilder
 
     if not corpus_root.is_dir():
         cli_error(f"corpus root not found: {corpus_root}")

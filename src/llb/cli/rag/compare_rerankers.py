@@ -11,7 +11,7 @@ from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 
 # Pure, dependency-free defaults (no torch / FAISS pulled in): safe as Typer option defaults.
 from llb.core.config_validation import DEFAULT_RERANK_CANDIDATES
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.embedding_bakeoff.uncertainty import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
     DEFAULT_SEED,
@@ -21,7 +21,7 @@ from llb.rag.rerank_bakeoff.loader import DEFAULT_BATCH_SIZE, DTYPE_AUTO
 from llb.rag.rerank_bakeoff.models import DEFAULT_BASELINE_RERANKER
 
 if TYPE_CHECKING:
-    from llb.rag.candidate_screen import SkippedCandidate
+    from llb.rag.encoders.candidate_screen import SkippedCandidate
     from llb.rag.rerank_bakeoff.models import VramHeadroom
 
 # Headroom the host keeps for fragmentation and the CUDA context, on top of the generator's own
@@ -33,13 +33,18 @@ def _resolve_roster(
     models: str, allow_remote_code: bool
 ) -> tuple[list[str], list["SkippedCandidate"]]:
     """Screen the requested roster into candidates to load plus visibly declined entries."""
-    from llb.rag.candidate_screen import UnregisteredCandidateError
+    from llb.rag.encoders.candidate_screen import UnregisteredCandidateError
     from llb.rag.rerank_bakeoff.models import DEFAULT_RERANK_CANDIDATES_ROSTER
+    from llb.rag.encoders.model_stack import installed_transformers_major
     from llb.rag.rerank_bakeoff.roster import screen_rerankers
 
     roster = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_RERANK_CANDIDATES_ROSTER
     try:
-        candidates, skipped = screen_rerankers(roster, allow_remote_code=allow_remote_code)
+        candidates, skipped = screen_rerankers(
+            roster,
+            allow_remote_code=allow_remote_code,
+            transformers_major=installed_transformers_major(),
+        )
     except UnregisteredCandidateError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -159,7 +164,7 @@ def compare_rerankers_cmd(
     from llb.cli.rag.embedding_stores import local_store_builder
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.embedding_bakeoff_verdict import resolve_bars
+    from llb.rag.embedding_bakeoff.verdict import resolve_bars
     from llb.rag.rerank_bakeoff.lane import run_rerank_bakeoff
     from llb.rag.rerank_bakeoff.loader import cross_encoder_loader
     from llb.rag.rerank_bakeoff.report import format_report, render_markdown
@@ -218,6 +223,7 @@ def compare_rerankers_cmd(
         batch_size=batch_size,
         candidates=candidates,
         load_scorer=load_scorer,
+        dtype=dtype,
         item_ids=[item.id for item in items],
         skipped=skipped,
         headroom=_headroom(generator_vram_mb, vram_reserve_mb),

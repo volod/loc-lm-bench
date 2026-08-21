@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from llb.bench.chain_context import METHOD
+from llb.bench.chain_context.run import METHOD
 from llb.core.contracts.results import BoardRow
 from llb.core.contracts.common import JsonObject
 from llb.scoring.aggregate import (

@@ -74,7 +74,7 @@ def ingest_corpus_cmd(
     ),
 ) -> None:
     """Ingest a mixed txt/md/pdf directory into one canonical corpus (PDFs converted, text passed through)."""
-    from llb.prep.corpus_ingest import ingest_corpus
+    from llb.prep.corpus.ingest import ingest_corpus
 
     try:
         result = ingest_corpus(

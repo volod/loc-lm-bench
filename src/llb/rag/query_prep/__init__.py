@@ -3,7 +3,7 @@
 A pure, unit-testable pipeline of NAMED steps that transforms a query BEFORE it reaches the
 retrieval store. It never touches the stored corpus text -- original word forms stay untouched;
 this is the query-side twin of the index-side lexical normalization already shipped in
-`llb.rag.lexical`. Every step is honest: it reports what it changed so an A/B report can attribute
+`llb.rag.vector_store.lexical`. Every step is honest: it reports what it changed so an A/B report can attribute
 a per-step retrieval delta before anyone turns the lane on by default.
 
 Steps (applied in the configured order), each living in its own submodule:

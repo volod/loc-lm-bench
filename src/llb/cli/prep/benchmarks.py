@@ -23,7 +23,7 @@ def prepare_agentic_search_cmd(
     """agentic benchmark: build deterministic real-corpus agentic SEARCH tasks (count + locate) from a corpus."""
     import json as _json
 
-    from llb.bench.agentic_tasks import build_from_corpus
+    from llb.bench.agentic.tasks import build_from_corpus
 
     try:
         tasks = build_from_corpus(corpus_root, top_k=top_k, limit=limit)
@@ -67,7 +67,7 @@ def prepare_agentic_long_transcript_cmd(
     """
     import json as _json
 
-    from llb.bench.agentic_long_transcript import (
+    from llb.bench.context_policy.long_transcript import (
         build_long_transcript_from_search_tasks,
         build_long_transcript_tasks,
     )
@@ -110,7 +110,7 @@ def prepare_agentic_memory_transcript_cmd(
     """Build tasks that need an early read-once fact after several later tool calls."""
     import json as _json
 
-    from llb.bench.agentic_memory_transcript import build_memory_dependent_tasks
+    from llb.bench.memory.transcript import build_memory_dependent_tasks
 
     tasks = build_memory_dependent_tasks(n_tasks=n_tasks, depth=depth, pad_chars=pad_chars)
     out.parent.mkdir(parents=True, exist_ok=True)

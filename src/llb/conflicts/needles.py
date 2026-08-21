@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 
 from llb.conflicts.constants import DEFAULT_COSINE_THRESHOLD
-from llb.conflicts.vectorops import VectorSet
+from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.goldset.schema import GoldItem

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.duplicate_models import DuplicateStats
+from llb.rag.duplicates.models import DuplicateStats
 from llb.rag.refresh.lexical_merge import MergeEntry
 
 

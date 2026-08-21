@@ -36,6 +36,26 @@ rag = [
   "sentence-transformers>=3.0",
   "deepeval>=4.0.6,<5",
 ]
+# Second SCORING environment for the encoder/reranker bake-offs, never the shipped path. Four
+# roster candidates ship their forward pass as repository code written against the transformers 4.x
+# API (`llb.rag.encoders.model_stack`); on the pinned 5.x stack two raise at load and two load and return
+# numbers that do not reproduce their own model card. This extra pins a transformers those
+# repositories run on, beside the same sentence-transformers/torch, so those rows can be scored in
+# a separate virtualenv (`make venv-encoders-legacy`) instead of being a hole in the ranking. It is
+# self-contained rather than additive to [rag] because a single environment cannot hold two
+# transformers majors -- hence the conflict declaration in [tool.uv] below.
+encoders-legacy = [
+  "transformers>=4.44,<5",
+  "sentence-transformers>=3.0",
+  "faiss-cpu>=1.8",
+  "scipy>=1.11",
+  "einops>=0.8",  # the gte remote code imports it directly
+  # The VRAM/power columns are half of a reranker recommendation, so the legacy pass has to be
+  # able to report them too -- without these its footprint cells are blank and the two passes'
+  # cost columns stop being comparable.
+  "nvidia-ml-py>=12.0",
+  "psutil>=5.9",
+]
 eval = ["langgraph>=0.2"]
 crewai = ["crewai>=1.15,<2"]  # agentic harness comparison alt agentic harness (LangGraph vs CrewAI); validated on 1.15.0
 # platform matrix alternative vector stores behind the RAG-store seam (FAISS stays the default in [rag]).
@@ -105,6 +125,17 @@ dev = [
 
 [tool.uv]
 conflicts = [
+  # One environment cannot hold two transformers majors, and the legacy encoder pass exists
+  # precisely to be the other one. Declaring the conflict is what keeps `uv lock` from resolving
+  # the SHIPPED path down to transformers 4.x to satisfy both at once.
+  [
+    { extra = "rag" },
+    { extra = "encoders-legacy" },
+  ],
+  [
+    { extra = "crewai" },
+    { extra = "encoders-legacy" },
+  ],
   [
     { extra = "crewai" },
     { extra = "rag-chroma" },
@@ -213,7 +244,7 @@ filterwarnings = [
 # default local environment; regular CI deselects it instead of reporting a dependency skip.
 # Mark a test `@pytest.mark.gpu_env` when it must touch the device (CUDA context, flashinfer JIT)
 # and cannot be marked `slow`; both markers exempt it from the no-GPU guard that `tests/conftest.py`
-# runs over every other test (llb.quality.gpu_guard).
+# runs over every other test (llb.quality.gpu_guard.guard).
 # Mark a test `@pytest.mark.network_env` when it must connect beyond loopback and cannot be marked
 # `slow`; both markers exempt it from the no-download guard (llb.quality.download_guard).
 markers = [

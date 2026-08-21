@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_DECISION_ACCEPT,
     HUMAN_DECISION_PARTIAL,
     HUMAN_DECISION_REJECT,

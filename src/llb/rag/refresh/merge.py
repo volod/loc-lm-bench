@@ -13,15 +13,15 @@ from typing import Any
 
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.rag.chunking.corpus import chunk_corpus, iter_doc_paths
-from llb.rag.duplicate_tiers import TIER_EXACT
-from llb.rag.duplicates import (
+from llb.rag.duplicates.tiers import TIER_EXACT
+from llb.rag.duplicates.collapse import (
     collapse_duplicate_chunks,
     duplicate_stats,
 )
 from llb.rag.page_metadata import annotate_page_metadata
 from llb.rag.refresh.merge_assembly import MergeAssemblyBuilder
 from llb.rag.refresh.merge_models import MergedUnits
-from llb.rag.store_build import _build_children
+from llb.rag.vector_store.build import _build_children
 
 MODE_PARENT_CHILD = "parent_child"
 

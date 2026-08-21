@@ -6,7 +6,7 @@ Part of the [Data prep](../data-prep.md) area of the
 ## Mixed txt/md/pdf ingestion
 
 `make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the
-canonical corpus in a single command (`src/llb/prep/corpus_ingest.py`). PDFs route through the
+canonical corpus in a single command (`src/llb/prep/corpus/ingest.py`). PDFs route through the
 `ingest_pdf_corpus` converter above (same `pdf-<digest>.md` ids and citation sidecars); `.md`/`.txt`
 files pass through verbatim under their relative path so offsets stay exact. Both lanes share the
 PDF manifest contract: a per-source `source_sha256`, incremental reuse when the source is unchanged
@@ -32,7 +32,7 @@ fingerprint (`llb refresh-index` publishes each refresh as a new
 `$DATA_DIR/llb/rag/generations/<utc-ts>/` generation; deleting the newest one rolls back).
 
 Manifest-diff contract (dynamic-corpus-refresh): `corpus_doc_fingerprints` in
-`src/llb/prep/corpus_governance.py` maps `doc_id -> fingerprint` from the same two sources as
+`src/llb/prep/corpus/governance.py` maps `doc_id -> fingerprint` from the same two sources as
 `corpus_fingerprint` -- the canonical per-item row (content sha256 plus governance fields) when
 `corpus_manifest.json` exists, else the sha256 of each committed `.md`/`.txt` file keyed by its
 corpus-relative path. In both modes a document's PDF citation sidecar

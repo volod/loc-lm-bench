@@ -12,7 +12,7 @@ Those lead to opposite fixes, so the probe names which one the corpus supports.
 from typing_extensions import NotRequired, TypedDict
 
 from llb.core.contracts.rag import SourceSpanRecord as SourceSpanRecord
-from llb.rag.compare_models import Retriever as Retriever  # the one `.retrieve` seam, re-used
+from llb.rag.comparison.models import Retriever as Retriever  # the one `.retrieve` seam, re-used
 from llb.rag.fusion_evidence.models import EvidenceItem as EvidenceItem
 from llb.rag.fusion_evidence.stats import Interval
 

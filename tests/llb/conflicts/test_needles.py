@@ -8,7 +8,7 @@ same measurement.
 from llb.conflicts.needles import analyze_needles
 from llb.goldset.schema import GoldItem, SourceSpan
 
-from conflict_helpers import (
+from tests.llb.conflicts.conflict_helpers import (
     DOC_2024,
     DOC_ARCHIVE,
     FAKE_COS_THRESHOLD,

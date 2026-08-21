@@ -13,7 +13,7 @@ lost.
 
 import logging
 
-from llb.rag.candidate_screen import SkippedCandidate
+from llb.rag.encoders.candidate_screen import SkippedCandidate
 from llb.rag.rerank_bakeoff.families import resolve_convention
 from llb.rag.rerank_bakeoff.models import (
     SKIP_LOAD_FAILED,

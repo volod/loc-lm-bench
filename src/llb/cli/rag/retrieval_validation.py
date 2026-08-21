@@ -32,6 +32,7 @@ class RetrievalValidationRequest:
     query_prep: str | None
     query_glossary: Path | None
     query_prep_typo_guard: bool
+    query_prep_dense_case: bool
     query_prep_ab: bool
     query_prep_model: str | None
     query_prep_backend: str | None
@@ -55,6 +56,7 @@ def _load_validation_inputs(
         query_prep=steps or None,
         query_glossary_path=request.query_glossary,
         query_prep_typo_guard=request.query_prep_typo_guard or None,
+        query_prep_dense_case=request.query_prep_dense_case or None,
     )
     store = _load_store(cfg)
     items = load_goldset(cfg.goldset_path)
@@ -153,6 +155,7 @@ def _emit_query_prep_ab_report(
         decomposer=pipeline.decomposer,
         known_word=pipeline.known_word,
         plausible=pipeline.plausible,
+        dense_case=pipeline.dense_case,
     )
     report = query_prep_ab_report(
         ab_items, lambda result, depth: retrieve_prepared(store, result, depth), k, stages

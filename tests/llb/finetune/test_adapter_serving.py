@@ -20,7 +20,7 @@ from llb.finetune.serving.model import (
     ServePlan,
 )
 from llb.finetune.serving.run import serve_adapter
-from adapter_registry_helpers import _FakeLauncher, _fake_merge, _trained_adapter
+from tests.llb.finetune.adapter_registry_helpers import _FakeLauncher, _fake_merge, _trained_adapter
 
 
 @pytest.mark.parametrize("backend", ["vllm", "ollama", "llamacpp"])

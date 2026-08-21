@@ -8,11 +8,11 @@ ingest-uk-squad: ## Development utility: GOLDSET_MODE=development|skeleton|draft
 	case "$(GOLDSET_MODE)" in \
 	  development) \
 	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
-	    $(PY) -m llb.prep.ingest_squad --pinned-development-source \
+	    $(PY) -m llb.prep.squad.ingest --pinned-development-source \
 	      --max-items $(GOLDSET_N) \
 	      --out-name goldset_uk_development.jsonl ;; \
 	  skeleton) \
-	    $(PY) -m llb.prep.goldset_skeleton ;; \
+	    $(PY) -m llb.prep.goldset.skeleton ;; \
 	  draft) \
 	    set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	    $(MAKE) --no-print-directory prepare-goldset-draft DRAFT_CORPUS="$(CORPUS)" ;; \

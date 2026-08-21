@@ -29,10 +29,10 @@ def measure_duplicate_residue_cmd(
     rows of a rate table -- only the corpus can say).
     """
     from llb.cli.helpers import load_config
-    from llb.rag.duplicate_residue import format_residue_report, measure_duplicate_residue
-    from llb.rag.store_build import CHUNKS_FILE, META_FILE
-    from llb.rag.store_io import _read_jsonl
-    from llb.rag.vector_index import RAG_BACKEND_FAISS, load_vector_index
+    from llb.rag.duplicates.residue import format_residue_report, measure_duplicate_residue
+    from llb.rag.vector_store.build import CHUNKS_FILE, META_FILE
+    from llb.rag.vector_store.io import _read_jsonl
+    from llb.rag.vector_store.vector_index import RAG_BACKEND_FAISS, load_vector_index
     from llb.core.store_generations import resolve_store_dir
 
     if store is None and config is None:

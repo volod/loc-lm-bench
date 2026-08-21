@@ -30,6 +30,7 @@ _JOURNALED_STATE_KEYS = (
     "rerank_latency_s",
     "query_processed",
     "query_corrections",
+    "query_dense",
     "query_hypothetical_answer",
     "query_decomposition",
     "query_subqueries",

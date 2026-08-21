@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.rag.lexical import tokenize
+from llb.rag.vector_store.lexical import tokenize
 from llb.rag.query_prep.base import STEP_GLOSSARY, QUERY_GLOSSARY_VERSION, QueryEdit
 from llb.rag.query_prep.normalize import cyrillic_to_latin
 

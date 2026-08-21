@@ -6,7 +6,7 @@ from llb.finetune.registry.io import registry_path
 from llb.finetune.registry.model import (
     AdapterEntry,
 )
-from adapter_registry_helpers import _entry, _register_event, _trained_adapter
+from tests.llb.finetune.adapter_registry_helpers import _entry, _register_event, _trained_adapter
 
 
 def _store_meta(tmp_path: Path, *, name: str = "rag", **overrides) -> Path:

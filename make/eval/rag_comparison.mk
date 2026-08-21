@@ -112,14 +112,20 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 COMPARE_EMBEDDINGS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
 COMPARE_EMBEDDINGS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
-compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] EMBED_ALLOW_REMOTE_CODE=1 NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
-	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
-	$(PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
+# The interpreter the bake-off lanes run in. `compare-*-legacy` overrides it per target rather than
+# re-entering make: `SPLIT` is exported, so in a sub-make its origin becomes `environment` and the
+# config-owns-its-split rule above would silently flip. One recipe, one origin, two interpreters.
+BAKEOFF_PY ?= $(PY)
+
+compare-embeddings: ## Rank UA embedders with paired evidence (CONFIG= or GOLDSET=; MODELS= EMBED_BASELINE= EMBED_POWER_REFERENCE= EMBED_POWER_CANDIDATE= EMBED_MDE= EMBED_POWER_METRIC= EMBED_TARGET_POWER= EMBED_API_MODEL= EMBED_ADOPTION_BARS=recall_at_k[,mrr] EMBED_ALLOW_REMOTE_CODE=1 EMBED_DTYPE=float32 NOISE_FLOOR=1 EMBED_RESAMPLES= EMBED_ENCODER_THROUGHPUT=1; needs ".[rag]")
+	@test -x "$(BAKEOFF_PY)" || { echo "ERROR: $(BAKEOFF_PY) missing -- run 'make venv' first"; exit 1; }
+	$(BAKEOFF_PY) -m llb.main compare-embeddings $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(COMPARE_EMBEDDINGS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_EMBEDDINGS_SPLIT_ARG) \
 		$(if $(MODELS),--models "$(MODELS)",) \
 		$(if $(EMBED_BASELINE),--baseline "$(EMBED_BASELINE)",) \
 		$(if $(EMBED_ADOPTION_BARS),--adoption-bars "$(EMBED_ADOPTION_BARS)",) \
 		$(if $(filter 1,$(EMBED_ALLOW_REMOTE_CODE)),--allow-remote-code,) \
+		$(if $(EMBED_DTYPE),--encoder-dtype "$(EMBED_DTYPE)",) \
 		$(if $(EMBED_RESAMPLES),--resamples $(EMBED_RESAMPLES),) \
 		$(if $(EMBED_CONFIDENCE),--confidence $(EMBED_CONFIDENCE),) \
 		$(if $(EMBED_POWER_REFERENCE),--power-reference "$(EMBED_POWER_REFERENCE)",) \
@@ -142,9 +148,9 @@ COMPARE_RERANKERS_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line enviro
 COMPARE_RERANKERS_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
 compare-rerankers: ## Rank cross-encoder rerankers on one pool with paired evidence + cost (CONFIG= or GOLDSET=; CORPUS= RERANK_MODELS= RERANK_BASELINE= RERANK_CANDIDATES= RERANK_ADOPTION_BARS=recall_at_k[,mrr] RERANK_ALLOW_REMOTE_CODE=1 RERANK_GENERATOR_VRAM_MB= RERANK_BATCH_SIZE= RERANK_DTYPE= NOISE_FLOOR=1; needs ".[rag]")
-	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -x "$(BAKEOFF_PY)" || { echo "ERROR: $(BAKEOFF_PY) missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
-	$(PY) -m llb.main compare-rerankers $(if $(CONFIG),--config "$(CONFIG)",) \
+	$(BAKEOFF_PY) -m llb.main compare-rerankers $(if $(CONFIG),--config "$(CONFIG)",) \
 		$(COMPARE_RERANKERS_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_RERANKERS_SPLIT_ARG) \
 		$(if $(CORPUS),--corpus-root "$(CORPUS)",) \
 		$(if $(RERANK_MODELS),--models "$(RERANK_MODELS)",) \
@@ -160,6 +166,35 @@ compare-rerankers: ## Rank cross-encoder rerankers on one pool with paired evide
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_RERANKERS_OUT),--out "$(COMPARE_RERANKERS_OUT)",)
+
+# The LEGACY scoring pass. Four roster candidates ship repository code written against the
+# transformers 4.x API, so on the pinned 5.x stack they are screened out with the pin they need
+# (src/llb/rag/encoders/model_stack.py). These two targets run the SAME recipe as their siblings above with
+# `BAKEOFF_PY` pointed at the `[encoders-legacy]` virtualenv under $DATA_DIR, which is where those
+# rows can be scored. Every other variable behaves exactly as it does on the pinned target.
+ENCODERS_LEGACY_PY = $(DATA_DIR)/venvs/encoders-legacy/bin/python
+LEGACY_ENCODER_ROSTER = $(EMBED_BASELINE),Alibaba-NLP/gte-multilingual-base,jinaai/jina-embeddings-v3
+LEGACY_RERANKER_ROSTER = $(RERANK_BASELINE),jinaai/jina-reranker-v2-base-multilingual,Alibaba-NLP/gte-multilingual-reranker-base
+
+venv-encoders-legacy: ## Create/refresh the legacy encoder venv (transformers<5) under $DATA_DIR
+	bash "$(PROJECT_ROOT)/scripts/setup_encoders_legacy_venv.sh"
+
+# The roster defaults name the incumbent BESIDE the legacy candidates on purpose: a pass that
+# scored only the unrunnable rows would have no baseline to pair them against, and the incumbent
+# reproducing its pinned-stack numbers here is what says the two passes are comparable at all.
+# `LEGACY_MODELS=` overrides that roster; `MODELS=` / `RERANK_MODELS=` are set by the target itself,
+# so an operator naming them on the command line would be overridden without noticing.
+compare-embeddings-legacy: BAKEOFF_PY = $(ENCODERS_LEGACY_PY)
+compare-embeddings-legacy: EMBED_ALLOW_REMOTE_CODE = 1
+compare-embeddings-legacy: MODELS = $(if $(LEGACY_MODELS),$(LEGACY_MODELS),$(LEGACY_ENCODER_ROSTER))
+compare-embeddings-legacy: venv-encoders-legacy compare-embeddings ## compare-embeddings for the transformers 4.x remote-code encoders (same vars, but LEGACY_MODELS= overrides the roster; defaults to the incumbent + those candidates)
+	@:
+
+compare-rerankers-legacy: BAKEOFF_PY = $(ENCODERS_LEGACY_PY)
+compare-rerankers-legacy: RERANK_ALLOW_REMOTE_CODE = 1
+compare-rerankers-legacy: RERANK_MODELS = $(if $(LEGACY_MODELS),$(LEGACY_MODELS),$(LEGACY_RERANKER_ROSTER))
+compare-rerankers-legacy: venv-encoders-legacy compare-rerankers ## compare-rerankers for the transformers 4.x remote-code rerankers (same vars, but LEGACY_MODELS= overrides the roster; defaults to the incumbent + those candidates)
+	@:
 
 compare-embedder-adoption: ## Does an embedder's FIRST-HIT-RANK gain reach the answer? Sweep top_k x reranker end to end on two encoders (MODEL= BACKEND= GOLDSET= SPLIT=a,b EMBED_BASELINE= EMBED_BASELINE_DATA_DIR= EMBED_CANDIDATE= EMBED_CANDIDATE_DATA_DIR= ADOPTION_TOP_KS=10,3 ADOPTION_RERANKERS=off,on ADOPTION_LIMIT= INCLUDE_DRAFTED=1 ADOPTION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -207,11 +242,21 @@ compare-adoption-screen: ## What does deciding the reranker question for ONE mod
 		$(if $(ADOPTION_SCREEN_TARGET),--target $(ADOPTION_SCREEN_TARGET),) \
 		$(if $(ADOPTION_SCREEN_OUT),--out-dir "$(ADOPTION_SCREEN_OUT)",)
 
-compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) on GOLDSET at a fixed embedder; VECTOR_BACKENDS= NOISE_FLOOR=1 (NOISE_FLOOR_REPLICATES=) COMPARE_STORES_OUT=
+# With CONFIG= the YAML owns the gold set and the split, so the defaults are forwarded only when
+# the caller actually set them -- otherwise a config-targeted backend comparison would silently
+# score the DEFAULT goldset against the config's corpus. Same rule as compare-embeddings.
+COMPARE_STORES_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
+COMPARE_STORES_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
+
+compare-vector-stores: ## platform matrix: rank vector backends (FAISS/Chroma/Qdrant/LanceDB) with paired evidence (CONFIG= or GOLDSET=; VECTOR_BACKENDS= VECTOR_BASELINE= VECTOR_RESAMPLES= VECTOR_CONFIDENCE= VECTOR_SEED= NOISE_FLOOR=1 NOISE_FLOOR_REPLICATES= COMPARE_STORES_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-vector-stores $(if $(CONFIG),--config "$(CONFIG)",) \
-		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(COMPARE_STORES_GOLDSET_ARG) --k $(RAG_K) $(COMPARE_STORES_SPLIT_ARG) \
 		$(if $(VECTOR_BACKENDS),--backends "$(VECTOR_BACKENDS)",) \
+		$(if $(VECTOR_BASELINE),--baseline "$(VECTOR_BASELINE)",) \
+		$(if $(VECTOR_RESAMPLES),--resamples $(VECTOR_RESAMPLES),) \
+		$(if $(VECTOR_CONFIDENCE),--confidence $(VECTOR_CONFIDENCE),) \
+		$(if $(VECTOR_SEED),--seed $(VECTOR_SEED),) \
 		$(if $(NOISE_FLOOR),--noise-floor,) \
 		$(if $(NOISE_FLOOR_REPLICATES),--noise-floor-replicates $(NOISE_FLOOR_REPLICATES),) \
 		$(if $(COMPARE_STORES_OUT),--out "$(COMPARE_STORES_OUT)",)

@@ -8,7 +8,7 @@ from llb.goldset.verify_acceptance import accepted_ids, emit_accepted_ledger
 from llb.goldset.verify_acceptance_report import acceptance_report
 from llb.goldset.verify_ref_format import format_verification_status
 from llb.goldset.verify_refcheck import check_verification_ref
-from llb.prep.verified_ledger import apply_verified_ledger, load_verified_ledger
+from llb.prep.goldset.verified_ledger import apply_verified_ledger, load_verified_ledger
 from tests.llb.goldset._verify_helpers import (
     DOC,
     _bundle,

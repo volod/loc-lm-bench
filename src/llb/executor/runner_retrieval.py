@@ -53,7 +53,7 @@ def _query_vocabulary(
     context = VocabularyContext.build(str(chunk.get("text", "")) for chunk in chunks)
     known_word = None
     if config.query_prep_typo_guard:
-        from llb.rag.lexical import load_uk_word_probe
+        from llb.rag.vector_store.lexical import load_uk_word_probe
 
         known_word = load_uk_word_probe()
     return context.tokens, known_word, context
@@ -94,6 +94,7 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
         STEP_TYPOS,
     )
     from llb.rag.query_prep.pipeline import QueryPrep
+    from llb.rag.query_prep.restore_policy import RestorationPolicy
 
     steps = list(config.query_prep)
     if not steps:
@@ -122,6 +123,12 @@ def build_query_prep(config: RunConfig, store: Any, launcher: Any | None) -> Any
             known_word=known_word,
             context=context,
             plausible=plausible,
+            dense_case=config.query_prep_dense_case,
+            restoration_policy=RestorationPolicy(
+                surface_max_distance=config.query_prep_surface_max_distance,
+                ambiguous_token_max_chars=config.query_prep_ambiguous_max_chars,
+                rank_order=config.query_prep_restore_rank,
+            ),
         )
     except ValueError as exc:
         raise SystemExit(f"[run-eval] invalid query_prep: {exc}") from None
@@ -136,7 +143,7 @@ def _plausibility_probe(vocabulary: "frozenset[str] | None", probe: Any | None) 
     neither, so its transliteration is refused. `probe` is the already-loaded morphology probe when
     the typo guard supplied one, else it is loaded here."""
     if probe is None:
-        from llb.rag.lexical import load_uk_word_probe
+        from llb.rag.vector_store.lexical import load_uk_word_probe
 
         probe = load_uk_word_probe()
     if not vocabulary:
@@ -174,8 +181,8 @@ def _load_store(config: RunConfig) -> Any:
             return maybe_wrap_reranker(graph, config)
     vector = _load_vector_store(config)
     if config.retrieval_backend == "fused":
-        from llb.rag.fusion import FusedRetriever
-        from llb.rag.fusion_routing import QuestionTypeRouter, ROUTER_QUESTION_TYPE
+        from llb.rag.fusion.fuse import FusedRetriever
+        from llb.rag.fusion.routing import QuestionTypeRouter, ROUTER_QUESTION_TYPE
         from llb.rag.question_types import load_question_types_by_question
 
         assert graph is not None
@@ -210,9 +217,9 @@ def _load_graph_store(config: RunConfig) -> Any:
 
 def _load_vector_store(config: RunConfig) -> Any:
     """Load and validate the vector lane, including optional dense/BM25 fusion."""
-    from llb.rag.store import RagStore
-    from llb.rag.store_build import MODE_HYBRID
-    from llb.rag.store_validation import stale_store_message, store_embedder_mismatch
+    from llb.rag.vector_store.store import RagStore
+    from llb.rag.vector_store.build import MODE_HYBRID
+    from llb.rag.vector_store.validation import stale_store_message, store_embedder_mismatch
 
     store = RagStore.load(config.index_dir())
     stale = stale_store_message(store.meta, config.corpus_root, config.index_dir())

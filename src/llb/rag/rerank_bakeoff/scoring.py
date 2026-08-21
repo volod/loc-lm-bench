@@ -16,9 +16,10 @@ from dataclasses import dataclass
 from typing import Callable, cast
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalPair, SourceSpanRecord
-from llb.rag.embedding_bakeoff_models import BakeoffItem
+from llb.rag.embedding_bakeoff.models import BakeoffItem
 from llb.rag.rerank import RerankScorer, rerank_chunks
 from llb.rag.rerank_bakeoff.families import resolve_convention
+from llb.rag.encoders.card_parity import CardParityResult
 from llb.rag.rerank_bakeoff.models import (
     KIND_RERANK,
     KIND_RETRIEVAL_ORDER,
@@ -114,6 +115,7 @@ def candidate_row(
     loaded: LoadedScorer | None = None,
     peak_vram_mb: float | None = None,
     fits_headroom: bool | None = None,
+    card_parity: CardParityResult | None = None,
 ) -> RerankCandidateResult:
     """Shape one row from a finished pass: rank quality first, then what it cost to get it."""
     metrics = evaluate_retrieval(pairs, k)
@@ -134,6 +136,8 @@ def candidate_row(
         "rerank_ms_per_query": round(seconds * MS_PER_S / n, 3),
         "pairs_per_second": round(n * pool_depth / seconds, 1) if seconds > 0 else 0.0,
     }
+    if card_parity is not None:
+        row["card_parity"] = card_parity
     if kind == KIND_RERANK:
         if convention.trust_remote_code:
             row["trust_remote_code"] = True
@@ -156,7 +160,7 @@ def floor_pools(
 ) -> list[tuple[list[ChunkRecord], list[SourceSpanRecord]]]:
     """Pools re-keyed so the measurement floor perturbs the score the ROW was ranked on.
 
-    The floor jitters `retrieval_score` (`llb.rag.noise_floor`), which for a reranked lane is the
+    The floor jitters `retrieval_score` (`llb.rag.noise_floor.measure`), which for a reranked lane is the
     wrong number: the ranking came from the cross-encoder. Each chunk is copied with its rerank
     score written into that key, so the floor answers "how much of this lane's rank order is decided
     by noise in the RERANKER's scores" -- the question the row's recommendation rests on.

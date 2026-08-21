@@ -16,7 +16,7 @@ re-qualified against the unchanged token-chain control before any cell runs.
 A cap-fitting cell is usable only inside a narrow band, and that band needs NO model to compute. The
 memory-dependent tool world is deterministic, so an oracle controller that always plays the next
 workflow token reproduces the exact prompt sequence a perfect controller would send
-(`src/llb/bench/agentic_memory_boundary_probe.py`): depth 6 peaks at 8,374 prompt chars and depth 10
+(`src/llb/bench/memory/boundary/probe.py`): depth 6 peaks at 8,374 prompt chars and depth 10
 at 11,926, and the probe's cap totals (13,258 and 27,343 model-input tokens per task) are the
 numbers the host then measured. A guard BELOW the peak overflows cap; a guard at or above
 `peak / compact_share` never lets compact fire. Design validation refuses any cell outside that open
@@ -42,17 +42,17 @@ cell must also keep its preconditions -- zero cap overflows, zero compact overfl
 above the activation floor, paired completion, and both policies above the cell completion floor --
 or it is reported invalid with the named reason instead of bending the crossover.
 
-Core locations are `src/llb/bench/agentic_memory_boundary_probe.py` (the oracle episode walk that
-measures the peak), `src/llb/bench/agentic_memory_fold_step_ladder.py` (`usable_guard_band` and
+Core locations are `src/llb/bench/memory/boundary/probe.py` (the oracle episode walk that
+measures the peak), `src/llb/bench/memory/fold_step/ladder.py` (`usable_guard_band` and
 `guard_is_cap_fitting`, the band arithmetic over that peak),
-`src/llb/bench/agentic_memory_boundary_gate.py` (the direction-aware lower-is-better cost gate,
+`src/llb/bench/memory/boundary/gate.py` (the direction-aware lower-is-better cost gate,
 shared with the replication in [compact versus cap](compact-versus-cap.md)),
-`src/llb/bench/agentic_memory_boundary_surface_cells.py` (grid contract and per-cell validity),
-`src/llb/bench/agentic_memory_boundary_crossover.py` (the interpolation and the routing lines),
-`src/llb/bench/agentic_memory_boundary_surface.py` (design, run, and analysis),
-`src/llb/bench/agentic_memory_boundary_surface_report.py`,
-`src/llb/cli/bench/category_agentic_memory_boundary_surface.py`, and
-`tests/llb/bench/test_agentic_memory_boundary_surface.py`, whose fake-model pass over the committed
+`src/llb/bench/memory/boundary/surface_cells.py` (grid contract and per-cell validity),
+`src/llb/bench/memory/boundary/crossover.py` (the interpolation and the routing lines),
+`src/llb/bench/memory/boundary/surface.py` (design, run, and analysis),
+`src/llb/bench/memory/boundary/surface_report.py`,
+`src/llb/cli/bench/memory/boundary_surface.py`, and
+`tests/llb/bench/memory/test_agentic_memory_boundary_surface.py`, whose fake-model pass over the committed
 grid proves every predeclared cell keeps cap fitting and compact firing.
 
 ```bash
@@ -117,13 +117,13 @@ reports `no_resolving_power` instead of a collapse. The probe also predicts, wit
 step each trigger folds at (`first_fold_step` over the deterministic cap prompt sequence), which is
 the mechanism the claim rests on.
 
-Core locations are `src/llb/bench/agentic_memory_trigger_collapse_design.py` (family/axis contract
-and the cap-fitting band per pair), `src/llb/bench/agentic_memory_trigger_collapse_reading.py`
+Core locations are `src/llb/bench/memory/trigger_collapse/design.py` (family/axis contract
+and the cap-fitting band per pair), `src/llb/bench/memory/trigger_collapse/reading.py`
 (vocabulary, fold-step annotation, family spread, and the reading),
-`src/llb/bench/agentic_memory_trigger_collapse.py` (run and analysis),
-`src/llb/bench/agentic_memory_trigger_collapse_report.py`,
-`src/llb/cli/bench/category_agentic_memory_trigger_collapse.py`, and
-`tests/llb/bench/test_agentic_memory_trigger_collapse.py`.
+`src/llb/bench/memory/trigger_collapse/run.py` (run and analysis),
+`src/llb/bench/memory/trigger_collapse/report.py`,
+`src/llb/cli/bench/memory/trigger_collapse.py`, and
+`tests/llb/bench/memory/test_agentic_memory_trigger_collapse.py`.
 
 ```bash
 make bench-agentic-context-compact-trigger-collapse
@@ -201,18 +201,18 @@ whose measured fold step drifts from its declared one aborts the analysis rather
 
 That arithmetic is separated from the episode walk that feeds it, because the two cost wildly
 different things to call and a shared module name hid which one an import line was reaching for.
-`src/llb/bench/agentic_memory_fold_step_ladder.py` holds the pure half -- the trigger/guard interval
+`src/llb/bench/memory/fold_step/ladder.py` holds the pure half -- the trigger/guard interval
 inverse, `first_fold_step`, the reachable and foldable ladders, `live_entries_at_fold_step`,
 `compaction_trigger_chars`, `smallest_guard_reaching`, `measured_cap_peak`, `usable_guard_band`, and
 `guard_is_cap_fitting` -- every one a function of a prompt-size SEQUENCE plus a share or a guard,
 cheap enough for the placement rules, the summarize-cap ladder, and the policy-change band solver to
-sweep in a tight loop. `src/llb/bench/agentic_memory_boundary_probe.py` keeps the half that RUNS
+sweep in a tight loop. `src/llb/bench/memory/boundary/probe.py` keeps the half that RUNS
 episodes (`oracle_controller`, `oracle_compacting_controller`, `compact_fold_input_probe`,
 `cap_prompt_sequence`, `cap_peak_prompt_chars`), each call a full workflow walk per task. No
 re-export layer bridges them: every caller imports from the module that owns the name, so an import
 line says which cost it is paying.
 
-The tests mirror that split. `tests/llb/bench/test_agentic_memory_fold_step_ladder.py` holds the
+The tests mirror that split. `tests/llb/bench/memory/test_agentic_memory_fold_step_ladder.py` holds the
 interval algebra on synthetic prompt sequences -- the trigger interval and its inverse, the guard
 interval through the runtime truncation, and the unreachable-versus-unfoldable step -- with no design
 file, no episode, and no model in reach, so a failure there names the ladder rather than the study
@@ -228,10 +228,10 @@ refused); `usable_guard_band` refuses a non-positive peak, which is a probe that
 at all; `measured_cap_peak` names the GEOMETRY behind such a walk, including the empty one a bare
 `max` could only call an empty iterable; and an empty sequence folds at no step, has no reachable or
 foldable step, and puts every step out of range.
-`tests/llb/bench/test_agentic_memory_fold_step_crossover.py` keeps the study: the committed design's
+`tests/llb/bench/memory/test_agentic_memory_fold_step_crossover.py` keeps the study: the committed design's
 placement, the validation refusals, the readings over fixture rows, and the end-to-end run under
 perfect play. The usable band keeps its own home in
-`tests/llb/bench/test_agentic_memory_boundary_surface.py`, where it is asserted against the
+`tests/llb/bench/memory/test_agentic_memory_boundary_surface.py`, where it is asserted against the
 probe-measured cap peak it is only meaningful next to. The two policy-change interaction tests
 (`test_agentic_policy_change_interaction_{band,cap}.py`) import ladder names to BUILD their geometry
 rather than to test it, so they stay where they are.
@@ -241,7 +241,7 @@ probe-measured value into the arithmetic now states what it does when the ladder
 choice asserted rather than implied. They do not all answer the same way, because what the refusal
 MEANS differs per caller.
 
-`_step_row` (`agentic_memory_fold_step_rows.py`) TRANSLATES. The step is a measured cell property
+`_step_row` (`fold_step/rows.py`) TRANSLATES. The step is a measured cell property
 (`predicted_fold_step`) and the sequence is the depth's own oracle walk, so a step the sequence
 cannot answer for means the two describe different geometries -- a probe that measured nothing, or
 rows grouped against another depth's ladder. Both now read as `cells [...] cannot be read against
@@ -254,16 +254,16 @@ The cap PEAK is translated once, for everyone. `usable_guard_band` refuses a non
 the peak is the `max` of a probe walk, so a geometry whose oracle episodes end before their first
 prompt failed inside that `max` instead -- one layer lower still, and as the bare builtin `max()
 iterable argument is empty`, which names neither the geometry nor what the peak was wanted for.
-`measured_cap_peak(sequence, geometry=...)` in `agentic_memory_fold_step_ladder.py` is the reduction
+`measured_cap_peak(sequence, geometry=...)` in `fold_step/ladder.py` is the reduction
 every cap-fitting caller now takes, and it states the fact above the band rather than inside it:
 `depth 6 measured no prompt under perfect play (0 steps), so it has no cap peak and no usable guard
 band to place cells in`. The `geometry` label is the caller's own vocabulary, so a surface depth and
 a summarize-cap arm ladder read differently while the refusal stays one refusal. Seven readers share
 it: `cap_peak_prompt_chars` (the probe's own reduction), `_validate_band`
-(`agentic_memory_boundary_surface_cells.py`), `fold_step_cap_peaks` and `_validate_ladder`
-(`agentic_memory_fold_step_design.py`), `_validate_ladder` (`agentic_memory_summary_cap_design.py`),
-`_arm_row` (`agentic_memory_summary_cap_rows.py`), and `analyze_summary_cap`
-(`agentic_memory_summary_cap.py`). In the two ladder validators the read moved AHEAD of the shape
+(`boundary/surface_cells.py`), `fold_step_cap_peaks` and `_validate_ladder`
+(`fold_step/design.py`), `_validate_ladder` (`summary_cap/design.py`),
+`_arm_row` (`summary_cap/rows.py`), and `analyze_summary_cap`
+(`summary_cap/run.py`). In the two ladder validators the read moved AHEAD of the shape
 rule as well: an unmeasured depth used to be reported as declared steps that are not adjacent on the
 foldable ladder `[]`, which points the operator at the design instead of at the geometry.
 
@@ -271,7 +271,7 @@ The SHARE is deliberately left alone in all of them: it is a `held_fixed` value 
 verbatim, so `compact share must be in (0, 1]` already names what the operator wrote as precisely as
 a translation would.
 
-`_interpolated_row` (`agentic_memory_crossover_restatement_rows.py`) TRANSLATES, and its refusal is
+`_interpolated_row` (`crossover_restatement/rows.py`) TRANSLATES, and its refusal is
 the sharpest of the set because the step comes from a COMMITTED artifact rather than from a probe of
 the same geometry. Every other caller reads a step it measured itself; this one interpolates a fresh
 guard against a freshly measured sequence and then asks where the PUBLISHED fold step's guard
@@ -286,7 +286,7 @@ check is the FOLDABLE ladder rather than the sequence bounds, because a publishe
 cost measured at a step an episode folded at: a step still in range but no longer reachable (an
 earlier prompt grew past it) has been retired by the geometry just as completely.
 
-`share_bound_conditions` (`agentic_policy_change_interaction_conditions.py`) PROPAGATES, and the
+`share_bound_conditions` (`interaction/conditions.py`) PROPAGATES, and the
 reachable fault was one level up. Every step the solver states conditions at comes from
 `foldable_fold_steps` of the same sequence, so a step `fold_step_trigger_interval` cannot answer for
 is a fabricated `StepGeometry` rather than a geometry anyone declared, and the ladder's own words are
@@ -309,22 +309,22 @@ published-step translation in `test_agentic_memory_crossover_restatement.py`, ag
 that the committed number still restates inside its own interval; and both band-solver halves in
 `test_agentic_policy_change_interaction_band.py`.
 
-Core locations are `src/llb/bench/agentic_memory_fold_step_ladder.py` (the interval arithmetic
+Core locations are `src/llb/bench/memory/fold_step/ladder.py` (the interval arithmetic
 above, shared with the collapse study, the summarize-cap arms, and the policy-change band solver),
-`src/llb/bench/agentic_memory_boundary_probe.py` (the oracle prompt sequence it is computed over),
-`src/llb/bench/agentic_memory_fold_step_design.py` (the placement contract),
-`src/llb/bench/agentic_memory_fold_step_rows.py` (step and depth rows, and the caller-side refusal
+`src/llb/bench/memory/boundary/probe.py` (the oracle prompt sequence it is computed over),
+`src/llb/bench/memory/fold_step/design.py` (the placement contract),
+`src/llb/bench/memory/fold_step/rows.py` (step and depth rows, and the caller-side refusal
 for a step the measured sequence cannot answer for),
-`src/llb/bench/agentic_memory_boundary_surface_cells.py` (the depth-side walk behind the shared peak
-read), `src/llb/bench/agentic_memory_crossover_restatement_rows.py` (the published-fold-step
-refusal), `src/llb/bench/agentic_policy_change_interaction_band.py` (the empty-foldable-ladder
+`src/llb/bench/memory/boundary/surface_cells.py` (the depth-side walk behind the shared peak
+read), `src/llb/bench/memory/crossover_restatement/rows.py` (the published-fold-step
+refusal), `src/llb/bench/policy_change/interaction/band.py` (the empty-foldable-ladder
 refusal),
-`src/llb/bench/agentic_memory_fold_step_reading.py` (vocabulary, readings, routing lines),
-`src/llb/bench/agentic_memory_fold_step.py` (run and analysis),
-`src/llb/bench/agentic_memory_fold_step_report.py`,
-`src/llb/cli/bench/category_agentic_memory_fold_step.py`,
-`tests/llb/bench/test_agentic_memory_fold_step_ladder.py` (the interval arithmetic), and
-`tests/llb/bench/test_agentic_memory_fold_step_crossover.py` (the study).
+`src/llb/bench/memory/fold_step/reading.py` (vocabulary, readings, routing lines),
+`src/llb/bench/memory/fold_step/run.py` (run and analysis),
+`src/llb/bench/memory/fold_step/report.py`,
+`src/llb/cli/bench/memory/fold_step.py`,
+`tests/llb/bench/memory/test_agentic_memory_fold_step_ladder.py` (the interval arithmetic), and
+`tests/llb/bench/memory/test_agentic_memory_fold_step_crossover.py` (the study).
 
 ```bash
 make bench-agentic-context-compact-fold-step

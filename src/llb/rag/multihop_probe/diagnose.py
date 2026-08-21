@@ -4,6 +4,14 @@ The rule is deliberately small, because the whole value of the probe is that a r
 it: the WORST hop decides the item, and a hop the question never reaches is read against the same
 hop queried by its own text. A hop the span text finds at the operating budget but the question
 does not is a query problem; one neither form finds is not a ranking or budget question at all.
+
+`covered` is decided by the RETRIEVAL AT THE OPERATING BUDGET, not by the deep pass, because that
+is the only one of the two an operator is served. A lane that re-fuses its candidate pool per
+requested depth (a hybrid dense/lexical store does) can rank a chunk inside the top k of a deep
+pass and outside the top k of a k-sized retrieval, and the reverse; anchoring `covered` to the
+deep ranks therefore let an item be counted covered while the operating budget missed a span, and
+counted as failing while the operating budget carried them all. The remaining three diagnoses stay
+rank-based -- they answer "what would fix it", which is a question about depth, not about the cut.
 """
 
 from collections.abc import Sequence
@@ -38,9 +46,15 @@ _REASON_OF = {
 }
 
 
-def diagnose_item(hops: Sequence[HopOutcome], operating_budget: int) -> str:
-    """Classify one item by its worst hop: covered, budget-limited, query-limited, or absent."""
-    if all(_within(hop["question_rank"], operating_budget) for hop in hops):
+def diagnose_item(
+    hops: Sequence[HopOutcome], operating_budget: int, *, covered_at_operating_budget: bool
+) -> str:
+    """Classify one item by its worst hop: covered, budget-limited, query-limited, or absent.
+
+    `covered_at_operating_budget` is the item's measured `all-spans@k` at the smallest compared
+    budget -- what the operator actually got -- and it alone decides `covered`.
+    """
+    if covered_at_operating_budget:
         return DIAGNOSIS_COVERED
     unreached = [hop for hop in hops if hop["question_rank"] is None]
     if not unreached:

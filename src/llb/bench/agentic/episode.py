@@ -17,7 +17,7 @@ from llb.bench.common import LLMChat, LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld, tool_catalog
 from llb.core.contracts.benchmarks import ToolDef
 from llb.core.contracts.common import ChatMessage
-from llb.scoring.tool_calls import ToolCall
+from llb.scoring.tooling.tool_calls import ToolCall
 
 
 def _record_call(

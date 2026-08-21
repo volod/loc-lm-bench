@@ -15,7 +15,7 @@ from llb.prep.ontology.constants import (
     EXTRACTION_FILENAME,
     ONTOLOGY_FILENAME,
 )
-from llb.prep.ontology.inventory import inventory_corpus
+from llb.prep.ontology.coverage.inventory import inventory_corpus
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 
 _LOG = logging.getLogger(__name__)

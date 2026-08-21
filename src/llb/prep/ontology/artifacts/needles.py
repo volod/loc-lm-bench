@@ -9,7 +9,7 @@ from llb.goldset.schema import GoldItem
 from llb.prep.ontology.artifacts.citations import ratio, span_page_refs
 from llb.prep.ontology.constants import DEFAULT_QUESTION_TYPE
 from llb.prep.ontology.models import ItemLabels
-from llb.prep.ontology.needles import NeedleRetriever, annotate_needle_retrieval
+from llb.prep.ontology.drafting.needles import NeedleRetriever, annotate_needle_retrieval
 
 
 def citation_valid_items(items: list[GoldItem], index: dict[str, dict[str, Any]]) -> list[GoldItem]:

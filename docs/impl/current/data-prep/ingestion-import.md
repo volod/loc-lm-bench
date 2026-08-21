@@ -3,7 +3,7 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
-`src/llb/prep/ingest_squad.py` maps SQuAD-like rows to `GoldItem` records. It accepts local JSON,
+`src/llb/prep/squad/ingest.py` maps SQuAD-like rows to `GoldItem` records. It accepts local JSON,
 Hugging Face rows, flattened rows, nested article rows, and rows whose `answers` value is encoded
 as a dict string.
 
@@ -12,14 +12,14 @@ make ingest-uk-squad GOLDSET_MODE=development
 make ingest-uk-squad GOLDSET_MODE=skeleton
 make ingest-uk-squad GOLDSET_MODE=draft CORPUS=<dir>
 make ingest-squad SQUAD_JSON=path.json
-python -m llb.prep.ingest_squad --hf-dataset <id> --hf-split train
+python -m llb.prep.squad.ingest --hf-dataset <id> --hf-split train
 ```
 
 Draft imports start with `verified=false`. A verification ledger can adopt matching canonical rows
 by id. Adoption replaces the whole canonical item and corpus file, which prevents a reused id from
 certifying changed content.
 
-`src/llb/prep/goldset_skeleton.py` writes an editable from-scratch SQuAD template under
+`src/llb/prep/goldset/skeleton.py` writes an editable from-scratch SQuAD template under
 `$DATA_DIR/goldset-skeleton/<timestamp>/`.
 
 For **open** corpora, drafts can also be authored with an external AI provider service (Claude
@@ -34,12 +34,12 @@ and the [external-service draft contract](../../../design/external-draft-contrac
 
 ## Grounded-JSONL import (Artifact B -> draft bundle)
 
-`make import-external-draft` / `llb import-external-draft` (`src/llb/prep/external_draft.py`) turns a
-grounded-JSONL export (contract Artifact B: `quote` + `source_doc_id` rows) into a canonical draft
-bundle for the usual `validate-goldset` -> `cross-check-goldset` -> `verify-*` chain. Unlike
-`ingest-squad` -- which stamps `provenance: public-reused`, hashes each context into its own doc
-(losing full-document needle realism), and cannot read grounded JSONL -- the import re-grounds
-against the FULL original corpus doc:
+`make import-external-draft` / `llb import-external-draft`
+(`src/llb/prep/goldset/external_draft.py`) turns a grounded-JSONL export (contract Artifact B:
+`quote` + `source_doc_id` rows) into a canonical draft bundle for the usual `validate-goldset` ->
+`cross-check-goldset` -> `verify-*` chain. Unlike `ingest-squad` -- which stamps `provenance:
+public-reused`, hashes each context into its own doc (losing full-document needle realism), and
+cannot read grounded JSONL -- the import re-grounds against the FULL original corpus doc:
 
 - egress gate FIRST: the required `external_provenance.json` sidecar must be present and declare
   `data_classification: "open"`; a missing or non-open sidecar aborts before any bundle is written

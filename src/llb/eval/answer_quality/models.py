@@ -12,7 +12,7 @@ from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.slices import SliceReport
-from llb.rag.fusion_spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
+from llb.rag.fusion.spans import DEFAULT_SPAN_IDENTITY, SPAN_MERGE_MIN_RATIO
 
 # Per-case columns compared between lanes, all present on every `scores.jsonl` row.
 # `objective_score` is the decision metric; `retrieval_hit` is the any-span coverage signal that

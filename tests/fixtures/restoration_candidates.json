@@ -1,0 +1,90 @@
+{
+  "description": "Committed candidate sets for the restoration constraint sweep. Each case is one out-of-vocabulary query token with the near candidates the typo step would see, plus the selection every swept setting must make. The three constants are separable here: a case is written so that exactly one of them changes its outcome.",
+  "settings": [
+    "surface=0,short=4,rank=morphology",
+    "surface=1,short=4,rank=morphology",
+    "surface=0,short=3,rank=morphology",
+    "surface=0,short=5,rank=morphology",
+    "surface=0,short=4,rank=context"
+  ],
+  "cases": [
+    {
+      "id": "surface-budget-refuses-a-tie-it-created",
+      "constant": "surface_max_distance",
+      "why": "'sut' was typed for 'суть'; only 'суть' romanizes back to it. A budget of 1 also admits 'суд', and the two then tie on every signal, so the short-token refusal fires and the CORRECT restoration is lost as well.",
+      "token": "сут",
+      "candidates": [[1, "суд"], [1, "суть"]],
+      "provenance": {"noisy": "sut", "kind": "transliterate"},
+      "expected": {
+        "surface=0,short=4,rank=morphology": "суть",
+        "surface=1,short=4,rank=morphology": null,
+        "surface=0,short=3,rank=morphology": "суть",
+        "surface=0,short=5,rank=morphology": "суть",
+        "surface=0,short=4,rank=context": "суть"
+      }
+    },
+    {
+      "id": "surface-budget-swaps-the-inflection",
+      "constant": "surface_max_distance",
+      "why": "'rishennya' romanizes back to 'рішення' exactly. A budget of 1 also admits 'рішенню', which is a different case of the same noun and sorts first, so the relaxed budget rewrites the user's inflection on a token long enough that no tie refusal protects it.",
+      "token": "рішенн",
+      "candidates": [[1, "рішення"], [1, "рішенню"]],
+      "provenance": {"noisy": "rishennya", "kind": "transliterate"},
+      "expected": {
+        "surface=0,short=4,rank=morphology": "рішення",
+        "surface=1,short=4,rank=morphology": "рішенню",
+        "surface=0,short=3,rank=morphology": "рішення",
+        "surface=0,short=5,rank=morphology": "рішення",
+        "surface=0,short=4,rank=context": "рішення"
+      }
+    },
+    {
+      "id": "short-cutoff-locks-a-four-character-token",
+      "constant": "ambiguous_token_max_chars",
+      "why": "Deleting a character from a four-character token yields a different short word, not a repair. Only a cutoff of 3 stops treating 'хіта' as short and lets the deletion through.",
+      "token": "хіта",
+      "candidates": [[1, "хіт"]],
+      "expected": {
+        "surface=0,short=4,rank=morphology": null,
+        "surface=1,short=4,rank=morphology": null,
+        "surface=0,short=3,rank=morphology": "хіт",
+        "surface=0,short=5,rank=morphology": null,
+        "surface=0,short=4,rank=context": null
+      }
+    },
+    {
+      "id": "short-cutoff-locks-a-five-character-token",
+      "constant": "ambiguous_token_max_chars",
+      "why": "The mirror image: raising the cutoff to 5 starts refusing length changes on five-character tokens, where a dropped letter is still a plausible typo.",
+      "token": "слово",
+      "candidates": [[1, "слов"]],
+      "expected": {
+        "surface=0,short=4,rank=morphology": "слов",
+        "surface=1,short=4,rank=morphology": "слов",
+        "surface=0,short=3,rank=morphology": "слов",
+        "surface=0,short=5,rank=morphology": null,
+        "surface=0,short=4,rank=context": "слов"
+      }
+    },
+    {
+      "id": "rank-order-decides-between-morphology-and-context",
+      "constant": "rank_order",
+      "why": "'наказ' is the known word form; 'накат' is what a query about waves co-occurs with. The two signals disagree, so the tie-break order alone decides which corpus surface the query is rewritten to.",
+      "token": "накас",
+      "candidates": [[1, "наказ"], [1, "накат"]],
+      "known_words": ["наказ"],
+      "context_chunks": [
+        "наказ про відпустку працівника",
+        "накат хвилі на морському березі"
+      ],
+      "context_query": "накас хвилі на березі",
+      "expected": {
+        "surface=0,short=4,rank=morphology": "наказ",
+        "surface=1,short=4,rank=morphology": "наказ",
+        "surface=0,short=3,rank=morphology": "наказ",
+        "surface=0,short=5,rank=morphology": "наказ",
+        "surface=0,short=4,rank=context": "накат"
+      }
+    }
+  ]
+}

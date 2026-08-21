@@ -19,7 +19,7 @@ from llb.optimize.tuning_space import (
     fits_context,
     suggest_overrides,
 )
-from test_tuner import FakeTrial, SMALL_CTX_SPEC
+from tests.llb.optimize.test_tuner import FakeTrial, SMALL_CTX_SPEC
 
 
 def test_parse_objectives_requires_quality_and_two_goals():

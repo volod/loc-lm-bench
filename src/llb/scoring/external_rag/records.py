@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.core.fsutil import atomic_write_text
-from llb.scoring.external_rag_common import (
+from llb.scoring.external_rag.common import (
     HUMAN_DECISION_FIELD,
     HUMAN_DECISIONS,
     HUMAN_FIELDS,

@@ -7,7 +7,7 @@ question drafting should spread across. Save the output as `inventory.json` in t
 bundle.
 
 The entity `type` vocabulary below is the project's closed 13-type set
-(`src/llb/prep/ontology/entity_types.py` / `docs/design/graph-ontology-schema.md`), so the
+(`src/llb/prep/ontology/extraction/entity_types.py` / `docs/design/graph-ontology-schema.md`), so the
 inventory maps onto the local knowledge-graph tooling without renaming.
 
 Operator notes:

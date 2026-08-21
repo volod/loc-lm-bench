@@ -7,7 +7,7 @@ from llb.judge.rate.state import (
     advanced_index,
     save_human_columns,
 )
-from test_rate import _by_id, _make_ws, _row, _run_session
+from tests.llb.judge.test_rate import _by_id, _make_ws, _row, _run_session
 
 
 def test_session_author_rate_navigate_quit(tmp_path):

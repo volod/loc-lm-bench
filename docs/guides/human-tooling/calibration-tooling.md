@@ -234,7 +234,7 @@ items). Promote a calibration subset to verified first, exactly as for any score
 
    ```
    make validate-goldset GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus
-   python -m llb.prep.ingest_squad ... --verified-goldset <accepted-ledger>
+   python -m llb.prep.squad.ingest ... --verified-goldset <accepted-ledger>
    ```
 
 4. **Calibrate against the verified ledger** -- now it has `verified=true` calibration items, so

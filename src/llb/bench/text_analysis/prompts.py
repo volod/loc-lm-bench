@@ -3,9 +3,9 @@
 import json
 from collections.abc import Sequence
 
-from llb.prep.frontier import parse_json_block
+from llb.prep.frontier.client import parse_json_block
 from llb.prompts.registry import render_text, render_text_map
-from llb.scoring import text_analysis_labels as ta
+from llb.scoring.text_analysis import labels as ta
 
 JUDGED_EXTRACT_KINDS = (ta.NARRATIVE, ta.INSIGHT)
 JUDGE_INTENT = render_text_map("bench.text_analysis.judge_intents")

@@ -25,7 +25,7 @@ DOCUMENTS or bounded by a run parameter. The first three are; the last two are p
 with the corpus, so recording them would be keeping a second copy of the store inside the bundle.
 Both refusals have the same honest fix -- rebuild the store and re-run the audit.
 
-The verdicts are computed per bundle by `bundle_readings` (`src/llb/conflicts/bundle_readings.py`)
+The verdicts are computed per bundle by `bundle_readings` (`src/llb/conflicts/bundle/readings.py`)
 and printed by `make recompute-conflict-stage` as a table, so an operator reads them instead of
 discovering a gap when an answer turns out wrong. A question that is unavailable says WHY in the
 operator's own terms: a bundle written before the record says it predates it, and a run below the
@@ -34,7 +34,7 @@ semantic tier says it read no store and names `--effort` rather than a re-run.
 ## The record
 
 All of it rides under `stage_attribution_inputs` in `summary.json`
-(`src/llb/conflicts/bundle_record.py` builds it, `AuditResult.stage_inputs` carries it,
+(`src/llb/conflicts/bundle/record.py` builds it, `AuditResult.stage_inputs` carries it,
 `RunInputs` is what the semantic pass hands back). `schema_version` is the migration seam and is
 **7**; versions 1-3 are additive, so a schema-1 bundle still replays its stage and answers the two
 newer questions with a refusal, and a schema-2 bundle still answers a budget inside its prefix -- it
@@ -44,12 +44,12 @@ shape rather than adding to it, and each removes one repetition: 4 is
 [the label it stopped carrying](#the-label-a-document-with-nothing-to-label-was-carrying), 6 is
 [the head and tail every id shares](#the-head-and-tail-every-id-shares), and 7 is
 [the count most documents share](#the-count-most-documents-share). All four obey one rule
-(`src/llb/conflicts/record_fold.py`): a fold is taken only where it is actually smaller, so a corpus
+(`src/llb/conflicts/bundle/fold.py`): a fold is taken only where it is actually smaller, so a corpus
 it does not suit gets the previous form byte for byte instead of a penalty.
 
 | key | what it carries | module |
 | --- | --- | --- |
-| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- the id alone where it has neither, and the id minus whatever head and tail the whole table shares | `bundle_record.py` |
+| `documents` | every corpus document in corpus order, with the `effective_date` / `version` it was audited under -- the id alone where it has neither, and the id minus whatever head and tail the whole table shares | `bundle/record.py` |
 | `document_id_prefix` / `document_id_suffix` | the head and tail every id in the table shares, absent when the fold does not pay for itself | `document_affix.py` |
 | `chunks` | `stored` / `comparable` / `copies` per document; the two count maps carry a `default` where one count dominates | `document_chunks.py` |
 | `exclusions` | `front_matter` / `low_content` / `metadata_block` per document, plus `recovery_floor` and the run's `min_claim_tokens` | `document_exclusions.py` |
@@ -72,7 +72,7 @@ over -- in `documents`, in `chunks.stored`, in `chunks.comparable`, in each of t
 information: `documents` is already the corpus-order index every other key could name a position in.
 So it does. Every key outside `documents` is that POSITION -- a decimal string in the maps, an
 integer in the candidate rows -- and `documents` is the table they resolve against
-(`src/llb/conflicts/document_index.py`: `DocumentInterner` writes, `DocumentNaming` reads).
+(`src/llb/conflicts/bundle/document_index.py`: `DocumentInterner` writes, `DocumentNaming` reads).
 
 Two facts the change has to survive, and both are load-bearing:
 
@@ -222,7 +222,7 @@ rather than on the shape around it. A corpus-relative id is a PATH, and a corpus
 directory of one file type, so the ids share a head and a tail that carry nothing per document: the
 250-document quickstart corpus writes `squad/` and `.txt` 250 times each, 2.5 KiB of the table's
 6.5. So the record writes them ONCE (`document_id_prefix` / `document_id_suffix`,
-`src/llb/conflicts/document_affix.py`) and each entry keeps only its stem.
+`src/llb/conflicts/bundle/document_affix.py`) and each entry keeps only its stem.
 
 **The fold is applied only where it pays for itself**, which is the whole of the "buys nothing,
 costs nothing" side. `IdAffix.over` computes the shared head and tail and then compares what they
@@ -321,8 +321,9 @@ exactly one comparable chunk. That number was being written out 250 times.
 
 So a count map records the value most CORPUS documents share once, under `default`, and lists only
 the documents that differ (`interned_counts` / `named_counts` in
-`src/llb/conflicts/document_index.py`). Every count map in the record is offered the fold -- the two
-under `chunks` and the three exclusion reasons -- under the same per-map gate as the id fold.
+`src/llb/conflicts/bundle/document_index.py`). Every count map in the record is offered the fold --
+the two under `chunks` and the three exclusion reasons -- under the same per-map gate as the id
+fold.
 
 **Three things a default must not swallow**, because in a count map absence already carries meaning:
 
@@ -640,7 +641,7 @@ same store and reads as one.
 
 **Decision: record the identity, not the manifest.** `doc_fingerprints_digest` plus
 `doc_fingerprints_documents` replace `doc_fingerprints`
-(`identity_payload`, `src/llb/conflicts/store_identity.py`). The document count rides along because
+(`identity_payload`, `src/llb/conflicts/bundle/store_identity.py`). The document count rides along because
 it is 3 bytes and it is what makes a changed-store sentence readable ("250 documents recorded, 251
 on disk now"); the verdict itself never rests on it, which is why an EDITED document under an
 unchanged count is still detected below. A store that records no fingerprints at all -- a store
@@ -726,16 +727,16 @@ size is constant in the corpus where the map it replaces was linear
 
 | what | where |
 | --- | --- |
-| the record a run writes | `src/llb/conflicts/bundle_record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`, `naming_of`) |
-| the id table both forms resolve against | `src/llb/conflicts/document_index.py` (`DocumentInterner`, `DocumentNaming`) |
-| the head and tail the table is folded on | `src/llb/conflicts/document_affix.py` (`IdAffix.over`, `pays_for_itself`, `stem`, `expand`) |
-| the rule every fold obeys | `src/llb/conflicts/record_fold.py` (`json_bytes`, `smaller_form`) |
-| the count default a map is folded on | `src/llb/conflicts/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
-| the store identity the `tree` block records | `src/llb/conflicts/store_identity.py` (`fingerprint_digest`, `identity_payload`, `StoreIdentity.of`, `compare_store`), written by `tree_meta` (`tree_refresh.py`) |
+| the record a run writes | `src/llb/conflicts/bundle/record.py` (`RunInputs`, `stage_attribution_inputs`, `recorded_inputs`, `readable_record`, `naming_of`) |
+| the id table both forms resolve against | `src/llb/conflicts/bundle/document_index.py` (`DocumentInterner`, `DocumentNaming`) |
+| the head and tail the table is folded on | `src/llb/conflicts/bundle/document_affix.py` (`IdAffix.over`, `pays_for_itself`, `stem`, `expand`) |
+| the rule every fold obeys | `src/llb/conflicts/bundle/fold.py` (`json_bytes`, `smaller_form`) |
+| the count default a map is folded on | `src/llb/conflicts/bundle/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
+| the store identity the `tree` block records | `src/llb/conflicts/bundle/store_identity.py` (`fingerprint_digest`, `identity_payload`, `StoreIdentity.of`, `compare_store`), written by `tree_meta` (`semantic_tree/refresh.py`) |
 | the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints`, meta only -- no chunks, no vectors) |
-| re-reading a bundle with it | `src/llb/conflicts/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
-| per-document exclusions | `src/llb/conflicts/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
-| the ranked candidate list | `src/llb/conflicts/candidate_record.py` |
-| the per-question verdicts | `src/llb/conflicts/bundle_readings.py` |
-| rendering | `src/llb/conflicts/report_stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
+| re-reading a bundle with it | `src/llb/conflicts/bundle/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
+| per-document exclusions | `src/llb/conflicts/bundle/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
+| the ranked candidate list | `src/llb/conflicts/bundle/candidate_record.py` |
+| the per-question verdicts | `src/llb/conflicts/bundle/readings.py` |
+| rendering | `src/llb/conflicts/report/stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
 | tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/test_stage_replay.py` |

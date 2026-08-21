@@ -1,12 +1,10 @@
 """Embedder bake-off command (`compare-embeddings`): rank encoders on one gold set."""
 
-import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import typer
 
-from llb.core import env
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
@@ -16,6 +14,7 @@ from llb.cli.rag.compare_embeddings_output import (
     write_bakeoff_report,
     write_throughput_summary,
 )
+from llb.cli.rag.compare_embeddings_setup import prepared_power_plan, resolve_roster
 from llb.cli.rag.embedding_stores import (
     EncoderThroughputOptions,
     api_store_builder,
@@ -23,7 +22,7 @@ from llb.cli.rag.embedding_stores import (
 )
 
 # Pure, dependency-free defaults (no FAISS / torch pulled in): safe as Typer option defaults.
-from llb.rag.embedding_bakeoff_uncertainty import (
+from llb.rag.embedding_bakeoff.uncertainty import (
     DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
     DEFAULT_CONFIDENCE,
@@ -34,35 +33,9 @@ from llb.rag.embedding_bakeoff_uncertainty import (
 )
 from llb.rag.fusion_evidence.power import DEFAULT_TARGET_POWER
 
-if TYPE_CHECKING:
-    from llb.rag.candidate_screen import SkippedCandidate
-
-
-def _resolve_roster(
-    models: str, allow_remote_code: bool
-) -> tuple[list[str], list["SkippedCandidate"]]:
-    """Screen the requested roster into candidates to build plus visibly declined entries.
-
-    An id with no declared query/passage convention exits the run (scoring it would guess a format
-    and understate the encoder); a candidate needing `trust_remote_code` is declined unless the
-    operator opted in, and the opt-in is exported process-wide -- like `LLB_EMBED_DEVICE`, because
-    the store build, the lazy reload behind `retrieve()`, and the throughput profiler each
-    construct their own `Embedder` and all three must agree.
-    """
-    from llb.rag.embedding_bakeoff_models import DEFAULT_LOCAL_CANDIDATES
-    from llb.rag.embedding_bakeoff_roster import UnregisteredCandidateError, screen_candidates
-
-    roster = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_LOCAL_CANDIDATES
-    try:
-        local_models, skipped = screen_candidates(roster, allow_remote_code=allow_remote_code)
-    except UnregisteredCandidateError as exc:
-        typer.echo(f"[error] {exc}", err=True)
-        raise typer.Exit(code=2) from None
-    for row in skipped:
-        typer.echo(f"[compare-embeddings] skipping {row['model']}: {row['detail']}", err=True)
-    if allow_remote_code:
-        os.environ[env.LLB_TRUST_REMOTE_CODE] = "1"
-    return local_models, skipped
+# Module level so the gate is one patchable seam for the fake-store CLI tests; the probe itself
+# defers every heavy import, exactly like `llb.rag.encoders.embedder`.
+from llb.rag.encoders.card_probe import probe_encoder_card
 
 
 @app.command("compare-embeddings")
@@ -98,6 +71,13 @@ def compare_embeddings_cmd(
         "--allow-remote-code",
         help="opt into candidates that ship their own modelling code (trust_remote_code), e.g. "
         "gte-multilingual / jina-embeddings-v3; without it those rows are SKIPPED and recorded",
+    ),
+    encoder_dtype: str = typer.Option(
+        "auto",
+        "--encoder-dtype",
+        help="load EVERY candidate at this precision (auto|float32|float16|bfloat16). `auto` keeps "
+        "each checkpoint's uploaded dtype, which is what reproduces the recorded rows; declare one "
+        "to make the throughput column a model comparison instead of a checkpoint comparison",
     ),
     noise_floor: bool = typer.Option(
         False,
@@ -189,10 +169,10 @@ def compare_embeddings_cmd(
     from llb.cli.helpers import best_effort_gpu_readers
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.prep.frontier_telemetry import ProvenanceLog
-    from llb.rag.embedding_bakeoff import run_bakeoff
-    from llb.rag.embedding_bakeoff_power import prepare_embedding_power, resolve_embedding_power
-    from llb.rag.encoder_throughput import ThroughputProfile
+    from llb.prep.frontier.telemetry import ProvenanceLog
+    from llb.rag.embedding_bakeoff.run import run_bakeoff
+    from llb.rag.embedding_bakeoff.power import resolve_embedding_power
+    from llb.rag.encoders.throughput import ThroughputProfile
 
     bars = resolved_bars(adoption_bars)
     cfg = load_config(
@@ -204,26 +184,22 @@ def compare_embeddings_cmd(
     if split:
         items = [it for it in items if it.split == split]
     bakeoff_items = [(it.question, spans_as_dicts(it)) for it in items]
-    local_models, skipped = _resolve_roster(models, allow_remote_code)
+    local_models, skipped = resolve_roster(models, allow_remote_code, encoder_dtype)
 
     _, run_ts = new_run_timestamp()
     run_dir = cfg.data_dir / "compare-embeddings" / run_ts
     stores_dir = run_dir / "stores"
     report_path = out if out is not None else run_dir / "report.md"
-    try:
-        power_plan = prepare_embedding_power(
-            power_reference,
-            candidate=power_candidate,
-            metric=power_metric,
-            minimum_detectable_delta=minimum_detectable_delta,
-            target_power=target_power,
-            confidence=confidence,
-            planned_n=len(items),
-            plan_path=report_path.parent / "power-plan.json",
-        )
-    except ValueError as exc:
-        typer.echo(f"[error] {exc}", err=True)
-        raise typer.Exit(code=2) from None
+    power_plan = prepared_power_plan(
+        report_path,
+        power_reference=power_reference,
+        candidate=power_candidate,
+        metric=power_metric,
+        minimum_detectable_delta=minimum_detectable_delta,
+        target_power=target_power,
+        confidence=confidence,
+        planned_n=len(items),
+    )
     stores_dir.mkdir(parents=True, exist_ok=True)
 
     egress_log = ProvenanceLog()
@@ -251,6 +227,7 @@ def compare_embeddings_cmd(
             power_reader=power_reader,
             profiles_out=throughput_profiles,
         ),
+        card_parity=probe_encoder_card,
         item_ids=[item.id for item in items],
         skipped=skipped,
         api_model=api_model,

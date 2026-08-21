@@ -6,7 +6,7 @@ slice, bootstrap interval, and paired delta is computed from those cached per-it
 adding a graph weight to the sweep costs one retrieval pass, not one per metric.
 """
 
-from llb.rag.compare_models import CompareItem  # the one (question, spans) pair shape, re-used
+from llb.rag.comparison.models import CompareItem  # the one (question, spans) pair shape, re-used
 from llb.rag.fusion_evidence.models import (
     FOCUS_SLICE,
     AgreementReport,
@@ -126,7 +126,7 @@ def evaluate_fusion_evidence(
 ) -> FusionEvidenceReport:
     """Score every row overall and per question-type slice, then decide on the focus slice.
 
-    `noise_floor` additionally measures each row's measurement floor (`llb.rag.noise_floor`), so a
+    `noise_floor` additionally measures each row's measurement floor (`llb.rag.noise_floor.measure`), so a
     weight-to-weight recall delta is read against the band tie order alone can move. It is measured
     TWICE -- over every item and over the focus slice alone -- because the verdict is decided on the
     focus slice, and a floor measured on 95 items does not bound the band of a 35-item slice.
@@ -187,7 +187,7 @@ def evaluate_fusion_evidence(
         ),
     }
     if noise_floor:
-        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES, measure_noise_floor
 
         replicates = noise_floor_replicates or DEFAULT_REPLICATES
         report["noise_floor"] = measure_noise_floor(

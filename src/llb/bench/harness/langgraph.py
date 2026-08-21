@@ -31,7 +31,7 @@ from llb.bench.agentic.success import check_success
 from llb.bench.common import LLMComplete
 from llb.bench.tool_world import FINISH, ToolWorld
 from llb.core.contracts.benchmarks import ToolDef
-from llb.scoring.tool_calls import parse_tool_call
+from llb.scoring.tooling.tool_calls import parse_tool_call
 
 # Routing labels (the conditional-edge targets).
 ROUTE_TOOL = "tool"

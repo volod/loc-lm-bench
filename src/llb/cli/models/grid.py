@@ -7,7 +7,7 @@ import typer
 from llb.backends.readiness import local_backend_ready
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
-from llb.rag.fusion_spans import SPAN_IDENTITIES
+from llb.rag.fusion.spans import SPAN_IDENTITIES
 
 _local_backend_ready = local_backend_ready
 

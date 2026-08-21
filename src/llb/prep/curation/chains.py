@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from llb.prep.frontier import ground_span
+from llb.prep.frontier.client import ground_span
 from llb.prep.curation.common import (
     CurationReport,
     QuestionEmbedder,
@@ -25,7 +25,7 @@ from llb.prep.curation.input import (
     normalize_text,
     question_too_vague,
 )
-from llb.prep.ontology.refine import is_circular
+from llb.prep.ontology.extraction.refine import is_circular
 
 _LOG = logging.getLogger(__name__)
 

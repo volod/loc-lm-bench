@@ -123,7 +123,7 @@ def _transliteration_candidates(query: str) -> list[str]:
     Short uppercase acronyms are excluded for the same reason the step leaves them Latin: `NP` is
     not romanized Ukrainian, so it neither romanizes nor speaks to whether the query is Ukrainian.
     """
-    from llb.rag.lexical import _TOKEN_RE
+    from llb.rag.vector_store.lexical import _TOKEN_RE
 
     candidates: list[str] = []
     for raw in _TOKEN_RE.findall(query):
@@ -181,7 +181,7 @@ def apply_normalize(query: str, *, gate: LanguageGate | None = None) -> tuple[st
     off (None) unless the pipeline is wired with a plausibility probe, so a bare `apply_normalize`
     call transliterates unconditionally as before.
     """
-    from llb.rag.lexical import _APOSTROPHE_VARIANTS, _TOKEN_RE
+    from llb.rag.vector_store.lexical import _APOSTROPHE_VARIANTS, _TOKEN_RE
 
     if gate is not None and not gate.transliterate:
         return query, []

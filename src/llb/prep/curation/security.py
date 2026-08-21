@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from llb.prep.frontier import ground_span
+from llb.prep.frontier.client import ground_span
 from llb.prep.curation.common import (
     CurationReport,
     QuestionEmbedder,
@@ -50,7 +50,7 @@ def _case_id(case: dict[str, Any], index: int) -> str:
 
 
 def _validate(case: dict[str, Any], case_id: str, report: CurationReport) -> bool:
-    from llb.scoring.security_cases import SecurityCase
+    from llb.scoring.security.cases import SecurityCase
 
     source = case["_source"]
     try:

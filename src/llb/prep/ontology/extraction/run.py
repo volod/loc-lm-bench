@@ -1,0 +1,177 @@
+"""Stage 2 -- extract entities, aliases/coreference, events, claims, and SRO facts.
+
+The extractor is a pluggable seam (`ExtractionAdapter`). The DEFAULT is LLM-only via the
+injectable `complete` (local endpoint by default). A Python-native NER/coreference adapter
+(Stanza or spaCy `uk_core_news`) is an opt-in plug-in kept OUT of the base deps: implement the
+`ExtractionAdapter` protocol and pass it to the pipeline.
+
+Every extracted artifact must quote EXACT evidence; each quote is grounded back to offsets via
+`ground_quote`, and anything ungrounded is dropped, so the extraction links to exact evidence
+(ontology-assisted drafting acceptance). Aliases collected per entity are the lightweight coreference signal.
+"""
+
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Protocol
+
+from llb.prep.frontier.client import parse_json_block
+from llb.prep.frontier.telemetry import DraftBudgetExceeded, LLMComplete
+from llb.prep.ontology.constants import (
+    EXTRACT_CHUNK_OVERLAP,
+    EXTRACT_CONCURRENCY,
+    EXTRACT_MAX_CHARS,
+    EXTRACT_PARSE_RETRIES,
+)
+from llb.prep.ontology.coverage.journal import ExtractionJournal
+from llb.prep.ontology.models import DocExtraction, DocRecord
+from llb.prep.ontology.extraction.parsing import (
+    _LOG,
+    _log_window_progress,
+    extraction_prompt,
+    merge_extractions,
+    parse_extraction,
+)
+
+
+class ExtractionAdapter(Protocol):
+    """A document -> DocExtraction extractor. Inject any implementation (LLM, spaCy, Stanza)."""
+
+    def extract(self, doc: DocRecord) -> DocExtraction: ...
+
+
+@dataclass
+class LLMExtractionAdapter:
+    """Default extractor via the injectable `complete`. A document longer than `max_chars` is
+    CHUNKED into overlapping windows (verified-data hardening) -- one extraction call per window, merged -- instead of
+    one truncated call, so a long doc's later content is no longer dropped. Offsets stay exact:
+    grounding always runs against the FULL original text.
+
+    An optional `journal` makes the stage resumable: a completed window is recorded and, on a later
+    run over the same bundle, reused instead of re-calling the model. Window identity is the
+    deterministic `split_document` index, so a journaled window is valid as long as the extraction
+    settings are unchanged (the pipeline pins them in the journal meta)."""
+
+    complete: LLMComplete
+    max_chars: int = EXTRACT_MAX_CHARS
+    chunk_overlap: int = EXTRACT_CHUNK_OVERLAP
+    concurrency: int = EXTRACT_CONCURRENCY
+    parse_retries: int = EXTRACT_PARSE_RETRIES
+    journal: ExtractionJournal | None = None
+
+    def __post_init__(self) -> None:
+        if self.concurrency < 1:
+            raise ValueError("concurrency must be >= 1")
+        if self.parse_retries < 0:
+            raise ValueError("parse_retries must be >= 0")
+
+    def _call_window(self, doc_id: str, full_text: str, window_text: str) -> DocExtraction | None:
+        attempts = self.parse_retries + 1
+        prompt = extraction_prompt(doc_id, window_text)
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = parse_json_block(self.complete(prompt))
+            except json.JSONDecodeError:
+                _LOG.warning(
+                    "[ontology] unparseable extraction for %s (attempt %d/%d)",
+                    doc_id,
+                    attempt,
+                    attempts,
+                )
+                continue
+            except DraftBudgetExceeded:
+                raise
+            except Exception as exc:  # endpoint/transport error -> retry, then skip the window
+                _LOG.warning(
+                    "[ontology] extraction call failed for %s (attempt %d/%d): %s",
+                    doc_id,
+                    attempt,
+                    attempts,
+                    exc,
+                )
+                continue
+            if not isinstance(payload, dict):
+                _LOG.warning(
+                    "[ontology] extraction for %s is not a JSON object (attempt %d/%d)",
+                    doc_id,
+                    attempt,
+                    attempts,
+                )
+                continue
+            # Ground against the FULL original text so offsets stay exact for windowed calls.
+            return parse_extraction(doc_id, full_text, payload)
+        _LOG.warning(
+            "[ontology] extraction for %s failed after %d attempts; window remains resumable",
+            doc_id,
+            attempts,
+        )
+        return None
+
+    def _extract_window(
+        self, doc_id: str, full_text: str, window_text: str, window_index: int, window_total: int
+    ) -> DocExtraction:
+        if self.journal is not None:
+            cached = self.journal.get(doc_id, window_index)
+            if cached is not None:
+                return cached
+        extraction = self._call_window(doc_id, full_text, window_text)
+        if extraction is None:
+            return DocExtraction(doc_id=doc_id)
+        if self.journal is not None:
+            self.journal.record(doc_id, window_index, window_total, extraction)
+        return extraction
+
+    def extract(self, doc: DocRecord) -> DocExtraction:
+        if len(doc.text) <= self.max_chars:
+            return self._extract_window(doc.doc_id, doc.text, doc.text, 1, 1)
+        from llb.eval.map_reduce_prompts import split_document
+
+        windows = split_document(doc.text, self.max_chars, self.chunk_overlap)
+        total = len(windows)
+        if self.concurrency == 1 or total <= 1:
+            sequential_parts = []
+            for index, window in enumerate(windows, start=1):
+                _log_window_progress(doc.doc_id, index, total)
+                sequential_parts.append(
+                    self._extract_window(doc.doc_id, doc.text, window, index, total)
+                )
+            return merge_extractions(doc.doc_id, sequential_parts)
+
+        worker_count = min(self.concurrency, total)
+        _LOG.info(
+            "[ontology] extracting %s with %d windows at concurrency %d",
+            doc.doc_id,
+            total,
+            worker_count,
+        )
+        parallel_parts: list[DocExtraction | None] = [None] * total
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_index = {}
+            for index, window in enumerate(windows, start=1):
+                _log_window_progress(doc.doc_id, index, total)
+                future = executor.submit(
+                    self._extract_window, doc.doc_id, doc.text, window, index, total
+                )
+                future_to_index[future] = index - 1
+            for future in as_completed(future_to_index):
+                parallel_parts[future_to_index[future]] = future.result()
+        ordered_parts = [part for part in parallel_parts if part is not None]
+        return merge_extractions(doc.doc_id, ordered_parts)
+
+
+def extract_corpus(docs: list[DocRecord], adapter: ExtractionAdapter) -> list[DocExtraction]:
+    """Run the extractor over every inventoried document."""
+    extractions = []
+    for index, doc in enumerate(docs, start=1):
+        _LOG.info(
+            "[ontology] stage 2: extracting doc %d/%d %s (%d chars)",
+            index,
+            len(docs),
+            doc.doc_id,
+            doc.n_chars,
+        )
+        extractions.append(adapter.extract(doc))
+    n_facts = sum(len(e.facts) for e in extractions)
+    n_ent = sum(len(e.entities) for e in extractions)
+    _LOG.info("[ontology] stage 2: %d entities, %d facts across %d docs", n_ent, n_facts, len(docs))
+    return extractions

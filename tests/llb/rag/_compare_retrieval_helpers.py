@@ -1,4 +1,4 @@
-"""GraphRAG backend residual 3 -- graph-vs-FAISS retrieval comparison core (`llb.rag.compare`).
+"""GraphRAG backend residual 3 -- graph-vs-FAISS retrieval comparison core (`llb.rag.comparison.run`).
 
 Pure: driven by fake stores exposing the `.retrieve` seam, so it runs in the lightweight CI install
 (no FAISS, no DuckDB, no GPU). The CLI wiring (`compare-retrieval`) layers real stores on top.
@@ -32,6 +32,16 @@ def _items() -> list[tuple[str, list[SourceSpanRecord]]]:
 class _MetaStore(_FakeStore):
     """A store that also carries build meta, like a real `RagStore`."""
 
-    def __init__(self, hits: list[ChunkRecord], duplicates: dict) -> None:
+    def __init__(
+        self,
+        hits: list[ChunkRecord],
+        duplicates: dict,
+        collapse_duplicates: bool = True,
+        strategy: str = "recursive",
+    ) -> None:
         super().__init__(hits)
-        self.meta = {"duplicates": duplicates}
+        self.meta = {
+            "duplicates": duplicates,
+            "collapse_duplicates": collapse_duplicates,
+            "strategy": strategy,
+        }

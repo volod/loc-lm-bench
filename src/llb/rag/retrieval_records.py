@@ -4,7 +4,7 @@
 retrieval metrics from that sidecar instead of from the live store -- miss classification
 (`llb.board.miss_analysis`) and multi-span answer coverage (`llb.eval.answer_quality.coverage`).
 Those recomputations must agree with the metric the run itself reported, which is why the record
-carries the DUPLICATE OCCURRENCES of a collapsed chunk (`llb.rag.duplicates`): a chunk that stands
+carries the DUPLICATE OCCURRENCES of a collapsed chunk (`llb.rag.duplicates.collapse`): a chunk that stands
 for the same text in several documents hits a gold span labeled at any of them, and a record that
 kept only the surviving copy's offsets would report a retrieval miss the run did not have.
 
@@ -22,12 +22,12 @@ from llb.core.contracts.rag import (
     RetrievedSpanRecord,
     SourceSpanRecord,
 )
-from llb.rag.duplicates import (
+from llb.rag.duplicates.collapse import (
     COUNT_KEY,
     OCCURRENCES_KEY,
     duplicate_occurrences,
 )
-from llb.rag.duplicate_models import DuplicateOccurrence
+from llb.rag.duplicates.models import DuplicateOccurrence
 from llb.rag.retrieval import chunk_hits_any
 
 # Bounded per-chunk text carried into `retrieval.jsonl` for observability; the span coordinates

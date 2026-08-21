@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from llb.prep.ontology.dedup import QuestionEmbedder, Vector, _cosine
+from llb.prep.ontology.extraction.dedup import QuestionEmbedder, Vector, _cosine
 
 _LOG = logging.getLogger(__name__)
 
@@ -193,7 +193,7 @@ def resolve_embedder(semantic: bool) -> QuestionEmbedder | None:
     if not semantic:
         return None
     try:
-        from llb.prep.ontology.dedup import E5QuestionEmbedder
+        from llb.prep.ontology.extraction.dedup import E5QuestionEmbedder
 
         return E5QuestionEmbedder()
     except Exception as exc:  # sentence-transformers absent or model unavailable

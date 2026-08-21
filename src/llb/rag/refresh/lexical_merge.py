@@ -10,11 +10,11 @@ them with freshly tokenized texts for changed documents only, producing an index
 
 from collections import Counter
 
-from llb.rag.lexical import (
+from llb.rag.vector_store.lexical import (
     Lemmatizer,
     tokenize,
 )
-from llb.rag.lexical_index import LexicalIndex
+from llb.rag.vector_store.lexical_index import LexicalIndex
 
 # One merged-store entry in the new build order: an old ordinal to reuse (int) or the text of a
 # freshly chunked unit to tokenize (str).

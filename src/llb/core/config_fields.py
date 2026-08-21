@@ -18,6 +18,13 @@ from llb.core.config_validation import (
     _environment_value,
     _optional_environment_value,
 )
+from llb.rag.query_prep.restore_policy import (
+    AMBIGUOUS_TOKEN_MAX_CHARS,
+    AMBIGUOUS_TOKEN_MAX_CHARS_LIMIT,
+    RANK_MORPHOLOGY,
+    SURFACE_MAX_DISTANCE,
+    SURFACE_MAX_DISTANCE_LIMIT,
+)
 
 Strategy = Literal[
     "fixed", "sentence", "recursive", "markdown", "semantic", "page", "heading", "late", "table"
@@ -27,7 +34,7 @@ RetrievalStrategy = Literal["local_khop", "global_community"]
 # Span-identity policy of graph-vector fusion (fusion-span-overlap-identity): when do a graph
 # evidence span and a vector chunk name ONE candidate both lanes vouch for? "exact" requires
 # identical (doc_id, char_start, char_end); "overlap" folds a graph span into the vector chunk
-# that contains it. See `src/llb/rag/fusion_spans.py`.
+# that contains it. See `src/llb/rag/fusion/spans.py`.
 SpanIdentity = Literal["exact", "overlap"]
 # Per-question graph fusion policy. "fixed" applies graph_weight to every question;
 # "question_type" uses a sidecar label when available and a deterministic text fallback.
@@ -35,11 +42,16 @@ GraphFusionRouter = Literal["fixed", "question_type"]
 # Context-order policy (rerank-context-order): how kept chunks are laid into the prompt.
 # "rank" = best-first (retrieval/rerank order); "reverse_rank" = best-last.
 ContextOrder = Literal["rank", "reverse_rank"]
+# Tie-break order of the typo step's restoration constraints
+# (restoration-constraint-threshold-sweep): which ranking signal separates two equally near
+# candidates first. Kept in step with `RESTORATION_RANK_ORDERS` in
+# `llb.rag.query_prep.restore_policy`, which owns the vocabulary.
+RestorationRankOrder = Literal["morphology", "context"]
 # Context strategy (rag-vs-long-context-ablation): where the prompt's evidence comes from.
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
 ContextStrategy = Literal["rag", "closed_book", "long_context"]
-# Duplicate-collapse tier (llb.rag.duplicate_tiers): when do two chunk texts count as ONE
+# Duplicate-collapse tier (llb.rag.duplicates.tiers): when do two chunk texts count as ONE
 # passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
 # coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
 DuplicateTier = Literal["exact", "normalized", "masked"]
@@ -118,7 +130,7 @@ class RunConfigFields(BaseModel):
     retrieval_mode: RetrievalMode = "flat"
     child_chunk_size: int = Field(default=400, ge=1)
 
-    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates).
+    # Duplicate-collapse tier applied to the INDEXED units at build time (llb.rag.duplicates.collapse).
     # "exact" is loss-free; the coarser tiers trade a smaller index and fewer near-ties for
     # merging passages that differ, so they need per-corpus residue evidence before adoption.
     duplicate_tier: DuplicateTier = "exact"
@@ -167,6 +179,26 @@ class RunConfigFields(BaseModel):
     # (`what does the` -> `wгат доес тге`). Off by default so per-token transliteration stays the
     # explicit baseline; needs the 'normalize' step.
     query_prep_language_gate: bool = False
+    # Dense-lane casing for the 'normalize' step (normalize-casefold-dense-lane-cost): when on, the
+    # processed query is re-cased from the raw question before it reaches the CASE-SENSITIVE dense
+    # encoder, while the lexical lane keeps the folded text its index matches on. Casefolding is a
+    # lexical matching convention the dense side never asked for. Off by default so the folded
+    # dense query stays the explicit baseline; needs the 'normalize' step.
+    query_prep_dense_case: bool = False
+    # Restoration constraints for the 'typos' step (restoration-constraint-threshold-sweep). The
+    # defaults are the conservative shipped behavior; each is a swept design constant, not a
+    # preference: `surface_max_distance` is how far a candidate's re-noised surface may sit from
+    # the form the user typed (0 = exactly), `ambiguous_max_chars` is the length at or below which
+    # a length change or an unresolved tie is refused, and `restore_rank` chooses whether
+    # morphology or local query context breaks an edit-distance tie first. All three need the
+    # 'typos' step and are recorded in the manifest fingerprint like every other knob.
+    query_prep_surface_max_distance: int = Field(
+        default=SURFACE_MAX_DISTANCE, ge=0, le=SURFACE_MAX_DISTANCE_LIMIT
+    )
+    query_prep_ambiguous_max_chars: int = Field(
+        default=AMBIGUOUS_TOKEN_MAX_CHARS, ge=0, le=AMBIGUOUS_TOKEN_MAX_CHARS_LIMIT
+    )
+    query_prep_restore_rank: RestorationRankOrder = RANK_MORPHOLOGY
 
     # Retrieval backend (GraphRAG backend). "faiss" is the default vector store; "graph" selects the GraphRAG
     # knowledge-graph backend (built from the ontology-assisted drafting extraction). `retrieval_strategy` chooses the

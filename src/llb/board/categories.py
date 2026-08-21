@@ -7,8 +7,8 @@ from pathlib import Path
 
 from llb.core.contracts.common import JsonObject
 from llb.scoring.leaderboard import ModelResult
-from llb.scoring.composite_builder import build_category_composite_rows
-from llb.scoring.composite_types import CompositeComponent, CompositeIssue
+from llb.scoring.composite.builder import build_category_composite_rows
+from llb.scoring.composite.types import CompositeComponent, CompositeIssue
 
 from llb.board.io import read_case_series
 

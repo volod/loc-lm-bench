@@ -24,7 +24,7 @@ to end and `decide_verdict` gains an opt-in second bar keyed to the answer.
   in any cell, so the sweep never tested the question). Reports are `report.md` + `comparison.json` under
   `$DATA_DIR/embedder-adoption-bar/<run>/`. The whole comparison + verdict is fake-bundle
   unit-tested (`tests/llb/eval/test_embedder_adoption.py`) -- no backend, store, or GPU.
-- **The second bar** (`embedding_bakeoff_uncertainty.py`): `decide_verdict` takes a `bars`
+- **The second bar** (`embedding_bakeoff/uncertainty.py`): `decide_verdict` takes a `bars`
   selection. `recall_at_k` is the default and the only UNCONDITIONAL bar; `--adoption-bars
   recall_at_k,mrr` (`EMBED_ADOPTION_BARS=`) opts into the scoped first-hit-rank (`BAR_FIRST_HIT =
   mrr`) bar. A candidate is adopted when it clears at least one enabled bar; the verdict records

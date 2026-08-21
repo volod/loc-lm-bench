@@ -33,18 +33,20 @@ score at most a few hundred short passages, which is minutes, not hours.
 
 Implementation:
 
-- `null_research_synthesis.py` samples source chunks per document, asks the host-fit Ukrainian model
+- `controls/synthesis.py` samples source chunks per document, asks the host-fit Ukrainian model
   for a same-genre passage about a different subject, adjudicates each generated passage against its
-  own source on the claim-tier prompt, and keeps only the non-conflicting ones. Survivors are
-  embedded with the target's own encoder and become a control population addressed exactly like a
-  corpus, so the third generation's balancing, tail, and gate machinery applies unchanged.
-- `null_research_cross_encoder.py` re-scores the cosine shortlist and the frozen controls with a
+  own source on the claim-tier prompt, and keeps only the non-conflicting ones.
+  `controls/synthesis_bank.py` embeds the survivors with the target's own encoder and assembles
+  them into a control population addressed exactly like a corpus -- one geometry per generation
+  domain, plus the yield/scale record -- so the third generation's balancing, tail, and gate
+  machinery applies unchanged.
+- `controls/cross_encoder.py` re-scores the cosine shortlist and the frozen controls with a
   pinned multilingual cross-encoder, then reports a calibration curve against the adjudicated labels,
   relation recall, and clustered tail coverage. A fixture-F1 improvement alone cannot accept it.
-- `null_research_conformal.py` compares group-split conformal tail CERTIFICATION against the shipped
+- `statistics/conformal.py` compares group-split conformal tail CERTIFICATION against the shipped
   two-way row bootstrap under duplicate reuse, domain shift, and a tail finer than the bank resolves.
-- `null_research_fourth.py` orchestrates the lanes over one shared bank;
-  `null_research_report_fourth.py` renders their sections. Deterministic coverage with injected model
+- `generations/fourth.py` orchestrates the lanes over one shared bank;
+  `report/fourth.py` renders their sections. Deterministic coverage with injected model
   and cross-encoder fakes is in `tests/llb/conflicts/test_null_research_fourth.py`.
 
 ## The floor no estimator choice can move

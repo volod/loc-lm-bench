@@ -12,7 +12,7 @@ from llb.graph.linking import (
     tokenize,
 )
 from llb.graph.retrieval import serialize_subgraph
-from test_graph import _graph
+from tests.llb.graph.test_graph import _graph
 
 
 def test_communities_split_two_clusters_deterministically():

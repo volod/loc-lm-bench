@@ -3,7 +3,7 @@
 A converted manual repeats whole blocks INSIDE one document -- a boilerplate procedure step
 restated in section after section, a note repeated under every table, a running footer the
 line-level `strip_page_furniture` pass did not reach. Index-time collapse
-(`llb.rag.duplicates`) already removes their index and tie cost, but it cannot restore what the
+(`llb.rag.duplicates.collapse`) already removes their index and tie cost, but it cannot restore what the
 repetition destroys in the SOURCE: the document's own reading order stops tracking its chunk
 ordinals, and one surviving copy answers a question asked about any of the sections that carry it.
 

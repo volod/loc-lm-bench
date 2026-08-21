@@ -11,7 +11,7 @@ import pytest
 from llb.goldset.schema import SourceSpan
 from llb.graph.refresh import refresh_graph_store, save_graph_inputs
 from llb.graph.store import GraphStore
-from llb.prep.ontology.inventory import inventory_corpus
+from llb.prep.ontology.coverage.inventory import inventory_corpus
 from llb.prep.ontology.models import DocExtraction, Entity, SROFact
 
 TS = "20990101T000000Z"

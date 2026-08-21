@@ -33,8 +33,8 @@ def compare_conflict_granularity_cmd(
     """Compare the transitive and shared-unit decision groupings over audited runs."""
     import json
 
-    from llb.conflicts.granularity import RULE_SHARED_UNIT, RULE_TRANSITIVE
-    from llb.conflicts.report_granularity import comparison_report
+    from llb.conflicts.grouping.granularity import RULE_SHARED_UNIT, RULE_TRANSITIVE
+    from llb.conflicts.report.granularity import comparison_report
     from llb.core.paths import resolve_data_dir
     from llb.core.store_generations import generation_timestamp
 
@@ -64,7 +64,7 @@ def _entry(path: Path) -> JsonObject:
     import json
 
     from llb.conflicts.constants import FINDINGS_FILE
-    from llb.conflicts.granularity import rows_granularity
+    from llb.conflicts.grouping.granularity import rows_granularity
 
     findings = path / FINDINGS_FILE if path.is_dir() else path
     if not findings.is_file():

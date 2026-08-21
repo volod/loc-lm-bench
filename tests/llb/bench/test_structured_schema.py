@@ -1,7 +1,7 @@
 """Tests for structured schema."""
 
-from llb.scoring import structured
-from test_structured import ARRAY_SCHEMA, NESTED_SCHEMA
+from llb.scoring.structured import run as structured
+from tests.llb.bench.test_structured import ARRAY_SCHEMA, NESTED_SCHEMA
 
 
 def test_field_accuracy_unordered_array_set_match():

@@ -148,6 +148,15 @@ rank. This isolates the evidence-delivery ceiling from generation quality. If re
 gold span, the case is classified as a retrieval miss; when evidence is present and the answer is
 wrong, it is a generation miss.
 
+Overlap-based recall is deliberately generous: it credits an item as soon as a retrieved chunk
+shares ONE character with a gold span, so it cannot tell evidence that arrived whole from evidence
+that arrived in pieces. The same source spans are therefore also read for INTACTNESS -- how much of
+each gold span the retrieved context carries, and whether a single retrieved chunk carries a span
+whole. That pair is the axis a chunk-boundary change moves while recall stays flat. The boundary:
+intactness is REPORTED, never ranked on. It does not gate a leaderboard, does not decide an
+adopt-or-retain verdict, and says nothing about whether an answer used the evidence -- that is the
+answer-side measurement.
+
 FAISS is the default vector path. Alternative stores share the same source-span metric, which makes
 comparisons meaningful without changing gold labels. A retrieval-side component change is adopted on
 a stated bar, not on a raw metric win: a rank-quality gain that no configuration can convert into a
@@ -358,7 +367,7 @@ Four rules settle it, in order:
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 3 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 3 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage and intactness reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
 | 4 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
 | 5 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 6 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |

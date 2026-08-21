@@ -69,14 +69,14 @@ def _endpoint_config_setup(
     max_usd: float | None = None,
     max_calls: int | None = None,
 ) -> tuple[Any, Any, Optional[Path]]:
-    from llb.prep.ontology.endpoint_config import (
+    from llb.prep.ontology.endpoints.config import (
         DEFAULT_LOCAL_BASE_URL,
         ENDPOINT_FRONTIER,
         ENDPOINT_LOCAL,
         LOCAL_BACKEND_OLLAMA,
         LOCAL_BACKEND_VLLM,
     )
-    from llb.prep.ontology.endpoint_builder import EndpointConfigBuilder
+    from llb.prep.ontology.endpoints.builder import EndpointConfigBuilder
     from llb.prep.ontology.pipeline.journaling import default_out_dir
 
     resolved_out = out_dir
@@ -126,7 +126,7 @@ def _endpoint_plan_setup(
     max_usd: float | None,
     max_calls: int | None,
 ) -> tuple[Any, Any, Optional[Path]]:
-    from llb.prep.ontology.endpoint_config import ENDPOINT_FRONTIER, EndpointPlan
+    from llb.prep.ontology.endpoints.config import ENDPOINT_FRONTIER, EndpointPlan
 
     if frontier_stage not in ("extraction", "drafting", "both"):
         cli_error("--frontier-stage must be extraction, drafting, or both")

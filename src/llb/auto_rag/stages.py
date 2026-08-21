@@ -8,7 +8,7 @@ from llb.auto_rag.models import AutoRagSettings
 
 
 def ingest_stage(settings: AutoRagSettings, _outputs: dict[str, Any]) -> dict[str, Any]:
-    from llb.prep.corpus_ingest import ingest_corpus
+    from llb.prep.corpus.ingest import ingest_corpus
 
     out = settings.run_dir / "stages" / "ingest" / "corpus"
     result = ingest_corpus(settings.corpus, out, min_chars=1)
@@ -23,7 +23,7 @@ def ingest_stage(settings: AutoRagSettings, _outputs: dict[str, Any]) -> dict[st
 
 
 def draft_stage(settings: AutoRagSettings, outputs: dict[str, Any]) -> dict[str, Any]:
-    from llb.prep.ontology.endpoint_config import EndpointConfig, EndpointPlan
+    from llb.prep.ontology.endpoints.config import EndpointConfig, EndpointPlan
     from llb.prep.ontology.pipeline.run import draft_goldset
 
     stage_dir = settings.run_dir / "stages" / "draft" / "bundle"

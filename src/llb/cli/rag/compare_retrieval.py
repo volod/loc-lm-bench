@@ -7,7 +7,7 @@ import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.cli.rag.compare_stores import _compare_vector_corpus_root
+from llb.cli.rag.compare_stores import _compare_vector_corpus_root, resolve_paired_baseline
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
@@ -96,8 +96,8 @@ def compare_retrieval_cmd(
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
-    from llb.rag.compare import compare_retrieval
-    from llb.rag.compare_rows import (
+    from llb.rag.comparison.run import compare_retrieval
+    from llb.rag.comparison.rows import (
         add_rerank_rows,
         duplicate_census,
         format_comparison,
@@ -145,11 +145,13 @@ def compare_retrieval_cmd(
         confidence=confidence,
         seed=seed,
     )
-    census = duplicate_census(stores)
+    census, census_kept = duplicate_census(stores)
     if census:
         report["duplicates"] = census
+        if census_kept:
+            report["duplicates_kept"] = census_kept
     if noise_floor:
-        from llb.rag.noise_floor import DEFAULT_REPLICATES, measure_noise_floor
+        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES, measure_noise_floor
 
         report["noise_floor"] = measure_noise_floor(
             stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
@@ -166,7 +168,7 @@ def _build_compare_stores(
     cfg: Any, strategies: Optional[str], hybrid: bool, compare_items: list[Any]
 ) -> dict[str, Any]:
     """The label -> store map to compare: per-strategy builds, hybrid rows, or built backends."""
-    from llb.rag.comparison_builders import (
+    from llb.rag.comparison.builders import (
         build_chunking_comparison,
         build_hybrid_comparison,
         load_compare_stores,
@@ -211,21 +213,18 @@ def _comparison_baseline(
     strategies: str | None,
     hybrid: bool,
 ) -> str:
-    """Resolve a stable, mode-aware baseline before any item is retrieved."""
-    if requested is not None:
-        if requested not in stores:
-            raise ValueError(
-                f"paired baseline lane `{requested}` was not scored; choose one of "
-                f"{', '.join(stores)}"
-            )
-        return requested
-    preferred = ["dense"] if hybrid else ["recursive"] if strategies else ["faiss"]
-    return next((lane for lane in preferred if lane in stores), next(iter(stores)))
+    """Resolve a stable, mode-aware baseline before any item is retrieved.
+
+    Each mode has its own incumbent -- the shipped retrieval path of that comparison -- and the
+    resolution/validation itself is shared with `compare-vector-stores`.
+    """
+    preferred = ("dense",) if hybrid else ("recursive",) if strategies else ("faiss",)
+    return resolve_paired_baseline(stores, requested, preferred)
 
 
 def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:
     """Return deployable rows only: oracle and lexical diagnostics cannot receive ADOPT."""
-    from llb.rag.compare_models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
+    from llb.rag.comparison.models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
 
     excluded = {ROW_ORACLE_DOC}
     if hybrid:

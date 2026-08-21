@@ -22,10 +22,10 @@ Core locations:
   serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
   policy-aware `run_episode`;
-- `src/llb/bench/agentic_context.py`: the four-policy run + persistence;
-- `src/llb/bench/agentic_context_report.py`: the paired reading, the policy table, and the
+- `src/llb/bench/context_policy/run.py`: the four-policy run + persistence;
+- `src/llb/bench/context_policy/report.py`: the paired reading, the policy table, and the
   recommendation;
-- `src/llb/bench/agentic_context_sweep.py`: the constant-grid sweep (cap / head-share / keep_last_n)
+- `src/llb/bench/context_policy/sweep.py`: the constant-grid sweep (cap / head-share / keep_last_n)
   and pin/expose/inapplicable verdicts;
 - `src/llb/board/agentic_context.py`: one-model policy comparison board rows;
 - `src/llb/prompts/templates/bench/agentic/compact_summary.*`: the reviewable compaction prompt.
@@ -140,11 +140,12 @@ bundles live under their own method root, so they are never mixed into the harne
 category composite, which both read `agentic`.
 
 CI drives every policy, the compaction path, and the guard over the fake endpoint with no GPU
-(`tests/llb/bench/test_agentic_context.py`, `tests/llb/backends/test_served_window.py`), including
-the assertion that the `full` policy's prompt is byte-identical to the pre-policy loop's, that no
-episode in any policy sends a prompt over the resolved window, and that a declared window larger
-than a probed one is bound by the probe. The constant-sweep lane's trim arithmetic and pin/expose
-verdicts are covered in `tests/llb/bench/test_agentic_context_sweep.py`.
+(`tests/llb/bench/context_policy/test_agentic_context.py`,
+`tests/llb/backends/test_served_window.py`), including the assertion that the `full` policy's prompt
+is byte-identical to the pre-policy loop's, that no episode in any policy sends a prompt over the
+resolved window, and that a declared window larger than a probed one is bound by the probe. The
+constant-sweep lane's trim arithmetic and pin/expose verdicts are covered in
+`tests/llb/bench/context_policy/test_agentic_context_sweep.py`.
 
 CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
 `OllamaLauncher.ensure_num_ctx(8192)`, `/api/ps` reported `context_length=8192` and

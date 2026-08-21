@@ -95,7 +95,7 @@ def _report_draft(request: DraftRequest, result: Any, endpoints: Any) -> None:
 
 
 def run_draft(request: DraftRequest) -> None:
-    from llb.prep.frontier_telemetry import DraftBudgetExceeded
+    from llb.prep.frontier.telemetry import DraftBudgetExceeded
     from llb.prep.ontology.pipeline.run import draft_goldset
 
     resolved = _resolved_request(request)

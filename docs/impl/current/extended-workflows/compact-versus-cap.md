@@ -17,10 +17,10 @@ adds controller and summarizer calls. Repeated compactions also feed the prior r
 the next summary prompt and preserve its machine aggregate headers instead of overwriting earlier
 memory. After the first summary, trigger hysteresis lets live work grow to the full prompt guard
 before summarizing again; each summary input remains capped at the initial trigger size. Core
-locations are `src/llb/bench/agentic_compact_vs_cap.py`,
-`src/llb/bench/agentic_compact_vs_cap_report.py`,
-`src/llb/cli/bench/category_agentic_compact_vs_cap.py`, and
-`tests/llb/bench/test_agentic_compact_vs_cap.py`.
+locations are `src/llb/bench/context_policy/compact_vs_cap.py`,
+`src/llb/bench/context_policy/compact_vs_cap_report.py`,
+`src/llb/cli/bench/context/compact_vs_cap.py`, and
+`tests/llb/bench/context_policy/test_agentic_compact_vs_cap.py`.
 
 ```bash
 make bench-agentic-context-compact-long MODEL=<model> BACKEND=<backend> \
@@ -68,12 +68,12 @@ too few compact episodes cross the trigger.
 make bench-agentic-context-compact-memory MODEL=<model> BACKEND=<backend>
 ```
 
-Core locations are `src/llb/bench/agentic_memory_transcript.py` (task builder),
+Core locations are `src/llb/bench/memory/transcript.py` (task builder),
 `src/llb/bench/tool_world.py` (one-way token workflow),
 `src/llb/bench/agentic/context.py` (typed memory folding and finish cue), the focused compact-vs-cap
 runner and report modules, `make/eval/categories-platform.mk`, and focused tests in
-`tests/llb/bench/test_agentic_memory_transcript.py` and
-`tests/llb/bench/test_agentic_compact_vs_cap.py`.
+`tests/llb/bench/memory/test_agentic_memory_transcript.py` and
+`tests/llb/bench/context_policy/test_agentic_compact_vs_cap.py`.
 
 CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `qwen3:14b` on Ollama, eight depth-8 tasks,
 `max_steps=14`, 8,000-character prompt guard, 136 model calls at 19.9 tok/s. The predeclared
@@ -112,11 +112,11 @@ guard, observation cap, padding, tasks, and success contract fixed.
 
 The prospective design is
 `samples/benchmarks/agentic_compact_memory_transfer_design.json`. Orchestration and analysis live
-in `src/llb/bench/agentic_memory_transfer.py`, aggregate rendering/persistence in
-`src/llb/bench/agentic_memory_transfer_report.py`, and the CLI in
-`src/llb/cli/bench/category_agentic_memory_transfer.py`. Focused contracts are in
-`tests/llb/bench/test_agentic_memory_transfer.py`; token-chain task construction shares
-`src/llb/bench/agentic_memory_transcript.py` with the memory-dependent lane.
+in `src/llb/bench/memory/transfer/run.py`, aggregate rendering/persistence in
+`src/llb/bench/memory/transfer/report.py`, and the CLI in
+`src/llb/cli/bench/memory/transfer.py`. Focused contracts are in
+`tests/llb/bench/memory/test_agentic_memory_transfer.py`; token-chain task construction shares
+`src/llb/bench/memory/transcript.py` with the memory-dependent lane.
 
 ```bash
 make bench-agentic-context-compact-memory-transfer
@@ -160,12 +160,12 @@ make bench-agentic-context-compact-memory-replication
 ```
 
 Shared cell execution and its self-contained row schema live in
-`src/llb/bench/agentic_memory_transfer_cells.py`; the original transfer runner now reuses that
+`src/llb/bench/memory/transfer/cells.py`; the original transfer runner now reuses that
 module. Replication validation, execution, and analysis live in
-`src/llb/bench/agentic_memory_replication.py`, rendering and persistence in
-`src/llb/bench/agentic_memory_replication_report.py`, the CLI in
-`src/llb/cli/bench/category_agentic_memory_replication.py`, and focused contracts in
-`tests/llb/bench/test_agentic_memory_replication.py`. The boundary analyzer records a
+`src/llb/bench/memory/replication/run.py`, rendering and persistence in
+`src/llb/bench/memory/replication/report.py`, the CLI in
+`src/llb/cli/bench/memory/replication.py`, and focused contracts in
+`tests/llb/bench/memory/test_agentic_memory_replication.py`. The boundary analyzer records a
 direction-aware lower-is-better cost gate: it uses the original compact-minus-cap delta and the
 two-sided exact sign test rather than misreading the shared positive-tail randomization field.
 

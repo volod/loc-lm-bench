@@ -103,11 +103,11 @@ the HR corpus the useful operating point is ~0.6, not the 0.9 that suits raw-spa
 
 ## Corpus-calibrated cosine threshold (`--max-candidate-pairs`)
 
-Even in the centered space a fixed cosine is not portable: the same row budget lands at ~0.60 on
-the HR corpus and ~0.46 on the goods corpus. `src/llb/conflicts/null_distribution.py` (the record),
-`null_sampling.py` (how it is measured), and `null_calibration.py` (which knob wins) derive the
-cutoff from the distribution of the corpus's own comparable cross-document chunk pairs instead of
-asking the operator to sweep for it.
+Even in the centered space a fixed cosine is not portable: the same row budget lands at ~0.60 on the
+HR corpus and ~0.46 on the goods corpus. `src/llb/conflicts/calibration/distribution.py` (the
+record), `calibration/sampling.py` (how it is measured), and `calibration/operating_point.py` (which
+knob wins) derive the cutoff from the distribution of the corpus's own comparable cross-document
+chunk pairs instead of asking the operator to sweep for it.
 
 `--max-candidate-pairs N` resolves the per-pair quantile `1 - N/total_pairs`, which over an
 exhaustive distribution cuts at the N-th largest similarity. A bare `--cos-quantile` is the wrong
@@ -212,11 +212,11 @@ Four properties are what make the number publishable, and each is enforced rathe
   Both `--max-claim-pairs` and the precision curve's budgets read a prefix; before this they read
   whatever order the tree traversal produced.
 - **A two-way clustered bound.** Rows that share a left or a right chunk are not independent
-  evidence, so the lower bound is `two_way_proportion_bound` (`null_research_clusters.py`) --
+  evidence, so the lower bound is `two_way_proportion_bound` (`statistics/clusters.py`) --
   literally the estimator the independent-null research established, imported rather than
   reimplemented, with `tests/llb/conflicts/test_claim_precision.py` asserting the audit's curve
   equals the research lane's curve on the same rows. The shared helpers live in
-  `src/llb/conflicts/claim_precision.py`; `interval_stats.py` holds the Wilson interval both sides
+  `src/llb/conflicts/claim/precision.py`; `interval_stats.py` holds the Wilson interval both sides
   use.
 - **A budget sweep for free.** Rank order also makes the precision curve a genuine
   candidate-budget sweep over one adjudicated list, so `budget_resolution` can name the smallest
@@ -242,7 +242,7 @@ Every prompt is distinct: the fixture documents restate each other verbatim, so 
 present byte-identical passages were replaced rather than counted twice.
 
 The probe stores `doc_id` + heading line, never passage text, and
-`src/llb/conflicts/claim_calibration.py` resolves each side to the exact corpus bytes at run time.
+`src/llb/conflicts/claim/calibration.py` resolves each side to the exact corpus bytes at run time.
 A fixture edit that moves the text fails the run instead of silently leaving a frozen label
 attached to a passage that no longer exists.
 
@@ -325,11 +325,11 @@ their own page: [decision groups and their counts](conflict-decision-groups.md).
 
 ## Semantic prefix tree
 
-`src/llb/conflicts/tree.py` builds a centroid tree over chunk vectors by deterministic bisecting
-2-means for angular vectors and axis-aligned median splits for projected Euclidean vectors. The
-angular tree retains the exact centroid/radius triangle-inequality path used by refresh and
-inspection. Select the large-corpus path with `--project-dims` (Make: `PROJECT_DIMS=32`); its PCA
-and persistence implementation lives in `projection.py` and `projected_index.py`.
+`src/llb/conflicts/semantic_tree/tree.py` builds a centroid tree over chunk vectors by deterministic
+bisecting 2-means for angular vectors and axis-aligned median splits for projected Euclidean
+vectors. The angular tree retains the exact centroid/radius triangle-inequality path used by refresh
+and inspection. Select the large-corpus path with `--project-dims` (Make: `PROJECT_DIMS=32`); its
+PCA and persistence implementation lives in `projection.py` and `projected_index.py`.
 
 The blocker is exact. Store vectors are unit length, so cosine cutoff `c` is Euclidean distance
 `sqrt(2 - 2c)`. PCA is an orthogonal projection and can only shrink pairwise distance. A projected

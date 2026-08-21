@@ -10,7 +10,7 @@ from llb.rag.page_metadata import (
     intersect_pages,
     load_page_citations,
 )
-from llb.rag.store_build import _build_children
+from llb.rag.vector_store.build import _build_children
 from llb.core.paths import PROJECT_ROOT
 
 FIXTURE = PROJECT_ROOT / "samples" / "pdf_pages"
@@ -176,7 +176,7 @@ def test_retrieval_hits_expose_page_fields_flat() -> None:
         def search(self, query, k):
             return [[0.9, 0.8]], [[0, 1]]
 
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     chunks = [_rec(100, 200), _rec(300, 400)]
     annotate_page_metadata(chunks, FIXTURE)
@@ -195,7 +195,7 @@ def test_retrieval_hits_expose_page_fields_parent_child() -> None:
         def search(self, query, k):
             return [[0.9]], [[0]]
 
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     parents = [_rec(100, 200)]
     annotate_page_metadata(parents, FIXTURE)

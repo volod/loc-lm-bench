@@ -272,7 +272,7 @@ The llama.cpp launcher first checks the project-managed binary under
 
 ## Vector-Store Seam
 
-`src/llb/rag/vector_index.py` defines the `VectorIndex` protocol and backend dispatch:
+`src/llb/rag/vector_store/vector_index.py` defines the `VectorIndex` protocol and backend dispatch:
 
 ```text
 faiss
@@ -309,36 +309,91 @@ llb validate-retrieval --goldset <bundle>/goldset.jsonl --k 10
 make compare-vector-stores GOLDSET=<bundle>/goldset.jsonl RAG_K=10 \
   VECTOR_BACKENDS=faiss,chroma,qdrant,lancedb NOISE_FLOOR=1 \
   COMPARE_STORES_OUT=<report>.json
+make compare-vector-stores CONFIG=<run>.yaml VECTOR_BACKENDS=faiss,chroma,qdrant NOISE_FLOOR=1
 ```
 
 When `--goldset <bundle>/goldset.jsonl` is passed and `<bundle>/corpus/` exists,
 `compare-vector-stores` uses the sibling corpus automatically. Pass `--corpus-root` when the paths
-are separate. `NOISE_FLOOR=1` adds the [measurement
+are separate. With `CONFIG=` the YAML owns the gold set and the split, and `GOLDSET=` / `SPLIT=`
+are forwarded only when the caller actually sets them -- the same rule `compare-embeddings` uses,
+so a config-targeted backend comparison cannot silently score the default gold set against the
+config's corpus. `NOISE_FLOOR=1` adds the [measurement
 floor](rag-core/retrieval-metrics.md#measurement-floor---noise-floor) per backend, which is what
 says whether a backend-to-backend delta is a ranking at all.
 
 Use one isolated `DATA_DIR` per validation run when you need to keep persisted stores for multiple
 backends.
 
-Measured backend comparison (CUDA host, 2026-07-24, pinned e5-base, `recursive` 800/120, 40-item
-accepted converted-PDF goldset, k=10; report at
-`$DATA_DIR/compare-embeddings/floor-reread/vector-stores-floor.json`):
+### Paired Backend Evidence
 
-| backend | recall@10 | MRR | fragile | floor recall@10 |
-| --- | ---: | ---: | ---: | ---: |
-| `faiss` | 0.925 | 0.852 | 0/40 | +/-0.000 |
-| `chroma` | 0.925 | 0.852 | 0/40 | +/-0.000 |
-| `qdrant` | 0.925 | 0.852 | 0/40 | +/-0.000 |
+Every backend row also carries a PAIRED delta interval against the incumbent backend over shared
+resample index sets, its win/loss/tie ledger, and an explicit adopt-or-retain verdict -- the same
+lane, statistics, and verdict vocabulary an embedder swap is decided on
+([RAG core](rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict)). The
+point estimate alone cannot say whether a backend gap is real, and `best (recall@k)` is label order
+when the backends tie, so the verdict rather than that line is the recommendation.
 
-The three backends are indistinguishable: identical recall@10, identical MRR, a zero floor in each,
-and a leader-to-runner-up gap of 0.000 that the report states does not clear the floor. The
-`best (recall@k): chroma` line the table prints is label order, not a recommendation -- which is the
-reason the floor was wired into this lane. That is the designed outcome of the
+`VECTOR_BASELINE=` names the incumbent (default `faiss` when it is in `VECTOR_BACKENDS=`, else the
+first selected backend; naming a backend that was not scored exits 2 rather than pairing against a
+different row). `VECTOR_RESAMPLES=`, `VECTOR_CONFIDENCE=`, and `VECTOR_SEED=` set the draw. The
+report JSON gains `uncertainty`, `paired_items` (the per-item ledger the reading is recomputable
+from), `backends.<row>.paired_vs_baseline`, and `verdict`.
+
+A backend comparison has one reading the embedder lane rarely sees: a ledger with zero wins AND
+zero losses on every metric. That is stronger than the `flat` reading printed per column -- `flat`
+says this item set did not separate the lanes, while zero discordant pairs says they returned the
+same evidence for every question, so no larger gold set would separate them either. The verdict
+names that case explicitly instead of reporting an unresolved measurement.
+
+Modules and tests: `src/llb/cli/rag/compare_stores.py` (command + the shared
+`resolve_paired_baseline`, reused by `compare-retrieval`), `src/llb/rag/comparison/run.py` (scoring +
+paired attachment), `src/llb/rag/comparison/uncertainty.py` (the verdict);
+`tests/llb/rag/comparison/test_compare_retrieval_cli.py` and `tests/llb/rag/comparison/test_compare_retrieval_core.py`
+cover the columns, the baseline resolution, and the verdict over fake stores.
+
+### Measured Backend Comparison
+
+Measured on the CUDA host (RTX 4060 Ti, 16,380 MiB) on 2026-08-19 with the pinned e5-base encoder,
+`recursive` 800/120, k=10, 2000 resamples at 95% confidence, seed 13, on the same two corpora the
+embedder bake-off is read on. Configs and reports:
+`$DATA_DIR/compare-vector-stores/paired-uncertainty-{pdf,fixture}.yaml` and
+`$DATA_DIR/compare-vector-stores/paired-uncertainty-{pdf,fixture}/report.json`. The earlier
+floor-only reading is at `$DATA_DIR/compare-embeddings/floor-reread/vector-stores-floor.json`.
+
+40-item accepted converted-PDF goldset:
+
+| backend | recall@10 | MRR | recall delta vs faiss | w/l/t | floor recall@10 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `faiss` | 0.925 | 0.852 | +0.000 `[0.000, 0.000]` | 0/0/40 | +/-0.000 |
+| `chroma` | 0.925 | 0.852 | +0.000 `[0.000, 0.000]` | 0/0/40 | +/-0.000 |
+| `qdrant` | 0.925 | 0.852 | +0.000 `[0.000, 0.000]` | 0/0/40 | +/-0.000 |
+
+250-item committed UA fixture (`samples/goldsets/ua_squad_postedited_v1/`):
+
+| backend | recall@10 | MRR | recall delta vs faiss | w/l/t | floor recall@10 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `faiss` | 0.980 | 0.847 | +0.000 `[0.000, 0.000]` | 0/0/250 | +/-0.000 |
+| `chroma` | 0.980 | 0.847 | +0.000 `[0.000, 0.000]` | 0/0/250 | +/-0.000 |
+| `qdrant` | 0.980 | 0.847 | +0.000 `[0.000, 0.000]` | 0/0/250 | +/-0.000 |
+
+**Verdict on both corpora: RETAIN `faiss`.** Not "the gap is small" -- the paired ledger is empty
+on both item sets (no discordant pair on recall, MRR, coverage, or intactness), so the point-estimate
+`best (recall@k): chroma` line is label order and no larger gold set would separate the three
+backends. Coverage@k and intact@k are identical too. That is the designed outcome of the
 [vector-store seam](#vector-store-seam): the adapters map query embeddings to ids and `RagStore`
-owns the chunk records, so the source-span metric SHOULD be backend-invariant on a corpus this
-size, and now it is measured rather than assumed. Choose the backend on operational grounds (build
-time, footprint, deployment), not on these rows. `lancedb` is not in the row set because its
-optional extra is not installed on this host.
+owns the chunk records, so the source-span metric SHOULD be backend-invariant, and it is now
+measured on two corpora rather than assumed. Choose the backend on operational grounds (build time,
+footprint, deployment), not on these rows. `lancedb` is not in the row set because its optional
+extra is not installed on this host.
+
+One caveat the re-reads surfaced: the PDF lane was read three times and one of the three runs put
+`chroma` one item ahead of `faiss` on MRR (+0.001, 1/0/39) while the other two were itemwise
+identical (`report-repeat.json` beside the recorded report). The recall ledger was empty in all
+three. A single discordant item cannot reach the 95% reporting level -- which needs six
+([evidence gate](rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading))
+-- so it cannot move the verdict; read it as rebuild noise in the approximate adapter indexes, not
+as a backend property. The measurement floor jitters scores within ONE build and therefore reports
++/-0.000 here; between-build variation is a separate axis this lane does not price.
 
 ## Embedding Bake-off
 
@@ -351,6 +406,8 @@ fingerprint guard, and the opt-in Cohere API-row egress gate.
 ```bash
 make compare-embeddings GOLDSET=<bundle>/goldset.jsonl RAG_K=10 NOISE_FLOOR=1
 make compare-embeddings GOLDSET=... EMBED_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
+make compare-embeddings GOLDSET=... EMBED_DTYPE=float32         # one declared precision for every row
+make compare-embeddings-legacy CONFIG=<run.yaml>                # the transformers 4.x scoring pass
 llb compare-embeddings --goldset <bundle>/goldset.jsonl --k 10 --noise-floor \
   --models intfloat/multilingual-e5-base,intfloat/multilingual-e5-small,\
 intfloat/multilingual-e5-large,BAAI/bge-m3 \
@@ -361,9 +418,12 @@ make build-index EMBEDDING_MODEL=intfloat/multilingual-e5-base   # apply an ADOP
 The default roster is nine ids: the four incumbents, the current multilingual retrieval generation
 (`multilingual-e5-large-instruct`, `gte-multilingual-base`, `jina-embeddings-v3`,
 `Qwen3-Embedding-0.6B`), and the paraphrase/STS control. A candidate with no declared query/passage
-convention fails the run before any store is built, and a `trust_remote_code` candidate is skipped
-with its reason recorded unless `EMBED_ALLOW_REMOTE_CODE=1`
-([RAG core](rag-core/embedders.md#roster-screening)).
+convention fails the run before any store is built, a `trust_remote_code` candidate is skipped with
+its reason recorded unless `EMBED_ALLOW_REMOTE_CODE=1`
+([RAG core](rag-core/embedders.md#roster-screening)), and a candidate whose repository code targets
+a different transformers major is routed to `compare-embeddings-legacy`. Every scored candidate
+must reproduce its own model card before a store is built for it
+([RAG core](rag-core/stack-and-card-parity.md)).
 
 Every candidate row carries a PAIRED delta interval against `--baseline` plus the win/loss/tie
 ledger, and the report ends in an explicit adopt-or-retain verdict rather than a point-estimate
@@ -401,10 +461,14 @@ call: on a 16,380 MiB RTX 4060 Ti both corpora still verdict **RETAIN `e5-base`*
 `multilingual-e5-large-instruct` tying `bge-m3` on the fixture (+0.012, 3 wins / 0 losses) and
 losing an item on the PDF corpus, and `Qwen3-Embedding-0.6B` tying the baseline on one corpus and
 sitting below it on the other. Peak VRAM across the seven scored candidates stayed under 5.1 GiB.
-`gte-multilingual-base` and `jina-embeddings-v3` could not be scored at all -- their remote code
-targets the transformers 4.x API and breaks on the pinned 5.12.1. Full tables, the checkpoint-dtype
-caveat on the throughput column, and the two failure diagnoses are in
-[RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16).
+`gte-multilingual-base` and `jina-embeddings-v3` are scored in the transformers 4.x
+[legacy pass](rag-core/stack-and-card-parity.md#the-legacy-transformers-pass) instead, and neither
+changes the call either: gte sits `-0.024` recall below the incumbent and jina `+0.008` with an
+interval spanning zero, at 2.1x its peak VRAM. The 3.4x throughput lead of
+`multilingual-e5-large-instruct` turns out to be its float16 upload -- at a declared
+`EMBED_DTYPE=float32` it lands within 1.4% of `e5-large`. Full tables are in
+[RAG core](rag-core/embedders.md#the-refreshed-candidate-roster-2026-08-16) and
+[the scoring stack and card-parity gate](rag-core/stack-and-card-parity.md).
 
 ## Reranker Bake-off
 
@@ -418,6 +482,7 @@ row, the per-candidate process isolation, and the full tables.
 make compare-rerankers GOLDSET=<bundle>/goldset.jsonl CORPUS=<bundle>/corpus SPLIT= RAG_K=10 \
   NOISE_FLOOR=1 RERANK_GENERATOR_VRAM_MB=<mb>   # declares the budget the fit gate reads
 make compare-rerankers GOLDSET=... RERANK_ALLOW_REMOTE_CODE=1   # opt into trust_remote_code rows
+make compare-rerankers-legacy GOLDSET=... CORPUS=... SPLIT=      # the transformers 4.x scoring pass
 make run-eval MODEL=<m> RERANKER=BAAI/bge-reranker-v2-m3        # apply a chosen reranker
 ```
 
@@ -428,7 +493,10 @@ ties it on recall and sits 0.017 MRR below at twice the latency, and `mxbai-rera
 it on both bars with intervals that exclude zero on the 250-item fixture. What the reranker buys is
 first-hit RANK -- against no reranking, +0.094 MRR `[+0.063, +0.127]` but only +0.020 recall@10 --
 for ~530-600 ms per query and a ~4.5 GiB scoring peak, which fits beside the generator on this host.
-`jina-reranker-v2-base-multilingual` and `gte-multilingual-reranker-base` could not be scored at
-all: their remote code targets the transformers 4.x API and breaks on the pinned 5.12.1, the same
-packaging hole the encoder roster hit. Full tables and the two failure diagnoses are in
-[RAG core](rag-core/reranker-bakeoff.md#what-the-bake-off-measured-2026-08-16-cuda-host).
+`jina-reranker-v2-base-multilingual` and `gte-multilingual-reranker-base` are scored in the
+transformers 4.x [legacy pass](rag-core/stack-and-card-parity.md#the-legacy-transformers-pass), the
+same packaging hole the encoder roster hit. Both are below the incumbent on both bars on the
+fixture, but at ~7x lower latency (73 and 80 ms per query against 546) and about a third of its
+resident VRAM -- a latency/quality frontier, not a swap candidate. Full tables are in
+[RAG core](rag-core/reranker-bakeoff.md#what-the-bake-off-measured-2026-08-16-cuda-host) and
+[the scoring stack and card-parity gate](rag-core/stack-and-card-parity.md#the-two-rerankers).

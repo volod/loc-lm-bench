@@ -12,15 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from llb.core.contracts.common import JsonObject
-from llb.conflicts.hashing import sha256_text
-from llb.prep.corpus_governance import (
+from llb.conflicts.tiers.hashing import sha256_text
+from llb.prep.corpus.governance import (
     DEFAULT_SOURCE_SYSTEM,
     manifest_governance_by_doc,
     source_governance,
     split_front_matter,
 )
 from llb.rag.chunking.corpus import iter_docs
-from llb.rag.lexical import tokenize
+from llb.rag.vector_store.lexical import tokenize
 
 
 @dataclass(frozen=True)

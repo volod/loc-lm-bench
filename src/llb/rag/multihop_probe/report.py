@@ -73,10 +73,16 @@ def _histogram_table(slice_probe: SliceProbe, probe_depth: int) -> list[str]:
 
 def _diagnosis_block(slice_probe: SliceProbe) -> list[str]:
     diagnosis = slice_probe["diagnosis"]
+    operating = slice_probe["curve"][0]["k"]
     lines = [
         "| diagnosis | items |",
         "| --- | ---: |",
         *(f"| {name} | {diagnosis['counts'][name]} |" for name in DIAGNOSES),
+        "",
+        f"`covered` is the measured `all-spans@{operating}` outcome -- the items the retrieval AT "
+        "the operating budget carried every labeled span for -- so this row always agrees with the "
+        "curve above. The other three read the deep-pass ranks, because they answer what would fix "
+        "the miss.",
         "",
         f"**Explanation supported: {diagnosis['explanation']}** -- {diagnosis['reason']}.",
         "",

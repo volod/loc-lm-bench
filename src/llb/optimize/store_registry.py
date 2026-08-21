@@ -45,7 +45,7 @@ def study_stores_dir(data_dir: Path, study_name: str) -> Path:
 
 def _build_bare_store(config: RunConfig) -> Any:
     """Chunk + embed without query-time fusion / rerank (those apply on every get)."""
-    from llb.rag.store import RagStore
+    from llb.rag.vector_store.store import RagStore
 
     return RagStore.build(
         config.corpus_root,
@@ -68,7 +68,7 @@ def _apply_query_knobs(store: Any, config: RunConfig) -> Any:
     retriever = store
     if config.retrieval_backend == "fused":
         from llb.executor.runner_retrieval import _load_graph_store
-        from llb.rag.fusion import FusedRetriever
+        from llb.rag.fusion.fuse import FusedRetriever
 
         retriever = FusedRetriever(
             store,
@@ -179,7 +179,7 @@ class StoreRegistry:
             recorded = json.loads(meta_path.read_text(encoding="utf-8")).get("key")
             if list(recorded) != list(key):
                 return None
-            from llb.rag.store import RagStore
+            from llb.rag.vector_store.store import RagStore
 
             store = RagStore.load(path)
             _LOG.info("[tune] reloaded store cache %s", fingerprint_slug(key))

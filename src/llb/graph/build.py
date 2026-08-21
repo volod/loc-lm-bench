@@ -20,9 +20,9 @@ from llb.graph.model import (
     GraphNode,
     KnowledgeGraph,
 )
-from llb.prep.ontology.entity_types import DEFAULT_ENTITY_TYPE
-from llb.prep.ontology.induce import induce_ontology
-from llb.prep.ontology.inventory import section_at
+from llb.prep.ontology.extraction.entity_types import DEFAULT_ENTITY_TYPE
+from llb.prep.ontology.extraction.induce import induce_ontology
+from llb.prep.ontology.coverage.inventory import section_at
 from llb.prep.ontology.models import (
     DocExtraction,
     DocRecord,

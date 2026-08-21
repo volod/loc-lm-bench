@@ -1,6 +1,6 @@
 """Tune deterministic routing thresholds once, then score only the frozen policy on final."""
 
-from llb.rag.fusion import fuse_lane_hits, lane_depth
+from llb.rag.fusion.fuse import fuse_lane_hits, lane_depth
 from llb.rag.fusion_calibration.models import (
     PolicyResult,
     RouteError,
@@ -24,7 +24,12 @@ from llb.rag.fusion_evidence.paired import (
     paired_comparison,
     separates,
 )
-from llb.rag.fusion_routing import HeuristicPolicy, QuestionTypeRouter, ROUTE_GRAPH, ROUTE_VECTOR
+from llb.rag.fusion.routing import (
+    HeuristicPolicy,
+    QuestionTypeRouter,
+    ROUTE_GRAPH,
+    ROUTE_VECTOR,
+)
 from llb.rag.retrieval import recall_at_k, span_coverage_at_k
 
 SELECTION_METRIC = "multi_span_coverage_delta"

@@ -9,7 +9,7 @@ from llb.optimize.tuner import (
     tune,
     two_stage,
 )
-from test_tuner import BASE_OVERRIDES, FakeTrial, _GPU
+from tests.llb.optimize.test_tuner import BASE_OVERRIDES, FakeTrial, _GPU
 
 
 @pytest.mark.slow

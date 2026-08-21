@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from llb.core.store_generations import GENERATIONS_DIRNAME, resolve_store_dir
-from llb.rag.lexical import Lemmatizer
+from llb.rag.vector_store.lexical import Lemmatizer
 from llb.rag.refresh.store_refresh import VectorRefreshResult, refresh_vector_store
-from llb.rag.store_build import META_FILE
+from llb.rag.vector_store.build import META_FILE
 
 
 def sibling_store_dirs(index_dir: Path | str) -> list[Path]:

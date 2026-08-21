@@ -23,13 +23,13 @@ from llb.rag.fusion_evidence.models import (
     ROUTED_ROW_PREFIX,
     VECTOR_ROW,
 )
-from llb.rag.fusion_spans import (
+from llb.rag.fusion.spans import (
     DEFAULT_SPAN_IDENTITY,
     SPAN_MERGE_MIN_RATIO,
     resolve_merge_ratio,
     resolve_span_identity,
 )
-from llb.rag.fusion_routing import ROUTER_QUESTION_TYPE
+from llb.rag.fusion.routing import ROUTER_QUESTION_TYPE
 
 BACKEND_VECTOR = "faiss"
 BACKEND_GRAPH = "graph"

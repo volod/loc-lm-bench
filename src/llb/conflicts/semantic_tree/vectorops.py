@@ -1,0 +1,291 @@
+"""Vector primitives for the semantic prefix tree, with optional numpy acceleration.
+
+The tree algorithms above this module are backend-agnostic: they only ask a `VectorSet` for dot
+products and centroids. numpy is used when importable (every CUDA host and the full local install
+have it via the `[rag]` extra) and a pure-Python path covers the base `[dev]` environment GitHub
+CI runs, so the tree and its tests never need an optional extra. Both paths compute the same
+values; only the speed differs.
+
+Vectors are L2-normalized on load, so a dot product IS the cosine similarity -- the same identity
+FAISS relies on for its inner-product index.
+"""
+
+from typing import Any
+
+from llb.conflicts.semantic_tree.vector_math import (
+    METRICS,
+    METRIC_ANGULAR,
+    METRIC_EUCLIDEAN,
+    Vector,
+    angular_distance,
+    dot,
+    normalize,
+    vector_distance,
+)
+from llb.conflicts.semantic_tree.vector_batches import cross_group_similarities
+
+
+def _import_numpy() -> Any:
+    try:
+        import numpy
+    except ImportError:
+        return None
+    return numpy
+
+
+class VectorSet:
+    """An immutable row-vector set addressed by build-order ordinal.
+
+    Encoder vectors use angular geometry and are L2-normalized. PCA projections use Euclidean
+    geometry and MUST retain their original lengths: re-normalizing a projection destroys the
+    lower-bound guarantee that makes projected conflict blocking exact.
+    """
+
+    def __init__(
+        self,
+        rows: list[Vector],
+        use_numpy: bool = True,
+        *,
+        metric: str = METRIC_ANGULAR,
+    ):
+        if metric not in METRICS:
+            raise ValueError(f"unknown vector metric {metric!r}")
+        self._np = _import_numpy() if use_numpy else None
+        self.metric = metric
+        prepared = (
+            [normalize(row) for row in rows]
+            if metric == METRIC_ANGULAR
+            else [list(row) for row in rows]
+        )
+        self.dim = len(prepared[0]) if prepared else 0
+        for row in prepared:
+            if len(row) != self.dim:
+                raise ValueError("every vector must have the same dimension")
+        self._rows = prepared
+        self._matrix = self._np.asarray(prepared, dtype="float64") if self._np else None
+
+    @classmethod
+    def from_any(
+        cls,
+        vectors: Any,
+        use_numpy: bool = True,
+        *,
+        metric: str = METRIC_ANGULAR,
+    ) -> "VectorSet":
+        """Build from a numpy matrix, a list of lists, or anything with `tolist()`."""
+        rows = vectors.tolist() if hasattr(vectors, "tolist") else [list(row) for row in vectors]
+        return cls(
+            [[float(value) for value in row] for row in rows],
+            use_numpy=use_numpy,
+            metric=metric,
+        )
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+    def row(self, index: int) -> Vector:
+        return self._rows[index]
+
+    def similarity(self, left: int, right: int) -> float:
+        """Cosine similarity between two stored rows."""
+        return dot(self._rows[left], self._rows[right])
+
+    def similarity_to(self, vector: Vector, indices: list[int]) -> list[float]:
+        """Cosine similarity of `vector` against each row in `indices`, in order."""
+        if self._np is not None and self._matrix is not None and indices:
+            block = self._matrix[indices]
+            return [float(value) for value in block @ self._np.asarray(vector, dtype="float64")]
+        return [dot(vector, self._rows[index]) for index in indices]
+
+    def distance(self, left: int, right: int) -> float:
+        """Metric distance between two rows."""
+        return vector_distance(self.metric, self._rows[left], self._rows[right])
+
+    def distances_to(self, vector: Vector, indices: list[int]) -> list[float]:
+        """Metric distance from `vector` to each selected row."""
+        if self._np is not None and self._matrix is not None and indices:
+            block = self._matrix[indices]
+            target = self._np.asarray(vector, dtype="float64")
+            if self.metric == METRIC_EUCLIDEAN:
+                return [float(value) for value in self._np.linalg.norm(block - target, axis=1)]
+            dots = block @ target
+            return [angular_distance(float(value)) for value in dots]
+        return [vector_distance(self.metric, vector, self._rows[index]) for index in indices]
+
+    def pair_similarities(self, pairs: list[tuple[int, int]]) -> list[float]:
+        """Cosine similarity for an arbitrary list of ordinal pairs, in the order given.
+
+        Unlike `pairs_above` this scores a chosen SUBSET rather than scanning every pair, which
+        is what null-distribution sampling needs: a few hundred thousand random pairs out of a
+        pair space too large to materialize. The numpy path gathers both sides and takes a
+        row-wise dot product, so cost is linear in the sample rather than quadratic in the corpus.
+        """
+        if not pairs:
+            return []
+        if self._np is not None and self._matrix is not None:
+            left = self._matrix[[pair[0] for pair in pairs]]
+            right = self._matrix[[pair[1] for pair in pairs]]
+            return [float(value) for value in (left * right).sum(axis=1)]
+        return [dot(self._rows[left], self._rows[right]) for left, right in pairs]
+
+    def cross_similarities(
+        self,
+        other: "VectorSet",
+        left_indices: list[int],
+        right_indices: list[int],
+        *,
+        block: int = 512,
+    ) -> list[float]:
+        """Every left-by-right cosine, without concatenating two independent corpora.
+
+        Independent-null research compares a target corpus with a reference corpus embedded by
+        the same model. Keeping the sets separate avoids inventing document ids or rebuilding a
+        FAISS store merely to score their Cartesian product. Batching bounds the temporary matrix
+        for larger reference corpora.
+        """
+        if self.metric != METRIC_ANGULAR or other.metric != METRIC_ANGULAR:
+            raise ValueError("cross_similarities requires angular vectors")
+        if self.dim != other.dim:
+            raise ValueError("cross-similarity vector dimensions must match")
+        if not left_indices or not right_indices:
+            return []
+        if self._np is not None and self._matrix is not None and other._matrix is not None:
+            right = other._matrix[right_indices]
+            values: list[float] = []
+            for start in range(0, len(left_indices), block):
+                left = self._matrix[left_indices[start : start + block]]
+                values.extend(float(value) for value in (left @ right.T).ravel())
+            return values
+        return [
+            dot(self._rows[left], other._rows[right])
+            for left in left_indices
+            for right in right_indices
+        ]
+
+    def pairs_above_candidates(
+        self,
+        pairs: list[tuple[int, int]],
+        threshold: float,
+        *,
+        block: int = 16_384,
+    ) -> list[tuple[int, int, float]]:
+        """Exactly confirm chosen pairs in bounded batches.
+
+        Gathering both sides of every projected candidate at once can consume several gigabytes
+        on a large corpus. Batching bounds temporary memory while retaining numpy's vectorized
+        full-space confirmation.
+        """
+        out: list[tuple[int, int, float]] = []
+        for start in range(0, len(pairs), block):
+            selected = pairs[start : start + block]
+            similarities = self.pair_similarities(selected)
+            out.extend(
+                (left, right, similarity)
+                for (left, right), similarity in zip(selected, similarities)
+                if similarity >= threshold
+            )
+        return out
+
+    def cross_group_similarities(self, indices: list[int], groups: list[int]) -> list[float]:
+        """Similarity of every pair of `indices` whose `groups` label differs, unordered.
+
+        `groups[i]` labels `indices[i]` (the conflict audit passes document ids), so this is the
+        exact set of pairs the cross-document scan considers -- which is what makes it usable as
+        an EXHAUSTIVE null distribution rather than a sample of one. The numpy path never
+        materializes the pair list, only one block of the similarity matrix at a time.
+        """
+        if len(indices) != len(groups):
+            raise ValueError("indices and groups must be the same length")
+        if self._np is not None and self._matrix is not None:
+            return cross_group_similarities(self._matrix, self._np, indices, groups, 512)
+        return [
+            dot(self._rows[indices[i]], self._rows[indices[j]])
+            for i in range(len(indices))
+            for j in range(i + 1, len(indices))
+            if groups[i] != groups[j]
+        ]
+
+    def mean_vector(self) -> Vector:
+        """Arithmetic row mean in the stored coordinate system."""
+        if not self._rows:
+            return []
+        return [sum(column) / len(self._rows) for column in zip(*self._rows)]
+
+    def centered(self, mean: Vector | None = None) -> "VectorSet":
+        """This set with the corpus mean direction removed, then renormalized.
+
+        Sentence-encoder spaces are strongly anisotropic: on a real Ukrainian corpus every
+        multilingual-E5 chunk vector sits in a narrow cone, so two COMPLETELY unrelated chunks
+        still score cosine 0.83 and a 0.9 "near-duplicate" threshold is barely above noise.
+        Subtracting the mean (the standard all-but-the-top correction) restores an isotropic
+        space where unrelated pairs score about 0 and a threshold means what it says.
+        """
+        if not self._rows:
+            return VectorSet([], use_numpy=self._np is not None, metric=self.metric)
+        resolved_mean = self.mean_vector() if mean is None else mean
+        if len(resolved_mean) != self.dim:
+            raise ValueError("centering mean dimension must match the vectors")
+        shifted = [
+            [value - offset for value, offset in zip(row, resolved_mean)] for row in self._rows
+        ]
+        return VectorSet(shifted, use_numpy=self._np is not None, metric=self.metric)
+
+    def pairs_above(self, threshold: float, *, block: int = 512) -> list[tuple[int, int, float]]:
+        """Every pair at or above `threshold`, as sorted `(low, high, similarity)`.
+
+        This remains the small-corpus path and the exact baseline for projected blocking. The
+        large-corpus path uses a PCA Euclidean lower bound, then confirms its candidates against
+        these full-space vectors.
+        """
+        if self.metric != METRIC_ANGULAR:
+            raise ValueError("pairs_above requires angular vectors")
+        if self._matrix is not None:
+            return self._pairs_above_numpy(threshold, self._matrix, block)
+        return [
+            (left, right, similarity)
+            for left in range(len(self._rows))
+            for right in range(left + 1, len(self._rows))
+            if (similarity := dot(self._rows[left], self._rows[right])) >= threshold
+        ]
+
+    def _pairs_above_numpy(
+        self, threshold: float, matrix: Any, block: int
+    ) -> list[tuple[int, int, float]]:
+        out: list[tuple[int, int, float]] = []
+        total = len(self._rows)
+        for start in range(0, total, block):
+            similarities = matrix[start : start + block] @ matrix.T
+            rows, columns = (similarities >= threshold).nonzero()
+            for row, column in zip(rows.tolist(), columns.tolist()):
+                left = start + row
+                if left < column:
+                    out.append((left, column, float(similarities[row][column])))
+        return sorted(out)
+
+    def centroid(self, indices: list[int]) -> Vector:
+        """The normalized mean of the given rows (a zero mean falls back to the first row)."""
+        if not indices:
+            raise ValueError("centroid needs at least one member")
+        if self._matrix is not None:
+            mean = self._matrix[indices].mean(axis=0)
+            values = [float(value) for value in mean]
+            return normalize(values) if self.metric == METRIC_ANGULAR else values
+        total = [0.0] * self.dim
+        for index in indices:
+            row = self._rows[index]
+            for position in range(self.dim):
+                total[position] += row[position]
+        mean = [value / len(indices) for value in total]
+        if self.metric == METRIC_EUCLIDEAN:
+            return mean
+        normalized = normalize(mean)
+        return normalized if any(normalized) else list(self._rows[indices[0]])
+
+    def numpy_matrix(self) -> Any:
+        """The internal read-only numerical matrix, or a freshly imported numpy copy."""
+        numpy = self._np or _import_numpy()
+        if numpy is None:
+            raise RuntimeError("PCA conflict blocking requires numpy")
+        return (
+            self._matrix if self._matrix is not None else numpy.asarray(self._rows, dtype="float64")
+        )

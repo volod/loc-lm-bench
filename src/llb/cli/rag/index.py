@@ -57,11 +57,11 @@ def build_index(
     ),
 ) -> None:
     """Chunk + embed the corpus into a RAG store (FAISS by default) under the index dir."""
-    from llb.rag.duplicate_tiers import DUPLICATE_TIERS
-    from llb.rag.duplicates import format_duplicate_stats
-    from llb.rag.duplicate_models import DuplicateStats
-    from llb.rag.store import RagStore
-    from llb.rag.vector_index import RAG_BACKENDS
+    from llb.rag.duplicates.tiers import DUPLICATE_TIERS
+    from llb.rag.duplicates.collapse import format_duplicate_stats, kept_duplicates_reason
+    from llb.rag.duplicates.models import DuplicateStats
+    from llb.rag.vector_store.store import RagStore
+    from llb.rag.vector_store.vector_index import RAG_BACKENDS
 
     if duplicate_tier is not None and duplicate_tier not in DUPLICATE_TIERS:
         typer.echo(
@@ -120,6 +120,7 @@ def build_index(
         f"-> {cfg.index_dir()}{pages}{lexical}"
     )
     duplicates = format_duplicate_stats(
-        cast(DuplicateStats, store.meta["duplicates"]), not keep_duplicate_chunks
+        cast(DuplicateStats, store.meta["duplicates"]),
+        kept_duplicates_reason(store.meta, requested=keep_duplicate_chunks),
     )
     typer.echo(f"[build-index] {duplicates}")

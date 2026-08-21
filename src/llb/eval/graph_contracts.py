@@ -21,6 +21,7 @@ class RagState(TypedDict, total=False):
     rerank_latency_s: float
     query_processed: str
     query_corrections: int
+    query_dense: str
     query_hypothetical_answer: str
     query_decomposition: str
     query_subqueries: list[str]

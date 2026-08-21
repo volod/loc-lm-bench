@@ -4,9 +4,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from llb.conflicts.overlay import apply_to_chunks, directives_by_doc, load_applied_overlay
+from llb.conflicts.resolution.overlay import (
+    apply_to_chunks,
+    directives_by_doc,
+    load_applied_overlay,
+)
 from llb.core.contracts.rag import ChunkRecord, ChunkSummary
-from llb.prep.corpus_governance import manifest_governance_by_doc
+from llb.prep.corpus.governance import manifest_governance_by_doc
 from llb.rag.chunking.dispatch import chunk_spans
 from llb.rag.chunking.structure import doc_page_spans
 

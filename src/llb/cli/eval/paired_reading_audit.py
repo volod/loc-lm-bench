@@ -19,8 +19,8 @@ def audit_paired_readings_cmd(
     ),
 ) -> None:
     """Re-read vector-backed artifacts with per-row and selection-adjusted inference."""
-    from llb.rag.paired_reading_audit import audit_paired_readings
-    from llb.rag.paired_reading_audit_report import format_audit
+    from llb.rag.paired_reading_audit.audit import audit_paired_readings
+    from llb.rag.paired_reading_audit.report import format_audit
 
     root = resolve_data_dir(data_dir)
     target = out_dir or root / "paired-reading-audit" / generation_timestamp()

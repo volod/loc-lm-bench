@@ -21,13 +21,13 @@ The policy vocabulary is:
 - `noop`: record the repeated call and return an explicit controller note without executing its
   world mutation again.
 
-`parse_tool_call_detailed` in `src/llb/scoring/tool_calls.py` preserves whether a response was a
-structured-call attempt and its parse error while the existing `parse_tool_call` API remains
+`parse_tool_call_detailed` in `src/llb/scoring/tooling/tool_calls.py` preserves whether a response
+was a structured-call attempt and its parse error while the existing `parse_tool_call` API remains
 unchanged. `src/llb/bench/agentic/loop_policy.py` owns the policy constants and repair prompt;
 `src/llb/bench/agentic/episode.py` applies them; generic batch execution/scoring is split into
-`src/llb/bench/agentic/batch.py`. The grid, persistence, paired report, and CLI live in
-`src/llb/bench/agentic_loop_policy.py`, `agentic_loop_policy_persist.py`,
-`agentic_loop_policy_report.py`, and `src/llb/cli/bench/category_agentic_loop_policy.py`.
+`src/llb/bench/agentic/batch.py`. The grid, the sweep, persistence, paired report, and CLI live in
+`src/llb/bench/loop_policy/grid.py`, `loop_policy/run.py`, `loop_policy/persist.py`,
+`loop_policy/report.py`, and `src/llb/cli/bench/loop/policy.py`.
 
 Every case row reports objective completion, malformed-call count and rate, logical steps, tool and
 model calls, repair count, repeated no-ops, total model-input tokens, and wall-clock seconds.
@@ -70,11 +70,11 @@ completion, 5131.5 mean input tokens, and 34.70 mean wall seconds; shipped defau
 The 18 bundles are under `.data/agentic-loop-policy/20260731T061934*` through
 `.data/agentic-loop-policy/20260731T061938*`.
 
-CI coverage in `tests/llb/bench/test_agentic_loop_policy.py` drives all malformed branches over the
-fake completion seam, including an unreadable JSON call repaired into a successful tool call,
-strict continuation, repeated no-op behavior, mandatory baseline validation, paired metrics,
-recommendation gating, and per-cell comparison artifacts. The explicit default policy is also
-checked against the implicit legacy loop behavior.
+CI coverage in `tests/llb/bench/loop_policy/test_agentic_loop_policy.py` drives all malformed
+branches over the fake completion seam, including an unreadable JSON call repaired into a successful
+tool call, strict continuation, repeated no-op behavior, mandatory baseline validation, paired
+metrics, recommendation gating, and per-cell comparison artifacts. The explicit default policy is
+also checked against the implicit legacy loop behavior.
 
 Episode elapsed time uses an injectable monotonic clock from `run_episode` through `loop_harness`,
 `run_policy_cell`, and `run_agentic_loop_policy`; production calls retain `time.monotonic`. The
@@ -103,7 +103,7 @@ suppression count. Reports show activation rate and mean repeats beside completi
 cell manifest carries family counts, the prospective contract, completion and paired cost gates,
 and `power-analysis.json`.
 
-`src/llb/bench/agentic_loop_policy_power.py` validates the declaration before model inference and
+`src/llb/bench/loop_policy/power.py` validates the declaration before model inference and
 resolves its gates afterward. Its per-family support flag requires coverage, repeat activation, a
 positive separated completion delta at least as large as the declared gain, and upper paired cost
 bounds within both ceilings. A single family cannot set `changes_shipped_defaults`; that remains
@@ -142,8 +142,8 @@ The four cell bundles are:
 - Qwen `allow`: `.data/agentic-loop-policy/20260731T095054.804103Z-86b26eada0a8/`
 - Qwen `noop`: `.data/agentic-loop-policy/20260731T095055.716092Z-06242ba52f0a/`
 
-`tests/llb/bench/test_agentic_loop_policy_power.py` checks declaration validation, duplicate refusal,
-family coverage, activation/completion separation, recommendation gating, persistence, and the
-committed 32-task fixture. The original loop-policy suite also checks that repeated calls are
-counted without suppression under `allow`. Validation on 2026-07-31: `make ci` passed 2,460 tests
-with 45 opt-in/slow tests deselected, and `make lint-md` passed.
+`tests/llb/bench/loop_policy/test_agentic_loop_policy_power.py` checks declaration validation,
+duplicate refusal, family coverage, activation/completion separation, recommendation gating,
+persistence, and the committed 32-task fixture. The original loop-policy suite also checks that
+repeated calls are counted without suppression under `allow`. Validation on 2026-07-31: `make ci`
+passed 2,460 tests with 45 opt-in/slow tests deselected, and `make lint-md` passed.

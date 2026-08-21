@@ -5,9 +5,9 @@ Part of the [Data prep](../data-prep.md) area of the
 
 `llb resolve-corpus-conflicts` and the `make resolve-corpus-conflicts` alias turn an audit
 `findings.jsonl` into `plan.json`, `conflict_overlay.json`, `resolution_review.jsonl`, and
-`effect.md`. The implementation is split across `src/llb/conflicts/resolution_policy.py`,
-`resolution_io.py`, `resolution_review.py` (the reviewer's ledger and returned decisions),
-`overlay.py`, `group_artifact.py`, and `resolution_effect.py`; Typer wiring lives in
+`effect.md`. The implementation is split across `src/llb/conflicts/resolution/policy.py`,
+`resolution/io.py`, `resolution/review.py` (the reviewer's ledger and returned decisions),
+`overlay.py`, `grouping/artifact.py`, and `resolution/effect.py`; Typer wiring lives in
 `src/llb/cli/prep/conflict_resolution.py`.
 
 The policy is deliberately narrower than the detector:

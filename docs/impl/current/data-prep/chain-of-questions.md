@@ -8,9 +8,9 @@ Part of the [Data prep](../data-prep.md) area of the
 dependency note, and exact `SourceSpan` list; `validate_chains` checks duplicate ids, step order,
 span offsets, span reuse within a chain, and final-answer leakage from the first step's passage.
 
-`make prepare-goldset-draft DRAFT_CHAINS=1` passes `--chains` to the ontology pipeline. The
-pipeline walks the same 2-hop knowledge-graph paths as multi-hop drafting, builds ordered chain
-rows in `src/llb/prep/ontology/chains.py`, records `stages.chains` in `provenance.json`, and writes
+`make prepare-goldset-draft DRAFT_CHAINS=1` passes `--chains` to the ontology pipeline. The pipeline
+walks the same 2-hop knowledge-graph paths as multi-hop drafting, builds ordered chain rows in
+`src/llb/prep/ontology/drafting/chains.py`, records `stages.chains` in `provenance.json`, and writes
 `<bundle>/chains.jsonl` beside `goldset.jsonl`.
 
 Chain generation keeps strict directed `A -> B -> C` paths first. If that topology does not fill

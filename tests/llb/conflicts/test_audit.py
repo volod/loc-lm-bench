@@ -22,9 +22,9 @@ from llb.conflicts.constants import (
     TIER_SEMANTIC,
     tiers_up_to,
 )
-from llb.conflicts.report import render_report, write_audit
+from llb.conflicts.report.render import render_report, write_audit
 
-from conflict_helpers import (
+from tests.llb.conflicts.conflict_helpers import (
     DOC_2021,
     DOC_2021_COPY,
     DOC_2024,
@@ -243,7 +243,7 @@ def test_centering_is_skipped_on_a_corpus_too_small_to_estimate_a_mean():
 
 def test_low_content_chunks_never_pair():
     """A page marker matching another page marker is a conversion artifact, not a conflict."""
-    from llb.conflicts.semantic_tier import claim_token_count, content_ordinals
+    from llb.conflicts.tiers.semantic import claim_token_count, content_ordinals
 
     chunks = [
         {

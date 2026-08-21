@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
-from llb.conflicts.bundle_record import (
+from llb.conflicts.bundle.record import (
     CANDIDATES_KEY,
     CHUNKS_KEY,
     DOC_ID_KEY,
@@ -33,15 +33,15 @@ from llb.conflicts.bundle_record import (
     SCHEMA_KEY,
     naming_of,
 )
-from llb.conflicts.candidate_record import ENTRIES_KEY
+from llb.conflicts.bundle.candidate_record import ENTRIES_KEY
 from llb.conflicts.constants import TIER_SEMANTIC
-from llb.conflicts.document_affix import PREFIX_KEY, SUFFIX_KEY, IdAffix
-from llb.conflicts.document_chunks import COUNT_KEYS as CHUNK_COUNT_KEYS
-from llb.conflicts.document_exclusions import REASON_NAMES
-from llb.conflicts.document_index import COUNT_DEFAULT_KEY, EXTRA_IDS_KEY, DocumentNaming
+from llb.conflicts.bundle.document_affix import PREFIX_KEY, SUFFIX_KEY, IdAffix
+from llb.conflicts.bundle.document_chunks import COUNT_KEYS as CHUNK_COUNT_KEYS
+from llb.conflicts.bundle.document_exclusions import REASON_NAMES
+from llb.conflicts.bundle.document_index import COUNT_DEFAULT_KEY, EXTRA_IDS_KEY, DocumentNaming
 from llb.conflicts.models import AuditResult
 from llb.conflicts.store_access import StoreView
-from llb.conflicts.vectorops import VectorSet
+from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.paths import PROJECT_ROOT
 from llb.rag.chunking.corpus import chunk_corpus
 
@@ -245,7 +245,7 @@ def probe_aware(base, *, correct: bool = True):
     every complementary probe pair a duplicate, which is the failure mode the gate exists to
     catch -- it inflates precision on a corpus with nothing to find.
     """
-    from llb.conflicts.claim_calibration import load_calibration_probe
+    from llb.conflicts.claim.calibration import load_calibration_probe
 
     labels = {
         (pair.left_text, pair.right_text): pair.relation
@@ -272,7 +272,7 @@ def probe_aware(base, *, correct: bool = True):
 
 def adjudicated_rows(flags, *, left_keys=None, right_keys=None, parsed=None):
     """Claim-tier rows carrying the given actionable flags, ranked highest cosine first."""
-    from llb.conflicts.claim_precision import AdjudicatedRow
+    from llb.conflicts.claim.precision import AdjudicatedRow
     from llb.conflicts.constants import REL_COMPLEMENTARY, REL_DUPLICATE
 
     left_keys = left_keys or [f"left#{index}" for index in range(len(flags))]
@@ -293,7 +293,7 @@ def adjudicated_rows(flags, *, left_keys=None, right_keys=None, parsed=None):
 
 def calibrated_stub(accuracy_lcb: float = 0.9) -> dict:
     """A calibration payload that clears the gate, so precision tests isolate the precision."""
-    from llb.conflicts.claim_calibration import MIN_ADJUDICATOR_ACCURACY_LCB
+    from llb.conflicts.claim.calibration import MIN_ADJUDICATOR_ACCURACY_LCB
 
     return {
         "probe_id": "test",

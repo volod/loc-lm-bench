@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from llb.prep.frontier import parse_json_block
+from llb.prep.frontier.client import parse_json_block
 from llb.prep.ontology.constants import NEAR_DUP_COSINE_THRESHOLD
 
 DEFAULT_DEDUP_THRESHOLD = NEAR_DUP_COSINE_THRESHOLD

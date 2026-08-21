@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 import typer
 
-from llb.rag.embedding_bakeoff_verdict import resolve_bars
+from llb.rag.embedding_bakeoff.verdict import resolve_bars
 
 if TYPE_CHECKING:
-    from llb.rag.encoder_throughput import ThroughputProfile
+    from llb.rag.encoders.throughput import ThroughputProfile
 
 
 def resolved_bars(adoption_bars: str) -> Sequence[str]:
@@ -37,8 +37,8 @@ def write_throughput_summary(
     data_dir: Path,
     run_ts: str,
 ) -> dict[str, Any]:
-    from llb.rag.encoder_throughput_report import format_host_summary, render_host_markdown
-    from llb.rag.encoder_throughput_summary import build_host_summary
+    from llb.rag.encoders.throughput_report import format_host_summary, render_host_markdown
+    from llb.rag.encoders.throughput_summary import build_host_summary
 
     summary = build_host_summary(
         profiles,
@@ -57,7 +57,7 @@ def write_throughput_summary(
 
 
 def write_bakeoff_report(report: Any, report_path: Path) -> None:
-    from llb.rag.embedding_bakeoff_report import format_report, render_markdown
+    from llb.rag.embedding_bakeoff.report import format_report, render_markdown
 
     typer.echo(format_report(report))
     report_path.parent.mkdir(parents=True, exist_ok=True)

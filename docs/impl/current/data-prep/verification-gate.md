@@ -14,7 +14,7 @@ make verify-review VERIFY_WS=<worksheet>
 make verify-accept VERIFY_WS=<worksheet> BUNDLE=<draft>
 ```
 
-`src/llb/prep/cross_check.py` checks grounding and non-circularity before calling an injectable
+`src/llb/prep/goldset/cross_check.py` checks grounding and non-circularity before calling an injectable
 second verifier for support and answerability. A pass means the item is reviewable, not verified.
 
 `src/llb/goldset/verify_sampling/` handles stratification, reviewer context, confidence ordering,
@@ -153,7 +153,7 @@ make prepare-goldset-draft DRAFT_CORPUS=<dir> \
 ```
 
 `llb prepare-goldset-draft --rejection-feedback <file>` maps each dominant reject code to a
-deterministic Ukrainian draft-prompt hint (`src/llb/prep/ontology/feedback.py`; the mapping
+deterministic Ukrainian draft-prompt hint (`src/llb/prep/ontology/extraction/feedback.py`; the mapping
 covers exactly the closed reject-code set, ordered by rejection count, and each hint carries the
 first rejected item's note as an example -- e.g. a `circular`-heavy summary adds an explicit
 non-circularity instruction). The combined hint block is appended to the ontology-constraint

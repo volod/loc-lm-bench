@@ -15,7 +15,7 @@ from pathlib import Path
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.chunking.corpus import chunk_corpus, summarize
 from llb.rag.chunking.dispatch import STRATEGIES
-from llb.rag.duplicates import duplicate_stats
+from llb.rag.duplicates.collapse import duplicate_stats
 
 _LOG = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def build_faiss(
         import numpy as np
         import sentence_transformers  # noqa: F401
 
-        from llb.rag.embedding import Embedder
+        from llb.rag.encoders.embedder import Embedder
     except ImportError:
         _LOG.warning(
             "[build-rag-store] --embed needs the [rag] extra "
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             import sentence_transformers  # noqa: F401
 
-            from llb.rag.embedding import Embedder
+            from llb.rag.encoders.embedder import Embedder
 
             embedder = Embedder(args.model)
         except ImportError:

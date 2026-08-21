@@ -5,8 +5,8 @@ Part of the [RAG core](../rag-core.md) area of the
 
 `retrieval_backend=fused` composes the configured vector lane (flat, parent-child, or hybrid) and
 the selected GraphRAG strategy behind one `.retrieve(question, k)` wrapper. The wrapper in
-`src/llb/rag/fusion.py` maps both lane rankings onto one candidate set through the selected
-span-identity policy (`src/llb/rag/fusion_spans.py`), fuses them with generalized weighted RRF,
+`src/llb/rag/fusion/fuse.py` maps both lane rankings onto one candidate set through the selected
+span-identity policy (`src/llb/rag/fusion/spans.py`), fuses them with generalized weighted RRF,
 and keeps the surviving record's source offsets unchanged for recall@k and MRR. Reranking wraps
 the fused result once, rather than independently reranking each input lane.
 
@@ -110,7 +110,7 @@ per-question endpoint choice: the configured share for likely multi-span questio
 for likely single-span questions. The zero endpoint calls only the vector lane at `top_k`; it is an
 exact ranking passthrough and does not query the graph store. `fixed` remains the default.
 
-The pure policy lives in `src/llb/rag/fusion_routing.py`. A recognized sidecar label wins:
+The pure policy lives in `src/llb/rag/fusion/routing.py`. A recognized sidecar label wins:
 `multi-hop` and `comparative` route to graph fusion; `factoid`, `definition`, `numeric`, and
 `procedural` route to vector. An absent or unknown label falls back to deterministic text signals:
 a bridge term routes directly, while a long question routes only when it also names multiple
@@ -146,7 +146,7 @@ policy can be recommended.
 CI coverage is split along those seams: `tests/llb/rag/test_graph_vector_fusion.py` pins sidecar
 precedence, heuristic signals, exact zero-weight passthrough, configuration fingerprints, and
 runner wiring; `tests/llb/rag/test_fusion_evidence.py` pins routed replay and decision reporting;
-`tests/llb/rag/test_fusion_calibration.py` pins threshold parsing, tuning-only selection, frozen
+`tests/llb/rag/fusion/test_fusion_calibration.py` pins threshold parsing, tuning-only selection, frozen
 final scoring, and the no-gain refusal; `tests/llb/eval/test_answer_quality.py` pins label
 round-tripping and the routing outcome summary.
 

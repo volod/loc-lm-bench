@@ -1,4 +1,8 @@
-"""Focused tuning space implementation."""
+"""The tuning search space: what a trial may sample, and what disqualifies it.
+
+Pure and import-light (no `optuna`), so the ranges, the context-fit prune, and the OOM
+classification are unit-testable on their own. `llb.optimize.tuner` drives them.
+"""
 
 from typing import Any, Callable, Sequence
 
@@ -12,16 +16,24 @@ FINAL_SPLIT = "final"
 
 STRATEGIES = ["fixed", "sentence", "recursive", "markdown", "semantic"]
 
+# The corpus-chunking additions join the search space only behind an explicit flag
+# (`tune --extended-chunkers`): `late` re-embeds whole documents per trial, `page` only
+# differs from `recursive` on sidecar-bearing PDF corpora, and `table` only differs on
+# corpora carrying markdown tables, so they are opt-in.
 EXTENDED_STRATEGIES = [*STRATEGIES, "page", "heading", "late", "table"]
 
 RETRIEVAL_MODES = ["flat", "parent_child", "hybrid"]
 
+# Hybrid fusion search ranges (hybrid-retrieval-uk): the dense share of the weighted RRF and
+# the per-side candidate depth, sampled only when the trial picked hybrid mode.
 FUSION_WEIGHT_RANGE = (0.2, 0.8)
 
 FUSION_CANDIDATES_RANGE = (20, 80)
 
 GRAPH_WEIGHT_RANGE = (0.1, 0.5)
 
+# Rerank search range (rerank-context-order): the candidate pool depth fed into the
+# cross-encoder, sampled only when the trial turned the opt-in reranker on.
 RERANK_CANDIDATES_RANGE = (15, 60)
 
 # Token budgets that couple top_k, chunk_size, and max_model_len in multi-objective search.
@@ -65,6 +77,7 @@ def with_isolation(
     return run
 
 
+# Substrings that mark a measured out-of-memory / capacity failure -> prune, do not crash.
 _OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memory", "kv cache")
 
 SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]

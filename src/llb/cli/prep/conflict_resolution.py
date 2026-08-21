@@ -6,7 +6,7 @@ from typing import Any, Optional
 import typer
 
 from llb.cli.app import app
-from llb.conflicts.resolution_policy import POLICIES, POLICY_CONSERVATIVE
+from llb.conflicts.resolution.policy import POLICIES, POLICY_CONSERVATIVE
 
 
 @app.command("resolve-corpus-conflicts")
@@ -39,7 +39,7 @@ def resolve_corpus_conflicts_cmd(
     ),
 ) -> None:
     """Turn findings into a reversible resolution overlay and measure its retrieval effect."""
-    from llb.conflicts.resolution_io import (
+    from llb.conflicts.resolution.io import (
         create_resolution_artifacts,
         infer_corpus_root,
         install_overlay,
@@ -115,7 +115,7 @@ def _echo_plan(plan: dict[str, Any], paths: dict[str, Path]) -> int:
         f"[resolve-conflicts] {len(items)} rows in {len(decisions)} decision groups "
         f"(largest {max((int(d['rows']) for d in decisions), default=0)} rows)"
     )
-    from llb.conflicts.census import counted
+    from llb.conflicts.grouping.census import counted
 
     decide_rows = sum(int(d.get("decide_rows", 0)) for d in decisions)
     review_count = sum(1 for item in items if item.get("status") == "review_required")
@@ -144,7 +144,7 @@ def _refresh_and_report(
     unresolved_reviews: int,
     effect_key: str,
 ) -> None:
-    from llb.conflicts.resolution_effect import objective_from_manifest, write_effect
+    from llb.conflicts.resolution.effect import objective_from_manifest, write_effect
     from llb.core.store_generations import generation_timestamp
     from llb.goldset.schema import load_goldset
     from llb.rag.refresh.drift import measure_drift
@@ -174,7 +174,7 @@ def _refresh_and_report(
 
 
 def _effect_key(overlay: dict[str, Any]) -> str:
-    from llb.conflicts.overlay import overlay_fingerprint
+    from llb.conflicts.resolution.overlay import overlay_fingerprint
 
     value = overlay_fingerprint(overlay)
     assert value is not None

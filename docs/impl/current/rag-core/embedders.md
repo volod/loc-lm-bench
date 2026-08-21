@@ -5,13 +5,13 @@ Part of the [RAG core](../rag-core.md) area of the
 
 ## The convention registry
 
-Per-family query/passage conventions live in `src/llb/rag/embedding_families.py`: a retrieval-tuned
+Per-family query/passage conventions live in `src/llb/rag/encoders/families.py`: a retrieval-tuned
 encoder scored with the wrong instruction silently loses recall, so `Embedder`
-(`src/llb/rag/embedding.py`) applies each model FAMILY's declared convention. Resolution is an
+(`src/llb/rag/encoders/embedder.py`) applies each model FAMILY's declared convention. Resolution is an
 ORDERED registry, not a chain of substring tests -- `embedding_family` walks a match table whose
 first row whose every substring appears in the lowercased id wins, `resolve_convention` returns the
 `EmbeddingConvention` record, and `apply_query_convention` / `apply_passage_convention` are pure +
-unit-tested (`tests/llb/rag/test_embedding_families.py`). Every entry names the model card its
+unit-tested (`tests/llb/rag/encoders/test_embedding_families.py`). Every entry names the model card its
 prefixes were read from, so a row's format is auditable without reading module history.
 
 | family | models | query side | passage side | notes |
@@ -52,7 +52,7 @@ profiler each construct their own `Embedder` and all three must agree.
 
 ## Roster screening
 
-`screen_candidates` (`src/llb/rag/embedding_bakeoff_roster.py`) runs before any store is built and
+`screen_candidates` (`src/llb/rag/embedding_bakeoff/roster.py`) runs before any store is built and
 splits the roster two ways:
 
 - an id with **no registered convention** RAISES `UnregisteredCandidateError`; the CLI exits 2
@@ -62,13 +62,19 @@ splits the roster two ways:
   `report.json` as a `skipped[]` entry and in `report.md` under "Roster entries not scored" -- so a
   declined row reads as declined, never as beaten. The rest of the roster still ranks.
 
-Every scored row now also carries the `family` it was scored under and, when repo code ran,
+A third check joins those two once the caller declares which stack it is on: a candidate whose
+repository code targets a different transformers major is SKIPPED with the pin it needs and the
+target that provides it ([the legacy transformers
+pass](stack-and-card-parity.md#the-legacy-transformers-pass)).
+
+Every scored row now also carries the `family` it was scored under, the precision it was measured
+at, its [card-parity verdict](stack-and-card-parity.md#the-card-parity-gate), and, when repo code ran,
 `trust_remote_code: true`; `report.md` prints both plus a peak-VRAM column fed from the
 `--encoder-throughput` decomposition.
 
 ## The bake-off lane
 
-`llb compare-embeddings` (`src/llb/rag/embedding_bakeoff.py`; `make compare-embeddings`) answers
+`llb compare-embeddings` (`src/llb/rag/embedding_bakeoff/run.py`; `make compare-embeddings`) answers
 "which embedder for Ukrainian?" with evidence, not assumption. It builds one store per candidate
 over the SAME corpus + chunking (each under its own family convention), scores recall@k / MRR by the
 model-independent source-span metric (reusing `evaluate_retrieval`), and reports embed throughput,
@@ -76,7 +82,7 @@ index size, dimension, and device -- ending in the [adopt-or-retain verdict](pai
 which the operator applies via `build-index --embedding-model <winner>` +
 `RunConfig.embedding_model`. Artifacts: `$DATA_DIR/compare-embeddings/<timestamp>/report.md` and
 `report.json` plus one saved store per candidate under `stores/<model-slug>/`.
-`DEFAULT_LOCAL_CANDIDATES` (`src/llb/rag/embedding_bakeoff_models.py`) is nine ids in three bands:
+`DEFAULT_LOCAL_CANDIDATES` (`src/llb/rag/embedding_bakeoff/models.py`) is nine ids in three bands:
 the incumbents (`intfloat/multilingual-e5-base` -- the current default and the paired baseline --
 plus `-small`, `-large`, and `BAAI/bge-m3`), the current multilingual retrieval generation
 (`intfloat/multilingual-e5-large-instruct`, `Alibaba-NLP/gte-multilingual-base`,
@@ -84,11 +90,12 @@ plus `-small`, `-large`, and `BAAI/bge-m3`), the current multilingual retrieval 
 `lang-uk/ukr-paraphrase-multilingual-mpnet-base` whose objective differs. The store builder is an
 injectable seam, so
 scoring, ranking, the consent gate, and report shaping are fake-store unit-tested
-(`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network. The lane is four modules:
-`embedding_bakeoff_models.py` (the item/store seams and the row + report shapes every consumer
-reads), `embedding_bakeoff.py` (build, score, rank), `embedding_bakeoff_uncertainty.py` (the paired
-intervals and [the verdict](paired-verdicts.md)), and `embedding_bakeoff_report.py` (ASCII +
-Markdown rendering).
+(`tests/llb/rag/test_embedding_bakeoff.py`) with no GPU/FAISS/network. The lane is five modules:
+`embedding_bakeoff/models.py` (the item/store seams and the row + report shapes every consumer
+reads), `embedding_bakeoff/scoring.py` (the retrieval pass, the report row, and the ranking over one
+built store), `embedding_bakeoff/run.py` (drive the roster, the gated API row, and the report),
+`embedding_bakeoff/uncertainty.py` (the paired intervals and [the verdict](paired-verdicts.md)), and
+`embedding_bakeoff/report.py` (ASCII + Markdown rendering).
 
 `NOISE_FLOOR=1` (`--noise-floor`) adds the [measurement floor](retrieval-metrics.md#measurement-floor---noise-floor)
 per candidate to both the ASCII table and `report.md`, ending in the one sentence the
@@ -210,7 +217,7 @@ Reusable knobs: `--encoder-throughput`, `--encoder-precision`, `--encoder-min-wa
 `faster_than_baseline` when the bake-off baseline is set. `Embedder.release()` plus
 `torch.cuda.empty_cache()` runs between candidates so peak VRAM is per-encoder, not stacked.
 CI covers the aggregation with an injected clock and fake encoders
-(`tests/llb/rag/test_encoder_throughput.py`).
+(`tests/llb/rag/encoders/test_encoder_throughput.py`).
 
 ## The refreshed candidate roster (2026-08-16)
 
@@ -291,40 +298,40 @@ checkpoints differ in precision -- measured with `SentenceTransformer(...)` defa
 
 So `e5-large-instruct` running 3.4x `e5-large` (272.6 vs 79.9 warm c/s) at the same parameter count
 and dimension is a PRECISION difference in the published weights, not a faster model, and its peak
-VRAM is nonetheless the roster's highest (5077 MB). `Qwen3-Embedding-0.6B` is the slowest row on
+VRAM is nonetheless the roster's highest (5077 MB). Precision is now a DECLARED knob rather than an
+inherited one (`--encoder-dtype` / `EMBED_DTYPE=`), and the re-read at a declared float32 settles
+the caveat: the two rows land at 79.3 against 78.2 warm chunks/s, a 1.4% difference
+([what a declared float32 does to the throughput
+column](stack-and-card-parity.md#what-a-declared-float32-does-to-the-throughput-column)).
+Every encoder row states the precision it was measured at, and the card's when the two differ.
+
+`Qwen3-Embedding-0.6B` is the slowest row on
 both corpora (~50 c/s) despite being a 0.6B model: its 32,768-token window dominates. And the
 `lang-uk` paraphrase model's 128-token window is the mechanical reason its collapse is worst on the
 PDF corpus, whose 800-character chunks are truncated hard. Every candidate's peak VRAM stayed under
 5.1 GiB with `Embedder.release()` between candidates, so all seven fit the 16 GiB host beside a
 served generator.
 
-### The two remote-code candidates do not run on the pinned stack
+### The two remote-code candidates are scored in the legacy transformers pass
 
-`Alibaba-NLP/gte-multilingual-base` and `jinaai/jina-embeddings-v3` were declined by default and
-then attempted explicitly (`make compare-embeddings ... MODELS=<id> EMBED_ALLOW_REMOTE_CODE=1`).
-Neither can be scored on this repo's pinned `transformers 5.12.1` / `torch 2.13.0+cu130` /
-`sentence-transformers 5.6.0`; both remote-code repositories target the transformers 4.x API:
+`Alibaba-NLP/gte-multilingual-base` and `jinaai/jina-embeddings-v3` cannot be scored on this repo's
+pinned `transformers 5.12.1`: both remote-code repositories target the transformers 4.x API, so
+jina raises `AttributeError: 'XLMRobertaLoRA' object has no attribute 'all_tied_weights_keys'` at
+load, and gte loads but returns embeddings that do not reproduce its own card, because 5.x
+materializes its non-persistent `position_ids` buffer as uninitialized memory and `rope_cos[...]`
+gathers out of bounds. That is a PACKAGING fact, so the screen routes both rows to the
+[legacy pass](stack-and-card-parity.md#the-legacy-transformers-pass) rather than failing the run,
+and both are scored there against a reproducing `e5-base` baseline -- gte at `-0.024` recall and
+jina at `+0.008` with an interval spanning zero, neither changing the recommendation
+([the four unscorable rows](stack-and-card-parity.md#what-the-four-unscorable-rows-measure)).
 
-- **`jinaai/jina-embeddings-v3` fails at LOAD**: `AttributeError: 'XLMRobertaLoRA' object has no
-  attribute 'all_tied_weights_keys'`, raised from `transformers/modeling_utils.py`
-  `_move_missing_keys_from_meta_to_device`. The repo's `modeling_xlm_roberta.py` overrides
-  `from_pretrained` and defines only the older `_tied_weights_keys`.
-- **`Alibaba-NLP/gte-multilingual-base` loads but is BROKEN**: transformers 5.x materializes the
-  remote code's non-persistent `position_ids` buffer as uninitialized memory (observed values on the
-  order of `-6.5e16`), so `rope_cos[position_ids]` indexes out of bounds -- an `IndexError` on CPU
-  and a CUDA device-side assert on GPU. Repairing the buffer by hand
-  (`position_ids.copy_(torch.arange(n))`) makes it run but does NOT make it correct: its card's
-  reference similarities are `[[0.3017, 0.7504, 0.3203]]` and the repaired model returns
-  `[[0.738, 0.676, 0.598]]`, so something further down its attention/unpadding path is also wrong.
-  It is recorded as unscorable rather than scored on numbers that do not reproduce its card.
-
-The two candidates that DO run were checked against their cards' documented reference similarities
-through the registered conventions before scoring, which is what makes their rows readable:
-`multilingual-e5-large-instruct` reproduces `[[0.9193, 0.6758], [0.7038, 0.9213]]` to within 0.0005,
-and `Qwen3-Embedding-0.6B` reproduces `[[0.7646, 0.1414], [0.1355, 0.6000]]` to within 0.0051
-(fp/device noise). A CUDA device-side assert poisons the process's CUDA context, so a failing
-candidate deliberately FAILS the run rather than being caught and skipped -- continuing would score
-every later candidate on a corrupted context.
+Every scored candidate now clears a [card-parity gate](stack-and-card-parity.md#the-card-parity-gate)
+before a store is built for it, which is what makes a row readable: `multilingual-e5-large-instruct`
+reproduces `[[0.9193, 0.6758], [0.7038, 0.9213]]` to 0.0001 and `Qwen3-Embedding-0.6B` reproduces
+`[[0.7646, 0.1414], [0.1355, 0.6000]]` to 0.0036, both on the pinned stack; `gte-multilingual-base`
+reproduces `[[0.3017, 0.7504, 0.3203]]` exactly once its repository code has the transformers it
+targets. A CUDA device-side assert poisons the process's CUDA context, so a candidate that fails
+the gate is refused BEFORE its store is built rather than scored on numbers that do not reproduce.
 
 ## Blackwell sub-base encoder roster (e5-small)
 
@@ -412,12 +419,12 @@ prompt exceeds the budget, and multi-objective search samples the budget from
 
 Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
 with, and `_load_store` refuses a run whose `config.embedding_model` differs
-(`store_embedder_mismatch` in `src/llb/rag/store.py`), because a store is embedded and queried by
-one encoder -- a mismatch would silently score the wrong model. A non-default-embedder store runs
-normally with the embedder recorded in the manifest fingerprint.
+(`store_embedder_mismatch` in `src/llb/rag/vector_store/store.py`), because a store is embedded and
+queried by one encoder -- a mismatch would silently score the wrong model. A non-default-embedder
+store runs normally with the embedder recorded in the manifest fingerprint.
 
 Opt-in API row (open corpora only): `--api-model cohere/embed-multilingual-v3.0`
-(`src/llb/rag/api_embedder.py`) embeds the corpus through a hosted API -- full egress, so it is
+(`src/llb/rag/encoders/api.py`) embeds the corpus through a hosted API -- full egress, so it is
 bake-off EVIDENCE ONLY (never usable as `RunConfig.embedding_model` for a scored run), refused
 unless `--data-classification open`, gated on an interactive consent prompt naming the corpus, and
 capped by `--max-usd` (`record_embed_cost` aborts when the running cost crosses the cap). Cohere's

@@ -5,7 +5,7 @@ Part of the [RAG core](../rag-core.md) area of the
 
 ## Retrieval Store
 
-`src/llb/rag/store.py` builds `RagStore`:
+`src/llb/rag/vector_store/store.py` builds `RagStore`:
 
 - chunks the corpus through `llb.rag.chunking`;
 - embeds with the pinned multilingual E5 embedder;
@@ -13,7 +13,7 @@ Part of the [RAG core](../rag-core.md) area of the
 - persists a vector index through the vector-store seam.
 
 The default backend is FAISS. Chroma, Qdrant, and LanceDB use the same `VectorIndex` protocol in
-`src/llb/rag/vector_index.py`.
+`src/llb/rag/vector_store/vector_index.py`.
 
 Chunk-to-source linkage (audited 2026-07-04 against the Ukrainian-RAG production checklist): every
 chunk record in every strategy and both retrieval modes carries `doc_id`, a unique `chunk_id`, and
@@ -34,8 +34,8 @@ and their parents are annotated, so the fields surface on retrieval hits either 
 carry these fields, so verify cards, cited answers, miss clustering, and metadata filters can say
 "file X, page N, section Y" without re-deriving the join.
 
-Governance metadata (`src/llb/prep/corpus_governance.py`, `src/llb/rag/chunking/corpus.py`, and
-`src/llb/rag/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
+Governance metadata (`src/llb/prep/corpus/governance.py`, `src/llb/rag/chunking/corpus.py`, and
+`src/llb/rag/vector_store/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
 `metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
 `metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
 The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
@@ -66,20 +66,30 @@ Retrieval modes:
 
 ### Duplicate Chunk Collapse
 
-Shipped (duplicate-chunk-suppression, `src/llb/rag/duplicates.py`): `RagStore.build` indexes each
-DISTINCT chunk text once. Converted-PDF corpora repeat page furniture, boilerplate instructions,
-and table headers verbatim -- on the measured goods corpus every one of the 494 collapse groups
-repeats INSIDE a single long manual, none across documents -- so the same text was embedded,
-stored, and searched many times over;
-worse, identical text embeds to an identical vector, which scores an EXACT tie, which the backend
-broke by candidate order -- so an item whose top-k cut fell inside such a group had a metric no
-retrieval property decided (see [measurement floor](retrieval-metrics.md#measurement-floor---noise-floor)).
+Shipped (duplicate-chunk-suppression, `src/llb/rag/duplicates/collapse.py`): `RagStore.build`
+indexes each DISTINCT chunk text once. Converted-PDF corpora repeat page furniture, boilerplate
+instructions, and table headers verbatim -- on the measured goods corpus every one of the 494
+collapse groups repeats INSIDE a single long manual, none across documents -- so the same text was
+embedded, stored, and searched many times over; worse, identical text embeds to an identical vector,
+which scores an EXACT tie, which the backend broke by candidate order -- so an item whose top-k cut
+fell inside such a group had a metric no retrieval property decided (see [measurement
+floor](retrieval-metrics.md#measurement-floor---noise-floor)).
 
 How it works:
 
 - Collapse is EXACT-only (byte-identical text) and keeps the FIRST copy in build order, so the
   surviving record is deterministic across rebuilds. Near-duplicate DOCUMENTS remain the corpus
   conflict lane's question ([data prep](../data-prep.md)).
+- Collapse applies only where a chunk's vector is a PURE FUNCTION OF ITS TEXT, which is the
+  premise the paragraph above states. The `late` strategy breaks it: its vectors are mean-pooled
+  from whole-document token embeddings, so the same passage at two document positions carries two
+  DIFFERENT vectors and dropping one would discard exactly the document context the strategy
+  exists to add. `collapse_is_lossless` (`src/llb/rag/vector_store/build.py`) names the rule,
+  `build_store_parts` downgrades `collapse_duplicates` to False for such a strategy and logs it,
+  and the meta records what the build actually did -- so the incremental refresh, which reads
+  `collapse_duplicates` back from the meta, follows without a second rule. The duplicate stats are
+  still measured, so a `late` store still reports what its repeats cost. The refresh path already
+  refused text-keyed row reuse for `late` for the same reason; this is that rule on the build path.
 - Each dropped copy is kept on the survivor as additive `metadata.duplicate_occurrences` -- its
   whole chunk record minus the (identical) text, so offsets, ids, and page/governance metadata
   survive -- plus `metadata.duplicate_count`. Every surviving chunk and every recorded occurrence
@@ -90,7 +100,7 @@ How it works:
   parents of all its occurrences, which is the same parent set the tied duplicate children
   returned before.
 - Where duplicates remain (`build-index --keep-duplicate-chunks`, or a backend that rounds its
-  scores), `order_by_score` in `src/llb/rag/store_build.py` breaks an exact score tie on the
+  scores), `order_by_score` in `src/llb/rag/vector_store/build.py` breaks an exact score tie on the
   stable `chunk_id` instead of the backend's candidate order, on both the dense and the hybrid
   path -- so a tie is a documented property of the data, reproducible across rebuilds and
   backends.
@@ -115,7 +125,7 @@ How it works:
   property of that one document handled at ingestion by
   [intra-document repeat handling](../data-prep/ingestion-import.md#intra-document-repeated-block-handling---repeat-blocks).
 - `compare-retrieval` prints each built lane's duplicate census beneath the recall table
-  (`duplicate_census` in `src/llb/rag/compare.py`), so a recall row is read next to how much of
+  (`duplicate_census` in `src/llb/rag/comparison/run.py`), so a recall row is read next to how much of
   that lane's index is repeated text and whether the repeats are intra- or cross-document; a lane
   with no build meta (a graph or fake store) simply contributes no census row.
 - The occurrences travel into the run bundle's `retrieval.jsonl`, so a lane that recomputes a
@@ -148,17 +158,20 @@ question about any section that carries the block. Handling those blocks at CONV
 [intra-document repeat handling](../data-prep/ingestion-import.md#intra-document-repeated-block-handling---repeat-blocks)
 for the option and its adopt-`drop` / reject-`anchor` verdict.
 
-Tests: `tests/llb/rag/test_duplicates.py` (collapse, occurrence metadata, offset-exactness against
-the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span matching at every
-occurrence, exact expansion, the tie-break, and the parent expansion) and
-`tests/llb/rag/test_duplicates_store.py` (index budget, retrievability of every copy's place, the
-fragility drop measured through `measure_noise_floor`, and refresh-equals-rebuild when the
-survivor's document is deleted) -- fake hashed-BoW embedder, no GPU.
+Tests: `tests/llb/rag/duplicates/test_duplicates.py` (collapse, occurrence metadata,
+offset-exactness against the committed `samples/corpora/duplicate_chunks_uk_v1/` fixture, span
+matching at every occurrence, exact expansion, the tie-break, and the parent expansion) and
+`tests/llb/rag/duplicates/test_duplicates_store.py` (index budget, retrievability of every copy's
+place, the fragility drop measured through `measure_noise_floor`, refresh-equals-rebuild when the
+survivor's document is deleted, and the `late` exception -- every repeat indexed, the stats still
+measured, a text-only strategy on the same corpus still collapsing, and the refresh following the
+recorded flag) -- fake hashed-BoW and token-level embedders, no GPU. `collapse_is_lossless` itself
+is covered in `tests/llb/rag/chunking/test_chunking_strategies.py`.
 
 ### Near-Duplicate Residue And The Collapse Tiers
 
-Shipped (near-duplicate-chunk-collapse, `src/llb/rag/duplicate_tiers.py` and
-`src/llb/rag/duplicate_residue.py`): collapse takes a TIER that decides when two chunk texts count
+Shipped (near-duplicate-chunk-collapse, `src/llb/rag/duplicates/tiers.py` and
+`src/llb/rag/duplicates/residue.py`): collapse takes a TIER that decides when two chunk texts count
 as one passage, and a measurement that says how much repetition a store still holds after it.
 
 Tiers, cheapest first, each strictly coarser than the one before:
@@ -166,7 +179,7 @@ Tiers, cheapest first, each strictly coarser than the one before:
 | tier | two texts are one passage when | loss-free |
 | --- | --- | --- |
 | `exact` (default) | they are byte-identical | yes -- the survivor's text IS every copy's |
-| `normalized` | they share the corpus-conflict `hash` tier's normalized token stream (`llb.rag.lexical.tokenize`: casefold, apostrophe unification, punctuation strip, whitespace collapse) | no |
+| `normalized` | they share the corpus-conflict `hash` tier's normalized token stream (`llb.rag.vector_store.lexical.tokenize`: casefold, apostrophe unification, punctuation strip, whitespace collapse) | no |
 | `masked` | `normalized` plus digit-run masking (`Сторінка 3` == `Сторінка 47`) | no |
 
 - Selection: `build-index --duplicate-tier <tier>` (`make build-index DUPLICATE_TIER=`),
@@ -179,7 +192,7 @@ Tiers, cheapest first, each strictly coarser than the one before:
   pre-collapse set exactly. It hands back no reusable embedding row for such a copy, so an
   incremental refresh that promotes a differing copy to survivor re-embeds it instead of inheriting
   a vector encoded from another wording -- a refreshed store still equals a rebuild under a coarse
-  tier (`tests/llb/rag/test_duplicates_store.py`).
+  tier (`tests/llb/rag/duplicates/test_duplicates_store.py`).
 - A chunk whose text has no word tokens at all (a rule line, a stray bullet) falls back to its
   verbatim text, so no tier ever merges on the absence of content.
 - What a coarse tier gives up: only `exact` guarantees the survivor's text is a verbatim slice of
@@ -241,15 +254,15 @@ not recommended even though this goldset cannot see its cost.**
   Reaching the rest needs an embedding-side merge with a measured false-merge rate, which is
   forward work, not current behavior.
 
-Tests: `tests/llb/rag/test_duplicate_tiers.py` (the normalizer's grouping and digit masking, the
-token-free fallback, the tier ladder on the committed `samples/corpora/near_duplicate_chunks_uk_v1/`
-fixture, offset-exactness and per-copy text at a coarse tier, exact expansion with no reusable row
-for a differing copy, and the residue report's bands/samples over hand-built vectors) plus the two
-coarse-tier store tests in `tests/llb/rag/test_duplicates_store.py` -- fake embedders, no GPU. The
-fixture's `Застереження` block additionally pins apostrophe-variant equivalence: a U+2019 copy
-normalizes onto its U+0027 twin (see [hybrid
-retrieval](hybrid-retrieval.md#hybrid-retrieval-dense--bm25--rrf) for the tokenizer rule and what it
-moved).
+Tests: `tests/llb/rag/duplicates/test_duplicate_tiers.py` (the normalizer's grouping and digit
+masking, the token-free fallback, the tier ladder on the committed
+`samples/corpora/near_duplicate_chunks_uk_v1/` fixture, offset-exactness and per-copy text at a
+coarse tier, exact expansion with no reusable row for a differing copy, and the residue report's
+bands/samples over hand-built vectors) plus the two coarse-tier store tests in
+`tests/llb/rag/duplicates/test_duplicates_store.py` -- fake embedders, no GPU. The fixture's
+`Застереження` block additionally pins apostrophe-variant equivalence: a U+2019 copy normalizes onto
+its U+0027 twin (see [hybrid retrieval](hybrid-retrieval.md#hybrid-retrieval-dense--bm25--rrf) for
+the tokenizer rule and what it moved).
 
 ## Store Lifecycle: Dynamic Corpus Refresh
 
@@ -260,7 +273,7 @@ rebuild, and tells the operator when the corpus has drifted enough that the tune
 should be re-searched.
 
 Manifest diff: `store_meta.json` records `doc_fingerprints` -- per-document hashes from
-`corpus_doc_fingerprints` in `src/llb/prep/corpus_governance.py` (with `corpus_manifest.json`
+`corpus_doc_fingerprints` in `src/llb/prep/corpus/governance.py` (with `corpus_manifest.json`
 present, each ok item's canonical row: content sha plus governance fields; hand-built corpora
 hash each committed `.md`/`.txt` file, keyed by the same relative-path `doc_id` chunking uses).
 A document's PDF citation sidecar (`pdf-<digest>.citations.json`, the page-provenance source
@@ -296,14 +309,14 @@ from-scratch build order, so a refresh is identical to a rebuild on the same cor
 full-extra local suite proves the equivalence per store kind (FAISS, Chroma, Qdrant, LanceDB,
 hybrid BM25, parent_child, graph, and the `late` chunking strategy via a token-level fake
 embedder) over add/modify/delete fixture cases in
-`tests/llb/rag/test_refresh_store_core.py`,
-`tests/llb/rag/test_refresh_store_metadata.py`, and
+`tests/llb/rag/refresh/test_refresh_store_core.py`,
+`tests/llb/rag/refresh/test_refresh_store_metadata.py`, and
 `tests/llb/graph/test_graph_refresh.py`, plus annotation-only (sidecar regeneration) cases
 asserting zero embedder calls in flat, hybrid, and parent_child modes and a same-span text-edit
 guard. Both split refresh-store modules carry `pytest.mark.heavy_env` directly because Pytest
 module marks do not propagate from their imported helper; `make ci-github` therefore deselects
 these FAISS-dependent cases in its base `[dev]`-only environment.
-`tests/llb/rag/test_duplicates_store.py` covers the text-keyed reuse: the shared block is
+`tests/llb/rag/duplicates/test_duplicates_store.py` covers the text-keyed reuse: the shared block is
 recovered from the store's own vectors when the edited document is the one that carried its
 survivor, and the refreshed store still matches a rebuild byte for byte. The
 hybrid lexical side merges incrementally (`src/llb/rag/refresh/lexical_merge.py`): the old
@@ -343,14 +356,14 @@ writes `$DATA_DIR/refresh/<run-ts>/{drift.json,report.md}` with the per-metric d
 feature has no `doc_fingerprints` and refreshes once as a full re-embed into a generation
 (logged); it refreshes incrementally afterwards.
 
-Semantic prefix tree (`src/llb/conflicts/tree_refresh.py`): the corpus-conflict audit persists a
-centroid tree over the store's chunk vectors, and it consumes the same `ManifestDiff` classes.
-Chunks of deleted and modified documents are removed, chunks of added and modified documents are
-re-inserted at their nearest leaf, and centroids and radii are recomputed only along the affected
-root-to-leaf paths -- nodes off those paths keep their exact geometry, so their bounds stay valid
-without being touched. A refresh answers queries identically to a rebuild on the same corpus state
-(asserted in CI); once more than `REBUILD_FRACTION` of the chunks have changed it rebuilds instead,
-because patching stops paying. The tree meta pins the embedder model and dimension: centroids are
-only meaningful in the space that produced them, so a store re-embedded with a different encoder
-rebuilds rather than patches. Full behavior in
-[data prep](../data-prep/conflict-detection.md#corpus-hygiene-conflict-detection-corpus-conflict-detection).
+Semantic prefix tree (`src/llb/conflicts/semantic_tree/refresh.py`): the corpus-conflict audit
+persists a centroid tree over the store's chunk vectors, and it consumes the same `ManifestDiff`
+classes. Chunks of deleted and modified documents are removed, chunks of added and modified
+documents are re-inserted at their nearest leaf, and centroids and radii are recomputed only along
+the affected root-to-leaf paths -- nodes off those paths keep their exact geometry, so their bounds
+stay valid without being touched. A refresh answers queries identically to a rebuild on the same
+corpus state (asserted in CI); once more than `REBUILD_FRACTION` of the chunks have changed it
+rebuilds instead, because patching stops paying. The tree meta pins the embedder model and
+dimension: centroids are only meaningful in the space that produced them, so a store re-embedded
+with a different encoder rebuilds rather than patches. Full behavior in [data
+prep](../data-prep/conflict-detection.md#corpus-hygiene-conflict-detection-corpus-conflict-detection).
