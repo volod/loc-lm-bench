@@ -34,6 +34,13 @@ Community ids are computed offline and stored. Query time only needs DuckDB tabl
 `src/llb/graph/store.py`
 : Implements `GraphStore.build`, `save`, `load`, and `retrieve(question, k)`.
 
+`src/llb/graph/resolution/`
+: Graph entity node resolution: links the node table on name distance, surface-form intersection,
+  entity type, co-occurring document ids, and mention-embedding cosine through the shared
+  [record-linkage seam](../entity-resolution.md#the-graph-node-lane), proposes canonical node
+  clusters as an OVERLAY beside the built graph, and reruns the graph lane over the same items with
+  and without each candidate overlay. It rewrites no stored graph.
+
 `src/llb/graph/summary.py`
 : Optional diagnostic community summaries. Summaries are stored separately and are not returned as
   retrieval context because they are abstractive and not span-scored.
@@ -121,6 +128,8 @@ llb build-graph --bundle <prepare-goldset-dir>
 llb build-graph --extraction <extraction.jsonl> --corpus-root <dir>
 llb build-graph --corpus-root <dir> --extract-model llama3.2:3b
 llb build-graph --bundle <dir> --summarize --summarize-model llama3.2:3b
+llb resolve-graph-entities --goldset <goldset.jsonl> --k 10
+llb resolve-graph-entities --goldset <goldset.jsonl> --thresholds 0.5,0.3,0.1 --with-vector
 llb validate-retrieval --retrieval-backend graph --retrieval-strategy local_khop
 llb validate-retrieval --retrieval-backend fused --graph-weight 0.3
 llb compare-retrieval --graph-weight 0.3 --k 10 --out report.json

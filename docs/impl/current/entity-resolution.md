@@ -32,6 +32,7 @@ it, and `make ci-github` stays green with it absent because every test that need
 | `llb/linkage/comparisons.py` | Vocabulary -> Splink comparison creators; the deterministic model id |
 | `llb/linkage/fitting.py` | Blocking counts, u/m training, the labelled accuracy curve |
 | `llb/linkage/engine.py` | Fit or replay a record table into scored pairs and clusters |
+| `llb/linkage/clustering.py` | Re-cluster ONE fit's pairs at any threshold, without Splink |
 | `llb/linkage/artifacts.py` | The `linkage/` bundle: write it, read it back |
 | `llb/linkage/run.py` | Publishing a run and the operator-readable report |
 | `llb/cli/linkage.py` | The `llb link-records` command |
@@ -64,9 +65,12 @@ byte.
 
 The specification also refuses what the method cannot price, before any table is read: fewer than
 two comparisons (a one-feature threshold is exactly what this seam replaces), two comparisons on
-one column, a comparison on the identifier column, no blocking rule, repeated thresholds, and a
+one column, a comparison on the identifier column, no blocking rule, repeated thresholds, a
 zero `levenshtein` or `array_intersect` threshold (which silently repeats the exact-match level and
-shows up much later as an m value that would not train). A column a blocking expression references
+shows up much later as an m value that would not train), and a column named `cluster_id`,
+`node_id`, or `representative` -- Splink's clustering SQL introduces those itself, so a record
+table carrying one fails as an ambiguous-reference binder error deep inside the clustering step,
+after the model has already trained. A column a blocking expression references
 without comparing goes in `retain_columns`; a blocking rule over a column the table does not carry
 fails with the list of columns it could have used.
 
@@ -100,6 +104,17 @@ fails with the list of columns it could have used.
 Levels the fit could not estimate are recorded as `null` and counted in the summary
 (`n_untrained_levels`) rather than silently defaulted -- a label set covers only the levels its
 matches exhibit, so a label-fitted model legitimately leaves the rest unmeasured.
+
+## Pricing several cuts from one fit
+
+Step 4 resolves the specification's OWN threshold through Splink. A consumer that has to price
+several candidate cuts -- read a threshold off a curve, or measure what each cut would do
+downstream -- calls `clustering.cluster_pairs(record_ids, pairs, threshold)` instead: the same
+connected-components rule (an edge per pair at or above the cut, the smallest member id as the
+cluster id) applied to the pairs a fit already published. One fit, many cuts, so a per-threshold
+reading varies the threshold and nothing else. Re-fitting per cut would move the model as well,
+which is exactly the confound such a reading exists to avoid. A test holds the two together: at
+the specification's own threshold `cluster_pairs` reproduces what the engine clustered.
 
 ## Reproducibility
 
@@ -272,6 +287,117 @@ The pair of readings is the point: which side the constant and the model differ 
 embedding, and both runs leave the shipped constant in charge. Levels the fit never observed are
 reported as `n_untrained_levels` rather than defaulted.
 
+## The graph node lane
+
+Graph entity nodes are the second identity decision to move onto the seam. `_GraphBuilder`
+keys a node on `_norm(name)`, a full-string equality test, so in Ukrainian a surname alone, a full
+name, an initialed form, and an inflected case form key differently and one entity becomes several
+nodes -- splitting its mentions, its degree, and its community membership. That is upstream of
+every graph-lane number, because seed linking scores a node by the question tokens it covers and a
+node holding a third of its own mentions covers proportionally fewer.
+
+The lane resolves those nodes as an OVERLAY beside the built graph and MEASURES what applying one
+would do. Nothing here rewrites a stored graph: the pass proposes canonical clusters, applies each
+to a copy, reruns the graph lane over the identical item set at a fixed seed, and reports the
+difference. The readings are in
+[GraphRAG](graphrag-backend/entity-resolution-evidence.md).
+
+| Module | Owns |
+| --- | --- |
+| `llb/graph/resolution/records.py` | Graph nodes -> the record table, and the comparison specification |
+| `llb/graph/resolution/overlay.py` | The node-cluster overlay: propose it, apply it to a copy, write and read it |
+| `llb/graph/resolution/compare.py` | Building the lane set per strategy and running the paired rerun |
+| `llb/graph/resolution/verdict.py` | The recommend-or-negative rule and the per-threshold rows |
+| `llb/graph/resolution/run.py` | Fitting once, pricing every cut, and the decline reasons |
+| `llb/graph/resolution/artifacts.py` | The run bundle, including the retained pre-merge graph |
+| `llb/graph/resolution/report.py` | The Markdown artifact and the console summary |
+| `llb/cli/rag/graph_resolution.py` | The `llb resolve-graph-entities` command |
+
+### What a graph node is compared on
+
+| Column | Kind | Ladder | Why it carries information |
+| --- | --- | --- | --- |
+| `name` | `jaro_winkler` | 0.92 / 0.85 / 0.75 | Prefix-weighted, so an inflected ending costs less than a different word |
+| `surface_forms` | `array_intersect` | 2 / 1 | Every form the node was seen under, its own name included -- the builder merges an alias onto the node whose NAME matches, so the second node's name is often the first node's alias |
+| `entity_type` | `exact` | -- | Weak alone (a third of this corpus's nodes are `MISC`) and informative in combination |
+| `doc_ids` | `array_intersect` | 2 / 1 | Two fragments of one entity are cited from the same documents |
+| `mention_vector` | `cosine` | 0.97 / 0.94 / 0.9 | The pinned E5 embedding of the node's surface forms plus its mention text -- the only signal that reaches an initialism against its spelled-out form |
+
+The `name` column's exact-match level, which Splink adds above every ladder, is UNREACHABLE by
+construction: the builder already keys a node on its normalized name, so two records with an equal
+name would be one node. It is reported in `untrained_levels` with that sentence rather than left as
+a bare count.
+
+Three blocking rules generate the candidates. `tail_key` and `head_key` are the leading
+`MIN_STEM_LEN` characters of the name's last and first token -- the same dependency-free
+`graph.linking.morph_key` the question linker already uses, so a candidate pair is generated by
+exactly the morphology the retrieval path assumes. The tail stem is what blocks a surname against
+its own full name and against every inflected form of either; the head stem blocks the multiword
+institution names that agree on their first word instead. `entity_type` is the third rule, and it
+is what proposes a merge between two forms sharing no stem at all.
+
+The expectation-maximisation passes block on `entity_type` and on `tail_key`, in that order, and
+the order is the finding. A stem key is very nearly a function of the name, so a pass blocked on
+one sees no name variation to learn from and lands m BELOW u on the very level a same-entity pair
+agrees at -- which on the first CUDA-host attempt scored every real duplicate at a negative match
+weight. Blocking on the type leaves the name free to vary, and the tail-stem pass then trains the
+type the first pass held fixed.
+
+The lane declines rather than publish noise below 20 nodes (too few pairs for the u estimate) and
+above 3000 (the entity-type rule is near-quadratic within a type). Each decline is written with its
+reason.
+
+### The overlay and what applying it does
+
+An overlay names, per candidate cut, which node ids the model put in one identity and which member
+is canonical -- the most grounded (most mentions), then the longest name, then the lowest id, so a
+merged node reads as the spelled-out form rather than the initialism. Every cut is re-clustered
+from the SAME fit, so a per-threshold reading varies the threshold and nothing else.
+
+Applying an overlay builds a new `KnowledgeGraph`:
+
+- the canonical node carries every member's surface forms as aliases and every member's mention
+  spans, deduplicated by exact span -- which is the recall mechanism, because the seed linker keys
+  on a node's name plus aliases and serializes all of its mentions;
+- edges are remapped onto canonical endpoints and deduplicated by fact plus evidence span; a
+  self-loop that survives the remap is KEPT, because its evidence is a grounded fact the serializer
+  still emits;
+- communities are RE-DETECTED, because merging changes the adjacency label propagation reads and a
+  carried `community_id` would describe a graph that no longer exists.
+
+The source graph is never mutated, and the run copies the pre-merge store into the bundle so the
+reading can be redone without the overlay.
+
+### Artifacts
+
+`$DATA_DIR/graph-entity-resolution/<run>/`:
+
+| File | Contents |
+| --- | --- |
+| `linkage/` | The seam's standard bundle for the node fit (`mode: graph-node-overlay`) |
+| `node_records.jsonl` | The record table the fit read, one row per graph node |
+| `overlays/overlay_<cut>.jsonl` | One overlay per priced cut: a header row, then one row per proposed identity with the canonical and member NAMES |
+| `comparison.json` | The paired lane rerun, one `compare-retrieval` report per graph strategy |
+| `summary.json` | The counts, the per-cut rows with their deltas, and the verdict |
+| `resolution_report.md` | The same reading as Markdown |
+| `pre_merge_graph/` | The graph the reading was taken over, copied |
+
+### Running it
+
+```bash
+make resolve-graph-entities GOLDSET=<goldset.jsonl>
+make resolve-graph-entities GOLDSET=<goldset.jsonl> RESOLVE_THRESHOLDS=0.5,0.3,0.1 \
+  RESOLVE_WITH_VECTOR=1 CORPUS=<corpus-dir>
+llb resolve-graph-entities --goldset <goldset.jsonl> --k 10 [--thresholds 0.99,0.9,0.75,0.6] \
+  [--strategies local_khop,global_community] [--no-mention-embeddings] [--with-vector]
+```
+
+It reads the built graph store at the config's `graph_dir()` and needs the `linkage` extra;
+`--mention-embeddings` (the default) also needs the `[rag]` extra for the pinned embedder, and
+`--no-mention-embeddings` drops the cosine comparison rather than zero-filling it.
+`--with-vector` adds the built FAISS lane as a reference row that the verdict can never adopt --
+this run decides an overlay, not a backend.
+
 ## Tests
 
 `tests/llb/linkage/` -- the specification, record-table, and result contracts run in the base
@@ -287,7 +413,10 @@ install; the fit, replay, artifact, and vocabulary tests are `heavy_env`. What t
   one);
 - the labelled run's cut is scored exactly, and the clustering's recall exceeds the pairwise cut's
   on the fixture's transitive merges;
-- the bundle holds every documented artifact, and an unlabelled run writes no accuracy curve.
+- the bundle holds every documented artifact, and an unlabelled run writes no accuracy curve;
+- `cluster_pairs` reproduces what the engine clustered at the specification's own threshold,
+  merges a pair scoring below a cut when a third record links them, and never splits a cluster
+  as the cut is lowered.
 
 `tests/llb/prep/ontology/linkage/` -- the gold-item lane. The record table, the derived question
 type, the span-block grid, and the specification's shape run in the base install; the fixture runs
@@ -297,6 +426,19 @@ every drop row names its agreements and the prior item it lost to; the default c
 list is non-empty and complete enough to label from; the bundle holds the fit; and a table below
 the fit floor or a batch with no drafted items declines with a reason instead of publishing noise.
 
+`tests/llb/graph/resolution/` -- the graph node lane. The record table, the blocking keys, the
+overlay, the verdict rule, and both report renderings run in the base install; the whole pass over
+the planted graph is `heavy_env`. The plant is 31 nodes over 6 fragmented entities plus 16
+distractors that share a type, a document, and a leading word with each other, and it deliberately
+does NOT plant an epithet nothing else mentions -- resolving that is coreference, which this pass
+is not. What the tests hold: one cut recovers the planted clustering EXACTLY; no cut proposes a
+cross-entity merge; a tighter cut never merges more than a looser one; the paired rerun scores the
+identical items under every lane against the pre-overlay baseline; a recovered overlay costs the
+lane neither recall nor MRR; a merged node carries every member's mentions; the bundle holds every
+documented artifact including the retained pre-merge graph; applying an overlay never mutates the
+source graph; the merged node links on a form only a fragment carried; and a flat reading arrives
+labelled as the negative result it is. The floor and cap declines are checked by their reasons.
+
 ## Boundary
 
 Linkage needs records carrying several weakly correlated fields. It is not applied to a single
@@ -305,3 +447,10 @@ near-duplicate collapse stays in [the retrieval store's](rag-core/retrieval-stor
 tiers, and linkage does not replace the exact and normalized hash tiers that already settle the
 cases they settle for free. The Spark, Athena, and Postgres Splink backends are out of scope, as
 are Splink's interactive HTML charts -- the numbers behind them are recorded instead.
+
+The graph lane draws its own boundary inside that one. It produces an overlay BESIDE the built
+graph and never rewrites the stored one in place; it does not change the closed node vocabulary or
+an entity's typing; it does not merge edges or relations as identities of their own (edges are
+remapped onto merged endpoints, which is a consequence of a node merge, not a decision about the
+edge); and it is not a coreference model -- a form that agrees with its entity on nothing but the
+type and the document is outside what the method can price, and the planted fixture says so.

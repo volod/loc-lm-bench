@@ -29,6 +29,7 @@ from llb.linkage.constants import (
     KINDS_WITH_SCORE_THRESHOLDS,
     KIND_COSINE,
     MIN_COMPARISONS,
+    RESERVED_COLUMNS,
 )
 
 
@@ -184,6 +185,7 @@ class LinkageSpec:
             raise ValueError(
                 f"the identifier column {self.unique_id_column!r} cannot also be compared"
             )
+        self._validate_column_names(columns)
         if not self.blocking_rules:
             raise ValueError("a linkage run needs at least one blocking rule")
         for rule in (*self.blocking_rules, *self.training_rules):
@@ -194,6 +196,22 @@ class LinkageSpec:
             raise ValueError(f"max_pairs must be positive; got {self.max_pairs}")
         if self.duckdb_threads < 1:
             raise ValueError(f"duckdb_threads must be at least 1; got {self.duckdb_threads}")
+
+    def _validate_column_names(self, columns: list[str]) -> None:
+        """Refuse a column name Splink's clustering SQL introduces itself.
+
+        The collision does not surface at fit time: it lands as an ambiguous-reference binder
+        error inside the connected-components step, after the model has already trained. Naming
+        it here costs one check and saves reading a generated SQL statement.
+        """
+        taken = sorted(
+            {self.unique_id_column, *columns, *self.retain_columns} & set(RESERVED_COLUMNS)
+        )
+        if taken:
+            raise ValueError(
+                f"column name(s) {taken} are reserved by the clustering step; rename them in the "
+                f"record table (reserved: {', '.join(RESERVED_COLUMNS)})"
+            )
 
     @property
     def compared_columns(self) -> tuple[str, ...]:

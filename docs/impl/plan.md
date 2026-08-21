@@ -76,48 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Entity resolution -- `entity-resolution`
 
-#### graph-entity-node-resolution
-
-Resolve knowledge-graph entity nodes that denote the same entity but do not share a normalized name.
-`_GraphBuilder._ensure_node` keys a node on `_norm(name)` and merges aliases onto an exact key hit,
-which is a full-string equality test: in Ukrainian a surname alone, a full name, an initialed form,
-and an inflected case form key differently, so one entity becomes several nodes and its mentions,
-degree, and community membership split across them. That fragmentation is upstream of every graph
-lane number -- seed linking scores a node by the question tokens it covers, and a node holding a
-third of its own mentions covers proportionally fewer. Link the node table on name distance, alias
-array intersection, entity type, co-occurring document ids, and mention-embedding cosine; cluster
-the survivors; and read the result on the same source-span metric the vector lanes use.
-
-- Serves: `entity-resolution` --
-  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
-- Agent status: RUN NEEDED
-- Dependencies: the record-linkage seam in `src/llb/linkage/` supplies the fit and the clustering --
-  see [entity resolution](current/entity-resolution.md); call it rather than Splink directly.
-  Cross-section block: adopting a clustering threshold as the default needs the reviewer merge
-  labels from `entity-merge-labelled-set`. Reuse the graph builder
-  and node model in `src/llb/graph/`, and the graph-vs-vector paired comparison described in
-  [GraphRAG](current/graphrag-backend.md).
-- User-visible outcome: the operator learns whether entity fragmentation is costing the graph lane
-  real recall, and by how much, rather than assuming either way.
-- Scope boundary: in scope -- a post-build resolution pass that produces canonical node clusters as
-  an OVERLAY beside the built graph, a paired graph-lane rerun at the same seed and item set with
-  and without the overlay, and per-threshold readings. Out of scope -- rewriting the stored graph in
-  place, changing the closed node vocabulary or entity typing, merging EDGES or relations, applying
-  the overlay to a shipped store before the paired reading justifies it, and any coreference model.
-- Data and artifact paths: `$DATA_DIR/graph-entity-resolution/<run>/` -- the linkage artifacts, the
-  node-cluster overlay, and the paired lane comparison; the pre-merge graph is retained so the
-  reading can be redone without the overlay.
-- Execution path: build the graph as today, then a `make resolve-graph-entities` target over the
-  built graph, then the existing graph-vs-vector paired comparison per candidate threshold on the
-  CUDA host.
-- Acceptance gates: `make ci` green with fixture coverage on a small planted graph whose correct
-  clustering is known; the paired rerun scores the identical item set at a fixed seed and reports
-  recall at k and MRR with and without the overlay, plus the count of nodes merged and the largest
-  cluster formed; a threshold that lifts no lane metric is recorded as a negative result and the
-  overlay is not adopted.
-- Documentation target: the graph section of `docs/impl/current/entity-resolution.md`, with the lane
-  numbers going to [GraphRAG](current/graphrag-backend.md).
-
 #### gold-item-drop-policy-adoption
 
 Decide whether the gold-item drop policy moves from the shipped cosine constant to the fitted
@@ -1628,9 +1586,11 @@ workbench, so the decisions land in a ledger like every other human gate.
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: HUMAN-GATED
 - Dependencies: whichever supplies the candidate pairs to label -- the gold-item shadow lane's
-  disagreement list ([the gold-item lane](current/entity-resolution.md#the-gold-item-lane))
-  or `graph-entity-node-resolution` once it lands. The seam's label-based fit and labelled accuracy curve
-  already exist -- see [entity resolution](current/entity-resolution.md). Human step that gates
+  disagreement list ([the gold-item lane](current/entity-resolution.md#the-gold-item-lane)) or the
+  graph node lane's scored pairs
+  ([the graph node lane](current/entity-resolution.md#the-graph-node-lane)). The seam's label-based
+  fit and labelled accuracy curve already exist -- see
+  [entity resolution](current/entity-resolution.md). Human step that gates
   completion: a Ukrainian-reading reviewer decides each sampled pair. Reuse the adapter pattern in
   [review workbench](current/review-workbench.md) rather than building a second review surface.
 - User-visible outcome: both linkage domains gain a threshold with a precision and recall attached

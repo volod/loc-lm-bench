@@ -99,3 +99,9 @@ MATCH_LABELS_SUFFIX = "_matches"
 # The labelled accuracy curve is reported at rounded match weights; without rounding a large label
 # set produces one row per distinct weight, which is a chart's problem, not a report's.
 ACCURACY_WEIGHT_ROUNDING = 0.5
+
+# Column names Splink's own clustering SQL introduces (`connected_components.py`): the final
+# cluster table selects `cc.cluster_id` beside every input column, so a record table carrying one
+# of these names produces an ambiguous-reference binder error deep inside the clustering step,
+# long after the fit succeeded. The seam refuses them up front instead.
+RESERVED_COLUMNS = ("cluster_id", "node_id", "representative")

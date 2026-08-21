@@ -45,6 +45,16 @@ def test_the_identifier_column_cannot_also_be_compared():
         spec.validate()
 
 
+@pytest.mark.parametrize("column", ["cluster_id", "node_id", "representative"])
+def test_a_column_the_clustering_step_reserves_is_refused(column):
+    """Splink's clustering SQL introduces these itself, so the collision surfaces after the fit."""
+    compared = _spec(comparisons=(ComparisonSpec(column, "exact"), ComparisonSpec("city", "exact")))
+    with pytest.raises(ValueError, match="reserved by the clustering step"):
+        compared.validate()
+    with pytest.raises(ValueError, match="reserved by the clustering step"):
+        _spec(retain_columns=(column,)).validate()
+
+
 def test_one_column_carries_one_comparison():
     spec = _spec(
         comparisons=(
