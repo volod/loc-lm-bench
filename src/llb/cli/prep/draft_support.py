@@ -39,6 +39,7 @@ def _validate_draft_inputs(
     multi_hop_only: bool,
     carry_forward_multi_hop: bool,
     dedup_against: Optional[list[Path | str]],
+    dedup_linkage_shadow: bool = False,
 ) -> None:
     """Fail fast (exit 2) on option combinations and paths that cannot work."""
     if drop_nonretrievable_needles and retrieval_index_dir is None:
@@ -51,6 +52,8 @@ def _validate_draft_inputs(
         cli_error("--multi-hop-only requires --multi-hop")
     if carry_forward_multi_hop and not dedup_against:
         cli_error("--carry-forward-multi-hop requires --dedup-against")
+    if dedup_linkage_shadow and not dedup_against:
+        cli_error("--dedup-linkage-shadow requires --dedup-against")
     _validate_dedup_bundles(dedup_against)
 
 

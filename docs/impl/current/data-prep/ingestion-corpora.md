@@ -98,7 +98,10 @@ Three opt-in yield-max knobs raise the meaningful-question yield of a draft: `DR
 drafts up to N seeds per stratum bucket (with a `coverage_matrix` exhaustion report) instead of a
 flat `DRAFT_MAX_ITEMS` cap; `DRAFT_MULTI_HOP=1` adds multi-span chain questions walked from 2-hop
 knowledge-graph paths (each carrying >= 2 grounded spans); and `DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`
-drops questions that are pinned-E5 near-duplicates of prior bundles. Every drafted item is tagged
+drops questions that are pinned-E5 near-duplicates of prior bundles (add
+`DRAFT_DEDUP_LINKAGE_SHADOW=1` to score the record-linkage model beside that constant and get each
+rejection's match probability and level agreements -- see
+[the gold-item lane](../entity-resolution.md#the-gold-item-lane)). Every drafted item is tagged
 with a `question_type` and `difficulty` label reviewers and the miss analyzer can filter on. See
 [robust backends and ontology drafting](../robustness-ontology-backends.md) for the module map, report
 fields, and command reference.

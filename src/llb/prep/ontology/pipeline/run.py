@@ -72,6 +72,7 @@ def draft_goldset(
     multi_hop_document_mode_target: int = DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET,
     multi_hop_source_document_target: int = DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET,
     dedup_against: list[Path | str] | None = None,
+    dedup_linkage_shadow: bool = False,
     carry_forward_multi_hop: bool = False,
     graph_dir: Path | str | None = None,
     dedup_embedder: QuestionEmbedder | None = None,
@@ -109,6 +110,7 @@ def draft_goldset(
         multi_hop_document_mode_target=multi_hop_document_mode_target,
         multi_hop_source_document_target=multi_hop_source_document_target,
         dedup_against=dedup_against,
+        dedup_linkage_shadow=dedup_linkage_shadow,
         carry_forward_multi_hop=carry_forward_multi_hop,
         graph_dir=graph_dir,
         rejection_feedback=rejection_feedback,
@@ -136,6 +138,7 @@ def draft_goldset(
             extraction_adapter,
             dedup_embedder,
             started,
+            write=write,
         )
     except DraftBudgetExceeded as exc:
         if write:
@@ -170,6 +173,7 @@ def _execute_pipeline(
     extraction_adapter: ExtractionAdapter | None,
     dedup_embedder: QuestionEmbedder | None,
     started: float,
+    write: bool,
 ) -> PipelineResult:
     """Run the model stages after resumability and budget artifacts are ready."""
     docs = inventory_corpus(Path(settings.corpus_root))
@@ -208,6 +212,8 @@ def _execute_pipeline(
             item_labels,
             dedup_against=settings.dedup_against,
             embedder=dedup_embedder,
+            linkage_shadow=settings.dedup_linkage_shadow,
+            bundle_dir=out_dir if write else None,
         )
         if settings.multi_hop:
             from llb.prep.ontology.pipeline.expansion import prior_multihop_span_pairs

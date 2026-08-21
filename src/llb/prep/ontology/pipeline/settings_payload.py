@@ -25,6 +25,7 @@ def _multi_hop_settings(settings: "DraftSettings") -> dict[str, object]:
         "dedup_against": (
             [str(path) for path in settings.dedup_against] if settings.dedup_against else None
         ),
+        "dedup_linkage_shadow": settings.dedup_linkage_shadow,
         "carry_forward_multi_hop": settings.carry_forward_multi_hop,
         "graph_dir": _opt_str(settings.graph_dir),
     }

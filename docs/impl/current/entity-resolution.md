@@ -171,6 +171,107 @@ two are the transitive merges. That gap is the fixture's point restated in the l
 and it is also the honest limit of a 19-pair label set: it prices the threshold on this fixture,
 not on any production table.
 
+## The gold-item lane
+
+Drafted gold items are the first of the three identity decisions to move onto the seam, and they
+move onto it in SHADOW: the shipped policy still decides every drop, and the fitted model is scored
+beside it. That is deliberate -- the confidence contract publishes a match probability with the
+labelled set it was scored against, and until `entity-merge-labelled-set` produces one there is no
+defensible ground on which to flip a default. What the lane changes today is what a drop REPORT
+says: a rejection arrives with a match probability, the level agreements behind it, and the prior
+item it lost to, instead of one cosine.
+
+| Module | Owns |
+| --- | --- |
+| `llb/prep/ontology/linkage/records.py` | Gold items -> the record table, and the comparison specification |
+| `llb/prep/ontology/linkage/shadow.py` | Running the fit beside the constant and publishing the report |
+| `llb/prep/ontology/linkage/verdicts.py` | Both policies' verdict per item, the operating points, the provisional cut |
+| `llb/prep/ontology/linkage/agreements.py` | Reading a scored pair back in words; pair and neighbour indexes |
+| `llb/prep/ontology/linkage/constants.py` | Column names, agreement ladders, the fit floor and all-pairs cap |
+
+### What a gold item is compared on
+
+| Column | Kind | Ladder | Why it carries information |
+| --- | --- | --- | --- |
+| `question_vector` | `cosine` | 0.95 / 0.9 / 0.8 | The shipped signal, kept on the pinned E5 embedding so "similar" still means what the retriever sees |
+| `answer_vector` | `cosine` | 0.95 / 0.85 | Two distinct questions about one narrow fact share an answer; one question with two answers does not |
+| `source_doc_id` | `exact` | -- | A repeat is drafted from the document it repeats |
+| `span_blocks` | `array_intersect` | 3 / 1 | Source-span character overlap, priced as shared 50-character grid cells of `<doc-id>:<cell>` so two citations of one sentence agree when their offsets differ by a word |
+| `question_type` | `exact` | -- | Weak on its own (roughly half of random pairs agree) and useful in combination, which is the whole method |
+
+`split` is RETAINED and not compared. The drafting pipeline assigns splits after deduplication, so
+every candidate carries the same placeholder at drop time; agreement on it would price when a field
+gets filled in rather than whether two items are the same question. That is a departure from the
+field list the task was written with, and it is the honest one.
+
+One blocking rule compares every pair (all records agree on a constant `block_key`), because the
+shipped constant compares a drafted question against every prior question -- a lane that scored
+fewer pairs could not reproduce its decisions. The cost is therefore the table size, and it is
+bounded at both ends: below `MIN_SHADOW_RECORDS` (20) the lane declines rather than publish u
+estimates drawn from a handful of pairs, and above `MAX_SHADOW_RECORDS` (1500, about 1.1M pairs) it
+declines rather than generate a pair table nobody asked for. Each decline is reported with its
+reason instead of silently skipped. The two expectation-maximisation passes block on
+`source_doc_id` and on `question_type`, so each holds one comparison fixed and they cover each
+other.
+
+### What the run reports
+
+The drafting bundle's `dedup` block gains a `linkage_shadow` entry, and every row of
+`dropped_detail` gains the pair behind it -- `match_probability`, `match_weight`, and `agreements`
+naming the level each comparison landed on ("Cosine similarity of question_vector >= 0.95",
+"Array intersection size >= 3"). A drop against a prior bundle also names the prior ITEM
+(`nearest_prior_id`), which is what makes the decision replayable against the written pair table.
+
+`linkage_shadow` carries the two numbers the policies are compared on -- the lowest match weight
+among the items the constant DROPPED and the highest among those it KEPT -- plus their margin, and
+a list of operating points. Each operating point states what that cut would decide and lists every
+item where the two policies disagree, with the nearest record and the agreements behind it. That
+list is the input `entity-merge-labelled-set` samples from.
+
+Both comparisons are made on the match WEIGHT, not the probability. A well-separated fit pushes a
+duplicate and a merely-similar item to probabilities that both round to 1.0, so the margin between
+them survives only in the log-odds the probability was computed from; the published cut carries
+both forms plus `probability_cut_reproduces_shipped_drops`, which says whether the probability form
+still decides what the weight does. The provisional cut is the seam's default (0.9) whenever that
+already drops exactly what the constant drops, and otherwise the lowest-scoring drop -- the
+tightest cut that preserves every shipped decision. It is deliberately NOT the midpoint of the two
+weights: non-match weights run to tens of negative bits, so their arithmetic midpoint lands far
+below any value an operator would adopt and moves with every unrelated pair added to the table.
+
+### Running it
+
+```bash
+make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \
+  DRAFT_DEDUP_AGAINST=<prior-bundle> DRAFT_DEDUP_LINKAGE_SHADOW=1
+llb prepare-goldset-draft --corpus-root <dir> --model <model> \
+  --dedup-against <prior-bundle> --dedup-linkage-shadow
+```
+
+The flag requires `--dedup-against` (there is nothing to score against without it) and needs the
+`linkage` extra; without it the lane records `enabled: false` with the missing packages rather than
+failing the drafting run. The fit lands in the drafting bundle's own `linkage/` directory, with the
+same artifact set every linkage run writes, and its `settings.json` metadata records
+`mode: gold-item-dedup-shadow` and the provisional cut, so a reader cannot mistake the bundle for
+an adopted policy.
+
+### What the fixture runs showed (2026-08-21)
+
+Two runs over the committed gold-set fixtures, both scoring the same drafted batch (exact repeats,
+near-paraphrases, one intra-batch repeat, and unrelated questions from a second fixture):
+
+- With the deterministic hashed-bag embedder the tests inject (143 records, 10153 scored pairs), a
+  cut exists that reproduces all 10 shipped drops exactly, with a 0.26-bit margin; the seam's
+  default 0.9 does NOT -- it would drop 5 more items, each a paraphrase the question cosine alone
+  kept while every other field agreed. Those 5 rows are the disagreement list.
+- With the pinned E5 embedder on the CUDA host (80 records, 3160 pairs, 12 s including model load),
+  the default 0.9 cut reproduces all 12 shipped drops with a 162-bit margin and no disagreement:
+  real E5 already scores those paraphrases above the shipped cosine, so the constant dropped them
+  too.
+
+The pair of readings is the point: which side the constant and the model differ on depends on the
+embedding, and both runs leave the shipped constant in charge. Levels the fit never observed are
+reported as `n_untrained_levels` rather than defaulted.
+
 ## Tests
 
 `tests/llb/linkage/` -- the specification, record-table, and result contracts run in the base
@@ -187,6 +288,14 @@ install; the fit, replay, artifact, and vocabulary tests are `heavy_env`. What t
 - the labelled run's cut is scored exactly, and the clustering's recall exceeds the pairwise cut's
   on the fixture's transitive merges;
 - the bundle holds every documented artifact, and an unlabelled run writes no accuracy curve.
+
+`tests/llb/prep/ontology/linkage/` -- the gold-item lane. The record table, the derived question
+type, the span-block grid, and the specification's shape run in the base install; the fixture runs
+are `heavy_env`. What they hold: the shadow lane changes no drop (the kept and dropped ids match a
+run with the lane off); every shipped drop is scored and a cut exists that reproduces all of them;
+every drop row names its agreements and the prior item it lost to; the default cut's disagreement
+list is non-empty and complete enough to label from; the bundle holds the fit; and a table below
+the fit floor or a batch with no drafted items declines with a reason instead of publishing noise.
 
 ## Boundary
 

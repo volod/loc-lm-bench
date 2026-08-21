@@ -62,6 +62,7 @@ class DraftRequest:
     multi_hop_document_mode_target: int
     multi_hop_source_document_target: int
     dedup_against: Optional[str]
+    dedup_linkage_shadow: bool
     carry_forward_multi_hop: bool
     graph_dir: Optional[Path]
     rejection_feedback: Optional[Path]

@@ -76,49 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Entity resolution -- `entity-resolution`
 
-#### gold-item-duplicate-linkage
-
-Replace the single-threshold near-duplicate suppression on drafted gold items with a linkage model
-over the fields a gold item actually carries. Today a drafted item is dropped when its question's
-E5 cosine against any prior bundle's question clears one constant, with a second constant on the
-answer for multi-hop items; a paraphrase that shares no wording survives, and two genuinely distinct
-questions about one narrow fact are dropped together. The item record has more to say than one
-cosine: question embedding, reference-answer embedding, `source_doc_id`, source-span character
-overlap, question type, and split. Fit those as comparison levels so the drop decision carries a
-match probability and the operating point is a position on a curve rather than a constant, and so
-the drop report can name WHICH agreements drove each rejection.
-
-- Serves: `entity-resolution` --
-  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
-- Agent status: CLEAR
-- Dependencies: the record-linkage seam in `src/llb/linkage/`, which takes a record table, a
-  comparison specification, and blocking rules and returns match probabilities plus identity
-  clusters -- see [entity resolution](current/entity-resolution.md). Cross-section block: the
-  labelled operating threshold comes from `entity-merge-labelled-set` under Human-Assisted Tasks,
-  so this task ships the fitted model and a provisional threshold from the unsupervised fit, and the
-  DEFAULT threshold stays where it is until that label set exists. Reuse `deduplicate_drafts` in
-  `src/llb/prep/ontology/pipeline/deduplication.py` and the embedder seam in
-  `src/llb/prep/ontology/extraction/dedup.py` -- the pinned E5 embedder stays the vector source, so
-  "similar" keeps meaning what the retriever sees.
-- User-visible outcome: a drafting run reports each suppressed item with its match probability and
-  the agreements behind it, and a reviewer can move the suppression threshold with the
-  precision/recall consequence visible instead of guessing at a cosine.
-- Scope boundary: in scope -- the comparison specification for gold items, the fit, the enriched
-  drop report, and a shadow mode that scores the model beside the shipped constant without changing
-  which items are dropped. Out of scope -- changing the drafting prompts, changing what a gold item
-  contains, re-deduplicating already-accepted ledgers, and flipping the default suppression policy
-  (that needs the labelled set).
-- Data and artifact paths: the drafting bundle's dedup report gains the per-pair probability and
-  level agreements; the fitted model lands under `<bundle>/linkage/`.
-- Execution path: the existing drafting entrypoint with the shadow lane enabled; fixture coverage
-  uses the deterministic fake embedder the current dedup tests already inject, so no GPU.
-- Acceptance gates: `make ci` green; on the committed drafting fixture the model reproduces every
-  drop the exact-question and cosine tiers make today (a model that loses an obvious duplicate is
-  rejected); the shadow report lists each pair where model and constant disagree, which is the input
-  the human labelling task consumes.
-- Documentation target: the gold-item section of `docs/impl/current/entity-resolution.md`, linked
-  from [chunking and glossary](current/data-prep/chunking-and-glossary.md) drafting notes.
-
 #### graph-entity-node-resolution
 
 Resolve knowledge-graph entity nodes that denote the same entity but do not share a normalized name.
@@ -160,6 +117,45 @@ the survivors; and read the result on the same source-span metric the vector lan
   overlay is not adopted.
 - Documentation target: the graph section of `docs/impl/current/entity-resolution.md`, with the lane
   numbers going to [GraphRAG](current/graphrag-backend.md).
+
+#### gold-item-drop-policy-adoption
+
+Decide whether the gold-item drop policy moves from the shipped cosine constant to the fitted
+linkage model, and make the decision on the labelled curve rather than on the shadow report alone.
+The shadow lane already publishes, per drafting run, the cut that reproduces today's decisions and
+every item where a probability cut and the constant disagree -- see
+[the gold-item lane](current/entity-resolution.md#the-gold-item-lane). What it cannot supply is
+which side of each disagreement is right: a paraphrase the constant kept and the model would drop
+is either a duplicate the constant missed or a distinct question the model would destroy, and only
+a reviewer decision separates those. Score the model against the merge ledger, read the threshold
+off the labelled accuracy curve, and either flip `NEAR_DUP_COSINE_THRESHOLD` and the multi-hop
+answer constant for the model at that threshold, or record why the labelled curve does not support
+the move.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the reviewer merge ledger from `entity-merge-labelled-set` under Human-Assisted
+  Tasks is the gate -- without it there is no curve to read a threshold off. The lane, its record
+  specification, and the shadow report already exist; the seam's label-fitted m estimation and
+  labelled accuracy curve already exist.
+- User-visible outcome: a drafting run's suppression decision carries a threshold with a precision
+  and recall attached to it, and a reviewer who wants a looser or stricter policy can see what it
+  would cost before changing it.
+- Scope boundary: in scope -- scoring the fitted model against the merge ledger, the threshold
+  recommendation, flipping the default (or recording the negative result), and re-running the
+  shadow report at the adopted cut so the change is visible in one diff. Out of scope --
+  re-deduplicating already-accepted ledgers, changing what a gold item contains, changing the
+  drafting prompts, and adopting a cut the labelled curve does not support.
+- Data and artifact paths: the drafting bundle's `linkage/` gains the accuracy curve a labelled fit
+  writes; the adopted threshold lands beside the constants it replaces.
+- Execution path: the drafting entrypoint with the shadow lane enabled and the merge ledger passed
+  as the label table, over the same fixtures the lane is tested on.
+- Acceptance gates: `make ci` green; the model is scored against the ledger with precision and
+  recall at the adopted cut and at the shipped constant's operating point, so the two policies are
+  compared on the same labelled pairs; a cut that does not beat the constant on both is recorded as
+  a negative result and the constant stays.
+- Documentation target: the gold-item section of `docs/impl/current/entity-resolution.md`.
 
 #### corpus-edition-linkage (optional)
 
@@ -1631,8 +1627,9 @@ workbench, so the decisions land in a ledger like every other human gate.
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: HUMAN-GATED
-- Dependencies: whichever of `graph-entity-node-resolution` and `gold-item-duplicate-linkage`
-  supplies the candidate pairs to label. The seam's label-based fit and labelled accuracy curve
+- Dependencies: whichever supplies the candidate pairs to label -- the gold-item shadow lane's
+  disagreement list ([the gold-item lane](current/entity-resolution.md#the-gold-item-lane))
+  or `graph-entity-node-resolution` once it lands. The seam's label-based fit and labelled accuracy curve
   already exist -- see [entity resolution](current/entity-resolution.md). Human step that gates
   completion: a Ukrainian-reading reviewer decides each sampled pair. Reuse the adapter pattern in
   [review workbench](current/review-workbench.md) rather than building a second review surface.
