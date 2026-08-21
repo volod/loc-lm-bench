@@ -7,6 +7,7 @@ Committed sample files are grouped by the workflow that consumes them.
 | `configs/` | Candidate model manifest and run-eval YAML examples | `make list-models`, `make prep-models`, `llb run-eval --config` |
 | `benchmarks/` | Small Ukrainian category-suite seeds and catalogs | `bench-security`, `bench-tooling`, `bench-agentic`, `bench-summarization`, `bench-structured`, composite smoke fixtures |
 | `data-prep/` | Import and synthetic RAG-item fixtures | `make ingest-squad`, `scripts/gen_rag_items.sh`, data-prep tests |
+| `linkage/` | Record table, specification, and reviewer labels for the record-linkage seam | `make link-records`, `make replay-linkage`, linkage tests |
 | `goldsets/` | Verified committed gold-set bundles with corpus files | default RAG and quickstart flows |
 | `pdf_pages/` | PDF page/citation metadata fixtures | page-aware chunking and metadata tests |
 | `query-prep/` | Query glossary and prompt dictionary fixtures | query-prep tests and examples |

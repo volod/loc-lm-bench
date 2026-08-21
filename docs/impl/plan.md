@@ -76,52 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Entity resolution -- `entity-resolution`
 
-#### record-linkage-seam
-
-Build the project-owned record-linkage seam the three identity decisions below share: a module that
-takes a table of records, a comparison specification, and blocking rules, and returns pairwise match
-probabilities plus identity clusters, with the trained model written into the run bundle so an
-identity decision is reproducible without re-fitting. Splink (MIT, pure Python, 4.0.x) supplies the
-Fellegi-Sunter engine on the DuckDB backend the graph store already requires, so the seam is a thin
-adapter rather than a new algorithm: blocking-rule comparison counting before a run,
-`estimate_u_using_random_sampling` for the non-match parameters, expectation-maximisation for the
-match parameters, `estimate_m_from_pairwise_labels` when a reviewer label table is supplied, and
-`cluster_pairwise_predictions_at_threshold` for the connected-components resolution. The comparison
-level vocabulary is what makes one seam serve three domains: exact match, Levenshtein and
-Jaro-Winkler on names, array intersection on aliases, Jaccard on shingle sets, absolute date
-difference on `effective_date`, and cosine similarity on an embedding column that the project
-already computes.
-
-- Serves: `entity-resolution` --
-  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
-- Agent status: CLEAR
-- Dependencies: none. Prerequisite for `gold-item-duplicate-linkage`,
-  `graph-entity-node-resolution`, and `corpus-edition-linkage`; every one of them consumes this
-  seam rather than calling Splink directly.
-- User-visible outcome: an operator can ask "which of these records denote the same thing, and how
-  sure is the model" of any record table the project holds, and can replay the answer from a saved
-  model artifact without re-fitting.
-- Scope boundary: in scope -- `src/llb/linkage/`, a `linkage = ["splink>=4.0,<5"]` optional extra
-  behind a lazy import (base install must not pull it), a typed comparison/blocking specification,
-  the training and clustering calls above, the saved model artifact, and deterministic fixture tests
-  gated with `pytest.importorskip("splink")` as the optional-dependency suites already are. Out of
-  scope -- any domain wiring (the three tasks below own that), the Spark/Athena/Postgres backends,
-  shipping Splink's interactive HTML charts as an artifact (record the numbers behind them instead),
-  and any use of a match probability as a CONFLICT probability, which the capability's confidence
-  contract forbids.
-- Data and artifact paths: `$DATA_DIR/<method>/<run>/linkage/` -- `settings.json` (the comparison
-  and blocking specification), `match_parameters.json` (fitted m/u per comparison level),
-  `blocking_counts.json` (comparisons each blocking rule generates, recorded before the fit),
-  `pairs.jsonl` (pair, match probability, per-level agreement), `clusters.jsonl` (cluster id per
-  record at the run's threshold).
-- Execution path: `uv pip install -e ".[linkage]"`; a low-level `llb link-records` command plus a
-  `make link-records` target carrying a `##` help line; no GPU and no network.
-- Acceptance gates: `make ci` green; the seam's tests run on a committed fixture record table with a
-  known cluster structure and reproduce it at a fixed seed; `make ci-github` stays green with the
-  extra absent; a saved model artifact re-scores the same pairs to identical probabilities.
-- Documentation target: a new `docs/impl/current/entity-resolution.md` area page indexed from
-  [current.md](current.md), plus its row in [the guides index](../guides/README.md).
-
 #### gold-item-duplicate-linkage
 
 Replace the single-threshold near-duplicate suppression on drafted gold items with a linkage model
@@ -137,10 +91,12 @@ the drop report can name WHICH agreements drove each rejection.
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: CLEAR
-- Dependencies: `record-linkage-seam`. Cross-section block: the labelled operating threshold comes
-  from `entity-merge-labelled-set` under Human-Assisted Tasks, so this task ships the fitted model
-  and a provisional threshold from the unsupervised fit, and the DEFAULT threshold stays where it is
-  until that label set exists. Reuse `deduplicate_drafts` in
+- Dependencies: the record-linkage seam in `src/llb/linkage/`, which takes a record table, a
+  comparison specification, and blocking rules and returns match probabilities plus identity
+  clusters -- see [entity resolution](current/entity-resolution.md). Cross-section block: the
+  labelled operating threshold comes from `entity-merge-labelled-set` under Human-Assisted Tasks,
+  so this task ships the fitted model and a provisional threshold from the unsupervised fit, and the
+  DEFAULT threshold stays where it is until that label set exists. Reuse `deduplicate_drafts` in
   `src/llb/prep/ontology/pipeline/deduplication.py` and the embedder seam in
   `src/llb/prep/ontology/extraction/dedup.py` -- the pinned E5 embedder stays the vector source, so
   "similar" keeps meaning what the retriever sees.
@@ -178,8 +134,10 @@ the survivors; and read the result on the same source-span metric the vector lan
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: RUN NEEDED
-- Dependencies: `record-linkage-seam`. Cross-section block: adopting a clustering threshold as the
-  default needs the reviewer merge labels from `entity-merge-labelled-set`. Reuse the graph builder
+- Dependencies: the record-linkage seam in `src/llb/linkage/` supplies the fit and the clustering --
+  see [entity resolution](current/entity-resolution.md); call it rather than Splink directly.
+  Cross-section block: adopting a clustering threshold as the default needs the reviewer merge
+  labels from `entity-merge-labelled-set`. Reuse the graph builder
   and node model in `src/llb/graph/`, and the graph-vs-vector paired comparison described in
   [GraphRAG](current/graphrag-backend.md).
 - User-visible outcome: the operator learns whether entity fragmentation is costing the graph lane
@@ -219,9 +177,11 @@ what the fit adds is a priced ranking and a group, not a new pair.
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: RUN NEEDED
-- Dependencies: `record-linkage-seam`. Reuse `shingles`, `jaccard`, `containment`, and
-  `candidate_pairs` in `src/llb/conflicts/tiers/lexical.py` as the feature source and the blocking
-  index, and `compare_editions` in `src/llb/conflicts/governance/editions.py` for the ordering.
+- Dependencies: the record-linkage seam in `src/llb/linkage/` supplies the fit and the clustering --
+  see [entity resolution](current/entity-resolution.md). Reuse `shingles`, `jaccard`,
+  `containment`, and `candidate_pairs` in `src/llb/conflicts/tiers/lexical.py` as the feature source
+  and the blocking index, and `compare_editions` in `src/llb/conflicts/governance/editions.py` for
+  the ordering.
 - User-visible outcome: a reviewer sees candidate duplicate documents ranked by a probability scored
   against a labelled set, grouped into editions of one document rather than listed as loose pairs.
 - Scope boundary: in scope -- the duplicate and subsumption relations only, the edition clustering,
@@ -1671,8 +1631,9 @@ workbench, so the decisions land in a ledger like every other human gate.
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: HUMAN-GATED
-- Dependencies: `record-linkage-seam`, plus whichever of `graph-entity-node-resolution` and
-  `gold-item-duplicate-linkage` supplies the candidate pairs to label. Human step that gates
+- Dependencies: whichever of `graph-entity-node-resolution` and `gold-item-duplicate-linkage`
+  supplies the candidate pairs to label. The seam's label-based fit and labelled accuracy curve
+  already exist -- see [entity resolution](current/entity-resolution.md). Human step that gates
   completion: a Ukrainian-reading reviewer decides each sampled pair. Reuse the adapter pattern in
   [review workbench](current/review-workbench.md) rather than building a second review surface.
 - User-visible outcome: both linkage domains gain a threshold with a precision and recall attached

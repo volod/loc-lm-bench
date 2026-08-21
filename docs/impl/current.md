@@ -39,6 +39,7 @@ closed each one and what would make it worth reopening.
 | [Overview](current/overview.md) | System shape, setup, repo layout, artifact roots | page |
 | [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 10 pages |
 | [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 14 pages |
+| [Entity resolution](current/entity-resolution.md) | Probabilistic record linkage: the shared identity seam and its artifacts | page |
 | [GraphRAG](current/graphrag-backend.md) | Knowledge-graph retrieval and graph-vs-vector evidence | 5 pages |
 | [Extended workflows](current/extended-workflows.md) | Agentic harnesses, agent context policies, prompt systems, fine-tuning | 14 pages |
 | [Evaluation rigor](current/rigor-board-judge.md) | Model resolution, sweeps, tuning, joint search, board, judge, miss analysis | 5 pages |

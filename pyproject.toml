@@ -64,6 +64,12 @@ rag-chroma = ["chromadb==1.5.9"]
 rag-qdrant = ["qdrant-client==1.18.0"]
 rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
+# Probabilistic record linkage (the identity seam under entity resolution). Splink supplies the
+# Fellegi-Sunter engine on the DuckDB backend the graph store already requires, so this extra adds
+# an engine, not a database. Upper bound: Splink 4 renamed the whole API surface this adapter is
+# written against (namespaced `linker.training` / `.inference` / `.clustering`, `SettingsCreator`,
+# `block_on`); a future major is a deliberate port, not a resolver decision.
+linkage = ["splink>=4.0,<5", "duckdb>=1.0"]
 track = ["mlflow>=2.15", "duckdb>=1.0", "optuna>=3.6"]  # pyarrow arrives transitively via mlflow
 board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart
