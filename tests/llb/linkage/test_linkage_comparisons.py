@@ -1,14 +1,15 @@
 """Every comparison kind in the vocabulary must build, fit, and score on a real table.
 
-The sample record table exercises five of the seven kinds; `levenshtein` on a code column and
-`cosine` on an embedding column are covered here on a tiny synthetic table, so no kind is
-declared in the vocabulary without a run behind it.
+The sample record table exercises five of the kinds; `levenshtein` on a code column, `cosine` on an
+embedding column, and `set_overlap` on a shingle column are covered here on a tiny synthetic table,
+so no kind is declared in the vocabulary without a run behind it.
 """
 
 import pytest
 from llb.linkage.comparisons import settings_uid
 from llb.linkage.constants import COMPARISON_KINDS
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 
 VECTOR_WIDTH = 3
 
@@ -20,7 +21,11 @@ THRESHOLDS = {
     "jaccard": (0.9, 0.8),
     "date_difference": (30.0, 365.0),
     "cosine": (0.95, 0.8),
+    "set_overlap": (0.8, 0.5),
 }
+
+# `set_overlap` is the one kind with a SECOND ladder over the same column.
+CONTAINMENT = {"set_overlap": (0.9, 0.6)}
 
 COLUMNS = {
     "exact": "city",
@@ -30,6 +35,7 @@ COLUMNS = {
     "jaccard": "address",
     "date_difference": "effective_date",
     "cosine": "vector",
+    "set_overlap": "shingles",
 }
 
 RECORDS = [
@@ -42,6 +48,7 @@ RECORDS = [
         "city": "Львів",
         "effective_date": "2021-03-04",
         "vector": [1.0, 0.0, 0.0],
+        "shingles": ["a", "b", "c", "d"],
     },
     {
         "unique_id": "r2",
@@ -52,6 +59,7 @@ RECORDS = [
         "city": "Львів",
         "effective_date": "2021-03-11",
         "vector": [0.98, 0.19, 0.0],
+        "shingles": ["a", "b", "c", "e"],
     },
     {
         "unique_id": "r3",
@@ -62,12 +70,19 @@ RECORDS = [
         "city": "Київ",
         "effective_date": "2019-01-02",
         "vector": [0.0, 0.0, 1.0],
+        "shingles": ["x", "y", "z"],
     },
 ]
 
 
 def _comparison(kind: str) -> ComparisonSpec:
-    return ComparisonSpec(COLUMNS[kind], kind, THRESHOLDS[kind], dimension=VECTOR_WIDTH)
+    return ComparisonSpec(
+        COLUMNS[kind],
+        kind,
+        THRESHOLDS[kind],
+        dimension=VECTOR_WIDTH,
+        containment_thresholds=CONTAINMENT.get(kind, ()),
+    )
 
 
 def _spec_for(kind: str) -> LinkageSpec:

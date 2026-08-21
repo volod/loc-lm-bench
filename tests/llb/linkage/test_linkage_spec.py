@@ -5,7 +5,8 @@ base install, because every consumer of the seam reads a saved `settings.json`.
 """
 
 import pytest
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec, load_spec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec, load_spec
 
 
 def _spec(**overrides) -> LinkageSpec:

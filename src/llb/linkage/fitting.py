@@ -4,6 +4,7 @@ Split from `engine.py` along the obvious seam -- this half decides what the mode
 decides what a record table becomes under it.
 """
 
+import copy
 from typing import Any
 
 from llb.core.contracts.common import JsonObject
@@ -94,6 +95,31 @@ def labelled_accuracy(linker: Any, labels_table: str) -> tuple[AccuracyPoint, ..
         for row in table.as_record_dict()
     ]
     return tuple(sorted(points, key=lambda point: point.threshold))
+
+
+def smoothed_model(model: JsonObject, floor: float) -> JsonObject:
+    """The same trained model with every fitted m and u pulled into `[floor, 1 - floor]`.
+
+    Expectation-maximisation has a degenerate boundary solution on a small table: a level no pair
+    of the match class exhibits gets m driven to machine zero, and every pair that lands on such a
+    level then scores at the SAME floor weight -- so the ranking below the top class becomes one
+    tie, which is the part of it a reviewer reads. A pseudo-count floor says "nobody observed this
+    level", not "this level cannot occur among matches".
+
+    It moves the probability SCALE and not the order within the trained part of the model, and a
+    level the fit left as `null` stays null: an estimate that was never made is not smoothed into
+    one that was.
+    """
+    if floor <= 0:
+        return dict(model)
+    smoothed = copy.deepcopy(dict(model))
+    for comparison in smoothed.get("comparisons", ()):
+        for level in comparison.get("comparison_levels", ()):
+            for key in ("m_probability", "u_probability"):
+                value = level.get(key)
+                if value is not None:
+                    level[key] = min(max(float(value), floor), 1.0 - floor)
+    return smoothed
 
 
 def match_parameters(model: JsonObject) -> tuple[MatchParameter, ...]:

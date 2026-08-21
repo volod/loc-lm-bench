@@ -135,6 +135,14 @@ def audit_corpus_conflicts_cmd(
         min=0,
         help="PCA dimensions for exact Euclidean tree blocking (0 = blocked all-pairs scan)",
     ),
+    linkage: bool = typer.Option(
+        False,
+        "--linkage/--no-linkage",
+        help="also price the hash and lexical tiers' duplicate evidence as ONE match probability "
+        "per document pair and cluster it into edition groups (needs the `linkage` extra). A "
+        "ranking and a proposed grouping published beside the tiers -- it changes no finding, no "
+        "relation, and no threshold, and a match probability is never a conflict verdict",
+    ),
     project_policy: Optional[str] = typer.Option(
         None,
         help="also PROJECT the `to review` count under these resolution policies, comma-separated "
@@ -195,6 +203,7 @@ def audit_corpus_conflicts_cmd(
             project_dims=project_dims,
             calibrate_adjudicator=calibrate_adjudicator,
             calibration_probe=calibration_probe,
+            linkage=linkage,
         ),
         store=view,
         goldset=items,

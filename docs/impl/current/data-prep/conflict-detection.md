@@ -42,6 +42,16 @@ Duplicate groups are transitive, so the tier reports `n-1` chained pairs for a g
 marks the group's **full pair closure** as settled. Without that split the later tiers re-derive
 (and re-report) the pairs the chaining left implicit.
 
+`--linkage` (`LINKAGE=1`) adds an opt-in lane BESIDE these two tiers rather than inside them: it
+prices their duplicate and subsumption evidence as one match probability per document pair and
+clusters the result into edition groups, leaving every finding, relation, and threshold exactly as
+it is. It runs where the lexical tier runs, needs the `linkage` extra, and declines below 20
+documents. The lane, what it measures against the current cutoffs, and its runs are documented in
+[the document-edition lane](../entity-resolution.md#the-document-edition-lane); its two settings
+that a reader of this page will meet -- the prior taken from the hash tier's settled pairs, and the
+pseudo-count floor without which the ranking below the top class collapses -- are documented there
+too.
+
 ## Relation vocabulary
 
 Relations are assigned per **claim pair**, never per document: `duplicate`, `subsumes` /
@@ -382,6 +392,13 @@ the embedder fingerprint that pins reuse, since centroids are only meaningful in
 produced them). With projected blocking, the resolved store
 generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
 `semantic_tree/tree_meta.json`. The projection JSON carries its own SHA-256 fingerprint.
+
+With `--linkage`, the run directory also holds `linkage/` -- the record-linkage seam's standard
+bundle (settings, blocking counts, fitted match parameters, the trained model, the scored pairs, and
+the clusters) plus `edition_summary.json`, `document_records.jsonl`, and `editions.jsonl`; the
+audit's own `summary.json` carries the compact form of that reading under `edition_linkage`, and
+each decision group in `groups.json` gains the `edition_groups` its documents fall into. See
+[the document-edition lane](../entity-resolution.md#artifacts-2).
 
 `make compare-conflict-granularity` writes
 `$DATA_DIR/corpus-conflict-granularity/<run>/{granularity.md,granularity.json}` and

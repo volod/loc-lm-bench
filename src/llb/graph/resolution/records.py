@@ -38,7 +38,8 @@ from llb.linkage.constants import (
     KIND_EXACT,
     KIND_JARO_WINKLER,
 )
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 
 Vector = list[float]
 

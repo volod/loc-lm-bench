@@ -21,7 +21,8 @@ from llb.linkage.run import (
     format_summary,
     read_spec_file,
 )
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 
 SAMPLES = PROJECT_ROOT / "samples" / "linkage"
 

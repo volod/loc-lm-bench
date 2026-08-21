@@ -10,7 +10,8 @@ from llb.linkage.records import (
     read_records,
     validate_records,
 )
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 
 SPEC = LinkageSpec(
     comparisons=(

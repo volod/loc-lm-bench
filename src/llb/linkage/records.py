@@ -14,6 +14,7 @@ from typing import Any
 from llb.core.contracts.common import JsonObject
 from llb.linkage.constants import (
     DUCKDB_TYPES,
+    EXPLODED_COLUMN_TYPE,
     KIND_COSINE,
     LABELS_TABLE,
     MATCH_LABELS_SUFFIX,
@@ -43,12 +44,19 @@ def read_records(path: Path) -> list[JsonObject]:
 
 
 def column_types(spec: LinkageSpec) -> dict[str, str]:
-    """DuckDB DDL types for the identifier, every compared column, and retained columns."""
+    """DuckDB DDL types for the identifier, compared columns, exploded and retained columns.
+
+    An exploded blocking column is typed from the RULE that explodes it rather than from a
+    comparison, because a rule may generate candidates from a column nothing scores -- and a
+    retained column's default `VARCHAR` would make the explode fail on a text value.
+    """
     types: dict[str, str] = {spec.unique_id_column: "VARCHAR"}
     for comparison in spec.comparisons:
         types[comparison.column] = DUCKDB_TYPES[comparison.kind].format(
             dimension=comparison.dimension
         )
+    for column in spec.exploded_columns:
+        types.setdefault(column, EXPLODED_COLUMN_TYPE)
     for column in spec.retain_columns:
         types.setdefault(column, "VARCHAR")
     return types

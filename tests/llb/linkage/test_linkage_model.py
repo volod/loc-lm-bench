@@ -14,7 +14,8 @@ from llb.linkage.model import (
     sorted_pairs,
 )
 from llb.linkage.records import ReviewerLabel
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 
 SPEC = LinkageSpec(
     comparisons=(ComparisonSpec("name", "exact"), ComparisonSpec("city", "exact")),

@@ -32,6 +32,15 @@ DEFAULT_RANDOM_MATCH_PROBABILITY = 1e-4
 # that the trade is worth stating in `settings.json`.
 DEFAULT_DUCKDB_THREADS = 1
 
+# Expectation-maximisation on a small table has a degenerate boundary solution: a comparison level
+# no pair of the match class exhibits gets m driven to machine zero, and every pair landing on such
+# a level then scores at the SAME floor weight. The ranking below the top class collapses into one
+# tie, which is precisely the part of it a reviewer reads. Flooring m and u at a small pseudo-count
+# says "nobody observed this level", not "this level cannot occur among matches", and restores the
+# order. Off by default (0.0): a fit that trains every level does not need it, and turning it on
+# per run keeps every reading taken without it reproducible.
+DEFAULT_MIN_LEVEL_PROBABILITY = 0.0
+
 # The linkage boundary: a method that combines several weak agreement signals needs several
 # fields. One column is a single-feature threshold wearing a probability, which is what this
 # capability exists to replace.
@@ -46,6 +55,7 @@ KIND_ARRAY_INTERSECT = "array_intersect"
 KIND_JACCARD = "jaccard"
 KIND_DATE_DIFFERENCE = "date_difference"
 KIND_COSINE = "cosine"
+KIND_SET_OVERLAP = "set_overlap"
 
 COMPARISON_KINDS = (
     KIND_EXACT,
@@ -55,11 +65,15 @@ COMPARISON_KINDS = (
     KIND_JACCARD,
     KIND_DATE_DIFFERENCE,
     KIND_COSINE,
+    KIND_SET_OVERLAP,
 )
 # Kinds whose comparison levels are cut points: a spec that omits them has no levels to score.
 KINDS_NEEDING_THRESHOLDS = tuple(k for k in COMPARISON_KINDS if k != KIND_EXACT)
 # Kinds whose thresholds are similarity scores in (0, 1]; the rest are distances/sizes.
-KINDS_WITH_SCORE_THRESHOLDS = (KIND_JARO_WINKLER, KIND_JACCARD, KIND_COSINE)
+KINDS_WITH_SCORE_THRESHOLDS = (KIND_JARO_WINKLER, KIND_JACCARD, KIND_COSINE, KIND_SET_OVERLAP)
+# The one kind whose ladder is built from TWO measures of the same set pair, so it is the one kind
+# `containment_thresholds` applies to (see `ComparisonSpec`).
+KINDS_WITH_CONTAINMENT = (KIND_SET_OVERLAP,)
 # Kinds whose thresholds must be whole numbers (edit distance, intersection size, day count).
 KINDS_WITH_INTEGER_THRESHOLDS = (KIND_LEVENSHTEIN, KIND_ARRAY_INTERSECT, KIND_DATE_DIFFERENCE)
 # Splink already emits an exact-match level above every ladder, so a zero edit distance or a
@@ -84,7 +98,12 @@ DUCKDB_TYPES = {
     # The cosine column is the exception: DuckDB's `array_cosine_similarity` is defined on
     # FIXED-size arrays, so the type carries the embedding dimension (see `column_types`).
     KIND_COSINE: "DOUBLE[{dimension}]",
+    KIND_SET_OVERLAP: "VARCHAR[]",
 }
+
+# A column an EXPLODING blocking rule generates candidates from is an array in the record table
+# whatever else it is, so its DDL type is fixed rather than derived from a comparison kind.
+EXPLODED_COLUMN_TYPE = "VARCHAR[]"
 
 RECORDS_TABLE = "llb_records"
 LABELS_TABLE = "llb_labels"

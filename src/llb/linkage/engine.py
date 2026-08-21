@@ -17,6 +17,7 @@ from llb.linkage.fitting import (
     count_blocking_comparisons,
     labelled_accuracy,
     match_parameters,
+    smoothed_model,
     train,
 )
 from llb.linkage.model import (
@@ -134,6 +135,23 @@ def _score(
     return pairs, _clusters(clustered.as_record_dict(), spec)
 
 
+@contextmanager
+def _scoring_pass(
+    records: Sequence[JsonObject],
+    spec: LinkageSpec,
+    model: JsonObject,
+    labels: Sequence[ReviewerLabel] | None,
+) -> Iterator[tuple[Any, LabelTables | None]]:
+    """A second pass that SCORES a table from an already-trained model.
+
+    A smoothed model is a different model from the one the linker holds after training, and every
+    published number -- the pairs, the clustering, and the labelled curve alike -- must come from
+    the one model. Scoring it is therefore a fresh linker rather than a patched one.
+    """
+    with _prepared(records, spec, dict(model), labels) as (linker, _, label_tables):
+        yield linker, label_tables
+
+
 def run_linkage(
     records: Sequence[JsonObject],
     spec: LinkageSpec,
@@ -143,9 +161,14 @@ def run_linkage(
     spec.validate()
     with _prepared(records, spec, build_settings(spec), labels) as (linker, counts, label_tables):
         from_labels = train(linker, spec, label_tables)
-        model = linker.misc.save_model_to_json()
-        pairs, clusters = _score(linker, spec)
-        accuracy = labelled_accuracy(linker, label_tables.judged) if label_tables else ()
+        model = smoothed_model(linker.misc.save_model_to_json(), spec.min_level_probability)
+        if not spec.min_level_probability:
+            pairs, clusters = _score(linker, spec)
+            accuracy = labelled_accuracy(linker, label_tables.judged) if label_tables else ()
+    if spec.min_level_probability:
+        with _scoring_pass(records, spec, model, labels) as (scorer, scored_labels):
+            pairs, clusters = _score(scorer, spec)
+            accuracy = labelled_accuracy(scorer, scored_labels.judged) if scored_labels else ()
     cut = spec.match_threshold
     return LinkageResult(
         spec=spec,

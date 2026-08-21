@@ -16,9 +16,16 @@ from llb.linkage.constants import (
     KIND_JACCARD,
     KIND_JARO_WINKLER,
     KIND_LEVENSHTEIN,
+    KIND_SET_OVERLAP,
     SPLINK_MISSING,
 )
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
+
+# Level labels of the `set_overlap` ladder. Named here because the fitted parameters, the report,
+# and any consumer reading a pair's agreement back in words all address a level by its label.
+JACCARD_LEVEL_PREFIX = "Jaccard >="
+CONTAINMENT_LEVEL_PREFIX = "Containment >="
 
 
 def require_splink() -> Any:
@@ -28,6 +35,50 @@ def require_splink() -> Any:
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise SystemExit(SPLINK_MISSING) from exc
     return splink
+
+
+def _set_overlap_comparison(comparison: ComparisonSpec) -> Any:
+    """A two-measure ladder over one pair of element sets, as raw SQL comparison levels.
+
+    Splink has no creator for either measure, so both are spelled out. `list_intersect` is DuckDB's
+    set intersection over the `VARCHAR[]` column; the union size is derived from the two lengths
+    rather than materialised, and `nullif` sends an empty set to the else level instead of dividing
+    by zero.
+
+    The order is mutual overlap first, then containment, and it is not cosmetic: the first level a
+    pair satisfies is the one it is scored at, so this ladder reads a pair the same way a caller
+    that tests Jaccard before falling back to containment already does.
+    """
+    require_splink()
+    import splink.comparison_level_library as cll
+    import splink.comparison_library as cl
+
+    column = comparison.column
+    left, right = f'"{column}_l"', f'"{column}_r"'
+    intersection = f"len(list_intersect({left}, {right}))"
+    union = f"(len({left}) + len({right}) - {intersection})"
+    smaller = f"least(len({left}), len({right}))"
+    levels: list[Any] = [cll.NullLevel(column)]
+    levels += [
+        cll.CustomLevel(
+            f"{intersection}::DOUBLE / nullif({union}, 0) >= {threshold}",
+            label_for_charts=f"{JACCARD_LEVEL_PREFIX} {threshold}",
+        )
+        for threshold in comparison.thresholds
+    ]
+    levels += [
+        cll.CustomLevel(
+            f"{intersection}::DOUBLE / nullif({smaller}, 0) >= {threshold}",
+            label_for_charts=f"{CONTAINMENT_LEVEL_PREFIX} {threshold}",
+        )
+        for threshold in comparison.containment_thresholds
+    ]
+    levels.append(cll.ElseLevel())
+    return cl.CustomComparison(
+        output_column_name=column,
+        comparison_description="set overlap: Jaccard, then containment of the smaller set",
+        comparison_levels=levels,
+    )
 
 
 def build_comparison(comparison: ComparisonSpec) -> Any:
@@ -48,6 +99,8 @@ def build_comparison(comparison: ComparisonSpec) -> Any:
         return cl.JaccardAtThresholds(column, list(comparison.thresholds))
     if kind == KIND_COSINE:
         return cl.CosineSimilarityAtThresholds(column, list(comparison.thresholds))
+    if kind == KIND_SET_OVERLAP:
+        return _set_overlap_comparison(comparison)
     if kind == KIND_DATE_DIFFERENCE:
         # `date_metric` is validated against DATE_METRICS in ComparisonSpec.validate; Splink types
         # it as a Literal, which a spec loaded from JSON cannot be.
@@ -68,6 +121,8 @@ def build_blocking_rule(rule: BlockingRule) -> Any:
     require_splink()
     from splink import block_on
 
+    if rule.explodes:
+        return block_on(*rule.expressions, arrays_to_explode=list(rule.arrays_to_explode))
     return block_on(*rule.expressions)
 
 
@@ -96,7 +151,7 @@ def build_settings(spec: LinkageSpec) -> Any:
         em_convergence=spec.em_convergence,
         max_iterations=spec.em_max_iterations,
         unique_id_column_name=spec.unique_id_column,
-        retain_matching_columns=True,
+        retain_matching_columns=spec.retain_matching_columns,
         retain_intermediate_calculation_columns=False,
         additional_columns_to_retain=list(spec.retain_columns),
         linker_uid=settings_uid(spec),

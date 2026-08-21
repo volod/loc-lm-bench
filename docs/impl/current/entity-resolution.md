@@ -26,7 +26,8 @@ it, and `make ci-github` stays green with it absent because every test that need
 
 | Module | Owns |
 | --- | --- |
-| `llb/linkage/spec.py` | The typed comparison/blocking specification and its validation |
+| `llb/linkage/comparison_spec.py` | One compared field's agreement ladder and the ladders it refuses |
+| `llb/linkage/spec.py` | The blocking rules, the whole specification, and its validation |
 | `llb/linkage/constants.py` | Artifact names, defaults, the comparison vocabulary, DuckDB types |
 | `llb/linkage/records.py` | JSONL record and label reading, derived column types, DuckDB registration |
 | `llb/linkage/comparisons.py` | Vocabulary -> Splink comparison creators; the deterministic model id |
@@ -53,9 +54,16 @@ an exact-match level above every ladder and an "all other comparisons" level bel
 | `levenshtein` | edit distance | whole numbers >= 1 | `VARCHAR` |
 | `jaro_winkler` | prefix-weighted string similarity | scores in (0, 1] | `VARCHAR` |
 | `jaccard` | character-shingle set overlap | scores in (0, 1] | `VARCHAR` |
+| `set_overlap` | Jaccard of two element sets, then containment of the smaller | scores in (0, 1], in two ladders | `VARCHAR[]` |
 | `array_intersect` | shared elements of an alias list | whole sizes >= 1 | `VARCHAR[]` |
 | `date_difference` | absolute difference in `date_metric` units | whole numbers >= 0 | `VARCHAR` |
 | `cosine` | embedding cosine similarity | scores in (0, 1] | `DOUBLE[dimension]` |
+
+`set_overlap` is the one kind that carries a SECOND ladder over one column
+(`containment_thresholds`), because mutual overlap and one-sided coverage measure different
+relations between two sets and a short set inside a long one has low Jaccard by construction. Its
+levels are emitted mutual-first, so a pair reads the way a caller testing Jaccard before falling
+back to containment already reads it.
 
 Column types are DERIVED from the kinds rather than inferred from the data, so the same JSONL
 always materialises the same table. Two consequences worth knowing: a `cosine` comparison must
@@ -73,6 +81,12 @@ table carrying one fails as an ambiguous-reference binder error deep inside the 
 after the model has already trained. A column a blocking expression references
 without comparing goes in `retain_columns`; a blocking rule over a column the table does not carry
 fails with the list of columns it could have used.
+
+A blocking rule may also EXPLODE an array column (`arrays_to_explode`): two records are compared
+when they share at least one element, which is how an inverted index a caller already computes in
+Python becomes the rule Splink runs. Such a column is typed `VARCHAR[]` from the rule rather than
+from a comparison, and it may not be a TRAINING rule -- Splink refuses an exploding rule for
+expectation-maximisation, and it fixes no comparison for the others to be trained against.
 
 ## What a run does
 
@@ -125,6 +139,11 @@ The seam's output is meant to be replayable, so two things are pinned:
   every published probability. Single-threaded, two fits of the same table are byte-identical.
   Raise it per run only when a table is large enough that the trade is worth stating in
   `settings.json`.
+- **A pseudo-count floor, off by default.** `min_level_probability` pulls every fitted m and u into
+  `[floor, 1 - floor]` before scoring, and a level the fit left as `null` stays null. It exists
+  because expectation-maximisation on a small table drives the m of an unobserved level to machine
+  zero, which collapses the whole ranking below the top class into one tie; a reading taken without
+  it is unchanged, because the default is 0.
 - **A derived model id.** Splink's default `linker_uid` is random, which would make two identical
   fits produce two different `model.json` files. It is a hash of the specification instead.
 
@@ -398,6 +417,167 @@ It reads the built graph store at the config's `graph_dir()` and needs the `link
 `--with-vector` adds the built FAISS lane as a reference row that the verdict can never adopt --
 this run decides an overlay, not a backend.
 
+## The document-edition lane
+
+Re-ingested document editions are the third identity decision to move onto the seam, and the only
+one where the shipped decision is TWO hand-set constants rather than one. The conflict audit's
+lexical tier reports a `duplicate` when the shingle Jaccard clears 0.8 and a `subsumed_by` when the
+containment of the smaller document clears 0.9 -- two numbers on two scales, so the list a reviewer
+opens has no order across the relations in it, and neither cutoff can be priced. The hash tier
+below it settles byte-identical and normalization-equivalent documents for free and is untouched by
+this lane.
+
+What the lane adds is a probability per document pair and an edition GROUP: the connected component
+a document belongs to, in edition order, with the current edition named where the governance fields
+can name it. What it does not add is a finding. The audit's relations stay the tiers'; the lane is
+opt-in (`--linkage`), runs where the two model-free tiers run, and publishes beside them.
+
+| Module | Owns |
+| --- | --- |
+| `llb/conflicts/linkage/records.py` | Corpus documents -> the record table, and the comparison specification |
+| `llb/conflicts/linkage/run.py` | The prior, the fit, the provisional cut, the decline reasons, the verdict |
+| `llb/conflicts/linkage/editions.py` | Clusters read as edition groups, ordered by `compare_editions` |
+| `llb/conflicts/linkage/rankings.py` | The two-ranking comparison: recovery, ordering discordance, decisions |
+| `llb/conflicts/linkage/artifacts.py` | The `linkage/` subdirectory of the audit bundle |
+| `llb/conflicts/linkage/report.py` | The report section and the console lines |
+
+### What a document pair is compared on
+
+| Column | Kind | Ladder | Why it carries information |
+| --- | --- | --- | --- |
+| `shingles` | `set_overlap` | Jaccard 0.8 / 0.5, then containment 0.9 / 0.6 | The lexical tier's own two measures, over the tier's own word 5-gram shingles, at the run's own cutoffs |
+| `title` | `jaro_winkler` | 0.9 / 0.7 | The first heading, case-folded -- an upper-cased re-issue is a title AGREEMENT, not a disagreement |
+| `source_system` | `exact` | -- | Weak alone, and informative in combination: a re-ingest often arrives from a different system |
+| `effective_date` | `date_difference` | 400 / 1500 days | An edition is dated later than the document it revises, so a gap is the ordinary case and an exact match is the re-upload |
+
+`set_overlap` is the comparison kind the seam grew for this lane: one column, two measures, and the
+levels emitted mutual-overlap-first then containment -- the order the lexical tier's own decision
+rule already applies. The top rung of each ladder IS that run's cutoff, so the fit and the
+thresholds read the same two numbers and a difference between them is a difference in how the
+evidence is COMBINED, never in what was measured.
+
+### Blocking is the tier's inverted index, not a second candidate list
+
+One blocking rule, and it EXPLODES an array: two documents are compared when they share at least
+one discriminative shingle. That is `candidate_pairs` restated as SQL, so the fit prices exactly the
+pairs the lexical tier examines -- a test asserts the two agree in Python and a second asserts the
+engine scores that many pairs. Banded LSH is still not an option here for the reason the tier
+documents: a short note inside a long document has low Jaccard by construction.
+
+The record table therefore carries two shingle arrays. `shingles` is the WHOLE set, which is what
+the two overlap measures are defined on; `block_shingles` is the doc-frequency-filtered subset the
+inverted index blocks on. Splitting them is what keeps the measured numbers identical to the tier's
+while the candidate list stays identical to the tier's too.
+
+Expectation-maximisation trains on ONE rule that generates every pair. No ordinary agreement blocks
+a re-ingested edition against its predecessor -- an edition changes its date and often its source
+system -- so a training rule over either would hold fixed the very field an edition varies. (Splink
+refuses an exploding rule for training outright, and the specification refuses it before Splink
+does.)
+
+### The prior, and the floor
+
+Two settings decide whether the published probabilities mean anything at corpus scale, and both are
+measured rather than assumed.
+
+**The prior comes from the hash tier.** `probability_two_random_records_match` moves every
+probability, and the seam's generic 1e-4 default is orders of magnitude off on a corpus of a few
+dozen documents. The pairs the hash tier settled are duplicates nobody had to judge, so their share
+of the corpus's document pairs, divided by the share of duplicates a byte-and-normalization test can
+be expected to catch (`HASH_TIER_ASSUMED_RECALL`, 0.5), is the prior. On the planted fixture that
+gives 0.0369 against the plant's true duplicate-pair rate of 0.046 -- close enough to price a cut,
+and the construction is stated in the bundle so a reader can re-derive it. A corpus the hash tier
+settled nothing in falls back to the seam default and says so.
+
+**The floor is what makes a ranking exist.** Expectation-maximisation on a corpus-sized table has a
+degenerate boundary solution: a comparison level no pair of the match class exhibits gets m driven
+to machine zero, and every pair landing on such a level then scores at the same floor weight. The
+lane sets `min_level_probability` to 1e-4, a pseudo-count floor the seam applies to every fitted m
+and u before scoring -- "nobody observed this level", not "this level cannot occur among matches".
+Measured on the planted fixture, with the floor off the lowest-ranked reported relation sits at rank
+135 of 140 and 115 unrelated pairs outrank a reported relation; at any floor from 1e-6 to 1e-2 it
+sits at rank 21 with one, and the edition grouping and the cut are the same. The floor decides
+whether the ranking exists; its value does not decide the order.
+
+### The cut and the edition groups
+
+The fit resolves the seam's own 0.9 threshold, and the lane then re-clusters the SAME pairs at a
+provisional cut: 0.9 whenever that already merges every duplicate the current thresholds report,
+and otherwise the lowest probability among those duplicates -- the tightest cut that preserves every
+decision the corpus is audited under today. It is deliberately not the midpoint between the classes,
+which on a well-separated fit lands far below anything an operator would adopt and moves with every
+unrelated pair the corpus gains.
+
+An edition group is a multi-document cluster read as a history: members oldest first under
+`compare_editions`, and `current` naming the members no other member is newer than. That is a LIST
+because two byte-identical re-uploads carrying one date are one edition held twice -- naming either
+would invent a precedence the governance fields do not record. Singletons are not groups. Each
+decision group in `groups.json` gains the `edition_groups` its documents fall into, so a reviewer
+reading four rows about four files can see they are four editions of one document.
+
+### What the lane does NOT do
+
+A subsumption is not an identity. A note a regulation absorbed whole is scored, ranked, and
+reported -- and left out of the regulation's edition group, because the two are different documents.
+The lane's verdict is therefore about RECALL only: relations no blocking rule generated, and
+duplicates the cut does not merge. Pairs the fit ranks that the thresholds reject are counted and
+listed as the candidate surface a ranking adds, not as a disagreement the run settles.
+
+### Artifacts
+
+The audit bundle's `linkage/` subdirectory, which is the seam's standard bundle
+(`mode: corpus-edition-linkage`) plus three files:
+
+| File | Contents |
+| --- | --- |
+| `edition_summary.json` | The prior, the cut, the edition counts, the recovery table, the ordering discordance, the decisions, and the verdict |
+| `document_records.jsonl` | The record table, with each shingle array replaced by its size |
+| `editions.jsonl` | One row per proposed edition group: members oldest first, the current edition, and the field that ordered it |
+
+The audit's own `summary.json` carries the same reading under `edition_linkage`, without the
+per-relation rows and the group list -- those have files of their own.
+
+### Running it
+
+```bash
+make audit-corpus-conflicts CORPUS=<corpus-dir> EFFORT=lexical LINKAGE=1
+llb audit-corpus-conflicts --corpus <corpus-dir> --effort lexical --linkage
+```
+
+It needs the `linkage` extra, no GPU and no network. The lane declines rather than publish noise
+below 20 documents (too few pairs to estimate a non-match parameter from, and the levels no pair
+exhibits would not train), above 1000 documents, or above 2,000,000 discriminative shingles (the
+exploded blocking join). Each decline is written with its reason.
+
+### What the runs showed (2026-08-21)
+
+Three corpora, `--effort lexical --linkage`, under `$DATA_DIR/corpus-conflicts/`:
+
+- **The planted fixture** (`samples/corpora/editions_uk_v1/`, 26 documents, 140 candidate pairs,
+  run `20260821T-editions-linkage`): every one of the 20 relations the current thresholds recover is
+  scored, the 15 duplicates among them are all merged, and the clustering forms exactly the plant's
+  6 edition families -- 16 documents grouped, largest 4, 5 groups with a current edition the dates
+  could name. The 20 relations occupy ranks 1-21 of 140; the one pair between them is the note whose
+  containment in the 2019 appeals edition is 0.735, which the tier's 0.9 cutoff rejects. Two
+  comparison levels were never observed and are reported rather than defaulted
+  (`shingles/Jaccard >= 0.5`, `title/Jaro-Winkler >= 0.9`).
+- **The two ranking disagree, and that is the finding.** Over the 110 comparable orderings of those
+  20 relations the two rankings disagree on 77 (Kendall tau -0.4). Nearly all of it is one thing:
+  the tier scores every planted subsumption at containment 1.0 and every revision at a Jaccard
+  around 0.9, so its ordering puts the notes above the editions; the fit puts every duplicate above
+  every subsumption. A tier score is a Jaccard for one relation and a containment for the other, so
+  the order it implies across relations was never a quantity -- the discordance is measuring that,
+  not a disagreement about evidence.
+- **The two quickstart corpora decline** (`20260821T-hr-linkage`, 8 documents;
+  `20260821T-goods-linkage`, 5 documents). Both are far below the 20-document floor, and both carry
+  zero hash and lexical findings, so there was nothing for a fit to reproduce either. That is the
+  honest state of this host's operator corpora for a DOCUMENT-pair fit: they are a handful of large
+  PDFs, and the method needs a table of documents. The lane records the reason rather than
+  publishing an untrainable model.
+
+The reading is adopted for nothing. The lexical tier's two cutoffs still decide every finding, and
+the lane publishes a ranking and a proposed grouping beside them.
+
 ## Tests
 
 `tests/llb/linkage/` -- the specification, record-table, and result contracts run in the base
@@ -425,6 +605,18 @@ run with the lane off); every shipped drop is scored and a cut exists that repro
 every drop row names its agreements and the prior item it lost to; the default cut's disagreement
 list is non-empty and complete enough to label from; the bundle holds the fit; and a table below
 the fit floor or a batch with no drafted items declines with a reason instead of publishing noise.
+
+`tests/llb/conflicts/linkage/` -- the document-edition lane. The record table, the blocking-column
+equality with `candidate_pairs`, the specification's ladders, the prior, the provisional cut, the
+edition grouping, and the two-ranking comparison run in the base install; the fit over the planted
+corpus is `heavy_env`. What they hold: the exploding blocking column generates exactly the pairs
+`candidate_pairs` returns, in Python and in the engine; every relation the thresholds recover is
+scored; every duplicate among them is merged; the edition groups ARE the plant's six families and no
+group crosses two of them; an absorbed note is scored and ranked and never merged into the document
+that absorbed it; every duplicate ranks above every subsumption; two fits publish identical pairs;
+the audit's findings are byte-identical with the lane on and off; `groups.json` names edition groups
+only when the lane ran; the bundle holds every documented artifact and records shingle COUNTS rather
+than shingles; and a corpus below the document floor declines with its reason.
 
 `tests/llb/graph/resolution/` -- the graph node lane. The record table, the blocking keys, the
 overlay, the verdict rule, and both report renderings run in the base install; the whole pass over

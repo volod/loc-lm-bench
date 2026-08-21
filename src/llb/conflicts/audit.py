@@ -65,6 +65,10 @@ class AuditParams:
     project_dims: int = 0
     calibrate_adjudicator: bool = True
     calibration_probe: Path | str | None = None
+    # Price the hash and lexical tiers' duplicate evidence as one match probability and cluster it
+    # into edition groups. Off by default: it needs the `linkage` extra, and the audit's findings
+    # are the tiers' either way.
+    linkage: bool = False
 
     def payload(self) -> JsonObject:
         return {
@@ -86,6 +90,7 @@ class AuditParams:
             "calibration_probe": str(self.calibration_probe)
             if self.calibration_probe is not None
             else None,
+            "linkage": self.linkage,
         }
 
 
@@ -138,6 +143,22 @@ def run_audit(
         result.findings.extend(lexical_findings)
         result.tiers.append(lexical_stats)
         _LOG.info("[conflicts] tier=lexical findings=%d", len(lexical_findings))
+
+    # The linkage lane reads exactly what the two model-free tiers read, so it runs where they do
+    # and never where the effort dial stopped before them. It appends nothing to `findings`: an
+    # identity probability is not a conflict verdict, and the confidence contract turns on that.
+    if params.linkage and TIER_LEXICAL in tiers:
+        from llb.conflicts.linkage.run import run_edition_linkage
+
+        lane = run_edition_linkage(
+            docs,
+            result.findings,
+            settled,
+            jaccard_threshold=params.jaccard_threshold,
+            containment_threshold=params.containment_threshold,
+        )
+        result.edition_linkage = lane.summary
+        result.edition_linkage_run = lane
 
     # Empty below the semantic tier, and that is itself the attribution: a run that read no store
     # lost its orderable pairs at the effort dial rather than at any knob inside retrieval.

@@ -12,7 +12,8 @@ field gets filled in, not whether two items are the same question.
 
 from llb.core.contracts.common import JsonObject
 from llb.goldset.schema import GoldItem
-from llb.linkage.spec import BlockingRule, ComparisonSpec, LinkageSpec
+from llb.linkage.comparison_spec import ComparisonSpec
+from llb.linkage.spec import BlockingRule, LinkageSpec
 from llb.linkage.constants import (
     KIND_ARRAY_INTERSECT,
     KIND_COSINE,
