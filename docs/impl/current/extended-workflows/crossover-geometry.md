@@ -64,10 +64,7 @@ CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ol
 observation cap, 88 episodes at 11.21 tok/s over about 50 minutes. The pinned family re-passed the
 unchanged depth-10 control at 4/4. Every cell completed 7/7 under both policies with zero overflows
 and exactly one compaction per compact episode, so each cost delta is one summary call against
-smaller later controller prompts. The aggregate is
-`$DATA_DIR/agentic-compact-memory-boundary-surface/20260802T154634.305722Z-c668820b6c4d/manifest.json`;
-its source cell bundles are under `.data/agentic-compact-vs-cap/20260802T1506*` through
-`.data/agentic-compact-vs-cap/20260802T1546*`.
+smaller later controller prompts. The aggregate is audit-complete over its source cell bundles.
 
 | cell | depth | guard | cap input tok | compact input tok | paired d(input tok) | cost pairs | side |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -132,9 +129,8 @@ make bench-agentic-context-compact-trigger-collapse
 CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ollama with
 `num_ctx=8192`, the same seven memory tasks per cell, eight cells at 10.64 tok/s over about an hour,
 the pinned family re-passing the control at 4/4. Every cell completed 7/7 under both policies with
-zero overflows, one compaction per compact episode, and +1.000 model calls per task. The
-fold-annotated aggregate is
-`$DATA_DIR/agentic-compact-trigger-guard-collapse/20260802T171326.479910Z-eed680be10aa/manifest.json`.
+zero overflows, one compaction per compact episode, and +1.000 model calls per task. The aggregate
+is fold-annotated.
 
 | family | kind | depth | share / guard | trigger | fold step | d(input tok) |
 | --- | --- | ---: | --- | ---: | ---: | ---: |
@@ -335,8 +331,7 @@ CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ol
 10.56 tok/s over about 68 minutes. The pinned family re-passed the unchanged depth-10 control at
 4/4; every cell
 completed 7/7 under both policies with zero overflows, one compaction per compact episode, and all
-eight landed on the side the design predeclared. The aggregate is
-`$DATA_DIR/agentic-compact-fold-step-crossover/20260802T185212.038607Z-24e73063cba6/manifest.json`.
+eight landed on the side the design predeclared.
 
 | cell | depth | guard | trigger | fold step | cap tok | compact tok | d(input tok) | side |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |

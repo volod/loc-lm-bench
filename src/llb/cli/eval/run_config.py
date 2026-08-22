@@ -31,6 +31,7 @@ _CONFIG_OPTIONS = {
     "reranker": "reranker",
     "rerank_candidates": "rerank_candidates",
     "context_order": "context_order",
+    "restore_table_headers": "restore_table_headers",
     "context_strategy": "context_strategy",
     "query_glossary": "query_glossary_path",
     "query_prep_typo_guard": "query_prep_typo_guard",

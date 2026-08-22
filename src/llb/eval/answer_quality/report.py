@@ -14,6 +14,7 @@ from llb.eval.answer_quality.models import (
     METRIC_PROMPT_TOKENS,
     METRIC_RETRIEVAL_HIT,
     METRIC_SPAN_COVERAGE,
+    METRIC_TABLE_HEADER_CHARS,
     METRIC_TOKEN_F1,
     AnswerQualityReport,
     LaneReport,
@@ -38,6 +39,7 @@ _HEADERS = {
     METRIC_SPAN_COVERAGE: "span coverage",
     METRIC_CONTEXT_CHARS: "context chars",
     METRIC_PROMPT_TOKENS: "prompt tokens",
+    METRIC_TABLE_HEADER_CHARS: "header chars",
 }
 
 

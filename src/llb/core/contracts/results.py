@@ -35,6 +35,12 @@ class CaseScoreRow(TypedDict):
     query_hypothetical_answer: NotRequired[str]
     query_decomposition: NotRequired[str]
     query_subqueries: NotRequired[list[str]]
+    # Prompt-side table-header restoration (table-header-context-restoration): how many retrieved
+    # chunks were given back their column names in the prompt and what that added in characters.
+    # Present on every case that RETRIEVED (0 / 0 when the step is off), absent on a lane that
+    # supplied its own context, so an off lane and an on lane compare the same measured column.
+    table_headers_restored: NotRequired[int]
+    table_header_chars: NotRequired[float]
     groundedness: NotRequired[float]
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]

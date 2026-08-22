@@ -78,8 +78,8 @@ failures as full coverage.
 
 ## Is the both-hops ceiling a budget or a query problem?
 
-CUDA-host evidence is under `$DATA_DIR/graph-vector-fusion-multihop/20260816T-hop-probe/` (the
-probe) and `.../20260816T-k-sweep-k10`, `-k25`, `-k50` (the sweep at three budgets). All four runs
+Measured 2026-08-16 on the RTX 4060 Ti 16 GB CUDA host: one per-hop probe run plus a sweep at
+three retrieval budgets (k=10, k=25, k=50). All four runs
 score the same 95 drafted goods items (35 multi-hop), the same rebuilt store as the
 [measurement-floor re-read](fusion-sweep-evidence.md#the-sweep-re-read-against-its-measurement-floor)
 (1099 indexed chunks), seed 13, and the sweep grid of the
@@ -160,8 +160,7 @@ drafted:
 
 ## Query decomposition conversion evidence
 
-CUDA-host evidence from 2026-08-19 is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260819T-query-decomposition-conversion/`. It answers the
+Measured 2026-08-19 on the RTX 4060 Ti 16 GB CUDA host. It answers the
 question against the ORIGINAL cohorts, so conversion is attributable to the same 8 query-diagnosed
 and 19 budget-diagnosed items the [budget reading](#is-the-both-hops-ceiling-a-budget-or-a-query-problem)
 above diagnosed.
@@ -174,8 +173,9 @@ The 95-item ledger it runs on is the shared draft bundle at
 collapse and 1,099 indexed after it. Neither needed recovery or recreation; the bundle is not
 per-run, so it sits beside the runs rather than inside one.
 
-**The raw identity gate passed before the paired result was read.** `raw-identity/report.md`
-reproduces `20260816T-hop-probe/report.md` byte for byte, including the multi-hop diagnosis split
+**The raw identity gate passed before the paired result was read.** The re-read reproduces the
+probe's own
+rows byte for byte, including the multi-hop diagnosis split
 of 2 covered, 19 budget, 8 query, 6 unreachable and the curve 0.057 / 0.200 / 0.229. `raw/` is the
 same probe re-read after `covered` was anchored to the served retrieval: the multi-hop slice is
 unchanged, and only the whole-set and factoid ledgers move (45/34/9/7 and 31/8/1/0).

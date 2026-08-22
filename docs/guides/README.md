@@ -19,7 +19,7 @@ docs/guides/
 |-- data-prep/       create corpora and gold sets (local drafting or external AI services)
 |-- human-tooling/   the human gates: data verification, judge calibration, and the why
 |-- benchmarking/    run, compare, and analyze scored model runs
-'-- development/     contributor environment setup
+'-- development/     contributor setup, heavy runs, and evidence citation
 ```
 
 ## Choose a scenario
@@ -141,8 +141,10 @@ provide granular commands and corpus-specific detail.
 
 ## development/ -- contributor setup
 
-- [Dev setup](development/dev-setup.md) -- uv, venv, extras, apt packages, make targets, and
-  troubleshooting.
+- [Dev setup](development/dev-setup.md) -- uv, venv, extras, apt packages, make targets,
+  troubleshooting, and the parallelism cap for source builds that compile C++/CUDA.
+- [Heavy runs and evidence](development/heavy-runs-and-evidence.md) -- choosing a model for a local
+  run, citing a measured result in the delivered docs, and leaving the host clean afterwards.
 
 ## See also
 

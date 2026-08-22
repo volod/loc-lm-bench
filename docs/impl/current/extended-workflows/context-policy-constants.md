@@ -26,7 +26,7 @@ Core locations: `src/llb/bench/context_policy/sweep.py` (grids, pairing, verdict
 CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
 `--max-model-len 8192` (prompt budget 21504 chars), the same 24-task large-observation set, 8
 unique cells (shipped `observation_cap` shared across the cap and head-share baselines), ~73 min,
-562 calls at 3.8 tok/s. Summary under `.data/agentic-context-sweep/20260730T125612*`.
+562 calls at 3.8 tok/s.
 
 | axis | setting | completion | mean prompt tok | overflow | d(compl) vs shipped | d(prompt) vs shipped |
 | --- | --- | ---: | ---: | ---: | --- | --- |
@@ -73,8 +73,7 @@ pipelines for CI), `make bench-agentic-context-keep-long`, axes filter
 
 CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB): `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama,
 `--max-model-len 8192`, 14 medium search tasks (from the 24-task UA-squad set), keep grid only,
-`max_steps=12`, ~41 min, 362 calls at 4.7 tok/s. Bundles under
-`.data/agentic-context-sweep/20260730T1855*`.
+`max_steps=12`, ~41 min, 362 calls at 4.7 tok/s. One bundle per policy.
 
 | setting | completion | mean steps | mean prompt tok | overflow | d(compl) vs keep=3 | d(prompt) vs keep=3 |
 | --- | ---: | ---: | ---: | ---: | --- | --- |

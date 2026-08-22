@@ -67,8 +67,7 @@ paired 95% interval was `[0.000, 0.750]` with only one discordant task, so the s
 flat. Raising the budget to 10 added about 3828.5 input tokens per episode under `allow` without a
 completion gain. The evidence-backed recommendation therefore retains `6/answer/allow` at 0.250
 completion, 5131.5 mean input tokens, and 34.70 mean wall seconds; shipped defaults did not change.
-The 18 bundles are under `.data/agentic-loop-policy/20260731T061934*` through
-`.data/agentic-loop-policy/20260731T061938*`.
+The sweep wrote 18 run bundles, one per cell.
 
 CI coverage in `tests/llb/bench/loop_policy/test_agentic_loop_policy.py` drives all malformed
 branches over the fake completion seam, including an unreadable JSON call repaired into a successful
@@ -133,14 +132,7 @@ wall time stayed inside its ceiling for both families. Thus activation and cover
 material completion gate fails for both families and Qwen also fails the prompt-cost gate.
 `allow` remains the repeated-call default.
 
-The four cell bundles are:
-
-- MamayLM `allow`:
-  `.data/agentic-loop-policy/20260731T094604.022763Z-bd8879dc435f/`
-- MamayLM `noop`:
-  `.data/agentic-loop-policy/20260731T094605.300042Z-7654dc4ad227/`
-- Qwen `allow`: `.data/agentic-loop-policy/20260731T095054.804103Z-86b26eada0a8/`
-- Qwen `noop`: `.data/agentic-loop-policy/20260731T095055.716092Z-06242ba52f0a/`
+One run bundle per cell, four in all: MamayLM and Qwen crossed with `allow` and `noop`.
 
 `tests/llb/bench/loop_policy/test_agentic_loop_policy_power.py` checks declaration validation,
 duplicate refusal, family coverage, activation/completion separation, recommendation gating,

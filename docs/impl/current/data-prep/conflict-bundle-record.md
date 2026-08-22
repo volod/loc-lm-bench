@@ -97,16 +97,19 @@ make recompute-conflict-stage STAGE_RUNS="<the 24 run dirs>" STAGE_BUDGET=2 \
   STAGE_OUT=.data/corpus-conflict-stage/20260815T-interned-ids-archive
 ```
 
-The resulting `stage.json` is **byte-identical** to the archive sweep taken before the interning
-(`.data/corpus-conflict-stage/20260815T-bundle-record-archive/stage.json`): same attribution, same
-agreement verdict, same budget answers, same refusals and refusal reasons. Separately, every
-recorded bundle re-encoded through `stage_attribution_inputs` returns the same `RunInputs` and the
-same `documents_of` as the bundle it came from.
+The resulting `stage.json` is **byte-identical** to the sweep over the same 24 bundles taken
+before the interning: same attribution, same agreement verdict, same budget answers, same refusals
+and refusal reasons. That identity is not a one-off -- re-verified 2026-08-22 on this host, the
+`stage.json` of every sweep in this section, across all five id-table forms, is the SAME file
+(sha256 `6489f34d...`), which is the strongest form the claim can take: the record changed shape
+four times and not one reading moved. Separately, every recorded bundle re-encoded through
+`stage_attribution_inputs` returns the same `RunInputs` and the same `documents_of` as the bundle it
+came from.
 
 The saving is the difference between an id and its ordinal, so it grows with the id length and with
-how many maps mention the document. On the largest bundle on this host (250 documents, corpus
-`.data/prepare-goldset/20260711T092608Z/corpus`, re-run at cos 0.6 as
-`.data/corpus-conflicts/20260815T-interned-ids-squad-cos060/`):
+how many maps mention the document. On the largest bundle on this host -- the 250-document
+SQuAD-derived quickstart corpus, 311 chunks, re-audited at cosine 0.6 (2026-08-15, RTX 4060 Ti
+16 GB CUDA host, no model call):
 
 | part | keyed by id | keyed by position | saving |
 | --- | --- | --- | --- |
@@ -189,9 +192,10 @@ left after it is the id STRING, which is what [the fold](#the-head-and-tail-ever
 documents the positional row would save a further ~975 KB (1,225,000 against 2,200,000 bytes). If
 such a corpus appears, the same schema seam that carried the interning carries that too.
 
-**Measured, on real bundles** (CUDA host, no model call; the 250-document run re-taken as
-`.data/corpus-conflicts/20260815T-bare-id-squad-cos060/`, the fixture as
-`.data/corpus-conflicts/20260815T-bare-id-fixture-semantic/`):
+**Measured, on real bundles** (2026-08-15, RTX 4060 Ti 16 GB CUDA host, no model call). The
+250-document quickstart audit and the committed 7-document fixture audit were each re-taken on the
+schema-5 build, so each row is the same audit as its schema-4 predecessor with only the table form
+changed:
 
 | bundle | documents | dated | `documents` | whole record | `summary.json` |
 | --- | --- | --- | --- | --- | --- |
@@ -206,14 +210,11 @@ is identical. The dated fixture is the control -- it keeps every label and pays 
 paid.
 
 **Every reading replays identically through all three forms.** The 24-bundle archive sweep
-(no record at all, schema 1, schema 2, schema 4) re-taken on this build produces a `stage.json` and
-a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
-(`.data/corpus-conflict-stage/20260815T-bare-id-archive/` against
-`.data/corpus-conflict-stage/20260815T-interned-ids-archive/`), and the two re-taken bundles above
-replay to the same attribution, the same agreement verdict, and the same budget answer as the
-schema-4 and schema-2 bundles of the same runs
-(`.data/corpus-conflict-stage/20260815T-bare-id-pairs/`). The same gate now covers four forms and is
-[re-stated with the fold](#the-head-and-tail-every-id-shares).
+(no record at all, schema 1, schema 2, schema 4) re-taken on the schema-5 build produces a
+`stage.json` and a `stage.md` BYTE-IDENTICAL to the sweep taken on the schema-4 build before it,
+and the two re-taken bundles above replay to the same attribution, the same agreement verdict, and
+the same budget answer as the schema-4 and schema-2 bundles of the same runs. The same gate now
+covers four forms and is [re-stated with the fold](#the-head-and-tail-every-id-shares).
 
 ### The head and tail every id shares
 
@@ -298,12 +299,10 @@ another file, and there is no array whose mis-length silently re-labels every do
 **Every reading replays identically through every form.** The 24-bundle archive sweep
 (no record at all, schema 1, schema 2, schema 4/5) re-taken on this build produces a `stage.json`
 and a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
-(`.data/corpus-conflict-stage/20260815T-id-fold-archive/` against
-`.data/corpus-conflict-stage/20260815T-bare-id-archive/`), and the two bundles above that have a
-schema-5 predecessor -- `id-fold-squad-cos060` against `bare-id-squad-cos060`, and
-`id-fold-fixture-semantic` against `bare-id-fixture-semantic` -- replay to the same attribution, the
-same agreement verdict, and the same budget answer as it
-(`.data/corpus-conflict-stage/20260815T-id-fold-pairs/`). In CI,
+against the sweep taken on the schema-5 build before it, and the two bundles above that have a
+schema-5 predecessor -- the 250-document audit at cosine 0.6 and the 7-document fixture audit --
+replay to the same attribution, the same agreement verdict, and the same budget answer as it. In
+CI,
 `test_every_reading_replays_identically_through_all_five_forms` runs a path-shaped MIXED corpus --
 dated documents and one undated, so the table carries a labelled entry and a bare stem under a live
 fold -- and asserts every reading equal across the unfolded schema 5 (`unfolded_documents`), the
@@ -376,13 +375,11 @@ too and reaches only 2,371 (-51%), less than half of what the default takes.
 
 **Every reading replays identically.** The 24-bundle archive sweep re-taken on this build produces a
 `stage.json` and a `stage.md` BYTE-IDENTICAL to the pre-change sweep
-(`.data/corpus-conflict-stage/20260815T-count-default-archive/` against
-`.data/corpus-conflict-stage/20260815T-id-fold-archive/`), and each re-taken bundle replays to the
-same attribution, agreement verdict, and budget answer as its predecessor -- including
-`count-default-fixture-floor` against the **schema-2** `bundle-record-fixture-floor`, which is the
-bundle whose reading quotes exclusion counts and a recovery floor by value, so a default that
-swallowed either would show up as a changed sentence
-(`.data/corpus-conflict-stage/20260815T-count-default-pairs/`). Directly on disk, every re-taken
+against the sweep taken on the schema-6 build before it, and each re-taken bundle replays to the
+same attribution, agreement verdict, and budget answer as its predecessor -- including the
+count-defaulted floor fixture against its **schema-2** original, which is the bundle whose reading
+quotes exclusion counts and a recovery floor BY VALUE, so a default that swallowed either would
+show up as a changed sentence. Directly on disk, every re-taken
 bundle's `chunks` and `exclusions` unfold byte-for-byte to the schema-6 bundle of the same run. In
 CI, `test_every_reading_replays_identically_through_all_five_forms` adds the count-unfolded schema 6
 to the four id-table forms, and `test_a_document_the_default_does_not_speak_for_is_written_out`,
@@ -483,8 +480,8 @@ pair, and on a corpus whose corpus-first lost pair is lost at every budget the N
 however many pairs the budget takes away. So the count comes with it -- how many document pairs
 would have returned, against how many the run returned.
 
-**Measured, over the bundles on this host**
-(`.data/corpus-conflict-stage/20260815T-bundle-record-archive/`, CUDA host, no model call):
+**Measured, over the bundles on this host** (2026-08-15, RTX 4060 Ti 16 GB CUDA host, no model
+call; one `make recompute-conflict-stage` sweep at `STAGE_BUDGET=2` over all 24 recorded bundles):
 
 | bundle | run's document pairs | at budget 2 | attribution moves |
 | --- | --- | --- | --- |
@@ -520,8 +517,8 @@ its own cosine (0.36 on the goods corpus) -- caps the record at that budget and 
 constant either.
 
 **The depth/cost curve** (same corpus and store at cos 0.25, where the ranking is 3,127 chunk pairs
-collapsing to 2,560 document pairs; one `make audit-corpus-conflicts` run per cap, artifacts under
-`.data/corpus-conflicts/20260815T-candidate-cap-cos025-<cap>/`). Those runs predate
+collapsing to 2,560 document pairs; one `make audit-corpus-conflicts` run per cap, 2026-08-15,
+RTX 4060 Ti 16 GB CUDA host). Those runs predate
 [the id table](#the-id-table-every-document-named-once), so both columns are given -- the bytes as
 those bundles hold them, and the bytes the same content occupies re-encoded at schema 4:
 
@@ -702,19 +699,17 @@ genuinely needs the store.
 corpus copied to `.data/store-identity-stores/edited-corpus/` with ONE document extended by one
 sentence, re-indexed at the same e5-base heading settings into
 `.data/store-identity-stores/edited/`, still holds 7 documents and 19 chunks -- and both fixture
-bundles are placed against it as `NOT the one this run read: 7 documents recorded, 7 on disk now`
-(`.data/corpus-conflict-stage/20260815T-store-identity-edited/`). A count comparison would have
-missed it; the digest does not.
+bundles are placed against it as `NOT the one this run read: 7 documents recorded, 7 on disk now`.
+A count comparison would have missed it -- the count is identical on both sides -- and the digest
+does not.
 
 **Every reading replays identically through both forms.** The 24-bundle archive sweep re-taken on
 this build produces a `stage.json` and a `stage.md` that are BYTE-IDENTICAL to the pre-change sweep
-(`.data/corpus-conflict-stage/20260815T-store-identity-archive/` against
-`.data/corpus-conflict-stage/20260815T-count-default-archive/`), and each re-taken bundle replays to
-the same attribution, agreement verdict, and budget answer as its `count-default` predecessor
-(`.data/corpus-conflict-stage/20260815T-store-identity-pairs/`). The identity verdict itself is the
-same through either form on real data: pointed at the fixture store, the schema-7 bundle and its
-old-form predecessor both read as "the one this run read"
-(`.data/corpus-conflict-stage/20260815T-store-identity-placed/`). In CI,
+against the sweep taken on the build before the identity change, and each re-taken bundle replays
+to the same attribution, agreement verdict, and budget answer as its count-defaulted predecessor.
+The identity verdict itself is the same through either form on real data: pointed at the fixture
+store, the schema-7 bundle and its old-form predecessor both read as "the one this run read". In
+CI,
 `test_a_bundle_at_either_form_returns_the_identical_verdict` pins that equality over both a matching
 and a changed store, `test_a_store_that_genuinely_changed_is_detected_as_changed` covers all three
 ways a manifest changes (a document edited, added, and removed),

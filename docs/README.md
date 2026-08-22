@@ -42,7 +42,7 @@ the groups are:
   prompt systems, local fine-tuning and adapters, MLflow analysis, composite headline, agentic
   harnesses.
 - [development/](guides/README.md#development----contributor-setup) -- contributor environment
-  setup.
+  setup, heavy local runs, and how a measured result is cited in the delivered docs.
 
 ## Project rules
 

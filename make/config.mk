@@ -242,6 +242,10 @@ ANSWER_QUALITY_OUT_DIR ?=
 # config's own top_k once; a second budget adds the reading that says whether a budget-driven
 # coverage gain converts into answers, and what the extra context costs.
 ANSWER_QUALITY_BUDGETS ?=
+# Set to 1 to twin every scored lane with a `<lane>+headers` copy whose prompt restores a table
+# chunk's recorded header row. The twins retrieve identically, so the delta is answer-quality only;
+# it needs a store built with CHUNK_STRATEGY=table to fire at all.
+ANSWER_QUALITY_RESTORE_HEADERS ?=
 # Set to 1 only to score a drafted (not human-accepted) ledger; artifacts record the grounding.
 INCLUDE_DRAFTED ?=
 # Embedder adoption bar (compare-embedder-adoption): the two encoders, each with the data root

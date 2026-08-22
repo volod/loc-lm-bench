@@ -76,81 +76,13 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### fusion-answer-quality-second-model (optional)
-
-Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
-evidence converts into a better answer is a property of the MODEL, not only of the retrieval lane:
-a measured coverage gain that one model ignores may be exactly what a stronger (or more
-instruction-following) model needs, and a single-model result cannot separate "fusion does not
-help answers" from "this model does not use the extra hop". The lane, its verdict vocabulary, and
-the drafted-grounding rules are current behavior
-([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)).
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-answer-quality` as-is with a different `MODEL`; the matched
-  stores and drafted bundle already exist.
-- User-visible outcome: the operator learns whether the retrieval-only finding is a property of
-  the corpus and the fusion lane, or of the one model that was scored.
-- Scope boundary: in scope -- one more model, the same lanes/splits/seed, and a two-model
-  comparison of the per-slice deltas. Out of scope -- any ranking-policy change, model selection,
-  and re-tuning the graph weight per model.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
-  calibration ANSWER_QUALITY_LANES=vector,<best-exact-row>,<best-overlap-row> INCLUDE_DRAFTED=1`
-  -- the same three lanes the first model was scored on, so the two models are compared row for
-  row; no new CI coverage.
-- Acceptance gates: `make ci` green; both models score the identical item set at the same seed;
-  the report states whether the two models agree on the verdict per lane, including whether the
-  factoid cost of the overlap row reproduces.
-- Documentation target: the answer-quality evidence subsection of
-  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
-
-#### table-header-context-restoration (optional)
-
-The `table` chunker records the header row's source offsets on every table chunk
-(`metadata.table_header_span`, [RAG core](current/rag-core/chunking.md#table-aware-chunking)) and
-NOTHING reads them: a middle row block reaches the model as rows of bare values whose column names
-sit in a different chunk, which is precisely the shape a numeric or comparative question cannot be
-answered from. Add an opt-in context-assembly step that, when a retrieved chunk carries
-`table_header_span` and does not already contain it, prepends the header row's source text to that
-chunk IN THE PROMPT ONLY -- the stored chunk, its offsets, and the source-span metric stay
-untouched, so retrieval scores are unchanged by construction and only answer quality can move.
-Measure it on the numeric and comparative slices, where the header is what the answer needs.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none in code, but it is only readable beside
-  `retrieved-evidence-intactness-metric`, which measures how often a row block arrives without its
-  header in the first place. Reuse `format_context` in `src/llb/eval/common.py`, the context-order
-  seam in [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order),
-  and the per-slice comparison in `src/llb/eval/answer_quality/`.
-- User-visible outcome: a table row block that reaches the model carries the column names that
-  make its numbers readable, instead of a grid of unlabeled values.
-- Scope boundary: in scope -- the prompt-side header restoration, its added-token cost, and a
-  per-slice answer-quality comparison with the standard paired verdict. Out of scope -- rewriting
-  stored chunk text, any change to the retrieval metrics or the chunk offsets, reconstructing a
-  table across chunks, and enabling the step by default before the measurement supports it.
-- Data and artifact paths: `$DATA_DIR/table-aware-chunking/<run>/answer-quality/`.
-- Execution path: `make build-index CHUNK_STRATEGY=table` then `make compare-answer-quality` with
-  the step off and on over a table-heavy corpus on the CUDA host; CI covers the restoration rule
-  (prepend, skip when the chunk already contains the header, skip when no span is recorded) and the
-  token accounting over fixtures.
-- Acceptance gates: `make ci` green; with the step off every recorded bundle reproduces
-  bit-identically; retrieval recall@k / MRR are identical with the step on and off (the change is
-  prompt-side only); the report carries the objective delta per question-type slice with paired
-  intervals plus the added tokens per answer, and states adopt or reject.
-- Documentation target: the table-aware chunking section of
-  [RAG core](current/rag-core/chunking.md#table-aware-chunking) and the context-order section of
-  [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
-
 #### answer-quality-recompare-from-bundles (optional)
 
 An answer-quality comparison costs hours of generation and is then locked to the report format it
 was rendered under: a later improvement to the artifact -- a new column, a new section, a corrected
 reading -- cannot reach a recorded run without paying for every generation again, and a heavy
 budget sweep is the worst case
-([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#the-retrieval-budget-dimension)).
+([GraphRAG](current/graphrag-backend/answer-quality-budget-evidence.md#the-retrieval-budget-dimension)).
 Nothing about that is necessary: the comparison is pure over the per-case rows, every lane's run
 bundles are recorded in its own `comparison.json`, and the lane runner is already an injection
 point. Add a `--from-bundles <comparison.json>` path that resolves each lane's recorded run dirs
@@ -1375,6 +1307,49 @@ outcome and closes the question.
 
 ### Documentation integrity -- `documentation-integrity`
 
+#### temp-artifact-citations-on-the-12gb-host
+
+The delivered docs must not cite evidence by a `$DATA_DIR/<method>/<run-id>/` path: that directory
+is host-local and temporary, so it is gone after a cleanup, absent on a fresh checkout, and absent
+on every other machine -- and a bare run label like `20260815T-bare-id-squad-cos060` is no better,
+because it identifies nothing a reader can use ([AGENTS.md](../../AGENTS.md), "Citing a measured
+result"). The pages whose runs live on THIS host now carry the description, the date, the host, and
+the numbers instead. What remains is 59 path citations and 6 bare run labels, across 20 pages whose
+runs were measured on the OTHER GPU host (the
+12 GiB box -- the `blackwell12`, `context-ablation`, `encoder-throughput`, `verbosity-sensitivity`,
+`query-robustness`, and `agentic-compact-window-elision` families among them). They were left alone
+deliberately: converting a citation means reading the run's own numbers out of the bundle and
+inlining them, which cannot be done from a host that does not hold it. Run this task ON that host.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: BLOCKED BY HUMAN (needs a session on the 12 GiB GPU host; no human judgment beyond
+  running it there)
+- Dependencies: none in code. The citation rule and the target shape are in
+  [AGENTS.md](../../AGENTS.md); the already-converted pages under
+  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence) are the
+  worked example.
+- User-visible outcome: every measured result in the delivered docs stays checkable from the page
+  alone, on any machine, after every run directory is deleted.
+- Scope boundary: in scope -- replacing each remaining path citation with a run-label citation plus
+  the load-bearing numbers read out of that run's own bundle, and adding the reproduction recipe and
+  boundaries the page is missing. Out of scope -- re-running any measurement, changing any recorded
+  number, converting a citation whose bundle is missing on that host too (record it as unrecoverable
+  in the page instead), and touching the `$DATA_DIR` path TEMPLATES that document where a command
+  writes.
+- Data and artifact paths: read-only over that host's own `$DATA_DIR`; this task writes only docs.
+- Execution path: enumerate the remaining citations with a scan for BOTH forms -- a backticked
+  `$DATA_DIR/` or `.data/` span whose path carries a `<8-digit>T` run segment, and a backticked bare
+  `<8-digit>T...` run label outside a table row -- convert each page, then re-scan to confirm none
+  is left; `make lint-md` covers wrapping and links.
+- Acceptance gates: `make ci` green; `make lint-md` green; the scan above returns zero of BOTH
+  forms across `docs/`; every page it touched states, for each result, what was measured on what,
+  the date, the host, the numbers the verdict rests on, and the reading those numbers support.
+  Once the scan is clean on both hosts,
+  add it to `make lint-doc-links` so a re-introduced path citation fails the build instead of being
+  found by the next reader.
+- Documentation target: the 19 pages the scan names, and
+  [overview](current/overview.md#documentation-and-specification-gates) for the new check.
+
 #### conflict-bundle-record-page-is-past-the-split-threshold (optional)
 
 [bundle record](current/data-prep/conflict-bundle-record.md) is ~740 lines and its headings describe
@@ -1688,7 +1663,7 @@ its item set or of the drafting, which only an accepted ledger over that corpus 
 Increase the sidecar-free routing calibration's statistical power before reconsidering its
 production defaults. The first held-out measurement cannot separate its positive retrieval deltas
 from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend/answer-quality-evidence.md#sidecar-free-heuristic-calibration).
+[GraphRAG](current/graphrag-backend/sidecar-free-routing-calibration.md#sidecar-free-heuristic-calibration).
 Assemble a larger, independent multi-span tuning/final ledger, declare its minimum detectable gain
 and split sizes before retrieval, then repeat the frozen-policy workflow without widening the
 threshold grid.

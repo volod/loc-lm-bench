@@ -29,8 +29,7 @@ make bench-agentic-context-compact-long MODEL=<model> BACKEND=<backend> \
 
 CUDA host evidence (2026-07-30, RTX 4060 Ti 16 GB):
 `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama with `num_ctx=8192`, 14 medium-search tasks,
-`max_steps=12`, a 16,000-character prompt guard, 206 calls at 4.3 tok/s. Bundles are under
-`.data/agentic-compact-vs-cap/20260730T19462*`.
+`max_steps=12`, a 16,000-character prompt guard, 206 calls at 4.3 tok/s. One bundle per policy.
 
 | policy | completion | mean steps | model calls | total input tok | compactions | overflow |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -77,9 +76,8 @@ runner and report modules, `make/eval/categories-platform.mk`, and focused tests
 
 CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `qwen3:14b` on Ollama, eight depth-8 tasks,
 `max_steps=14`, 8,000-character prompt guard, 136 model calls at 19.9 tok/s. The predeclared
-activation floor was 75% (6/8); compact activated in 8/8 episodes with 16 compactions. Bundles are
-under `.data/agentic-compact-vs-cap/20260802T11390*`; the summary manifest is
-`.data/agentic-compact-vs-cap/20260802T113901.203273Z-2bf71a093172/manifest.json`.
+activation floor was 75% (6/8); compact activated in 8/8 episodes with 16 compactions. One bundle
+per cell, with a summary manifest over them.
 
 | policy | completion | mean steps | mean model calls | mean input tok | compactions | overflow |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -126,9 +124,7 @@ CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): the 11.8B Lapa/Gemma candida
 control at 0/4 after exhausting the step budget; the installed Q4 `gemma4:e4b` candidate passed
 4/4 at 38.27 tok/s and became the selected non-Qwen family. In every matrix cell, cap completed
 0/6 and compact completed 6/6. All compact episodes crossed the predeclared 75% activation floor;
-depth 6 produced six compactions per cell and depth 10 produced twelve. The audit-complete
-aggregate is
-`$DATA_DIR/agentic-compact-memory-transfer/20260802T120539.133308Z-146807806b61/manifest.json`.
+depth 6 produced six compactions per cell and depth 10 produced twelve. The aggregate is audit-complete.
 
 | depth | compact share | cap completion | compact completion | paired d(completion) | cap input tok | compact input tok | paired d(input tok) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -173,8 +169,7 @@ CUDA host evidence (2026-08-02, RTX 4060 Ti 16 GB): `aya-expanse:8b` failed the 
 at 0/4. `mistral-small3.1:24b` passed 4/4 and became the second eligible non-Qwen family. It ran at
 12.49 tok/s with a served 4,096-token window; live host telemetry showed 89% GPU / 11% CPU layer
 placement, 14,730 MiB VRAM resident, and high GPU utilization rather than swap-thrashing. The
-audit-complete, direction-corrected aggregate is
-`$DATA_DIR/agentic-compact-memory-transfer-replication/20260802T131252.023379Z-488fd4867be7/manifest.json`.
+aggregate is audit-complete and direction-corrected.
 
 | cell | guard | cap completion | compact completion | paired d(completion) | cap input tok | compact input tok | paired d(input tok) | compactions |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

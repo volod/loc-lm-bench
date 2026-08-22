@@ -154,6 +154,15 @@ class RunConfigFields(BaseModel):
     rerank_candidates: int = Field(default=DEFAULT_RERANK_CANDIDATES, ge=1)
     context_order: ContextOrder = "rank"
 
+    # Prompt-side table-header restoration (table-header-context-restoration): when on, a retrieved
+    # chunk that carries the `table` chunker's `metadata.table_header_span` and does not already
+    # show that header gets the header row prepended IN THE PROMPT ONLY. The stored chunk, its
+    # offsets, and every source-span metric are untouched, so retrieval recall@k / MRR are
+    # identical with it on and off and only answer quality can move. Off by default: the step is
+    # adopted per corpus with evidence, never by construction. Needs `strategy: table` to fire at
+    # all, and reads the header text from `corpus_root`.
+    restore_table_headers: bool = False
+
     # Context strategy (rag-vs-long-context-ablation): a DIAGNOSTIC lane selector, not a ranking
     # policy -- "rag" (the default) is the leaderboard row. "closed_book" sends no context at all,
     # so the score is what the model already knows; "long_context" lays the item's whole source

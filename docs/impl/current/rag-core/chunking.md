@@ -100,9 +100,8 @@ visible.
 
 CUDA host (2026-08-19), `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,
 late,markdown,semantic NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95%
-confidence, seed 13. Configs, reports, per-strategy stores, and per-item vectors under
-`$DATA_DIR/chunker-bakeoff-size-cap/` (`goods.yaml` -> `20260819T-goods/`, `pdf-accepted.yaml` ->
-`20260819T-pdf-accepted/`).
+confidence, seed 13. Measured 2026-08-19, one run per corpus config (`goods.yaml` and
+`pdf-accepted.yaml`).
 
 The recorded 44-item accepted item set is no longer on disk, but the five-PDF CORPUS it was scored
 on is -- it is the goods corpus -- so the re-read runs on both of the sets the repo still has:
@@ -205,7 +204,10 @@ into TABLE regions and everything else:
   heading, reusing the `markdown`/`heading` parser) and `metadata.table_header_span` --
   the header row's `[start, end]` SOURCE offsets, so a consumer can restore the column names a
   middle row block would otherwise have lost. The header is recorded as OFFSETS, never copied into
-  the text, because chunk text must stay a verbatim corpus slice for the source-span metric;
+  the text, because chunk text must stay a verbatim corpus slice for the source-span metric. The
+  consumer that reads them is the opt-in
+  [table-header restoration](context-assembly.md#table-header-restoration-table-header-context-restoration),
+  which restores the header in the PROMPT only and therefore cannot move any number on this page;
 - non-table text routes through the `recursive` splitter WITHIN its region, so a `table`-versus-
   `recursive` delta isolates the table handling;
 - the one row a boundary may cut is a row longer than `size`: it falls through to the shared
@@ -251,7 +253,7 @@ theoretical minimum on any corpus here. The strategy's row guarantee is therefor
 CUDA host (2026-08-16), `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence
 NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95% confidence, seed 13. Reports,
 configs, stores, and per-item vectors under `$DATA_DIR/table-aware-chunking/<run>/`
-(`20260816T-goods`, `20260816T-pdf-accepted`).
+(one run per corpus, 2026-08-16).
 
 95-item drafted goods ledger (`size` 200 / overlap 30; 24 of its 95 items have a gold span inside
 a table row):
@@ -291,7 +293,12 @@ exactly (`recursive` 0.695 / `sentence` 0.632 on goods), so the comparison is ag
 state, not a re-tuned one. Two reasons the null result is not a null strategy: the guarantee is
 structural rather than incidental (`recursive`'s row alignment is a side effect of one separator in
 a pinned third-party splitter, and nothing measures it per build), and `table_header_span` is
-information no other strategy produces.
+information no other strategy produces. What that second reason has since been WORTH is measured:
+its consumer, [prompt-side header
+restoration](context-assembly.md#measured-result-the-header-reaches-the-prompt-and-does-not-reach-the-answer),
+costs ~20 prompt tokens per touched case on this same corpus and returns no measurable answer gain
+on any question-type slice, so the span remains a capability the strategy uniquely offers rather
+than a benefit it has yet delivered here.
 
 Why recall could not move here, stated plainly: `recall@k` credits an item when a retrieved chunk
 OVERLAPS a gold span by a single character (`chunk_hits_span`,
@@ -305,9 +312,8 @@ to 171 rows. The re-read below asks the same question on the axis that can see i
 CUDA host (2026-08-19), the SAME command, corpora, `size`/`overlap`, k, seed, and resample count
 as the rows above, re-scored once [evidence
 intactness](retrieval-metrics.md#evidence-intactness-span_char_coveragek--span_intactk) existed.
-Reports, configs, stores, and per-item vectors under
-`$DATA_DIR/table-aware-chunking/20260819T-goods-intactness/` and
-`.../20260819T-pdf-accepted-intactness/`. Recall@10 and MRR reproduce the recorded rows
+Measured 2026-08-19, one intactness run per corpus.
+Recall@10 and MRR reproduce the recorded rows
 BIT-IDENTICALLY on both corpora (the metrics are additive; `recursive` 0.694737 / 0.465155 on
 goods, 0.925000 / 0.852321 on the accepted PDF goldset), so this is the recorded state re-read,
 not a re-measured one.

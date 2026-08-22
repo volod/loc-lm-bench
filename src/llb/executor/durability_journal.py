@@ -34,6 +34,13 @@ _JOURNALED_STATE_KEYS = (
     "query_hypothetical_answer",
     "query_decomposition",
     "query_subqueries",
+    # Prompt-side context assembly (`llb.eval.table_headers`): the accounting columns, plus the
+    # prompt copies the answer-side signals are scored against. Journaling them is what keeps a
+    # RESUMED bundle byte-identical to an uninterrupted one -- a state key the journal drops is a
+    # score column a resumed case silently loses.
+    "table_headers_restored",
+    "table_header_chars",
+    "prompt_chunks",
 )
 
 

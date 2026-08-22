@@ -167,9 +167,8 @@ the first time the real merge lane ran end to end):
 - Three-way final-split objective (n=82, same goldset/store/seed):
   base (vLLM) **0.2880** [0.204, 0.370]; vLLM LoRA row **0.3272** [0.239, 0.422]; merged tag on
   ollama **0.3119** [0.218, 0.402] -- inside the LoRA row's CI and above the base point estimate,
-  so the merged artifact answers as the ADAPTER, not the base model. Run bundles:
-  `.data/run-eval/20260710T075222*` (base), `...075718*` (LoRA), `...081359*` (merged, fixed
-  template).
+  so the merged artifact answers as the ADAPTER, not the base model. One run bundle per row: base,
+  LoRA, and merged (the merged row uses the fixed template).
 - The Ollama Modelfile carries the explicit chat template described above, while the smoke probe
   rejects an empty completion. The `finetune` extra includes both the converter's `gguf` import and
   the trainer's `bitsandbytes` dependency so failures occur during dependency validation.
@@ -186,8 +185,7 @@ one `self-improve` round trained with the effective-batch search's best config, 
   row's CI, so the merge passes the fidelity gate, with the honest caveat that the point
   estimate sits 0.068 below the LoRA row (unresolved at n=82, and partly a cross-backend
   comparison: the merged row is f16-GGUF-on-ollama while both reference rows are
-  safetensors-on-vLLM). Run bundles: `.data/run-eval/20260710T122520*` (base),
-  `...122821*` (LoRA), `...125503*` (merged).
+  safetensors-on-vLLM). One run bundle per row: base, LoRA, and merged.
 
 CUDA evidence on the 12 GB RTX PRO 3000 host:
 
