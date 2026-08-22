@@ -87,7 +87,7 @@ Tests: `tests/llb/rag/test_retrieval_records.py` (the unchanged uncollapsed reco
 occurrences, the bound on a 58-copy chunk, the gold-completeness of that bound, and reading a
 record back), plus reader-level cases in `tests/llb/board/test_miss_analysis_classification.py`,
 `tests/llb/board/test_miss_probe.py` (producer to reader, end to end), and
-`tests/llb/eval/test_answer_quality.py`.
+`tests/llb/eval/answer_quality/`.
 
 ## Executor
 

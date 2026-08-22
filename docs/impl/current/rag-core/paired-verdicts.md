@@ -262,7 +262,7 @@ deterministic Monte Carlo tail with the plus-one correction. Each `PairedCompari
   paired interval (`delta.hi < 0`), the same fallback an uncalibrated archived block gets, and it
   carries the same minimum-evidence gate, so a loss resting on three differing items is not
   reported as one either. Its first consumer is the budget-conversion cost scan
-  ([GraphRAG](../graphrag-backend/answer-quality-evidence.md#the-retrieval-budget-dimension)).
+  ([GraphRAG](../graphrag-backend/answer-quality-budget-evidence.md#the-retrieval-budget-dimension)).
 - The three-state adoption reading (`answer` / `rank only` / `neither`) calibrates its objective
   and reciprocal-rank vectors separately while preserving objective-first order. Directional
   query-robustness rows test both sign-flip directions and persist the p for the observed direction.

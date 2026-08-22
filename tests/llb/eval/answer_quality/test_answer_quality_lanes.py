@@ -61,27 +61,62 @@ def test_routed_label_round_trips_and_enables_question_type_routing():
     assert config.graph_fusion_router == "question_type"
 
 
-def test_routed_report_states_focus_gain_and_exact_factoid_passthrough():
-    routed = "routed/global_community@0.30/d50/ioverlap"
+ROUTED = "routed/global_community@0.30/d50/ioverlap"
+FIXED_TWIN = "fused/global_community@0.30/d50/ioverlap"
+
+
+def _routed_report(rows: dict[str, list[dict]], types: dict[str, str]):
+    return compare_answer_quality(rows, types, baseline=VECTOR, resamples=20)
+
+
+def test_routed_report_states_focus_gain_and_exact_passthrough():
     rows = {
-        VECTOR: [
-            _row("multi", 0.2, 0.0),
-            _row("fact", 0.8, 1.0),
-        ],
-        routed: [
-            _row("multi", 0.2, 1.0),
-            _row("fact", 0.8, 1.0),
-        ],
+        VECTOR: [_row("multi", 0.2, 0.0), _row("fact", 0.8, 1.0)],
+        ROUTED: [_row("multi", 0.2, 1.0), _row("fact", 0.8, 1.0)],
     }
-    report = compare_answer_quality(
-        rows,
-        {"multi": "multi-hop", "fact": "factoid"},
-        baseline=VECTOR,
-        resamples=20,
-    )
-    rendered = format_report(report)
+    rendered = format_report(_routed_report(rows, {"multi": "multi-hop", "fact": "factoid"}))
     assert "### Routing outcome" in rendered
-    assert "makes factoid answers an exact baseline passthrough" in rendered
+    assert "exact baseline passthrough on `factoid`" in rendered
+    assert "the route leaves nothing measurably paying" in rendered
+
+
+def test_routed_report_names_the_focus_slice_the_route_still_pays_on():
+    """A cost on the slice routing sends TO fusion is the case the section exists to catch."""
+    item_ids = [f"multi-{index}" for index in range(10)]
+    rows = {
+        VECTOR: [_row(item_id, 0.6, 0.0) for item_id in item_ids] + [_row("fact", 0.8)],
+        ROUTED: [_row(item_id, 0.3, 1.0) for item_id in item_ids] + [_row("fact", 0.8)],
+    }
+    types = {item_id: "multi-hop" for item_id in item_ids} | {"fact": "factoid"}
+    rendered = format_report(_routed_report(rows, types))
+    assert "still pays on `multi-hop`" in rendered
+    assert "clears the minimum-evidence gate" in rendered
+    assert "exact baseline passthrough on `factoid`" in rendered
+
+
+def test_a_routed_cost_on_too_few_differing_items_is_not_reported_as_a_loss():
+    item_ids = [f"multi-{index}" for index in range(10)]
+    losers = set(item_ids[:5])
+    rows = {
+        VECTOR: [_row(item_id, 0.6, 0.0) for item_id in item_ids],
+        ROUTED: [_row(item_id, 0.0 if item_id in losers else 0.6, 1.0) for item_id in item_ids],
+    }
+    rendered = format_report(_routed_report(rows, {item_id: "multi-hop" for item_id in item_ids}))
+    assert "does NOT clear the minimum-evidence gate" in rendered
+
+
+def test_routed_costs_are_read_against_the_fixed_row_carrying_the_same_knobs():
+    """The route is bought to clear its twin's cost slices, so the report states which it did."""
+    facts = [f"fact-{index}" for index in range(10)]
+    rows = {
+        VECTOR: [_row("multi", 0.2, 0.0)] + [_row(item_id, 0.9) for item_id in facts],
+        FIXED_TWIN: [_row("multi", 0.2, 1.0)] + [_row(item_id, 0.3) for item_id in facts],
+        ROUTED: [_row("multi", 0.2, 1.0)] + [_row(item_id, 0.9) for item_id in facts],
+    }
+    types = {"multi": "multi-hop"} | {item_id: "factoid" for item_id in facts}
+    rendered = format_report(_routed_report(rows, types))
+    assert f"against its fixed twin `{FIXED_TWIN}`: clears `factoid`" in rendered
+    assert "retains nothing; adds nothing" in rendered
 
 
 def test_fused_label_without_depth_leaves_the_lane_pool_at_top_k():

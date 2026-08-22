@@ -11,6 +11,8 @@ calibrated test separates is a MEASURED result about the retrieval half; calling
 measured one.
 """
 
+from collections.abc import Collection
+
 from llb.eval.answer_quality.models import (
     METRIC_OBJECTIVE,
     METRIC_RETRIEVAL_HIT,
@@ -34,8 +36,13 @@ from llb.rag.fusion_evidence.stats import (
 from llb.rag.fusion_evidence.paired import (
     PairedComparison,
     evidence_gate_clause,
+    regresses,
     separates,
 )
+
+# One slice a lane pays on: its name, the objective block, and whether the minimum-evidence gate
+# lets that loss be read as one.
+SliceCost = tuple[str, PairedComparison, bool]
 
 ZERO: Interval = {"mean": 0.0, "lo": 0.0, "hi": 0.0}
 NO_COMPARISON: PairedComparison = {
@@ -117,6 +124,32 @@ def decide(
     verdict["reason"] = decisions[best]["reason"]
     verdict["lane_decisions"] = decisions
     return verdict
+
+
+def objective_costs(
+    lane: LaneReport,
+    confidence: float = DEFAULT_CONFIDENCE,
+    *,
+    exclude: Collection[str] = (),
+) -> list[SliceCost]:
+    """Every slice whose objective this lane LOWERED by an interval clear of zero.
+
+    The calibrated sign-flip test is one-sided ("candidate ahead") and so cannot state a loss; the
+    cost is read off the paired interval instead, exactly as `regresses` documents. Both gate
+    states are returned rather than filtered, because a loss the minimum-evidence gate withdraws is
+    an open question about that slice and dropping it silently would read as a clean lane -- the
+    caller decides which of the two it may act on.
+    """
+    return sorted(
+        (
+            (name, paired, regresses(paired, confidence))
+            for name, entry in lane["slices"].items()
+            if name not in exclude
+            for paired in (entry["paired_vs_baseline"][METRIC_OBJECTIVE],)
+            if paired["delta"]["hi"] < 0.0
+        ),
+        key=lambda cost: cost[0],
+    )
 
 
 def _focus_n(lanes: dict[str, LaneReport], baseline: str, focus_slice: str) -> int:

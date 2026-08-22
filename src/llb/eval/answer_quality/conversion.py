@@ -19,7 +19,6 @@ from llb.eval.answer_quality.budgets import split_budget_label
 from llb.eval.answer_quality.models import (
     CONVERSION_CONVERTED,
     CONVERSION_STALLED,
-    METRIC_OBJECTIVE,
     VERDICT_ANSWER_GAIN,
     VERDICT_INCONCLUSIVE,
     VERDICT_NO_EVIDENCE,
@@ -29,8 +28,7 @@ from llb.eval.answer_quality.models import (
     CrossReading,
     RowConversion,
 )
-from llb.eval.answer_quality.verdict import judge_lane
-from llb.rag.fusion_evidence.paired import regresses
+from llb.eval.answer_quality.verdict import judge_lane, objective_costs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
 
 # Row outcome -> the headline the sweep gets when it is the strongest one measured.
@@ -47,12 +45,11 @@ def cost_slices(
     reading: CrossReading, focus_slice: str, confidence: float = DEFAULT_CONFIDENCE
 ) -> list[str]:
     """Question types whose objective the raised budget measurably LOWERED."""
-    return sorted(
+    return [
         name
-        for name, entry in reading["slices"].items()
-        if name != focus_slice
-        and regresses(entry["paired_vs_baseline"][METRIC_OBJECTIVE], confidence)
-    )
+        for name, _paired, gated in objective_costs(reading, confidence, exclude=(focus_slice,))
+        if gated
+    ]
 
 
 def _row_conversion(

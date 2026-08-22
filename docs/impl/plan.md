@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### routed-lane-second-model-cost-check
-
-The question-type route is recommended because it removes a measured per-slice cost -- it never
-fuses a factoid, and the fixed overlap row's factoid answer loss is the cost it clears. That
-recommendation is established for ONE generator. On the second Ukrainian family the same overlap
-row carries no factoid cost at all and instead lowers the MULTI-HOP objective by an interval clear
-of zero on 21 differing items ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#measured-result-the-verdict-is-model-invariant-the-cost-slice-is-not))
--- and multi-hop is precisely the slice the router sends TO fusion, so routing cannot clear a cost
-of that shape. Score the routed row on that second model and state whether the route still buys
-what it is recommended for, or whether the recommendation is model-conditioned.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-answer-quality` with the `routed/` lane label; the matched
-  stores, the question-type sidecar, and both models are already on the host.
-- User-visible outcome: the operator learns whether "use the routed overlap row when a sidecar
-  exists" is a recommendation about the corpus or about one tune.
-- Scope boundary: in scope -- the routed lane on the second model over the same items, splits, and
-  seed, and the per-slice cost comparison against both models' fixed overlap rows. Out of scope --
-  a new routing policy, a per-model router, re-tuning the graph weight, and any change to the
-  shipped `fixed` default.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/<model-slug>/answer-quality/`.
-- Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
-  calibration ANSWER_QUALITY_LANES=vector,<best-overlap-row>,<routed-overlap-row>
-  INCLUDE_DRAFTED=1` on the CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the routed lane's factoid rows reproduce the vector lane
-  exactly on the second model as they do on the first; the report states, per model, which
-  question-type slice the route leaves paying and whether any surviving cost clears the
-  minimum-evidence gate.
-- Documentation target: the answer-quality evidence page of
-  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
-
 #### table-header-context-restoration (optional)
 
 The `table` chunker records the header row's source offsets on every table chunk
@@ -152,7 +120,7 @@ An answer-quality comparison costs hours of generation and is then locked to the
 was rendered under: a later improvement to the artifact -- a new column, a new section, a corrected
 reading -- cannot reach a recorded run without paying for every generation again, and a heavy
 budget sweep is the worst case
-([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#the-retrieval-budget-dimension)).
+([GraphRAG](current/graphrag-backend/answer-quality-budget-evidence.md#the-retrieval-budget-dimension)).
 Nothing about that is necessary: the comparison is pure over the per-case rows, every lane's run
 bundles are recorded in its own `comparison.json`, and the lane runner is already an injection
 point. Add a `--from-bundles <comparison.json>` path that resolves each lane's recorded run dirs
