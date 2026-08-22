@@ -428,10 +428,12 @@ The committed fixture at `samples/corpora/conflicts_uk_v1/` plants one instance 
 restatement, unrelated control), plus repeated publication records and a single-occurrence prose
 control, so each tier and semantic exclusion reason is asserted against a known answer in CI.
 
-Post-filter CUDA-host evidence (RTX 4060 Ti, multilingual-E5 stores) is under
-`$DATA_DIR/corpus-conflicts/20260720T-semantic-metadata-filter-*`. The HR swept, budget-12, and
-budget-50 runs and the goods budget-12 and budget-50 runs are the source for the measurements
-above. The [claim-tier precision](#measured-claim-tier-precision) runs are under
-`$DATA_DIR/corpus-conflicts/20260812T-claim-precision-{hr,goods}-budget{12,100}/`, each carrying
-its per-row ledger and all 24 calibration verdicts in `summary.json`; the budget-100 pair is the
-source for the sweep tables above and the budget-12 pair reproduces their first two rows.
+Post-filter evidence measured 2026-07-20 on the RTX 4060 Ti 16 GB CUDA host over
+multilingual-E5 stores, one run per semantic-metadata-filter setting. The HR swept, budget-12, and
+budget-50 runs and the goods
+budget-12 and budget-50 runs are the source for the measurements above. The
+[claim-tier precision](#measured-claim-tier-precision) reading comes from four runs measured
+2026-08-12 -- the HR and goods corpora each at candidate budgets 12 and 100 -- each recording a
+per-row ledger and 24 calibration verdicts; the budget-100 pair is the source for the sweep tables
+above and the
+budget-12 pair reproduces their first two rows.

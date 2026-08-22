@@ -23,9 +23,7 @@ reference arm with no elision, a window arm that elides, different within-step f
 drifted fold-step boundary. `compact_fold_input_probe` settles those properties without a model.
 
 CUDA evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b`, Ollama `num_ctx=8192`, seven
-tasks per cell, and 10.63 tok/s. All eight cells completed 7/7 with one fold and zero overflows. The
-aggregate is
-`$DATA_DIR/agentic-compact-summary-input-cap/20260805T185837.832318Z-0f86b57558a1/manifest.json`.
+tasks per cell, and 10.63 tok/s. All eight cells completed 7/7 with one fold and zero overflows.
 
 | arm | cell | guard | fold step | offered | elided | compact tok | d(input tok) | side |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |

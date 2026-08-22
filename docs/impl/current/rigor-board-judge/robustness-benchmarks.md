@@ -214,12 +214,8 @@ in the 2026-07-24 evidence is a FOLDED reading, and a silent default would chang
 readings mean. Turn it on with the step (`QUERY_PREP=normalize QUERY_PREP_DENSE_CASE=1`); leave it
 off only to reproduce a folded baseline.
 
-Artifacts: folded `$DATA_DIR/query-robustness/20260819T142700.448675Z-1f153f14ba5d/` (clean baseline
-`$DATA_DIR/run-eval/20260819T134855.282489Z-dd0ed2c3162c/`), dense-cased
-`$DATA_DIR/query-robustness/20260819T150241.558709Z-e114c0a4525c/` (clean baseline
-`$DATA_DIR/run-eval/20260819T142702.513006Z-a77aa5be363c/`), and the four clean-query A/B reports
-plus their `summary.md` in
-`$DATA_DIR/query-robustness/20260819T140213.064476Z-c231ef43769c-dense-case-clean-ab/`. Each
+Measured 2026-08-19: one perturbation run per casing lane (folded and dense-cased), each against
+its own clean baseline run, plus the four clean-query A/B lanes. Each
 `report.md` header carries a `dense-lane casing: on|off` line, since the lane ids are deliberately
 identical in both runs so the two reports read cell for cell.
 
@@ -245,9 +241,8 @@ transliteration (0.3320 recorded at budget 0, +0.0037) and 0.4376 on keyboard ty
 below the `normalize`-only lane's 0.3763. The retrieval sweep's ledger for the same setting is ten
 additional wrong corrections ([RAG
 core](../rag-core/rerank-and-query.md#restoration-constraint-sweep-restoration-constraint-threshold-sweep)),
-so the end-to-end reading agrees with the sweep: keep the exact surface budget. Artifact:
-`$DATA_DIR/query-robustness/20260819T171103.933023Z-a5e94ffc6ffd/`; clean baseline:
-`$DATA_DIR/run-eval/20260819T165101.093894Z-8d63efec70c7/`.
+so the end-to-end reading agrees with the sweep: keep the exact surface budget. Measured 2026-08-19
+against its own clean baseline run.
 
 ## Cross-Lingual Query Lane
 

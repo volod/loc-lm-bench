@@ -19,19 +19,9 @@
 
 ## Local Run Models Selection
 
-- **Local evidence models:** When running local heavy / evidence / acceptance pipelines on this
-  machine (e.g. multi-objective RAG tune, joint search, auto-rag, host validation with real
-  backends), pick the strongest local model that fits the host -- never use tiny smoke models
-  under 7B parameters (no `llama3.2:3b`, `0.5B`, `1B`, `3B`, etc.) unless the user explicitly
-  asks for a tiny model.
-- **Model selection order:** 1. Prefer UA-capable instruct models already on the
-  host (Ollama / vLLM / llama.cpp). 2. Prefer the largest parameter count that fits the GPU with
-  RAG headroom (KV cache + embedder + optional reranker). On a ~16 GiB GPU, prefer ~12B-14B class
-  over 24B+ GGUF that barely fits and thrash-swaps. 3. Floor: at least 7B parameters for any
-  real-model evidence run recorded in `docs/impl/current/`. 4. CI / `make ci` fixtures and
-  injected fakes stay unchanged -- this rule is for live local backend runs only.
-- **Model examples (12-16 GiB class):** Prefer: MamayLM-Gemma v2.0 GGUF, `gemma4:31b`,
-  `qwen3.6:27b`, when present. Avoid for evidence: `llama3.2:3b` and other sub-7B tags.
+Real-model evidence on this host uses the strongest model that FITS -- never a sub-7B smoke model
+(`llama3.2:3b`, `0.5B`, `1B`, `3B`) unless the user asks for one. CI fixtures and injected fakes are
+exempt. Before picking one, read the sizing order and the 12-16 GiB roster in [heavy runs and evidence](docs/guides/development/heavy-runs-and-evidence.md).
 
 ## Code Organization
 
@@ -62,173 +52,100 @@
 
 ## Documentation
 
-`docs/impl/plan.md` is FORWARD-ONLY: it contains ONLY work that is not yet implemented.
-`docs/impl/current.md` is the compact index for everything DELIVERED; detailed delivered facts live
-in topic files under `docs/impl/current/`. Running the cycle below is PART OF "done" for any
-feature, Ordered-Implementation-Sequence entry, or ad-hoc task -- not an optional extra. The user
-should never have to ask you to make `plan.md` forward-only again.
+`docs/impl/plan.md` is FORWARD-ONLY -- only work not yet implemented. `docs/impl/current.md` indexes
+what is DELIVERED; the detail lives in `docs/impl/current/<area>/<topic>.md`. Running the cycle
+below is part of "done" for any task, not an extra.
 
-**The delivered docs are a three-level tree.** `docs/impl/current.md` (areas) ->
-`docs/impl/current/<area>.md` (orientation + the tree of pages under it) ->
-`docs/impl/current/<area>/<topic>.md` (one subject). A large area owns a directory; a small one
-stays a single page. Rules for keeping it navigable:
+**The delivered docs are a three-level tree** -- `current.md` (areas) -> `<area>.md` (orientation
+plus a table of its pages) -> `<area>/<topic>.md` (one subject). A large area owns a directory, a
+small one stays one page.
 
-- **Write to the narrowest page.** Add delivered detail to the topic page that owns the subject.
-  Create a new topic page when a subject is genuinely new, and add its row to the area page in the
-  same change -- a page no index links to is a page nobody finds.
-- **An area page is an index, not a container.** It carries orientation plus a table of its pages;
-  it does not accumulate the detail itself.
-- **Split before a page becomes a scroll.** A topic page past ~500 lines, or one whose headings
-  describe two subjects, splits along the heading seam; a section that grows past ~500 lines with
-  no subheadings gets subheadings first.
-- **Links are the navigation, so they must land.** `make lint-doc-links` checks every relative
-  link (file + `#anchor`) and runs inside `make lint-md`. A heading's anchor does NOT depend on its
-  level, so a section moved between files keeps its fragment and only the path changes.
+- **Write to the narrowest page,** and add a new topic page's row to its area page in the same
+  change -- a page no index links to is a page nobody finds.
+- **An area page is an index, not a container.**
+- **Split a page past ~500 lines, or one whose headings describe two subjects,** along the heading
+  seam; a section that long with no subheadings gets subheadings first.
+- **Links must land.** `make lint-doc-links` (inside `make lint-md`) checks every relative link and
+  anchor. An anchor does not depend on heading level, so a moved section keeps its fragment.
 
-**The plan/current update cycle (run after every implemented feature, before reporting done):**
+**The cycle, after every implemented feature and before reporting done:**
 
-1. **Record in current docs.** Add or refresh the delivered behavior in the narrowest matching
-   topic page (`docs/impl/current/<area>/<topic>.md`, or `docs/impl/current/<area>.md` for a
-   single-page area): what was built, where it lives (modules / commands / tests), how to run it,
-   and the result if any (numbers, decisions, file locations, dates). Update the area page when a
-   new topic page is added, and `docs/impl/current.md` only when a new area or frequent lookup
-   path is needed. Results, "DONE" status, and history belong HERE.
-2. **Delete from plan.md.** Remove the implemented item's description ENTIRELY. Do NOT leave a
-   "DONE" bullet, a result line, a date, or a "we did X" note: if a sentence describes the past it
-   is history and must not stay in `plan.md`. Keep the item's stable sequence number ONLY if open
-   residual work remains under it; if fully delivered with no residual, delete the whole item.
-3. **Route what the work surfaced.** Implementation surfaces things you only learn by doing it -- a
-   weakness in the result, a difficulty, a sharp edge, a capability the domain turns out to need.
-   Each one goes to exactly one of four places, and picking the right one is the whole discipline:
-   - a **chore** (a file over the soft limit, an artifact already inside its size bound) -- do it
-     inline now or drop it, never write it up as a task;
-   - an **audit of our own output** (an artifact's field layout or byte count) -- drop it;
-   - **more work under an existing capability** -- a new task in that capability's group in
-     `plan.md`, written as FUTURE work (what to do + why it helps + rough how), not as commentary on
-     what you did; flag it optional if it is. (E.g. "strengthen the borderline judge calibration
-     split -- its CI dips below the gate -- by adding harder + fluent-but-wrong items, then re-run
-     the calibrate loop".)
-   - a **capability the spec does not describe** -- do NOT open a task for it. Run the product
-     feature lifecycle below. This is the important one: a useful discovery is a reason to extend the
-     product, and extending it means amending the spec first.
+1. **Record it** in the narrowest topic page: what was built, where it lives (modules, commands,
+   tests), how to run it, and the result. Results and history belong HERE, never in `plan.md`.
+2. **Delete it from `plan.md`** -- the whole item, unless open residual work remains under it.
+3. **Route what the work surfaced** to exactly one of four places: a **chore** -> do it now or drop
+   it; an **audit of our own output** -> drop it; **more work under an existing capability** -> a
+   task in that group, written as future work and flagged `(optional)` if it is; a **capability the
+   spec does not describe** -> the lifecycle below, never a task. Surfacing nothing is a normal,
+   good outcome.
+4. **Keep `plan.md` forward-actionable.** A task needing a delivered fact states it in ONE line and
+   links the current-docs topic; it never restates it.
 
-   Finishing a task and adding nothing is a normal, good outcome; so is finishing one and amending
-   the spec because the work taught you what the product was missing. What is never acceptable is
-   capability arriving in the plan, or in `src/`, that no spec section describes.
-4. **Keep only forward-actionable context.** When a remaining task needs a fact about delivered
-   behavior to be implementable, state that fact in ONE line and LINK to `docs/impl/current.md` or
-   the specific `docs/impl/current/*.md` topic for the detail -- never restate the delivered
-   description in `plan.md`.
+### Citing a measured result
+
+Delivered docs must stay checkable on a machine that never held the run, so a page cites neither a
+`$DATA_DIR/<method>/<run-id>/` path (host-local, deleted, absent on the other GPU hosts) nor a bare
+run label (a lookup key that identifies nothing). It states what ran on what, the date and host,
+every load-bearing number AND its reading, and what would overturn it. **Before writing any measured
+result into the docs, read [heavy runs and evidence](docs/guides/development/heavy-runs-and-evidence.md).**
 
 ## Product Feature Lifecycle
 
-The spec is a LIVING register of what the product does, not a scope fence. Implementation is the
-main way gaps in it are found, and finding one is a good outcome: a difficulty hit while building, a
-corpus property nobody anticipated, or a result that only makes sense alongside a capability that
-does not exist yet are all legitimate discoveries. What is NOT acceptable is acting on the discovery
-silently -- code and plan tasks that no spec section describes are capability nobody can evaluate,
-document, or later decide to remove.
+The spec is a LIVING register of what the product does, not a scope fence. Finding a gap while
+implementing is a good outcome; acting on it silently is not. **Capability that reaches `src/` or
+`plan.md` with no spec section describing it is never acceptable** -- nobody can evaluate, document,
+or later remove it.
 
-So the response to a discovery is to extend the product deliberately. Run these six steps in order;
-[Extending this specification](docs/design/spec.md#extending-this-specification) is the same list
-written for the reader of the spec.
+The six steps are canonical in [Extending this
+specification](docs/design/spec.md#extending-this-specification): state the domain problem, amend
+the spec INCLUDING the capability's boundary, declare the evaluation and what a negative result
+looks like, register the row as `planned`, write the tasks (each with a `Serves` line), then close
+the loop when it lands. Two rules that list does not carry:
 
-1. **State the problem in domain terms.** What can an operator not do, or not trust, today? "Our
-   artifact is bigger than it needs to be" is not a domain problem. "An operator cannot tell which
-   of two contradicting documents holds" is.
-2. **Amend `docs/design/spec.md`.** Extend the section that owns the capability, or add one,
-   INCLUDING its boundary -- what it explicitly does not do. A capability with no stated boundary
-   grows without one, which is how a helper becomes the third-largest package in the repo.
-3. **Declare the evaluation before implementing.** Name how anyone will know it works: the
-   measurement, its gate, and what a negative result would look like. A capability whose evaluation
-   cannot be stated is not ready to be built. A negative result is then a valid outcome to record,
-   not a thing to work around.
-4. **Register it.** Add a row to the [capability registry](docs/design/spec.md#capability-registry)
-   with status `planned` and the evaluation from step 3. Row order is the implementation line, so
-   placing the row is also deciding when it gets built.
-5. **Write the tasks.** Add them to `plan.md` under that capability's `###` group, each with a
-   `Serves` line naming the capability id.
-6. **Close the loop when it lands.** Record the delivered behavior in the current docs, remove the
-   task from `plan.md`, and flip the registry row to `shipped` with its implementation link.
-
-Steps 2-4 are the cost, and they are deliberately real: cheap enough that a genuine capability
-always clears them, expensive enough that a passing thought does not. Do them BEFORE writing code
-when the capability is known up front, and in the same change as the code when the work itself
-taught you the capability was needed -- never in a later ticket.
-
-**When an existing capability is the wrong shape,** amend its spec section rather than working
-around it in the implementation. A spec that no longer describes the code is worse than no spec: it
-is a document people trust and should not.
-
-**`(optional)` is binding within a capability group.** It sorts a task behind the non-optional tasks
-of its own group; it never reorders the line. An optional task of an earlier capability still comes
-before a required task of a later one -- the line is where priority lives, and `(optional)` only
-breaks ties inside a group.
-
-**A capability whose remaining work is entirely optional moves DOWN the line.** That is rule 3 of the
-[registry ordering](docs/design/spec.md#capability-registry), and it is the counterweight to the
-trust chain: a shipped upstream capability with nothing but refinements left is not what blocks the
-product, however far upstream it sits. Check this when a capability's group has grown -- concentrated
-growth in one shipped capability is the signal to re-read the line, not to work it harder.
-
+- **Timing.** Do steps 2-4 before the code when the capability is known up front, and in the same
+  change when the work taught you it was needed -- never in a later ticket.
+- **Wrong shape.** When an existing capability is the wrong shape, amend its spec section rather
+  than working around it in the implementation: a spec that no longer describes the code is worse
+  than none, because people trust it.
 ## Specification And Plan Integrity
 
-The spec and the plan must agree at all times, and `make lint-spec-plan` makes that a build failure
-rather than a review opinion. It runs inside `make ci-checks`, so a drift is caught in the change
-that introduced it. What it enforces:
+`make lint-spec-plan` (inside `make ci-checks`) makes spec/plan drift a build failure. It enforces
+that every task carries a `Serves` line naming a real capability id; that every `shipped` capability
+links its implementation docs and every `planned` one has an open task; that every capability
+declares a non-empty evaluation; and that capability groups appear in `plan.md` in registry row
+order, in both sections. When it fails, fix the DOCUMENTS -- it is reporting a real disagreement
+about what the product is, and the fix is never to loosen the check.
 
-- every plan task carries a `Serves` line naming a capability id that exists in the registry;
-- every `shipped` capability links to its implementation docs, and every `planned` one has at least
-  one open plan task;
-- every capability declares a non-empty evaluation;
-- capability groups appear in `plan.md` in the registry's row order, in both sections.
-
-Run it after any edit to `docs/design/spec.md` or `docs/impl/plan.md`. When it fails, fix the
-DOCUMENTS -- the checker is reporting a real disagreement about what the product is, and the fix is
-never to loosen the check.
-
-**plan.md structure:** three levels -- `## Agent Implementation Tasks` / `## Human-Assisted Tasks`,
-then a `###` capability group whose heading is the capability title, two hyphens, and the backticked
-capability id, then one `####` heading per task id. Count tasks with
+**plan.md structure:** `## Agent Implementation Tasks` / `## Human-Assisted Tasks`, then a `###`
+group per capability (title, two hyphens, backticked id), then one `####` per task id. Count with
 `grep -c '^#### ' docs/impl/plan.md`.
 
-**plan.md content rules:**
+**Every line in `plan.md` answers "what remains to be done".** FORBIDDEN there: "DONE",
+"delivered", "implemented", an ISO date, "we/I did", check marks, result values, or any past-tense
+status -- all of it lives in the current docs.
 
-- Every line must answer "what remains to be done": well-defined specs, dependencies / blockers, and
-  explicit AGI-vs-human to-do instructions, ordered by the capability implementation line.
-- FORBIDDEN in `plan.md`: "DONE", "delivered", "implemented", an ISO date, "we/I did", check marks,
-  result values, or any past-tense status narrative -- all of that lives in `current.md`.
-- Self-check before finishing: the task diff NET-REMOVES the implemented scope from `plan.md` and
-  ADDS it to the current docs (`current.md` index or `current/*.md` topic), and a grep of `plan.md`
-  for `DONE` / `delivered` / `implemented` / an ISO date returns nothing left over from this task.
-- Self-check across a ticket: report the task count before and after, and say which capabilities
-  moved. Growth is allowed -- that is what extensibility means -- but it is REPORTED, never silent,
-  and growth concentrated in the capability you happened to be working in is the signal to stop and
-  ask whether the line still reflects what matters.
+**Ordering.** `(optional)` sorts a task behind the non-optional tasks of its OWN group and never
+reorders the line: an optional task of an earlier capability still precedes a required task of a
+later one. A capability whose remaining work is entirely optional moves DOWN the line -- a shipped
+capability with only refinements left is not what blocks the product.
+
+**Self-check before reporting done.** The diff NET-REMOVES the implemented scope from `plan.md` and
+ADDS it to the current docs, and grepping `plan.md` for the forbidden words returns nothing left
+over. Report the task count before and after and say which capabilities moved: growth is allowed --
+that is what extensibility means -- but it is REPORTED, never silent, and growth concentrated in the
+capability you happened to be working in is the signal to stop and ask whether the line still
+reflects what matters.
 
 ## Leaving The Host Clean
 
-A "done" report claims the host is back to the state a reader would expect. Verify that before
-reporting -- a leftover process keeps burning a GPU or a core, and a leftover file is the next
-task's mystery diff.
-
-- **Background shells:** Before reporting done, list every background task this session started and
-  confirm each has EXITED. Stop the ones that have not (`TaskStop`), and say so in the report if any
-  was killed rather than finished. A task still running is not a finished task.
-- **Do not arm a poller for work the harness tracks:** a backgrounded command notifies on exit, so a
-  second shell that waits on it is pure waste. Poll only for state the harness cannot see (an
-  external queue, a remote job).
-- **A watcher must not match itself:** `pgrep -f` / `pgrep -a` match the FULL command line, so a
-  waiter that greps for the command it is waiting on finds its own shell and loops forever. Match on
-  the process name, the PID, or a pattern the watcher's own command line does not contain.
-- **Host processes:** No model server, run, or tool this task started may be left holding the GPU or
-  a port unless the user asked for it to stay up. Check with `nvidia-smi` after any heavy local run.
-- **Temporary artifacts:** `git status` must show only the files the task intended to change.
-  Throwaway roots, scratch scripts, half-written fixtures, and debug output go to the session
-  scratchpad directory or are deleted -- never left in the repo, `src/`, or `samples/`.
-- **Run artifacts are NOT temporary:** anything a real run wrote under
-  `$DATA_DIR/<method_name>/<run_timestamp>/` stays. Clean up what YOU scaffolded, not what the
-  pipeline produced.
+A "done" report claims the host is back to the state a reader would expect, so verify before
+reporting: every background task this session started has EXITED (stop the rest, and say so if any
+was killed rather than finished), `git status` shows only the files the task intended to change, and
+nothing this task started still holds the GPU or a port. **Run artifacts are NOT temporary** --
+anything a real run wrote under `$DATA_DIR/<method_name>/<run_timestamp>/` stays; clean up what YOU
+scaffolded, not what the pipeline produced. Winding a run down safely -- pollers, self-matching
+watchers, the GPU check -- is in
+[heavy runs and evidence](docs/guides/development/heavy-runs-and-evidence.md).
 
 ## Formatting & Conventions
 
@@ -253,19 +170,7 @@ task's mystery diff.
 
 ## Heavy compilation (ninja / cmake / CUDA)
 
-Any installation that compiles C++/CUDA from source (git+, --no-binary, --no-build-isolation)
-MUST cap parallelism using formila MAX_JOBS=min(cpu_core_num//2, RAM // 14)
-
-Do not inline the formula — the helpers are the single source of truth. The canonical helper is
-`llb_max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
-
-Only wheels deliberately built from a local git checkout (flash-attn forks, vLLM forks, xformers
-forks, etc.) may be exported under
-`$DATA_DIR/wheels/<package-name>_<abi-key>_git<revision>/`. The key MUST encode the
-ABI-relevant dimensions (Python, torch, CUDA, GPU compute capability) and the exact git
-revision; source checkouts must be clean before building.
-
-Registry wheels, prebuilt wheels, and all ordinary build/runtime dependencies MUST be installed
-directly with `uv` and left in uv's standard shared cache. Never use `pip wheel` or a
-dependency-resolving wheelhouse under `$DATA_DIR/wheels`; that directory contains only
-intentional local-source build outputs.
+Any install that compiles C++/CUDA from source MUST cap parallelism with `llb_max_jobs()` from
+`scripts/shared/common.sh` -- never inline the formula. Only wheels built from a local git checkout
+may be exported under `$DATA_DIR/wheels/`; registry and prebuilt wheels install with `uv`. Details
+and the ABI-key layout: [dev setup](docs/guides/development/dev-setup.md).

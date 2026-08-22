@@ -212,8 +212,7 @@ It also samples what a merge would actually do: the top-cosine pairs no text tie
 pairs ONLY digit masking merges (the page footer and the rate row are the same shape to it).
 
 Durable evidence (2026-07-24, goods PDF corpus at `size` 200/30, pinned e5-base, k=10, n=95, the
-same corpus/goldset/seed as the exact-collapse evidence above; reports under
-`$DATA_DIR/retrieval-noise-floor/20260724T-near-dup-residue/`).
+same corpus/goldset/seed as the exact-collapse evidence above).
 
 Residue left by exact collapse, per lane:
 

@@ -409,10 +409,9 @@ rigor](../rigor-board-judge/robustness-benchmarks.md#relaxed-restoration-budget-
   the wrong count are identical; pooled MRR moves +0.0030, which is exactly those two picks. There
   is no evidence for reordering the signals.
 
-Artifacts: folded `$DATA_DIR/restoration-sweep/20260819T170934.639293Z-c19fcb509e24/`,
-dense-cased `$DATA_DIR/restoration-sweep/20260819T171023.498781Z-09973ef3e2c5/`. Each carries
-`report.md`, `settings.jsonl` (per setting per class plus a pooled row), `edit_audit.jsonl` (every
-correction with its reference and label), and `metadata.json`.
+Measured 2026-08-19, one run per casing lane (folded and dense-cased). Each recorded a
+per-setting-per-class row plus a pooled row, and an edit audit carrying every correction with its
+reference and label.
 
 Reading the audit, all 29 of the default setting's wrong corrections are genuinely not the token
 the user typed, so the automated label and a human reading agree on 29 of 29. The share splits in a

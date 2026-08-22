@@ -447,8 +447,7 @@ CUDA host evidence (2026-08-05, RTX 4060 Ti 16 GB): `mistral-small3.1:24b` on Ol
 `num_ctx=8192`, seven depth-10 memory tasks, `compact_share=0.5`, one re-measured cell at 10.55
 tok/s over about 12 minutes including the control. The pinned family re-passed the unchanged
 depth-10 control at 4/4; the re-measured cell completed 7/7 under both policies with zero overflows
-and one compaction per compact episode. The aggregate is
-`$DATA_DIR/agentic-compact-crossover-restatement/20260805T192757.795491Z-2bc079197412/manifest.json`.
+and one compaction per compact episode.
 
 | study | depth | form | published | restated | fold step | basis |
 | --- | ---: | --- | ---: | ---: | ---: | --- |
@@ -476,9 +475,8 @@ The cap peaks those ratios rest on are re-measured on every run rather than read
 aggregate, and on the committed geometry they still ARE the published ones. Four re-runs on
 2026-08-07 (same host, same pinned model, same design) agree on every number; the current aggregate,
 which is the first run whose six published values were RESOLVED out of their aggregates rather than
-read off the design, is
-`$DATA_DIR/agentic-compact-crossover-restatement/20260807T163405.122030Z-c0d5961bc165/manifest.json`
-at 10.27 tok/s over about 14 minutes including the control. All four
+read off the design, is the 2026-08-07 run, at 10.27 tok/s over about 14 minutes including the
+control. All four
 read `the_re_measured_geometry_has_the_published_cap_peak` at both depths with a 0-char delta --
 8374 at depth 6, 11926 at depth 10 -- so the 1.69x and 1.83x guard ratios are stated against the
 geometry that measured the guards they divide. All four also re-measured `surface-d10-g23000`

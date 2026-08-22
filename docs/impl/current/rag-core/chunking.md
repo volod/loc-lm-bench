@@ -100,9 +100,8 @@ visible.
 
 CUDA host (2026-08-19), `make compare-retrieval CHUNK_STRATEGIES=sentence,recursive,page,heading,
 late,markdown,semantic NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95%
-confidence, seed 13. Configs, reports, per-strategy stores, and per-item vectors under
-`$DATA_DIR/chunker-bakeoff-size-cap/` (`goods.yaml` -> `20260819T-goods/`, `pdf-accepted.yaml` ->
-`20260819T-pdf-accepted/`).
+confidence, seed 13. Measured 2026-08-19, one run per corpus config (`goods.yaml` and
+`pdf-accepted.yaml`).
 
 The recorded 44-item accepted item set is no longer on disk, but the five-PDF CORPUS it was scored
 on is -- it is the goods corpus -- so the re-read runs on both of the sets the repo still has:
@@ -251,7 +250,7 @@ theoretical minimum on any corpus here. The strategy's row guarantee is therefor
 CUDA host (2026-08-16), `make compare-retrieval CHUNK_STRATEGIES=table,recursive,sentence
 NOISE_FLOOR=1`, pinned e5-base, k=10, 2000 paired resamples, 95% confidence, seed 13. Reports,
 configs, stores, and per-item vectors under `$DATA_DIR/table-aware-chunking/<run>/`
-(`20260816T-goods`, `20260816T-pdf-accepted`).
+(one run per corpus, 2026-08-16).
 
 95-item drafted goods ledger (`size` 200 / overlap 30; 24 of its 95 items have a gold span inside
 a table row):
@@ -305,9 +304,8 @@ to 171 rows. The re-read below asks the same question on the axis that can see i
 CUDA host (2026-08-19), the SAME command, corpora, `size`/`overlap`, k, seed, and resample count
 as the rows above, re-scored once [evidence
 intactness](retrieval-metrics.md#evidence-intactness-span_char_coveragek--span_intactk) existed.
-Reports, configs, stores, and per-item vectors under
-`$DATA_DIR/table-aware-chunking/20260819T-goods-intactness/` and
-`.../20260819T-pdf-accepted-intactness/`. Recall@10 and MRR reproduce the recorded rows
+Measured 2026-08-19, one intactness run per corpus.
+Recall@10 and MRR reproduce the recorded rows
 BIT-IDENTICALLY on both corpora (the metrics are additive; `recursive` 0.694737 / 0.465155 on
 goods, 0.925000 / 0.852321 on the accepted PDF goldset), so this is the recorded state re-read,
 not a re-measured one.

@@ -174,6 +174,5 @@ estimator needs 607,303 verified units for the HR operating point, and this host
 hour. The reopening conditions -- and the directions proven dead -- are recorded in
 [future research](../../future-research.md).
 
-Artifacts are under `$DATA_DIR/corpus-conflicts/null-research/20260811T191419Z/`: `summary.json`
-carries every lane, gate, the 44 generation and verification verdicts, all 150 shortlist
-adjudications, the calibration bins, and the conformal grid; `report.md` renders them.
+The closure run (2026-08-11) recorded every lane and gate, 44 generation and verification
+verdicts, 150 shortlist adjudications, the calibration bins, and the conformal grid.

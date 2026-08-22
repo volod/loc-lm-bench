@@ -46,8 +46,7 @@ telemetry is available.
 fact, and how much else it carries -- and the recorded evidence base contains the one comparison
 that separates them: the context-ablation `rag` lanes score the SAME 82-item committed fixture under
 PINNED retrieval (recall@5 = 0.951 for every row), so all differences are answer-side. Read-only
-audit over those bundles, harness and output under
-`$DATA_DIR/paired-reading-audit/20260726T100856Z/verbosity{_probe.py,.txt}`:
+audit over those bundles:
 
 | model | median completion tokens | objective (token F1) | contains | exact | r(len, objective) | items found | implied token precision when found |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

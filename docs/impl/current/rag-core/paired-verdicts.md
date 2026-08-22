@@ -191,8 +191,8 @@ What the annotation found on evidence already recorded:
   long-context lane FIRST, that run's `rag_pays_off` is one convention away from
   `long_context_wins`, and the reason now says so. The other eight recorded ablations are settled.
 - **Three of six recorded fusion sweeps now qualify their `inconclusive`.** The deciding gain
-  metric sits on the cut in `20260722T100231Z`, `20260722T102219Z-depth`, and
-  `20260724T-noise-floor`; the three `adopt` sweeps have borderline rows elsewhere in the grid but
+  metric sits on the cut in the base graph-weight sweep, the candidate-depth sweep, and the
+  noise-floor re-read; the three `adopt` sweeps have borderline rows elsewhere in the grid but
   a settled winner, so their reasons stay unqualified -- the clause is scoped to the deciding row
   rather than fired on any unsettled row anywhere.
 - **Two of three recorded answer-quality comparisons qualify their `retrieval_only`.** The
@@ -208,8 +208,7 @@ reporting level, and what selecting a row out of a grid does to it. Method: a pa
 (randomization) null over the per-item delta vectors the recorded artifacts persist, applied
 JOINTLY across a family so the real cross-row correlation survives, with the repo's own resample
 index sets, seed, and nearest-rank percentile convention; 4000 flips for the rate studies and
-20000 for the selection study. Read-only, no new inference. The one-off harness and its output are
-under `$DATA_DIR/paired-reading-audit/20260726T100856Z/`. The reachability finding below is now
+20000 for the selection study. Read-only, no new inference. The reachability finding below is now
 shipped behavior ([the minimum-evidence gate](#the-minimum-evidence-gate-on-a-paired-reading));
 the per-test size finding is now enforced by
 [randomization-calibrated paired readings](#randomization-calibrated-paired-readings); selection
@@ -324,7 +323,7 @@ continue to print the calibrated per-row p. Lane adapters live in
 
 CUDA-host re-read: `make audit-paired-readings
 PAIRED_READING_AUDIT_OUT=$DATA_DIR/paired-reading-audit/<run>` produced
-`$DATA_DIR/paired-reading-audit/20260728T-selection-adjusted-grid-verdicts/`. It reconstituted 14
+the selection-adjusted grid re-read. It reconstituted 14
 vector-backed grid artifacts and 7,129 paired blocks:
 
 | lane | grid artifacts | selected family survives | adjusted verdict |
@@ -399,7 +398,7 @@ estimate / sign-test p are untouched when the reading is relabeled, that the two
 (ledger and delta vector) agree, and the verdict guard driven end to end per lane.
 
 Re-read of the recorded evidence base (2026-07-26, read-only, no new inference; harness and output
-under `$DATA_DIR/paired-reading-audit/20260726T-minimum-evidence-gate/`). Recorded artifacts on disk
+). Recorded artifacts on disk
 were NOT rewritten -- they stay as produced, and this is what the gate says about them:
 
 | lane | artifacts | paired blocks | read `separated` | relabeled |
@@ -435,8 +434,8 @@ were NOT rewritten -- they stay as produced, and this is what the gate says abou
 
 Live confirmation, CUDA host 2026-07-26 (`LLB_EMBED_DEVICE=cuda make compare-embeddings
 CONFIG=$DATA_DIR/compare-embeddings/paired-uncertainty-fixture.yaml
-GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl SPLIT= NOISE_FLOOR=1`, report under
-`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T121757.672014Z-73f58e382297/`):
+GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl SPLIT= NOISE_FLOOR=1`, report in run
+the fixture bake-off):
 the bake-off whose recorded verdict the re-read downgrades was re-run end to end through the real
 encoders. **Every number reproduces bit-identically** -- all four candidates' recall@10, MRR, dim,
 indexed count, index bytes, each paired delta bound, each win/loss/tie ledger, each exact sign-test
@@ -470,7 +469,7 @@ items before the level becomes reachable at all.
   have shown a difference is not the same as one that looked and found none.
 
 Re-decision of the recorded evidence base (2026-07-26, read-only, no new inference; harness and
-output under `$DATA_DIR/paired-reading-audit/20260726T-open-question-restatement/`). All eight
+). All eight
 withdrawn verdicts, restated with what each one needs:
 
 | lane | runs | recorded -> re-read | deciding row | differs | floor | what would settle it |
@@ -509,8 +508,7 @@ table column including the archived-artifact fallback, the recorded prices the t
 that no committed goldset reaches the encoder floor, and the withdrawn verdict of each affected
 lane naming its own item count end to end.
 
-Live confirmation, CUDA host 2026-07-26 (same command as above; report under
-`$DATA_DIR/compare-embeddings/paired-uncertainty-fixture/compare-embeddings/20260726T125150.260342Z-3cdf0a4eb1db/`):
+Live confirmation, CUDA host 2026-07-26 (same command as above):
 the fixture bake-off was re-run end to end through the real encoders once more. **Every retrieval
 number reproduces bit-identically** against the pre-re-decision run -- 0 fields differ across all
 four candidates' recall@10, MRR, dim, indexed count, index bytes, every paired delta bound, every

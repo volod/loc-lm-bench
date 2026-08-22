@@ -224,10 +224,9 @@ CI covers the aggregation with an injected clock and fake encoders
 RTX 4060 Ti (16,380 MiB) CUDA host, `LLB_EMBED_DEVICE=cuda`, both scored corpora, k=10,
 `recursive` 800/120, flat mode, 2000 resamples, seed 13, `NOISE_FLOOR=1`,
 `EMBED_ENCODER_THROUGHPUT=1`. Run configs unchanged
-(`.data/compare-embeddings/paired-uncertainty{,-fixture}.yaml`); reports under
-`$DATA_DIR/compare-embeddings/paired-uncertainty-pdf/compare-embeddings/20260816T120805.613959Z-d843778462a0/`
-and `.../paired-uncertainty-fixture/compare-embeddings/20260816T120246.110009Z-1d83e6004ec4/`, with
-the throughput host summaries beside them under each corpus's `encoder-throughput/<run>/`.
+(`.data/compare-embeddings/paired-uncertainty{,-fixture}.yaml`); measured 2026-08-16, one report
+per corpus -- the converted-PDF set and the committed UA fixture -- with an encoder-throughput host
+summary beside each.
 
 Both corpora report a `+/-0.000` measurement floor with 0 fragile items, so every delta below is a
 SAMPLING statement. Seven of the nine roster ids were scored; the two `trust_remote_code` rows were

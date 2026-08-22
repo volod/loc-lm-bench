@@ -112,8 +112,7 @@ comparison would then be measuring the truncation.
 
 ### Measured result: the multi-hop coverage gain does not reach the answer
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T133033Z-answer-quality/answer-quality/`. The same
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The same
 95-item drafted goods ledger, matched stores, and k=10 as the sweep above were scored end to end by
 `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama under two lanes -- `vector` and the sweep's
 best row `fused/global_community@0.10/d10` -- across all three splits (one run bundle per lane and
@@ -179,8 +178,7 @@ Boundaries, both recorded in the artifact rather than inferred:
 
 ### Measured result: the overlap span identity carries more evidence and costs factoid answers
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T151635Z-overlap-answer-quality/answer-quality/`.
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host.
 THREE lanes were scored end to end over the identical 95-item drafted ledger, same model, splits,
 bootstrap, and seed as the two-lane run above: `vector`, the best `exact` row
 (`fused/global_community@0.10/d10`), and the best `overlap` row
@@ -228,9 +226,9 @@ answer-side metric still cannot see hops; both boundaries above apply unchanged.
 
 ### Measured result: question-type routing keeps the gain and clears the factoid loss
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T160531Z-question-routing/`; answer comparison is
-in its `answer-quality/` child. The same 95-item drafted goods ledger, stores, k=10, split pool,
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host; the sweep and the end-to-end answer
+comparison are two lanes of the one run. The same 95-item drafted goods ledger, stores, k=10,
+split pool,
 2,000 bootstrap resamples, seed 13, and 12B MamayLM model as the fixed overlap result were used.
 The sweep reports the routed rows beside the complete fixed grid; the end-to-end comparison scores
 `vector` against `routed/global_community@0.30/d50/ioverlap`.
@@ -276,8 +274,7 @@ held-out result below and does not support changing its defaults.
 
 ### Measured result: the diagnosed budget buys retrieval, not answers
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260816T-budget-answer-quality/answer-quality/`. The
+Scored 2026-08-16 on the RTX 4060 Ti 16 GB CUDA host. The
 [budget diagnosis](retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)
 found the multi-hop `all-spans@k` ceiling to be a property of k=10 rather than of the ranking, with
 large headroom at k=50. This run scores that headroom END TO END. The same 95-item drafted goods
@@ -356,9 +353,8 @@ on this page:
 
 ### Measured result: the verdict is model-invariant, the cost slice is not
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260822T-second-model-answer-quality/`, one
-`answer-quality/` child per model (`mamaylm-v2-12b/`, `lapa-v0.1.2-12b/`). Whether extra retrieved
+Scored 2026-08-22 on the RTX 4060 Ti 16 GB CUDA host, one comparison per model. Whether extra
+retrieved
 evidence converts into a better answer is a property of the MODEL as much as of the lane, so every
 result above -- all measured with one generator -- could not tell "fusion does not help answers on
 this corpus" from "this tune does not use the extra hop". This run separates them by scoring the
@@ -371,8 +367,9 @@ drafted goods ledger, same stores, k=10, all three splits pooled, 2,000 bootstra
 Both models were re-scored rather than pairing the new one against the recorded MamayLM numbers.
 The July fixed-budget runs read a store whose lexical index was written by the `bm25-uk-v1`
 tokenizer, which the current build refuses, so their retrieval columns are not reproducible under
-today's code; this run uses the `20260724T-noise-floor` store both k-sweep and budget evidence ride
-on. The re-scored MamayLM lane reproduces every July multi-hop retrieval figure exactly anyway --
+today's code; this run uses the duplicate-collapsed 1,099-chunk store that the k-sweep and the
+budget evidence both ride on. The re-scored MamayLM lane reproduces every July multi-hop
+retrieval figure exactly anyway --
 recall 0.686 / 0.771 / 0.800, all-spans 0.057 / 0.086 / 0.086, span coverage 0.371 / 0.429 / 0.443
 -- so the new pair is readable against the three fixed-budget results above.
 

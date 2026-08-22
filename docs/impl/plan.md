@@ -1377,6 +1377,49 @@ outcome and closes the question.
 
 ### Documentation integrity -- `documentation-integrity`
 
+#### temp-artifact-citations-on-the-12gb-host
+
+The delivered docs must not cite evidence by a `$DATA_DIR/<method>/<run-id>/` path: that directory
+is host-local and temporary, so it is gone after a cleanup, absent on a fresh checkout, and absent
+on every other machine -- and a bare run label like `20260815T-bare-id-squad-cos060` is no better,
+because it identifies nothing a reader can use ([AGENTS.md](../../AGENTS.md), "Citing a measured
+result"). The pages whose runs live on THIS host now carry the description, the date, the host, and
+the numbers instead. What remains is 59 path citations and 6 bare run labels, across 20 pages whose
+runs were measured on the OTHER GPU host (the
+12 GiB box -- the `blackwell12`, `context-ablation`, `encoder-throughput`, `verbosity-sensitivity`,
+`query-robustness`, and `agentic-compact-window-elision` families among them). They were left alone
+deliberately: converting a citation means reading the run's own numbers out of the bundle and
+inlining them, which cannot be done from a host that does not hold it. Run this task ON that host.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: BLOCKED BY HUMAN (needs a session on the 12 GiB GPU host; no human judgment beyond
+  running it there)
+- Dependencies: none in code. The citation rule and the target shape are in
+  [AGENTS.md](../../AGENTS.md); the already-converted pages under
+  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence) are the
+  worked example.
+- User-visible outcome: every measured result in the delivered docs stays checkable from the page
+  alone, on any machine, after every run directory is deleted.
+- Scope boundary: in scope -- replacing each remaining path citation with a run-label citation plus
+  the load-bearing numbers read out of that run's own bundle, and adding the reproduction recipe and
+  boundaries the page is missing. Out of scope -- re-running any measurement, changing any recorded
+  number, converting a citation whose bundle is missing on that host too (record it as unrecoverable
+  in the page instead), and touching the `$DATA_DIR` path TEMPLATES that document where a command
+  writes.
+- Data and artifact paths: read-only over that host's own `$DATA_DIR`; this task writes only docs.
+- Execution path: enumerate the remaining citations with a scan for BOTH forms -- a backticked
+  `$DATA_DIR/` or `.data/` span whose path carries a `<8-digit>T` run segment, and a backticked bare
+  `<8-digit>T...` run label outside a table row -- convert each page, then re-scan to confirm none
+  is left; `make lint-md` covers wrapping and links.
+- Acceptance gates: `make ci` green; `make lint-md` green; the scan above returns zero of BOTH
+  forms across `docs/`; every page it touched states, for each result, what was measured on what,
+  the date, the host, the numbers the verdict rests on, and the reading those numbers support.
+  Once the scan is clean on both hosts,
+  add it to `make lint-doc-links` so a re-introduced path citation fails the build instead of being
+  found by the next reader.
+- Documentation target: the 19 pages the scan names, and
+  [overview](current/overview.md#documentation-and-specification-gates) for the new check.
+
 #### conflict-bundle-record-page-is-past-the-split-threshold (optional)
 
 [bundle record](current/data-prep/conflict-bundle-record.md) is ~740 lines and its headings describe

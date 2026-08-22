@@ -109,7 +109,7 @@ dtype `auto` (each card's own), 2000 paired resamples, seed 13.
 
 ### Corpus 1: the accepted converted-PDF ledger (40 items)
 
-`$DATA_DIR/compare-rerankers/20260816T150456.120681Z-0cd6e2d48f61/report.md`.
+Measured 2026-08-16.
 
 | row | recall@10 | MRR | first-hit rank | items hit | ms/query | VRAM at rest (MB) | peak (MB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -127,7 +127,7 @@ itself a property of its score spacing near the cut.
 
 ### Corpus 2: the committed 250-item UA fixture
 
-`$DATA_DIR/compare-rerankers/20260816T150841.670986Z-e49d2bc4a042/report.md`, over
+Measured 2026-08-16, over
 `samples/goldsets/ua_squad_postedited_v1/` (250 items, 250 documents).
 
 | row | recall@10 | MRR | first-hit rank | items hit | ms/query | VRAM at rest (MB) | peak (MB) |

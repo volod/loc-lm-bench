@@ -7,8 +7,7 @@ answer-quality comparisons it is read beside, are on the
 
 ## Sidecar-free heuristic calibration
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T180211Z-routing-calibration/`. The run used the
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The run used the
 same drafted goods ledger and matched stores, `global_community@0.30/d50/ioverlap`, k=10,
 multilingual E5 on the RTX 4060 Ti, 2,000 bootstrap resamples, and seed 13. Question-type labels
 were hidden from every routing decision; the evaluation truth was only whether an item carried
