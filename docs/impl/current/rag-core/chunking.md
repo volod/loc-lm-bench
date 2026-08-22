@@ -204,7 +204,10 @@ into TABLE regions and everything else:
   heading, reusing the `markdown`/`heading` parser) and `metadata.table_header_span` --
   the header row's `[start, end]` SOURCE offsets, so a consumer can restore the column names a
   middle row block would otherwise have lost. The header is recorded as OFFSETS, never copied into
-  the text, because chunk text must stay a verbatim corpus slice for the source-span metric;
+  the text, because chunk text must stay a verbatim corpus slice for the source-span metric. The
+  consumer that reads them is the opt-in
+  [table-header restoration](context-assembly.md#table-header-restoration-table-header-context-restoration),
+  which restores the header in the PROMPT only and therefore cannot move any number on this page;
 - non-table text routes through the `recursive` splitter WITHIN its region, so a `table`-versus-
   `recursive` delta isolates the table handling;
 - the one row a boundary may cut is a row longer than `size`: it falls through to the shared
@@ -290,7 +293,12 @@ exactly (`recursive` 0.695 / `sentence` 0.632 on goods), so the comparison is ag
 state, not a re-tuned one. Two reasons the null result is not a null strategy: the guarantee is
 structural rather than incidental (`recursive`'s row alignment is a side effect of one separator in
 a pinned third-party splitter, and nothing measures it per build), and `table_header_span` is
-information no other strategy produces.
+information no other strategy produces. What that second reason has since been WORTH is measured:
+its consumer, [prompt-side header
+restoration](context-assembly.md#measured-result-the-header-reaches-the-prompt-and-does-not-reach-the-answer),
+costs ~20 prompt tokens per touched case on this same corpus and returns no measurable answer gain
+on any question-type slice, so the span remains a capability the strategy uniquely offers rather
+than a benefit it has yet delivered here.
 
 Why recall could not move here, stated plainly: `recall@k` credits an item when a retrieved chunk
 OVERLAPS a gold span by a single character (`chunk_hits_span`,

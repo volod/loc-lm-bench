@@ -192,3 +192,70 @@ def test_comparison_aligns_rows_by_item_id_not_by_file_order():
 def test_an_unknown_baseline_lane_is_rejected():
     with pytest.raises(ValueError, match="baseline lane"):
         compare_answer_quality(_lanes([_row("a", 1.0)], [_row("a", 1.0)]), {}, baseline="missing")
+
+
+# --- the table-header dimension (table-header-context-restoration) ---------------------------
+
+
+def test_header_label_round_trips_and_turns_the_prompt_step_on():
+    from llb.eval.answer_quality import header_label, header_lanes, split_header_label
+
+    label = header_label(VECTOR)
+    assert label == "vector+headers"
+    assert split_header_label(label) == (VECTOR, True)
+    spec = parse_lane_label(label)
+    assert spec.label == label
+    assert spec.retrieval_backend == "faiss"
+    assert spec.restore_table_headers is True
+    assert parse_lane_label(VECTOR).restore_table_headers is False
+    twins = header_lanes(parse_lanes(VECTOR))
+    assert [lane.label for lane in twins] == [VECTOR, label]
+    assert [lane.restore_table_headers for lane in twins] == [False, True]
+
+
+def test_header_suffix_rides_a_fused_row_and_a_budget_together():
+    from llb.eval.answer_quality import budget_label, header_label
+
+    label = budget_label(header_label(FUSED), 50)
+    spec = parse_lane_label(label)
+    assert spec.label == label
+    assert (spec.retrieval_strategy, spec.graph_fusion_candidates) == ("global_community", 10)
+    assert spec.top_k == 50
+    assert spec.restore_table_headers is True
+
+
+def test_header_only_label_is_refused():
+    from llb.eval.answer_quality import split_header_label
+
+    with pytest.raises(ValueError):
+        split_header_label("+headers")
+
+
+def test_header_lane_config_differs_from_its_twin_in_the_prompt_step_alone():
+    """The whole reading rests on this: the two lanes retrieve identically."""
+    from llb.eval.answer_quality import header_label
+
+    base = lane_config(RunConfig(), parse_lane_label(VECTOR), run_name_prefix="aq")
+    twin = lane_config(RunConfig(), parse_lane_label(header_label(VECTOR)), run_name_prefix="aq")
+    assert twin.restore_table_headers is True
+    assert base.restore_table_headers is False
+    differing = {
+        field for field in base.model_dump() if getattr(base, field) != getattr(twin, field)
+    }
+    assert differing == {"restore_table_headers", "run_name"}
+
+
+def test_header_chars_column_is_compared_when_both_lanes_measured_it():
+    """The price of the step: an off lane measures 0.0, so the pair reports what it added."""
+    from llb.eval.answer_quality.models import METRIC_TABLE_HEADER_CHARS
+
+    off = [{**_row("q1", 0.4), "table_header_chars": 0.0, "table_headers_restored": 0}]
+    on = [{**_row("q1", 0.9), "table_header_chars": 96.0, "table_headers_restored": 4}]
+    report = compare_answer_quality(
+        {VECTOR: off, "vector+headers": on}, _types("q1"), baseline=VECTOR, resamples=20
+    )
+    assert METRIC_TABLE_HEADER_CHARS in report["metrics"]
+    lanes = report["lanes"]
+    assert lanes["vector+headers"]["overall"]["metrics"][METRIC_TABLE_HEADER_CHARS]["mean"] == 96.0
+    assert lanes[VECTOR]["overall"]["metrics"][METRIC_TABLE_HEADER_CHARS]["mean"] == 0.0
+    assert "header chars" in format_report(report)

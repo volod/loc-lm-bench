@@ -216,6 +216,18 @@ reported beside the coverage it bought. The boundary: this measures a budget, it
 one. No default moves on the strength of the measurement alone, and the context size is reported
 rather than gated -- what a context is worth is a deployment decision the evidence informs.
 
+What the delivered context CARRIES into the prompt is a third thing the same bar governs, and it is
+neither a component nor a budget. A chunk boundary can remove structure the text needs to be read at
+all -- a table's column names sit in the header row, so a middle row block reaches the model as a
+grid of unlabeled values -- and restoring that structure is a CONTEXT-ASSEMBLY step, applied when
+the retrieved chunks are laid into the prompt. Because it changes only what the model reads, it
+cannot move a retrieval metric, and the only reading that exists for it is the same retrieval row
+scored end to end with the step off and on over one item set, reported per question-type slice
+because the structure a step restores is what a particular kind of question needs. The boundary:
+context assembly never rewrites a stored chunk, its offsets, or the source-span metrics read from
+them -- restoration is prompt-side only, and its added context is reported as a cost beside the
+answer delta. No such step is on by default before its measurement supports it.
+
 Every end-to-end reading of that bar is conditioned on the GENERATOR that produced the answers,
 because whether delivered evidence becomes a better answer is a property of the model as much as of
 the retrieval lane. A reading taken with one model therefore cannot distinguish "this corpus and

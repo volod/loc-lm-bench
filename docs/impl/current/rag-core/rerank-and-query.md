@@ -36,6 +36,11 @@ Modules:
 - `src/llb/eval/position_probe.py` -- `llb probe-context-position` (see
   [evaluation rigor](../rigor-board-judge.md) for the probe contract and artifacts).
 
+Ordering is one of two things this stage does to the kept chunks; the other is what each chunk's
+TEXT looks like in the prompt, which is
+[prompt-side context assembly](context-assembly.md) -- same boundary (prompt copies only, stored
+chunks and their offsets untouched), separate page.
+
 Knobs (all `RunConfig` fields, hence in the manifest and the sweep cell fingerprint):
 `reranker` (HF cross-encoder id; `None` == off, the default), `rerank_candidates` (pool depth,
 default 30), `context_order` (`rank` | `reverse_rank`, applies with or without a reranker).

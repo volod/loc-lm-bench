@@ -36,6 +36,14 @@ def compare_answer_quality_cmd(
         help="a compare-graph-fusion comparison.json; scores its baseline plus the fused row its "
         "verdict named best (overrides --lanes)",
     ),
+    restore_headers: bool = typer.Option(
+        False,
+        "--restore-headers",
+        help="twin EVERY named lane with a `<lane>+headers` copy whose prompt restores a table "
+        "chunk's recorded header row (table-header-context-restoration). The twins retrieve "
+        "identically, so any delta between a lane and its twin is an answer-quality delta. The "
+        "same twin can be named directly in --lanes",
+    ),
     include_drafted: bool = typer.Option(
         False,
         "--include-drafted",
@@ -76,6 +84,7 @@ def compare_answer_quality_cmd(
     """
     from llb.eval.answer_quality import (
         FOCUS_SLICE,
+        header_lanes,
         lane_labels_from_comparison,
         parse_lanes,
         run_answer_quality,
@@ -91,6 +100,8 @@ def compare_answer_quality_cmd(
             else lanes
         )
         specs = parse_lanes(selection)
+        if restore_headers:
+            specs = header_lanes(specs)
         scored_budgets = parse_top_ks(budgets) if budgets else []
     except (OSError, ValueError) as exc:
         typer.echo(f"[error] {exc}", err=True)

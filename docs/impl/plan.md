@@ -76,44 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### table-header-context-restoration (optional)
-
-The `table` chunker records the header row's source offsets on every table chunk
-(`metadata.table_header_span`, [RAG core](current/rag-core/chunking.md#table-aware-chunking)) and
-NOTHING reads them: a middle row block reaches the model as rows of bare values whose column names
-sit in a different chunk, which is precisely the shape a numeric or comparative question cannot be
-answered from. Add an opt-in context-assembly step that, when a retrieved chunk carries
-`table_header_span` and does not already contain it, prepends the header row's source text to that
-chunk IN THE PROMPT ONLY -- the stored chunk, its offsets, and the source-span metric stay
-untouched, so retrieval scores are unchanged by construction and only answer quality can move.
-Measure it on the numeric and comparative slices, where the header is what the answer needs.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none in code, but it is only readable beside
-  `retrieved-evidence-intactness-metric`, which measures how often a row block arrives without its
-  header in the first place. Reuse `format_context` in `src/llb/eval/common.py`, the context-order
-  seam in [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order),
-  and the per-slice comparison in `src/llb/eval/answer_quality/`.
-- User-visible outcome: a table row block that reaches the model carries the column names that
-  make its numbers readable, instead of a grid of unlabeled values.
-- Scope boundary: in scope -- the prompt-side header restoration, its added-token cost, and a
-  per-slice answer-quality comparison with the standard paired verdict. Out of scope -- rewriting
-  stored chunk text, any change to the retrieval metrics or the chunk offsets, reconstructing a
-  table across chunks, and enabling the step by default before the measurement supports it.
-- Data and artifact paths: `$DATA_DIR/table-aware-chunking/<run>/answer-quality/`.
-- Execution path: `make build-index CHUNK_STRATEGY=table` then `make compare-answer-quality` with
-  the step off and on over a table-heavy corpus on the CUDA host; CI covers the restoration rule
-  (prepend, skip when the chunk already contains the header, skip when no span is recorded) and the
-  token accounting over fixtures.
-- Acceptance gates: `make ci` green; with the step off every recorded bundle reproduces
-  bit-identically; retrieval recall@k / MRR are identical with the step on and off (the change is
-  prompt-side only); the report carries the objective delta per question-type slice with paired
-  intervals plus the added tokens per answer, and states adopt or reject.
-- Documentation target: the table-aware chunking section of
-  [RAG core](current/rag-core/chunking.md#table-aware-chunking) and the context-order section of
-  [RAG core](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
-
 #### answer-quality-recompare-from-bundles (optional)
 
 An answer-quality comparison costs hours of generation and is then locked to the report format it

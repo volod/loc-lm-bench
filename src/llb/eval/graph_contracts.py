@@ -12,6 +12,10 @@ class RagState(TypedDict, total=False):
     question: str
     gold_spans: list[SourceSpanRecord]
     retrieved: list[ChunkRecord]
+    # The chunks as the PROMPT carried them. Present only when prompt-side context assembly made
+    # them differ from `retrieved` (table-header restoration); `retrieved` always stays the stored
+    # records the source-span metrics are read from.
+    prompt_chunks: list[ChunkRecord]
     context: str
     answer: str
     status: str
@@ -25,6 +29,10 @@ class RagState(TypedDict, total=False):
     query_hypothetical_answer: str
     query_decomposition: str
     query_subqueries: list[str]
+    # Prompt-side table-header restoration accounting: how many retrieved chunks were given back
+    # their column names, and what that added in characters (0 / 0 when the step is off).
+    table_headers_restored: int
+    table_header_chars: int
 
 
 ContextSource = Callable[[RagState], RagState]

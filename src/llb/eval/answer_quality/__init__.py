@@ -23,6 +23,7 @@ from llb.eval.answer_quality.lanes import (
 )
 from llb.eval.answer_quality.models import FOCUS_SLICE, LaneSpec
 from llb.eval.answer_quality.report import format_report
+from llb.eval.answer_quality.table_headers import header_label, header_lanes, split_header_label
 from llb.eval.answer_quality.run import run_answer_quality
 
 __all__ = [
@@ -34,10 +35,13 @@ __all__ = [
     "conversion_baselines",
     "expand_budget_lanes",
     "format_report",
+    "header_label",
+    "header_lanes",
     "lane_config",
     "lane_labels_from_comparison",
     "parse_lane_label",
     "parse_lanes",
     "run_answer_quality",
     "split_budget_label",
+    "split_header_label",
 ]

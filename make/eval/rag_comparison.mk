@@ -75,7 +75,7 @@ calibrate-fusion-routing: ## Tune sidecar-free routing thresholds, freeze on tun
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(ROUTING_OUT_DIR),--out-dir "$(ROUTING_OUT_DIR)",)
 
-compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= ANSWER_QUALITY_BUDGETS=10,50 FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
+compare-answer-quality: ## Score the multi-hop slice end to end under two retrieval lanes and compare ANSWERS (MODEL= BACKEND= GOLDSET= SPLIT=a,b ANSWER_QUALITY_LANES= FUSION_COMPARISON= ANSWER_QUALITY_BUDGETS=10,50 ANSWER_QUALITY_RESTORE_HEADERS=1 FUSION_FOCUS_SLICE= INCLUDE_DRAFTED=1 ANSWER_QUALITY_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-answer-quality $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -84,6 +84,7 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(ANSWER_QUALITY_LANES),--lanes "$(ANSWER_QUALITY_LANES)",) \
 		$(if $(FUSION_COMPARISON),--from-comparison "$(FUSION_COMPARISON)",) \
 		$(if $(ANSWER_QUALITY_BUDGETS),--budgets "$(ANSWER_QUALITY_BUDGETS)",) \
+		$(if $(ANSWER_QUALITY_RESTORE_HEADERS),--restore-headers,) \
 		$(if $(FUSION_FOCUS_SLICE),--focus-slice "$(FUSION_FOCUS_SLICE)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(ANSWER_QUALITY_LIMIT),--limit $(ANSWER_QUALITY_LIMIT),) \
