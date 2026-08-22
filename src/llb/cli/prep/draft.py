@@ -233,6 +233,12 @@ def prepare_goldset_draft_cmd(
         None,
         help="yield-max: comma-separated prior bundle dirs; drop pinned-E5 near-duplicate questions",
     ),
+    dedup_linkage_shadow: bool = typer.Option(
+        False,
+        "--dedup-linkage-shadow",
+        help="score the gold-item record-linkage model beside the shipped cosine constant and "
+        "write the fit under <bundle>/linkage/; it changes no drop (requires --dedup-against)",
+    ),
     carry_forward_multi_hop: bool = typer.Option(
         False,
         "--carry-forward-multi-hop",

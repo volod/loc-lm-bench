@@ -210,6 +210,13 @@ meta pins them).
   injectable, so the filter is unit-tested with a fake embedder. `pdf_ontology_report.json` gains a
   `dedup` block (threshold, prior question count, dropped ids); `provenance.json` records the prior
   bundles.
+- **Linkage shadow lane** (`--dedup-linkage-shadow`, `DRAFT_DEDUP_LINKAGE_SHADOW=1`, requires
+  `--dedup-against` and the `linkage` extra). Fits the gold-item record-linkage model over the prior
+  bundles plus the drafted batch and scores it BESIDE the constant above -- it changes no drop. The
+  `dedup` block gains a `linkage_shadow` entry (the cut that would reproduce today's decisions and
+  every item where the two policies disagree), each `dropped_detail` row gains its match
+  probability and level agreements, and the fit lands in `<bundle>/linkage/`. See
+  [the gold-item lane](entity-resolution.md#the-gold-item-lane).
 
 Every drafted item is tagged with a closed **question type** (factoid, definition, procedural,
 numeric, comparative, multi-hop) and a **difficulty** label, recorded in item provenance and on the
@@ -231,7 +238,7 @@ make prepare-goldset-draft DRAFT_CORPUS=<dir> DRAFT_MODEL=<model> \
   DRAFT_COVERAGE_TARGET=6 DRAFT_MULTI_HOP=1 DRAFT_DEDUP_AGAINST=<prior-bundle>
 llb prepare-goldset-draft --corpus-root <dir> --model <model> \
   --coverage-target 6 --multi-hop --multi-hop-bridge-fill --multi-hop-max-paths 40 \
-  --dedup-against <prior-bundle>,<other-bundle> --graph-dir <graph-store>
+  --dedup-against <prior-bundle>,<other-bundle> --dedup-linkage-shadow --graph-dir <graph-store>
 ```
 
 ## spaCy Adapter And Long Documents

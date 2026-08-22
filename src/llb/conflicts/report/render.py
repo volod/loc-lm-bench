@@ -35,6 +35,7 @@ from llb.conflicts.tiers.hashing import sha256_text
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report.findings import findings_section
 from llb.conflicts.report.precision import precision_section
+from llb.conflicts.linkage.report import report_section as linkage_section
 from llb.conflicts.report.projection import projected_review_lines
 
 
@@ -59,6 +60,7 @@ def render_report(result: AuditResult) -> str:
     lines += _tiers_section(result)
     lines += precision_section(result)
     lines += _needles_section(result)
+    lines += linkage_section(result.edition_linkage)
     lines += findings_section(result)
     return "\n".join(lines)
 
@@ -209,6 +211,12 @@ def _needles_section(result: AuditResult) -> list[str]:
     return lines
 
 
+def _editions_of(result: AuditResult) -> dict[str, str]:
+    """Which edition group each document was proposed into, or nothing when the lane did not run."""
+    lane = result.edition_linkage_run
+    return dict(lane.editions_of) if lane is not None and not lane.declined else {}
+
+
 def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
     """Persist the audit artifacts; returns their paths by name."""
     out = Path(out_dir)
@@ -229,7 +237,11 @@ def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
     groups_path = out / GROUPS_FILE
     groups_path.write_text(
         json.dumps(
-            groups_document(rows, findings_sha256=sha256_text(findings_text)),
+            groups_document(
+                rows,
+                findings_sha256=sha256_text(findings_text),
+                editions=_editions_of(result),
+            ),
             ensure_ascii=False,
             indent=2,
         ),
@@ -241,6 +253,10 @@ def write_audit(out_dir: Path | str, result: AuditResult) -> dict[str, Path]:
         "summary": summary_path,
         "groups": groups_path,
     }
+    if result.edition_linkage:
+        from llb.conflicts.linkage.artifacts import write_edition_linkage
+
+        paths.update(write_edition_linkage(out, result.edition_linkage_run))
     if result.tree_meta:
         tree_path = out / TREE_META_FILE
         tree_path.write_text(

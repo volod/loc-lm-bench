@@ -78,6 +78,7 @@ prepare-goldset-draft: ## Ontology-assisted draft bundle; use DRAFT_DOC_LIMIT=1 
 	  --multi-hop-source-document-target "$(DRAFT_MULTI_HOP_SOURCE_DOCUMENT_TARGET)" \
 	); \
 	if [ -n "$(DRAFT_DEDUP_AGAINST)" ]; then args+=(--dedup-against "$(DRAFT_DEDUP_AGAINST)"); fi; \
+	if [ "$(DRAFT_DEDUP_LINKAGE_SHADOW)" = "1" ]; then args+=(--dedup-linkage-shadow); fi; \
 	if [ "$(DRAFT_CARRY_FORWARD_MULTI_HOP)" = "1" ]; then args+=(--carry-forward-multi-hop); fi; \
 	if [ -n "$(DRAFT_GRAPH_DIR)" ]; then args+=(--graph-dir "$(DRAFT_GRAPH_DIR)"); fi; \
 	if [ -n "$(DRAFT_REJECTION_FEEDBACK)" ]; then args+=(--rejection-feedback "$(DRAFT_REJECTION_FEEDBACK)"); fi; \

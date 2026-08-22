@@ -1425,6 +1425,33 @@ Anchors keep their fragments, so only paths change and `make lint-doc-links` pro
   no anchor text changes.
 - Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
 
+#### entity-resolution-page-is-a-single-page-area-with-four-subjects (optional)
+
+[entity resolution](current/entity-resolution.md) is ~650 lines and its headings describe four
+subjects: the shared linkage seam (its vocabulary, artifacts, commands, and committed sample) and
+one page's worth of lane apiece for gold items, graph nodes, and document editions. That is past the
+~500-line split rule in [AGENTS.md](../../AGENTS.md), and the page is a single-page AREA rather than
+a container, so every new lane lands on it. Turn it into an area directory: keep the orientation,
+the confidence contract, and the boundary on `entity-resolution.md` with a table of its pages, and
+move the seam and the three lanes to `current/entity-resolution/<topic>.md`. Anchors keep their
+fragments, so only paths change and `make lint-doc-links` proves the move.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `plan.md`, `current.md`, `robustness-ontology-backends.md`, two `graphrag-backend/`
+  pages, `data-prep/ingestion-corpora.md`, `data-prep/conflict-detection.md`, and the
+  `samples/corpora/editions_uk_v1/README.md`.
+- User-visible outcome: a reader who wants one lane stops scrolling past the other three and the
+  seam to reach it, and the next lane to move onto the seam gets a page instead of a section.
+- Scope boundary: in scope -- the split, the area-page table, and the link repointing. Out of scope
+  -- rewriting the moved text, changing any measured result, and merging the per-lane test
+  paragraphs.
+- Acceptance gates: `make lint-md` green with zero broken links; no page past ~500 lines; no anchor
+  text changes.
+- Documentation target: [entity resolution](current/entity-resolution.md) and the pages the split
+  produces.
+
 ## Human-Assisted Tasks
 
 Work whose acceptance needs human judgment or authorization, in the same capability
@@ -1487,6 +1514,88 @@ say whether a shared-bridge question genuinely needs both facts.
   reviewed ledger.
 - Documentation target: the graph-vector fusion evidence section of
   [GraphRAG](current/graphrag-backend.md).
+
+### Entity resolution -- `entity-resolution`
+
+#### entity-merge-labelled-set
+
+Produce the reviewer-labelled merge set that turns a linkage probability into an operating point. An
+unsupervised fit ranks pairs and clusters them, but nothing in it says where to cut: the
+confidence contract publishes a match probability only with the labelled set it was scored against,
+so until a human has read a sample of proposed merges there is no defensible default threshold for
+either the graph overlay or the gold-item suppression policy. Sample the proposed merges across the
+probability range -- not only the confident ones, because the threshold lives where the model is
+unsure -- and record same-thing / different-thing / cannot-tell per pair through the review
+workbench, so the decisions land in a ledger like every other human gate.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: HUMAN-GATED
+- Dependencies: whichever supplies the candidate pairs to label -- the gold-item shadow lane's
+  disagreement list ([the gold-item lane](current/entity-resolution.md#the-gold-item-lane)) or the
+  graph node lane's scored pairs
+  ([the graph node lane](current/entity-resolution.md#the-graph-node-lane)). The seam's label-based
+  fit and labelled accuracy curve already exist -- see
+  [entity resolution](current/entity-resolution.md). Human step that gates
+  completion: a Ukrainian-reading reviewer decides each sampled pair. Reuse the adapter pattern in
+  [review workbench](current/review-workbench.md) rather than building a second review surface.
+- User-visible outcome: both linkage domains gain a threshold with a precision and recall attached
+  to it, and the operator can see what a stricter or looser cut would cost.
+- Scope boundary: in scope -- the workbench adapter for merge decisions, a stratified sample across
+  probability bands, the label ledger, the labelled accuracy curve computed from it, and the
+  threshold recommendation that follows. Out of scope -- labelling every candidate pair, labelling
+  CONFLICT relations (a different question with a different adjudicator), and adopting a threshold
+  that the paired retrieval or drafting evidence does not support.
+- Data and artifact paths: `$DATA_DIR/entity-merge-labels/<run>/` -- the sampled pairs, the decision
+  ledger, and the accuracy curve; the ledger is the frozen label set later fits are scored against.
+- Execution path: generate the sample from a linkage run's `pairs.jsonl`, review it in the
+  workbench, then re-score the model against the ledger with the seam's label-based fit and accuracy
+  analysis.
+- Acceptance gates: every sampled pair carries a decision or an explicit cannot-tell; the sample
+  covers each probability band, including the uncertain middle; the curve reports precision and
+  recall at several thresholds with the reviewer cost the sample took; the recommended threshold
+  is stated with what it would merge and what it would leave apart.
+- Documentation target: the labelling section of `docs/impl/current/entity-resolution.md`, with the
+  measured reviewer cost going to [review workbench](current/review-workbench.md).
+
+#### gold-item-drop-policy-adoption
+
+Decide whether the gold-item drop policy moves from the shipped cosine constant to the fitted
+linkage model, and make the decision on the labelled curve rather than on the shadow report alone.
+The shadow lane already publishes, per drafting run, the cut that reproduces today's decisions and
+every item where a probability cut and the constant disagree -- see
+[the gold-item lane](current/entity-resolution.md#the-gold-item-lane). What it cannot supply is
+which side of each disagreement is right: a paraphrase the constant kept and the model would drop
+is either a duplicate the constant missed or a distinct question the model would destroy, and only
+a reviewer decision separates those. Score the model against the merge ledger, read the threshold
+off the labelled accuracy curve, and either flip `NEAR_DUP_COSINE_THRESHOLD` and the multi-hop
+answer constant for the model at that threshold, or record why the labelled curve does not support
+the move.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: BLOCKED BY HUMAN
+- Dependencies: the reviewer merge ledger from `entity-merge-labelled-set` under Human-Assisted
+  Tasks is the gate -- without it there is no curve to read a threshold off. The lane, its record
+  specification, and the shadow report already exist; the seam's label-fitted m estimation and
+  labelled accuracy curve already exist.
+- User-visible outcome: a drafting run's suppression decision carries a threshold with a precision
+  and recall attached to it, and a reviewer who wants a looser or stricter policy can see what it
+  would cost before changing it.
+- Scope boundary: in scope -- scoring the fitted model against the merge ledger, the threshold
+  recommendation, flipping the default (or recording the negative result), and re-running the
+  shadow report at the adopted cut so the change is visible in one diff. Out of scope --
+  re-deduplicating already-accepted ledgers, changing what a gold item contains, changing the
+  drafting prompts, and adopting a cut the labelled curve does not support.
+- Data and artifact paths: the drafting bundle's `linkage/` gains the accuracy curve a labelled fit
+  writes; the adopted threshold lands beside the constants it replaces.
+- Execution path: the drafting entrypoint with the shadow lane enabled and the merge ledger passed
+  as the label table, over the same fixtures the lane is tested on.
+- Acceptance gates: `make ci` green; the model is scored against the ledger with precision and
+  recall at the adopted cut and at the shipped constant's operating point, so the two policies are
+  compared on the same labelled pairs; a cut that does not beat the constant on both is recorded as
+  a negative result and the constant stays.
+- Documentation target: the gold-item section of `docs/impl/current/entity-resolution.md`.
 
 ### Retrieval evidence -- `retrieval-evidence`
 

@@ -12,6 +12,7 @@ from llb.cli.rag import (  # noqa: F401
     fusion_calibration,
     fusion_evidence,
     graph_index,
+    graph_resolution,
     index,
     multihop_probe,
     refresh,

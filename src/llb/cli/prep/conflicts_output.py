@@ -99,6 +99,7 @@ def echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
     for relation, row in relation_census(result.findings).items():
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
     echo_projection(result.policy_projection, result.governance_coverage)
+    _echo_edition_linkage(result.edition_linkage)
     _echo_claim_precision(result.claim_precision)
     if result.needles:
         typer.echo(
@@ -119,6 +120,14 @@ def _echo_semantic_threshold(result: "AuditResult") -> None:
     if isinstance(null, dict):
         line += f" q={null.get('resolved_quantile')} over {null['total_pairs']} comparable pairs"
     typer.echo(line)
+
+
+def _echo_edition_linkage(summary: JsonObject) -> None:
+    """The edition-linkage lane's reading, or the reason it did not run."""
+    from llb.conflicts.linkage.report import console_lines
+
+    for line in console_lines(summary):
+        typer.echo(line)
 
 
 def _echo_claim_precision(precision: JsonObject) -> None:

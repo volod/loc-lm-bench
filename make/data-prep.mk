@@ -6,3 +6,4 @@ include $(PROJECT_ROOT)/make/data-prep/curation.mk
 include $(PROJECT_ROOT)/make/data-prep/verification.mk
 include $(PROJECT_ROOT)/make/data-prep/drafting.mk
 include $(PROJECT_ROOT)/make/data-prep/draft-comparison.mk
+include $(PROJECT_ROOT)/make/data-prep/linkage.mk

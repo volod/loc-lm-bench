@@ -132,6 +132,14 @@ class AuditResult:
     # never ran the corpus pass; the chunk half of it is absent below the semantic tier, which is
     # itself the `effort` reading.
     stage_inputs: JsonObject = field(default_factory=dict)
+    # The opt-in edition-linkage lane's reading (`conflicts/linkage/`). Empty unless the run asked
+    # for it, and empty is not a failure: the lane prices the model-free tiers' duplicate evidence
+    # BESIDE them and decides nothing, so an audit without it is the same audit.
+    edition_linkage: JsonObject = field(default_factory=dict)
+    # The same reading as the object that produced it, kept so `write_audit` can publish the seam's
+    # own bundle (the fitted model, the scored pairs, the proposed groups) beside the summary. Not
+    # part of `summary()`: those artifacts have files of their own under `linkage/`.
+    edition_linkage_run: Any = None
     # An opt-in TO REVIEW projection under a policy the operator named, computed ABOVE this layer
     # (`policy_projection.py`) and carried as plain data. Empty by default, and empty is the whole
     # point: the detector runs without a resolution policy, and the renderer reads this dict
@@ -184,6 +192,10 @@ class AuditResult:
             payload[COVERAGE_FIELD] = dict(self.governance_coverage)
         if self.stage_inputs:
             payload[STAGE_INPUTS_FIELD] = dict(self.stage_inputs)
+        if self.edition_linkage:
+            from llb.conflicts.linkage.run import compact_summary
+
+            payload["edition_linkage"] = compact_summary(self.edition_linkage)
         if self.policy_projection:
             payload["policy_projection"] = dict(self.policy_projection)
         return payload

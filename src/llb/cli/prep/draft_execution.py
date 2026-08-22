@@ -112,6 +112,7 @@ def run_draft(request: DraftRequest) -> None:
         request.multi_hop_only,
         request.carry_forward_multi_hop,
         dedup_against_dirs,
+        request.dedup_linkage_shadow,
     )
     _apply_egress_policy(resolved)
     endpoints, launched_vllm, resolved_out_dir = _endpoint_plan_setup(
@@ -159,6 +160,7 @@ def run_draft(request: DraftRequest) -> None:
             multi_hop_document_mode_target=request.multi_hop_document_mode_target,
             multi_hop_source_document_target=request.multi_hop_source_document_target,
             dedup_against=dedup_against_dirs,
+            dedup_linkage_shadow=request.dedup_linkage_shadow,
             carry_forward_multi_hop=request.carry_forward_multi_hop,
             graph_dir=request.graph_dir,
             rejection_feedback=request.rejection_feedback,

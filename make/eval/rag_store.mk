@@ -1,6 +1,6 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
-.PHONY: build-rag-store build-index build-graph refresh-index validate-retrieval \
+.PHONY: build-rag-store build-index build-graph resolve-graph-entities refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
 	venv-encoders-legacy compare-embeddings-legacy compare-rerankers-legacy \
@@ -47,6 +47,18 @@ build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assi
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
 	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
+
+resolve-graph-entities: ## Entity resolution: propose a graph node-cluster overlay and price it on the graph lane (GOLDSET= SPLIT= RAG_K= RESOLVE_THRESHOLDS= RESOLVE_STRATEGIES= RESOLVE_NO_EMBEDDINGS=1 RESOLVE_WITH_VECTOR=1 CORPUS= RESOLVE_OUT_DIR=; needs ".[linkage]")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main resolve-graph-entities $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --k $(RAG_K) $(if $(SPLIT),--split "$(SPLIT)",) \
+		$(if $(RESOLVE_THRESHOLDS),--thresholds "$(RESOLVE_THRESHOLDS)",) \
+		$(if $(RESOLVE_STRATEGIES),--strategies "$(RESOLVE_STRATEGIES)",) \
+		$(if $(RESOLVE_NO_EMBEDDINGS),--no-mention-embeddings,) \
+		$(if $(RESOLVE_WITH_VECTOR),--with-vector $(if $(CORPUS),--corpus-root "$(CORPUS)",),) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(RESOLVE_OUT_DIR),--out-dir "$(RESOLVE_OUT_DIR)",)
 
 refresh-index: ## Incrementally refresh built stores after corpus edits + drift report (CORPUS= GOLDSET= RETUNE_THRESHOLD= SKIP_GRAPH=1 GRAPH_EXTRACTION=<jsonl>)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

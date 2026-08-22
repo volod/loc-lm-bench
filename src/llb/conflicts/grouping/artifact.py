@@ -41,15 +41,34 @@ def _relation_counts(rows: list[JsonObject]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def _summary(index: int, rows: list[JsonObject], pairs: list[PairUnits]) -> JsonObject:
+def _editions(documents: list[str], editions: dict[str, str]) -> list[str]:
+    """The edition groups a decision group's documents were proposed into, deduplicated.
+
+    A decision group is rows that share a chunk or a document; an edition group is documents one
+    linkage fit put in one identity. Naming the second on the first is what lets a reviewer see
+    that four rows about four files are four editions of ONE document -- which is a different
+    amount of work from four documents that happen to overlap.
+    """
+    named = {editions[doc] for doc in documents if doc in editions}
+    return sorted(named)
+
+
+def _summary(
+    index: int, rows: list[JsonObject], pairs: list[PairUnits], editions: dict[str, str]
+) -> JsonObject:
     """One group's public record: what it is, what it rests on, and which rows it speaks for."""
+    documents = sorted({doc for pair in pairs for doc in pair.doc_pair})
+    grouped = _editions(documents, editions)
     return {
         "group_id": f"G{index}",
         "rows": len(rows),
         "finding_ids": [finding_id(row) for row in rows],
         "relations": _relation_counts(rows),
         "shared_units": _shared_units(pairs),
-        "documents": sorted({doc for pair in pairs for doc in pair.doc_pair}),
+        "documents": documents,
+        # Present only when the edition-linkage lane ran, so a bundle written without it is
+        # byte-identical to one written before the lane existed.
+        **({"edition_groups": grouped} if grouped else {}),
         # Lists, not tuples: a consumer comparing this against the JSON on disk must not see a
         # difference the serializer invented.
         "document_pairs": [list(pair) for pair in sorted({pair.doc_pair for pair in pairs})],
@@ -57,23 +76,28 @@ def _summary(index: int, rows: list[JsonObject], pairs: list[PairUnits]) -> Json
     }
 
 
-def group_summaries(rows: list[JsonObject]) -> list[JsonObject]:
+def group_summaries(
+    rows: list[JsonObject], editions: dict[str, str] | None = None
+) -> list[JsonObject]:
     """One summary per decision group, in the order the rows are listed."""
     pairs = [row_pair_units(row) for row in rows]
+    named = editions or {}
     return [
-        _summary(index, [rows[at] for at in members], [pairs[at] for at in members])
+        _summary(index, [rows[at] for at in members], [pairs[at] for at in members], named)
         for index, members in enumerate(group_indices(pairs), start=1)
     ]
 
 
-def groups_document(rows: list[JsonObject], *, findings_sha256: str) -> JsonObject:
+def groups_document(
+    rows: list[JsonObject], *, findings_sha256: str, editions: dict[str, str] | None = None
+) -> JsonObject:
     """The `groups.json` sidecar: the audit's grouping, pinned to the rows it was derived from."""
     return {
         "schema_version": GROUPS_SCHEMA_VERSION,
         "unit": UNIT_DESCRIPTION,
         "source_findings_sha256": findings_sha256,
         "census": rows_census(rows),
-        "groups": group_summaries(rows),
+        "groups": group_summaries(rows, editions),
     }
 
 

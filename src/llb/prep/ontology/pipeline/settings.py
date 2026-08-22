@@ -62,6 +62,7 @@ class DraftSettings:
     multi_hop_document_mode_target: int = DEFAULT_MULTI_HOP_DOCUMENT_MODE_TARGET
     multi_hop_source_document_target: int = DEFAULT_MULTI_HOP_SOURCE_DOCUMENT_TARGET
     dedup_against: list[Path | str] | None = None
+    dedup_linkage_shadow: bool = False
     carry_forward_multi_hop: bool = False
     graph_dir: Path | str | None = None
     rejection_feedback: Path | str | None = None
@@ -116,6 +117,9 @@ class DraftSettings:
         )
         dedup = meta.get("dedup_against")
         self.dedup_against = list(dedup) if dedup is not None else self.dedup_against
+        self.dedup_linkage_shadow = bool(
+            meta.get("dedup_linkage_shadow", self.dedup_linkage_shadow)
+        )
         self.carry_forward_multi_hop = bool(
             meta.get("carry_forward_multi_hop", self.carry_forward_multi_hop)
         )
@@ -133,6 +137,8 @@ class DraftSettings:
             raise ValueError("multi_hop_only requires multi_hop")
         if self.carry_forward_multi_hop and not self.dedup_against:
             raise ValueError("carry_forward_multi_hop requires dedup_against")
+        if self.dedup_linkage_shadow and not self.dedup_against:
+            raise ValueError("dedup_linkage_shadow requires dedup_against")
         if (
             min(
                 self.multi_hop_relation_pair_target,

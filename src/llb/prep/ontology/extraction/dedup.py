@@ -108,11 +108,17 @@ class NearDuplicateFilter:
         threshold: float = NEAR_DUP_COSINE_THRESHOLD,
         prior_answers: list[str] | None = None,
         answer_threshold: float | None = None,
+        prior_ids: list[str] | None = None,
     ):
         if prior_answers is not None and len(prior_answers) != len(prior_questions):
             raise ValueError("prior_answers must align with prior_questions")
+        if prior_ids is not None and len(prior_ids) != len(prior_questions):
+            raise ValueError("prior_ids must align with prior_questions")
         self._prior_questions = prior_questions
         self._prior_answers = prior_answers
+        # Carried so a drop names the prior ITEM it lost to, not only that prior's text: the
+        # shadow linkage lane looks the decided pair up by record id.
+        self._prior_ids = prior_ids
         self._answer_threshold = threshold if answer_threshold is None else answer_threshold
         self._embedder = embedder
         self._threshold = threshold
@@ -208,6 +214,8 @@ class NearDuplicateFilter:
             "nearest_prior_question": self._prior_questions[best_index],
             "candidate_question": item.question,
         }
+        if self._prior_ids is not None:
+            detail["nearest_prior_id"] = self._prior_ids[best_index]
         if answer_similarities is not None and self._prior_answers is not None:
             detail.update(
                 {
