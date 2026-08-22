@@ -167,4 +167,4 @@ The CUDA result keeps the best fixed row's multi-hop retrieval gain while making
 retrieval and answer an exact vector tie; see
 [GraphRAG](../graphrag-backend/answer-quality-evidence.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss).
 The held-out sidecar-free calibration recommends no threshold change; see
-[GraphRAG](../graphrag-backend/answer-quality-evidence.md#sidecar-free-heuristic-calibration).
+[GraphRAG](../graphrag-backend/sidecar-free-routing-calibration.md#sidecar-free-heuristic-calibration).

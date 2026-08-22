@@ -17,7 +17,8 @@ This page is the AREA INDEX: the mechanics and each evidence chain live under
 | [Span identity and candidate depth evidence](graphrag-backend/span-and-depth-evidence.md) | How deep to take graph candidates, how a graph hit maps to a source span, and what the merge threshold is worth |
 | [Retrieval budget and per-hop evidence](graphrag-backend/retrieval-budget-evidence.md) | The per-hop probe lane, and whether a stuck multi-hop `all-spans@k` is limited by the retrieval budget or by the query |
 | [Entity resolution evidence](graphrag-backend/entity-resolution-evidence.md) | Whether entity-node fragmentation is costing the graph lane recall, and what merging the fragments does to it |
-| [Answer-quality evidence](graphrag-backend/answer-quality-evidence.md) | Whether fused retrieval moves ANSWER quality rather than retrieval rank, and the sidecar-free heuristic calibration |
+| [Answer-quality evidence](graphrag-backend/answer-quality-evidence.md) | Whether fused retrieval moves ANSWER quality rather than retrieval rank, and which half of that reading is a property of the generator |
+| [Sidecar-free routing calibration](graphrag-backend/sidecar-free-routing-calibration.md) | What the question-type router is worth when no question-type sidecar exists to route on |
 
 ## Ontology Scope
 

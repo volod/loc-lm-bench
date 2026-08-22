@@ -216,6 +216,18 @@ reported beside the coverage it bought. The boundary: this measures a budget, it
 one. No default moves on the strength of the measurement alone, and the context size is reported
 rather than gated -- what a context is worth is a deployment decision the evidence informs.
 
+Every end-to-end reading of that bar is conditioned on the GENERATOR that produced the answers,
+because whether delivered evidence becomes a better answer is a property of the model as much as of
+the retrieval lane. A reading taken with one model therefore cannot distinguish "this corpus and
+lane do not convert" from "this tune does not convert", and the question-type slice a retrieval
+change pays for itself on can differ between models even when the delivered context is identical.
+So a retrieval change that is adopted, retained, or recommended on end-to-end evidence names the
+model that evidence was taken with, and a recommendation whose whole purpose is to avoid a measured
+per-slice cost is only established for the model whose cost was measured. The boundary: this
+requires the reading to be ATTRIBUTED, not repeated -- the product does not gate a retrieval
+decision on a roster-wide sweep, and a second model is evidence to seek when a per-slice cost is
+what a decision rests on, not a precondition for taking the first reading.
+
 ## Graph Retrieval and Ontology
 
 GraphRAG is a retrieval lane, scored against the same source-span metric as the vector lanes so the

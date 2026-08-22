@@ -76,34 +76,36 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### fusion-answer-quality-second-model (optional)
+#### routed-lane-second-model-cost-check
 
-Repeat the end-to-end answer-quality comparison on a second roster model. Whether extra retrieved
-evidence converts into a better answer is a property of the MODEL, not only of the retrieval lane:
-a measured coverage gain that one model ignores may be exactly what a stronger (or more
-instruction-following) model needs, and a single-model result cannot separate "fusion does not
-help answers" from "this model does not use the extra hop". The lane, its verdict vocabulary, and
-the drafted-grounding rules are current behavior
-([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)).
+The question-type route is recommended because it removes a measured per-slice cost -- it never
+fuses a factoid, and the fixed overlap row's factoid answer loss is the cost it clears. That
+recommendation is established for ONE generator. On the second Ukrainian family the same overlap
+row carries no factoid cost at all and instead lowers the MULTI-HOP objective by an interval clear
+of zero on 21 differing items ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#measured-result-the-verdict-is-model-invariant-the-cost-slice-is-not))
+-- and multi-hop is precisely the slice the router sends TO fusion, so routing cannot clear a cost
+of that shape. Score the routed row on that second model and state whether the route still buys
+what it is recommended for, or whether the recommendation is model-conditioned.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-answer-quality` as-is with a different `MODEL`; the matched
-  stores and drafted bundle already exist.
-- User-visible outcome: the operator learns whether the retrieval-only finding is a property of
-  the corpus and the fusion lane, or of the one model that was scored.
-- Scope boundary: in scope -- one more model, the same lanes/splits/seed, and a two-model
-  comparison of the per-slice deltas. Out of scope -- any ranking-policy change, model selection,
-  and re-tuning the graph weight per model.
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
+- Dependencies: none. Reuse `compare-answer-quality` with the `routed/` lane label; the matched
+  stores, the question-type sidecar, and both models are already on the host.
+- User-visible outcome: the operator learns whether "use the routed overlap row when a sidecar
+  exists" is a recommendation about the corpus or about one tune.
+- Scope boundary: in scope -- the routed lane on the second model over the same items, splits, and
+  seed, and the per-slice cost comparison against both models' fixed overlap rows. Out of scope --
+  a new routing policy, a per-model router, re-tuning the graph weight, and any change to the
+  shipped `fixed` default.
+- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/<model-slug>/answer-quality/`.
 - Execution path: `make compare-answer-quality MODEL=<second-roster-model> SPLIT=final,tuning,
-  calibration ANSWER_QUALITY_LANES=vector,<best-exact-row>,<best-overlap-row> INCLUDE_DRAFTED=1`
-  -- the same three lanes the first model was scored on, so the two models are compared row for
-  row; no new CI coverage.
-- Acceptance gates: `make ci` green; both models score the identical item set at the same seed;
-  the report states whether the two models agree on the verdict per lane, including whether the
-  factoid cost of the overlap row reproduces.
-- Documentation target: the answer-quality evidence subsection of
+  calibration ANSWER_QUALITY_LANES=vector,<best-overlap-row>,<routed-overlap-row>
+  INCLUDE_DRAFTED=1` on the CUDA host; no new CI coverage.
+- Acceptance gates: `make ci` green; the routed lane's factoid rows reproduce the vector lane
+  exactly on the second model as they do on the first; the report states, per model, which
+  question-type slice the route leaves paying and whether any surviving cost clears the
+  minimum-evidence gate.
+- Documentation target: the answer-quality evidence page of
   [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
 
 #### table-header-context-restoration (optional)
@@ -1688,7 +1690,7 @@ its item set or of the drafting, which only an accepted ledger over that corpus 
 Increase the sidecar-free routing calibration's statistical power before reconsidering its
 production defaults. The first held-out measurement cannot separate its positive retrieval deltas
 from zero; see the compact result and frozen-policy diagnostics in
-[GraphRAG](current/graphrag-backend/answer-quality-evidence.md#sidecar-free-heuristic-calibration).
+[GraphRAG](current/graphrag-backend/sidecar-free-routing-calibration.md#sidecar-free-heuristic-calibration).
 Assemble a larger, independent multi-span tuning/final ledger, declare its minimum detectable gain
 and split sizes before retrieval, then repeat the frozen-policy workflow without widening the
 threshold grid.
