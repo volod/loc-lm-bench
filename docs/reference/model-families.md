@@ -1,28 +1,39 @@
 # Model Families, Tiers, and Licenses
 
-The default candidate sweep compares five open-weight families: two Ukrainian-specialized and three
-multilingual baselines. This page is the long form of the
-[README roster](../../README.md#model-families-and-licenses) -- what each family is in the sweep to
-answer, which artifact actually serves on which GPU tier, the traps that cost a run, and the license
-that travels with the weights.
+The default candidate sweep compares open-weight FAMILIES, and a family carries one or more
+GENERATIONS: exactly one is current, and a superseded one is kept only while a model still serves
+from it, so a family result reads as a generation comparison rather than a single point. This page
+is the long form of the [README roster](../../README.md#model-families-and-licenses) -- what each
+family is in the sweep to answer, which artifact actually serves on which GPU tier, the traps that
+cost a run, and the license that travels with the weights.
 
 Two files are the machine-readable source of truth, and they win over any prose here:
 
 - [`samples/configs/models_uk.yaml`](../../samples/configs/models_uk.yaml) -- the candidate roster:
-  per-backend sources, quants, VRAM floors, planning fields, and a `license` / `license_url` on
-  every logical model.
+  the `families:` register (generations, their status, upstream namespaces, licenses) and, per
+  logical model, its `family` / `generation`, per-backend sources, quants, VRAM floors, and
+  planning fields.
 - [`docs/inference/config-example.md`](../inference/config-example.md) -- the generated serve and
   `run-eval` artifacts per detected tier, the documented hosts, and the vLLM knobs.
 
 ## The roster
 
-| Family | Role in the sweep | Sizes carried | License |
-| --- | --- | --- | --- |
-| MamayLM v2 (INSAIT) | Ukrainian-specialized; the UA-tuned reference the baselines must beat | 12B bf16, 27B FP8 | [Gemma Terms][gemma-lic] |
-| Lapa v0.1.2 (lang-uk) | Ukrainian-specialized; a second, independently tuned UA lineage | 12B bf16 | [Gemma Terms][gemma-lic] |
-| Gemma 4 (Google) | Multilingual baseline; the shared architecture the UA models derive from | ~8B (E4B), 12B, 26B-A4B MoE | [Apache 2.0][apache-lic] |
-| Qwen (Alibaba) | Multilingual baseline; the MoE lane that serves on every tier | 27B dense, 35B-A3B MoE, 30B-A3B MoE | [Apache 2.0][apache-lic] |
-| Mistral Small 3.1 (Mistral AI) | Multilingual baseline; a non-Gemma, non-Qwen dense control | 24B | [Apache 2.0][apache-lic] |
+The table below is generated from that register -- run `make sync-model-family-docs` after editing
+it, and `make list-model-families` to print it in the terminal.
+
+<!-- generated: model-roster (make sync-model-family-docs) -->
+
+| Family | Generation | Status | Models carried | Weights | License |
+| --- | --- | --- | --- | --- | --- |
+| MamayLM (INSAIT) | MamayLM v2.0 (Gemma 3) | current | `mamaylm-v2-12b`, `mamaylm-v2-27b-fp8` | [upstream](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3) | [Gemma](https://ai.google.dev/gemma/terms) |
+| Lapa (lang-uk) | Lapa v0.1.2 instruct | current | `lapa-v0.1.2-instruct` | [upstream](https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct) | [Gemma](https://ai.google.dev/gemma/terms) |
+| Gemma (Google) | Gemma 4 | current | `gemma-4-e4b-it-w4a16`, `gemma-4-12b-it-w4a16`, `gemma-4-26b-a4b` | [upstream](https://huggingface.co/collections/google/gemma-4) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Qwen (Alibaba) | Qwen3.8 | current | `qwen3.8-27b` | [upstream](https://huggingface.co/Qwen/Qwen3.8-27B) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Qwen (Alibaba) | Qwen3.6 | previous | `qwen3.6-27b`, `qwen3.6-35b-a3b-fp8` | [upstream](https://huggingface.co/collections/Qwen/qwen36) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Qwen (Alibaba) | Qwen3 | previous | `qwen3-30b-a3b` | [upstream](https://huggingface.co/Qwen/Qwen3-30B-A3B) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Mistral Small (Mistral AI) | Mistral Small 3.1 | current | `mistral-small-3.1-24b` | [upstream](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+
+<!-- end generated: model-roster -->
 
 Comply with the listed license when serving or redistributing. The repository's own code is
 [MIT](../../LICENSE); the weights are not, and neither is the benchmark data
@@ -78,14 +89,26 @@ context -- its feasible-context numbers are conservative for this family, not op
 
 ### Qwen (Alibaba)
 
-The MoE lane, and the one family with an artifact that serves on EVERY CUDA tier. `qwen3.6-27b`
-(dense, FP8 at ~40 GiB) and `qwen3.6-35b-a3b-fp8` (36B stored / ~3B active) are large-tier or
-offload candidates; `qwen3-30b-a3b` is the curated Ollama `qwen3:30b` tag whose ~18.6 GiB `q4_k_m`
-weights stay VRAM-resident on 24/32 GB and CPU-offload on 12/16 GB. vLLM has no equivalent
-single-artifact path, which is exactly why the curated tag is carried.
+The MoE lane, the one family with an artifact that serves on EVERY CUDA tier, and the only family
+carrying more than one generation.
 
-Hybrid thinking is ON by default on the Qwen 3 tags. Turn it off for scoring (Ollama native
-`think=false`); generated run configs also pin `temperature: 0.0` for reproducible runs.
+- **Qwen3.8 (current).** `qwen3.8-27b` is the dense 27.3B `qwen3_5` checkpoint: 64 layers with
+  `full_attention_interval 4`, so only 16 of them own a growing KV cache, 248320 vocab, untied
+  embeddings, 262144 max context. vLLM takes bf16 (~58 GiB) or the first-party FP8 (~40 GiB); the
+  16 GiB dev host serves the `qwen3.8:27b` Ollama tag (`q4_k_m`, ~17 GB) with CPU offload, and that
+  tag is the Qwen target the generated local configs use. The tag needs Ollama >= 0.32.12 -- older
+  runners do not know the `qwen35` architecture and refuse to load it.
+- **Qwen3.6 (previous).** `qwen3.6-27b` (dense, FP8 at ~40 GiB) and `qwen3.6-35b-a3b-fp8` (36B
+  stored / ~3B active) stay in the roster so a Qwen result reads as a generation comparison: a
+  3.8-vs-3.6 gap on the same corpus is what says an upgrade paid for itself.
+- **Qwen3 (previous).** `qwen3-30b-a3b` is the curated Ollama `qwen3:30b` tag whose ~18.6 GiB
+  `q4_k_m` weights stay VRAM-resident on 24/32 GB and CPU-offload on 12/16 GB. vLLM has no
+  equivalent single-artifact path, which is exactly why the curated tag is still carried.
+
+Hybrid thinking is ON by default on every Qwen tag here. Turn it off for scoring (Ollama native
+`think=false`); generated run configs also pin `temperature: 0.0` for reproducible runs. Qwen3.8 is
+multimodal and the benchmark scores text only, so its vLLM serve script keeps the text-only
+`--limit-mm-per-prompt`.
 
 ### Mistral Small 3.1 (Mistral AI)
 
@@ -137,14 +160,33 @@ The full per-tier fit table (12 / 16 / 24 / 32 GiB, per family, with the vLLM kn
   Adapter provenance is recorded by the
   [adapter registry](../impl/current/extended-workflows/adapter-registry.md).
 
-## Adding a family
+## Adding a family or a generation
 
-Add one entry under `models:` in [`samples/configs/models_uk.yaml`](../../samples/configs/models_uk.yaml).
-The fields that matter:
+A family is registered once under `families:` in
+[`samples/configs/models_uk.yaml`](../../samples/configs/models_uk.yaml), and every logical model
+under `models:` names the family and generation it belongs to. The register is what the published
+tables are generated from, so a new family or generation reaches the README by editing it:
+
+| Field | Why it exists |
+| --- | --- |
+| `id`, `label`, `role` | The family key, its published name, and whether it is a UA-specialized entry or a multilingual baseline |
+| `focus` | One line saying what the family is in the sweep to answer |
+| `upstream` | Where a currency check reads the family: `hf_author`, `hf_prefix`, `ollama_namespace` |
+| `generations[].id`, `.status` | The generation key and whether it is `current` (exactly one per family) or `previous` |
+| `generations[].label`, `.weights_url` | How the generation is published and where its weights live |
+| `generations[].license`, `.license_url` | The terms that travel with that generation's weights |
+
+Adding a generation is three steps: add the generation to its family with `status: current` and
+demote the outgoing one to `previous`, add the logical model entries that carry it, then run
+`make sync-model-family-docs` to republish the tables. A generation no model carries any more is
+removed rather than kept, and `make ci` fails while the register and the docs disagree.
+
+Then add the model entry itself under `models:`. The fields that matter:
 
 | Field | Why it exists |
 | --- | --- |
 | `name`, `backend`, `source` | The logical model, its primary backend, and the tag or HF repo id |
+| `family`, `generation` | Which registered family and generation this model carries |
 | `sources:` | Per-backend (and per-quant) artifacts the resolver may substitute when the primary does not fit |
 | `min_vram_gb` | Rough floor to SERVE at a sane context; used to skip or flag, never as the fit test |
 | `params_b`, `quant`, `n_layers`, `kv_dim`, `max_context` | Planning fields for the weight and KV estimate |
@@ -153,7 +195,8 @@ The fields that matter:
 
 Architecture values are also auto-read from a cached Hugging Face `config.json` when one is present,
 so curated fields are an override and a fallback rather than the only source. Verify a new entry
-with `make list-models` before `make prep-models` downloads anything.
+with `make list-models` (fit) and `make list-model-families` (register) before `make prep-models`
+downloads anything.
 
 ## Related
 

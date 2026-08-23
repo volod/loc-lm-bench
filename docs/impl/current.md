@@ -52,6 +52,7 @@ closed each one and what would make it worth reopening.
 | [Knowledge cutoff](current/knowledge-cutoff.md) | Effective real-world knowledge cutoff for local models | page |
 | [Prompt templates](current/prompt-templates.md) | Prompt template registry and review workflow | page |
 | [Host validation](current/host-validation.md) | Host acceptance checklist and repeatable smoke runs | page |
+| [Model roster](current/model-roster.md) | Model family/generation register, the generated family tables, and generation upgrades | page |
 | [Product decisions](current/scope-boundaries.md) | Settled scope and decision motivation | page |
 
 ## Frequent lookups

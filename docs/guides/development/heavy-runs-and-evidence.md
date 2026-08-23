@@ -18,7 +18,10 @@ the procedure is here so it costs nothing when you are not doing these things.
   real-model evidence run recorded in `docs/impl/current/`. 4. CI / `make ci` fixtures and
   injected fakes stay unchanged -- this rule is for live local backend runs only.
 - **Model examples (12-16 GiB class):** Prefer: MamayLM-Gemma v2.0 GGUF, `gemma4:31b`,
-  `qwen3.6:27b`, when present. Avoid for evidence: `llama3.2:3b` and other sub-7B tags.
+  `qwen3.8:27b`, when present -- the Qwen lane runs its CURRENT generation for new evidence, and
+  `qwen3.6:27b` is kept only for a deliberate generation comparison against an older reading
+  (`make list-model-families` says which generation is current). Avoid for evidence:
+  `llama3.2:3b` and other sub-7B tags.
 
 ## Citing a measured result
 

@@ -280,6 +280,33 @@ recorded because a model name alone is not a reproducible runtime identity.
 One heavyweight model runs at a time. Sequential execution avoids VRAM contention, cross-run cache
 effects, and biased telemetry.
 
+## Model Roster and Family Currency
+
+The candidate roster is a register of model FAMILIES, not a list of tags. A family carries one or
+more GENERATIONS, and a generation carries the logical models and per-backend artifacts that serve
+it. Exactly one generation of a family is `current`; a superseded generation is retained as
+`previous` only while a carried model still serves from it, so a family result reads as a generation
+comparison rather than a single point and an upgrade that costs quality is visible instead of
+inferred. A generation with no carried model is dropped rather than kept: the roster answers what
+runs now and what it replaced, not what has ever existed.
+
+Because the register is the source of truth, the published family, generation, and license tables
+are GENERATED from it. A roster restated in prose drifts the moment a generation lands, and a reader
+cannot tell which of the two statements is current; a generated table cannot disagree with the
+manifest without failing the check that regenerates it.
+
+An upgrade is a decision, so the product supports one rather than performing it. Currency is read
+from the upstream registries a family's artifacts already come from -- the Ollama library and the
+Hugging Face model API -- and reported per family as the newest generation upstream offers beside
+the one the roster carries, with what was read and when. The report never edits the roster, pulls
+weights, or promotes a generation. Adopting one is an operator act, and it is reported together with
+what it invalidates: every measurement taken against the generation being replaced.
+
+The boundary: this capability owns family and generation identity, the published metadata derived
+from it, and the currency report. It does NOT own serving decisions -- which artifact serves on
+which host stays with the resolver and planner -- and it does not judge whether a newer generation
+is BETTER, which is a measurement the sweep makes rather than a fact a register can carry.
+
 ## Scoring Policy
 
 Objective task metrics are always available. RAG scoring includes exact/contains/token overlap,
@@ -468,14 +495,15 @@ Four rules settle it, in order:
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 9 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 10 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 11 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 12 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 13 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 14 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 15 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 16 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits | [Model roster](../impl/current/model-roster.md) |
+| 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 14 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 15 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 16 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 17 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 

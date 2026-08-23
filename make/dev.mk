@@ -135,6 +135,7 @@ ci-checks:
 	@$(MAKE) --no-print-directory complexity-gate
 	@$(MAKE) --no-print-directory shell-lint-gate
 	@$(MAKE) --no-print-directory lint-spec-plan
+	@$(MAKE) --no-print-directory lint-model-roster
 
 # Both also run inside ci-checks -- these aliases are for running one gate alone after a change.
 complexity-gate: ## Fail on any Radon D-or-worse or cognitive-complexity finding

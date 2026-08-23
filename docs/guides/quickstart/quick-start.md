@@ -45,9 +45,11 @@ make quickstart-goldset-prompt QUICKSTART_PROMPT_ID=<prompt-id>
 
 [See granular commands without the wrapper orchestration](quickstart-goldset-commands.md)
 
-The default candidate-family intent is to compare the largest runnable MamayLM, Lapa, Gemma 4,
-Qwen 3.6, and Mistral variants for the detected 12/16/24/32 GiB CUDA tier. The candidate and
-serving manifests cover all five families: the Mistral default is Mistral Small 3.1 24B
+The default candidate-family intent is to compare the largest runnable MamayLM, Lapa, Gemma, Qwen,
+and Mistral variants for the detected 12/16/24/32 GiB CUDA tier, each at the generation the roster
+currently carries (`make list-model-families` prints it; the Qwen target is Qwen3.8 today). The
+candidate and serving manifests cover every registered family: the Mistral default is Mistral Small
+3.1 24B
 (Apache-2.0, ungated), served via vLLM FP8 on the 32 GiB tier, vLLM w4a16 on the 24 GiB tier, and
 the curated `mistral-small3.1:24b` GGUF on Ollama (CPU offload) on the 12/16 GiB tiers.
 

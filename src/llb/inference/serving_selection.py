@@ -10,7 +10,9 @@ from llb.core.paths import PROJECT_ROOT
 
 SUPPORTED_TIERS_GB = (12, 16, 24, 32)
 
-PRIMARY_TARGETS = ("mamaylm", "lapa", "gemma-4", "qwen3.6", "mistral")
+# Primary target ids are FAMILY ids: each serves that family's current generation on the tier,
+# so a generation upgrade edits the manifest row rather than this list.
+PRIMARY_TARGETS = ("mamaylm", "lapa", "gemma-4", "qwen", "mistral")
 
 GEMMA4_TARGET_PREFIX = "gemma-4"
 

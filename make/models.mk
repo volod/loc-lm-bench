@@ -3,7 +3,8 @@
 
 .PHONY: \
 	build-vllm build-llamacpp download-model prep-models prep-serving-targets list-models \
-	detect-gpu-vram gen-serving-config
+	detect-gpu-vram gen-serving-config list-model-families sync-model-family-docs \
+	lint-model-roster
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
@@ -45,6 +46,18 @@ prep-serving-targets: ## Pull/cache models referenced by generated serving tier.
 list-models: ## List which candidate models can run here (GPU+RAM, KV-cache-aware); CONTEXT= to target a context
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main list-models --manifest "$(MODELS_MANIFEST)" $(if $(CONTEXT),--context $(CONTEXT),)
+
+list-model-families: ## Print the family register: generations, status, licenses, models carried
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main list-model-families --manifest "$(MODELS_MANIFEST)" $(if $(MARKDOWN),--markdown,)
+
+sync-model-family-docs: ## Republish the generated family tables in README + docs/reference
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.roster_docs --manifest "$(MODELS_MANIFEST)"
+
+lint-model-roster: ## Check the generated family tables still match the roster manifest (in ci-checks)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.quality.roster_docs --manifest "$(MODELS_MANIFEST)" --check
 
 detect-gpu-vram: ## Print supported GPU VRAM tier (12/16/24/32 GiB) from nvidia-smi
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

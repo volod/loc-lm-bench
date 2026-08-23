@@ -1,4 +1,9 @@
-"""Committed Ukrainian roster invariants and refresh-entry resolver fixtures."""
+"""Committed Ukrainian roster invariants and refresh-entry resolver fixtures.
+
+Every entry also declares the family and generation it belongs to -- a model the family register
+cannot place is invisible to the published tables and to any later currency check, so the roster
+test is where that is caught rather than in the doc tooling.
+"""
 
 from llb.backends.prepare.manifest import load_manifest
 from llb.backends.resolver import resolve
@@ -9,7 +14,7 @@ from tests.llb.backends.test_resolver import ALL_AVAILABLE
 
 
 ROSTER = PROJECT_ROOT / "samples" / "configs" / "models_uk.yaml"
-REFRESH_NAMES = ("gemma-4-26b-a4b", "qwen3.6-27b")
+REFRESH_NAMES = ("gemma-4-26b-a4b", "qwen3.6-27b", "qwen3.8-27b")
 
 
 def _models() -> list[ModelSpec]:
@@ -53,3 +58,19 @@ def test_gemma_26b_fp8_resolves_on_32gb_fixture() -> None:
 
     assert result["chosen_backend"] == "vllm"
     assert result["chosen_source"] == "RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic"
+
+
+def test_every_model_declares_its_family_and_generation() -> None:
+    for model in _models():
+        assert model.get("family"), f"{model['name']}: no family declared"
+        assert model.get("generation"), f"{model['name']}: no generation declared"
+
+
+def test_current_qwen_generation_serves_through_ollama_on_16gb_fixture() -> None:
+    # the local default: Qwen3.8's vLLM checkpoints need 40+ GiB, so 16 GiB takes the q4 tag
+    model = next(model for model in _models() if model["name"] == "qwen3.8-27b")
+
+    result = resolve(model, 16380, 128 * 1024, probes=ALL_AVAILABLE)
+
+    assert result["chosen_backend"] == "ollama"
+    assert result["chosen_source"] == "qwen3.8:27b"

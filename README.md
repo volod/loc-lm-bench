@@ -136,29 +136,31 @@ and contributor guardrails live in [AGENTS.md](AGENTS.md).
 
 ## Model Families and Licenses
 
-The default candidate sweep compares five open-weight families -- two Ukrainian-specialized and
-three multilingual baselines. Each links to its upstream weights; comply with the listed license
-when serving or redistributing.
+<!-- generated: model-families (make sync-model-family-docs) -->
 
-| Family | Focus | Default weights | License |
-| --- | --- | --- | --- |
-| MamayLM v2 (INSAIT) | Ukrainian-specialized | [MamayLM v2.0 (Gemma 3) collection][mamay-col] | [Gemma Terms][gemma-lic] |
-| Lapa v0.1.2 (lang-uk) | Ukrainian-specialized | [lapa-llm/lapa-v0.1.2-instruct][lapa-repo] | [Gemma Terms][gemma-lic] |
-| Gemma 4 (Google) | Multilingual baseline | [google/gemma-4 collection][gemma-col] | [Apache 2.0][apache-lic] |
-| Qwen 3.6 (Alibaba) | Multilingual baseline | [Qwen/Qwen3.6-35B-A3B][qwen-repo] | [Apache 2.0][apache-lic] |
-| Mistral Small 3.1 (Mistral AI) | Multilingual baseline | [mistralai/Mistral-Small-3.1-24B-Instruct-2503][mistral-repo] | [Apache 2.0][apache-lic] |
+The default candidate sweep carries 5 open-weight families (2 Ukrainian-specialized, 3
+multilingual baselines) across 7 generations -- one current per family plus 2 retained for
+generation comparison -- and 11 logical models. Comply with the listed license when serving or
+redistributing.
 
-What each family is in the sweep to answer, which artifact serves on which VRAM tier, the serving
-traps, gated-model handling, and how to add a family:
-**[model families, tiers, and licenses](docs/reference/model-families.md)**.
+| Family | Role in the sweep | Current generation | Also carried | License |
+| --- | --- | --- | --- | --- |
+| MamayLM (INSAIT) | Ukrainian-specialized | [MamayLM v2.0 (Gemma 3)](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3) | -- | [Gemma](https://ai.google.dev/gemma/terms) |
+| Lapa (lang-uk) | Ukrainian-specialized | [Lapa v0.1.2 instruct](https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct) | -- | [Gemma](https://ai.google.dev/gemma/terms) |
+| Gemma (Google) | Multilingual baseline | [Gemma 4](https://huggingface.co/collections/google/gemma-4) | -- | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Qwen (Alibaba) | Multilingual baseline | [Qwen3.8](https://huggingface.co/Qwen/Qwen3.8-27B) | Qwen3.6, Qwen3 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Mistral Small (Mistral AI) | Multilingual baseline | [Mistral Small 3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503) | -- | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 
-[mamay-col]: https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
-[lapa-repo]: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
-[gemma-col]: https://huggingface.co/collections/google/gemma-4
-[qwen-repo]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
-[mistral-repo]: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
-[gemma-lic]: https://ai.google.dev/gemma/terms
-[apache-lic]: https://www.apache.org/licenses/LICENSE-2.0
+<!-- end generated: model-families -->
+
+What each family is in the sweep to answer, which generation it carries now, which artifact serves
+on which VRAM tier, the serving traps, gated-model handling, and how to add a family or a
+generation: **[model families, tiers, and licenses](docs/reference/model-families.md)**.
+
+The table above is not maintained by hand -- it is generated from the family register in
+[`samples/configs/models_uk.yaml`](samples/configs/models_uk.yaml). Add a family or a generation
+there and run `make sync-model-family-docs`; `make ci` fails while the docs and the register
+disagree. `make list-model-families` prints the same register in the terminal.
 
 ## Data Licenses
 

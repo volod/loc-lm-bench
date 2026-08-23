@@ -350,6 +350,29 @@ re-measure the floor.
 
 ### Host fit and serving -- `host-fit-serving`
 
+#### current-qwen-generation-throughput-row
+
+The roster's Qwen lane now serves its current generation (`qwen3.8-27b`) on this host, but the
+full-roster throughput baseline in [backend telemetry](current/backend-telemetry.md) has a row for
+the generation it replaced and none for the one that runs. A per-model result read off that table
+therefore compares a served model against a number measured on a different generation. Measure the
+current Qwen entry under the same roster throughput protocol and record it beside the outgoing row,
+so the two generations are readable side by side rather than one silently standing in for the other.
+
+- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
+- Agent status: RUN NEEDED
+- Dependencies: the family register that says which generation is current, in
+  [model roster](current/model-roster.md).
+- User-visible outcome: the roster baseline table carries a measured row for the current Qwen
+  generation, with the previous generation's row kept and labelled as such.
+- Scope boundary: in scope -- the throughput, VRAM, and offload-split measurement for the current
+  generation on the documented host, under the protocol the existing rows used. Out of scope --
+  re-measuring the rest of the roster, and any quality claim from a throughput run.
+- Acceptance gates: the refreshed table states what ran on what and when, per the evidence rules in
+  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md); the offload split and
+  peak VRAM are recorded beside tok/s.
+- Documentation target: the roster baseline in [backend telemetry](current/backend-telemetry.md).
+
 #### gemma4-gguf-runner-gap (optional)
 
 The host Ollama cannot serve a `gemma4` GGUF at all: 0.20 answers both the curated `gemma4:12b`
@@ -378,6 +401,58 @@ the entry on Ollama so the roster is served by one backend end to end.
 - Documentation target: the roster baseline in
   [backend telemetry](current/backend-telemetry.md) and the host setup notes in
   [host validation](current/host-validation.md).
+
+### Model roster currency -- `model-roster-currency`
+
+#### upstream-generation-currency-probe
+
+The roster names each family's current and previous generation, and the published tables are
+generated from it, but nothing reads UPSTREAM: a family goes stale silently until somebody happens
+to notice a new tag, and the only way to answer "is this still the current Qwen" is to open a
+browser. Add a currency probe that asks, per registered family, what the Ollama library and the
+Hugging Face model API currently offer for that family's namespace, compares the newest upstream
+generation with the carried one, and reports the gap.
+
+- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
+- Agent status: CLEAR
+- Dependencies: the family/generation register and its manifest fields in
+  [model roster](current/model-roster.md).
+- User-visible outcome: one command reports every registered family as `current`, `behind`
+  (naming the upstream generation and where it was read), or `unknown` (naming the registry that
+  did not answer), with the read timestamp beside each row; a family that is already current is a
+  reported row, never silence.
+- Scope boundary: in scope -- reading the two upstream registries, matching a response to a
+  family's generation namespace, the report, and an offline mode that replays recorded responses.
+  Out of scope -- editing the roster, pulling weights, promoting a generation, and any claim about
+  whether the newer generation is better.
+- Execution path: add a probe module beside the register with one adapter per registry, record
+  response fixtures for a behind family and an up-to-date family, and wire the report into a make
+  target.
+- Acceptance gates: `make ci` green; a fixture run reproduces a `behind` verdict and a `current`
+  verdict without network; a registry error degrades that family's row to `unknown` with its reason
+  instead of failing the report; the report names each registry response's read time.
+- Documentation target: [model roster](current/model-roster.md).
+
+#### generation-adoption-invalidation-report (optional)
+
+Adopting a new generation invalidates every measurement taken against the generation it replaces,
+and today that list is reconstructed by hand from the board. Given a family and a target generation,
+report which committed run records, published numbers, and baseline tables were measured on the
+outgoing generation, so an operator sees the re-measurement cost before the swap rather than after.
+
+- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
+- Agent status: CLEAR
+- Dependencies: the currency probe above; published-number provenance in
+  [published values](current/extended-workflows/published-values.md).
+- User-visible outcome: one report lists, for a proposed generation swap, every published value and
+  committed aggregate whose model field resolves to the outgoing generation, and states plainly when
+  nothing is affected.
+- Scope boundary: in scope -- resolving recorded model identities to family generations and listing
+  what a swap invalidates. Out of scope -- re-running anything, editing the board, and deciding
+  whether to adopt.
+- Acceptance gates: `make ci` green; a fixture bundle measured on the outgoing generation is listed
+  and one measured on an unrelated family is not.
+- Documentation target: [model roster](current/model-roster.md).
 
 ### Optimization search -- `optimization-search`
 
