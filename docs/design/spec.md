@@ -351,6 +351,15 @@ retrieval policies and never leaderboard rows. `long_context` is oracle-grounded
 item's own gold document ids -- so its gap sizes what chunking still loses rather than what an
 operator would gain.
 
+An oracle ceiling is only actionable once it is split, so the ablation also carries a lane that is
+NOT a diagnostic: `retrieved_document` retrieves exactly as the ranked lane does and then widens
+the unit of context from the top-ranked chunk to the whole document that chunk came from, with no
+gold label anywhere in the path. It divides the oracle gap into the part an operator captures by
+changing a configuration value and the part that was the gold label all along, and because it is a
+configuration someone could ship it carries an explicit adopt-or-reject verdict read off the same
+calibrated paired interval as every other reading here. Adoption is a per-corpus measured result,
+never a default: `rag` remains the leaderboard row until a run says otherwise.
+
 ### Judge admission
 
 An LLM judge is admitted only after its exact rubric and model clear the configured correlation

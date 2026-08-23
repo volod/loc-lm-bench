@@ -8,11 +8,20 @@ question-type slices, and the flagged-item ledger follow as the evidence behind 
 from collections.abc import Mapping, Sequence
 
 from llb.eval.context_ablation.models import (
+    DERIVED_LONG_CONTEXT_DELTA,
+    DERIVED_LONG_CONTEXT_DELTA_FITTING,
+    DERIVED_ORACLE_DOCUMENT_GAP,
+    DERIVED_ORACLE_DOCUMENT_GAP_FITTING,
+    DERIVED_RETRIEVAL_UPLIFT,
+    DERIVED_RETRIEVED_DOCUMENT_DELTA,
+    DERIVED_RETRIEVED_DOCUMENT_DELTA_FITTING,
     METRIC_OBJECTIVE,
     METRIC_RETRIEVAL_HIT,
     METRIC_TOKEN_F1,
     METRICS,
+    RETRIEVED_DOCUMENT_NOT_MEASURED,
     ContextAblationReport,
+    ContextAblationVerdict,
     DerivedComparison,
     ItemOutcome,
 )
@@ -35,9 +44,13 @@ _HEADERS = {
 }
 
 _DERIVED_NOTES = {
-    "retrieval_uplift": "how much of the RAG score retrieval paid for",
-    "long_context_delta": "whole-document stuffing versus chunked retrieval",
-    "long_context_delta_fitting": "the same delta over items the long-context lane did not skip",
+    DERIVED_RETRIEVAL_UPLIFT: "how much of the RAG score retrieval paid for",
+    DERIVED_LONG_CONTEXT_DELTA: "whole-document stuffing versus chunked retrieval (ORACLE)",
+    DERIVED_LONG_CONTEXT_DELTA_FITTING: "the same delta over items the pair did not skip",
+    DERIVED_RETRIEVED_DOCUMENT_DELTA: "the part of that gap an operator captures, no gold label",
+    DERIVED_RETRIEVED_DOCUMENT_DELTA_FITTING: "the same delta over items the pair did not skip",
+    DERIVED_ORACLE_DOCUMENT_GAP: "what was left that only the gold label could supply",
+    DERIVED_ORACLE_DOCUMENT_GAP_FITTING: "the same delta over items the pair did not skip",
 }
 
 # Item rows worth printing: at a few dozen items the flagged ones ARE the evidence, and a full
@@ -176,6 +189,25 @@ def _item_table(report: ContextAblationReport) -> list[str]:
     return lines
 
 
+def _adoption_lines(verdict: ContextAblationVerdict) -> list[str]:
+    """The adopt-or-reject call on `retrieved_document`, stated apart from the ablation verdict.
+
+    An operator can act on this one, so it is not buried in the derived table: it names the
+    decision, the delta it rests on, and how much of the oracle gap the lane captured.
+    """
+    adoption = verdict.get("retrieved_document")
+    if adoption is None or adoption["decision"] == RETRIEVED_DOCUMENT_NOT_MEASURED:
+        return []
+    share = adoption["captured_share"]
+    captured = f", capturing {share:.0%} of the oracle gap" if share is not None else ""
+    skipped = f", {adoption['skipped']} item(s) skipped" if adoption["skipped"] else ""
+    return [
+        f"- retrieved-document lane: **{adoption['decision']}** "
+        f"({adoption['delta']:+.3f} objective vs rag on n={adoption['n']}{captured}{skipped})"
+        + (f" -- {adoption['reason']}" if adoption["reason"] else "")
+    ]
+
+
 def _lane_list(report: ContextAblationReport) -> list[str]:
     lines = []
     for label, lane in sorted(report["lanes"].items()):
@@ -208,6 +240,7 @@ def format_report(
         f"- bootstrap: {report['resamples']} resamples, seed {report['seed']}",
         f"- verdict: **{verdict['decision']}**"
         + (f" -- {verdict['reason']}" if verdict["reason"] else ""),
+        *_adoption_lines(verdict),
         "- scored lanes:",
     ]
     lines += _lane_list(report)

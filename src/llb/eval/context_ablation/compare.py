@@ -1,4 +1,4 @@
-"""Compare the three context lanes over one identical item set (pure).
+"""Compare the context lanes over one identical item set (pure).
 
 File-driven like every other evidence lane: the input is one list of canonical per-case rows per
 lane plus the question-type sidecar labels, so the whole comparison is unit-tested with dict rows
@@ -14,15 +14,21 @@ from llb.eval.context_ablation.derived import (
     contamination_report,
     derived_comparison,
     fitting_indexes,
+    pair_skipped,
     skipped_item_ids,
 )
 from llb.eval.context_ablation.models import (
     DERIVED_LONG_CONTEXT_DELTA,
     DERIVED_LONG_CONTEXT_DELTA_FITTING,
+    DERIVED_ORACLE_DOCUMENT_GAP,
+    DERIVED_ORACLE_DOCUMENT_GAP_FITTING,
     DERIVED_RETRIEVAL_UPLIFT,
+    DERIVED_RETRIEVED_DOCUMENT_DELTA,
+    DERIVED_RETRIEVED_DOCUMENT_DELTA_FITTING,
     LANE_CLOSED_BOOK,
     LANE_LONG_CONTEXT,
     LANE_RAG,
+    LANE_RETRIEVED_DOCUMENT,
     METRICS,
     ContextAblationReport,
     DerivedComparison,
@@ -30,6 +36,7 @@ from llb.eval.context_ablation.models import (
     LaneReport,
 )
 from llb.eval.context_ablation.verdict import decide
+from llb.eval.context_ablation.verdict_adoption import decide_retrieved_document
 from llb.eval.paired_cases import CaseRows, lane_vectors, shared_item_ids
 from llb.rag.fusion_evidence.slices import (
     MetricVectors,
@@ -45,51 +52,66 @@ from llb.rag.fusion_evidence.stats import (
 )
 
 
-def _derived(
+# The paired deltas the report states, in reading order: what retrieval bought, what the oracle
+# document lane adds over chunks, how much of that a RETRIEVED document captures, and what is left
+# that only the gold label could have supplied. Each entry is
+# `(label, fitting label or None, candidate lane, reference lane)`; a delta whose lanes were not
+# both scored is simply absent, so a two- or three-lane selection reports what it can measure.
+_DELTAS = (
+    (DERIVED_RETRIEVAL_UPLIFT, None, LANE_RAG, LANE_CLOSED_BOOK),
+    (DERIVED_LONG_CONTEXT_DELTA, DERIVED_LONG_CONTEXT_DELTA_FITTING, LANE_LONG_CONTEXT, LANE_RAG),
+    (
+        DERIVED_RETRIEVED_DOCUMENT_DELTA,
+        DERIVED_RETRIEVED_DOCUMENT_DELTA_FITTING,
+        LANE_RETRIEVED_DOCUMENT,
+        LANE_RAG,
+    ),
+    (
+        DERIVED_ORACLE_DOCUMENT_GAP,
+        DERIVED_ORACLE_DOCUMENT_GAP_FITTING,
+        LANE_LONG_CONTEXT,
+        LANE_RETRIEVED_DOCUMENT,
+    ),
+)
+
+
+def _paired_delta(
+    label: str,
+    fitting_label: str | None,
+    candidate: str,
+    reference: str,
+    *,
     by_lane: Mapping[str, MetricVectors],
     item_ids: Sequence[str],
-    skipped: set[str],
+    skipped_by_lane: Mapping[str, list[str]],
     index_sets: list[list[int]],
     confidence: float,
     resamples: int,
     seed: int,
 ) -> list[DerivedComparison]:
-    """Retrieval uplift, the long-context delta, and -- when items were skipped -- its fitting cut."""
-    all_indexes = list(range(len(item_ids)))
-    entries: list[DerivedComparison] = []
-    if LANE_RAG in by_lane and LANE_CLOSED_BOOK in by_lane:
-        entries.append(
-            derived_comparison(
-                DERIVED_RETRIEVAL_UPLIFT,
-                candidate=LANE_RAG,
-                reference=LANE_CLOSED_BOOK,
-                by_lane=by_lane,
-                indexes=all_indexes,
-                index_sets=index_sets,
-                confidence=confidence,
-            )
-        )
-    if LANE_LONG_CONTEXT not in by_lane or LANE_RAG not in by_lane:
-        return entries
-    entries.append(
+    """One delta over all items, plus its fitting cut when either of its own lanes skipped."""
+    if candidate not in by_lane or reference not in by_lane:
+        return []
+    entries = [
         derived_comparison(
-            DERIVED_LONG_CONTEXT_DELTA,
-            candidate=LANE_LONG_CONTEXT,
-            reference=LANE_RAG,
+            label,
+            candidate=candidate,
+            reference=reference,
             by_lane=by_lane,
-            indexes=all_indexes,
+            indexes=list(range(len(item_ids))),
             index_sets=index_sets,
             confidence=confidence,
         )
-    )
-    if not skipped:
+    ]
+    skipped = pair_skipped(skipped_by_lane, candidate, reference)
+    if fitting_label is None or not skipped:
         return entries
     fitting = fitting_indexes(item_ids, skipped)
     entries.append(
         derived_comparison(
-            DERIVED_LONG_CONTEXT_DELTA_FITTING,
-            candidate=LANE_LONG_CONTEXT,
-            reference=LANE_RAG,
+            fitting_label,
+            candidate=candidate,
+            reference=reference,
             by_lane=by_lane,
             indexes=fitting,
             index_sets=bootstrap_index_sets(len(fitting), resamples, seed),
@@ -97,6 +119,36 @@ def _derived(
             population=POPULATION_FITTING,
         )
     )
+    return entries
+
+
+def _derived(
+    by_lane: Mapping[str, MetricVectors],
+    item_ids: Sequence[str],
+    skipped_by_lane: Mapping[str, list[str]],
+    index_sets: list[list[int]],
+    confidence: float,
+    resamples: int,
+    seed: int,
+) -> list[DerivedComparison]:
+    """Every measurable paired delta for the lanes this run actually scored."""
+    entries: list[DerivedComparison] = []
+    for label, fitting_label, candidate, reference in _DELTAS:
+        entries.extend(
+            _paired_delta(
+                label,
+                fitting_label,
+                candidate,
+                reference,
+                by_lane=by_lane,
+                item_ids=item_ids,
+                skipped_by_lane=skipped_by_lane,
+                index_sets=index_sets,
+                confidence=confidence,
+                resamples=resamples,
+                seed=seed,
+            )
+        )
     return entries
 
 
@@ -137,7 +189,6 @@ def compare_context_strategies(
     by_lane = {label: lane_vectors(rows, item_ids, METRICS) for label, rows in lanes.items()}
     base_vectors = by_lane[baseline]
     skipped_by_lane = {label: skipped_item_ids(rows) for label, rows in lanes.items()}
-    skipped = {item_id for ids in skipped_by_lane.values() for item_id in ids}
     grouped = slice_indexes([question_types.get(item_id) for item_id in item_ids])
     all_indexes = list(range(len(item_ids)))
     index_sets = bootstrap_index_sets(len(item_ids), resamples, seed)
@@ -159,8 +210,21 @@ def compare_context_strategies(
         }
         for label, vectors in by_lane.items()
     }
-    derived = _derived(by_lane, item_ids, skipped, index_sets, confidence, resamples, seed)
+    derived = _derived(by_lane, item_ids, skipped_by_lane, index_sets, confidence, resamples, seed)
     contamination = contamination_report(baseline, lanes[baseline], item_ids)
+    verdict = decide(
+        lane_reports,
+        derived,
+        contamination,
+        baseline=baseline,
+        n=len(item_ids),
+        confidence=confidence,
+    )
+    # Two decisions, composed here rather than nested: the ablation reading ("what is retrieval
+    # worth on this corpus") and the adoption call on the one lane an operator could ship.
+    verdict["retrieved_document"] = decide_retrieved_document(
+        derived, lane_reports, confidence=confidence
+    )
     return {
         "n": len(item_ids),
         "baseline": baseline,
@@ -173,14 +237,7 @@ def compare_context_strategies(
         "derived": derived,
         "contamination": contamination,
         "items": _items(item_ids, question_types, by_lane, set(contamination["item_ids"])),
-        "verdict": decide(
-            lane_reports,
-            derived,
-            contamination,
-            baseline=baseline,
-            n=len(item_ids),
-            confidence=confidence,
-        ),
+        "verdict": verdict,
     }
 
 

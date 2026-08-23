@@ -120,13 +120,33 @@ both scored roster models
   and an illegitimate thing to ship -- a real query arrives without a gold label.
 - Its gap therefore sizes what chunking still loses, not what an operator would gain. Reading
   "+0.142 objective" as "stuff whole documents instead of retrieving" would be adopting the
-  oracle, not the lane.
+  oracle, not the lane -- and the `retrieved_document` lane below has now MEASURED that: holding
+  the retrieved set fixed and sending documents instead of chunks recovers none of the gap on
+  either model.
 - `closed_book` scores what the model already knows, which is a contamination and
   parametric-knowledge signal for the corpus, not a system configuration anyone would run.
 
 The one number the ablation is entitled to change is interpretation of a leaderboard row: an
 uplift that does not clear zero says the RAG stack is not earning its cost on that corpus, and a
 high closed-book match rate says the item set is measuring memory as much as retrieval.
+
+`retrieved_document` is the deliberate exception, and the reason the boundary above is a boundary
+rather than a refusal to act. It sends whole documents like `long_context` does, but it picks them
+from the RANKING -- top-N distinct documents off the retrieved chunk list -- so nothing in its path
+knows the gold label and its score is reachable by an operator who changes a config value. It is
+therefore a shippable configuration and carries an adopt-or-reject verdict of its own
+([RAG core](rag-core/context-ablation.md#the-shippable-sibling-retrieved_document)), while `rag`
+stays the leaderboard row unless a measured run on the operator's own corpus says otherwise. The
+split it makes possible is the point: whatever `retrieved_document` does NOT capture of the
+`long_context` gap was the oracle, and no configuration will ever recover it.
+
+On the committed UA fixture that split is now measured, and the answer is do not adopt: at equal
+retrieval depth the lane is -0.017 [-0.034, -0.004] objective on MamayLM 12B (a verbosity cost --
+same found-rate, same span coverage) and +0.002 [-0.027, +0.035] on Lapa, while
+`oracle_document_gap` stays separated above zero in all four runs
+([RAG core](rag-core/context-ablation.md#the-shippable-document-lane-does-not-pay-reject-2026-08-23)).
+The lane stays in the product as the measurement that keeps the boundary honest -- an operator on
+another corpus runs it and gets their own verdict -- not as a recommended configuration.
 
 ## Agentic Framework Scope
 

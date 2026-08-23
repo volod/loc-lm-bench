@@ -40,8 +40,18 @@ def skipped_item_ids(rows: CaseRows) -> list[str]:
 
 
 def fitting_indexes(item_ids: Sequence[str], skipped: set[str]) -> list[int]:
-    """Positions of the items no lane skipped."""
+    """Positions of the items the delta's own two lanes both scored."""
     return [i for i, item_id in enumerate(item_ids) if item_id not in skipped]
+
+
+def pair_skipped(skipped_by_lane: Mapping[str, Sequence[str]], *lanes: str) -> set[str]:
+    """Items either lane of ONE paired delta skipped.
+
+    Scoped to the pair, not to the run: with two document lanes present, an item only
+    `retrieved_document` skipped says nothing about the `long_context - rag` population, and
+    pooling every lane's skips would silently shrink a delta that was fully measured.
+    """
+    return {item_id for lane in lanes for item_id in skipped_by_lane.get(lane, ())}
 
 
 def derived_comparison(

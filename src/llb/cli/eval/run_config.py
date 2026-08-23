@@ -34,6 +34,7 @@ _CONFIG_OPTIONS = {
     "context_order": "context_order",
     "restore_table_headers": "restore_table_headers",
     "context_strategy": "context_strategy",
+    "retrieved_document_top_n": "retrieved_document_top_n",
     "query_glossary": "query_glossary_path",
     "query_prep_typo_guard": "query_prep_typo_guard",
     "query_prep_dense_case": "query_prep_dense_case",

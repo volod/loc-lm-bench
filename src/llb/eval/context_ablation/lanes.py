@@ -7,7 +7,12 @@ against a plain scored run.
 """
 
 from llb.core.config import RunConfig
-from llb.eval.context_ablation.models import LANE_CLOSED_BOOK, LANE_RAG, LANES
+from llb.eval.context_ablation.models import (
+    LANE_CLOSED_BOOK,
+    LANE_RAG,
+    LANE_RETRIEVED_DOCUMENT,
+    LANES,
+)
 
 
 def parse_lanes(spec: str) -> list[str]:
@@ -39,8 +44,15 @@ def lane_config(config: RunConfig, lane: str, *, run_name_prefix: str) -> RunCon
 
 
 def default_lanes() -> list[str]:
-    """All three lanes, baseline first."""
+    """Every lane, baseline first and ordered by how much context each is entitled to see."""
     return list(LANES)
 
 
-__all__ = ["LANE_CLOSED_BOOK", "LANE_RAG", "default_lanes", "lane_config", "parse_lanes"]
+__all__ = [
+    "LANE_CLOSED_BOOK",
+    "LANE_RAG",
+    "LANE_RETRIEVED_DOCUMENT",
+    "default_lanes",
+    "lane_config",
+    "parse_lanes",
+]

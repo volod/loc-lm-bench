@@ -20,7 +20,7 @@ from llb.eval import common as eval_common
 from llb.eval.answer_envelope import boundary as envelope_boundary
 from llb.eval.answer_envelope import lane as envelope_lane
 from llb.eval.answer_envelope.models import envelope_prompt_values
-from llb.eval.graph_contracts import ContextSource, RagState
+from llb.eval.graph_contracts import ContextRefiner, ContextSource, RagState
 from llb.eval.table_headers import HeaderRestorer, prompt_context
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
@@ -114,6 +114,7 @@ def make_retrieve_node(
     chunk_filter: Any | None = None,
     context_source: ContextSource | None = None,
     header_restorer: HeaderRestorer | None = None,
+    context_refiner: ContextRefiner | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -129,6 +130,11 @@ def make_retrieve_node(
     `context_source` replaces store retrieval entirely for a diagnostic context lane
     (rag-vs-long-context-ablation): the store, `k`, the ordering policy, and the query-prep lane
     all belong to retrieval, so a lane that does not retrieve simply supplies its own update.
+
+    `context_refiner` runs AFTER ordinary retrieval and rewrites the update it produced, which is
+    how the `retrieved_document` lane widens the unit of context from the top-ranked chunk to its
+    whole document (rag-vs-long-context-ablation): that lane DOES retrieve, so replacing the node
+    would mean reimplementing query prep, filtering, reranking, and the latency accounting.
 
     `header_restorer` (`llb.eval.table_headers`) is the opt-in prompt-side context-assembly step
     that gives a table row block back its column names (table-header-context-restoration). It
@@ -163,7 +169,8 @@ def make_retrieve_node(
         }
         if not chunks:
             update["status"] = eval_common.RETRIEVAL_MISS
-        return update
+            return update
+        return context_refiner(state, update) if context_refiner is not None else update
 
     return retrieve
 
@@ -258,6 +265,7 @@ def build_rag_graph(
     header_restorer: HeaderRestorer | None = None,
     answer_format: str = envelope_lane.FREE_TEXT,
     suppress_reasoning: bool = False,
+    context_refiner: ContextRefiner | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -280,6 +288,7 @@ def build_rag_graph(
                 chunk_filter,
                 context_source=context_source,
                 header_restorer=header_restorer,
+                context_refiner=context_refiner,
             ),
         ),
     )

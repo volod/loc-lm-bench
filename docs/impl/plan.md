@@ -76,36 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### retrieved-document-long-context-lane
-
-The measured long-context lane is oracle-grounded -- it reads the item's own gold `doc_id`s, so it
-sizes a CEILING and cannot be adopted
-([product decisions](current/scope-boundaries.md#context-ablation-lanes-stay-diagnostic)). Add the
-shippable sibling: a `retrieved_document` context strategy that takes the top-ranked RETRIEVED
-chunk's document (no gold label), lays that whole document into the prompt under the same budget
-check and `context_overflow` skip rule, and reports beside the existing lanes. The measured
-oracle-versus-rag gap (+0.142 / +0.080 objective on two roster models) then splits into the part
-an operator can actually capture by widening the unit of retrieval from a chunk to its document,
-and the part that was pure oracle advantage.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the context-source seam, `fits_context_chars`, and the comparison in
-  [RAG core](current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
-- User-visible outcome: the operator learns whether "retrieve the chunk, send the document" is a
-  real configuration worth shipping, or whether the long-context gain was the gold label all along.
-- Scope boundary: in scope -- the strategy, its document-selection rule (top-1 versus top-k
-  distinct documents), the budget/skip path, and a four-lane comparison. Out of scope -- changing
-  the chunker, the ranking policy, and context-window extension tricks.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies CONTEXT_LANES=closed_book,rag,retrieved_document,long_context`;
-  CI covers document selection and the skip rule over fake lane stores.
-- Acceptance gates: `make ci` green; the three existing lanes reproduce their current rows exactly;
-  a heavy run on both scored roster models reports the four-lane table with paired intervals and an
-  explicit adopt-or-reject verdict for the new lane.
-- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
-  diagnostic-lane boundary in [product decisions](current/scope-boundaries.md).
-
 #### context-ablation-question-type-slices (optional)
 
 The context ablation slices by question type, but the committed UA fixture ships no
@@ -138,21 +108,23 @@ slices retrieval fails to pay for.
 
 A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
 same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
-the `rag` and `long_context` lanes were byte-identical ([RAG
+the `rag` and `long_context` lanes were byte-identical WITHIN that host state -- across a month of
+host and roster change they drift too, 5-7 of 82 answers on the same pinned retrieval ([RAG
 core](current/rag-core/context-ablation.md#context-ablation-evidence)). An ungrounded prompt leaves
-a much flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift
-stayed well inside the uplift interval and changed no verdict, but a contamination rate quoted to
-one decimal place is currently over-stated precision. Measure it: repeat the closed-book lane N
-times at a fixed seed, report the between-repeat spread of the lane mean and of the contamination
-rate, and either quote the ablation's closed-book numbers with that spread or make the lane
-reproducible (pinned sampler / seeded backend options) if the backend allows it.
+a much flatter next-token distribution, so kernel-level nondeterminism flips more tokens there. The
+drift stayed well inside the uplift interval and changed no verdict, but a contamination rate
+quoted to one decimal place is currently over-stated precision. Measure it: repeat the closed-book
+lane N times at a fixed seed, report the between-repeat spread of the lane mean and of the
+contamination rate against the grounded lanes' own spread, and either quote the ablation's numbers
+with that spread or make the lanes reproducible (pinned sampler / seeded backend options) if the
+backend allows it.
 
 - Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
   existing paired-bootstrap reporting.
 - User-visible outcome: the operator knows how much of a closed-book delta is measurement noise
-  before reading it as parametric knowledge.
+  before reading it as parametric knowledge, and how much smaller that noise is on a grounded lane.
 - Scope boundary: in scope -- repeat runs, the spread statistic, and whichever of the two remedies
   the measurement supports. Out of scope -- changing the objective metric and swapping backends.
 - Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.

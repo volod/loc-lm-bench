@@ -50,7 +50,7 @@ RestorationRankOrder = Literal["morphology", "context"]
 # Context strategy (rag-vs-long-context-ablation): where the prompt's evidence comes from.
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
-ContextStrategy = Literal["rag", "closed_book", "long_context"]
+ContextStrategy = Literal["rag", "closed_book", "retrieved_document", "long_context"]
 
 # Answer contract of the generation lane (typed-rag-answer-envelope): free prose (the default,
 # byte-for-byte the pre-envelope path) or the typed `AnswerEnvelope` parsed at the boundary.
@@ -167,12 +167,21 @@ class RunConfigFields(BaseModel):
     # all, and reads the header text from `corpus_root`.
     restore_table_headers: bool = False
 
-    # Context strategy (rag-vs-long-context-ablation): a DIAGNOSTIC lane selector, not a ranking
-    # policy -- "rag" (the default) is the leaderboard row. "closed_book" sends no context at all,
-    # so the score is what the model already knows; "long_context" lays the item's whole source
-    # document(s) into the prompt, and skips (never truncates) an item whose document does not fit
-    # the model's usable window. Recorded in the manifest fingerprint like every other knob.
+    # Context strategy (rag-vs-long-context-ablation): a lane selector, not a ranking policy --
+    # "rag" (the default) is the leaderboard row. "closed_book" sends no context at all, so the
+    # score is what the model already knows; "long_context" lays the item's whole GOLD source
+    # document(s) into the prompt. Both are diagnostics. "retrieved_document" is the shippable
+    # sibling of "long_context": it retrieves as configured and then widens the unit of context
+    # from the top-ranked chunk to the whole document that chunk came from, with no gold label
+    # anywhere in the path. Every document lane skips (never truncates) an item whose documents do
+    # not fit the model's usable window. Recorded in the manifest fingerprint like every other knob.
     context_strategy: ContextStrategy = "rag"
+
+    # How many DISTINCT retrieved documents the "retrieved_document" lane lays into the prompt,
+    # walking the ranked chunk list best-first (1 = the top-ranked chunk's document only). It is
+    # the lane's document-selection rule, so it is recorded in the fingerprint: widening it trades
+    # a higher chance of covering the answer against a longer prompt and more skipped items.
+    retrieved_document_top_n: int = Field(default=1, ge=1)
 
     # Query-side processing lane (uk-query-processing): an ORDERED, opt-in list of query-prep
     # steps applied between the user question and retrieval (never mutating the stored corpus).

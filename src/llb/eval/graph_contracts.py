@@ -45,3 +45,9 @@ class RagState(TypedDict, total=False):
 
 
 ContextSource = Callable[[RagState], RagState]
+
+# A context refiner runs AFTER ordinary retrieval and rewrites what the prompt carries, given the
+# case state and the retrieve node's own update. It is how the `retrieved_document` context lane
+# widens the unit of context from the top-ranked chunk to the document that chunk came from
+# without reimplementing query prep, filtering, reranking, or the latency accounting.
+ContextRefiner = Callable[[RagState, RagState], RagState]

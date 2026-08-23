@@ -141,9 +141,17 @@ def run_eval_cmd(
     ),
     context_strategy: Optional[str] = typer.Option(
         None,
-        help="DIAGNOSTIC context lane (rag-vs-long-context-ablation): rag (retrieve, the default "
-        "and the leaderboard row) | closed_book (no context; the model answers from its weights) "
-        "| long_context (the item's whole source document, skipped when it does not fit)",
+        help="context lane (rag-vs-long-context-ablation): rag (retrieve, the default and the "
+        "leaderboard row) | closed_book (no context; the model answers from its weights) "
+        "| retrieved_document (retrieve, then send the whole document the top chunk came from) "
+        "| long_context (the item's whole GOLD document; DIAGNOSTIC, it reads the gold label). "
+        "Both document lanes skip an item whose documents do not fit",
+    ),
+    retrieved_document_top_n: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="how many DISTINCT retrieved documents the retrieved_document lane lays in, walking "
+        "the ranked chunk list best-first (default 1)",
     ),
     query_prep: Optional[str] = typer.Option(
         None,

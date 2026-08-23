@@ -11,6 +11,7 @@ from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     LANE_LONG_CONTEXT,
     LANE_RAG,
+    LANE_RETRIEVED_DOCUMENT,
     POWER_RESOLUTION_SEPARATED,
     POWER_RESOLUTION_UNDECIDABLE,
 )
@@ -141,7 +142,12 @@ def test_power_plan_is_on_disk_before_the_first_lane_is_scored(tmp_path: Path):
         assert (out_dir / "power-plan.json").is_file()
         scores = tmp_path / f"{config.context_strategy}-{split}" / "scores.jsonl"
         scores.parent.mkdir(parents=True, exist_ok=True)
-        objective = {LANE_CLOSED_BOOK: 0.0, LANE_RAG: 0.5, LANE_LONG_CONTEXT: 0.6}
+        objective = {
+            LANE_CLOSED_BOOK: 0.0,
+            LANE_RAG: 0.5,
+            LANE_RETRIEVED_DOCUMENT: 0.55,
+            LANE_LONG_CONTEXT: 0.6,
+        }
         scores.write_text(
             "".join(
                 json.dumps(_row(item.id, objective[config.context_strategy])) + "\n"

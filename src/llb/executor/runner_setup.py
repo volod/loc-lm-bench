@@ -68,10 +68,12 @@ def _default_runner_fn(
 ) -> Callable[[GoldItem], RagState]:
     """The per-case runner for this config's context strategy.
 
-    A non-`rag` strategy (rag-vs-long-context-ablation) swaps the retrieve node's store lookup for
-    its own context source and, for `closed_book`, its own generation prompt. The store is still
-    loaded and passed: it carries the embedder the optional semantic correctness signal scores
-    with, so every lane scores its answers identically.
+    A non-`rag` strategy (rag-vs-long-context-ablation) either swaps the retrieve node's store
+    lookup for its own context source (`closed_book`, `long_context`) or refines what ordinary
+    retrieval produced (`retrieved_document`, which still retrieves). `closed_book` additionally
+    brings its own generation prompt. The store is always loaded and passed: it carries the
+    embedder the optional semantic correctness signal scores with, so every lane scores its
+    answers identically.
     """
     from llb.eval.context_ablation.sources import build_context_lane
 
@@ -100,6 +102,7 @@ def _default_runner_fn(
         cited=config.cited_answers,
         context_source=lane.source if lane is not None else None,
         template_id=lane.template_id if lane is not None else None,
+        context_refiner=lane.refiner if lane is not None else None,
         header_restorer=header_restorer,
         answer_format=config.answer_format,
         suppress_reasoning=config.suppress_reasoning_prompt,

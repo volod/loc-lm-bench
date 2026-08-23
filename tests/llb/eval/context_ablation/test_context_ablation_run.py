@@ -18,6 +18,7 @@ from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     LANE_LONG_CONTEXT,
     LANE_RAG,
+    LANE_RETRIEVED_DOCUMENT,
 )
 
 
@@ -33,7 +34,12 @@ def test_every_lane_scores_the_same_selected_items_and_the_comparison_persists(t
         run_lane=_recording_lane(tmp_path, seen),
     )
 
-    assert [entry[1] for entry in seen] == [LANE_CLOSED_BOOK, LANE_RAG, LANE_LONG_CONTEXT]
+    assert [entry[1] for entry in seen] == [
+        LANE_CLOSED_BOOK,
+        LANE_RAG,
+        LANE_RETRIEVED_DOCUMENT,
+        LANE_LONG_CONTEXT,
+    ]
     assert {entry[2] for entry in seen} == {("q1", "q2")}
     assert run.report["item_ids"] == ["q1", "q2"]
     assert run.report["lanes"][LANE_RAG]["run_dirs"] == [
