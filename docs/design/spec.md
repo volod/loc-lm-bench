@@ -333,6 +333,19 @@ requested format, wrong shape" -- after at most one bounded repair, rather than 
 wrong answer: an operator has to be able to tell a model that does not KNOW the answer from one
 that cannot EMIT it.
 
+A completion can be well-formed, on-topic, and still not be an answer. Two delivery failures are
+therefore read per response and recorded beside the failure taxonomy rather than folded into
+correctness: deliberation the model leaked into the answer body despite the serving backend's
+thinking-suppression flag, and an answer delivered in a language other than the question's. Both
+are scored as ordinary content otherwise -- a low overlap score that reads identically to a wrong
+answer -- and the leak additionally inflates the generated-token count that throughput and cost are
+derived from, so it corrupts a measurement the operator reads as hardware fact. The guard names
+them; it never changes the case's status or the objective, because what it detects is a property of
+the serving configuration, not of the model's knowledge. Suppression is therefore a per-model
+verdict backed by a measured leak rate -- the backend flag, a prompt-level instruction on top of
+it, or neither, in which case the tag is not scoreable as a non-thinking model and the roster, not
+the scorer, is what has to change.
+
 Context-ablation lanes (`closed_book`, `long_context`) are measurement lanes, never default
 retrieval policies and never leaderboard rows. `long_context` is oracle-grounded -- it reads the
 item's own gold document ids -- so its gap sizes what chunking still loses rather than what an
@@ -491,7 +504,7 @@ Four rules settle it, in order:
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
 | 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
 | 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
+| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |

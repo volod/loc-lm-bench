@@ -261,6 +261,57 @@ evidence](../graphrag-backend/answer-quality-evidence.md#answer-quality-evidence
 measured on the recorded multi-hop comparison is [answer-side coverage
 evidence](../graphrag-backend/answer-side-coverage-evidence.md#measured-result-the-answers-do-not-state-the-evidence-the-fused-lane-adds).
 
+### Response-integrity guard (thinking-suppression-and-answer-language-guard)
+
+Shipped: `reasoning_leak`, `reasoning_leak_marker`, `reasoning_leak_chars`, `answer_language`, and
+`language_mismatch` on every `scores.jsonl` row, from `src/llb/scoring/answer_guard.py`, plus
+`reasoning_leak_rate`, `language_mismatch_rate`, and `mean_reasoning_leak_chars` in
+`manifest.metrics` beside `reliability`. The guard is ALWAYS ON and always ADDITIVE: it never
+changes a case's `status`, never rewrites the answer, and never feeds the objective.
+
+It names two delivery failures that the correctness columns score as ordinary content:
+
+- **Leaked reasoning.** A hybrid-thinking tag emits its deliberation into the ANSWER BODY even
+  though the launcher already sends the backend's native suppression flag on every call (`think:
+  false` in `src/llb/backends/ollama.py`). The deliberation is generated text, so it inflates
+  `completion_tokens` -- the number throughput and cost are derived from -- and against a bounded
+  `max_tokens` it can consume the whole budget so no answer is emitted at all.
+- **Off-language answer.** The benchmark prompt and the `eval.rag` system prompt are Ukrainian, so
+  an English answer is a delivery failure. Token F1 against a Ukrainian reference simply reads low,
+  which is exactly what a WRONG Ukrainian answer reads.
+
+How each is detected, and why:
+
+| Signal | Rule | Why not the obvious rule |
+| --- | --- | --- |
+| leak delimiter | `</think>`, `<think>`, `</thinking>`, harmony channel markers -- each matched INDEPENDENTLY | The measured leak carries a BARE closing tag: the chat template already emitted the opening one into the prompt, so a matched-pair scan misses precisely the case the guard exists for |
+| leak opener | a deliberation frame in the answer's first 120 chars, EN + UA + RU | A leak that exhausts the token budget never emits a terminator, so the delimiter rule alone cannot see it. Anchored to the head because a leak is a prefix by construction |
+| `reasoning_leak_chars` | text up to and including the LAST delimiter, else the whole completion | With no terminator there is no answer boundary in the text; over-reporting the leak is preferred to inventing one |
+| `answer_language` | `uk` / `ru` / `cyrillic` / `en` / `undetermined`, by dominant script then by letters only one Cyrillic language has (`їієґ` vs `ыэъё`) | Plenty of genuine Ukrainian carries none of those letters -- including this benchmark's own questions -- so `cyrillic` settles the script and declines to guess the language |
+| `language_mismatch` | different SCRIPTS is a mismatch outright; inside Cyrillic both sides must be decided `uk`/`ru` | The measured failure is a script disagreement, so it must not depend on either side carrying an "i" |
+| acronyms | an all-caps run of 2+ letters is dropped from BOTH scripts before counting | Measured: without it, the one benchmark item whose correct answer is three Latin acronyms (`BPP, ZPP та RP.`, objective 1.0) was the ONLY off-language flag on both clean roster models |
+
+The language reading is taken over the WHOLE completion, leaked reasoning included, because that is
+the text the objective scored: an English deliberation with a Ukrainian sentence at the end is an
+English response by delivered volume, and `reasoning_leak` in the same row is what says why.
+
+The prompt-level lever is `--suppress-reasoning-prompt` (`SUPPRESS_REASONING_PROMPT=1`,
+`RunConfig.suppress_reasoning_prompt`), which appends the `eval.rag.no_reasoning` instruction to the
+system message on top of the backend flag. It is OFF by default and adopted per model with the leak
+rate as evidence -- see the measured verdicts below, where it made things worse on the only tag that
+needed it.
+
+Modules/tests: `src/llb/scoring/answer_guard.py`, the columns in `src/llb/executor/cases.py`
+(`_attach_guard_columns`) and `llb.core.contracts.results.CaseScoreRow`, the run rates in
+`src/llb/executor/runner_metrics.py` (`_attach_guard_metrics`) and
+`llb.core.contracts.runs.RunMetrics`, the prompt seam in `src/llb/eval/graph.py` (`build_messages`);
+`tests/llb/scoring/test_answer_guard.py` (bare closing tag, unterminated leak, the Ukrainian
+deliberation frame, the bare-"давайте" non-leak, head anchoring, script mismatch without a
+distinguishing letter, the uk/ru call, acronyms) and `tests/llb/executor/test_runner.py`
+(leaked / off-language / clean fake generations reaching `scores.jsonl` and `manifest.json`, and the
+prompt lever composing with a prompt package). The per-model suppression verdicts are in
+[backend telemetry](../backend-telemetry.md#thinking-suppression-verdicts-per-roster-tag).
+
 ## Validation architecture: where a completion becomes typed
 
 Two lanes now parse a model completion into a typed object, and they are deliberately different

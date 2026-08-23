@@ -193,6 +193,13 @@ def run_eval_cmd(
         "the generation boundary, and read the answer-side signals from declared fields "
         "(typed-rag-answer-envelope)",
     ),
+    suppress_reasoning_prompt: Optional[bool] = typer.Option(
+        None,
+        "--suppress-reasoning-prompt/--no-suppress-reasoning-prompt",
+        help="append a prompt-level no-reasoning instruction on top of the backend's native "
+        "thinking-suppression flag, for a tag whose chat template leaks deliberation into the "
+        "answer body (thinking-suppression-and-answer-language-guard)",
+    ),
     insufficient_context_probes: Optional[int] = typer.Option(
         None,
         help="re-run N sampled gold items with their gold evidence excluded from retrieval and "

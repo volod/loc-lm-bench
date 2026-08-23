@@ -56,6 +56,20 @@ class CaseScoreRow(TypedDict):
     answer_span_coverage: NotRequired[float]
     answer_all_spans: NotRequired[float]
     answer_spans_measured: NotRequired[int]
+    # Response-integrity guard (`llb.scoring.answer_guard`): did the completion leak deliberation
+    # into the answer body despite the backend's native thinking-suppression flag, and did the
+    # model answer in the question's language? Both are ADDITIVE -- they never change `status` or
+    # the objective, they name a delivery failure the correctness columns cannot express. Every
+    # current run writes all five; they are optional only so a bundle recorded before the guard
+    # existed still re-reads. `reasoning_leak_marker` names the signal that fired (a reasoning
+    # delimiter, or the deliberation opener of a leak whose terminator the token budget cut off),
+    # and `reasoning_leak_chars` is how much of the generation the leak accounts for -- the term
+    # that inflates `completion_tokens`, and with it throughput and cost.
+    reasoning_leak: NotRequired[bool]
+    reasoning_leak_marker: NotRequired[str]
+    reasoning_leak_chars: NotRequired[int]
+    answer_language: NotRequired[str]
+    language_mismatch: NotRequired[bool]
     groundedness: NotRequired[float]
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]

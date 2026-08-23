@@ -48,6 +48,14 @@ FREE_TEXT_COLUMNS = {
     "answer_span_coverage",
     "answer_all_spans",
     "answer_spans_measured",
+    # The response-integrity guard is likewise always on, envelope or prose
+    # (thinking-suppression-and-answer-language-guard): a declared envelope can carry a leaked
+    # reasoning prefix or an off-language answer text just as free prose can.
+    "reasoning_leak",
+    "reasoning_leak_marker",
+    "reasoning_leak_chars",
+    "answer_language",
+    "language_mismatch",
 }
 
 

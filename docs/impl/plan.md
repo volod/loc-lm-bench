@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### thinking-suppression-and-answer-language-guard
-
-`qwen3:30b` answers a Ukrainian benchmark prompt with first-person English deliberation ("Okay, I
-need to explain...") even though the launcher sends Ollama's native `think: false` on every call,
-so the thinking suppression the manifest relies on is not sufficient for that tag. Two scoring
-risks follow: reasoning text inflates the generated-token count that throughput and cost are
-derived from, and an English answer to a Ukrainian prompt is scored as content rather than caught
-as an off-language response. Add a per-response guard that detects a leaked-reasoning prefix and a
-dominant-script/language mismatch against the prompt, record both as named per-case flags in the
-run bundle beside the existing reliability fields, and decide per model whether suppression needs a
-prompt-level instruction on top of the API flag. Evidence for the observation is in the full-roster
-throughput baseline in [backend telemetry](current/backend-telemetry.md).
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: the throughput protocol in
-  [backend telemetry](current/backend-telemetry.md#telemetry-fields) and the correctness/reliability
-  fields in [RAG core](current/rag-core/scoring.md#scoring).
-- User-visible outcome: a run bundle shows how many answers leaked reasoning or answered in the
-  wrong language, per model, instead of silently scoring them as ordinary content.
-- Scope boundary: in scope -- the detection flags, their manifest fields, and a per-model
-  suppression verdict. Out of scope -- rewriting the judge or changing the objective's definition.
-- Execution path: re-run the roster throughput protocol capturing generations, then a bounded
-  `run-eval` cell per affected tag.
-- Acceptance gates: `make ci` green with injected fake generations covering leaked-reasoning,
-  off-language, and clean answers; the flags appear in the persisted manifest; every roster tag
-  carries an explicit suppression verdict, including the tags where no leak was observed.
-- Documentation target: the roster baseline in
-  [backend telemetry](current/backend-telemetry.md) and the scoring fields in
-  [RAG core](current/rag-core/scoring.md#scoring).
-
 #### retrieved-document-long-context-lane
 
 The measured long-context lane is oracle-grounded -- it reads the item's own gold `doc_id`s, so it
@@ -372,6 +341,40 @@ so the two generations are readable side by side rather than one silently standi
   [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md); the offload split and
   peak VRAM are recorded beside tok/s.
 - Documentation target: the roster baseline in [backend telemetry](current/backend-telemetry.md).
+
+#### vllm-thinking-suppression-flag
+
+The Ollama launcher sends the backend's native thinking-suppression flag (`think: false`) on every
+call; `VllmLauncher.chat` sends nothing. On this 16 GiB host that costs nothing -- no vLLM-served
+roster model has a reasoning template -- but the roster names vLLM as the PRIMARY backend for the
+Qwen entries, which do, so on a larger tier those models would be scored with their reasoning
+unsuppressed. The response-integrity guard already DETECTS that
+([scoring](current/rag-core/scoring.md#response-integrity-guard-thinking-suppression-and-answer-language-guard));
+what is missing is the lever. Forward the reasoning controls vLLM exposes through `extra_body`,
+reusing the shape already written for the ontology endpoints in
+`src/llb/prep/ontology/endpoints/client.py` rather than a second copy of it. Whether an older
+vLLM rejects the unknown request fields is the open question -- it is why the flag was not simply
+switched on with the guard, and a launcher that breaks every vLLM run is worse than one that sends
+no flag, so the fields must be sent only behind a verified-once probe or an explicit opt-in.
+
+- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
+- Agent status: RUN NEEDED
+- Dependencies: the per-tag suppression verdicts in
+  [backend telemetry](current/backend-telemetry.md#thinking-suppression-verdicts-per-roster-tag),
+  which record which tags have a reasoning template at all.
+- User-visible outcome: a reasoning-capable model served through vLLM is scored with its thinking
+  suppressed, the same way the Ollama path already is, instead of silently spending its token
+  budget on deliberation.
+- Scope boundary: in scope -- the launcher-side request fields, the compatibility probe or opt-in
+  that guards them, and the shared helper both call sites use. Out of scope -- the prompt-level
+  instruction (shipped) and any change to the guard's detection rules.
+- Execution path: a bounded `run-eval` cell on a reasoning-capable model served by vLLM, read
+  against its `reasoning_leak_rate`; CI covers the request-body shape against a fake client.
+- Acceptance gates: `make ci` green; a vLLM run of a NON-reasoning model is byte-identical in
+  request shape to today's unless the flag is enabled; the measured cell shows the leak rate
+  falling to zero, or records that it does not.
+- Documentation target: the vLLM launcher section and the verdict table in
+  [backend telemetry](current/backend-telemetry.md).
 
 #### gemma4-gguf-runner-gap (optional)
 

@@ -17,7 +17,7 @@ from llb.eval.answer_envelope.models import AnswerEnvelope
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
-from llb.scoring import answer_spans, correctness, groundedness
+from llb.scoring import answer_guard, answer_spans, correctness, groundedness
 from llb.scoring.verbosity import ranking_score
 
 from llb.eval.graph_contracts import RagState
@@ -136,6 +136,7 @@ def score_case(
     if "table_headers_restored" in state:
         row["table_headers_restored"] = int(state["table_headers_restored"])
         row["table_header_chars"] = float(state.get("table_header_chars", 0))
+    _attach_guard_columns(row, item.question, answer)
     envelope = _declared_envelope(state)
     _attach_envelope_columns(row, state, envelope)
     # Answer-side signals read the chunks as the PROMPT carried them, which is what the model was
@@ -143,6 +144,21 @@ def score_case(
     # assembly (`llb.eval.table_headers`).
     _score_answer_side(row, answer, state.get("prompt_chunks") or retrieved, options, envelope)
     return row
+
+
+def _attach_guard_columns(row: CaseScoreRow, question: str, answer: str) -> None:
+    """Attach the response-integrity guard columns (`llb.scoring.answer_guard`) to `row`.
+
+    Written on EVERY case, including the pre-generation statuses whose answer is empty, so a run's
+    leak and off-language rates are shares of the same denominator as its reliability. Purely
+    additive: neither verdict touches `status` or any correctness column.
+    """
+    leak, language = answer_guard.guard_verdicts(question, answer)
+    row["reasoning_leak"] = leak.leaked
+    row["reasoning_leak_marker"] = leak.marker
+    row["reasoning_leak_chars"] = leak.leak_chars
+    row["answer_language"] = language.answer_language
+    row["language_mismatch"] = language.mismatch
 
 
 def _attach_envelope_columns(

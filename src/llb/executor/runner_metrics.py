@@ -149,6 +149,7 @@ def _aggregate(
         metrics["stage_latency"] = stage
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
+    _attach_guard_metrics(metrics, case_rows)
     _attach_answer_side_metrics(metrics, case_rows)
     _attach_envelope_metrics(metrics, case_rows)
     return rows, metrics
@@ -157,6 +158,27 @@ def _aggregate(
 def _mean(case_rows: list[CaseScoreRow], key: str) -> float:
     values = [float(row[key]) for row in case_rows]  # type: ignore[literal-required]
     return sum(values) / len(values) if values else 0.0
+
+
+def _attach_guard_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Run-level rates for the response-integrity guard (`llb.scoring.answer_guard`).
+
+    The denominator is every scored case, exactly as `reliability`'s is, so the three read
+    together: a model can be perfectly reliable by status and still deliver a third of its answers
+    as English deliberation. `mean_reasoning_leak_chars` is what makes the throughput reading
+    honest -- it prices the part of `mean_completion_tokens` that was never an answer.
+    """
+    rows = [row for row in case_rows if "reasoning_leak" in row]
+    if not rows:
+        return
+    n = len(rows)
+    metrics["reasoning_leak_rate"] = round(sum(1 for row in rows if row["reasoning_leak"]) / n, 4)
+    metrics["language_mismatch_rate"] = round(
+        sum(1 for row in rows if row.get("language_mismatch")) / n, 4
+    )
+    metrics["mean_reasoning_leak_chars"] = round(
+        sum(int(row.get("reasoning_leak_chars", 0)) for row in rows) / n, 2
+    )
 
 
 def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:

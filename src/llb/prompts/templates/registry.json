@@ -803,6 +803,14 @@
         "sha256": "db8375bd62607de8fa74d41ef0551696c51e17a8526c9d1b33b98a5e7d1437e6"
       }
     },
+    "eval.rag.no_reasoning": {
+      "kind": "text",
+      "descriptor": "eval/rag/no_reasoning.prompt.json",
+      "template": {
+        "path": "eval/rag/no_reasoning.txt",
+        "sha256": "d2177cacf5f27850be77019ec3011e3fe8e6de5ef2f192771f849fdb119d359b"
+      }
+    },
     "eval.rag.package_context": {
       "kind": "text",
       "descriptor": "eval/rag/package_context.prompt.json",

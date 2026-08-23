@@ -102,6 +102,7 @@ def _default_runner_fn(
         template_id=lane.template_id if lane is not None else None,
         header_restorer=header_restorer,
         answer_format=config.answer_format,
+        suppress_reasoning=config.suppress_reasoning_prompt,
     )
 
     def run(item: GoldItem) -> RagState:

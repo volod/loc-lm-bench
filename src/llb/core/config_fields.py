@@ -278,6 +278,15 @@ class RunConfigFields(BaseModel):
     score_groundedness: bool = False
     insufficient_context_probes: int = Field(default=0, ge=0)
 
+    # Prompt-level thinking suppression (thinking-suppression-and-answer-language-guard), ON TOP
+    # of the backend's native flag (Ollama `think: false`, vLLM `enable_thinking=false`), which
+    # every launcher already sends. Off by default because the flag alone is sufficient on every
+    # roster tag but one: a chat template that emits the reasoning block into the answer body
+    # ignores the flag, and the instruction is the only lever left. It is a PROMPT change, so it is
+    # adopted per model with the guard's leak rate as evidence, never switched on roster-wide --
+    # an instruction the model did not need still changes what it was asked.
+    suppress_reasoning_prompt: bool = False
+
     # Declared answer contract (typed-rag-answer-envelope). "free_text" keeps the shipped prose
     # path unchanged. "envelope" swaps in the typed-answer generation prompt, validates the
     # completion at the generation boundary, spends at most one bounded repair reprompt carrying

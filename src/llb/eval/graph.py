@@ -48,6 +48,11 @@ CLOSED_BOOK_TEMPLATE = "eval.rag.closed_book"
 # instead of prose, and the answer-side signals are read from its fields.
 ENVELOPE_TEMPLATE = "eval.rag.envelope"
 
+# The prompt-level thinking-suppression instruction (thinking-suppression-and-answer-language-guard),
+# appended to the system message when the backend's native suppression flag is not enough for the
+# served tag. It is the LAST lever, not the first: every launcher already sends the native flag.
+NO_REASONING_TEMPLATE = "eval.rag.no_reasoning"
+
 
 # A context source REPLACES store retrieval for a diagnostic context lane. It returns the same
 # partial state update the retrieve node would (`retrieved` / `context`, plus an optional terminal
@@ -70,17 +75,30 @@ def build_messages(
     cited: bool = False,
     template_id: str | None = None,
     answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
 ) -> list[ChatMessage]:
-    """Render the generation prompt. `template_id` overrides the `cited` style selection."""
-    augmentation: PromptAugmentation | None = None
+    """Render the generation prompt. `template_id` overrides the `cited` style selection.
+
+    `suppress_reasoning` appends the no-reasoning instruction to the system message, for a tag
+    whose chat template leaks its deliberation into the answer body despite the backend's native
+    suppression flag (thinking-suppression-and-answer-language-guard). It composes with a prompt
+    package rather than replacing it: the package still owns the system PREFIX.
+    """
+    system_prefix = ""
     if prompt_package is not None:
-        augmentation = PromptAugmentation(system_prefix=str(prompt_package.system_prompt))
+        system_prefix = str(prompt_package.system_prompt)
         extra = str(prompt_package.additional_prompt).strip()
         if extra:
             context = render_text(
                 "eval.rag.package_context",
                 {"additional_prompt": extra, "context": context},
             )
+    system_suffix = render_text(NO_REASONING_TEMPLATE) if suppress_reasoning else ""
+    augmentation: PromptAugmentation | None = (
+        PromptAugmentation(system_prefix=system_prefix, system_suffix=system_suffix)
+        if (system_prefix or system_suffix)
+        else None
+    )
     selected = template_id or generation_template(cited, answer_format)
     values: dict[str, Any] = {"context": context, "question": question}
     if selected == ENVELOPE_TEMPLATE:
@@ -170,6 +188,7 @@ def make_generate_node(
     cited: bool = False,
     template_id: str | None = None,
     answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response.
 
@@ -200,6 +219,7 @@ def make_generate_node(
             cited=cited,
             template_id=template_id,
             answer_format=answer_format,
+            suppress_reasoning=suppress_reasoning,
         )
         result = chat(messages)
         if answer_format == envelope_lane.ENVELOPE:
@@ -237,6 +257,7 @@ def build_rag_graph(
     template_id: str | None = None,
     header_restorer: HeaderRestorer | None = None,
     answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -275,6 +296,7 @@ def build_rag_graph(
                 cited,
                 template_id=template_id,
                 answer_format=answer_format,
+                suppress_reasoning=suppress_reasoning,
             ),
         ),
     )

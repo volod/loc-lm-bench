@@ -42,6 +42,7 @@ _CONFIG_OPTIONS = {
     "score_groundedness": "score_groundedness",
     "insufficient_context_probes": "insufficient_context_probes",
     "answer_format": "answer_format",
+    "suppress_reasoning_prompt": "suppress_reasoning_prompt",
     "telemetry": "measure_telemetry",
 }
 _FALSE_MEANS_UNSET = {
