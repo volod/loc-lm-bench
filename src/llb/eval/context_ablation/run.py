@@ -16,11 +16,8 @@ from pathlib import Path
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
-from llb.eval.answer_quality.run import (
-    GROUNDING_DRAFTED,
-    GROUNDING_VERIFIED,
-    select_items,
-)
+from llb.eval.answer_quality.models import GROUNDING_DRAFTED, GROUNDING_VERIFIED
+from llb.eval.answer_quality.run import select_items
 from llb.eval.context_ablation.compare import compare_context_strategies
 from llb.eval.context_ablation.lanes import default_lanes, lane_config
 from llb.eval.context_ablation.models import (

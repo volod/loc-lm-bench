@@ -76,40 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Retrieval evidence -- `retrieval-evidence`
 
-#### answer-quality-recompare-from-bundles (optional)
-
-An answer-quality comparison costs hours of generation and is then locked to the report format it
-was rendered under: a later improvement to the artifact -- a new column, a new section, a corrected
-reading -- cannot reach a recorded run without paying for every generation again, and a heavy
-budget sweep is the worst case
-([GraphRAG](current/graphrag-backend/answer-quality-budget-evidence.md#the-retrieval-budget-dimension)).
-Nothing about that is necessary: the comparison is pure over the per-case rows, every lane's run
-bundles are recorded in its own `comparison.json`, and the lane runner is already an injection
-point. Add a `--from-bundles <comparison.json>` path that resolves each lane's recorded run dirs
-per split instead of running one, refuses a bundle set whose configs no longer match the recorded
-lanes, and re-renders the artifact with no model call. The same seam is what `make
-audit-paired-readings` uses for the inference-side re-read
-([RAG core](current/rag-core/paired-verdicts.md#randomization-calibrated-paired-readings)), so the
-two should agree on how a recorded lane is reconstituted.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: CLEAR
-- Dependencies: none. The lane's `run_lane` injection point and the `run_dirs` recorded per lane in
-  `comparison.json` ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md)).
-- User-visible outcome: the operator can re-render a recorded comparison under an improved report
-  without re-running the generations it was measured with.
-- Scope boundary: in scope -- resolving recorded bundles per (lane, split), the mismatch refusal,
-  and the re-render. Out of scope -- re-scoring answers, editing a recorded bundle, and any change
-  to what the comparison computes.
-- Data and artifact paths: the recorded run's own
-  `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Execution path: `make compare-answer-quality` with the new flag; CI covers resolution, the
-  mismatch refusal, and re-render equality over committed fixture bundles.
-- Acceptance gates: `make ci` green; re-rendering a recorded comparison with an unchanged report
-  format reproduces its `comparison.json` byte-identically apart from the metadata timestamp.
-- Documentation target: the answer-quality evidence page of
-  [GraphRAG](current/graphrag-backend.md).
-
 #### fragmented-evidence-delivery-lever (optional)
 
 With the shipped `recursive` chunker on the 95-item goods corpus, `procedural` items retrieve 0.706

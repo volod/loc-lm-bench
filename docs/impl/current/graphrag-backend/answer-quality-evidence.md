@@ -70,6 +70,12 @@ result](#measured-result-what-the-route-clears-is-model-conditioned).
 Scoring every lane at more than one retrieval budget is a second axis with its own page:
 [answer-quality budget evidence](answer-quality-budget-evidence.md#the-retrieval-budget-dimension).
 
+Because the comparison is pure over the per-case rows and every lane's bundles are recorded in the
+artifact, a finished run does not have to be re-generated to be re-read under an improved report:
+`--from-bundles` re-renders it from those bundles with no model call, and refuses a bundle set that
+no longer matches the recorded lanes -- [re-rendering a recorded
+comparison](answer-quality-rerender.md).
+
 ### Measured result: the multi-hop coverage gain does not reach the answer
 
 Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The same
@@ -104,7 +110,10 @@ unaffected: the objective was flat before the gate and is flat after it.
 That withdrawn coverage reading is priced with the same rule as the sweep's: at 4 of 35 differing
 items it needs **53 multi-hop items** to be readable at 95%, and the routed run's 5 of 35 needs
 **42** ([the
-re-decision](../rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs)). All
+re-decision](../rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs)).
+Re-rendering all three recorded comparisons from their own run bundles derives that downgrade
+rather than restating it: each prints `no_gain` with the same two floors and no other number moved
+([re-rendering a recorded comparison](answer-quality-rerender.md)). All
 three comparisons ride on the one drafted slice, so a single wider accepted ledger settles all of
 them or none.
 

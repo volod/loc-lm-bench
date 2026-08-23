@@ -17,11 +17,18 @@ from pathlib import Path
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval.answer_quality.budgets import conversion_baselines, expand_budget_lanes
+from llb.eval.answer_quality.bundle_match import RUN_NAME_PREFIX
 from llb.eval.answer_quality.compare import CaseRows, compare_answer_quality
 from llb.eval.answer_quality.conversion import budget_conversion
 from llb.eval.answer_quality.coverage import read_case_coverage, with_coverage
 from llb.eval.answer_quality.lanes import lane_config
-from llb.eval.answer_quality.models import FOCUS_SLICE, AnswerQualityReport, LaneSpec
+from llb.eval.answer_quality.models import (
+    FOCUS_SLICE,
+    GROUNDING_DRAFTED,
+    GROUNDING_VERIFIED,
+    AnswerQualityReport,
+    LaneSpec,
+)
 from llb.eval.answer_quality.report import format_report
 from llb.executor.runner_setup import _select_eval_items
 from llb.goldset.schema import GoldItem
@@ -30,13 +37,9 @@ from llb.rag.question_types import load_question_types
 
 METHOD = "graph-vector-fusion-multihop"
 ARTIFACT_SUBDIR = "answer-quality"
-RUN_NAME_PREFIX = "answer-quality"
 
 # One lane config + one split's items -> that (lane, split) bundle's persisted `scores.jsonl`.
 LaneRunner = Callable[[RunConfig, list[GoldItem], str], Path]
-
-GROUNDING_VERIFIED = "verified"
-GROUNDING_DRAFTED = "drafted"
 
 
 @dataclass(frozen=True)

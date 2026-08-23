@@ -54,6 +54,13 @@ CONTEXT_METRICS = (METRIC_CONTEXT_CHARS, METRIC_PROMPT_TOKENS, METRIC_TABLE_HEAD
 # The slice the verdict is decided on; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
 
+# What the compared items were grounded on. A comparison scored on a DRAFTED ledger records
+# `drafted` in every artifact, and each of its run bundles records `item_grounding: drafted` in its
+# own manifest; a verified bundle records nothing, which is what a re-render checks a recorded
+# bundle set against.
+GROUNDING_VERIFIED = "verified"
+GROUNDING_DRAFTED = "drafted"
+
 # The candidate lane's calibrated objective test separates from the baseline.
 VERDICT_ANSWER_GAIN = "answer_quality_gain"
 # The candidate retrieves more evidence but does not turn it into better answers.

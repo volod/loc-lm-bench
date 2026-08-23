@@ -19,6 +19,7 @@ This page is the AREA INDEX: the mechanics and each evidence chain live under
 | [Entity resolution evidence](graphrag-backend/entity-resolution-evidence.md) | Whether entity-node fragmentation is costing the graph lane recall, and what merging the fragments does to it |
 | [Answer-quality evidence](graphrag-backend/answer-quality-evidence.md) | Whether fused retrieval moves ANSWER quality rather than retrieval rank, and which half of that reading is a property of the generator |
 | [Answer-quality budget evidence](graphrag-backend/answer-quality-budget-evidence.md) | Whether a coverage gain bought with a larger retrieval budget converts into answers, and what the extra context costs |
+| [Re-rendering a recorded comparison](graphrag-backend/answer-quality-rerender.md) | How a finished answer-quality run is re-read under an improved report with no model call, and what a drifted bundle set is refused on |
 | [Sidecar-free routing calibration](graphrag-backend/sidecar-free-routing-calibration.md) | What the question-type router is worth when no question-type sidecar exists to route on |
 
 ## Ontology Scope

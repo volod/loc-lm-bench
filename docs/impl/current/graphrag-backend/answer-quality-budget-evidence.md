@@ -134,7 +134,10 @@ on this page:
   120s request timeout on `vector#k50` -- itself a consequence of the budget, since only that lane's
   prompts are large enough to approach it. It is a `comparative` item, a context slice of n=2, and
   it is the whole reason that slice shows -0.369; it is not in the focus slice and touches no
-  verdict. The per-lane `not_ok` accounting that now surfaces such a case in the report was added
-  AFTER this run, so for this artifact the count was established by hand from the bundles.
+  verdict. The per-lane `not_ok` accounting that surfaces such a case in the report was added AFTER
+  this run, so the count was first established by hand from the bundles; re-rendering the recorded
+  comparison from those same bundles now prints it -- `vector#k50`, 1 of 95 not `ok` -- with no
+  generation re-run and no other number moved ([re-rendering a recorded
+  comparison](answer-quality-rerender.md#measured-result-the-current-report-reaches-four-recorded-runs-unchanged-in-substance)).
 - **The served window was verified, not assumed.** The largest prompt any cell sent was 14,855
   tokens against the 24,576 served, so no context was truncated into the measurement.

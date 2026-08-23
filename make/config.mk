@@ -238,6 +238,9 @@ ANSWER_QUALITY_LANES ?=
 FUSION_COMPARISON ?=
 ANSWER_QUALITY_LIMIT ?=
 ANSWER_QUALITY_OUT_DIR ?=
+# A RECORDED answer-quality comparison.json to re-render under the current report from the run
+# bundles it named, with no model call. Every other variable above is ignored when it is set.
+ANSWER_QUALITY_BUNDLES ?=
 # Retrieval budgets every lane is scored at, smallest first (e.g. 10,50). Empty scores the
 # config's own top_k once; a second budget adds the reading that says whether a budget-driven
 # coverage gain converts into answers, and what the extra context costs.
