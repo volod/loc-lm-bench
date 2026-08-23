@@ -159,3 +159,80 @@ whether delivered structure becomes a better answer is a property of the model a
 prompt. A future re-read should also carry the same `header chars` / `prompt tokens` pair, because
 a corpus with wide headers will pay far more than 20 tokens per case and the trade has to be read
 against that price, not this one.
+
+## Contiguous-Chunk Stitching (fragmented-evidence-delivery-lever)
+
+Shipped as a MEASUREMENT lane, not a run knob: `compare-retrieval --stitch` twins every compared
+row with a copy whose top-k has its contiguous same-document chunks merged into one block.
+
+The problem it addresses is fragmentation rather than missing structure. On the goods corpus the
+`procedural` slice retrieves 0.706 of its gold-span characters but only 0.357 of those spans arrive
+inside ONE chunk ([the intactness
+re-read](chunking.md#the-intactness-re-read-of-the-same-three-chunkers)), so on a whole question
+type the model reassembles a procedure from pieces that were adjacent in the source document. Two
+levers can convert those pieces back into whole spans: raise the `size` cap, which rebuilds the
+index and changes what is retrieved, or reflow what was ALREADY retrieved, which does not.
+Stitching is the second one. What the two are worth against each other is measured in [two levers
+against fragmented evidence](fragmented-evidence.md).
+
+Modules:
+
+- `src/llb/rag/stitching.py` -- the rule and the wrapper. `stitch_contiguous(chunks)` merges two
+  retrieved chunks only when they share a document and their character ranges TOUCH or OVERLAP. A
+  gap is never bridged (that would serve text nobody retrieved), nothing is reordered (a block sits
+  at its best-ranked part's position and inherits that part's identity and score), and no text is
+  invented -- the merged text is the parts' own text with an overlap counted once, so the block is
+  exactly the source slice its merged offsets name. It returns the input list itself when nothing
+  merged, so a no-op is free; otherwise every block is a copy, `rank` is renumbered 1..n because the
+  pre-stitch rank names a position the list no longer has, and a merged block records its parts in
+  `metadata.stitched_from`. `StitchingRetriever` wraps any store on the `.retrieve` seam (the split
+  dense/lexical path of a hybrid store included) and censuses blocks, merges, and served characters
+  per query.
+- `src/llb/rag/comparison/rows.py` -- `add_stitch_rows` builds the `<row>+stitch` twins and
+  `stitch_report` records, per twin, what it merged AND whether it reproduced its base lane's
+  `recall@k` and `span_char_coverage@k` exactly. That invariance is the reading's own precondition,
+  so it lands in the artifact as two booleans rather than being asserted in prose.
+- `src/llb/cli/rag/compare_retrieval_lanes.py` -- `--stitch` layers the twins over whatever rows the
+  comparison built, AFTER any `--reranker` twins, because stitching reflows what a lane finally
+  delivers rather than its pre-rerank pool. `verdict_lanes` keeps every stitched row out of the
+  eligible set.
+
+Two merges are REFUSED, both to keep a block exactly reversible onto the source: a chunk whose text
+length disagrees with its own offsets (a governance overlay may rewrite chunk text), and a chunk
+that collapsed byte-identical copies ([duplicate chunk
+collapse](retrieval-store.md#duplicate-chunk-collapse)), whose recorded occurrences describe that
+text at other places a merged block appears at none of. A refused chunk is still served as its own
+block, so a refusal costs intactness, never evidence.
+
+Why this step is read on retrieval metrics while header restoration is not: restoration changes the
+TEXT the model reads, which no source-span metric can see, whereas stitching changes only how many
+BLOCKS the same characters arrive in -- and `span_intact@k` asks exactly whether ONE block carries a
+span whole. What follows is a boundary, not a convenience: `recall@k` and `cover@k` MUST reproduce
+the base lane, and a lane that moved them did not reflow evidence, it changed it.
+
+`mrr` is NOT readable on a stitched row and the report says so on its own line. Merging shortens the
+returned list, so the first hit can only move to an earlier position; the compression is an artifact
+of counting positions, not a ranking gain. For the same reason a stitched twin is a REPORTED lever
+and never an adoption candidate: it ties its base lane on every metric a verdict is decided on, so
+`compare-retrieval` excludes it from the eligible lanes rather than letting it win a tie-break on a
+compressed `mrr`.
+
+Commands:
+
+```bash
+make compare-retrieval CONFIG=<run.yaml> STITCH=1
+make compare-retrieval CONFIG=<run.yaml> CHUNK_SIZES=200,400,800 STITCH=1
+```
+
+Boundary of the step, stated so nobody has to rediscover it: it exists on the comparison path only.
+No `RunConfig` field turns it on, nothing in the eval graph stitches, and no default moved -- what
+ships is the measurement that would justify shipping it. Promoting it to a run knob is future work
+that needs an answer-side reading, exactly as header restoration did.
+
+Tests: `tests/llb/rag/test_stitching.py` -- adjacent chunks merged with exact offsets, an overlap
+served once, a contained chunk adding nothing, a gap never bridged, two documents left alone, the
+two refusals, the block taking its best-ranked part's position and identity, a cut span turning
+intact while recall/coverage/served characters do not move, and the retriever's census, delegation,
+and split-query path. `tests/llb/rag/comparison/test_compare_retrieval_core.py` and
+`test_compare_retrieval_cli.py` -- the twin scored beside its base through the real comparison, the
+invariance flags in both directions, the rendering, and the twin's exclusion from the verdict lanes.

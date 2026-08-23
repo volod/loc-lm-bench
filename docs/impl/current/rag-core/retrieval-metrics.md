@@ -142,6 +142,15 @@ exactly the kind that helps one slice and hurts another. `compare-retrieval` the
 per-question-type breakdown beside the aggregate: every lane is scored again on the items carrying
 each label, from the SAME retrieval pass (no second retrieval, so the slices cost nothing).
 
+A slice also carries its OWN paired reading against the baseline lane, drawn on that slice's items
+with the run's resamples/confidence/seed (`_one_slice` in `src/llb/rag/comparison/run.py`). The
+reason is the slice size: a 14-item slice turns on one or two questions, so a point move from 0.357
+to 0.714 there is not yet a reading -- the interval and the win/loss/tie ledger beside it are what
+say whether it is an item set. The JSON artifact carries all four metrics' slice deltas; the ASCII
+rendering prints the INTACTNESS pair under each slice's point rows (`SLICE_PAIRED_BLOCK`), because
+the aggregate table already carries all four blocks and a slice is the resolution at which an
+evidence-delivery change is read. An empty slice pairs nothing rather than reporting invented zeros.
+
 The labels are not in the gold set -- a `GoldItem` has no question type -- they live in the draft
 bundle's sidecars, and `src/llb/rag/question_types.py` is the one place that knows where those sit:
 `needle_items.jsonl` (ontology-assisted drafting) and `item_provenance.jsonl` (the external-draft
@@ -150,14 +159,57 @@ ledger under `accepted/`. The two are JOINED, nearest sidecar first, so a bundle
 (or both) slices the same way; a gold set with neither reports no slices at all instead of an
 invented label.
 
-`FOCUS_SLICES` (`src/llb/rag/comparison/models.py`) -- `numeric`, `comparative`, `multi-hop` -- are
+`FOCUS_SLICES` (`src/llb/rag/comparison/models.py`) -- `numeric`, `comparative`, `multi-hop`,
+`procedural` -- are
 always present in the JSON report even at `n=0`, so a reader can tell "this corpus labels no
 numeric question" from "nobody looked". The ASCII rendering scores only the non-empty slices and
 names the empty ones on one line, because printing a zero-item slice's zeros would read as a
-measured result. Those three are the slices a chunking change is read on: in converted Ukrainian
+measured result. Those four are the slices a chunking change is read on: in converted Ukrainian
 PDFs the numeric and comparative answers live in tables ([table-aware
-chunking](chunking.md#table-aware-chunking)), and a multi-hop answer needs every span carried at
-once.
+chunking](chunking.md#table-aware-chunking)), a multi-hop answer needs every span carried at
+once, and a procedural answer is a multi-line step sequence -- the shape a `size` cap cuts, which
+is why it is where evidence INTACTNESS is read.
+
+## Served Context Cost (`served_chars@k`)
+
+A lever that delivers more of a gold span by serving MORE text is a different trade from one that
+delivers the same characters in fewer pieces, and the four quality columns cannot tell the two
+apart. `served_chars_at_k` (`src/llb/rag/retrieval.py`) is the cost column that can: the mean total
+characters of the top-k chunk TEXTS, so what an overlapping chunk pair serves twice is counted
+twice, because what the model pays for is what is laid into its prompt rather than the character
+union behind it.
+
+It rides the same `evaluate_retrieval` return every lane already computes, so every per-lane and
+per-slice row in `compare-retrieval` carries it for no extra retrieval, and the ASCII report renders
+it as the `chars@k` point column beside `intact@k`. It is deliberately NOT in `METRICS`: it is never
+resampled into a paired delta and no verdict is argued from it. A lane is adopted for what it
+delivers; this column is what delivering it cost. Like the intactness pair, the key is `NotRequired`
+on `RetrievalMetrics` so an artifact recorded before it existed still validates and still re-reads,
+printing `n/a` in that column.
+
+## Reading A Stitched Twin (`<row>+stitch`)
+
+`compare-retrieval --stitch` adds an assembly-time twin per compared row: the SAME top-k with
+contiguous same-document chunks merged into one block ([contiguous-chunk
+stitching](context-assembly.md#contiguous-chunk-stitching-fragmented-evidence-delivery-lever)). The
+twin retrieves nothing its base lane did not, which fixes how its four columns are read:
+
+- `recall@k` and `cover@k` MUST reproduce the base lane exactly -- the retrieved character set is
+  identical -- and `stitch_report` records that invariance per twin as `recall_invariant` /
+  `coverage_invariant` in the report's `stitching` block, rendered as `invariance held` or
+  `INVARIANCE FAILED`. A failure means the twin changed evidence rather than reflowing it and its
+  reading is void.
+- `intact@k` is the axis the lever moves, upward only: a merge can turn a span that arrived cut into
+  one a single block carries whole, and can never do the reverse.
+- `chars@k` is its price, and for stitching it can only fall or stay level, because merging counts a
+  chunk-overlap once instead of twice.
+- `mrr` is NOT readable: merging shortens the returned list, so the first hit can only move to an
+  earlier position. The report prints that caveat on its own line beside the stitch census.
+
+Because a stitched twin ties its base lane on both metrics a verdict is decided on,
+`verdict_lanes` (`src/llb/cli/rag/compare_retrieval_lanes.py`) keeps it out of the eligible set --
+it is a reported lever, not an adoption candidate, and letting it win a tie-break on a compressed
+`mrr` would be the one way the report could lie about it.
 
 ## Measurement Floor (`--noise-floor`)
 

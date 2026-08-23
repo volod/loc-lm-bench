@@ -5,6 +5,7 @@ from llb.core.contracts.rag import ChunkRecord
 from llb.rag.filters import metadata_filter
 from llb.rag.comparison.models import (
     CompareItem,
+    size_row_label,
     ROW_DENSE,
     ROW_HYBRID,
     ROW_HYBRID_LEMMAS,
@@ -82,6 +83,45 @@ def build_chunking_comparison(
         if stores_root is not None:
             store.save(Path(stores_root) / strategy)
         stores[strategy] = store
+    return stores
+
+
+def build_chunk_size_comparison(
+    config: Any, sizes: list[int], stores_root: Any = None
+) -> dict[str, Retriever]:
+    """Build one FAISS store per chunk `size` under the config's SHIPPED strategy.
+
+    The `size` lever against evidence fragmentation: a span the cap cuts arrives whole once the cap
+    is wide enough to hold it. Every store shares the corpus, strategy, overlap, duplicate tier, and
+    PINNED embedder and differs ONLY in `size`, so the intactness delta is attributable to the cap
+    and its price is visible in the served-context column beside it. Lanes are labeled
+    `<strategy>#size<n>` and persist under `<stores_root>/<label>/` when a root is given. Overlap is
+    held at the config's value rather than scaled with `size`, because scaling both would confound
+    the reading with a second change. Real path: needs the `[rag]` extra.
+    """
+    from pathlib import Path
+
+    from llb.rag.duplicates.tiers import TIER_EXACT
+    from llb.rag.vector_store.store import RagStore
+
+    invalid = [size for size in sizes if size < 1]
+    if invalid:
+        raise ValueError(f"chunk size must be >= 1; got {invalid[0]}")
+    stores: dict[str, Retriever] = {}
+    for size in sizes:
+        store = RagStore.build(
+            config.corpus_root,
+            config.strategy,
+            size,
+            config.chunk_overlap,
+            config.embedding_model,
+            mode="flat",
+            duplicate_tier=getattr(config, "duplicate_tier", TIER_EXACT),
+        )
+        label = size_row_label(config.strategy, size)
+        if stores_root is not None:
+            store.save(Path(stores_root) / label)
+        stores[label] = store
     return stores
 
 

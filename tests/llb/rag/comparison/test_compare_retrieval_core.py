@@ -8,15 +8,19 @@ from llb.rag.comparison.run import compare_retrieval
 from llb.rag.comparison.models import ROW_ORACLE_DOC
 from llb.rag.comparison.rows import (
     add_rerank_rows,
+    add_stitch_rows,
     duplicate_census,
     format_comparison,
+    stitch_report,
 )
+from llb.rag.stitching import StitchingRetriever
 from llb.rag.duplicates.collapse import KEPT_BY_REQUEST, KEPT_BY_STRATEGY
 
 
 from tests.llb.rag._compare_retrieval_helpers import (
     _FakeStore,
     _chunk,
+    _exact_chunk,
     _items,
     _MetaStore,
 )
@@ -418,12 +422,12 @@ def test_the_report_renders_the_intactness_columns_and_their_paired_block():
         baseline="recursive",
     )
     rendered = format_comparison(report)
-    assert "cover@k intact@k" in rendered
+    assert "cover@k intact@k  chars@k" in rendered
     assert "coverage delta [lo, hi]" in rendered and "intact delta [lo, hi]" in rendered
     assert rendered.isascii()
-    # the slice block reuses the same four columns
+    # the slice block reuses the same four quality columns and the served-cost column beside them
     slice_row = [line for line in rendered.splitlines() if line.startswith("    sentence")]
-    assert slice_row and slice_row[0].split()[1:] == ["1.000", "1.000", "0.500", "0.000"]
+    assert slice_row and slice_row[0].split()[1:] == ["1.000", "1.000", "0.500", "0.000", "1"]
 
 
 def test_a_separated_loss_is_named_regressed_not_flat():
@@ -442,3 +446,110 @@ def test_a_separated_loss_is_named_regressed_not_flat():
     rendered = format_comparison(report)
     sentence_rows = [line for line in rendered.splitlines() if line.startswith("  sentence   ")]
     assert any("regressed" in line for line in sentence_rows)
+
+
+def test_stitched_twin_converts_fragments_and_reproduces_its_base_lanes_finding_metrics():
+    """The fragmented-evidence lever, read the way the report reads it.
+
+    The base lane retrieves a gold span cut across two adjacent chunks: found, fully covered, not
+    intact. Its stitched twin retrieves the SAME chunks and merges them, so recall and coverage
+    must reproduce the base lane exactly and only intactness may move.
+    """
+    questions = [f"q{index}" for index in range(20)]
+    spans = [{"doc_id": "d1", "char_start": 40, "char_end": 60, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    fragments = [_exact_chunk("d1", 0, 50), _exact_chunk("d1", 50, 100)]
+    stores = add_stitch_rows({"recursive": _FakeStore(fragments)})
+
+    report = compare_retrieval(
+        stores,
+        items,
+        k=10,
+        slice_labels=["procedural"] * len(questions),
+        baseline="recursive",
+    )
+    report["stitching"] = stitch_report(report, stores)
+
+    base = report["backends"]["recursive"]
+    stitched = report["backends"]["recursive+stitch"]
+    assert base["span_intact_at_k"] == 0.0 and stitched["span_intact_at_k"] == 1.0
+    assert stitched["recall_at_k"] == base["recall_at_k"] == 1.0
+    assert stitched["span_char_coverage_at_k"] == base["span_char_coverage_at_k"] == 1.0
+    assert stitched["served_chars_at_k"] == base["served_chars_at_k"] == 100.0
+    assert report["slices"]["procedural"]["backends"]["recursive+stitch"]["span_intact_at_k"] == 1.0
+
+    entry = report["stitching"]["recursive+stitch"]
+    assert entry["base"] == "recursive"
+    assert entry["recall_invariant"] and entry["coverage_invariant"]
+    assert entry["census"]["merged_per_query"] == 1.0
+
+    rendered = format_comparison(report)
+    assert "chars@k" in rendered
+    assert "invariance held" in rendered
+    assert "mrr compresses with the block count" in rendered
+    assert rendered.isascii()
+
+
+def test_stitch_report_names_a_lane_that_failed_the_invariance_it_rests_on():
+    """A stitched lane that moved recall did not reflow evidence -- the report must say so."""
+    items = [("q", [{"doc_id": "d1", "char_start": 0, "char_end": 10, "text": "g"}])]
+    stores = {
+        "recursive": _FakeStore([_chunk("miss", 0, 10)]),
+        "recursive+stitch": _FakeStore([_chunk("d1", 0, 10)]),
+    }
+    report = compare_retrieval(stores, items, k=10, baseline="recursive")
+    report["stitching"] = stitch_report(report, {"recursive+stitch": StitchingRetriever(object())})
+
+    assert report["stitching"]["recursive+stitch"]["recall_invariant"] is False
+    assert "INVARIANCE FAILED" in format_comparison(report)
+
+
+def test_stitching_is_absent_from_a_report_with_no_stitched_lane():
+    report = compare_retrieval({"faiss": _FakeStore([_chunk("d1", 0, 10)])}, _items(), k=5)
+    assert stitch_report(report, {"faiss": _FakeStore([])}) == {}
+    assert "+stitch" not in format_comparison(report)
+
+
+def test_each_slice_carries_its_own_paired_reading_not_only_a_point_row():
+    """A 14-item slice turns on one question, so a slice point delta needs its own interval."""
+    questions = [f"q{index}" for index in range(12)]
+    spans = [{"doc_id": "d1", "char_start": 0, "char_end": 100, "text": "g"}]
+    items = [(question, spans) for question in questions]
+    whole = _QuestionStore({question: [_chunk("d1", 0, 100)] for question in questions})
+    cut = _QuestionStore({question: [_chunk("d1", 0, 50)] for question in questions})
+    # the first six items are procedural, the rest factoid: the two slices must read differently
+    labels = ["procedural"] * 6 + ["factoid"] * 6
+
+    report = compare_retrieval(
+        {"recursive": cut, "wider": whole},
+        items,
+        k=5,
+        slice_labels=labels,
+        baseline="recursive",
+        resamples=200,
+    )
+
+    procedural = report["slices"]["procedural"]
+    assert procedural["n"] == 6
+    paired = procedural["backends"]["wider"]["paired_vs_baseline"]
+    assert paired["baseline"] == "recursive"
+    intact = paired["metrics"]["span_intact_at_k"]
+    assert intact["delta"]["mean"] == 1.0
+    assert (intact["wins"], intact["losses"], intact["ties"]) == (6, 0, 0)
+    # the slice's own items only -- the baseline lane pairs against itself at exactly zero
+    assert (
+        procedural["backends"]["recursive"]["paired_vs_baseline"]["metrics"]["span_intact_at_k"][
+            "delta"
+        ]["mean"]
+        == 0.0
+    )
+    # an empty focus slice scores nothing and pairs nothing rather than reporting invented zeros
+    assert report["slices"]["numeric"]["n"] == 0
+    assert "paired_vs_baseline" not in report["slices"]["numeric"]["backends"]["wider"]
+
+    rendered = format_comparison(report)
+    slice_block = rendered.split("slice procedural")[1].split("slice ")[0]
+    assert "intact delta [lo, hi]" in slice_block
+    assert "coverage delta [lo, hi]" in slice_block
+    # the finding pair stays on the aggregate table, so a slice block does not repeat it
+    assert "recall delta [lo, hi]" not in slice_block

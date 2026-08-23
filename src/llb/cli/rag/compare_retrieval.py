@@ -1,13 +1,13 @@
 """Retrieval-quality comparison command (compare-retrieval across stores)."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-from llb.cli.rag.compare_stores import _compare_vector_corpus_root, resolve_paired_baseline
+from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
     DEFAULT_RESAMPLES,
@@ -27,6 +27,21 @@ def compare_retrieval_cmd(
         help="comma-separated CHUNKING strategies to compare instead of the built backends "
         "(builds one FAISS store per strategy over the corpus -- the sibling corpus/ of "
         "--goldset when present -- and persists each under $DATA_DIR/llb/rag/<strategy>/)",
+    ),
+    sizes: Optional[str] = typer.Option(
+        None,
+        "--sizes",
+        help="comma-separated chunk SIZES to compare under the config's own strategy (builds one "
+        "FAISS store per size over the corpus and persists each under "
+        "$DATA_DIR/llb/rag/<strategy>#size<n>/) -- the index-side lever against evidence that "
+        "arrives in fragments, priced in the served-context column",
+    ),
+    stitch: bool = typer.Option(
+        False,
+        "--stitch",
+        help="add a '<row>+stitch' twin per compared row: the SAME top-k with contiguous chunks "
+        "of one document merged into one block at assembly time -- the assembly-side lever "
+        "against fragmented evidence, which retrieves nothing new and so moves intact@k only",
     ),
     hybrid: bool = typer.Option(
         False,
@@ -53,7 +68,8 @@ def compare_retrieval_cmd(
     duplicate_tier: Optional[str] = typer.Option(
         None,
         "--duplicate-tier",
-        help="duplicate-collapse tier for the stores this run BUILDS (--strategies / --hybrid): "
+        help="duplicate-collapse tier for the stores this run BUILDS "
+        "(--strategies / --sizes / --hybrid): "
         "exact (default) | normalized | masked -- see `measure-duplicate-residue` for the "
         "residue each tier would take",
     ),
@@ -69,7 +85,8 @@ def compare_retrieval_cmd(
     ),
     baseline: Optional[str] = typer.Option(
         None,
-        help="paired baseline lane (defaults by mode: recursive, dense, or faiss)",
+        help="paired baseline lane (defaults by mode: the config's own <strategy>#size<n>, "
+        "recursive, dense, or faiss)",
     ),
     resamples: int = typer.Option(
         DEFAULT_RESAMPLES, min=0, help="paired percentile-bootstrap resamples"
@@ -85,32 +102,41 @@ def compare_retrieval_cmd(
     Default: scores each BUILT backend (FAISS vs graph/local_khop vs graph/global_community) on
     the SAME items (a backend whose store is not built is skipped). With `--strategies` it instead
     builds one store per CHUNKING strategy (same corpus + pinned embedder) and ranks the chunkers,
-    so the best chunker is demonstrated per corpus. With `--hybrid` it demonstrates (not assumes)
+    so the best chunker is demonstrated per corpus. With `--sizes` it holds the strategy and
+    varies the chunk `size` cap instead -- the index-side lever for evidence that arrives in
+    fragments. With `--hybrid` it demonstrates (not assumes)
     per corpus whether dense+BM25 RRF fusion beats dense-only, how each lane retrieves ALONE,
     what Ukrainian lemmatization adds, and how much recall headroom perfect document routing
     would buy. `--reranker` adds a reranked
-    twin row per compared row (rerank-context-order). Answer-quality comparison rides
+    twin row per compared row (rerank-context-order); `--stitch` adds an assembly-time twin that
+    merges contiguous retrieved chunks (the lever that reflows evidence without retrieving any).
+    Every row is priced in the `chars@k` served-context column. Answer-quality comparison rides
     `run-eval --retrieval-backend ...` (it needs a model).
     """
     import json
 
+    from llb.cli.rag.compare_retrieval_lanes import (
+        add_twin_rows,
+        attach_diagnostics,
+        build_compare_stores,
+        comparison_baseline,
+        echo_stage_latencies,
+        refuse_two_modes,
+        verdict_lanes,
+    )
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
     from llb.rag.comparison.run import compare_retrieval
-    from llb.rag.comparison.rows import (
-        add_rerank_rows,
-        duplicate_census,
-        format_comparison,
-    )
+    from llb.rag.comparison.rows import format_comparison
     from llb.rag.question_types import aligned_question_types
 
-    if strategies and hybrid:
-        typer.echo("[error] --strategies and --hybrid are mutually exclusive", err=True)
-        raise typer.Exit(code=2)
+    refuse_two_modes(strategies, sizes, hybrid)
     cfg = load_config(
         config,
         goldset_path=goldset,
-        corpus_root=_compare_vector_corpus_root(goldset, None) if (strategies or hybrid) else None,
+        corpus_root=(
+            _compare_vector_corpus_root(goldset, None) if (strategies or sizes or hybrid) else None
+        ),
         fusion_weight=fusion_weight,
         graph_weight=graph_weight,
         duplicate_tier=duplicate_tier,
@@ -119,17 +145,10 @@ def compare_retrieval_cmd(
     if split:
         items = [it for it in items if it.split == split]
     compare_items = [(it.question, spans_as_dicts(it)) for it in items]
-    stores = _build_compare_stores(cfg, strategies, hybrid, compare_items)
-    if reranker:
-        from llb.rag.rerank import DEFAULT_RERANK_CANDIDATES, CrossEncoderReranker
-
-        stores = add_rerank_rows(
-            stores,
-            CrossEncoderReranker(reranker),
-            rerank_candidates or DEFAULT_RERANK_CANDIDATES,
-        )
+    stores = build_compare_stores(cfg, strategies, sizes, hybrid, compare_items)
+    stores = add_twin_rows(stores, reranker, rerank_candidates, stitch)
     try:
-        paired_baseline = _comparison_baseline(stores, baseline, strategies, hybrid)
+        paired_baseline = comparison_baseline(stores, baseline, cfg, strategies, sizes, hybrid)
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
@@ -140,93 +159,22 @@ def compare_retrieval_cmd(
         slice_labels=aligned_question_types(cfg.goldset_path, [it.id for it in items]),
         item_ids=[it.id for it in items],
         baseline=paired_baseline,
-        eligible_lanes=_verdict_lanes(stores, hybrid),
+        eligible_lanes=verdict_lanes(stores, hybrid),
         resamples=resamples,
         confidence=confidence,
         seed=seed,
     )
-    census, census_kept = duplicate_census(stores)
-    if census:
-        report["duplicates"] = census
-        if census_kept:
-            report["duplicates_kept"] = census_kept
-    if noise_floor:
-        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES, measure_noise_floor
-
-        report["noise_floor"] = measure_noise_floor(
-            stores, compare_items, k, replicates=noise_floor_replicates or DEFAULT_REPLICATES
-        )
+    attach_diagnostics(
+        report,
+        stores,
+        compare_items,
+        k,
+        noise_floor=noise_floor,
+        noise_floor_replicates=noise_floor_replicates,
+    )
     typer.echo(format_comparison(report))
-    _echo_stage_latencies(stores)
+    echo_stage_latencies(stores)
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[compare-retrieval] wrote report -> {out}")
-
-
-def _build_compare_stores(
-    cfg: Any, strategies: Optional[str], hybrid: bool, compare_items: list[Any]
-) -> dict[str, Any]:
-    """The label -> store map to compare: per-strategy builds, hybrid rows, or built backends."""
-    from llb.rag.comparison.builders import (
-        build_chunking_comparison,
-        build_hybrid_comparison,
-        load_compare_stores,
-    )
-
-    if strategies:
-        selected = [s.strip() for s in strategies.split(",") if s.strip()]
-        try:
-            stores = build_chunking_comparison(cfg, selected, stores_root=cfg.index_dir())
-        except ValueError as exc:
-            typer.echo(f"[error] {exc}", err=True)
-            raise typer.Exit(code=2) from None
-        typer.echo(f"[compare-retrieval] per-strategy stores saved under {cfg.index_dir()}/")
-    elif hybrid:
-        stores = build_hybrid_comparison(cfg, compare_items, stores_root=cfg.index_dir())
-        typer.echo(f"[compare-retrieval] hybrid store saved under {cfg.index_dir()}/hybrid/")
-    else:
-        stores = load_compare_stores(cfg)
-    if not stores:
-        typer.echo(
-            "[error] no retrieval backend is built (run build-index / build-graph)", err=True
-        )
-        raise typer.Exit(code=2)
-    return stores
-
-
-def _echo_stage_latencies(stores: dict[str, Any]) -> None:
-    """Print per-store retrieve/rerank stage latency when the store measured it."""
-    for label, store in sorted(stores.items()):
-        latency = getattr(store, "mean_stage_latency", None)
-        if callable(latency):
-            stages = latency()
-            typer.echo(
-                f"[compare-retrieval] {label}: mean/query retrieve "
-                f"{stages['retrieve_s'] * 1000:.1f} ms + rerank {stages['rerank_s'] * 1000:.1f} ms"
-            )
-
-
-def _comparison_baseline(
-    stores: dict[str, Any],
-    requested: str | None,
-    strategies: str | None,
-    hybrid: bool,
-) -> str:
-    """Resolve a stable, mode-aware baseline before any item is retrieved.
-
-    Each mode has its own incumbent -- the shipped retrieval path of that comparison -- and the
-    resolution/validation itself is shared with `compare-vector-stores`.
-    """
-    preferred = ("dense",) if hybrid else ("recursive",) if strategies else ("faiss",)
-    return resolve_paired_baseline(stores, requested, preferred)
-
-
-def _verdict_lanes(stores: dict[str, Any], hybrid: bool) -> list[str]:
-    """Return deployable rows only: oracle and lexical diagnostics cannot receive ADOPT."""
-    from llb.rag.comparison.models import RERANK_ROW_SUFFIX, ROW_LEXICAL, ROW_ORACLE_DOC
-
-    excluded = {ROW_ORACLE_DOC}
-    if hybrid:
-        excluded.update({ROW_LEXICAL, f"{ROW_LEXICAL}{RERANK_ROW_SUFFIX}"})
-    return [lane for lane in stores if lane not in excluded]

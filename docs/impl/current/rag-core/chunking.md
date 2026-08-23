@@ -362,6 +362,9 @@ Procedural answers on this corpus live in multi-line steps that `size=200` split
 reassembles half of them from fragments. No chunker in this comparison changes that, and no metric
 in the repo could show it before.
 
+What the two levers against that fragmentation are worth is measured in [two levers against
+fragmented evidence](fragmented-evidence.md).
+
 ## `size` Is A Hard Cap On Every Strategy
 
 `chunk_spans` runs every strategy's own boundaries through `cap_spans`

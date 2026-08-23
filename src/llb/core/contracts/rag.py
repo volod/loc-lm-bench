@@ -65,6 +65,10 @@ class RetrievalMetrics(TypedDict):
     # before the pair existed still validates and still re-reads.
     span_char_coverage_at_k: NotRequired[float]
     span_intact_at_k: NotRequired[float]
+    # Mean served context characters of the top-k (`llb.rag.retrieval.served_chars_at_k`): the COST
+    # beside the quality columns, so a lever that buys intactness by serving more text is told
+    # apart from one that reflows the same characters. Optional on the same terms as the pair above.
+    served_chars_at_k: NotRequired[float]
 
 
 RetrievalPair: TypeAlias = tuple[list[ChunkRecord], list[SourceSpanRecord]]

@@ -228,6 +228,19 @@ context assembly never rewrites a stored chunk, its offsets, or the source-span 
 them -- restoration is prompt-side only, and its added context is reported as a cost beside the
 answer delta. No such step is on by default before its measurement supports it.
 
+A second kind of assembly step changes no text at all. It changes only how many BLOCKS the delivered
+evidence arrives in, by merging retrieved pieces that were adjacent in the source back into one.
+Intactness asks whether a SINGLE delivered block carries a gold span whole, so a step of that shape
+is measurable on the retrieval side directly, without a generator -- and the property that makes the
+reading trustworthy is the one that makes the step safe: merging pieces that touch changes neither
+the set of retrieved characters nor their order, so recall and character coverage must reproduce the
+un-merged lane EXACTLY and only intactness may move. That invariance is reported per lane rather
+than assumed, because a lane that moved recall did not reflow evidence, it changed it. The boundary:
+such a step is a REPORTED lever and never an adoption candidate -- it cannot move the metrics an
+adopt-or-retain verdict is decided on, and a lane whose evidence was merely reflowed must not be
+ranked above one that retrieved more. Its price is the served context size, reported beside every
+lane on the same terms as a budget change.
+
 Every end-to-end reading of that bar is conditioned on the GENERATOR that produced the answers,
 because whether delivered evidence becomes a better answer is a property of the model as much as of
 the retrieval lane. A reading taken with one model therefore cannot distinguish "this corpus and
@@ -439,7 +452,7 @@ Four rules settle it, in order:
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
 | 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
-| 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage and intactness reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
 | 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |

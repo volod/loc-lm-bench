@@ -18,6 +18,7 @@ from llb.rag.question_types import (
 from tests.llb.rag._compare_retrieval_helpers import (
     _FakeStore,
     _chunk,
+    _exact_chunk,
 )
 
 
@@ -130,8 +131,8 @@ def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, 
         goldset,
     )
     monkeypatch.setattr(
-        "llb.cli.rag.compare_retrieval._build_compare_stores",
-        lambda cfg, strategies, hybrid, compare_items: {
+        "llb.cli.rag.compare_retrieval_lanes.build_compare_stores",
+        lambda cfg, strategies, sizes, hybrid, compare_items: {
             "sentence": _FakeStore([_chunk("d1", 0, 10)]),
             "recursive": _FakeStore([_chunk("d1", 0, 10)]),
         },
@@ -158,3 +159,142 @@ def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, 
     assert report["uncertainty"]["baseline"] == "recursive"
     assert report["paired_items"][0]["item_id"] == "paired-a"
     assert "paired_vs_baseline" in report["backends"]["sentence"]
+
+
+def _paired_goldset(tmp_path):
+    """One bundle whose single gold span is CUT across the two chunks the fake store returns."""
+    bundle = tmp_path / "bundle"
+    (bundle / "corpus").mkdir(parents=True)
+    goldset = bundle / "goldset.jsonl"
+    dump_goldset(
+        [
+            GoldItem(
+                id="paired-a",
+                question="питання",
+                reference_answer="x",
+                source_doc_id="d1",
+                source_spans=[
+                    SourceSpan(doc_id="d1", char_start=40, char_end=60, text="01234567890123456789")
+                ],
+                provenance="ontology-drafted",
+                split="final",
+            )
+        ],
+        goldset,
+    )
+    return goldset
+
+
+def test_compare_retrieval_cli_stitch_twin_is_reported_but_never_adopted(tmp_path, monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = _paired_goldset(tmp_path)
+    monkeypatch.setattr(
+        "llb.cli.rag.compare_retrieval_lanes.build_compare_stores",
+        lambda cfg, strategies, sizes, hybrid, compare_items: {
+            "recursive": _FakeStore([_exact_chunk("d1", 0, 50), _exact_chunk("d1", 50, 100)])
+        },
+    )
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compare-retrieval",
+            "--goldset",
+            str(goldset),
+            "--strategies",
+            "recursive",
+            "--stitch",
+            "--resamples",
+            "50",
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(out.read_text(encoding="utf-8"))
+    base = report["backends"]["recursive"]
+    stitched = report["backends"]["recursive+stitch"]
+    assert base["span_intact_at_k"] == 0.0 and stitched["span_intact_at_k"] == 1.0
+    assert stitched["recall_at_k"] == base["recall_at_k"]
+    assert report["stitching"]["recursive+stitch"]["recall_invariant"] is True
+    # the twin is a reported lever, so no verdict can name it
+    assert "recursive+stitch" not in report["uncertainty"]["eligible_lanes"]
+    assert report["verdict"]["lane"] != "recursive+stitch"
+
+
+def test_compare_retrieval_cli_size_lanes_are_paired_against_the_configs_own_size(
+    tmp_path, monkeypatch
+):
+    import json
+
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = _paired_goldset(tmp_path)
+    monkeypatch.setattr(
+        "llb.cli.rag.compare_retrieval_lanes.build_compare_stores",
+        lambda cfg, strategies, sizes, hybrid, compare_items: {
+            "recursive#size1600": _FakeStore([_exact_chunk("d1", 0, 100)]),
+            "recursive#size800": _FakeStore(
+                [_exact_chunk("d1", 0, 50), _exact_chunk("d1", 50, 100)]
+            ),
+        },
+    )
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "compare-retrieval",
+            "--goldset",
+            str(goldset),
+            "--sizes",
+            "1600,800",
+            "--resamples",
+            "50",
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # the config's shipped size (800) is the incumbent, not the first lane the operator listed
+    assert report["uncertainty"]["baseline"] == "recursive#size800"
+    assert report["backends"]["recursive#size1600"]["span_intact_at_k"] == 1.0
+    assert report["backends"]["recursive#size800"]["span_intact_at_k"] == 0.0
+    # and the served-context column prices each cap beside the gain it bought
+    assert report["backends"]["recursive#size1600"]["served_chars_at_k"] == 100.0
+
+
+def test_compare_retrieval_cli_refuses_two_comparison_modes_at_once(tmp_path):
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = _paired_goldset(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        ["compare-retrieval", "--goldset", str(goldset), "--sizes", "400", "--hybrid"],
+    )
+    assert result.exit_code == 2
+    assert "--sizes, --hybrid are mutually exclusive" in result.output
+
+
+def test_compare_retrieval_cli_refuses_a_non_integer_size(tmp_path):
+    from typer.testing import CliRunner
+
+    from llb.main import app
+
+    goldset = _paired_goldset(tmp_path)
+    result = CliRunner().invoke(
+        app, ["compare-retrieval", "--goldset", str(goldset), "--sizes", "400,big"]
+    )
+    assert result.exit_code == 2
+    assert "--sizes takes integers" in result.output

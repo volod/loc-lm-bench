@@ -47,21 +47,52 @@ def _slice_reports(
     pairs_by_backend: dict[str, list[Any]],
     slice_labels: list[str | None],
     k: int,
+    settings: ComparisonSettings,
 ) -> dict[str, ComparisonSlice]:
+    """Score every lane again on each question-type slice, paired against the baseline lane.
+
+    The aggregate row cannot say which questions a change moved, and a slice's POINT estimate
+    cannot say whether its movement is an item set -- a 14-item slice turns on one question. So a
+    slice carries the same paired reading the aggregate does, drawn on that slice's own items from
+    the SAME retrieval pass, and a lever is read on the slice it was aimed at with an interval.
+    """
     labels = sorted({label for label in slice_labels if label} | set(FOCUS_SLICES))
     return {
-        slice_label: {
-            "n": slice_labels.count(slice_label),
-            "backends": {
-                backend: evaluate_retrieval(
-                    [pair for pair, label in zip(pairs, slice_labels) if label == slice_label],
-                    k,
-                )
-                for backend, pairs in pairs_by_backend.items()
-            },
-        }
+        slice_label: _one_slice(pairs_by_backend, slice_labels, slice_label, k, settings)
         for slice_label in labels
     }
+
+
+def _one_slice(
+    pairs_by_backend: dict[str, list[Any]],
+    slice_labels: list[str | None],
+    slice_label: str,
+    k: int,
+    settings: ComparisonSettings,
+) -> ComparisonSlice:
+    """One slice's lane rows, plus its paired deltas when it labels an item and has a baseline."""
+    from llb.rag.embedding_bakeoff.uncertainty import item_vectors, paired_rows
+
+    sliced = {
+        backend: [pair for pair, label in zip(pairs, slice_labels) if label == slice_label]
+        for backend, pairs in pairs_by_backend.items()
+    }
+    n = slice_labels.count(slice_label)
+    rows = {
+        backend: cast(ComparisonLane, evaluate_retrieval(pairs, k))
+        for backend, pairs in sliced.items()
+    }
+    if n and settings.baseline is not None:
+        paired = paired_rows(
+            {backend: item_vectors(pairs, k) for backend, pairs in sliced.items()},
+            settings.baseline,
+            resamples=settings.resamples,
+            confidence=settings.confidence,
+            seed=settings.seed,
+        )
+        for backend, row in paired.items():
+            rows[backend]["paired_vs_baseline"] = row
+    return {"n": n, "backends": rows}
 
 
 def _lane_rows(
@@ -170,7 +201,7 @@ def compare_retrieval(
         ),
     }
     if slice_labels is not None:
-        report["slices"] = _slice_reports(pairs_by_backend, slice_labels, k)
+        report["slices"] = _slice_reports(pairs_by_backend, slice_labels, k, settings)
     return report
 
 

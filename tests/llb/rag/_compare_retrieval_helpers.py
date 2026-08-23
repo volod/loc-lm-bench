@@ -21,6 +21,12 @@ def _chunk(doc: str, start: int, end: int) -> ChunkRecord:
     return {"doc_id": doc, "char_start": start, "char_end": end, "text": "x"}
 
 
+def _exact_chunk(doc: str, start: int, end: int, fill: str = "abcdefghij") -> ChunkRecord:
+    """A chunk whose text is exactly the source slice its offsets name (so stitching may merge it)."""
+    body = (fill * (end // len(fill) + 2))[start:end]
+    return {"doc_id": doc, "char_start": start, "char_end": end, "text": body}
+
+
 def _span(doc: str, start: int, end: int) -> SourceSpanRecord:
     return {"doc_id": doc, "char_start": start, "char_end": end, "text": "g"}
 

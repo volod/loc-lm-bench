@@ -53,6 +53,11 @@ METRIC_MRR = "mrr"
 METRIC_SPAN_COVERAGE = "span_char_coverage_at_k"
 METRIC_SPAN_INTACT = "span_intact_at_k"
 METRICS = (METRIC_RECALL, METRIC_MRR, METRIC_SPAN_COVERAGE, METRIC_SPAN_INTACT)
+# The served-context COST of a lane (`llb.rag.retrieval.served_chars_at_k`). Deliberately OUTSIDE
+# `METRICS`: it is reported beside the four quality readings so a gain can be priced, never
+# resampled into a delta a verdict could be argued from. A lever is adopted for what it delivers,
+# and this column is what it costs to deliver it.
+METRIC_SERVED_CHARS = "served_chars_at_k"
 
 # The incumbent the deltas are measured against: the shipped `RunConfig.embedding_model`. A swap
 # recommendation is a statement about replacing THIS row, so it is the natural baseline.

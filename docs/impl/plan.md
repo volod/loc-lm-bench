@@ -74,43 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Retrieval evidence -- `retrieval-evidence`
-
-#### fragmented-evidence-delivery-lever (optional)
-
-With the shipped `recursive` chunker on the 95-item goods corpus, `procedural` items retrieve 0.706
-of their gold-span characters but only 0.357 of their spans arrive inside ONE chunk, and no
-chunking strategy in the comparison moves either number ([RAG
-core](current/rag-core/chunking.md#the-intactness-re-read-of-the-same-three-chunkers)). So on a
-whole question type the model is reassembling a procedure from fragments, and the operator has no
-lever registered against that. Measure the two candidate levers on `span_intact@k` with the items
-held fixed: raising `size` for the affected slice, and stitching CONTIGUOUS retrieved chunks of the
-same document back into one context block at assembly time (the second is free of an index rebuild
-and does not change what was retrieved, only what the model reads). Report which one converts
-fragments into whole spans, at what cost in served context characters, and whether either changes
-recall@k at all -- a lever that only reflows the same evidence should not.
-
-- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `span_intact_at_k` / `span_char_coverage_at_k` in
-  `src/llb/rag/retrieval.py`, the per-slice reporting in `src/llb/rag/comparison/run.py`, and the paired
-  lane machinery both already ride.
-- User-visible outcome: when the intactness columns show evidence arriving in pieces, the operator
-  has a measured lever rather than only a diagnosis.
-- Scope boundary: in scope -- the stitching step, a `size` reading on the affected slice, their
-  intactness deltas with paired intervals, and the served-context cost beside them. Out of scope --
-  changing the default chunker or `size`, answer-side measurement, and any ranking change (stitching
-  must not reorder or add evidence).
-- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` comparison layout.
-- Execution path: `make compare-retrieval` on the goods corpus on the CUDA host; CI covers stitching
-  over fixtures (two adjacent chunks merged, two non-adjacent left alone, chunks from different
-  documents left alone, offsets still exact after a merge).
-- Acceptance gates: `make ci` green; recall@k is unchanged by stitching on every lane (it reflows,
-  it does not retrieve); the report states whether either lever raises `span_intact@k` on the
-  procedural slice by an interval clear of zero, including recording that neither does.
-- Documentation target: [retrieval metrics](current/rag-core/retrieval-metrics.md) and the chunking
-  evidence in [RAG core](current/rag-core/chunking.md#retrieval-evidence).
-
 ### Answer scoring -- `answer-scoring`
 
 #### typed-rag-answer-envelope
@@ -1687,6 +1650,40 @@ on a corpus whose facts differ by one number.
   the fragile count, and the human's false-merge reading.
 - Documentation target:
   [RAG core](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers).
+
+#### procedural-size-lever-resolution (optional)
+
+The `size` lever against fragmented procedural evidence came ONE item short of a reading: on the
+14-item `procedural` slice of the goods ledger, `size400` doubles whole-span delivery (0.357 ->
+0.714) on 7 discordant items split 6/1, an exact randomization p of 0.0625 against the 0.025 a
+separation needs, where a clean 7/0 would have separated ([two levers against fragmented
+evidence](current/rag-core/fragmented-evidence.md)). The slice already clears the minimum-evidence
+gate, so this is not an underpowered comparison -- it is a decidable one that came out short, and a
+handful of accepted procedural items is what settles it. Enrich the procedural slice through the
+verification gate, re-read the same `CHUNK_SIZES` lever on it, and -- only if it then separates --
+take the end-to-end answer reading the spec requires of a retrieval configuration change, so the
+served-context price is weighed against an answer the model actually produced rather than against
+intactness alone.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: HUMAN-GATED
+- Dependencies: none in code. Reuse the `--sizes` lanes and per-slice paired readings in
+  `src/llb/rag/comparison/run.py`. Human step that gates completion: a reviewer accepts the added
+  procedural items through the verification gate, since a drafted item cannot license a default
+  change.
+- User-visible outcome: the operator learns whether a wider `size` cap is worth roughly double the
+  served context on procedural questions, or that it is not, on an item set that can say so.
+- Scope boundary: in scope -- the added items, the re-read of the same three caps, and the
+  answer-side reading conditioned on the model that took it. Out of scope -- changing the default
+  `size` without the end-to-end reading, and re-tuning the chunker.
+- Data and artifact paths: the existing `$DATA_DIR/table-aware-chunking/<run>/` comparison layout.
+- Execution path: `make compare-retrieval CONFIG=<goods.yaml> CHUNK_SIZES=200,400,800 STITCH=1` on
+  the CUDA host, then `make compare-answer-quality` on the same items if the slice separates.
+- Acceptance gates: `make ci` green; the procedural slice reports its paired `span_intact@k` delta
+  with the discordant count beside it; a separation is followed by the answer-side reading naming
+  its model, and a non-separation is recorded as the negative result it is.
+- Documentation target: [two levers against fragmented
+  evidence](current/rag-core/fragmented-evidence.md).
 
 #### cross-lingual-query-fixture-review (optional)
 

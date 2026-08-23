@@ -51,7 +51,20 @@ def test_evaluate_retrieval_empty():
         "mrr": 0.0,
         "span_char_coverage_at_k": 0.0,
         "span_intact_at_k": 0.0,
+        "served_chars_at_k": 0.0,
     }
+
+
+def test_served_chars_counts_the_top_k_text_an_overlap_included():
+    # What the model is served, not the character union: an overlapped copy is served twice.
+    retrieved = [
+        {"doc_id": "a.txt", "char_start": 0, "char_end": 5, "text": "01234"},
+        {"doc_id": "a.txt", "char_start": 3, "char_end": 8, "text": "34567"},
+        {"doc_id": "a.txt", "char_start": 8, "char_end": 9, "text": "8"},
+    ]
+    assert retrieval.served_chars_at_k(retrieved, 10) == 11
+    assert retrieval.served_chars_at_k(retrieved, 2) == 10  # the cut drops what it does not serve
+    assert retrieval.evaluate_retrieval([(retrieved, [])], k=10)["served_chars_at_k"] == 11.0
 
 
 def test_span_carried_whole_by_one_chunk_is_fully_covered_and_intact():
