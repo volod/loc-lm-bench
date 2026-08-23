@@ -250,6 +250,56 @@ def test_build_chunking_comparison_builds_flat_store_per_strategy(monkeypatch, t
     assert stores["heading"].saved_to == tmp_path / "heading"
 
 
+def test_build_chunk_size_comparison_varies_only_the_cap_and_labels_each_lane_by_it(
+    monkeypatch, tmp_path
+):
+    """The index-side fragmentation lever: one store per `size`, everything else held."""
+    import llb.rag.vector_store.store as store_mod
+    from llb.rag.comparison.builders import build_chunk_size_comparison
+
+    class FakeConfig:
+        corpus_root = tmp_path
+        strategy = "recursive"
+        chunk_size = 200
+        chunk_overlap = 30
+        embedding_model = "fake-embedder"
+
+    class FakeStore:
+        def __init__(self, size):
+            self.size = size
+            self.saved_to = None
+
+        def save(self, path):
+            self.saved_to = Path(path)
+
+        def retrieve(self, question, k):
+            return []
+
+    def fake_build(corpus_root, strategy, size, overlap, model, mode, duplicate_tier):
+        # overlap is HELD at the config's value: scaling it with `size` would confound the reading
+        assert (corpus_root, strategy, overlap, model, mode) == (
+            tmp_path,
+            "recursive",
+            30,
+            "fake-embedder",
+            "flat",
+        )
+        return FakeStore(size)
+
+    monkeypatch.setattr(store_mod.RagStore, "build", staticmethod(fake_build))
+    stores = build_chunk_size_comparison(FakeConfig(), [200, 400], stores_root=tmp_path)
+    assert list(stores) == ["recursive#size200", "recursive#size400"]
+    assert [store.size for store in stores.values()] == [200, 400]
+    assert stores["recursive#size400"].saved_to == tmp_path / "recursive#size400"
+
+
+def test_build_chunk_size_comparison_rejects_a_size_below_one():
+    from llb.rag.comparison.builders import build_chunk_size_comparison
+
+    with pytest.raises(ValueError, match="chunk size must be >= 1"):
+        build_chunk_size_comparison(object(), [200, 0])
+
+
 def test_collapse_is_lossless_only_for_text_only_vector_strategies():
     """`late` is the one strategy whose vector is not a pure function of its chunk text."""
     from llb.rag.duplicates.collapse import collapse_is_lossless

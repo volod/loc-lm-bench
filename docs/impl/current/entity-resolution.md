@@ -554,7 +554,7 @@ exploded blocking join). Each decline is written with its reason.
 Three corpora, `--effort lexical --linkage`, under `$DATA_DIR/corpus-conflicts/`:
 
 - **The planted fixture** (`samples/corpora/editions_uk_v1/`, 26 documents, 140 candidate pairs,
-  run `20260821T-editions-linkage`): every one of the 20 relations the current thresholds recover is
+  measured 2026-08-21): every one of the 20 relations the current thresholds recover is
   scored, the 15 duplicates among them are all merged, and the clustering forms exactly the plant's
   6 edition families -- 16 documents grouped, largest 4, 5 groups with a current edition the dates
   could name. The 20 relations occupy ranks 1-21 of 140; the one pair between them is the note whose
@@ -568,8 +568,8 @@ Three corpora, `--effort lexical --linkage`, under `$DATA_DIR/corpus-conflicts/`
   every subsumption. A tier score is a Jaccard for one relation and a containment for the other, so
   the order it implies across relations was never a quantity -- the discordance is measuring that,
   not a disagreement about evidence.
-- **The two quickstart corpora decline** (`20260821T-hr-linkage`, 8 documents;
-  `20260821T-goods-linkage`, 5 documents). Both are far below the 20-document floor, and both carry
+- **The two quickstart corpora decline** (the HR corpus at 8 documents and the goods corpus at 5,
+  both measured 2026-08-21). Both are far below the 20-document floor, and both carry
   zero hash and lexical findings, so there was nothing for a fit to reproduce either. That is the
   honest state of this host's operator corpora for a DOCUMENT-pair fit: they are a handful of large
   PDFs, and the method needs a table of documents. The lane records the reason rather than

@@ -88,8 +88,7 @@ measurement floor when asked for, item ledger), `comparison.json`, and `run_conf
 
 ## Accepted-ledger evidence, single graph weight
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-retrieval/20260721T052842Z/`. The run built a matched hybrid vector
+Measured 2026-07-21 on the RTX 4060 Ti 16 GB CUDA host. The run built a matched hybrid vector
 store (1,124 recursive chunks, multilingual E5 base, CUDA) and graph store (625 nodes, 213 edges)
 from one accepted ontology bundle, then scored all 40 human-accepted questions at k=10.
 
@@ -113,8 +112,8 @@ matched store config is `run_config.yaml` in the same artifact directory.
 
 ## Multi-hop slice evidence, swept graph weight
 
-CUDA-host evidence is under `$DATA_DIR/graph-vector-fusion-multihop/20260722T100231Z/`; the scored
-draft bundle is the sibling `goods-draft/`. A five-document, 1.15 MB converted Ukrainian goods-PDF
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host, over the `goods-draft` bundle.
+A five-document, 1.15 MB converted Ukrainian goods-PDF
 corpus was drafted with `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama at a 16,384-token
 context (62 extraction windows, 255 entities, 242 grounded facts), yielding 95 items: 60 flat plus
 **35 multi-hop items, every one carrying exactly two grounded spans, 17 of them citing two
@@ -167,8 +166,7 @@ What the run establishes:
 
 ## Widened multi-hop review handoff
 
-CUDA-host drafting evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260727T-widened-draft-final/`. The
+Drafted 2026-07-27 on the RTX 4060 Ti 16 GB CUDA host. The
 `make widen-multihop-draft` lane reused the five-document `goods-draft` extraction, drafted only
 multi-hop paths with the same 12B MamayLM model at a 16,384-token context, excluded prior
 evidence-span pairs before generation, and carried prior rows into one worksheet. The final
@@ -202,8 +200,7 @@ task.
 
 ## The sweep re-read against its measurement floor
 
-CUDA host, 2026-07-24; evidence under
-`$DATA_DIR/graph-vector-fusion-multihop/20260724T-noise-floor/`. The same 95 drafted items, the
+Measured 2026-07-24 on the RTX 4060 Ti 16 GB CUDA host. The same 95 drafted items, the
 same weight grid, k, and seed were re-scored with `NOISE_FLOOR=1`. The vector store was REBUILT for
 this run (the recorded one predates duplicate-chunk collapse and the v2 BM25 tokenizer, and its
 lexical index is refused by the current build), so the run is also a reproduction check: 1139

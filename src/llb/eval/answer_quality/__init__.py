@@ -13,6 +13,12 @@ from llb.eval.answer_quality.budgets import (
     expand_budget_lanes,
     split_budget_label,
 )
+from llb.eval.answer_quality.bundles import (
+    BundleMismatch,
+    RecordedComparison,
+    read_recorded,
+    resolve_lane_rows,
+)
 from llb.eval.answer_quality.compare import compare_answer_quality
 from llb.eval.answer_quality.conversion import budget_conversion
 from llb.eval.answer_quality.lanes import (
@@ -23,21 +29,32 @@ from llb.eval.answer_quality.lanes import (
 )
 from llb.eval.answer_quality.models import FOCUS_SLICE, LaneSpec
 from llb.eval.answer_quality.report import format_report
+from llb.eval.answer_quality.rerender import rebuild_report, rerender_from_bundles
+from llb.eval.answer_quality.table_headers import header_label, header_lanes, split_header_label
 from llb.eval.answer_quality.run import run_answer_quality
 
 __all__ = [
     "FOCUS_SLICE",
+    "BundleMismatch",
     "LaneSpec",
+    "RecordedComparison",
     "budget_conversion",
     "budget_label",
     "compare_answer_quality",
     "conversion_baselines",
     "expand_budget_lanes",
     "format_report",
+    "header_label",
+    "header_lanes",
     "lane_config",
     "lane_labels_from_comparison",
     "parse_lane_label",
     "parse_lanes",
+    "read_recorded",
+    "rebuild_report",
+    "rerender_from_bundles",
+    "resolve_lane_rows",
     "run_answer_quality",
     "split_budget_label",
+    "split_header_label",
 ]

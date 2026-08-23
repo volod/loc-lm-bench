@@ -146,9 +146,11 @@ policy can be recommended.
 CI coverage is split along those seams: `tests/llb/rag/test_graph_vector_fusion.py` pins sidecar
 precedence, heuristic signals, exact zero-weight passthrough, configuration fingerprints, and
 runner wiring; `tests/llb/rag/test_fusion_evidence.py` pins routed replay and decision reporting;
-`tests/llb/rag/fusion/test_fusion_calibration.py` pins threshold parsing, tuning-only selection, frozen
-final scoring, and the no-gain refusal; `tests/llb/eval/test_answer_quality.py` pins label
-round-tripping and the routing outcome summary.
+`tests/llb/rag/fusion/test_fusion_calibration.py` pins threshold parsing, tuning-only selection,
+frozen final scoring, and the no-gain refusal;
+`tests/llb/eval/answer_quality/test_answer_quality_lanes.py` pins label round-tripping and the
+routing outcome summary -- the passthrough slices, the cost slices with their gate state, and the
+reading against the fixed twin.
 
 ```bash
 make compare-graph-fusion CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
@@ -166,5 +168,9 @@ make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
 The CUDA result keeps the best fixed row's multi-hop retrieval gain while making every factoid
 retrieval and answer an exact vector tie; see
 [GraphRAG](../graphrag-backend/answer-quality-evidence.md#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss).
+WHICH cost that clears is a property of the generator, not of the corpus: scored on both roster
+families the route removes one model's factoid cost exactly and carries the other's multi-hop cost
+unchanged, because the router sends multi-hop to fusion by design
+([GraphRAG](../graphrag-backend/answer-quality-evidence.md#measured-result-what-the-route-clears-is-model-conditioned)).
 The held-out sidecar-free calibration recommends no threshold change; see
-[GraphRAG](../graphrag-backend/answer-quality-evidence.md#sidecar-free-heuristic-calibration).
+[GraphRAG](../graphrag-backend/sidecar-free-routing-calibration.md#sidecar-free-heuristic-calibration).

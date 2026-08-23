@@ -40,24 +40,8 @@ losses. Its paired prompt delta was `-873.5 [-1324.4, -424.4]` tokens and wall d
 completion and failed both cost gates. The evidence therefore recommends bilingual feedback for
 the Qwen family only; `current` remains the cross-family and shipped default.
 
-The eight cell bundles are:
-
-- MamayLM `allow/current`:
-  `.data/agentic-loop-policy/20260731T123111.702646Z-99c26f12d1c7/`
-- MamayLM `noop/current`:
-  `.data/agentic-loop-policy/20260731T123112.592149Z-ad0261bc51cf/`
-- MamayLM `noop/uk`:
-  `.data/agentic-loop-policy/20260731T123112.777345Z-8e1b53d48e28/`
-- MamayLM `noop/bilingual`:
-  `.data/agentic-loop-policy/20260731T123112.965330Z-ea4c46af639f/`
-- Qwen `allow/current`:
-  `.data/agentic-loop-policy/20260731T124056.430200Z-95e2e6b53e49/`
-- Qwen `noop/current`:
-  `.data/agentic-loop-policy/20260731T124057.322698Z-c5209e02c44a/`
-- Qwen `noop/uk`:
-  `.data/agentic-loop-policy/20260731T124057.491186Z-5df4be92d12a/`
-- Qwen `noop/bilingual`:
-  `.data/agentic-loop-policy/20260731T124057.667031Z-a3be207406a8/`
+One run bundle per cell, eight in all: MamayLM and Qwen crossed with `allow/current`,
+`noop/current`, `noop/uk`, and `noop/bilingual`.
 
 `tests/llb/bench/loop_feedback/test_agentic_loop_feedback.py` checks exact grid construction, design
 validation, redirect telemetry, prospective decision gates, rendered reporting, persistence, and the
@@ -102,8 +86,7 @@ Mistral, and Gemma remain on `current`. Stable support is one of four families, 
 three-family threshold, and neither added family supports the variant. The global feedback default
 therefore remains `current`.
 
-The audit-complete aggregate is
-`.data/agentic-loop-policy/20260731T203955.027095Z-138f43552ed1/manifest.json`; its analysis indexes
+The audit-complete aggregate's analysis indexes
 all 24 additive cell manifests. `tests/llb/bench/loop_feedback/test_agentic_loop_feedback_generalization.py`
 checks the prospective design, exact family/seed grid, coordinate metadata, activation telemetry,
 stable routing, global adoption rule, reporting, and persistence.
@@ -160,8 +143,7 @@ family-wide route.
 
 No candidate cleared the completion gate on either seed. Each family therefore has zero of two
 supporting seeds, every family remains routed to `current`, and the supported-family fraction is
-zero of three, below the declared cross-family threshold. The audit-complete aggregate is
-`.data/agentic-loop-policy/20260801T122638.618382Z-450efe8e5e90/manifest.json`; it indexes all 18
+zero of three, below the declared cross-family threshold. The audit-complete aggregate indexes all 18
 source cell manifests and carries the explicit per-gate decisions.
 
 `tests/llb/bench/loop_feedback/test_agentic_loop_feedback_adaptation.py` checks the immutable
@@ -217,11 +199,9 @@ completion interval was `[0.000, 0.000]`. Both paired cost gates passed. Thus th
 hypothesis does not transfer a useful redirect across task families, and `current` remains the
 recommended Gemma feedback variant.
 
-The audit-complete aggregate is
-`.data/agentic-loop-policy/20260801T145240.263763Z-778f62e7297b/manifest.json`. It indexes the six
-source cell manifests under `.data/agentic-loop-policy/20260801T134214*` through
-`.data/agentic-loop-policy/20260801T145005*` and preserves the exact prospective design. The first
-aggregate remains at `.data/agentic-loop-policy/20260801T145005.639616Z-1bdfdb79eb25/`; the later
+The audit-complete aggregate indexes the six
+all six source cell manifests and preserves the exact prospective design. The first
+aggregate is retained; the later
 aggregate adds baseline response and the complete paired gate objects from those same source
 cells, with no additional inference.
 
@@ -285,8 +265,7 @@ completion gate also failed. Prompt-token deltas were `-374.1 [-748.3, -16.2]` a
 
 The authority wording therefore shows stable read completion and mutation response, but it does
 not establish task-family transfer; `current` remains the recommended Gemma feedback variant. The
-audit-complete aggregate is
-`$DATA_DIR/agentic-loop-policy/20260801T180932.422116Z-a925598313d9/manifest.json`; it links all six
+audit-complete aggregate links all six
 source cell manifests and preserves response-versus-completion outcomes per family.
 
 `tests/llb/bench/loop_feedback/test_agentic_loop_feedback_authority.py` checks the immutable wording,
@@ -342,8 +321,7 @@ completion pairs and a flat paired completion reading.
 
 Structural controller authority is therefore not supported for this Gemma model and transcript
 shape; `observation` remains the recommended placement, and no shipped default changes. The
-audit-complete aggregate is
-`$DATA_DIR/agentic-loop-policy/20260801T201419.190139Z-62e3df17e112/manifest.json`; its analysis
+audit-complete aggregate's analysis
 links the four source manifests and all 64 paired snapshot proofs. The negative result is scoped to
 this model and serialization, not a claim that role never matters across model families.
 
@@ -379,8 +357,7 @@ Controller wall-time increases were separated above the 20% ceiling on both seed
 gate also failed. Observation remains the recommendation: structural controller authority does not
 transfer to this Qwen chat template and transcript shape, and no shipped default changes.
 
-The audit-complete aggregate is
-`$DATA_DIR/agentic-loop-policy/20260802T052500.927860Z-2dd4f2c196c8/manifest.json`; it links four
+The audit-complete aggregate links four
 source cell manifests, 64 role-only snapshot proofs, and per-cell throughput from 16.21 to 22.26
 tokens/s. Cross-model validation lives beside the base contract in
 `src/llb/bench/controller_authority/design.py`; the CLI model preflight now queries the
@@ -433,8 +410,7 @@ wall-cost ceiling on both seeds; prompt-token deltas were exactly zero. The temp
 preamble therefore does not improve repeated-call recovery for either tested family and makes
 Qwen materially slower. `observation` remains the recommendation, with no shipped-default change.
 
-The audit-complete aggregate is
-`$DATA_DIR/agentic-loop-policy/20260802T081304.031917Z-fabb673e7134/manifest.json`; it links eight
+The audit-complete aggregate links eight
 source manifests, four gate rows, and 128 paired snapshot proofs. Source-cell throughput was
 4.9-5.2 tokens/s for Gemma and 20.2 tokens/s for Qwen.
 

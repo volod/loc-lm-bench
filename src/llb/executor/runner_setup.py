@@ -80,6 +80,11 @@ def _default_runner_fn(
         from llb.rag.filters import metadata_filter
 
         chunk_filter = metadata_filter(acl_label=config.acl_label)
+    header_restorer = None
+    if config.restore_table_headers:
+        from llb.eval.table_headers import corpus_header_restorer
+
+        header_restorer = corpus_header_restorer(config.corpus_root)
     lane = build_context_lane(config)
     app = eval_graph.build_rag_graph(
         store,
@@ -95,6 +100,7 @@ def _default_runner_fn(
         cited=config.cited_answers,
         context_source=lane.source if lane is not None else None,
         template_id=lane.template_id if lane is not None else None,
+        header_restorer=header_restorer,
     )
 
     def run(item: GoldItem) -> RagState:

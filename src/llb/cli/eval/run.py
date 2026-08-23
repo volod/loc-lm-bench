@@ -125,6 +125,13 @@ def run_eval_cmd(
         help="how kept chunks are laid into the prompt: rank (best-first, default) | "
         "reverse_rank (best-last)",
     ),
+    restore_table_headers: Optional[bool] = typer.Option(
+        None,
+        "--restore-table-headers/--no-restore-table-headers",
+        help="prompt-side only: prepend a table chunk's recorded header row to it in the PROMPT "
+        "when the chunk does not already carry it (needs --strategy table); stored chunks, "
+        "offsets, and retrieval metrics are unchanged",
+    ),
     context_strategy: Optional[str] = typer.Option(
         None,
         help="DIAGNOSTIC context lane (rag-vs-long-context-ablation): rag (retrieve, the default "

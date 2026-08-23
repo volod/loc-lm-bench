@@ -9,11 +9,10 @@ from typing import Any
 
 from typing_extensions import TypedDict
 
-from llb.board.io import read_case_rows
 from llb.eval.context_ablation.compare import compare_context_strategies
 from llb.eval.embedder_adoption.compare import CellRows, compare_cells
 from llb.eval.embedder_adoption.models import CellSpec
-from llb.eval.paired_cases import CaseRows
+from llb.eval.paired_cases import CaseRows, recorded_lane_rows
 from llb.rag.embedding_bakeoff.selection import adjust_bakeoff_selection
 from llb.rag.embedding_bakeoff.uncertainty import paired_rows
 from llb.rag.embedding_bakeoff.verdict import decide_verdict
@@ -115,11 +114,7 @@ def _adoption_artifact(path: Path, payload: Mapping[str, Any]) -> RebuiltArtifac
         for model, lane in cell["lanes"].items():
             directories = list(lane["run_dirs"])
             run_dirs[cell["label"]][model] = directories
-            rows[model] = [
-                row
-                for directory in directories
-                for row in read_case_rows(Path(directory) / "scores.jsonl")
-            ]
+            rows[model] = recorded_lane_rows(directories)
         cells.append((CellSpec(cell["top_k"], cell["reranker"]), rows))
     rebuilt = compare_cells(
         cells,

@@ -123,14 +123,20 @@ def score_case(
         row["query_decomposition"] = str(state["query_decomposition"])
     if "query_subqueries" in state:
         row["query_subqueries"] = [str(value) for value in state["query_subqueries"]]
-    _score_answer_side(row, answer, retrieved, options)
+    if "table_headers_restored" in state:
+        row["table_headers_restored"] = int(state["table_headers_restored"])
+        row["table_header_chars"] = float(state.get("table_header_chars", 0))
+    # Answer-side signals read the chunks as the PROMPT carried them, which is what the model was
+    # asked to ground its answer in; they differ from `retrieved` only under prompt-side context
+    # assembly (`llb.eval.table_headers`).
+    _score_answer_side(row, answer, state.get("prompt_chunks") or retrieved, options)
     return row
 
 
 def _score_answer_side(
     row: CaseScoreRow,
     answer: str,
-    retrieved: list[ChunkRecord],
+    prompt_chunks: list[ChunkRecord],
     options: ScoreOptions | None,
 ) -> None:
     """Attach the opt-in answer-side signals (groundedness-citation-metrics) to `row`.
@@ -139,7 +145,7 @@ def _score_answer_side(
     matches what `format_context` emitted to the model."""
     if options is None or not (options.score_groundedness or options.cited_answers):
         return
-    ordered = eval_common.order_chunks(retrieved, options.context_order)
+    ordered = eval_common.order_chunks(prompt_chunks, options.context_order)
     if options.score_groundedness:
         row["groundedness"] = round(groundedness.groundedness_fraction(answer, ordered), 4)
     if options.cited_answers:

@@ -177,6 +177,25 @@ and `tesseract-ocr-ukr`. Install the Python extra on transform hosts with:
 Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Install
 `marker-pdf` only in the dedicated CUDA transform environment when benchmarking it explicitly.
 
+## Heavy compilation (ninja / cmake / CUDA)
+
+Any installation that compiles C++/CUDA from source (git+, --no-binary, --no-build-isolation)
+MUST cap parallelism using the formula MAX_JOBS=min(cpu_core_num//2, RAM // 14)
+
+Do not inline the formula -- the helpers are the single source of truth. The canonical helper is
+`llb_max_jobs()` in `scripts/shared/common.sh` (source it; see `scripts/build_vllm.sh` for usage).
+
+Only wheels deliberately built from a local git checkout (flash-attn forks, vLLM forks, xformers
+forks, etc.) may be exported under
+`$DATA_DIR/wheels/<package-name>_<abi-key>_git<revision>/`. The key MUST encode the
+ABI-relevant dimensions (Python, torch, CUDA, GPU compute capability) and the exact git
+revision; source checkouts must be clean before building.
+
+Registry wheels, prebuilt wheels, and all ordinary build/runtime dependencies MUST be installed
+directly with `uv` and left in uv's standard shared cache. Never use `pip wheel` or a
+dependency-resolving wheelhouse under `$DATA_DIR/wheels`; that directory contains only
+intentional local-source build outputs.
+
 ## Conventions
 
 - Runtime output under `.data/` (gitignored); secrets in `.env` (gitignored).

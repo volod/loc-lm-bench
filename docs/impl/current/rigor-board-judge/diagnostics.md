@@ -116,7 +116,7 @@ Order.
 A second full-cohort pass on the same host, index, and item set (`ua_squad_postedited_v1`, 82
 final items, k=5, Ollama, no LIMIT cap) extends the probe to the Gemma 4, MamayLM v2.0, and
 Qwen3.6 rosters. All seven models probed 82/82 items with 0 skips and reliability 1.0.
-Artifacts: `$DATA_DIR/context-position/20260724T0{63341,63726,64807,65031,70950,71850,73314}Z/`
+One run per model, 2026-07-24
 (lapa, gemma4:e4b, gemma4:26b, gemma4:e2b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
 
 | model | head | middle | tail | overall | head-tail |

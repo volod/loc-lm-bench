@@ -55,5 +55,5 @@ through `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama, all four policies in one ~11 mi
 reliability 1.000 for each. Final-answer correctness ranked `roles` **0.789** [0.635, 0.915] >
 `history` 0.625 > `summary` 0.534 > `fresh` 0.431: the naive no-carryover baseline is worst, any
 memory of the prior steps helps, and the staged librarian -> analyst -> answerer sequence wins with
-its CI resolved above the rest. Run bundles under `.data/chain-context/20260711T1938*` (one per
+its CI resolved above the rest. One run bundle per
 policy). The discriminating spread is the whole reason to measure the policy rather than assume one.

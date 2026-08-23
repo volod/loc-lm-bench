@@ -14,7 +14,7 @@ Both this lane and the fusion sweep read the calibrated paired sign-flip p, so b
 the deciding row sits from the cut: every paired delta carries `randomization_p`, diagnostic
 `p_positive`, and a `(borderline)` flag; the reason gains a shared clause when a neighbouring
 confidence convention would read it differently, and `report.md` renders a boundary table over
-the focus slice. Two of the three
+the focus slice. Two of the first three
 recorded answer-quality comparisons and three of the six recorded fusion sweeps are now qualified
 that way; see
 [how settled a paired reading is](../rag-core/paired-verdicts.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag).
@@ -59,61 +59,26 @@ llb compare-answer-quality --config <cfg> --lanes vector,fused/global_community@
 Artifacts per run: `report.md` and `comparison.json` under
 `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
 
-### The retrieval-budget dimension
+A routed lane adds one section to that report. `Routing outcome` states, per routed row, the
+focus-slice coverage it keeps, every slice it reproduces the baseline on EXACTLY, every slice
+whose objective it STILL lowers by an interval clear of zero (each marked with whether it clears
+the minimum-evidence gate), and which of its fixed twin's cost slices it therefore clears,
+retains, or adds. That last reading is what makes a routed row's bill readable without deriving
+it from six tables, and it is model-dependent -- see [the routed per-model
+result](#measured-result-what-the-route-clears-is-model-conditioned).
 
-`ANSWER_QUALITY_BUDGETS=10,50` (`--budgets`) adds the second axis the lane needs to answer a
-BUDGET question rather than a ranking one. Every selected lane is scored at every named `top_k`, so
-the run is a `(lane x budget)` grid: the cells are ordinary lanes labelled `<row>#k<budget>`
-(`vector#k50`), one run bundle each, one row in every table, and the label parses back into the
-retrieval knobs plus the budget. `lanes[0]` at the FIRST budget stays the report baseline, so the
-existing tables keep meaning "against the shipped configuration".
+Scoring every lane at more than one retrieval budget is a second axis with its own page:
+[answer-quality budget evidence](answer-quality-budget-evidence.md#the-retrieval-budget-dimension).
 
-What the grid adds is a second pairing the single-baseline table cannot express -- the SAME row at
-two budgets:
-
-- **The conversion reading** (`budgets.py` + `conversion.py`). Each raised cell is additionally
-  read against its own smallest-budget cell, on the identical resample draw (common random
-  numbers), and judged by the SAME `judge_lane` the lane verdict uses. A budget outcome and a lane
-  outcome therefore mean the same thing by construction: `answer_quality_gain`, `retrieval_only`,
-  `inconclusive`, or `no_gain`, carrying the same borderline and minimum-evidence clauses. The
-  sweep headline maps them to the operator's terms -- `converted`, `stalled`, `inconclusive`,
-  `no_gain` -- naming the strongest row reached.
-- **The cost scan.** A conversion bought by regressing another question type is not a conversion an
-  operator should buy, so every non-focus slice whose objective the raised budget LOWERED is named
-  in `cost_slices` and appended to the row's reason. The calibrated sign-flip test is one-sided by
-  construction ("candidate ahead") and so cannot state a loss; the cost is read off the paired
-  interval instead (`llb.rag.fusion_evidence.paired.regresses`) and carries the same
-  minimum-evidence gate, so a loss resting on three differing items is not reported as one.
-- **The context bill**, in two units, both reported with paired intervals like any other metric and
-  neither decided on. `context_chars` (`coverage.py`) is the characters the lane laid into the
-  prompt, summed from the retrieval sidecar's offsets rather than from the truncated
-  `text_preview`. `prompt_tokens` is what the backend actually CONSUMED: `run-eval` persists it per
-  case whenever the backend reports one (`llb.executor.cases`), and the comparison picks it up only
-  when every lane carried it, so a bundle from a backend that reports no usage simply drops the
-  column instead of comparing a measurement against a zero. Coverage at five times the budget is a
-  different result from the same coverage for free, and these are the columns that price it.
-
-Each cell reads its coverage and its bill at ITS OWN `top_k`; reading every cell at the base
-config's budget would erase exactly the thing the sweep measures.
-
-```bash
-make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
-  FUSION_COMPARISON=<sweep-dir>/comparison.json ANSWER_QUALITY_BUDGETS=10,50 \
-  SPLIT=final,tuning,calibration INCLUDE_DRAFTED=1
-```
-
-One operator obligation comes with the second budget: the served context window must fit the
-LARGER one, and it must be the same window at both. Ollama silently truncates a prompt past
-`num_ctx`, so a config that leaves it at the model default would measure truncation rather than the
-budget. Set `max_model_len` in the run config (it becomes the Ollama `num_ctx`), confirm
-`ollama ps` still reports `100% GPU`, and read the run's own `prompt tokens` column back against
-that window -- a maximum sitting AT the window is the signature of a truncated context, and the
-comparison would then be measuring the truncation.
+Because the comparison is pure over the per-case rows and every lane's bundles are recorded in the
+artifact, a finished run does not have to be re-generated to be re-read under an improved report:
+`--from-bundles` re-renders it from those bundles with no model call, and refuses a bundle set that
+no longer matches the recorded lanes -- [re-rendering a recorded
+comparison](answer-quality-rerender.md).
 
 ### Measured result: the multi-hop coverage gain does not reach the answer
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T133033Z-answer-quality/answer-quality/`. The same
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The same
 95-item drafted goods ledger, matched stores, and k=10 as the sweep above were scored end to end by
 `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama under two lanes -- `vector` and the sweep's
 best row `fused/global_community@0.10/d10` -- across all three splits (one run bundle per lane and
@@ -145,7 +110,10 @@ unaffected: the objective was flat before the gate and is flat after it.
 That withdrawn coverage reading is priced with the same rule as the sweep's: at 4 of 35 differing
 items it needs **53 multi-hop items** to be readable at 95%, and the routed run's 5 of 35 needs
 **42** ([the
-re-decision](../rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs)). All
+re-decision](../rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs)).
+Re-rendering all three recorded comparisons from their own run bundles derives that downgrade
+rather than restating it: each prints `no_gain` with the same two floors and no other number moved
+([re-rendering a recorded comparison](answer-quality-rerender.md)). All
 three comparisons ride on the one drafted slice, so a single wider accepted ledger settles all of
 them or none.
 
@@ -172,14 +140,14 @@ Boundaries, both recorded in the artifact rather than inferred:
   answer stating one fact fluently and omitting the other scores about the same as a vague answer
   touching both. The retrieval side distinguishes partial from complete evidence; the answer side
   does not, which bounds how sharply this verdict can be read. Building the answer-side counterpart
-  is tracked in [`plan.md`](../../plan.md) (`answer-side-span-coverage-metric`), and repeating the
-  comparison on a second model -- since "did the model use the extra hop" is a model property -- is
-  tracked as `fusion-answer-quality-second-model`.
+  is tracked in [`plan.md`](../../plan.md) (`answer-side-span-coverage-metric`). Whether "did the
+  model use the extra hop" is a property of this MODEL rather than of the corpus is settled below:
+  [the second-model reading](#measured-result-the-verdict-is-model-invariant-the-cost-slice-is-not)
+  reproduces this verdict on an independently tuned Ukrainian family.
 
 ### Measured result: the overlap span identity carries more evidence and costs factoid answers
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T151635Z-overlap-answer-quality/answer-quality/`.
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host.
 THREE lanes were scored end to end over the identical 95-item drafted ledger, same model, splits,
 bootstrap, and seed as the two-lane run above: `vector`, the best `exact` row
 (`fused/global_community@0.10/d10`), and the best `overlap` row
@@ -220,15 +188,16 @@ The new finding is on the other side of the ledger:
 What this means for the recommendation: on this corpus and this model, `graph_fusion_span_identity=
 overlap` buys strictly more multi-hop RETRIEVAL than `exact` and pays for it with a measured
 factoid ANSWER cost, so the fixed-weight row stays opt-in. The question-type route below removes
-that cost by never fusing a factoid. Whether a different model uses the extra hop is tracked in
-[`plan.md`](../../plan.md) (`fusion-answer-quality-second-model`). The ledger is DRAFTED and the
+that cost by never fusing a factoid. The factoid cost itself turns out to be specific to this
+model: [the second-model reading](#measured-result-the-verdict-is-model-invariant-the-cost-slice-is-not)
+finds it absent on Lapa, which pays on the multi-hop slice instead. The ledger is DRAFTED and the
 answer-side metric still cannot see hops; both boundaries above apply unchanged.
 
 ### Measured result: question-type routing keeps the gain and clears the factoid loss
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T160531Z-question-routing/`; answer comparison is
-in its `answer-quality/` child. The same 95-item drafted goods ledger, stores, k=10, split pool,
+Scored 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host; the sweep and the end-to-end answer
+comparison are two lanes of the one run. The same 95-item drafted goods ledger, stores, k=10,
+split pool,
 2,000 bootstrap resamples, seed 13, and 12B MamayLM model as the fixed overlap result were used.
 The sweep reports the routed rows beside the complete fixed grid; the end-to-end comparison scores
 `vector` against `routed/global_community@0.30/d50/ioverlap`.
@@ -265,126 +234,194 @@ The safety result is exact on the slice that motivated routing:
   lane, while the live factoid results reproduce vector generation exactly.
 
 Recommendation: use the routed overlap row when the bundle has the documented question-type
-sidecar and multi-hop coverage is the goal. Keep `fixed` as the shipped default: the evidence is
-drafted and the multi-hop answer gain is still absent. The sidecar-free policy has a separate
-held-out result below and does not support changing its defaults.
+sidecar, multi-hop coverage is the goal, AND the generator's own cost slice is one the router
+excludes. Keep `fixed` as the shipped default: the evidence is drafted and the multi-hop answer
+gain is still absent. That last condition is not decoration -- the route clears the factoid cost,
+which is the slice THIS model paid on, while a second model pays on multi-hop instead, which
+routing sends to fusion by design and therefore cannot clear ([the routed per-model
+result](#measured-result-what-the-route-clears-is-model-conditioned)). The sidecar-free policy has
+a separate held-out result below and does not support changing its defaults.
 
-### Measured result: the diagnosed budget buys retrieval, not answers
+### Measured result: the verdict is model-invariant, the cost slice is not
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260816T-budget-answer-quality/answer-quality/`. The
-[budget diagnosis](retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)
-found the multi-hop `all-spans@k` ceiling to be a property of k=10 rather than of the ranking, with
-large headroom at k=50. This run scores that headroom END TO END. The same 95-item drafted goods
-ledger, the same rebuilt 1099-chunk store as the k-sweep, and the two lanes the k=50 sweep's own
-verdict names (`vector` and `fused/global_community@0.70/d50/ioverlap`) were each scored at k=10
-and at k=50 by `MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` over Ollama across all three splits
-(pooled), 2,000 bootstrap resamples, seed 13, at a fixed `num_ctx` of 24,576 for every cell.
+Scored 2026-08-22 on the RTX 4060 Ti 16 GB CUDA host, one comparison per model. Whether extra
+retrieved
+evidence converts into a better answer is a property of the MODEL as much as of the lane, so every
+result above -- all measured with one generator -- could not tell "fusion does not help answers on
+this corpus" from "this tune does not use the extra hop". This run separates them by scoring the
+SAME three lanes with the roster's two Ukrainian-specialized families
+([model families](../../../reference/model-families.md#ukrainian-specialized-families)):
+`MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M` and `lapa-v0.1.2-instruct-GGUF:Q4_K_M`. Same 95-item
+drafted goods ledger, same stores, k=10, all three splits pooled, 2,000 bootstrap resamples, seed
+13, and a `num_ctx` of 8,192 served to both.
 
-The reproduction check passed first: `vector#k10` reports multi-hop recall 0.686, `all-spans@10`
-0.057, span coverage 0.371; `vector#k50` reports `all-spans@50` 0.229; and the fused row at k=50
-reports 0.657 -- every figure identical to the corresponding k-sweep row, now through the
-`run-eval` path instead of the sweep's replay wrappers, at BOTH budgets.
+Both models were re-scored rather than pairing the new one against the recorded MamayLM numbers.
+The July fixed-budget runs read a store whose lexical index was written by the `bm25-uk-v1`
+tokenizer, which the current build refuses, so their retrieval columns are not reproducible under
+today's code; this run uses the duplicate-collapsed 1,099-chunk store that the k-sweep and the
+budget evidence both ride on. The re-scored MamayLM lane reproduces every July multi-hop
+retrieval figure exactly anyway --
+recall 0.686 / 0.771 / 0.800, all-spans 0.057 / 0.086 / 0.086, span coverage 0.371 / 0.429 / 0.443
+-- so the new pair is readable against the three fixed-budget results above.
 
-Multi-hop slice (n=35), each row at k=50 minus ITSELF at k=10, 95% paired bootstrap CI:
+**The two models read identical context, by measurement rather than by assumption.** Every
+retrieval delta, its win/loss/tie ledger, its randomization p, and the `context_chars` column are
+BYTE-identical between the two comparisons on every slice. The only thing that differs between them
+is the generator.
 
-| row | all-spans@k | span coverage | objective | context chars |
-| --- | :-: | ---: | ---: | :-: |
-| `vector` | 0.057 -> 0.229 | **+0.171 [+0.086, +0.257]** | +0.001 [-0.102, +0.091] | 6,854 -> 33,366 |
-| `fused@0.70/d50/ioverlap` | 0.057 -> 0.657 | **+0.443 [+0.343, +0.557]** | +0.030 [-0.076, +0.134] | 3,217 -> 15,188 |
+Multi-hop slice (n=35), lane minus vector, 95% paired bootstrap CI:
 
-Verdict: **`stalled`** -- `retrieval_only` on both rows. The budget delivers exactly the coverage
-the probe predicted, including an eleven-fold lift in `all-spans@k` on the fused row, and the model
-turns none of it into better answers.
+| lane | metric | MamayLM 12B | Lapa 12B |
+| --- | --- | ---: | ---: |
+| exact `@0.10/d10` | objective | -0.002 [-0.059, +0.072] 7/10/18 | -0.024 [-0.074, +0.016] 10/7/18 |
+| exact `@0.10/d10` | span coverage | +0.057 [+0.014, +0.114] 4/0/31 | +0.057 [+0.014, +0.114] 4/0/31 |
+| overlap `@0.30/d50` | objective | -0.010 [-0.087, +0.070] 11/9/15 | **-0.081 [-0.157, -0.017] 7/14/14** |
+| overlap `@0.30/d50` | span coverage | +0.071 [+0.014, +0.129] 5/0/30 | +0.071 [+0.014, +0.129] 5/0/30 |
 
-Unlike the three fixed-budget comparisons above, this reading SURVIVES the minimum-evidence gate on
-both halves, which is what makes it a result rather than an open question:
+Verdict: **`no_gain` on both lanes for BOTH models** -- the same headline, the same per-lane
+decisions, and the same reasons, because the coverage half that would have made either lane
+`retrieval_only` rests on the same 4 and 5 differing items in both and is withdrawn by [the
+gate](../rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading) either way. The
+answer-side finding is therefore NOT an artifact of the one model that was scored: two independently
+tuned Ukrainian families, reading the identical context, both decline to turn the fused lane's extra
+multi-hop evidence into better multi-hop answers.
 
-- **The coverage half separates decisively.** Randomization p 0.0005 on both rows, resting on 11
-  and 25 differing items against the 6 the exact sign test needs. The ranking knobs never produced
-  a coverage reading this far past the floor -- theirs rested on 4-5 items and were withdrawn
-  ([the gate](../rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading)).
-- **The objective half is a MEASURED flat, not an unreachable one.** Its randomization p is 0.494
-  and 0.297 on 19 and 22 differing items, so the lanes did differ item by item and the differences
-  simply did not favour the larger budget. Both halves of the sentence "more evidence arrived and
-  the answers did not move" therefore rest on readings that clear the gate here, which is what the
-  earlier fixed-budget comparisons could not say: their objective was equally flat, but the
-  coverage gain it was being weighed against had been withdrawn.
-- **Nothing is measurably paid for it.** No slice's objective interval clears zero downward, so
-  `cost_slices` is empty for both rows; the factoid slice on the vector lane comes closest at
-  -0.043 [-0.100, +0.004]. Overall objective is -0.030 [-0.082, +0.022] for `vector#k50` and
-  -0.010 [-0.047, +0.030] for the fused row.
+That much reproduces. What does not is where the strongest-coverage row sends its bill:
 
-The bill for that non-result is the other half of the finding:
+- **The overlap row's factoid cost is a MamayLM property.** The [three-lane
+  result](#measured-result-the-overlap-span-identity-carries-more-evidence-and-costs-factoid-answers)
+  above found the overlap identity lowering the 40-item factoid objective by an interval clear of
+  zero; it reproduces here on MamayLM at -0.054 [-0.108, -0.009] (4/10/26, 14 differing items, past
+  the gate). On Lapa the same row over the same 40 items is -0.004 [-0.048, +0.049] (3/8/29, 11
+  differing items) -- a MEASURED flat, not an unreachable one. The extra graph vote re-ranks the
+  chunk each model was answering from; only one of the two tunes was answering worse for it.
+- **The bill moves to multi-hop instead.** On Lapa the overlap row lowers the objective on the very
+  slice it retrieves more evidence for: -0.081 [-0.157, -0.017], 7 wins against 14 losses on 21
+  differing items, `p_positive` 0.004. That clears the minimum-evidence gate comfortably, which
+  none of the coverage readings on this ledger do. So on Lapa the fused lane carries measurably
+  more multi-hop evidence AND answers multi-hop measurably worse with it.
+- **What is invariant is that the row pays, not what it pays with.** Across both models the
+  strongest-coverage lane loses on exactly one question-type slice by an interval clear of zero --
+  factoid for MamayLM, multi-hop for Lapa -- while overall answer quality stays flat for both
+  (MamayLM -0.020 [-0.060, +0.019]; Lapa -0.023 [-0.062, +0.013]). The `exact` row tells the same
+  story one step weaker: it costs MamayLM the same factoid slice (-0.045 [-0.099, -0.001] on 12
+  differing items) and costs Lapa nothing on any slice.
 
-| row | prompt tokens (median) | generation latency (median) | lane wall time |
-| --- | :-: | :-: | ---: |
-| `vector` k10 -> k50 | 2,815 -> 13,171 | 4.8s -> 70.4s | 9 -> 113 min |
-| `fused@0.70/d50/ioverlap` k10 -> k50 | 1,444 -> 6,493 | 2.9s -> 18.4s | 5 -> 36 min |
+Two corollaries an operator should read off this:
 
-A 4.9x context costs ~15x the generation latency on this host, because the whole increase is
-prefill. The graph-fused lane is the notable asymmetry: at the same k=50 it carries MORE multi-hop
-evidence than the vector lane (span coverage 0.814 versus 0.543) on LESS THAN HALF the context
-(15,188 versus 33,366 characters), because much of its candidate pool is short entity mentions
-rather than 800-character chunks -- the same shape the [covering-record
-measurement](retrieval-budget-evidence.md#what-the-k50-coverage-is-actually-made-of) found. Cheaper
-coverage, and it converts no better.
-
-What this licenses: the budget diagnosis stands as a RETRIEVAL result and does not extend to
-answers. `top_k` stays 10; raising it on this corpus and this model buys a measurably fuller
-context, five times the prompt, fifteen times the latency, and no better answer. The negative
-result points where the task predicted it would -- at compression or a two-stage context step,
-which can put a hop in front of the generator without putting 33,000 characters there, rather than
-at a larger k.
+- **"A stronger answerer would use the extra hop" is disconfirmed here, not merely untested.** Lapa
+  is much the better multi-hop answerer on this corpus -- its vector-lane multi-hop objective is
+  0.543 against MamayLM's 0.333, on the identical context -- and it converts LESS of the coverage,
+  not more.
+- **The question-type route was validated against one model's failure mode.** [Routing](#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss)
+  clears the factoid cost by never fusing a factoid, which is exactly the slice MamayLM paid on. It
+  cannot touch Lapa's cost, which lands on the multi-hop slice the router deliberately sends TO
+  fusion -- scored directly in [the routed per-model
+  result](#measured-result-what-the-route-clears-is-model-conditioned), which confirms the routed
+  row carries that loss unchanged.
 
 Boundaries, beyond the drafted ledger and the hop-blind token-F1 objective that bound every result
 on this page:
 
-- **One case of 95 timed out and is scored as a zero.** `pdf-6d8c2128b330.md-onto-41` exceeded the
-  120s request timeout on `vector#k50` -- itself a consequence of the budget, since only that lane's
-  prompts are large enough to approach it. It is a `comparative` item, a context slice of n=2, and
-  it is the whole reason that slice shows -0.369; it is not in the focus slice and touches no
-  verdict. The per-lane `not_ok` accounting that now surfaces such a case in the report was added
-  AFTER this run, so for this artifact the count was established by hand from the bundles.
-- **The served window was verified, not assumed.** The largest prompt any cell sent was 14,855
-  tokens against the 24,576 served, so no context was truncated into the measurement.
+- **Cross-model LEVELS of the objective are confounded; the deltas are not.** `objective_score` is
+  reference-answer token F1, so a terser model scores better on it for the same facts -- Lapa's
+  median answer is 22 completion tokens against MamayLM's 32, and their overall levels (0.510 and
+  0.516) are not a ranking. Every claim above is a within-model paired delta against that model's
+  own vector lane, which the length difference cannot move.
+- **One reading on Lapa is thin rather than flat.** Its factoid objective on the `exact` row,
+  -0.018 [-0.043, +0.002], differs on 5 of 40 items and is `insufficient evidence`; the factoid
+  claim above is made on the `overlap` row, which differs on 11 and clears the gate. Across the run
+  the gate relabels 8 of 126 paired readings for MamayLM and 6 of 126 for Lapa.
+- **Nothing was truncated and nothing timed out.** The largest prompt any lane sent was 3,357
+  tokens (MamayLM) and 2,509 (Lapa) against the 8,192 served, and all 95 cases in all six
+  lane-model bundles are `ok`.
 
-## Sidecar-free heuristic calibration
+```bash
+make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  MODEL=<second-roster-model> SPLIT=final,tuning,calibration \
+  ANSWER_QUALITY_LANES=vector,<best-exact-row>,<best-overlap-row> INCLUDE_DRAFTED=1 \
+  ANSWER_QUALITY_OUT_DIR=<run>/<model-slug>/answer-quality
+```
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T180211Z-routing-calibration/`. The run used the
-same drafted goods ledger and matched stores, `global_community@0.30/d50/ioverlap`, k=10,
-multilingual E5 on the RTX 4060 Ti, 2,000 bootstrap resamples, and seed 13. Question-type labels
-were hidden from every routing decision; the evaluation truth was only whether an item carried
-more than one gold span.
+### Measured result: what the route clears is model-conditioned
 
-`make calibrate-fusion-routing` swept word thresholds 10/12/14/16/18/20 crossed with linked-entity
-thresholds 0/1/2 on the 31-item tuning split. It froze `w12/e0` before constructing the final-split
-retrieval caches, then evaluated that one policy on the untouched 31-item final split.
+Scored 2026-08-22 on the RTX 4060 Ti 16 GB CUDA host, one comparison per model. The question-type
+route is recommended for REMOVING a measured per-slice cost, and the reading above found that cost
+slice moving between generators. This run scores the routed row itself under both families:
+`vector`, the fixed overlap row `fused/global_community@0.30/d50/ioverlap`, and its routed twin
+`routed/global_community@0.30/d50/ioverlap`, three lanes per model over the same 95-item drafted
+goods ledger, the same duplicate-collapsed 1,099-chunk store, k=10, all three splits pooled, 2,000
+bootstrap resamples, seed 13, and a `num_ctx` of 8,192 served to both.
 
-| split | tp/fp/tn/fn | precision | recall | multi-span coverage delta | single-span recall delta |
-| --- | :-: | ---: | ---: | ---: | ---: |
-| tuning | 9/7/14/1 | 0.562 [0.333, 0.800] | 0.900 [0.667, 1.000] | +0.050 [0.000, +0.150] | +0.048 [0.000, +0.143] |
-| final | 8/6/14/3 | 0.571 [0.308, 0.833] | 0.727 [0.444, 1.000] | +0.091 [0.000, +0.227] | +0.000 [-0.150, +0.150] |
+Both shared lanes reproduce the [second-model
+reading](#measured-result-the-verdict-is-model-invariant-the-cost-slice-is-not) exactly -- the
+fixed row's multi-hop objective is -0.010 [-0.087, +0.070] on MamayLM and -0.081 [-0.157, -0.017]
+on Lapa, its span coverage +0.071 [+0.014, +0.129] on both, and its factoid objective -0.054
+[-0.108, -0.009] and -0.004 [-0.048, +0.049] -- so the routed row is readable against it rather
+than against a re-measured baseline. Every retrieval delta is again byte-identical between the two
+models: only the generator differs.
 
-Route precision and recall now carry the lower-bound qualifier produced inside `bootstrap_ratio`:
-the same draw supplies `p_positive`, readings at 90% / 95% / 97.5%, and `borderline`, without a
-paired sign-test gate because these are count ratios rather than paired deltas. `report.md` renders
-all tuning rows plus frozen final in **Route-quality threshold stability**. Re-rendering the
-recorded gold-item order reproduced all 38 ratio point estimates and bounds exactly; 2 rows are
-borderline, both on tuning `w16/e0` (precision and recall, `p_positive` 0.954): they clear a 90%
-lower-bound cut but not 95%. Those descriptive rows did not select the frozen policy and do not
-change the verdict.
+Lane minus vector, 95% paired bootstrap CI, each routed row printed beside its fixed twin:
 
-Verdict: **no recommendation**. The frozen policy's tuning coverage interval touches zero, so it
-does not pass the predeclared positive-gain gate. Final points in the same positive direction but
-does not repair a failed tuning gate, and its single-span interval includes regression. The
-production fallback therefore stays at 16 words plus 2 linked entities.
+| slice | lane | MamayLM 12B | Lapa 12B |
+| --- | --- | ---: | ---: |
+| multi-hop (n=35) objective | fixed | -0.010 [-0.087, +0.070] 11/9/15 | **-0.081 [-0.157, -0.017] 7/14/14** |
+| multi-hop (n=35) objective | routed | -0.010 [-0.087, +0.070] 11/9/15 | **-0.081 [-0.157, -0.017] 7/14/14** |
+| multi-hop (n=35) span coverage | routed | +0.071 [+0.014, +0.129] 5/0/30 | +0.071 [+0.014, +0.129] 5/0/30 |
+| factoid (n=40) objective | fixed | **-0.054 [-0.108, -0.009] 4/10/26** | -0.004 [-0.048, +0.049] 3/8/29 |
+| factoid (n=40) objective | routed | +0.000 [0.000, 0.000] 0/0/40 | +0.000 [0.000, 0.000] 0/0/40 |
+| overall (n=95) objective | fixed | -0.020 [-0.060, +0.019] 22/25/48 | -0.023 [-0.062, +0.013] 17/25/53 |
+| overall (n=95) objective | routed | -0.002 [-0.032, +0.027] 13/9/73 | **-0.032 [-0.064, -0.007] 7/15/73** |
 
-The standard sweep path independently reproduced the frozen policy with
-`FUSION_HIDE_ROUTING_SIDECAR=1` on each split. The routed row gained multi-hop recall +0.100
-[0.000, +0.300] on tuning and +0.182 [0.000, +0.455] on final, while all-spans@10 was unchanged;
-both sweep verdicts were `inconclusive`. Their reports are the calibration artifact's
-`tuning-compare/` and `final-compare/` children. The remaining limitation is statistical power,
-not an invitation to select on final; a larger accepted-ledger repeat is forward work in
-[`plan.md`](../../plan.md) (`fusion-routing-calibration-power`).
+Verdict: **`no_gain` for the routed row on BOTH models**, for the same reason every k=10
+comparison on this ledger reaches it -- the coverage half that would make it `retrieval_only` rests
+on 5 differing items and is withdrawn by [the
+gate](../rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading). What the run
+settles is not that verdict but the per-slice bill:
+
+- **The safety property is model-invariant and exact.** On both models all 40 `factoid`, 4
+  `numeric`, and 14 `procedural` items are 0/0/n ties against vector on the objective AND on every
+  retrieval column -- the router sent them to the zero endpoint, which does not query the graph
+  lane, so the answers are the vector lane's own. MamayLM's factoid cost is therefore cleared
+  exactly, reproducing [the routing
+  result](#measured-result-question-type-routing-keeps-the-gain-and-clears-the-factoid-loss) on the
+  rebuilt store.
+- **The multi-hop gain survives the route in full,** identical to the fixed row on every retrieval
+  column (recall 0.800, all-spans 0.086, span coverage 0.443) for both models.
+- **What the route CLEARS is model-conditioned; what it PAYS is not.** Lapa's cost lands on
+  `multi-hop`, the slice the router sends TO fusion by construction, so the routed row carries it
+  unchanged: -0.081 [-0.157, -0.017] on 21 differing items, past the gate. The route removed the
+  slice MamayLM paid on and could not touch the slice Lapa pays on.
+- **On Lapa the route makes that loss MORE visible, not less.** Routing turns the untouched slices
+  into 73 exact ties, so the multi-hop loss is no longer diluted by them: the routed row's overall
+  objective is -0.032 [-0.064, -0.007] on 22 differing items -- an interval clear of zero, where
+  the fixed row's -0.023 [-0.062, +0.013] over 42 differing items is not. On MamayLM the same
+  arithmetic runs the other way, -0.020 to -0.002. Routing does not change how a model answers a
+  fused question; it changes how much of the run is fused.
+
+What this licenses: the recommendation is about the TUNE, not about the corpus. "Use the routed
+overlap row when the bundle has a question-type sidecar" buys what it is recommended for only when
+the generator's cost slice is one the router excludes; on a generator paying on the focus slice it
+delivers the same loss and promotes it to the dominant overall term. `fixed` stays the shipped
+default, and an operator adopting the route must first read WHICH slice their own model pays on --
+which is the reading the artifact now prints.
+
+Boundaries, beyond the drafted ledger and the hop-blind token-F1 objective that bound every result
+on this page:
+
+- **The `comparative` slice decides nothing.** It is n=2, it routes to fusion, and Lapa's -0.108
+  [-0.216, +0.000] there rests on ONE differing item; it is not a cost by the gate and is not read
+  as one.
+- **The gate relabels 14 of 126 paired readings for MamayLM and 10 of 126 for Lapa.** An exact
+  0/0/n tie is not among them: it claims no difference, so it reads `flat` rather than
+  `insufficient evidence`.
+- **Nothing was truncated and nothing timed out.** The largest prompt any lane sent was 3,357
+  tokens (MamayLM) and 2,509 (Lapa) against the 8,192 served, and all 95 cases of every one of the
+  six lane-model pairings (three split bundles each) are `ok`.
+
+```bash
+make compare-answer-quality CONFIG=<run-config.yaml> GOLDSET=<goldset-jsonl> \
+  MODEL=<roster-model> SPLIT=final,tuning,calibration \
+  ANSWER_QUALITY_LANES=vector,<best-overlap-row>,<routed-overlap-row> INCLUDE_DRAFTED=1 \
+  ANSWER_QUALITY_OUT_DIR=<run>/<model-slug>/answer-quality
+```

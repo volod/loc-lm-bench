@@ -233,8 +233,7 @@ llb ingest-pdf-corpus --pdf-root <pdf-dir> --repeat-blocks drop    # at conversi
 
 Retrieval verdict (CUDA host, pinned e5-base, `sentence`/`recursive` at `size=200`, k=10, seed 13,
 exact collapse ON in every lane; the 89 goods items whose gold spans survive both rewrites, so the
-three lanes score one item set; floor `+/-0.000` throughout; reports under
-`$DATA_DIR/retrieval-noise-floor/20260723T-intra-repeats/`):
+three lanes score one item set; floor `+/-0.000` throughout):
 
 | lane | recursive recall@10 | sentence recall@10 | dup% (recursive) | corpus chars |
 | --- | ---: | ---: | ---: | ---: |
@@ -273,8 +272,7 @@ cost that retrieval could previously answer.
 make audit-repeat-yield CORPUS=<md-corpus> GOLDSET=<gs> CHUNK_STRATEGY=sentence CHUNK_SIZE=200
 ```
 
-Measured on the goods corpus (CUDA host, pinned e5-base, `size=200`, k=10, all 95 items; reports
-under `$DATA_DIR/retrieval-noise-floor/20260723T-repeat-yield-<strategy>/`):
+Measured on the goods corpus (CUDA host, pinned e5-base, `size=200`, k=10, all 95 items):
 
 | strategy | kept recall@10 keep -> drop | held | recovered | lost (re-home) | dropped-from-set | answerable lost |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -306,8 +304,7 @@ by shift), and keeps the item with several spans instead of dropping it. Because
 credits an item when ANY of its spans is covered, the split preserves the original retrieval
 semantics, and each piece is verified against the stripped text so an off-by-one remap fails loudly.
 
-Re-run with recovery on (same corpus, k, splits; reports under
-`$DATA_DIR/retrieval-noise-floor/20260723T-straddle-recover-<strategy>/`):
+Re-run with recovery on (same corpus, k, splits):
 
 | strategy | kept recall@10 keep -> drop | dropped-from-set | answerable lost | verdict |
 | --- | --- | ---: | ---: | --- |

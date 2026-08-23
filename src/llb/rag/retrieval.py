@@ -171,12 +171,23 @@ def span_intact_at_k(retrieved: list[ChunkRecord], spans: list[SourceSpanRecord]
     return sum(1.0 for span in spans if span_carried_whole(top, span)) / len(spans)
 
 
-def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
-    """Aggregate the four top-k readings over (retrieved, gold_spans) pairs.
+def served_chars_at_k(retrieved: list[ChunkRecord], k: int) -> int:
+    """Characters the top-k context serves the model, counting an overlap as served twice.
 
-    Returns {n, k, recall_at_k, mrr, span_char_coverage_at_k, span_intact_at_k}: whether the
-    evidence was found, how early, how much of it arrived, and whether one chunk carried it
-    whole. Empty input yields zeros.
+    The COST column beside the quality ones: a lever that delivers more of a span by serving more
+    text is a different trade from one that delivers the same characters in fewer pieces, and this
+    is the only number that tells the two apart. It reads the served text, not the character union,
+    because what the model pays for is what is laid into its prompt.
+    """
+    return sum(len(str(chunk.get("text", ""))) for chunk in retrieved[:k])
+
+
+def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetrics:
+    """Aggregate the four top-k readings over (retrieved, gold_spans) pairs, plus served cost.
+
+    Returns {n, k, recall_at_k, mrr, span_char_coverage_at_k, span_intact_at_k,
+    served_chars_at_k}: whether the evidence was found, how early, how much of it arrived,
+    whether one chunk carried it whole, and what serving it cost. Empty input yields zeros.
     """
     n = len(per_item)
     if n == 0:
@@ -187,6 +198,7 @@ def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetric
             "mrr": 0.0,
             "span_char_coverage_at_k": 0.0,
             "span_intact_at_k": 0.0,
+            "served_chars_at_k": 0.0,
         }
     return {
         "n": n,
@@ -195,4 +207,5 @@ def evaluate_retrieval(per_item: list[RetrievalPair], k: int) -> RetrievalMetric
         "mrr": sum(reciprocal_rank(r, s) for r, s in per_item) / n,
         "span_char_coverage_at_k": sum(span_char_coverage_at_k(r, s, k) for r, s in per_item) / n,
         "span_intact_at_k": sum(span_intact_at_k(r, s, k) for r, s in per_item) / n,
+        "served_chars_at_k": sum(served_chars_at_k(r, k) for r, _ in per_item) / n,
     }

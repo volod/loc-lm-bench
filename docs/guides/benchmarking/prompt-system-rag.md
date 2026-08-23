@@ -176,7 +176,7 @@ The ranking discriminates and matches the design intent: the naive `fresh` basel
 is worst, any memory of the prior steps helps, and the staged `roles` sequence
 (librarian -> analyst -> answerer) wins with its CI resolved above the other three -- so for this
 model and chain set the recommendation is to sequence the system prompt rather than dump the raw
-transcript. Run bundles: `.data/chain-context/20260711T1938*` (one per policy); `llb recommend`
+transcript. One run bundle per policy; `llb recommend`
 renders the "Context policy" section naming `roles` as the best policy for this model.
 
 The same tuning caution applies as for the RAG prompt-system lane: treat a policy win as

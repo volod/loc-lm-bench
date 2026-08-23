@@ -12,7 +12,7 @@ are in [entity resolution](../entity-resolution.md#the-graph-node-lane). This pa
 **No, and merging harder costs it.** CUDA host, evidence under
 `$DATA_DIR/graph-entity-resolution-host/graph-entity-resolution/`. Two runs, both over the
 five-document Ukrainian PDF corpus and the 61-item multi-hop gold set of
-`$DATA_DIR/graph-vector-fusion-multihop/20260727T-widened-draft-final/`, whose graph builds to 423
+the widened multi-hop draft, whose graph builds to 423
 nodes and 242 edges. Each run fits the node linkage once (31,312 scored pairs across the three
 blocking rules, seed 7, one DuckDB thread), re-clusters that one fit at every candidate cut, and
 reruns both graph strategies over the identical items at k=10 with the same paired bootstrap seed.

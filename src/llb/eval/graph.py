@@ -17,6 +17,7 @@ from llb.core.contracts.common import ChatMessage
 from llb.core.contracts.rag import SourceSpanRecord
 from llb.eval import common as eval_common
 from llb.eval.graph_contracts import ContextSource, RagState
+from llb.eval.table_headers import HeaderRestorer, prompt_context
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
 
@@ -80,6 +81,7 @@ def make_retrieve_node(
     query_prep: Any | None = None,
     chunk_filter: Any | None = None,
     context_source: ContextSource | None = None,
+    header_restorer: HeaderRestorer | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -95,6 +97,12 @@ def make_retrieve_node(
     `context_source` replaces store retrieval entirely for a diagnostic context lane
     (rag-vs-long-context-ablation): the store, `k`, the ordering policy, and the query-prep lane
     all belong to retrieval, so a lane that does not retrieve simply supplies its own update.
+
+    `header_restorer` (`llb.eval.table_headers`) is the opt-in prompt-side context-assembly step
+    that gives a table row block back its column names (table-header-context-restoration). It
+    rewrites the PROMPT copies only -- `retrieved` keeps the stored records -- so the source-span
+    metrics cannot move with it. Its accounting is recorded on every retrieving case, restorer or
+    not, so an off lane and an on lane carry the same column and stay comparable.
     """
 
     def retrieve(state: RagState) -> RagState:
@@ -114,23 +122,29 @@ def make_retrieve_node(
             chunks = store.retrieve(question, k)
         else:
             chunks = store.retrieve(question, k, chunk_filter=chunk_filter)
-        total_s = time.perf_counter() - started
+        total_s = time.perf_counter() - started  # retrieval only; assembly is not retrieval
         update: RagState = {
             "retrieved": chunks,
-            "context": eval_common.format_context(chunks, order=context_order),
+            **prompt_context(chunks, context_order, header_restorer),
+            **_stage_latency(store, total_s),
             **prep_update,
         }
-        stage = getattr(store, "stage_latency", None)
-        if isinstance(stage, dict) and "rerank_s" in stage:
-            update["retrieve_latency_s"] = float(stage.get("retrieve_s", 0.0))
-            update["rerank_latency_s"] = float(stage["rerank_s"])
-        else:
-            update["retrieve_latency_s"] = total_s
         if not chunks:
             update["status"] = eval_common.RETRIEVAL_MISS
         return update
 
     return retrieve
+
+
+def _stage_latency(store: Any, total_s: float) -> RagState:
+    """Per-stage wall-clock of one retrieval: a reranking store splits it, others report one total."""
+    stage = getattr(store, "stage_latency", None)
+    if isinstance(stage, dict) and "rerank_s" in stage:
+        return {
+            "retrieve_latency_s": float(stage.get("retrieve_s", 0.0)),
+            "rerank_latency_s": float(stage["rerank_s"]),
+        }
+    return {"retrieve_latency_s": total_s}
 
 
 def make_generate_node(
@@ -190,6 +204,7 @@ def build_rag_graph(
     cited: bool = False,
     context_source: ContextSource | None = None,
     template_id: str | None = None,
+    header_restorer: HeaderRestorer | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -205,7 +220,13 @@ def build_rag_graph(
         cast(
             Any,
             make_retrieve_node(
-                store, k, context_order, query_prep, chunk_filter, context_source=context_source
+                store,
+                k,
+                context_order,
+                query_prep,
+                chunk_filter,
+                context_source=context_source,
+                header_restorer=header_restorer,
             ),
         ),
     )

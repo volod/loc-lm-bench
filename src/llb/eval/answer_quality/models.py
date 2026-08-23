@@ -44,10 +44,22 @@ COVERAGE_PRIORITY = (METRIC_SPAN_COVERAGE, METRIC_ALL_SPANS, METRIC_RETRIEVAL_HI
 # Both are reported, neither is decided on.
 METRIC_CONTEXT_CHARS = "context_chars"
 METRIC_PROMPT_TOKENS = "prompt_tokens"
-CONTEXT_METRICS = (METRIC_CONTEXT_CHARS, METRIC_PROMPT_TOKENS)
+# What prompt-side table-header restoration added on top of the retrieved context, in characters
+# (table-header-context-restoration). It is 0.0 on a lane with the step off, so an off/on pair
+# reports the price of the step directly; `prompt_tokens` is the same price in the model's own
+# units. Recorded on every case that RETRIEVED, so the column is present in both lanes or neither.
+METRIC_TABLE_HEADER_CHARS = "table_header_chars"
+CONTEXT_METRICS = (METRIC_CONTEXT_CHARS, METRIC_PROMPT_TOKENS, METRIC_TABLE_HEADER_CHARS)
 
 # The slice the verdict is decided on; other question types still report as context slices.
 FOCUS_SLICE = "multi-hop"
+
+# What the compared items were grounded on. A comparison scored on a DRAFTED ledger records
+# `drafted` in every artifact, and each of its run bundles records `item_grounding: drafted` in its
+# own manifest; a verified bundle records nothing, which is what a re-render checks a recorded
+# bundle set against.
+GROUNDING_VERIFIED = "verified"
+GROUNDING_DRAFTED = "drafted"
 
 # The candidate lane's calibrated objective test separates from the baseline.
 VERDICT_ANSWER_GAIN = "answer_quality_gain"
@@ -85,6 +97,10 @@ class LaneSpec(NamedTuple):
     graph_fusion_span_merge_ratio: float = SPAN_MERGE_MIN_RATIO
     graph_fusion_router: str = "fixed"
     top_k: int | None = None
+    # Prompt-side only (`llb.eval.answer_quality.table_headers`), carried in the label as
+    # `+headers`. It is deliberately NOT a retrieval knob: the two lanes it distinguishes retrieve
+    # identically, so any delta between them is an answer-quality delta by construction.
+    restore_table_headers: bool = False
 
 
 # A case row's terminal status; anything else is a case the model never answered.

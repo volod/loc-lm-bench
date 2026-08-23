@@ -63,6 +63,25 @@ MRR, so pick the demonstrated winner rather than assuming one. `page` needs the 
 whole-document embedding pass. `llb tune --extended-chunkers` adds the three new strategies to
 the Optuna search space.
 
+## When the evidence arrives in pieces
+
+When `intact@k` sits far under `cover@k`, the evidence is being found and delivered in fragments
+rather than missed, and the two levers against that are read on one command:
+
+```bash
+make compare-retrieval CONFIG=<run.yaml> CHUNK_SIZES=200,400,800 STITCH=1
+```
+
+`CHUNK_SIZES=` builds one store per `size` cap under the config's own strategy (lanes
+`<strategy>#size<n>`, paired against the config's OWN size); `STITCH=1` twins every lane with a copy
+whose top-k has its contiguous same-document chunks merged into one block. The stitched twin
+retrieves nothing new, so its `recall@k` / `cover@k` must reproduce its base lane -- the report says
+`invariance held` per twin -- and it is excluded from the verdict rather than allowed to win a
+tie-break. Read `intact@k` against the `chars@k` served-context column: a wider cap buys intactness
+by serving proportionally more text, while stitching costs nothing. What that trade measured on the
+converted-PDF goods corpus is in [two levers against fragmented
+evidence](../../impl/current/rag-core/fragmented-evidence.md).
+
 ## Hybrid retrieval (dense + BM25)
 
 Dense-only cosine loses exact surnames, article/law numbers, codes, and abbreviations to

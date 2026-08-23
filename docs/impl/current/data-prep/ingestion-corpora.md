@@ -186,7 +186,7 @@ The 2026-07-12 local acceptance preparation compares coverage-target sampling wi
 180-seed cap on the public one-document PDF quickstart corpus. Both lanes use `gemma4:e4b`, seed 13,
 the same 55-window extraction journal, a 16,384-token context, and the pinned-E5 store at
 `$DATA_DIR/llb/rag`; this holds extraction and retrieval constant while changing seed selection.
-Artifacts live under `$DATA_DIR/draft-yield-quality-max/20260712T102120Z/`.
+Measured 2026-07-12.
 
 | Lane | Raw seeds | Grounded needles | Retrieval-unique needles | Unique fraction |
 | --- | ---: | ---: | ---: | ---: |
@@ -218,7 +218,6 @@ Ukrainian-marked, Cyrillic-dominant gate in both flat and multi-hop refinement. 
 worksheets, and accepted ledgers have zero question/answer violations under that gate; the flat and
 coverage runs rejected one and two model outputs respectively for failing it.
 
-The final deterministic 40-row review worksheets are
-`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/coverage-target/verify_sample.csv` and
-`$DATA_DIR/draft-yield-quality-max/20260712T102120Z/flat-cap-180/verify_sample.csv`. Their acceptance
-commands emitted 40-item verified ledgers under the corresponding `accepted/` directories.
+That run emitted one deterministic 40-row review worksheet per lane
+(`coverage-target` and `flat-cap-180`), and their acceptance commands emitted a 40-item verified
+ledger each.

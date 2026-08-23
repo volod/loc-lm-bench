@@ -17,7 +17,8 @@ from pathlib import Path
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
-from llb.eval.answer_quality.run import GROUNDING_DRAFTED, GROUNDING_VERIFIED, LaneRunner
+from llb.eval.answer_quality.models import GROUNDING_DRAFTED, GROUNDING_VERIFIED
+from llb.eval.answer_quality.run import LaneRunner
 from llb.eval.embedder_adoption.cells import cell_config
 from llb.eval.embedder_adoption.compare import CellRows, compare_cells
 from llb.eval.embedder_adoption.models import AdoptionBarReport, CellSpec, EmbedderLane

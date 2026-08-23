@@ -106,7 +106,9 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   pairings with the same `judge_lane`, adds the cost scan over the non-focus slices, and
   `report_budgets.py` renders the section. `coverage.py` also reports `context_chars`, the served
   context measured from the sidecar offsets, so a budget's coverage is always readable beside its
-  price.
+  price. `bundles.py` / `bundle_match.py` / `rerender.py` re-read a RECORDED comparison from the
+  run bundles it named -- no model call -- and refuse a bundle set whose manifests no longer
+  describe those lanes ([re-rendering a recorded comparison](answer-quality-rerender.md)).
 
 ## Retrieval Strategies
 
@@ -137,6 +139,7 @@ llb run-eval --retrieval-backend graph --retrieval-strategy global_community ...
 llb run-eval --retrieval-backend fused --graph-weight 0.3 ...
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --split final
 llb compare-answer-quality --from-comparison <sweep>/comparison.json --budgets 10,50
+llb compare-answer-quality --from-bundles <recorded-run>/answer-quality/comparison.json
 llb probe-multihop-hops --budgets 10,25,50 --retrieval-backend faiss --out-dir <dir>
 llb probe-multihop-hops --query-prep decompose --query-prep-model <model> --out-dir <dir>
 ```

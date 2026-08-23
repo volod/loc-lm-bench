@@ -15,6 +15,7 @@ from pathlib import Path
 from llb.core.config import RunConfig
 from llb.eval.answer_quality.budgets import split_budget_label
 from llb.eval.answer_quality.models import LaneSpec
+from llb.eval.answer_quality.table_headers import split_header_label
 from llb.rag.fusion_evidence.models import (
     FUSED_ROW_PREFIX,
     GRAPH_ROW_PREFIX,
@@ -40,14 +41,16 @@ DEPTH_MARKER = "/d"
 def parse_lane_label(label: str) -> LaneSpec:
     """Turn a vector, graph, fixed-fused, or routed-fused row label into a `LaneSpec`.
 
-    An optional `#k<budget>` suffix scores the row at that retrieval budget instead of the
-    config's own, which is what lets a budget sweep's cell labels round-trip.
+    Two suffixes ride on the row label and are stripped before it is parsed: `#k<budget>` scores
+    the row at that retrieval budget instead of the config's own, and `+headers` turns on the
+    prompt-side table-header restoration (`llb.eval.answer_quality.table_headers`). Both are what
+    let a sweep's cell labels round-trip.
     """
-    row, budget = split_budget_label(label.strip())
-    spec = _parse_row_label(row)
-    if budget is None:
-        return spec
-    return spec._replace(label=label.strip(), top_k=budget)
+    text = label.strip()
+    row, budget = split_budget_label(text)
+    row, restore_headers = split_header_label(row)
+    spec = _parse_row_label(row)._replace(label=text, restore_table_headers=restore_headers)
+    return spec if budget is None else spec._replace(top_k=budget)
 
 
 def _parse_row_label(text: str) -> LaneSpec:
@@ -161,6 +164,7 @@ def lane_config(config: RunConfig, lane: LaneSpec, *, run_name_prefix: str) -> R
     values = config.model_dump()
     values.update(
         run_name=f"{run_name_prefix}-{lane.label}",
+        restore_table_headers=lane.restore_table_headers,
         retrieval_backend=lane.retrieval_backend,
         graph_fusion_candidates=lane.graph_fusion_candidates,
         graph_fusion_span_identity=lane.graph_fusion_span_identity,

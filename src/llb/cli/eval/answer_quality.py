@@ -1,7 +1,8 @@
 """Multi-hop answer-quality comparison across retrieval lanes (`compare-answer-quality`)."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -35,6 +36,22 @@ def compare_answer_quality_cmd(
         "--from-comparison",
         help="a compare-graph-fusion comparison.json; scores its baseline plus the fused row its "
         "verdict named best (overrides --lanes)",
+    ),
+    from_bundles: Optional[Path] = typer.Option(
+        None,
+        "--from-bundles",
+        help="a recorded compare-answer-quality comparison.json; re-renders it under the CURRENT "
+        "report from the run bundles it recorded, with NO model call. Every other option except "
+        "--out-dir is ignored: the lanes, splits, model, gold set, and bootstrap settings are the "
+        "recorded ones. A bundle set that no longer matches the recorded lanes is refused",
+    ),
+    restore_headers: bool = typer.Option(
+        False,
+        "--restore-headers",
+        help="twin EVERY named lane with a `<lane>+headers` copy whose prompt restores a table "
+        "chunk's recorded header row (table-header-context-restoration). The twins retrieve "
+        "identically, so any delta between a lane and its twin is an answer-quality delta. The "
+        "same twin can be named directly in --lanes",
     ),
     include_drafted: bool = typer.Option(
         False,
@@ -72,10 +89,12 @@ def compare_answer_quality_cmd(
     or recorded as a retrieval-only effect.
 
     Each lane persists an ordinary run bundle under `$DATA_DIR/run-eval/`; only the comparison is
-    new.
+    new -- which is what makes `--from-bundles` possible: a recorded comparison re-renders under the
+    CURRENT report from the bundles it named, with no model call.
     """
     from llb.eval.answer_quality import (
         FOCUS_SLICE,
+        header_lanes,
         lane_labels_from_comparison,
         parse_lanes,
         run_answer_quality,
@@ -83,6 +102,16 @@ def compare_answer_quality_cmd(
 
     from llb.eval.retrieval_budgets import parse_top_ks
 
+    if from_bundles is not None:
+        if from_comparison is not None:
+            typer.echo(
+                "[error] --from-bundles re-renders a recorded answer-quality comparison and "
+                "--from-comparison starts a new one from a retrieval sweep; name one",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        _rerender(from_bundles, config, out_dir)
+        return
     cfg = load_config(config, model=model, backend=backend, goldset_path=goldset)
     try:
         selection = (
@@ -91,6 +120,8 @@ def compare_answer_quality_cmd(
             else lanes
         )
         specs = parse_lanes(selection)
+        if restore_headers:
+            specs = header_lanes(specs)
         scored_budgets = parse_top_ks(budgets) if budgets else []
     except (OSError, ValueError) as exc:
         typer.echo(f"[error] {exc}", err=True)
@@ -120,16 +151,39 @@ def compare_answer_quality_cmd(
         out_dir=out_dir,
         verified_only=not include_drafted,
     )
-    verdict = run.report["verdict"]
+    _echo_verdict(run.report)
+    typer.echo(f"[compare-answer-quality] report -> {run.paths['report']}")
+
+
+def _echo_verdict(report: Mapping[str, Any]) -> None:
+    """The headline verdict, plus the budget-conversion headline when the run swept budgets."""
+    verdict = report["verdict"]
     typer.echo(
         f"[compare-answer-quality] {verdict['decision']}: {verdict['reason']}"
         if verdict["reason"]
         else f"[compare-answer-quality] {verdict['decision']}"
     )
-    conversion = run.report.get("budget_conversion")
+    conversion = report.get("budget_conversion")
     if conversion is not None:
         typer.echo(
             f"[compare-answer-quality] budget conversion {conversion['decision']}: "
             f"{conversion['reason']}"
         )
+
+
+def _rerender(comparison: Path, config: Optional[Path], out_dir: Optional[Path]) -> None:
+    """Re-render a recorded comparison from its own run bundles -- no lane runs, no model call."""
+    from llb.eval.answer_quality import BundleMismatch, rerender_from_bundles
+
+    cfg = load_config(config)
+    typer.echo(f"[compare-answer-quality] re-rendering {comparison} from its recorded run bundles")
+    try:
+        run = rerender_from_bundles(comparison, config=cfg, out_dir=out_dir)
+    except BundleMismatch as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    except (OSError, KeyError, ValueError) as exc:
+        typer.echo(f"[error] {comparison}: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    _echo_verdict(run.report)
     typer.echo(f"[compare-answer-quality] report -> {run.paths['report']}")

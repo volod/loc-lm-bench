@@ -165,8 +165,7 @@ seed plus 20 generated `search` tasks over the 250-document `ua_squad_postedited
 observations run
 20k-36k chars), all four policies in one ~46 min invocation, 377 model calls at 5.7 tok/s. Ollama
 serves a 4096 window here regardless of the GGUF advertising 131072, so the run declared
-`--max-model-len 4096` and the guard resolved a 9216-char prompt budget. Bundles under
-`.data/agentic-context/20260728T2034*` (one per policy).
+`--max-model-len 4096` and the guard resolved a 9216-char prompt budget. One bundle per policy.
 
 | policy | completion | steps | max prompt tok | overflow | reliability | d(prompt-tok) vs `full` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -212,9 +211,8 @@ compactions and never finished count tasks even after summary injection.
 
 Blackwell / RTX 4060 Ti host evidence (2026-07-29 pre-recovery; 2026-07-30 post-recovery):
 `MamayLM-Gemma-3-12B-IT-v2.0` on Ollama, `--max-model-len 8192` (prompt budget 21504 chars), the
-same 24-task shape (4 seed + 10 `search-count` + 10 `search-locate` over 250 UA docs). Pre-recovery
-bundles under `.data/agentic-context/20260729T1515*` / `20260729T155227*`. Post-recovery bundles
-under `.data/agentic-context/20260730T0952*` (266 calls, 3.6 tok/s).
+same 24-task shape (4 seed + 10 `search-count` + 10 `search-locate` over 250 UA docs). Post-recovery
+bundles (266 calls, 3.6 tok/s).
 
 Pre-recovery (aggregate headers on trim + summary injection only):
 

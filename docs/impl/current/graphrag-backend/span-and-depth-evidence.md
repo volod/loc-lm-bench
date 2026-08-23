@@ -5,7 +5,7 @@ Part of the [GraphRAG backend](../graphrag-backend.md) area of the
 
 ## Candidate depth evidence
 
-CUDA-host evidence is under `$DATA_DIR/graph-vector-fusion-multihop/20260722T102219Z-depth/`. The
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The
 same 95 items, matched stores, weight grid, and seed as the sweep above were re-scored at TWO
 per-lane candidate depths -- `k` (10, the historical pool) and 50 -- through
 `GRAPH_FUSION_CANDIDATES=k,50`. Fused rows are labeled `fused/<strategy>@<weight>/d<depth>`, so a
@@ -46,8 +46,7 @@ and re-running the sweep is tracked as forward work in [`plan.md`](../../plan.md
 
 ## Span-identity evidence
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T145615Z-span-identity/`. The same 95 drafted items
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The same 95 drafted items
 (35 multi-hop), matched stores, weight grid, depth grid, and seed as the two runs above were
 re-scored under BOTH span-identity policies -- 47 rows in one table -- with
 `GRAPH_FUSION_SPAN_IDENTITY=exact,overlap GRAPH_FUSION_CANDIDATES=k,50`.
@@ -142,8 +141,7 @@ Flipping the shipped default is gated on the accepted-ledger re-run tracked in
 
 ## Span merge-threshold evidence
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T194026Z-span-merge-ratio/`. The same 95 drafted
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The same 95 drafted
 items (35 multi-hop), matched stores, weight grid, depth grid, identity grid, and seed as the
 span-identity run were re-scored across a four-point merge-threshold grid --
 `GRAPH_FUSION_SPAN_MERGE_RATIO=0.25,0.5,0.75,1.0`, where `1.0` is containment-only -- for 127 rows
@@ -202,8 +200,8 @@ insensitive settings.
 
 ### Does the pin survive a smaller chunk size?
 
-CUDA-host evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260722T195633Z-small-chunk/`. The insensitivity above is
+Measured 2026-07-22 on the RTX 4060 Ti 16 GB CUDA host. The insensitivity
+above is
 a property of the CHUNK SIZE, not of the policy, so the same 95 drafted items, graph stores, grid,
 and seed were re-scored against two materially smaller chunkings built from the identical corpus --
 `sentence` at `size=200` (3,333 chunks, median 169 chars, no overlap) and `recursive` at

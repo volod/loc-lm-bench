@@ -97,6 +97,43 @@ def _write_bundle(goldset: Path, verified: bool = True) -> None:
     )
 
 
+def _bundle_lane(tmp_path: Path, *, covered: int = 2):
+    """A fake lane runner that persists a FULL run bundle: scores, retrieval sidecar, manifest.
+
+    `_recording_lane` writes only the score rows, which is all the orchestration reads back. A
+    re-render reads the manifest (to check the bundle still describes its lane) and the retrieval
+    sidecar (to recompute the coverage columns), so the bundles it is exercised over have to be the
+    shape `run-eval` really persists.
+    """
+
+    def fake_lane(config: RunConfig, items: list[GoldItem], split: str) -> Path:
+        run_dir = tmp_path / "run-eval" / f"{config.run_name}-{split}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        objective = 1.0 if config.retrieval_backend == "fused" else 0.0
+        hops = covered if config.retrieval_backend == "fused" else 1
+        (run_dir / "scores.jsonl").write_text(
+            "".join(json.dumps(_row(item.id, objective)) + "\n" for item in items),
+            encoding="utf-8",
+        )
+        (run_dir / "retrieval.jsonl").write_text(
+            "".join(_retrieval_record(item.id, hops) for item in items), encoding="utf-8"
+        )
+        (run_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_id": config.run_name,
+                    "run_name": config.run_name,
+                    "split": split,
+                    "config": config.fingerprint(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        return run_dir / "scores.jsonl"
+
+    return fake_lane
+
+
 def _recording_lane(tmp_path: Path, seen: list[tuple[str, str, tuple[str, ...]]]):
     """A fake lane runner that persists a `scores.jsonl` the fused lane always answers better."""
 

@@ -125,8 +125,8 @@ make resolve-corpus-conflicts ROLLBACK=1 CORPUS=<corpus-dir> \
 
 ## CUDA-host resolution evidence
 
-The goods quickstart evidence bundle is under
-`$DATA_DIR/corpus-conflicts/20260720T-resolution-goods/`. It used the 1,139-chunk hybrid
+The goods quickstart evidence bundle is
+the goods resolution run of 2026-07-20. It used the 1,139-chunk hybrid
 multilingual-E5 store, the 19-item flat retrieval set, and the 20 human-accepted chain set with
 MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M on the RTX 4060 Ti. The fixed history-policy objective run had
 40 scored steps and reliability 1.000 before and after.
