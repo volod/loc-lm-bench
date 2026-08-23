@@ -32,6 +32,12 @@ class RunMetrics(TypedDict):
     hallucinated_citation_rate: NotRequired[float]
     abstention_accuracy: NotRequired[float]
     n_probes: NotRequired[int]
+    # Declared answer contract (typed-rag-answer-envelope); present only on an envelope run.
+    envelope_conformance: NotRequired[float]
+    envelope_schema_invalid_rate: NotRequired[float]
+    envelope_malformed_rate: NotRequired[float]
+    envelope_repair_rate: NotRequired[float]
+    mean_claims: NotRequired[float]
 
 
 class RunEnvironment(TypedDict):

@@ -51,6 +51,10 @@ RestorationRankOrder = Literal["morphology", "context"]
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
 ContextStrategy = Literal["rag", "closed_book", "long_context"]
+
+# Answer contract of the generation lane (typed-rag-answer-envelope): free prose (the default,
+# byte-for-byte the pre-envelope path) or the typed `AnswerEnvelope` parsed at the boundary.
+AnswerFormat = Literal["free_text", "envelope"]
 # Duplicate-collapse tier (llb.rag.duplicates.tiers): when do two chunk texts count as ONE
 # passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
 # coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
@@ -273,6 +277,15 @@ class RunConfigFields(BaseModel):
     cited_answers: bool = False
     score_groundedness: bool = False
     insufficient_context_probes: int = Field(default=0, ge=0)
+
+    # Declared answer contract (typed-rag-answer-envelope). "free_text" keeps the shipped prose
+    # path unchanged. "envelope" swaps in the typed-answer generation prompt, validates the
+    # completion at the generation boundary, spends at most one bounded repair reprompt carrying
+    # the validation error, and ends a completion that still does not satisfy the contract in a
+    # typed status (`malformed` / `schema_invalid`) instead of scoring it as a wrong answer. The
+    # answer-side signals then read DECLARED fields instead of regexes over prose. Off by default:
+    # the format is adopted per model with evidence, never by construction.
+    answer_format: AnswerFormat = "free_text"
 
     # Paths (resolved against the project / DATA_DIR, never hardcoded)
     data_dir: Path = Path(".data")

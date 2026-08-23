@@ -1,4 +1,4 @@
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= RESTORE_TABLE_HEADERS=1 CONTEXT_STRATEGY= QUERY_PREP=... RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= RESTORE_TABLE_HEADERS=1 CONTEXT_STRATEGY= ANSWER_FORMAT=envelope MAX_TOKENS= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -21,6 +21,8 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(QUERY_GLOSSARY),--query-glossary "$(QUERY_GLOSSARY)",) \
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
 		$(if $(QUERY_PREP_DENSE_CASE),--query-prep-dense-case,) \
+		$(if $(ANSWER_FORMAT),--answer-format "$(ANSWER_FORMAT)",) \
+		$(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS),) \
 		$(if $(CITED_ANSWERS),--cited-answers,) \
 		$(if $(SCORE_GROUNDEDNESS),--score-groundedness,) \
 		$(if $(INSUFFICIENT_CONTEXT_PROBES),--insufficient-context-probes $(INSUFFICIENT_CONTEXT_PROBES),) \
@@ -29,6 +31,14 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(PROMPT_SYSTEM_ID),--prompt-system "$(PROMPT_SYSTEM_ID)",) \
 		$(if $(PROMPT_PACKAGE),--prompt-package "$(PROMPT_PACKAGE)",) \
 		$(if $(JUDGE_RHO),--judge-rho $(JUDGE_RHO) --judge-model "$(JUDGE_MODEL)" $(if $(JUDGE_BASE_URL),--judge-base-url "$(JUDGE_BASE_URL)"))
+
+analyze-answer-envelope: ## Per-model answer-envelope conformance, failure split, and repair rate (RUN_DIRS="<bundle> <bundle> ...")
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(RUN_DIRS)" || { echo "ERROR: set RUN_DIRS='<bundle> <bundle> ...'"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main analyze-answer-envelope \
+		$(foreach dir,$(RUN_DIRS),--run-dir "$(dir)") \
+		$(if $(ANSWER_ENVELOPE_OUT),--out-dir "$(ANSWER_ENVELOPE_OUT)",)
 
 analyze-verbosity: ## Compare fixed-item RAG bundles under F1, recall, found-rate, and declared format policy (RUN_DIRS="...")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

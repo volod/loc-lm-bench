@@ -28,7 +28,7 @@ question you have.
 | Re-rank | [Reranker bake-off](rag-core/reranker-bakeoff.md) | Which cross-encoder to run, what it buys in first-hit rank, and what it costs in latency and VRAM beside the generator |
 | Deliver | [Two levers against fragmented evidence](rag-core/fragmented-evidence.md) | What a wider `size` cap and assembly-time stitching are each worth when the evidence is found but arrives in pieces, and what each costs in served context |
 | Assemble | [Prompt-side context assembly](rag-core/context-assembly.md) | What the retrieved chunks look like once they are laid into the prompt: restoring a table row block's column names, stitching contiguous chunks back into one block, and why both are off by default |
-| Generate | [Generation graph and scoring](rag-core/scoring.md) | The generation graph, the headline objective's verbosity confound, its decomposition and declared ranking policy, groundedness and citation metrics |
+| Generate | [Generation graph and scoring](rag-core/scoring.md) | The generation graph, the headline objective's verbosity confound, its decomposition and declared ranking policy, groundedness and citation metrics, and the typed answer envelope that replaces the prose heuristics with declared fields |
 | Measure | [Retrieval metrics](rag-core/retrieval-metrics.md) | Recall@k / MRR by source span, the evidence-intactness pair beside them, the paired lane verdict, the per-question-type slices, and the measurement floor |
 | Persist | [Backends, persistence, and execution](rag-core/persistence-and-execution.md) | Backend seam, the persisted retrieval record, executor, durability, and the RAG-config sweep grid |
 

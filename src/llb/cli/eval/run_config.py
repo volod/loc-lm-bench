@@ -8,6 +8,7 @@ _CONFIG_OPTIONS = {
     "model": "model",
     "backend": "backend",
     "goldset": "goldset_path",
+    "max_tokens": "max_tokens",
     "max_model_len": "max_model_len",
     "gpu_memory_utilization": "gpu_memory_utilization",
     "gpu_layers": "n_gpu_layers",
@@ -40,6 +41,7 @@ _CONFIG_OPTIONS = {
     "cited_answers": "cited_answers",
     "score_groundedness": "score_groundedness",
     "insufficient_context_probes": "insufficient_context_probes",
+    "answer_format": "answer_format",
     "telemetry": "measure_telemetry",
 }
 _FALSE_MEANS_UNSET = {

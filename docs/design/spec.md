@@ -293,7 +293,11 @@ dimensions remain visible.
 Answer-side signals should be read from a declared answer contract wherever the workload allows one,
 rather than recovered from free text by heuristics after the fact. A status, an abstention, and a
 citation that the model DECLARED are evidence; the same three recovered by regex are an estimate of
-evidence, and the difference belongs in the record.
+evidence, and the difference belongs in the record. A completion that does not satisfy the declared
+contract ends in a typed status -- distinguishing "not the requested format at all" from "the
+requested format, wrong shape" -- after at most one bounded repair, rather than being scored as a
+wrong answer: an operator has to be able to tell a model that does not KNOW the answer from one
+that cannot EMIT it.
 
 Context-ablation lanes (`closed_book`, `long_context`) are measurement lanes, never default
 retrieval policies and never leaderboard rows. `long_context` is oracle-grounded -- it reads the
@@ -453,7 +457,7 @@ Four rules settle it, in order:
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
 | 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
 | 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
+| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |

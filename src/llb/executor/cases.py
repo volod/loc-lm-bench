@@ -11,6 +11,9 @@ from llb.core.contracts.rag import (
 )
 from llb.core.contracts.results import CaseScoreRow
 from llb.eval import common as eval_common
+from llb.eval.answer_envelope import lane as envelope_lane
+from llb.eval.answer_envelope import metrics as envelope_metrics
+from llb.eval.answer_envelope.models import AnswerEnvelope
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
@@ -24,13 +27,19 @@ from llb.eval.graph_contracts import RagState
 class ScoreOptions:
     """Opt-in answer-side scoring toggles (groundedness-citation-metrics).
 
-    `context_order` mirrors the prompt-layout policy so `[i]` citations are validated against the
-    chunks in the exact order the model saw them.
+    `context_order` mirrors the prompt-layout policy so citations are validated against the chunks
+    in the exact order the model saw them, declared or scraped.
+
+    `answer_format` says where the answer-side signals are READ FROM (typed-rag-answer-envelope):
+    the declared `AnswerEnvelope` fields, or the prose heuristics. It does not decide WHICH signals
+    are recorded -- the two toggles above still do that -- so an envelope run and a free-text run
+    carry the same columns and stay comparable.
     """
 
     score_groundedness: bool = False
     cited_answers: bool = False
     context_order: str = eval_common.ORDER_RANK
+    answer_format: str = envelope_lane.FREE_TEXT
 
 
 @dataclass(slots=True)
@@ -126,11 +135,41 @@ def score_case(
     if "table_headers_restored" in state:
         row["table_headers_restored"] = int(state["table_headers_restored"])
         row["table_header_chars"] = float(state.get("table_header_chars", 0))
+    envelope = _declared_envelope(state)
+    _attach_envelope_columns(row, state, envelope)
     # Answer-side signals read the chunks as the PROMPT carried them, which is what the model was
     # asked to ground its answer in; they differ from `retrieved` only under prompt-side context
     # assembly (`llb.eval.table_headers`).
-    _score_answer_side(row, answer, state.get("prompt_chunks") or retrieved, options)
+    _score_answer_side(row, answer, state.get("prompt_chunks") or retrieved, options, envelope)
     return row
+
+
+def _attach_envelope_columns(
+    row: CaseScoreRow, state: RagState, envelope: AnswerEnvelope | None
+) -> None:
+    """Attach the declared-answer columns (typed-rag-answer-envelope) to `row`.
+
+    Present only on an envelope-format run, so every bundle recorded with the envelope off keeps
+    exactly the shape it had. `envelope_status` is the parse verdict, `repaired` says the bounded
+    reprompt was spent (which makes first-attempt conformance readable as `1 - repair_rate`), and
+    `n_claims` / `envelope_abstained` are read straight off the declaration.
+    """
+    if "envelope_status" not in state:
+        return
+    row["envelope_status"] = str(state["envelope_status"])
+    row["repaired"] = bool(state.get("envelope_repaired", False))
+    row["n_claims"] = len(envelope.claims) if envelope is not None else 0
+    row["envelope_abstained"] = bool(envelope.abstained) if envelope is not None else False
+
+
+def _declared_envelope(state: RagState) -> AnswerEnvelope | None:
+    """The validated envelope this case declared, if it produced one.
+
+    The state carries it as a plain dict (the durability journal serializes state to JSON), so it
+    is revalidated here through the same contract that admitted it at the generation boundary.
+    """
+    payload = state.get("envelope")
+    return AnswerEnvelope.model_validate(payload) if payload is not None else None
 
 
 def _score_answer_side(
@@ -138,18 +177,31 @@ def _score_answer_side(
     answer: str,
     prompt_chunks: list[ChunkRecord],
     options: ScoreOptions | None,
+    envelope: AnswerEnvelope | None = None,
 ) -> None:
     """Attach the opt-in answer-side signals (groundedness-citation-metrics) to `row`.
 
-    `[i]` citations are validated against the chunks in prompt-layout order, so the numbering
-    matches what `format_context` emitted to the model."""
+    Citations are validated against the chunks in prompt-layout order, so the numbering matches
+    what `format_context` emitted to the model. When the case DECLARED an envelope, the claims and
+    their citations are read from it instead of being scraped out of prose; the two scorers apply
+    the same support threshold and countable-claim rule, so the columns stay comparable."""
     if options is None or not (options.score_groundedness or options.cited_answers):
         return
     ordered = eval_common.order_chunks(prompt_chunks, options.context_order)
+    declared = envelope if options.answer_format == envelope_lane.ENVELOPE else None
     if options.score_groundedness:
-        row["groundedness"] = round(groundedness.groundedness_fraction(answer, ordered), 4)
+        fraction = (
+            envelope_metrics.envelope_groundedness(declared, ordered)
+            if declared is not None
+            else groundedness.groundedness_fraction(answer, ordered)
+        )
+        row["groundedness"] = round(fraction, 4)
     if options.cited_answers:
-        report = groundedness.citation_report(answer, ordered)
+        report = (
+            envelope_metrics.envelope_citation_report(declared, ordered)
+            if declared is not None
+            else groundedness.citation_report(answer, ordered)
+        )
         row["citation_validity"] = round(report["citation_validity"], 4)
         row["citation_coverage"] = round(report["citation_coverage"], 4)
         row["hallucinated_citation_rate"] = round(report["hallucinated_citation_rate"], 4)

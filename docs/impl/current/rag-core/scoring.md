@@ -6,9 +6,11 @@ Part of the [RAG core](../rag-core.md) area of the
 ## Generation Graph
 
 `src/llb/eval/graph.py` builds the retrieve-generate flow. LangGraph is imported only when the
-graph is built. The graph records one status per case: `ok`, `empty`, `malformed`, `refusal`,
-`timeout`, `backend_error`, `retrieval_miss`, `context_overflow`, or another typed failure from the
-shared taxonomy. `retrieval_miss` and `context_overflow` are the pre-generation statuses
+graph is built. The graph records one status per case: `ok`, `empty`, `malformed`, `schema_invalid`,
+`refusal`, `timeout`, `backend_error`, `retrieval_miss`, `context_overflow`, or another typed
+failure from the shared taxonomy. `schema_invalid` is reachable only on a declared-answer-format
+run (see [the typed answer envelope](#typed-rag-answer-envelope-typed-rag-answer-envelope)).
+`retrieval_miss` and `context_overflow` are the pre-generation statuses
 (`eval_common.PRE_GENERATION_STATUSES`): the prompt is never sent, so the answer stays empty and
 the case scores zero rather than being quietly repaired into a different prompt.
 
@@ -184,3 +186,166 @@ rather than "cited wrongly"; abstention accuracy 0.000 -- on all four probes the
 answer (even citing non-existent chunks) instead of abstaining when its gold evidence was removed.
 Honest, unflattering evidence that a small model's answer-side grounding discipline is weak -- exactly
 the axis these metrics expose beyond a passing recall@k.
+
+## Validation architecture: where a completion becomes typed
+
+Two lanes now parse a model completion into a typed object, and they are deliberately different
+things at different places:
+
+| Lane | Where | What it validates | On failure |
+| --- | --- | --- | --- |
+| Structured-output BENCHMARK (`src/llb/scoring/structured/schema.py`) | inside one benchmark tier | a PER-CASE field schema compiled by `build_model` | `is_conformant` records False; the case is scored not-conformant |
+| RAG ANSWER contract (`src/llb/eval/answer_envelope/`) | the generation boundary of every RAG run | ONE fixed contract, the same for every case | a typed terminal status (`malformed` / `schema_invalid`), after one bounded repair |
+
+The answer boundary is `llb.eval.answer_envelope.boundary.parse_envelope`: the single place a RAG
+completion becomes an `AnswerEnvelope`. Nothing downstream re-parses model text -- the scorers read
+declared fields -- so the question "is this answer well-formed?" has exactly one answer per case,
+recorded rather than re-derived. The JSON extraction itself is the benchmark lane's own
+`parse_output`, so a fenced or prose-wrapped object is recovered identically on both sides.
+
+## Typed RAG answer envelope (typed-rag-answer-envelope)
+
+Shipped: `--answer-format envelope` (`make run-eval ANSWER_FORMAT=envelope`) asks the model for a
+declared answer instead of prose, validates it at the generation boundary, and reads every
+answer-side signal off the declared fields. Off by default (`free_text`), so an existing bundle and
+an existing command record exactly what they recorded before.
+
+### The contract
+
+`src/llb/eval/answer_envelope/models.py` is the whole contract, as Pydantic models:
+
+- `answer` -- the Ukrainian answer text. It is scored EXACTLY as the free-text answer of the same
+  string would be; the envelope changes where the string comes from, never how correctness is
+  computed.
+- `abstained` -- a required, explicit flag. "The context does not carry it" stops being a regex over
+  apology stems (`llb.eval.common.is_abstention`) and becomes something the model said.
+- `claims[]` -- each factual statement with `citations`, the prompt-position indices it rests on,
+  and an optional `triple` (subject / relation / object) whose two type fields are normalized into
+  the CLOSED 13-type entity vocabulary (`llb.prep.ontology.extraction.entity_types`): a synonym
+  canonicalizes, an invented type collapses to `MISC`, so the schema cannot silently expand.
+- `evidence[]` -- optional verbatim quotes per chunk. Requested in the prompt and useful to a
+  reviewer, but the citations already carry what the metrics need, so omitting them is not a
+  contract failure.
+
+Unknown extra keys are ignored rather than rejected: a model that adds `"confidence"` still emitted
+the contract, and conformance should measure the declared fields, not decoration around them. The
+prompt's worked example is the model instance `ENVELOPE_EXAMPLE` serialized by
+`envelope_schema_block()`, so what the model is ASKED for and what it is CHECKED against cannot
+drift apart.
+
+### The two statuses, and the one repair
+
+`malformed` keeps its meaning -- the completion is not JSON at all. `schema_invalid` is new: the
+completion IS JSON and does not satisfy the contract. They are separate because they call for
+different fixes (a decoding or prompt problem versus specific fields the model got wrong), and one
+number cannot say which happened.
+
+On a failure the boundary spends exactly ONE repair reprompt (`eval.rag.envelope_repair`), carrying
+the validator's own complaint back to the model -- the same bounded policy shape the
+[agent loop-policy lane](../extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
+measures for tool calls. It is bounded on purpose: an unbounded repair loop converts a formatting
+failure into an unmeasured token cost, and measuring that failure is the point. A transport failure
+(`timeout` / `backend_error`) is never repaired -- the run's own retry policy owns that. A repaired
+case is charged for BOTH generations in its usage accounting, so the format's real token cost is
+visible.
+
+A valid envelope's terminal status is then `classify_response` over its DECLARED answer text, so an
+empty answer is `empty` and a declined one is `refusal` exactly as on the free-text path.
+
+### What is recorded
+
+Per case (`scores.jsonl`), present only on an envelope run: `envelope_status`, `repaired`,
+`n_claims`, `envelope_abstained`. `repaired` means the reprompt was ISSUED, so first-attempt
+conformance reads off the bundle as `1 - repair_rate` and the repair's contribution is the gap up to
+final conformance. Run metrics add `envelope_conformance`, `envelope_schema_invalid_rate`,
+`envelope_malformed_rate`, `envelope_repair_rate`, and `mean_claims`, echoed on the run's
+`answer-side:` line. `answer_format` is recorded in the manifest fingerprint like every other knob.
+
+`--score-groundedness` and `--cited-answers` still decide WHICH answer-side columns exist; the
+envelope decides where they are READ FROM. Declared claims and citations replace punctuation
+splitting and `[i]` scraping, under the same support threshold and the same countable-claim floor
+(`llb.eval.answer_envelope.metrics` reuses `chunk_supports_claim` / `content_tokens` from
+`llb.scoring.groundedness`), so an envelope run and a free-text run stay comparable column by
+column. Citations are validated in PROMPT-LAYOUT order, so `reverse_rank` renumbering is respected
+exactly as the scraped `[i]` validation already respects it. The
+insufficient-context abstention probe is deliberately NOT converted: it is a separate lane with its
+own prompt and its own artifact, so it keeps scoring abstention by marker
+(`llb.eval.common.is_abstention`) and its numbers stay comparable with every probe run recorded
+before the envelope existed.
+
+### Reading the conformance study
+
+`make analyze-answer-envelope RUN_DIRS="<bundle> <bundle> ..."`
+(`src/llb/eval/answer_envelope/study.py`) compares roster models over ONE item set and writes
+`report.{json,md}` under `$DATA_DIR/answer-envelope/<run>/`. It refuses a free-text bundle, a
+duplicate model, a single bundle, or bundles over different item sets. The report keeps three
+things apart on purpose: conformance from correctness (a repair gain is a FORMATTING gain), first
+attempt from final, and truncation from non-conformance -- `truncated` is the share of the
+NON-conformant cases whose completion reached the run's token cap, because a cut-off completion is
+not JSON either. The envelope is several times longer than a short free-text answer, so raise
+`MAX_TOKENS` for the lane; a run that does not will measure its own budget.
+
+Modules/tests: `src/llb/eval/answer_envelope/` (`models`, `boundary`, `lane`, `metrics`, `study`),
+the `eval.rag.envelope` / `eval.rag.envelope_repair` templates, `answer_format` on `RunConfig`,
+`ScoreOptions` in `src/llb/executor/cases.py`, `_attach_envelope_metrics` in
+`src/llb/executor/runner_metrics.py`, and the CLI `analyze-answer-envelope`;
+`tests/llb/eval/test_answer_envelope.py` (contract-versus-prompt drift, closed-vocabulary
+normalization, fenced JSON, the malformed/schema_invalid split, every terminal status, the bounded
+repair and its two-generation cost, the untouched free-text update, journal coverage),
+`tests/llb/eval/test_answer_envelope_scoring.py` (declared citation validity / coverage /
+hallucination, prompt-layout order, declared groundedness, objective equality with the same free
+text, the columns present only on an envelope run, the whole vertical through the runner), and
+`tests/llb/eval/test_answer_envelope_study.py` (the study's separations and its four refusals).
+
+### Measured: conformance is a model property, and one reprompt can be worth 46 points
+
+2026-08-23, RTX 4060 Ti 16 GB CUDA host, ollama backend. Three UA-capable instruct models, each
+over the SAME committed 82-item final split of `ua_squad_postedited_v1`, against the same flat
+`intfloat/multilingual-e5-base` store (`top_k=5`, recall@5 = 0.951 and MRR 0.835 for every row --
+identical retrieval, so every difference below is answer-side). Command per model:
+`make run-eval ANSWER_FORMAT=envelope MAX_TOKENS=768 LIMIT=82 SCORE_GROUNDEDNESS=1
+CITED_ANSWERS=1 MODEL=<model> BACKEND=ollama`, then `make analyze-answer-envelope` over the three
+bundles.
+
+| model | conformance | first attempt | repaired | rescued | schema_invalid | malformed | objective | found |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| MamayLM-Gemma-3-12B v2.0 | 1.000 | 1.000 | 0.000 | 0 | 0.000 | 0.000 | 0.495 | 0.671 |
+| `lapa-v0.1.2-instruct` | 0.890 | 0.890 | 0.110 | 0 | 0.049 | 0.061 | 0.512 | 0.500 |
+| `aya-expanse:8b` | 0.854 | 0.390 | 0.610 | 38 | 0.146 | 0.000 | 0.422 | 0.549 |
+
+- **The format is a property of the weights, not of the harness.** One prompt, one validator, one
+  item set: 82 of 82 conformant on MamayLM, 73 of 82 on lapa, and only 32 of 82 on Aya's first
+  attempt. This is exactly why the envelope is opt-in per model rather than switched on by
+  construction.
+- **The bounded repair is worth 46.4 points on one model and nothing on another.** Aya emitted the
+  contract on 32 first attempts and, told what the validator rejected, on 38 of the remaining 50 --
+  0.390 to 0.854. Lapa was reprompted on all 9 of its failures and recovered NONE of them. The
+  reprompt is a FORMATTING intervention, and the table keeps it in its own columns: neither model's
+  objective moved because of it.
+- **The two failure statuses genuinely separate.** Aya never once failed to emit JSON (malformed
+  0.000); all 12 residual failures were JSON of the wrong shape. Lapa's 9 failures split 5 / 4 the
+  other way. Collapsing these into one "malformed" number, as the free-text path must, would have
+  pointed both models at the wrong fix.
+- **Conformance does not rank the roster the way correctness does.** Lapa has the best objective
+  (0.512) and the middle conformance; MamayLM has perfect conformance and the middle objective
+  (0.495). A model that cannot emit the shape is not thereby a model that does not know the answer,
+  and the report prints the two orders side by side so the distinction cannot be lost.
+- **The citation gap is now readable, which was the point.** Under declared claims MamayLM cites on
+  0.976 of countable claims with 0.774 validity and ZERO hallucinated citations; lapa 0.890 / 0.632;
+  Aya 0.842 / 0.657. The durable free-text 3B run recorded citation validity 0.000 -- a number that
+  meant "did not cite", not "cited wrongly". With coverage near 1.0 by construction, validity now
+  measures grounding alone.
+- **A format failure is a typed status, not a silent zero.** Because a non-conformant case ends in
+  `malformed` / `schema_invalid`, it lowers `reliability` (0.976 / 0.890 / 0.841) instead of
+  entering the correctness mean as a wrong answer.
+- **The format costs roughly fifteen times the completion tokens.** Mean completion tokens were
+  258.9 / 217.8 / 227.4 against the 17.3 the same MamayLM tag recorded on this same fixture in the
+  free-text verbosity study above. That is the price of the declaration and it is not small; at
+  `MAX_TOKENS=768` truncation was not the story (one of lapa's nine failures reached the cap, none
+  of Aya's), but a run left at a short free-text budget would have measured its own cap.
+
+What would overturn this: a different prompt (the contract's worked example is part of what is
+being measured, not a neutral instrument), a larger completion budget for the lapa truncation case,
+or a roster with a reasoning model whose thinking preamble the JSON extractor has to survive --
+none of the three models here emits one. The conformance numbers are per (model, prompt, budget)
+and do not transfer to another quantization or another serving stack.

@@ -26,6 +26,13 @@ def run_eval_cmd(
         help="registered adapter id, id prefix, or label (`llb list-adapters`); the contamination "
         "guard then reads the registry's recorded digests, not the adapter directory's manifest",
     ),
+    max_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-tokens",
+        help="completion token budget per case (overrides the config). Raise it for "
+        "--answer-format envelope: a typed answer is several times longer than a short free-text "
+        "one, and a completion cut off at the cap is scored as a format failure",
+    ),
     max_model_len: Optional[int] = typer.Option(
         None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
     ),
@@ -178,6 +185,13 @@ def run_eval_cmd(
         "--score-groundedness/--no-score-groundedness",
         help="record the deterministic groundedness fraction (share of answer claims supported by "
         "the retrieved context) as an additive per-case column",
+    ),
+    answer_format: Optional[str] = typer.Option(
+        None,
+        "--answer-format",
+        help="free_text (default) | envelope -- ask for the typed answer contract, validate it at "
+        "the generation boundary, and read the answer-side signals from declared fields "
+        "(typed-rag-answer-envelope)",
     ),
     insufficient_context_probes: Optional[int] = typer.Option(
         None,

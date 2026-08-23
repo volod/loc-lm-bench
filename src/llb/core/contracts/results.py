@@ -41,6 +41,15 @@ class CaseScoreRow(TypedDict):
     # supplied its own context, so an off lane and an on lane compare the same measured column.
     table_headers_restored: NotRequired[int]
     table_header_chars: NotRequired[float]
+    # Declared answer contract (typed-rag-answer-envelope). Present only on an envelope-format
+    # run, so a free-text bundle keeps exactly the shape it had. `envelope_status` is the parse
+    # verdict (`ok` / `malformed` / `schema_invalid`), `repaired` says the one bounded repair
+    # reprompt was spent on this case (first-attempt conformance is `1 - repair_rate`), and
+    # `n_claims` / `envelope_abstained` are read off the declaration itself.
+    envelope_status: NotRequired[str]
+    repaired: NotRequired[bool]
+    n_claims: NotRequired[int]
+    envelope_abstained: NotRequired[bool]
     groundedness: NotRequired[float]
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]

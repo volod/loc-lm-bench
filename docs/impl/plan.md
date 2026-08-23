@@ -76,64 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### typed-rag-answer-envelope
-
-The RAG answer path emits FREE TEXT and every answer-side signal is recovered from that text after
-the fact by a heuristic: `classify_response` maps a completion to a status with regex markers,
-`is_abstention` reads first-person refusal stems, `parse_citations` scrapes `[i]` markers out of
-prose, and groundedness re-segments the answer into "sentence-ish claims" by punctuation
-([RAG core](current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
-The repo already validates typed model output with Pydantic -- but only inside the structured-output
-BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
-the completion satisfies it (`src/llb/scoring/structured/schema.py`); nothing on the answer path an
-operator would actually ship is typed. Two consequences: the measured citation gap is unreadable
-(the durable 3B run scored citation validity 0.000 because the model mostly did not cite at all, a
-FORMAT failure scored as a grounding failure), and there is nowhere for a semantic validator to
-attach -- checking business rules requires a typed object to check, which is the door this task
-builds. Ship an `AnswerEnvelope` at the generation boundary -- the Ukrainian `answer`, `claims[]`
-(claim text, the chunk indices it cites, and an optional subject/relation/object triple typed
-against the closed 13-type entity vocabulary), an explicit `abstained` flag, and the evidence spans
--- parsed and validated in ONE place, with a completion that does not satisfy it ending in a typed
-status rather than being scored as a wrong answer.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none, and it must land before `ontology-validated-answer-gate` (which validates the
-  object this task defines). Reuse `build_model` / `parse_output` / `is_conformant` in
-  `src/llb/scoring/structured/schema.py` wholesale (they take a field schema, not a benchmark case),
-  the status taxonomy and `format_context` numbering in `src/llb/eval/common.py`, the claim
-  segmentation and citation parsing in `src/llb/scoring/groundedness.py`, and the
-  `eval.rag.cited_answer` template as the envelope prompt's starting point.
-- User-visible outcome: an operator can tell a model that does not KNOW the answer from a model that
-  cannot EMIT the answer in the requested shape, and every answer-side metric reads a declared field
-  instead of a regex over prose.
-- Scope boundary: in scope -- the envelope model, the boundary parse/validate function, the two new
-  statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
-  envelope, because the two call for different fixes and today collapse into one number), one
-  bounded `repair_once` reprompt carrying the validation error (the same policy shape measured by
-  the [agent loop-policy
-  lane](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
-  for tool calls), the per-case columns, and a roster conformance study. Out of scope -- any
-  SEMANTIC check on the envelope's contents (that is `ontology-validated-answer-gate`), changing the
-  headline objective, constrained/grammar decoding in the backends, and making the envelope the
-  default before the study supports it.
-- Data and artifact paths: additive per-case columns (`envelope_status`, `n_claims`, `repaired`) in
-  the standard `$DATA_DIR/run-eval/` bundles; the conformance study under
-  `$DATA_DIR/answer-envelope/<run>/`.
-- Execution path: `make run-eval ANSWER_FORMAT=envelope MODEL=<model> BACKEND=<backend>` over at
-  least two roster models on the CUDA host, since envelope conformance is a property of the MODEL;
-  CI drives parse, validate, repair, and each terminal status over the fake completer -- no GPU.
-- Acceptance gates: `make ci` green; with the envelope off every recorded bundle reproduces
-  bit-identically (the seam adds nothing to the free-text path); the study reports per-model
-  conformance, `schema_invalid` rate, and repair rate SEPARATELY from correctness, so a repair gain
-  is attributable to formatting rather than to reasoning; each claim's cited indices are validated
-  in prompt-layout order, so `reverse_rank` renumbering is respected exactly as citation validity
-  already respects it; an envelope answer's objective score matches the free-text score of the same
-  `answer` string.
-- Documentation target: the scoring and groundedness sections of
-  [RAG core](current/rag-core/scoring.md#scoring), plus a validation-architecture subsection that
-  names the boundary.
-
 #### answer-side-span-coverage-metric
 
 The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
@@ -352,8 +294,9 @@ checker. That keeps OWL semantics as the reference without letting a reasoner in
 #### ontology-validated-answer-gate
 
 Compose the two halves into the shipped two-step gate -- Pydantic at the door, the ontology at the
-ledger. Step one is `typed-rag-answer-envelope`: the completion either parses into a typed answer
-object or ends in a typed status. Step two is new: the envelope's asserted triples are checked
+ledger. Step one already ships: the completion either parses into the typed `AnswerEnvelope` or ends
+in a typed status ([RAG core](current/rag-core/scoring.md#typed-rag-answer-envelope-typed-rag-answer-envelope)).
+Step two is new: the envelope's asserted triples are checked
 against the accepted axiom set AND against the corpus ledger the retrieved context came from, so an
 answer that violates a functional property, a `domain`/`range` constraint, or a disjointness pair --
 or that contradicts a ledger fact whose evidence is IN the retrieved chunks -- ends as
@@ -370,9 +313,10 @@ declining the hard items looks like a win.
 
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: RUN NEEDED
-- Dependencies: `typed-rag-answer-envelope` (the typed object to validate) and
-  `ontology-axiom-layer` (the axioms to validate it against); enabling an axiom at answer time also
-  needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than defaulted.
+- Dependencies: `ontology-axiom-layer` (the axioms to validate against); enabling an axiom at answer
+  time also needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than
+  defaulted. The typed object, its boundary, and its bounded repair are shipped -- validate the
+  envelope's `claims[].triple` and extend the same boundary rather than adding a second one.
   Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff/uncertainty.py` and
   `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
   `compare-answer-quality`, and the ledger lookup in `src/llb/graph/retrieval.py`.

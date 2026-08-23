@@ -6,6 +6,7 @@ Importing each submodule registers its @app.command handlers on the shared Typer
 from llb.cli.eval import (  # noqa: F401
     analysis,
     adoption_screen,
+    answer_envelope,
     answer_quality,
     context_ablation,
     embedder_adoption,

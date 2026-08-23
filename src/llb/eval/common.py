@@ -7,8 +7,8 @@ instead of redefining them. Everything in this module is a pure function or cons
 is unit-testable WITHOUT langgraph installed (only the `build_*_graph` functions import it).
 
 Failure taxonomy (design "distinct typed cases"): each case ends in exactly one status --
-ok / empty / malformed / refusal / timeout / backend_error / retrieval_miss / context_overflow --
-recorded separately, never collapsed into a single "reliability failure".
+ok / empty / malformed / schema_invalid / refusal / timeout / backend_error / retrieval_miss /
+context_overflow -- recorded separately, never collapsed into a single "reliability failure".
 """
 
 import re
@@ -19,7 +19,12 @@ from llb.core.contracts.rag import ChunkRecord
 # Terminal case statuses (shared across all templates).
 OK = "ok"
 EMPTY = "empty"
+# The completion is not JSON at all (a declared-format lane asked for JSON and got prose).
 MALFORMED = "malformed"
+# The completion IS JSON but does not satisfy the declared answer contract
+# (typed-rag-answer-envelope). Distinct from MALFORMED on purpose: "did not emit JSON" and "emitted
+# JSON of the wrong shape" call for different fixes, and one number cannot say which happened.
+SCHEMA_INVALID = "schema_invalid"
 REFUSAL = "refusal"
 RETRIEVAL_MISS = "retrieval_miss"
 # The context a lane would have laid into the prompt does not fit the model's usable window
