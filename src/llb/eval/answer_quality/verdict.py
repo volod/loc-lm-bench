@@ -14,6 +14,7 @@ measured one.
 from collections.abc import Collection
 
 from llb.eval.answer_quality.models import (
+    METRIC_ANSWER_SPAN_COVERAGE,
     METRIC_OBJECTIVE,
     METRIC_RETRIEVAL_HIT,
     LaneDecision,
@@ -126,6 +127,38 @@ def decide(
     return verdict
 
 
+def answer_coverage_note(
+    lane: LaneReport, focus_slice: str, confidence: float = DEFAULT_CONFIDENCE
+) -> str:
+    """What the ANSWER side of the same slice says, appended to whichever outcome fired.
+
+    The four outcomes are cut from the objective and from RETRIEVAL coverage, and neither can say
+    whether the answers state more of the gold facts: `objective_score` is reference-answer token
+    F1, which a terse answer carrying both hops and a fluent one carrying half can earn alike
+    (`llb.scoring.answer_spans`). This is the clause that says it, so a `retrieval_only` reading
+    whose answers DID carry more evidence is never printed as if the evidence stopped at retrieval.
+
+    Empty on a comparison whose bundles predate the metric -- there is nothing to report, and a
+    sentence saying so on every old artifact would be noise.
+    """
+    slice_report = lane["slices"].get(focus_slice)
+    if slice_report is None:
+        return ""
+    paired = slice_report["paired_vs_baseline"].get(METRIC_ANSWER_SPAN_COVERAGE)
+    if paired is None:
+        return ""
+    delta = paired["delta"]
+    reading = (
+        f"answer-side span coverage {delta['mean']:+.3f} [{delta['lo']:+.3f}, {delta['hi']:+.3f}]"
+    )
+    if separates(paired, confidence):
+        return (
+            f" ANSWER SIDE: {reading} -- the answers themselves state more of the gold spans, so "
+            "the extra evidence reached the answer TEXT whatever the objective did."
+        )
+    return f" ANSWER SIDE: {reading}, which does not separate."
+
+
 def objective_costs(
     lane: LaneReport,
     confidence: float = DEFAULT_CONFIDENCE,
@@ -186,13 +219,17 @@ def judge_lane(
     )
     # Both readings the four outcomes below are cut from, so whichever branch fires says when the
     # cut -- not the evidence -- is what produced it.
-    note = borderline_note(
-        [
-            (metric, _focus_stability(lane, focus_slice, metric))
-            for metric in (METRIC_OBJECTIVE, coverage_metric)
-        ]
-    ) + evidence_gate_clause(
-        [(METRIC_OBJECTIVE, paired_objective), (coverage_metric, paired_coverage)], confidence
+    note = (
+        borderline_note(
+            [
+                (metric, _focus_stability(lane, focus_slice, metric))
+                for metric in (METRIC_OBJECTIVE, coverage_metric)
+            ]
+        )
+        + evidence_gate_clause(
+            [(METRIC_OBJECTIVE, paired_objective), (coverage_metric, paired_coverage)], confidence
+        )
+        + answer_coverage_note(lane, focus_slice, confidence)
     )
     if separates(paired_objective, confidence):
         return VERDICT_ANSWER_GAIN, (

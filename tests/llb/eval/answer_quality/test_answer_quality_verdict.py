@@ -7,6 +7,7 @@ import pytest
 from tests.llb.eval._answer_quality_helpers import (
     FUSED,
     VECTOR,
+    _answer_coverage,
     _lanes,
     _report,
     _retrieval_record,
@@ -23,6 +24,8 @@ from llb.eval.answer_quality.coverage import (
     with_coverage,
 )
 from llb.eval.answer_quality.models import (
+    METRIC_ANSWER_ALL_SPANS,
+    METRIC_ANSWER_SPAN_COVERAGE,
     METRIC_OBJECTIVE,
     METRIC_RETRIEVAL_HIT,
     VERDICT_ANSWER_GAIN,
@@ -172,6 +175,57 @@ def test_the_verdict_prefers_the_graded_coverage_metric_the_sidecar_supplied():
     assert report["verdict"]["coverage_metric"] == "span_coverage"
     assert report["verdict"]["decision"] == VERDICT_RETRIEVAL_ONLY
     assert "span_coverage +0.500" in report["verdict"]["reason"]
+
+
+def test_the_answer_side_coverage_columns_are_reported_and_read_by_the_verdict():
+    """answer-side-span-coverage-metric: the retrieval-only sentence is not the whole story when
+    the ANSWERS themselves carry more of the gold spans, so the verdict says which happened."""
+    ids = [f"q{i}" for i in range(8)]
+    vector = [
+        dict(_row(i, 0.0), all_spans_at_k=0.0, span_coverage=0.0, **_answer_coverage(0.0))
+        for i in ids
+    ]
+    fused = [
+        dict(_row(i, 0.0), all_spans_at_k=0.0, span_coverage=0.5, **_answer_coverage(0.5))
+        for i in ids
+    ]
+    report = compare_answer_quality(_lanes(vector, fused), _types(*ids), baseline=VECTOR)
+
+    assert report["metrics"][-2:] == [METRIC_ANSWER_SPAN_COVERAGE, METRIC_ANSWER_ALL_SPANS]
+    assert report["verdict"]["decision"] == VERDICT_RETRIEVAL_ONLY
+    assert "ANSWER SIDE: answer-side span coverage +0.500" in report["verdict"]["reason"]
+    assert "reached the answer TEXT" in report["verdict"]["reason"]
+    text = format_report(report)
+    assert "answer span coverage" in text
+    # The item ledger gains the answer-side reading beside the retrieval one it explains.
+    assert "0.00/0.50/0.50" in text
+
+
+def test_a_flat_answer_side_reading_is_reported_as_not_separating():
+    ids = [f"q{i}" for i in range(8)]
+    rows = {
+        label: [dict(_row(i, 0.0), span_coverage=coverage, **_answer_coverage(0.0)) for i in ids]
+        for label, coverage in ((VECTOR, 0.0), (FUSED, 0.5))
+    }
+    report = compare_answer_quality(rows, _types(*ids), baseline=VECTOR)
+
+    assert report["verdict"]["decision"] == VERDICT_RETRIEVAL_ONLY
+    assert (
+        "ANSWER SIDE: answer-side span coverage +0.000 [+0.000, +0.000], which does not"
+        in (report["verdict"]["reason"])
+    )
+
+
+def test_answer_side_columns_only_one_lane_measured_are_dropped_like_any_other():
+    """A bundle recorded before the metric existed compares against one that has it, unchanged."""
+    ids = ["q0", "q1"]
+    fused = [dict(_row(i, 0.0), **_answer_coverage(1.0)) for i in ids]
+    report = compare_answer_quality(
+        _lanes([_row(i, 0.0) for i in ids], fused), _types(*ids), baseline=VECTOR
+    )
+
+    assert METRIC_ANSWER_SPAN_COVERAGE not in report["metrics"]
+    assert "ANSWER SIDE" not in report["verdict"]["reason"]
 
 
 def test_a_coverage_column_only_one_lane_measured_is_dropped_rather_than_zero_filled():

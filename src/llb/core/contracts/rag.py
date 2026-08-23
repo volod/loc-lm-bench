@@ -117,6 +117,21 @@ class CorrectnessScores(TypedDict):
     semantic: NotRequired[float]
 
 
+class AnswerSpanScores(TypedDict):
+    """Answer-side gold-span coverage of one case (`llb.scoring.answer_spans`).
+
+    `answer_span_coverage` is the share of the item's judgeable gold spans whose fact the ANSWER
+    states, and `answer_all_spans` its all-or-nothing gate -- the answer-side twins of
+    `span_coverage_at_k` / `all_spans_at_k`, which say the same two things about the CONTEXT.
+    `answer_spans_measured` counts the spans behind them, so a vacuous 1.0 (nothing judgeable) is
+    never read as a carried one.
+    """
+
+    answer_span_coverage: float
+    answer_all_spans: float
+    answer_spans_measured: int
+
+
 class ChunkSummary(TypedDict):
     """Chunk-length distribution of a built store; the oversize fields audit the `size` cap."""
 

@@ -7,6 +7,8 @@ prose heuristics do, and a run with the envelope OFF records exactly the columns
 
 import json
 
+import pytest
+
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.core.config import RunConfig
 from llb.eval import common
@@ -41,6 +43,11 @@ FREE_TEXT_COLUMNS = {
     "latency_s",
     "completion_tokens",
     "answer_preview",
+    # Answer-side gold-span coverage is scored on every path, envelope or prose
+    # (answer-side-span-coverage-metric), so it belongs to the free-text shape too.
+    "answer_span_coverage",
+    "answer_all_spans",
+    "answer_spans_measured",
 }
 
 
@@ -181,6 +188,10 @@ def test_a_non_conformant_case_records_its_typed_status_and_no_claims():
 
 
 # --- the whole vertical -----------------------------------------------------------------------
+#
+# These go through the REAL runner rather than an injected `runner_fn`, so `run_eval` compiles the
+# LangGraph app and the two tests below need the `[eval]` extra: `heavy_env` is what deselects them
+# in the base [dev] install GitHub CI runs (they run in local `make ci` / `make test`).
 
 
 class ScriptedLauncher(BackendLauncher):
@@ -240,6 +251,7 @@ def _valid(answer="Конвенцію підписано 1994 року."):
     )
 
 
+@pytest.mark.heavy_env
 def test_a_run_publishes_conformance_apart_from_correctness(tmp_path):
     cfg, result, launcher = run_envelope_eval(tmp_path, [_valid(), '{"answer": "Так"}', "проза"])
     metrics_out = result["metrics"]
@@ -260,6 +272,7 @@ def test_a_run_publishes_conformance_apart_from_correctness(tmp_path):
     assert [row["repaired"] for row in rows] == [False, True]
 
 
+@pytest.mark.heavy_env
 def test_with_the_envelope_off_the_bundle_carries_no_envelope_column(tmp_path):
     cfg = RunConfig(data_dir=tmp_path, run_name="free-text", model="fake-uk", top_k=2)
     result = run_eval(

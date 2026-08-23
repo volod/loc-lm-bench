@@ -63,6 +63,7 @@ Questions that land deeper than an area page. Everything else is one hop from th
 | Need | Read |
 | --- | --- |
 | Headline token precision/recall/found-rate decomposition and declared format weight | [Generation graph and scoring](current/rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy) |
+| Whether an answer carried BOTH facts of a multi-hop item, not just how much it overlaps the reference | [Answer-side gold-span coverage](current/rag-core/scoring.md#answer-side-gold-span-coverage-answer-side-span-coverage-metric) |
 | Whether RAG pays for itself: closed-book vs rag vs long-context lanes | [Context ablation](current/rag-core/context-ablation.md) |
 | How much repeated text an index still holds, and which collapse tier to build with | [Retrieval store](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers) |
 | Cold/warm encoder throughput on CUDA hosts (load vs compile vs steady encode) | [Embedders](current/rag-core/embedders.md#blackwell-encoder-throughput-decomposition) |

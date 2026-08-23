@@ -76,41 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### answer-side-span-coverage-metric
-
-The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
-`all_spans_at_k`, [RAG core](current/rag-core/retrieval-metrics.md#retrieval-metrics)); the ANSWER
-side has no such distinction. `objective_score` is reference-answer token F1, so a two-hop answer
-that states one fact fluently and omits the other scores roughly half -- the same value a vague
-answer touching both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric
-that cannot say whether the model used both hops, which is precisely the question the lane exists to
-ask ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)). Build
-the answer-side counterpart: per gold span, decide whether the ANSWER carries that span's content
-(lemma and numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the
-correctness tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the
-objective and let the multi-hop verdict read them.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the scoring tokenizer in `src/llb/scoring/correctness.py`, the
-  multi-span retrieval metrics in `src/llb/rag/retrieval.py`, and the per-slice comparison in
-  `src/llb/eval/answer_quality/`.
-- User-visible outcome: the operator learns whether a multi-hop answer actually contains BOTH
-  facts, instead of inferring it from a token-overlap score that a half-answer can earn.
-- Scope boundary: in scope -- the answer-side coverage metric, its per-case columns, and wiring it
-  into the answer-quality slices and verdict as an additive signal. Out of scope -- replacing
-  `objective_score` as the leaderboard ranking metric, judge re-calibration, and any change to the
-  retrieval metrics.
-- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
-  comparison under the existing `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Execution path: `make compare-answer-quality` on the drafted multi-hop bundle; CI covers the
-  metric on committed two-span fixtures (both facts, one fact, neither, paraphrased).
-- Acceptance gates: `make ci` green; on single-span items the answer-side coverage agrees with the
-  existing exact/contains signals; the multi-hop re-run reports the new columns with paired
-  intervals and states whether they change the recorded verdict.
-- Documentation target: [RAG core](current/rag-core/scoring.md#scoring) and the answer-quality evidence
-  subsection of [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
-
 #### thinking-suppression-and-answer-language-guard
 
 `qwen3:30b` answers a Ukrainian benchmark prompt with first-person English deliberation ("Okay, I

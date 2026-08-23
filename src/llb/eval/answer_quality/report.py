@@ -9,6 +9,8 @@ from collections.abc import Mapping
 
 from llb.eval.answer_quality.models import (
     METRIC_ALL_SPANS,
+    METRIC_ANSWER_ALL_SPANS,
+    METRIC_ANSWER_SPAN_COVERAGE,
     METRIC_CONTEXT_CHARS,
     METRIC_OBJECTIVE,
     METRIC_PROMPT_TOKENS,
@@ -37,6 +39,8 @@ _HEADERS = {
     METRIC_RETRIEVAL_HIT: "recall@k",
     METRIC_ALL_SPANS: "all-spans@k",
     METRIC_SPAN_COVERAGE: "span coverage",
+    METRIC_ANSWER_SPAN_COVERAGE: "answer span coverage",
+    METRIC_ANSWER_ALL_SPANS: "answer all-spans",
     METRIC_CONTEXT_CHARS: "context chars",
     METRIC_PROMPT_TOKENS: "prompt tokens",
     METRIC_TABLE_HEADER_CHARS: "header chars",
@@ -142,27 +146,43 @@ def _boundary_section(report: AnswerQualityReport) -> list[str]:
     )
 
 
+def _item_metrics(report: AnswerQualityReport) -> list[str]:
+    """What each item cell reports: the objective, the retrieval coverage, and -- when the run
+    measured it -- the ANSWER-side coverage, which is what says whether the model USED the
+    evidence the middle number says it was given."""
+    metrics = [METRIC_OBJECTIVE, report["verdict"]["coverage_metric"]]
+    if METRIC_ANSWER_SPAN_COVERAGE in report["metrics"]:
+        metrics.append(METRIC_ANSWER_SPAN_COVERAGE)
+    return metrics
+
+
 def _item_table(report: AnswerQualityReport) -> list[str]:
-    """Per-item objective / retrieval-hit outcome of every lane on the focus slice."""
+    """Per-item objective / coverage outcome of every lane on the focus slice."""
     items = report["focus_items"]
     lines = [f"### Item-level outcomes ({report['focus_slice']})", ""]
     if not items:
         lines.extend([f"No {report['focus_slice']} item was scored.", ""])
         return lines
-    coverage = report["verdict"]["coverage_metric"]
+    metrics = _item_metrics(report)
     labels = sorted(report["lanes"])
     lines.append("| item | " + " | ".join(labels) + " |")
     lines.append("| --- | " + " | ".join([":-:"] * len(labels)) + " |")
     for item in items:
         cells = [
-            f"{item['lanes'][label][METRIC_OBJECTIVE]:.2f}/{item['lanes'][label][coverage]:.2f}"
+            "/".join(f"{item['lanes'][label][metric]:.2f}" for metric in metrics)
             for label in labels
         ]
         lines.append(f"| {item['item_id']} | " + " | ".join(cells) + " |")
     lines.append("")
-    lines.append(f"Each cell is `objective / {_HEADERS.get(coverage, coverage)}`. An item whose")
+    legend = " / ".join(_HEADERS.get(metric, metric) for metric in metrics)
+    lines.append(f"Each cell is `{legend}`. An item whose")
     lines.append("coverage rises while its objective does not is exactly the retrieval-only effect")
     lines.append("this lane exists to name.")
+    if METRIC_ANSWER_SPAN_COVERAGE in metrics:
+        lines.append("The third number is the answer-side reading of the same spans: retrieval")
+        lines.append("coverage up with answer coverage flat is evidence the model was handed the")
+        lines.append("hop and did not state it, and both up with the objective flat is a fact the")
+        lines.append("answer carried in words the reference did not use.")
     lines.append("")
     return lines
 

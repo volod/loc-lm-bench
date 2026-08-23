@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from llb.eval.answer_quality.models import (
+    ANSWER_COVERAGE_METRICS,
     BASE_METRICS,
     CONTEXT_METRICS,
     COVERAGE_METRICS,
@@ -46,7 +47,7 @@ def resolve_metrics(lanes: Mapping[str, CaseRows]) -> tuple[str, ...]:
     """
     extra = tuple(
         metric
-        for metric in COVERAGE_METRICS + CONTEXT_METRICS
+        for metric in COVERAGE_METRICS + ANSWER_COVERAGE_METRICS + CONTEXT_METRICS
         if all(metric in row for rows in lanes.values() for row in rows)
     )
     return BASE_METRICS + extra

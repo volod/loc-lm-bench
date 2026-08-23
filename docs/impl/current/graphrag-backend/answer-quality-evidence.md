@@ -19,7 +19,7 @@ recorded answer-quality comparisons and three of the six recorded fusion sweeps 
 that way; see
 [how settled a paired reading is](../rag-core/paired-verdicts.md#how-settled-a-paired-reading-is----p_positive-and-the-borderline-flag).
 
-Three properties make the comparison readable:
+Four properties make the comparison readable:
 
 - **The lanes are named by sweep row label.** `vector`, `graph/<strategy>`,
   `fused/<strategy>@<weight>[/d<depth>][/i<identity>][/r<ratio>]`, and
@@ -38,6 +38,17 @@ Three properties make the comparison readable:
   coverage claim on `span_coverage` (graded) rather than the `all_spans_at_k` gate, because on a
   hard multi-hop slice the gate can be near-zero for every lane and therefore blind to a lane that
   nonetheless carried more evidence.
+- **The answer side of those same spans.** `objective_score` is reference-answer token F1 over the
+  whole answer, which cannot say WHICH of a two-hop item's facts the model stated -- a fluent half
+  answer and a terse complete one earn the same number. Every case row therefore also carries
+  `answer_span_coverage` / `answer_all_spans` ([answer-side gold-span
+  coverage](../rag-core/scoring.md#answer-side-gold-span-coverage-answer-side-span-coverage-metric)),
+  the lane reports them as two more columns with their own paired intervals, and the item ledger
+  prints `objective / span coverage / answer span coverage` per cell. They are ADDITIVE: the four
+  outcomes are still cut from the objective and from retrieval coverage, and the metric enters the
+  verdict as an `ANSWER SIDE:` clause on whichever outcome fired -- which is what stops a
+  `retrieval_only` sentence from being printed over answers that did carry the extra evidence. A
+  comparison whose bundles predate the metric simply reports neither column and carries no clause.
 
 The verdict is one of `answer_quality_gain` (the objective randomization test separates),
 `retrieval_only` (the coverage test separates while the objective's does not),
@@ -69,6 +80,11 @@ result](#measured-result-what-the-route-clears-is-model-conditioned).
 
 Scoring every lane at more than one retrieval budget is a second axis with its own page:
 [answer-quality budget evidence](answer-quality-budget-evidence.md#the-retrieval-budget-dimension).
+
+Whether the ANSWERS state the facts those spans carry -- the reading `objective_score` cannot give,
+because a fluent half answer and a terse complete one earn the same token F1 -- is a third axis with
+its own page: [answer-side coverage
+evidence](answer-side-coverage-evidence.md#measured-result-the-answers-do-not-state-the-evidence-the-fused-lane-adds).
 
 Because the comparison is pure over the per-case rows and every lane's bundles are recorded in the
 artifact, a finished run does not have to be re-generated to be re-read under an improved report:

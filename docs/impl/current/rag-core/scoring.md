@@ -187,6 +187,80 @@ answer (even citing non-existent chunks) instead of abstaining when its gold evi
 Honest, unflattering evidence that a small model's answer-side grounding discipline is weak -- exactly
 the axis these metrics expose beyond a passing recall@k.
 
+### Answer-side gold-span coverage (answer-side-span-coverage-metric)
+
+Shipped: `answer_span_coverage`, `answer_all_spans`, and `answer_spans_measured` on every
+`scores.jsonl` row, from `src/llb/scoring/answer_spans.py`. They are the ANSWER-side twins of the
+retrieval pair `span_coverage_at_k` / `all_spans_at_k` ([retrieval
+metrics](retrieval-metrics.md#retrieval-metrics)): the retrieval pair says whether the
+CONTEXT carried each labeled span, these say whether the ANSWER states it.
+
+Why the objective cannot answer that question: `objective_score` is reference-answer token F1 over
+the whole answer, so a two-hop answer that states one fact in the reference's own words scores the
+same as a terse answer that states both -- the unit tests pin a pair that earns byte-identical
+token F1 and differ 1.0 against 0.0 here. Every multi-hop answer-quality verdict rested on that
+single number ([answer-quality
+evidence](../graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)).
+
+Per gold span, what the answer must carry is not the span's text but the fact it contributes:
+
+```text
+grounded(span)    = content of (span text) AND content of (reference answer)
+distinctive(span) = grounded(span) MINUS question content MINUS every OTHER span's content
+required(span)    = distinctive(span), or grounded(span) when that leaves nothing to judge
+```
+
+Terms are Ukrainian lemmas (the same pinned pymorphy3 lemmatizer the lexical index uses, injectable
+for tests) plus numerals matched literally, over the scoring tokenizer in
+`src/llb/scoring/correctness.py`, with a scoring-owned function-word table dropped from both sides.
+A span counts as carried when the answer holds at least `SPAN_CARRIED_MIN_SHARE` = 0.5 of its
+required terms AND every required numeral -- a table fact restated with the wrong number is not
+carried, however much of the wording around it is reproduced. `answer_span_coverage` is the share
+of judgeable spans carried, `answer_all_spans` the all-or-nothing gate over them, and
+`answer_spans_measured` the count behind both, so a vacuous 1.0 (nothing judgeable) never reads as
+a carried one.
+
+Each subtraction removes a way to score a fact the model never supplied, and the fallback is what
+keeps them safe on a literal ledger:
+
+- Without the reference intersection a correct one-line answer reads 0.05 against the registry
+  paragraph grounding it, because a labeled span is routinely several times longer than its answer.
+- Without the question subtraction, naming a hop's subject carries the hop ("the trademark
+  certificate - unknown" reproduces most of that span's wording and none of its fact).
+- Without the sibling-span subtraction, vocabulary the two hops share -- units, dates, the shared
+  subject -- lets one hop's answer satisfy the other.
+- The fallback fires on 42% of the spans of the drafted goods ledger, where the reference restates
+  its question almost verbatim and nothing distinctive is left. Deleting given terms outright
+  instead of falling back leaves 43% of the labeled spans unjudgeable, which is why the fallback
+  exists rather than a stricter rule.
+
+Read the pair BESIDE the objective, never instead of it. Coverage is a recall-side reading, so a
+model that dumps its whole context scores 1.0 by construction; `token_precision` and
+`ranking_score` in the same row are what price that, and the two together are what separate a terse
+complete answer from a verbose one ([the verbosity
+reading](#measured-the-headline-objective-is-partly-a-verbosity-ranking)). The reading is also NOT
+bounded by the retrieval pair: an item whose context carried one hop can still answer both from
+what the model already knows, and that gap is now visible rather than invisible.
+
+Calibration, over the 588 span readings of the 14 recorded multi-hop bundles (read-only audit, no
+model call): 76% of readings are exactly 0.0 or 1.0 and 10% fall anywhere near the cut, so the
+threshold sits in an empty middle rather than on a slope. Where the strict `contains` signal fires
+on a single-span item the span is carried in 49 of 49 cases, and where `exact` fires in 28 of 28;
+no item reads "not carried" with an objective above 0.8, while 11 read "carried" with an objective
+below 0.2 -- the answers stating the fact in words the reference did not use, which is the case the
+objective cannot express.
+
+Modules/tests: `src/llb/scoring/answer_spans.py` (with its function-word table in
+`src/llb/scoring/function_words.py`), the columns in `src/llb/executor/cases.py` and
+`llb.core.contracts.rag.AnswerSpanScores`; `tests/llb/scoring/test_answer_spans.py` (both facts,
+one fact, neither, paraphrase in other grammatical forms, the wrong-numeral gate, the
+question-echo case, the fallback, an unjudgeable span, and the token-F1 tie the pair separates) and
+`tests/llb/executor/test_runner_backend.py` (the per-case columns). The answer-quality lane's use of
+them is in [answer-quality
+evidence](../graphrag-backend/answer-quality-evidence.md#answer-quality-evidence), and what they
+measured on the recorded multi-hop comparison is [answer-side coverage
+evidence](../graphrag-backend/answer-side-coverage-evidence.md#measured-result-the-answers-do-not-state-the-evidence-the-fused-lane-adds).
+
 ## Validation architecture: where a completion becomes typed
 
 Two lanes now parse a model completion into a typed object, and they are deliberately different

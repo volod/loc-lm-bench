@@ -50,6 +50,12 @@ class CaseScoreRow(TypedDict):
     repaired: NotRequired[bool]
     n_claims: NotRequired[int]
     envelope_abstained: NotRequired[bool]
+    # Answer-side gold-span coverage (`llb.scoring.answer_spans`): whether the ANSWER states each
+    # labeled span's fact, and the all-spans gate over them. Every current run writes all three;
+    # they are optional only so a bundle recorded before the metric existed still re-reads.
+    answer_span_coverage: NotRequired[float]
+    answer_all_spans: NotRequired[float]
+    answer_spans_measured: NotRequired[int]
     groundedness: NotRequired[float]
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]

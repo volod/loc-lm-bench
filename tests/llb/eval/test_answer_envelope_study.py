@@ -11,6 +11,11 @@ import pytest
 from llb.eval.answer_envelope.study import analyze, render
 from tests.llb.eval.test_answer_envelope_scoring import _valid, run_envelope_eval
 
+# Every test here builds its bundles through the REAL runner, which compiles the LangGraph app
+# (`llb.eval.graph.build_rag_graph`) and therefore needs the `[eval]` extra the base [dev] install
+# of GitHub CI lacks. The study code they exercise is pure; only the bundle fixture is heavy.
+pytestmark = pytest.mark.heavy_env
+
 MALFORMED = "просто проза"
 INVALID = '{"answer": "Так"}'
 

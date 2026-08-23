@@ -17,7 +17,7 @@ from llb.eval.answer_envelope.models import AnswerEnvelope
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
-from llb.scoring import correctness, groundedness
+from llb.scoring import answer_spans, correctness, groundedness
 from llb.scoring.verbosity import ranking_score
 
 from llb.eval.graph_contracts import RagState
@@ -106,6 +106,7 @@ def score_case(
         "ranking_score": ranking_score(corr["token_precision"], corr["token_recall"]),
         "exact": corr["exact"],
         "contains": corr["contains"],
+        **answer_spans.answer_span_scores(answer, spans, item.reference_answer, item.question),
         "retrieval_hit": retrieval.recall_at_k(retrieved, spans, len(retrieved)),
         "first_hit_rank": retrieval.first_hit_rank(retrieved, spans),
         "tokens_per_s": usage.get("tokens_per_s", 0.0),

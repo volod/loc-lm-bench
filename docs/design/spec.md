@@ -286,6 +286,13 @@ Objective task metrics are always available. RAG scoring includes exact/contains
 semantic diagnostics, retrieval evidence, groundedness, citation validity, and abstention probes
 when configured.
 
+A single overlap score against the reference answer cannot say WHICH of a multi-evidence item's
+facts an answer states, so the answer side reports coverage of the item's own gold spans beside it:
+per labeled span, whether the answer carries the fact that span contributes, and the all-spans gate
+over them. It is the answer-side counterpart of the retrieval-side span coverage, it is additive --
+never a replacement for the ranking objective -- and it is a recall-side reading, so it is read
+beside the format component that prices verbosity rather than alone.
+
 Quality, throughput, VRAM, and power are retained as separate measurements. Recommendations may
 combine them for a named operator goal, such as best accuracy or best quality per watt, but the raw
 dimensions remain visible.
@@ -457,7 +464,7 @@ Four rules settle it, in order:
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
 | 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
 | 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
+| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
