@@ -1,26 +1,30 @@
-"""The per-step prompt budget the agent loop is checked against -- resolved ONCE per run.
+"""The usable prompt window of a served model, and what fits inside it -- resolved ONCE per run.
 
-Without this the loop sends every prompt it builds and finds out about an over-long one as a
-backend error, a truncated prompt, or (worst) a confidently wrong answer read from a shortened
-transcript. With it, a step whose prompt cannot fit terminates the episode as `context_overflow`
--- the status already in the shared taxonomy (`llb.eval.common`) that the context-ablation lane
-uses for exactly this situation -- so an unusable configuration is a TYPED outcome instead of a
-wrong answer.
+Two callers ask the same question. The agent loop asks it per step: without this it sends every
+prompt it builds and finds out about an over-long one as a backend error, a truncated prompt, or
+(worst) a confidently wrong answer read from a shortened transcript. The document lanes of the
+context ablation ask it per item, to decide whether a whole document can be laid into the prompt
+at all. Both terminate on a prompt that cannot fit as `context_overflow` -- the status already in
+the shared taxonomy (`llb.eval.common`) -- so an unusable configuration is a TYPED outcome instead
+of a wrong answer.
 
-The arithmetic is not new: `llb.optimize.tuning_space` already resolves a model's usable window
-(host planner cap, model window, served `max_model_len`, explicit `context_budget`) and prices a
-prompt against it. This module wraps that in the seam the episode loop needs -- a `fits(chars)`
-predicate plus the char budget the `compact` policy measures its trigger share against -- and
-imports the heavy resolution lazily so the agentic package stays importable (and unit-testable)
-without the backend/hardware stack.
+The arithmetic is not new: `llb.optimize.tuning_space` already resolves a model's DECLARED usable
+window (host planner cap, model window, served `max_model_len`, explicit `context_budget`) and
+prices a prompt against it. This module wraps that in the seam both callers need -- a `fits(chars)`
+predicate, the char budget the `compact` policy measures its trigger share against, and the
+provenance of the bound -- and imports the heavy resolution lazily so the module stays importable
+(and unit-testable) without the backend/hardware stack.
 
 Live backends can disagree with the declared window (Ollama's default `num_ctx` is 4096 regardless
-of a GGUF advertising 131072). Resolution therefore takes the MINIMUM of the declared window and
-a probed `served_max_model_len`, and records which one bound the budget.
+of a GGUF advertising 131072), and the disagreement is SILENT: the backend truncates and answers.
+Resolution therefore takes the MINIMUM of the declared window and a probed `served_max_model_len`,
+and records which one bound the budget so a report can say which window a skip was measured
+against.
 """
 
 from dataclasses import dataclass
-from typing import Callable
+from pathlib import Path
+from typing import Callable, cast
 
 from llb.backends.served_window import (
     BUDGET_SOURCE_DECLARED,
@@ -33,6 +37,8 @@ from llb.backends.served_window import (
 )
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
+
+DEFAULT_MODELS_MANIFEST = Path("samples/configs/models_uk.yaml")
 
 # A prompt-char budget of 0 means "cannot bound": no model spec, no served cap, no explicit budget.
 # Nothing is refused in that state -- an unknown model must never silently declare a prompt
@@ -112,6 +118,37 @@ def fixed_budget(max_prompt_chars: int) -> ContextBudget:
     )
 
 
+def resolve_model_spec(
+    model: str, backend: str | None = None, manifest: Path = DEFAULT_MODELS_MANIFEST
+) -> ModelSpec | None:
+    """Best-effort planning spec for the SERVED artifact `model` (None when the manifest has none).
+
+    A roster entry names its per-backend artifacts under `sources` -- the run is served by an
+    Ollama GGUF tag, not by the entry's headline HF repo id -- so the lookup goes through
+    `candidate_sources` and returns the spec priced for the artifact that actually runs.
+
+    None is not a failure: without a spec only an explicit `context_budget` / `max_model_len` can
+    bound the prompt, so an unlisted model skips nothing instead of skipping everything.
+    """
+    from llb.backends.prepare.manifest import load_manifest
+    from llb.backends.resolver_sources import candidate_sources
+
+    try:
+        specs = load_manifest(manifest)
+    except (OSError, ValueError):
+        return None
+    for spec in specs:
+        if spec.get("name") == model:
+            return spec
+        for source_backend, record in candidate_sources(spec):
+            if record.get("source") != model:
+                continue
+            if backend is not None and source_backend != backend:
+                continue
+            return cast(ModelSpec, {**spec, "backend": source_backend, **record})
+    return None
+
+
 def _declared_window(
     config: RunConfig,
     model_spec: ModelSpec | None,
@@ -175,7 +212,6 @@ def resolve_context_budget(
     and records `budget_source=declared` with `served_max_model_len=None`.
     """
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.eval.context_ablation.sources import resolve_model_spec
 
     spec = (
         model_spec if model_spec is not None else resolve_model_spec(config.model, config.backend)

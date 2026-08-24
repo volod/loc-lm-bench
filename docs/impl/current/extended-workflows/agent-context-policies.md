@@ -16,8 +16,10 @@ Core locations:
 
 - `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
   assembly, compaction, and the per-episode telemetry;
-- `src/llb/bench/agentic/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
-  resolution from the declared + probed usable window;
+- `src/llb/backends/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
+  resolution from the declared + probed usable window -- shared with the context-ablation
+  document lanes ([context ablation](../rag-core/context-ablation.md)), so a loop and a lane on
+  one host cannot disagree about what fits;
 - `src/llb/backends/served_window.py`: per-backend probe of the window the runtime is actually
   serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
@@ -88,8 +90,9 @@ When the URL points at a different host (a non-Ollama OpenAI-compat backend), th
 that does not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already
 in the shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same
 reason -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable
-window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
-`fits_context_chars`: an unknown model never silently declares a prompt unusable. A refused prompt
+window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, the same rule
+the context-ablation document lanes follow off the same resolution: an unknown model never silently
+declares a prompt unusable. A refused prompt
 is the one thing the loop builds that neither `complete` nor `chat` is handed, so `run_episode`
 offers an optional `on_refused_prompt` observer for callers that must compare it -- inert on a run
 that sends everything it builds, and used by the policy-change replay

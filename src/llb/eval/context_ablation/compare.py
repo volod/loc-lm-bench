@@ -22,6 +22,7 @@ from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     METRICS,
     ContextAblationReport,
+    ContextWindowBinding,
     ItemOutcome,
     LaneReport,
 )
@@ -69,6 +70,7 @@ def compare_context_strategies(
     *,
     baseline: str = LANE_CLOSED_BOOK,
     run_dirs: Mapping[str, list[str]] | None = None,
+    context_windows: Mapping[str, ContextWindowBinding | None] | None = None,
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     seed: int = DEFAULT_SEED,
@@ -98,6 +100,7 @@ def compare_context_strategies(
                 for name, positions in sorted(grouped.items())
             },
             "skipped_item_ids": skipped_by_lane[label],
+            "context_window": (context_windows or {}).get(label),
         }
         for label, vectors in by_lane.items()
     }

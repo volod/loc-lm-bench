@@ -8,10 +8,11 @@ from llb.backends.served_window import (
     BUDGET_SOURCE_UNBOUNDED,
     bind_window,
     is_ollama_base_url,
+    launcher_served_window,
     parse_ollama_served_context,
     probe_served_max_model_len,
 )
-from llb.bench.agentic.context_budget import resolve_context_budget
+from llb.backends.context_budget import resolve_context_budget
 from llb.core.config import RunConfig
 from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
@@ -206,3 +207,48 @@ def test_ollama_launcher_sends_num_ctx_in_options(monkeypatch):
     assert result.text == "ok"
     assert captured["payload"]["options"]["num_ctx"] == 8192
     assert captured["payload"]["options"]["num_predict"] == 16
+
+
+class _Ollama:
+    """Ollama's shape: `/api/ps` reports nothing until a request has loaded the model."""
+
+    def __init__(self, after_warm: int | None = 4096):
+        self._served: int | None = None
+        self._after_warm = after_warm
+        self.warmed = 0
+
+    def served_context(self) -> int | None:
+        return self._served
+
+    def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
+        self.warmed += 1
+        self._served = self._after_warm
+        return self._served
+
+
+def test_launcher_served_window_takes_a_window_the_launcher_already_knows():
+    class Ready:
+        def served_context(self) -> int:
+            return 8192
+
+    launcher = Ready()
+    assert launcher_served_window(launcher) == 8192
+
+
+def test_launcher_served_window_warms_a_backend_that_reports_nothing_yet():
+    """The unpinned-Ollama case: without the warm request the probe reads "unknown" exactly when
+    the 4096 default is about to truncate."""
+    launcher = _Ollama(after_warm=4096)
+    assert launcher_served_window(launcher) == 4096
+    assert launcher.warmed == 1
+
+
+def test_launcher_served_window_reports_none_when_the_warm_request_fails():
+    """A warm request is best-effort telemetry; a failing one falls back to the declared window."""
+
+    class Failing(_Ollama):
+        def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
+            raise RuntimeError("backend down")
+
+    assert launcher_served_window(Failing()) is None
+    assert launcher_served_window(object()) is None

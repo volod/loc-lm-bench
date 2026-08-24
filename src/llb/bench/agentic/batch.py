@@ -1,7 +1,7 @@
 """Batch execution and objective scoring for canonical agentic episodes."""
 
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget, prompt_tokens
+from llb.backends.context_budget import ContextBudget, prompt_tokens
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
     AgenticTask,

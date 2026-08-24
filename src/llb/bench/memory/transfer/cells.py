@@ -5,7 +5,7 @@ from typing import cast
 from pathlib import Path
 
 from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_INPUT_CAP, SUMMARY_INPUT_CAP_TRIGGER
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.context_policy.compact_vs_cap import run_compact_vs_cap
 from llb.bench.context_policy.compact_vs_cap_report import CompactVsCapRun

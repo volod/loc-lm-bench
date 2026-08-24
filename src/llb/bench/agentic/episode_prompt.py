@@ -8,7 +8,7 @@ from llb.bench.agentic.context import (
     format_entry,
     policy_history_lines,
 )
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.context_policy import (
     POLICY_COMPACT,
     SUMMARY_INPUT_CAP_TRIGGER,

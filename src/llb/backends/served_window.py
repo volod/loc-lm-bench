@@ -160,6 +160,33 @@ def probe_served_max_model_len(
     return None
 
 
+def launcher_served_window(launcher: object) -> int | None:
+    """The window a STARTED launcher is serving, warm-loading the model when that is what it takes.
+
+    vLLM and llama.cpp know their `n_ctx` the moment they answer readiness, so `served_context()`
+    is already populated by `start()`. Ollama does not: it loads a model on first request and
+    `/api/ps` reports nothing until then, so a probe taken before the first generation reads
+    "unknown" exactly when the default 4096 window is about to truncate. `ensure_num_ctx` sends a
+    one-token warm request so the probe observes the window the run will actually use.
+
+    None means "could not observe it" -- never "unbounded". The caller falls back to the declared
+    window and records that the probe was unavailable.
+    """
+    served = getattr(launcher, "served_context", None)
+    window = served() if callable(served) else None
+    if isinstance(window, int) and window > 0:
+        return window
+    warm = getattr(launcher, "ensure_num_ctx", None)
+    if not callable(warm):
+        return None
+    try:
+        window = warm()
+    except Exception:  # a warm request is best-effort telemetry, never a run failure
+        _LOG.info("[served-window] warm request failed; falling back to the declared window")
+        return None
+    return window if isinstance(window, int) and window > 0 else None
+
+
 def bind_window(declared: int, served: int | None) -> tuple[int, str]:
     """Take the minimum of declared and probed windows; name which one bound the result.
 

@@ -12,7 +12,7 @@ which it takes from the runtime's own arithmetic rather than restating the formu
 
 import math
 
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 
 # A fold needs a transcript to fold: `compact_state` returns False when the state holds no entry, so
 # a step whose prompt is built from fewer live entries than this never folds however the guard moves.

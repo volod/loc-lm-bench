@@ -60,6 +60,9 @@ class RunManifest(BaseModel):
     contention: ContentionReport | None = None
     durability: DurabilityStatus | None = None
     prompt_system_provenance: JsonObject | None = None
+    # Set only by a context lane that laid whole documents into the prompt: the declared window,
+    # the window the backend was probed as serving, and which of the two bound the skip threshold.
+    context_window: JsonObject | None = None
     n_cases: int = 0
 
 

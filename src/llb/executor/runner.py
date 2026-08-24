@@ -121,7 +121,7 @@ def run_eval(
     active_launcher: BackendLauncher | None = None
     counters = durability_journal.DurabilityCounters()
     try:
-        active_launcher, runner_fn, store, contention = _resolve_eval_runner(
+        resolved = _resolve_eval_runner(
             config,
             store=store,
             launcher=launcher,
@@ -131,6 +131,8 @@ def run_eval(
             evict=evict,
             wait=wait,
         )
+        active_launcher, runner_fn, store = resolved.launcher, resolved.runner_fn, resolved.store
+        contention = resolved.contention
         embedder = (
             store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
         )
@@ -198,6 +200,11 @@ def run_eval(
         durability=counters.as_status(),
         prompt_system_provenance=dict(prompt_system_provenance)
         if prompt_system_provenance is not None
+        else None,
+        # Which window a document lane's skips were measured against -- declared, or the smaller
+        # one the backend turned out to be serving. None whenever nothing was checked.
+        context_window=resolved.context_window.provenance()
+        if resolved.context_window is not None
         else None,
         n_cases=len(batch.rows),
     )

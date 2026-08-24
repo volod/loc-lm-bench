@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import cast
 
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.controller_channel import (
     CHANNEL_CONTROLLER,
     CHANNEL_OBSERVATION,

@@ -10,12 +10,14 @@ each slice alike) and the slice section in `report_slices.py`; this module is th
 
 from collections.abc import Mapping
 
+from llb.backends.served_window import BUDGET_SOURCE_SERVED
 from llb.eval.context_ablation.models import (
     METRIC_OBJECTIVE,
     RETRIEVED_DOCUMENT_NOT_MEASURED,
     ContextAblationReport,
     ContextAblationVerdict,
     ItemOutcome,
+    LaneReport,
 )
 from llb.rag.fusion_evidence.evidence_gate import (
     evidence_gate_summary,
@@ -121,12 +123,33 @@ def _adoption_lines(verdict: ContextAblationVerdict) -> list[str]:
     ]
 
 
+def _window_note(lane: LaneReport) -> str:
+    """Which window this lane's skip count was measured against.
+
+    A skip count is unreadable without it: "3 items skipped" against a declared 32k window and
+    against the 4k one Ollama turned out to be serving are different findings, and the second is
+    the one that would otherwise have been a silently truncated document reported as delivered.
+    """
+    binding = lane.get("context_window")
+    if not binding:
+        return ""
+    bound, other_label, other = (
+        (binding["served_max_model_len"], "declared", binding["declared_max_model_len"])
+        if binding["budget_source"] == BUDGET_SOURCE_SERVED
+        else (binding["declared_max_model_len"], "served", binding["served_max_model_len"])
+    )
+    if not bound:
+        return " -- window unbounded (nothing could be skipped for size)"
+    against = f", {other_label} {other}" if other and other != bound else ""
+    return f" -- window {bound} tokens ({binding['budget_source']}{against})"
+
+
 def _lane_list(report: ContextAblationReport) -> list[str]:
     lines = []
     for label, lane in sorted(report["lanes"].items()):
         skipped = len(lane["skipped_item_ids"])
         suffix = f" -- {skipped} item(s) skipped (context did not fit)" if skipped else ""
-        lines.append(f"  - `{label}`{suffix}")
+        lines.append(f"  - `{label}`{suffix}{_window_note(lane)}")
         lines.extend(f"    - `{run_dir}`" for run_dir in lane["run_dirs"])
     return lines
 

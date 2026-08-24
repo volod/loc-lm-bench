@@ -102,7 +102,7 @@ def test_langgraph_applies_observation_cap_like_loop():
         POLICY_OBSERVATION_CAP,
         ContextPolicy,
     )
-    from llb.bench.agentic.context_budget import unbounded_budget
+    from llb.backends.context_budget import unbounded_budget
 
     catalog = tw.tool_catalog()
     # One fat observation then finish: observation_cap must trim what the next prompt sees.

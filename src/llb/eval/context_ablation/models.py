@@ -81,6 +81,21 @@ POWER_RESOLUTION_FLAT = "flat"
 POWER_RESOLUTION_UNDECIDABLE = "undecidable"
 
 
+class ContextWindowBinding(TypedDict):
+    """Which window a document lane's skips were measured against, and which side bound it.
+
+    A skip count is only readable next to this. The DECLARED window (host planner cap, model card,
+    `max_model_len`, `context_budget`) is what a config says the model can take; the SERVED one is
+    what the backend answered when asked -- Ollama serves `num_ctx` 4096 however large a window the
+    GGUF advertises. The smaller of the two is what actually truncates, so it is what decides a
+    skip, and `budget_source` names which side that was.
+    """
+
+    declared_max_model_len: int | None
+    served_max_model_len: int | None
+    budget_source: str
+
+
 class LaneReport(TypedDict):
     """One scored lane: its run bundles, overall metrics, every question-type slice, and skips."""
 
@@ -89,6 +104,9 @@ class LaneReport(TypedDict):
     overall: SliceReport
     slices: dict[str, SliceReport]
     skipped_item_ids: list[str]
+    # None for a lane that never checked a document against a window (`closed_book`, `rag`), and
+    # for a bundle written before the binding was recorded.
+    context_window: ContextWindowBinding | None
 
 
 class DerivedComparison(TypedDict):

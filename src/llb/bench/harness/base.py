@@ -9,7 +9,7 @@ catalog, so the loop's results are unchanged by the agentic harness comparison r
 import time
 
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.episode_state import Clock
 from llb.bench.agentic.loop_policy import LoopPolicy

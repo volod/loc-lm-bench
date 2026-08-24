@@ -11,7 +11,7 @@ from llb.bench.agentic.context_policy import (
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
 )
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.context_policy.sweep import run_constant_sweep
 from llb.bench.context_policy.sweep_model import (

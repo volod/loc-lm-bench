@@ -26,17 +26,40 @@ every other knob, so a lane's bundle is reproducible from its own config
   [below](#the-shippable-sibling-retrieved_document). Same whole-document context, same generation
   prompt, same skip rule; the documents are chosen by RETRIEVAL rather than by the gold label.
 
-Budget and skips: the document lanes resolve the model's usable window ONCE per run --
-`resolve_model_spec` looks the served artifact up through `candidate_sources`, so an Ollama GGUF
-tag resolves to its roster entry priced at the right quant -- and each item is checked with
-`fits_context_chars` (`src/llb/optimize/tuning_space.py`, the same arithmetic as `fits_context`).
-An item whose documents do not fit terminates as `context_overflow`, a pre-generation status in
-the shared taxonomy: no model call, no truncation. A truncated document is a different and
-unstated retrieval policy, so crediting its answer to a document lane would measure whichever slice
-survived the cut. Both document lanes share one `document_context` helper, so they can differ only
-in how the documents were chosen. Without a manifest entry for the model, only an explicit
-`context_budget` / `max_model_len` can bound the prompt, so an unlisted model skips nothing rather
-than everything.
+Budget and skips: the document lanes resolve the model's usable window ONCE per run and check
+each item against it. An item whose documents do not fit terminates as `context_overflow`, a
+pre-generation status in the shared taxonomy: no model call, no truncation. A truncated document
+is a different and unstated retrieval policy, so crediting its answer to a document lane would
+measure whichever slice survived the cut. Both document lanes share one `document_context` helper,
+so they can differ only in how the documents were chosen.
+
+**The window is the MINIMUM of the declared one and the one the backend is actually serving**
+(`DocumentWindow` in `src/llb/eval/context_ablation/window.py`, resolving through
+`llb.backends.context_budget` -- the same arithmetic and the same rule the agent-loop prompt guard
+is bound by, so a lane and a loop on one host cannot disagree about what fits). The declared side
+is the host planner cap, the roster entry's `max_context`, `--max-model-len`, and `--context-budget`;
+`resolve_model_spec` looks the served artifact up through `candidate_sources`, so an Ollama GGUF tag
+resolves to its roster entry priced at the right quant. The served side is
+`launcher_served_window` (`src/llb/backends/served_window.py`), which asks the started launcher what
+it is serving. Taking only the declared side is what makes a skip promise hollow: Ollama serves
+`num_ctx` 4096 unless `--max-model-len` / `--context-budget` pins it, however large a window the
+GGUF advertises, so the backend would truncate a document the report counts as fully delivered --
+silently, leaving the lane to read as a measured long-context result.
+
+Two details make that probe land. It is **lazy**: the graph is wired before `launcher.start()`, so
+the window resolves on the first item's fit check instead of at build time, and every later item
+reuses it. And it **warm-loads** on Ollama, which reports no window at all over `/api/ps` until
+some request has loaded the model -- reading "unknown" there is exactly the case the probe exists
+for, so `ensure_num_ctx` sends a one-token request first.
+
+Which side bound the run is recorded, never inferred: `declared_max_model_len`,
+`served_max_model_len`, and `budget_source` go into the lane's own `manifest.json` under
+`context_window`, the comparison reads them back off those manifests (`lane_context_windows`), and
+`report.md` names them beside the lane's skip count -- `long_context -- window 4096 tokens (served,
+declared 131072)`. A lane that never checks a document against a window (`closed_book`, `rag`)
+records `null`. Without a manifest entry for the model AND without a probe, only an explicit
+`context_budget` / `max_model_len` can bound the prompt, so an unlisted model on an unreachable
+backend skips nothing rather than everything.
 
 The comparison (`src/llb/eval/context_ablation/`) is pure and file-driven: it consumes canonical
 `scores.jsonl` rows, aligns them with `llb.eval.paired_cases` (shared with
@@ -138,8 +161,8 @@ The refiner (`retrieved_document_refiner`, `src/llb/eval/context_ablation/source
 - **lays them in whole** through the same `document_context` helper `long_context` uses, so the two
   lanes differ ONLY in how the documents were chosen, and with the same generation prompt as `rag`,
   so the delta is attributable to the context and not to prompt wording.
-- **skips, never truncates**, on the same `fits_context_chars` budget and the same
-  `context_overflow` status.
+- **skips, never truncates**, on the same served-window budget and the same `context_overflow`
+  status.
 - **keeps the retrieval it paid for**: `retrieve_latency_s`, `rerank_latency_s`, and the query-prep
   provenance survive the rewrite, because that retrieval is what chose the document.
 - **fails loudly** when a retrieved `doc_id` is not in `--corpus`. Falling back to the chunk
@@ -177,6 +200,33 @@ The original `qwen3.6-35b` final-only row was the one exception: its `rag_pays_o
 settled uplift (`p_positive` 1.000) but a long-context delta at `p_positive` 0.960 that a 90%
 interval read as separated. The power-resolved run below removes that exception; every recorded
 context-ablation verdict is now settled at the neighbouring 90%, 95%, and 97.5% conventions.
+
+### The served window is 32x smaller than the declared one on this host (2026-08-24)
+
+A four-lane run on the RTX 4060 Ti 16 GB CUDA host with Ollama, MamayLM-Gemma-3-12B-IT v2.0 GGUF
+Q4_K_M, the committed UA fixture `samples/goldsets/ua_squad_postedited_v1/` (8 verified `final`
+items, `top_k=5`, `max_tokens=512`), scored to check what the document lanes were measuring their
+skips against. Both document-lane manifests recorded
+`{"declared_max_model_len": 131072, "served_max_model_len": 4096, "budget_source": "served"}`; both
+`closed_book` and `rag` recorded `null`.
+
+**The declared window was 32x the served one.** At `max_tokens=512` that is a document budget of
+9,216 usable characters, not the 390,144 the declared 131072 implies -- a 42x drop in what the
+lanes will accept. No item was skipped in either lane, before or after: the fixture's largest
+corpus document is 1,671 characters and its median is 615, three orders of magnitude inside both
+budgets, which is why this corpus never exposed the gap and why the numbers are unchanged. The
+finding is the gap itself: on any corpus whose documents run past ~9k characters, this host would
+have handed Ollama a document it truncated at 4096 tokens and reported the answer as a fully
+delivered long-context result.
+
+This run is a binding check, not a quality reading: 8 items is far below every evidence floor this
+page's verdicts are held to, so its lane means are deliberately not recorded here.
+
+What would overturn it: an Ollama build whose `/api/ps` reports the GGUF window rather than the
+served `num_ctx`, or a host with `OLLAMA_CONTEXT_LENGTH` raised, in which case `budget_source` reads
+`declared` and the two windows agree. The skip behaviour itself is pinned deterministically in both
+binding directions by `tests/llb/eval/context_ablation/test_context_ablation_window.py` rather than
+by this run, which could not produce a skip on a corpus this small.
 
 ### The shippable document lane does not pay: reject (2026-08-23)
 

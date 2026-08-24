@@ -12,6 +12,7 @@ from llb.executor.cases import spans_as_dicts
 from llb.goldset.schema import GoldItem, load_goldset
 
 if TYPE_CHECKING:
+    from llb.eval.context_ablation.window import DocumentWindow
     from llb.eval.insufficient_context import InsufficientContextReport
     from llb.executor.cases import ScoreOptions
 from llb.executor.runner_retrieval import build_query_prep
@@ -65,8 +66,8 @@ def _select_eval_items(
 
 def _default_runner_fn(
     config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
-) -> Callable[[GoldItem], RagState]:
-    """The per-case runner for this config's context strategy.
+) -> tuple[Callable[[GoldItem], RagState], "DocumentWindow | None"]:
+    """The per-case runner for this config's context strategy, and the window its skips read.
 
     A non-`rag` strategy (rag-vs-long-context-ablation) either swaps the retrieve node's store
     lookup for its own context source (`closed_book`, `long_context`) or refines what ordinary
@@ -74,6 +75,10 @@ def _default_runner_fn(
     brings its own generation prompt. The store is always loaded and passed: it carries the
     embedder the optional semantic correctness signal scores with, so every lane scores its
     answers identically.
+
+    The launcher is handed to the lane so a document lane's skip threshold is the MINIMUM of the
+    declared window and the one the backend is actually serving; the returned `DocumentWindow`
+    (None for every other strategy) is what the run manifest records that bound from.
     """
     from llb.eval.context_ablation.sources import build_context_lane
 
@@ -87,7 +92,7 @@ def _default_runner_fn(
         from llb.eval.table_headers import corpus_header_restorer
 
         header_restorer = corpus_header_restorer(config.corpus_root)
-    lane = build_context_lane(config)
+    lane = build_context_lane(config, launcher=launcher)
     app = eval_graph.build_rag_graph(
         store,
         launcher,
@@ -111,7 +116,7 @@ def _default_runner_fn(
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
-    return run
+    return run, lane.window if lane is not None else None
 
 
 def _score_options(config: RunConfig) -> "ScoreOptions":

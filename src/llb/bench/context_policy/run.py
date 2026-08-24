@@ -11,7 +11,7 @@ Every policy runs a fresh episode over the identical task set through the pure `
 (`run_episode`) -- context management is a property of the loop, not of a framework -- and is
 persisted as its OWN bundle under `$DATA_DIR/agentic-context/` tagged with the policy, mirroring
 the per-harness and per-chain-policy bundles. The per-step prompt guard rides underneath all four:
-`llb.bench.agentic.context_budget` resolves the model's usable window once per run, and a step
+`llb.backends.context_budget` resolves the model's usable window once per run, and a step
 whose prompt does not fit ends the episode as `context_overflow` instead of being sent.
 """
 
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.agentic.context_policy import CONTEXT_POLICIES, ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.backends.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.batch import _score_episodes
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import (

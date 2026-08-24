@@ -21,10 +21,9 @@ the oracle gap splits into a part an operator can capture and a part that was th
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from llb.core.config import RunConfig
-from llb.core.contracts.models import ModelSpec
 from llb.core.contracts.rag import ChunkRecord
 from llb.eval import common as eval_common
 from llb.eval.context_ablation.models import (
@@ -33,13 +32,15 @@ from llb.eval.context_ablation.models import (
     LANE_RAG,
     LANE_RETRIEVED_DOCUMENT,
 )
+from llb.eval.context_ablation.window import DocumentWindow
 from llb.eval.graph import CLOSED_BOOK_TEMPLATE
 from llb.eval.graph_contracts import ContextRefiner, ContextSource, RagState
 
+if TYPE_CHECKING:
+    from llb.backends.base import BackendLauncher
+
 # True when a context of that many characters fits the model's usable window.
 FitsContext = Callable[[int], bool]
-
-DEFAULT_MODELS_MANIFEST = Path("samples/configs/models_uk.yaml")
 
 
 class ContextLane(NamedTuple):
@@ -48,12 +49,14 @@ class ContextLane(NamedTuple):
     A lane sets exactly one of the two seams: `source` for a lane that does not retrieve at all,
     `refiner` for a lane that retrieves and then rewrites the context. `template_id` overrides the
     generation prompt (only `closed_book` needs to, so the other lanes' deltas stay attributable
-    to the context rather than to prompt wording).
+    to the context rather than to prompt wording). `window` is present only for the two document
+    lanes -- it is the object whose skip decisions the run manifest reports the provenance of.
     """
 
     source: ContextSource | None = None
     template_id: str | None = None
     refiner: ContextRefiner | None = None
+    window: DocumentWindow | None = None
 
 
 def closed_book_source() -> ContextSource:
@@ -174,74 +177,31 @@ def load_corpus_documents(corpus_root: Path) -> dict[str, str]:
     return documents
 
 
-def resolve_model_spec(
-    model: str, backend: str | None = None, manifest: Path = DEFAULT_MODELS_MANIFEST
-) -> ModelSpec | None:
-    """Best-effort planning spec for the SERVED artifact `model` (None when the manifest has none).
-
-    A roster entry names its per-backend artifacts under `sources` -- the run is served by an
-    Ollama GGUF tag, not by the entry's headline HF repo id -- so the lookup goes through
-    `candidate_sources` and returns the spec priced for the artifact that actually runs.
-
-    None is not a failure: without a spec only an explicit `context_budget` / `max_model_len` can
-    bound the prompt, so an unlisted model skips nothing instead of skipping everything.
-    """
-    from llb.backends.prepare.manifest import load_manifest
-    from llb.backends.resolver_sources import candidate_sources
-
-    try:
-        specs = load_manifest(manifest)
-    except (OSError, ValueError):
-        return None
-    for spec in specs:
-        if spec.get("name") == model:
-            return spec
-        for source_backend, record in candidate_sources(spec):
-            if record.get("source") != model:
-                continue
-            if backend is not None and source_backend != backend:
-                continue
-            return cast(ModelSpec, {**spec, "backend": source_backend, **record})
-    return None
-
-
-def context_fit_check(
+def build_context_lane(
     config: RunConfig,
+    fits: FitsContext | None = None,
     *,
-    model_spec: ModelSpec | None = None,
-    vram_mib: int | None = None,
-    ram_mib: int | None = None,
-) -> FitsContext:
-    """A `fits(context_chars)` predicate for this run, resolved once per lane, not per item."""
-    from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
-    from llb.optimize.tuning_space import fits_context_chars
+    launcher: "BackendLauncher | None" = None,
+) -> ContextLane | None:
+    """The context seam + generation prompt for `config.context_strategy` (None for `rag`).
 
-    spec = (
-        model_spec if model_spec is not None else resolve_model_spec(config.model, config.backend)
-    )
-    vram = vram_mib if vram_mib is not None else max_vram_mb(detect_gpus())
-    ram = ram_mib if ram_mib is not None else detect_ram_mb()
-
-    def fits(context_chars: int) -> bool:
-        return fits_context_chars(config, spec, vram, ram, context_chars)
-
-    return fits
-
-
-def build_context_lane(config: RunConfig, fits: FitsContext | None = None) -> ContextLane | None:
-    """The context seam + generation prompt for `config.context_strategy` (None for `rag`)."""
+    An explicit `fits` is the test seam; without one the document lanes resolve their own window
+    from `config` plus whatever `launcher` is actually serving.
+    """
     if config.context_strategy == LANE_RAG:
         return None
     if config.context_strategy == LANE_CLOSED_BOOK:
         return ContextLane(source=closed_book_source(), template_id=CLOSED_BOOK_TEMPLATE)
+    if config.context_strategy not in (LANE_LONG_CONTEXT, LANE_RETRIEVED_DOCUMENT):
+        raise ValueError(f"unknown context strategy: {config.context_strategy!r}")
+    documents = load_corpus_documents(config.corpus_root)
+    window = None
+    if fits is None:
+        window = DocumentWindow(config, launcher=launcher)
+        fits = window.fits
     if config.context_strategy == LANE_LONG_CONTEXT:
-        documents = load_corpus_documents(config.corpus_root)
-        return ContextLane(source=long_context_source(documents, fits or context_fit_check(config)))
-    if config.context_strategy == LANE_RETRIEVED_DOCUMENT:
-        documents = load_corpus_documents(config.corpus_root)
-        return ContextLane(
-            refiner=retrieved_document_refiner(
-                documents, fits or context_fit_check(config), config.retrieved_document_top_n
-            )
-        )
-    raise ValueError(f"unknown context strategy: {config.context_strategy!r}")
+        return ContextLane(source=long_context_source(documents, fits), window=window)
+    return ContextLane(
+        refiner=retrieved_document_refiner(documents, fits, config.retrieved_document_top_n),
+        window=window,
+    )

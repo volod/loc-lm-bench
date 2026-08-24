@@ -21,7 +21,7 @@ from llb.bench.agentic.context_policy import (
     ContextPolicy,
 )
 from llb.bench.agentic.context_summary import compact_state
-from llb.bench.agentic.context_budget import (
+from llb.backends.context_budget import (
     ContextBudget,
     fixed_budget,
     prompt_tokens,
@@ -691,7 +691,7 @@ def test_the_board_ignores_a_model_with_no_context_policy_runs(tmp_path: Path):
 
 
 def test_resolve_context_budget_bounds_the_prompt_from_an_explicit_context_budget():
-    from llb.bench.agentic.context_budget import resolve_context_budget
+    from llb.backends.context_budget import resolve_context_budget
     from llb.core.config import RunConfig
     from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
@@ -706,7 +706,7 @@ def test_resolve_context_budget_bounds_the_prompt_from_an_explicit_context_budge
 
 
 def test_resolve_context_budget_cannot_bound_an_unknown_model():
-    from llb.bench.agentic.context_budget import resolve_context_budget
+    from llb.backends.context_budget import resolve_context_budget
     from llb.core.config import RunConfig
 
     budget = resolve_context_budget(
