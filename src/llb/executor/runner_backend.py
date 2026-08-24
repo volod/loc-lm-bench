@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from llb.backends.base import BackendLauncher
+from llb.backends.prompt_window import PromptWindow
 from llb.core.config import RunConfig
 from llb.executor.runner_retrieval import _load_store
 from llb.executor.runner_setup import _default_runner_fn
@@ -21,7 +22,6 @@ from llb.goldset.schema import GoldItem
 
 if TYPE_CHECKING:
     from llb.core.contracts.hardware import ContentionReport
-    from llb.eval.context_ablation.window import DocumentWindow
 
 from llb.eval.graph_contracts import RagState
 
@@ -153,16 +153,16 @@ def _guard_vllm_contention(
 class ResolvedRunner(NamedTuple):
     """Everything `run_eval` needs to score cases, plus what the manifest records about the wiring.
 
-    `context_window` is set only by a document lane that resolved its own fit threshold; an
-    injected `runner_fn` and every other context strategy leave it None, because nothing was
-    checked against a window.
+    `context_window` is the run's usable prompt window -- what a document lane skips against and
+    what the `rag` prompt is checked against. An INJECTED `runner_fn` leaves it None: the caller
+    built its own graph, so this module never resolved a window for it.
     """
 
     launcher: BackendLauncher
     runner_fn: Callable[[GoldItem], RagState]
     store: Any
     contention: "ContentionReport | None"
-    context_window: "DocumentWindow | None" = None
+    context_window: PromptWindow | None = None
 
 
 def _resolve_eval_runner(
@@ -177,7 +177,7 @@ def _resolve_eval_runner(
     wait: bool,
 ) -> ResolvedRunner:
     contention: ContentionReport | None = None
-    context_window: DocumentWindow | None = None
+    context_window: PromptWindow | None = None
     if launcher is None:
         launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
         if config.backend == "vllm":

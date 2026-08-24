@@ -1,8 +1,11 @@
-"""What a document lane will accept into the prompt, and which window said so.
+"""The usable prompt window ONE run was measured under, resolved once and only when asked.
 
-Part of rag-vs-long-context-ablation. Split out of `sources.py` because it answers a different
-question from the lanes there: they decide WHICH documents the prompt carries, this decides whether
-those documents fit at all -- and unlike them it has to talk to the live backend to find out.
+`context_budget.resolve_context_budget` answers "how big a prompt fits" for a config plus a probed
+backend. This wraps that in the shape a run needs: the backend is not serving yet when a run's
+graph is wired (`runner_setup` builds it before `launcher.start()`, and Ollama reports no window at
+all until a request has loaded the model), so resolution has to wait for the first caller that
+actually needs an answer. Every later caller reuses it, and the run manifest reads `provenance()`
+afterwards to record which window bound the run.
 """
 
 from typing import TYPE_CHECKING
@@ -15,18 +18,12 @@ if TYPE_CHECKING:
     from llb.backends.context_budget import ContextBudget
 
 
-class DocumentWindow:
-    """The usable window a document lane checks each item against -- resolved once, on first use.
+class PromptWindow:
+    """A run's `fits(chars)` predicate plus the provenance of the window it decided against.
 
-    Lazily, because the window that decides a skip is the SERVED one and the backend is not
-    serving yet when the lane is wired (`runner_setup` builds the graph before `launcher.start()`,
-    and Ollama reports no window at all until a request has loaded the model). The first item's fit
-    check is the earliest moment a probe can see the truth, so that is when resolution runs; every
-    later item reuses the same answer, and the run manifest reads `provenance()` afterwards.
-
-    Resolution is `llb.backends.context_budget`, the same arithmetic and the same MINIMUM-of-
-    declared-and-served rule the agent-loop prompt guard is bound by -- so a lane and a loop on one
-    host cannot disagree about what fits.
+    Resolution takes the MINIMUM of the declared window and the one the launcher is serving -- the
+    same rule the agent-loop prompt guard is bound by -- so a lane, a loop, and a sweep on one host
+    cannot disagree about what fits.
     """
 
     def __init__(
@@ -69,5 +66,5 @@ class DocumentWindow:
         return self.resolve().fits(context_chars)
 
     def provenance(self) -> dict[str, object] | None:
-        """Which window bound the skips, or None when no item ever asked (nothing was checked)."""
+        """Which window bound the run, or None when nothing ever asked (nothing was checked)."""
         return self._budget.provenance() if self._budget is not None else None

@@ -14,8 +14,12 @@ Search space (the chunking machinery already exists in RAG core):
 
 Over-context configs are PRUNED before they are ever run: a big `top_k x chunk_size` retrieved
 context can exceed what the model can hold, and that depends on the RAG params, not just the
-model -- so the prune is a real search-space constraint, not a no-op. The Optuna study uses a
-persistent SQLite backend so a killed sweep resumes (`load_if_exists`).
+model -- so the prune is a real search-space constraint, not a no-op. The window it prunes against
+is the MINIMUM of the declared one and the one the backend is PROBED as serving, resolved once for
+the whole study: an unpinned Ollama serves `num_ctx` 4096 however large a window the model card
+advertises, and pricing a trial against the card alone keeps a configuration whose prompt the
+backend silently truncates, then scores the truncated answer as that configuration's quality. The
+Optuna study uses a persistent SQLite backend so a killed sweep resumes (`load_if_exists`).
 
 `optuna` is imported lazily (the `[track]` extra), so this module imports in the base install;
 the search-space + fit helpers are pure and unit-testable, and the heavy per-trial evaluation
@@ -27,6 +31,7 @@ from typing import Any, Callable
 from llb.core.config import RunConfig
 from llb.core.contracts.runs import EvalResult
 from llb.core.contracts.models import ModelSpec
+from llb.backends.context_fit import bound_max_context
 from llb.optimize.tuning_space import (
     FINAL_SPLIT,
     Objective,
@@ -36,7 +41,13 @@ from llb.optimize.tuning_space import (
     suggest_overrides,
     with_isolation,
 )
-from llb.optimize.tuner_runtime import TrialCallback, _LOG, _run_eval_final, _run_eval_quality
+from llb.optimize.tuner_runtime import (
+    TrialCallback,
+    _LOG,
+    _run_eval_final,
+    _run_eval_quality,
+    resolve_study_window,
+)
 from llb.optimize.tuner_models import TuneResult, TwoStageResult
 
 
@@ -53,6 +64,7 @@ def make_objective(
     on_trial: TrialCallback | None = None,
     strategies: list[str] | None = None,
     reranker: str | None = None,
+    served_max_model_len: int | None = None,
 ) -> Callable[[Any], float | Any]:
     """Build the Optuna objective: sample -> validate -> prune over-context -> evaluate.
 
@@ -74,9 +86,13 @@ def make_objective(
             config = base_config.with_overrides(**overrides)
         except ValueError as exc:  # e.g. overlap >= chunk_size after rounding
             raise optuna.TrialPruned(f"invalid config: {exc}") from None
-        if not fits_context(config, model_spec, vram_mib, ram_mib):
+        if not fits_context(config, model_spec, vram_mib, ram_mib, served_max_model_len):
+            window, source = bound_max_context(
+                config, model_spec, vram_mib, ram_mib, served_max_model_len
+            )
             raise optuna.TrialPruned(
-                f"retrieved context ~{estimate_prompt_tokens(config)} tok exceeds the model window"
+                f"retrieved context ~{estimate_prompt_tokens(config)} tok exceeds the "
+                f"{source} window of {window} tok"
             )
         trial.set_user_attr("overrides", overrides)
         try:
@@ -116,6 +132,8 @@ def tune(
     gpu_sampler: Callable[[], list[Any]] | None = None,
     strategies: list[str] | None = None,
     reranker: str | None = None,
+    served_max_model_len: int | None = None,
+    probe_served_window: bool = True,
 ) -> TuneResult:
     """Stage 1: search the RAG/backend space on the tuning split; return the best config.
 
@@ -135,6 +153,14 @@ def tune(
             pid_usage_reader=pid_usage_reader,
             gpu_sampler=gpu_sampler,
         )
+    served, window_provenance = resolve_study_window(
+        base_config,
+        model_spec=model_spec,
+        vram_mib=vram_mib,
+        ram_mib=ram_mib,
+        served_max_model_len=served_max_model_len,
+        probe=probe_served_window,
+    )
     storage = _study_storage(base_config, study_name, storage)
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(
@@ -154,11 +180,12 @@ def tune(
             on_trial=on_trial,
             strategies=strategies,
             reranker=reranker,
+            served_max_model_len=served,
         ),
         n_trials=n_trials,
     )
 
-    return _stage_one_result(base_config, study, study_name, storage)
+    return _stage_one_result(base_config, study, study_name, storage, window_provenance)
 
 
 def _study_storage(base_config: RunConfig, study_name: str, storage: str | None) -> str | None:
@@ -175,7 +202,11 @@ def _study_storage(base_config: RunConfig, study_name: str, storage: str | None)
 
 
 def _stage_one_result(
-    base_config: RunConfig, study: Any, study_name: str, storage: str | None
+    base_config: RunConfig,
+    study: Any,
+    study_name: str,
+    storage: str | None,
+    context_window: dict[str, object] | None = None,
 ) -> TuneResult:
     """The winning config of a finished study, or a hard failure when nothing completed."""
     import optuna
@@ -206,6 +237,7 @@ def _stage_one_result(
         n_pruned=len(pruned),
         study_name=study_name,
         storage=storage,
+        context_window=context_window,
     )
 
 
@@ -228,6 +260,8 @@ def two_stage(
     gpu_sampler: Callable[[], list[Any]] | None = None,
     strategies: list[str] | None = None,
     reranker: str | None = None,
+    served_max_model_len: int | None = None,
+    probe_served_window: bool = True,
 ) -> TwoStageResult:
     """Stage 1 tunes on the tuning split; stage 2 scores the winner on the full final split."""
     result = tune(
@@ -247,6 +281,8 @@ def two_stage(
         gpu_sampler=gpu_sampler,
         strategies=strategies,
         reranker=reranker,
+        served_max_model_len=served_max_model_len,
+        probe_served_window=probe_served_window,
     )
     runner = final_runner or _run_eval_final
     _LOG.info(

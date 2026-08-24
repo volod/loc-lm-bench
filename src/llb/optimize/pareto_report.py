@@ -50,6 +50,24 @@ def write_pareto_report(
     return {"json": json_path, "markdown": md_path}
 
 
+def _window_lines(binding: dict[str, Any] | None) -> list[str]:
+    """Which window the over-context prune was priced against.
+
+    A pruned-trial count is unreadable without it: the same search space prunes nothing against a
+    declared 128k window and a third of its trials against the 4k an unpinned Ollama serves, and
+    the trials that survive the first reading are the ones whose prompts the backend truncates.
+    """
+    if not binding:
+        return []
+    declared = binding.get("declared_max_model_len") or "unbounded"
+    served = binding.get("served_max_model_len")
+    return [
+        "",
+        f"Over-context prune priced against the **{binding.get('budget_source')}** window "
+        f"(declared {declared}, served {served if served is not None else 'unprobed'}).",
+    ]
+
+
 def _render_markdown(payload: dict[str, Any]) -> str:
     objectives = ", ".join(payload["objectives"])
     lines = [
@@ -72,6 +90,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
             f"| {point['number']} | {point['quality']:.4f} | {point['latency_s']:.3f} | "
             f"{point['cost_usd']:.4f} | {point['throughput']:.1f} | `{overrides}` |"
         )
+    lines.extend(_window_lines(payload.get("context_window")))
     lines.extend(["", "## Per-goal picks", ""])
     for pick in payload["picks"]:
         point = pick["point"]

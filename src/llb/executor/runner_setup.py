@@ -6,13 +6,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from llb.backends.base import BackendLauncher
+from llb.backends.prompt_window import PromptWindow
 from llb.core.config import RunConfig
 from llb.eval import graph as eval_graph
 from llb.executor.cases import spans_as_dicts
 from llb.goldset.schema import GoldItem, load_goldset
 
 if TYPE_CHECKING:
-    from llb.eval.context_ablation.window import DocumentWindow
     from llb.eval.insufficient_context import InsufficientContextReport
     from llb.executor.cases import ScoreOptions
 from llb.executor.runner_retrieval import build_query_prep
@@ -66,8 +66,8 @@ def _select_eval_items(
 
 def _default_runner_fn(
     config: RunConfig, store: Any, launcher: BackendLauncher, prompt_package: Any | None = None
-) -> tuple[Callable[[GoldItem], RagState], "DocumentWindow | None"]:
-    """The per-case runner for this config's context strategy, and the window its skips read.
+) -> tuple[Callable[[GoldItem], RagState], PromptWindow]:
+    """The per-case runner for this config's context strategy, and the run's usable prompt window.
 
     A non-`rag` strategy (rag-vs-long-context-ablation) either swaps the retrieve node's store
     lookup for its own context source (`closed_book`, `long_context`) or refines what ordinary
@@ -76,9 +76,10 @@ def _default_runner_fn(
     embedder the optional semantic correctness signal scores with, so every lane scores its
     answers identically.
 
-    The launcher is handed to the lane so a document lane's skip threshold is the MINIMUM of the
-    declared window and the one the backend is actually serving; the returned `DocumentWindow`
-    (None for every other strategy) is what the run manifest records that bound from.
+    The window is resolved ONCE per run and owned here rather than by a lane, because every
+    strategy shares it: the document lanes skip an item against it, and the `rag` lane is checked
+    against it before the run spends anything. It reads the MINIMUM of the declared window and the
+    one `launcher` is actually serving, and the run manifest records which side bound it.
     """
     from llb.eval.context_ablation.sources import build_context_lane
 
@@ -92,7 +93,8 @@ def _default_runner_fn(
         from llb.eval.table_headers import corpus_header_restorer
 
         header_restorer = corpus_header_restorer(config.corpus_root)
-    lane = build_context_lane(config, launcher=launcher)
+    window = PromptWindow(config, launcher=launcher)
+    lane = build_context_lane(config, window.fits)
     app = eval_graph.build_rag_graph(
         store,
         launcher,
@@ -116,7 +118,39 @@ def _default_runner_fn(
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
-    return run, lane.window if lane is not None else None
+    return run, window
+
+
+def check_rag_prompt_window(config: RunConfig, window: PromptWindow | None) -> str | None:
+    """The warning a `rag` run earns when its retrieved prompt cannot fit the served window.
+
+    A `rag` overflow is a CONFIGURATION error, not a per-item outcome: `top_k * chunk_size` is the
+    same on every item, so either every prompt fits or none do, and skipping items would report a
+    truncated configuration as a corpus finding. The run is not refused either -- `top_k *
+    chunk_size` is an UPPER bound on a context that short chunks, ACL filters, and reranking
+    routinely make smaller, so refusing on it would block runs that do fit. What it must not be is
+    silent: the backend truncates without saying so, and the score would read as that
+    configuration's quality. Returns None when the prompt fits or nothing can bound it.
+    """
+    # Imported lazily: `llb.eval.context_ablation` pulls in the comparison stack, and this module
+    # is imported while `llb.executor.runner` is still initializing.
+    from llb.eval.context_ablation.models import LANE_RAG
+    from llb.optimize.tuning_space import estimate_prompt_tokens
+
+    if window is None or config.context_strategy != LANE_RAG:
+        return None
+    if window.fits(config.top_k * config.chunk_size):
+        return None
+    budget = window.resolve()
+    return (
+        f"[run-eval] the retrieved prompt may not fit: top_k {config.top_k} x chunk_size "
+        f"{config.chunk_size} estimates ~{estimate_prompt_tokens(config)} tokens against a "
+        f"{budget.budget_source} window of {budget.bound_max_model_len} "
+        f"(declared {budget.declared_max_model_len}, served {budget.served_max_model_len}). "
+        "The backend truncates an over-long prompt silently, so read this run's scores as measured "
+        "on a shortened context; lower --top-k / --chunk-size, or raise --max-model-len so the "
+        "backend serves the window the config declares."
+    )
 
 
 def _score_options(config: RunConfig) -> "ScoreOptions":

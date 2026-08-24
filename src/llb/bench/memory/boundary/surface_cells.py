@@ -172,7 +172,7 @@ def depth_cap_peak_margin(depth: int, held_fixed: dict[str, object]) -> dict[str
 
 
 def _validate_window(held_fixed: dict[str, object], max_guard: int) -> None:
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+    from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
     declared = int(cast(int, held_fixed["max_model_len"]))
     required = int(max_guard / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS

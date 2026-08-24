@@ -21,7 +21,7 @@ the oracle gap splits into a part an operator can capture and a part that was th
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import NamedTuple, cast
 
 from llb.core.config import RunConfig
 from llb.core.contracts.rag import ChunkRecord
@@ -32,12 +32,8 @@ from llb.eval.context_ablation.models import (
     LANE_RAG,
     LANE_RETRIEVED_DOCUMENT,
 )
-from llb.eval.context_ablation.window import DocumentWindow
 from llb.eval.graph import CLOSED_BOOK_TEMPLATE
 from llb.eval.graph_contracts import ContextRefiner, ContextSource, RagState
-
-if TYPE_CHECKING:
-    from llb.backends.base import BackendLauncher
 
 # True when a context of that many characters fits the model's usable window.
 FitsContext = Callable[[int], bool]
@@ -49,14 +45,12 @@ class ContextLane(NamedTuple):
     A lane sets exactly one of the two seams: `source` for a lane that does not retrieve at all,
     `refiner` for a lane that retrieves and then rewrites the context. `template_id` overrides the
     generation prompt (only `closed_book` needs to, so the other lanes' deltas stay attributable
-    to the context rather than to prompt wording). `window` is present only for the two document
-    lanes -- it is the object whose skip decisions the run manifest reports the provenance of.
+    to the context rather than to prompt wording).
     """
 
     source: ContextSource | None = None
     template_id: str | None = None
     refiner: ContextRefiner | None = None
-    window: DocumentWindow | None = None
 
 
 def closed_book_source() -> ContextSource:
@@ -177,16 +171,12 @@ def load_corpus_documents(corpus_root: Path) -> dict[str, str]:
     return documents
 
 
-def build_context_lane(
-    config: RunConfig,
-    fits: FitsContext | None = None,
-    *,
-    launcher: "BackendLauncher | None" = None,
-) -> ContextLane | None:
+def build_context_lane(config: RunConfig, fits: FitsContext) -> ContextLane | None:
     """The context seam + generation prompt for `config.context_strategy` (None for `rag`).
 
-    An explicit `fits` is the test seam; without one the document lanes resolve their own window
-    from `config` plus whatever `launcher` is actually serving.
+    `fits` is the run's usable-window predicate, owned by the runner rather than resolved here: it
+    is the SAME budget every prompt on this host is bound by, and a lane that resolved its own
+    could disagree with the run it belongs to.
     """
     if config.context_strategy == LANE_RAG:
         return None
@@ -195,13 +185,8 @@ def build_context_lane(
     if config.context_strategy not in (LANE_LONG_CONTEXT, LANE_RETRIEVED_DOCUMENT):
         raise ValueError(f"unknown context strategy: {config.context_strategy!r}")
     documents = load_corpus_documents(config.corpus_root)
-    window = None
-    if fits is None:
-        window = DocumentWindow(config, launcher=launcher)
-        fits = window.fits
     if config.context_strategy == LANE_LONG_CONTEXT:
-        return ContextLane(source=long_context_source(documents, fits), window=window)
+        return ContextLane(source=long_context_source(documents, fits))
     return ContextLane(
-        refiner=retrieved_document_refiner(documents, fits, config.retrieved_document_top_n),
-        window=window,
+        refiner=retrieved_document_refiner(documents, fits, config.retrieved_document_top_n)
     )

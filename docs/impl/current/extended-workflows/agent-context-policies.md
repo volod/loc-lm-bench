@@ -16,10 +16,14 @@ Core locations:
 
 - `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
   assembly, compaction, and the per-episode telemetry;
+- `src/llb/backends/context_fit.py`: the window arithmetic itself (`CHARS_PER_TOKEN`, the declared
+  window, the `min(declared, served)` bind) -- shared by the agent loop, the context-ablation
+  document lanes, the `rag` prompt check, and the Optuna over-context prune, so none of them can
+  disagree about what fits on one host;
 - `src/llb/backends/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
-  resolution from the declared + probed usable window -- shared with the context-ablation
-  document lanes ([context ablation](../rag-core/context-ablation.md)), so a loop and a lane on
-  one host cannot disagree about what fits;
+  resolution from the declared + probed usable window;
+- `src/llb/backends/prompt_window.py`: `PromptWindow`, the lazy launcher-bound resolution one RUN
+  uses ([context ablation](../rag-core/context-ablation.md));
 - `src/llb/backends/served_window.py`: per-backend probe of the window the runtime is actually
   serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
@@ -70,7 +74,7 @@ The four policies (each a fresh episode over the identical task set):
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
-explicit `context_budget` via `effective_max_context` in `src/llb/optimize/tuning_space.py`) and a
+explicit `context_budget` via `declared_max_context` in `src/llb/backends/context_fit.py`) and a
 LIVE probe of what the backend is serving (`src/llb/backends/served_window.py`). The budget is the
 MINIMUM of those two; `budget_source` names which side bound it (`declared` or `served`), and both
 `declared_max_model_len` and `served_max_model_len` are recorded in the

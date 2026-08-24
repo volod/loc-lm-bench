@@ -8,6 +8,7 @@ from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
 from llb.optimize.objectives import TrialMetrics, metrics_vector, normalize_outcome
 from llb.optimize.tuner_runtime import TrialCallback
+from llb.backends.context_fit import bound_max_context
 from llb.optimize.tuning_space import (
     estimate_prompt_tokens,
     fits_context,
@@ -34,6 +35,7 @@ def make_multi_objective(
     embedders: Sequence[str] | None = None,
     tune_context_budget: bool = True,
     prune_case_count: int | None = None,
+    served_max_model_len: int | None = None,
 ) -> Callable[[Any], tuple[float, ...]]:
     """Build an NSGA-II objective: sample, validate, prune, then evaluate."""
     import optuna
@@ -52,9 +54,13 @@ def make_multi_objective(
             config = base_config.with_overrides(**overrides)
         except ValueError as exc:
             raise optuna.TrialPruned(f"invalid config: {exc}") from None
-        if not fits_context(config, model_spec, vram_mib, ram_mib):
+        if not fits_context(config, model_spec, vram_mib, ram_mib, served_max_model_len):
+            window, source = bound_max_context(
+                config, model_spec, vram_mib, ram_mib, served_max_model_len
+            )
             raise optuna.TrialPruned(
-                f"retrieved context ~{estimate_prompt_tokens(config)} tok exceeds the budget/window"
+                f"retrieved context ~{estimate_prompt_tokens(config)} tok exceeds the "
+                f"{source} budget/window of {window} tok"
             )
         trial.set_user_attr("overrides", overrides)
         try:

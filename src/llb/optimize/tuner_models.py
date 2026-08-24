@@ -18,6 +18,9 @@ class TuneResult:
     n_pruned: int
     study_name: str
     storage: str | None
+    # Which window the over-context prune was priced against: the declared one, or the smaller one
+    # the backend was probed as serving. None when the study never resolved it.
+    context_window: dict[str, Any] | None = None
 
 
 @dataclass

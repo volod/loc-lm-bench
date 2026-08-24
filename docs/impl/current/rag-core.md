@@ -20,7 +20,8 @@ question you have.
 | Enter | [Configuration and command path](rag-core/run-path.md) | How a run is configured and invoked, the standalone closed-service runner, and scoring an answer log produced elsewhere |
 | Index | [Retrieval store and lifecycle](rag-core/retrieval-store.md) | Store layout, duplicate-chunk collapse, near-duplicate residue and the collapse tiers, and refreshing a store against a changed corpus |
 | Chunk | [Chunking strategies](rag-core/chunking.md) | Which splitter to build with, the paired `sentence`-versus-`recursive` re-read, what table-aware chunking guarantees that `recursive` already achieved, and why `size` is a hard cap on every strategy |
-| Embed | [Embedder conventions and bake-off](rag-core/embedders.md) | Per-family query/passage conventions, the bake-off lane and its verdict, encoder throughput, cheap-GPU rosters, and the context budget |
+| Embed | [Embedder conventions and bake-off](rag-core/embedders.md) | Per-family query/passage conventions, the bake-off lane and its verdict, encoder throughput, and cheap-GPU rosters |
+| Embed | [The context budget](rag-core/context-budget.md) | What a retrieved prompt is priced against: the declared window, the one the backend actually serves, the Optuna over-context prune, and the `rag` run-start check |
 | Embed | [The scoring stack and the card-parity gate](rag-core/stack-and-card-parity.md) | What a candidate must clear before it gets a row: reproducing its own model card, and the transformers major its repository code targets; plus the declared load precision that makes two passes comparable |
 | Retrieve | [Hybrid retrieval](rag-core/hybrid-retrieval.md) | Dense + BM25 + RRF, the fusion-weight verdict re-read two ways, and what apostrophe-variant tokenization is worth |
 | Retrieve | [Graph-vector fusion](rag-core/graph-vector-fusion.md) | Span identity, candidate depth, and question-type routing across the fused lane |

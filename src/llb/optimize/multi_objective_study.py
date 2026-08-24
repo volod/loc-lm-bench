@@ -18,7 +18,12 @@ from llb.optimize.multi_objective_runtime import (
 )
 from llb.optimize.tuner_models import MultiObjectiveResult, MultiTwoStageResult
 from llb.optimize.store_registry import StoreRegistry
-from llb.optimize.tuner_runtime import TrialCallback, _LOG, _run_eval_final
+from llb.optimize.tuner_runtime import (
+    TrialCallback,
+    _LOG,
+    _run_eval_final,
+    resolve_study_window,
+)
 from llb.optimize.tuning_space import FINAL_SPLIT
 
 
@@ -44,6 +49,8 @@ def tune_multi(
     embedders: Sequence[str] | None = None,
     tune_context_budget: bool = True,
     prune_case_count: int | None = None,
+    served_max_model_len: int | None = None,
+    probe_served_window: bool = True,
     accuracy_floor: float | None = None,
     report_dir: Any | None = None,
     write_report: bool = True,
@@ -74,6 +81,14 @@ def tune_multi(
         pid_usage_reader=pid_usage_reader,
         gpu_sampler=gpu_sampler,
     )
+    served, window_provenance = resolve_study_window(
+        base_config,
+        model_spec=model_spec,
+        vram_mib=vram_mib,
+        ram_mib=ram_mib,
+        served_max_model_len=served_max_model_len,
+        probe=probe_served_window,
+    )
     storage = storage_url(base_config, study_name, storage)
     objective = make_multi_objective(
         base_config,
@@ -88,6 +103,7 @@ def tune_multi(
         embedders=embedders,
         tune_context_budget=tune_context_budget,
         prune_case_count=prune_case_count,
+        served_max_model_len=served,
     )
     study = run_study(
         study_name=study_name,
@@ -114,6 +130,7 @@ def tune_multi(
         n_pruned=len(pruned),
         report_dir=report_dir,
         enabled=write_report,
+        context_window=window_provenance,
     )
     _LOG.info(
         "[tune] %s multi-obj front=%d picks=%s over %d trials (%d pruned)",
@@ -161,6 +178,8 @@ def two_stage_multi(
     embedders: Sequence[str] | None = None,
     tune_context_budget: bool = True,
     prune_case_count: int | None = None,
+    served_max_model_len: int | None = None,
+    probe_served_window: bool = True,
     accuracy_floor: float | None = None,
     report_dir: Path | None = None,
     write_report: bool = True,

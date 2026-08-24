@@ -1,4 +1,5 @@
-"""Focused tuner runtime: default evaluate hooks, MLflow trial logging.
+"""Focused tuner runtime: default evaluate hooks, the study's served-window resolution, and
+MLflow trial logging.
 
 Store caching lives in ``llb.optimize.store_registry`` (re-exported here for callers).
 """
@@ -16,6 +17,8 @@ from llb.optimize.store_registry import (
     store_fingerprint,
     study_stores_dir,
 )
+from llb.core.contracts.models import ModelSpec
+from llb.backends.context_fit import bound_max_context
 from llb.optimize.tuning_space import (
     FINAL_SPLIT,
     TUNING_SPLIT,
@@ -27,11 +30,54 @@ _LOG = logging.getLogger(__name__)
 _store_fingerprint = store_fingerprint
 _chunking_fingerprint = chunking_fingerprint
 
+
+def resolve_study_window(
+    base_config: RunConfig,
+    *,
+    model_spec: ModelSpec | None,
+    vram_mib: int,
+    ram_mib: int,
+    served_max_model_len: int | None = None,
+    probe: bool = True,
+) -> tuple[int | None, dict[str, object]]:
+    """The served window a whole study prunes against, plus the provenance to record.
+
+    Resolved ONCE, not per trial: what the backend serves does not depend on the RAG parameters a
+    trial samples, while the declared side does -- `tune_context_budget` samples a `context_budget`
+    that tightens the declared window per trial, so only the served side is a study constant. The
+    reported binding is therefore the study's own (from `base_config`); a trial that samples a
+    smaller budget is bound tighter still, never looser.
+
+    `probe=False` (or an explicit `served_max_model_len`) is the injected-probe seam CI runs on.
+    """
+    served = served_max_model_len
+    if served is None and probe:
+        from llb.backends.served_window import probe_served_window
+
+        served = probe_served_window(base_config)
+    window, source = bound_max_context(base_config, model_spec, vram_mib, ram_mib, served)
+    declared, _ = bound_max_context(base_config, model_spec, vram_mib, ram_mib)
+    provenance: dict[str, object] = {
+        "declared_max_model_len": declared or None,
+        "served_max_model_len": served,
+        "budget_source": source,
+    }
+    _LOG.info(
+        "[tune] prune window: %s tok (%s; declared %s, served %s)",
+        window or "unbounded",
+        source,
+        declared or "unbounded",
+        served if served is not None else "unprobed",
+    )
+    return served, provenance
+
+
 TrialCallback = Callable[[dict[str, Any]], None]  # per-completed-trial hook (e.g. MLflow child)
 
 __all__ = [
     "StoreRegistry",
     "TrialCallback",
+    "resolve_study_window",
     "_LOG",
     "_build_store",
     "_chunking_fingerprint",

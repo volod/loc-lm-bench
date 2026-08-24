@@ -146,7 +146,7 @@ def _validate_family_axes(family: dict[str, object], cells: list[dict[str, objec
 def _validate_band(
     family: dict[str, object], held: dict[str, object], cells: list[dict[str, object]]
 ) -> None:
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+    from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
     peak = _cap_peak(int(cast(int, family["depth"])), held)
     pairs = [

@@ -14,7 +14,7 @@ from llb.backends.served_window import (
 )
 from llb.backends.context_budget import resolve_context_budget
 from llb.core.config import RunConfig
-from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
 
 def test_parse_ollama_served_context_reads_loaded_model_context():

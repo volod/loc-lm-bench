@@ -129,11 +129,11 @@ def test_a_skipped_case_never_reaches_the_model():
 
 
 def test_the_rag_strategy_installs_no_context_source_at_all():
-    assert build_context_lane(RunConfig(context_strategy=LANE_RAG)) is None
+    assert build_context_lane(RunConfig(context_strategy=LANE_RAG), ALWAYS_FITS) is None
 
 
 def test_the_closed_book_strategy_selects_the_closed_book_prompt():
-    lane = build_context_lane(RunConfig(context_strategy=LANE_CLOSED_BOOK))
+    lane = build_context_lane(RunConfig(context_strategy=LANE_CLOSED_BOOK), ALWAYS_FITS)
     assert lane is not None and lane.template_id == CLOSED_BOOK_TEMPLATE
 
 
@@ -152,9 +152,9 @@ def test_the_long_context_strategy_reads_the_corpus_and_keeps_the_rag_prompt(tmp
 def test_the_context_budget_is_what_decides_a_skip():
     """`fits_context_chars` is the one budget rule; a small explicit budget must skip a big doc."""
     config = RunConfig(context_budget=1024, max_tokens=256)
-    lane = build_context_lane(RunConfig(context_strategy=LANE_CLOSED_BOOK))
+    lane = build_context_lane(RunConfig(context_strategy=LANE_CLOSED_BOOK), ALWAYS_FITS)
     assert lane is not None  # sanity: the strategy switch itself is wired
-    from llb.optimize.tuning_space import fits_context_chars
+    from llb.backends.context_fit import fits_context_chars
 
     assert fits_context_chars(config, None, 0, 0, 500)
     assert not fits_context_chars(config, None, 0, 0, 100_000)

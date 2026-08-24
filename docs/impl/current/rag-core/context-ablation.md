@@ -33,13 +33,17 @@ is a different and unstated retrieval policy, so crediting its answer to a docum
 measure whichever slice survived the cut. Both document lanes share one `document_context` helper,
 so they can differ only in how the documents were chosen.
 
-**The window is the MINIMUM of the declared one and the one the backend is actually serving**
-(`DocumentWindow` in `src/llb/eval/context_ablation/window.py`, resolving through
-`llb.backends.context_budget` -- the same arithmetic and the same rule the agent-loop prompt guard
-is bound by, so a lane and a loop on one host cannot disagree about what fits). The declared side
+**The window is the MINIMUM of the declared one and the one the backend is actually serving.** The
+run owns it, not the lane: `runner_setup` builds one `PromptWindow`
+(`src/llb/backends/prompt_window.py`) per run and hands the lane its `fits` predicate, so a lane's
+skips, the `rag` prompt check, and the agent-loop prompt guard are all bound by the same number on
+one host ([the usable prompt
+window](../extended-workflows/agent-context-policies.md#agent-context-management-policies)). The
+declared side
 is the host planner cap, the roster entry's `max_context`, `--max-model-len`, and `--context-budget`;
-`resolve_model_spec` looks the served artifact up through `candidate_sources`, so an Ollama GGUF tag
-resolves to its roster entry priced at the right quant. The served side is
+`resolve_model_spec` (`src/llb/backends/context_budget.py`) looks the served artifact up through
+`candidate_sources`, so an Ollama GGUF tag resolves to its roster entry priced at the right quant.
+The served side is
 `launcher_served_window` (`src/llb/backends/served_window.py`), which asks the started launcher what
 it is serving. Taking only the declared side is what makes a skip promise hollow: Ollama serves
 `num_ctx` 4096 unless `--max-model-len` / `--context-budget` pins it, however large a window the

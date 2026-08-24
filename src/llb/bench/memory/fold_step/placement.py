@@ -121,7 +121,7 @@ def validate_step_changes(label: str, steps: list[dict[str, object]], allowed_ga
 
 def validate_window(max_model_len: int, max_guard: int) -> None:
     """The declared window must be able to carry the widest guard the ladder tests."""
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+    from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
     required = int(max_guard / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS
     if max_model_len < required:

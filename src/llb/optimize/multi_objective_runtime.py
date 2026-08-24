@@ -142,6 +142,7 @@ def write_study_report(
     n_pruned: int,
     report_dir: Path | None,
     enabled: bool,
+    context_window: dict[str, Any] | None = None,
 ) -> tuple[Path | None, dict[str, Path]]:
     """Write the Pareto report when enabled and return its location map."""
     if not enabled:
@@ -156,5 +157,6 @@ def write_study_report(
         n_trials=n_trials,
         n_complete=n_complete,
         n_pruned=n_pruned,
+        extra={"context_window": context_window} if context_window else None,
     )
     return out_dir, paths

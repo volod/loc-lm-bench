@@ -60,6 +60,15 @@ class ContextBudget:
     def bounded(self) -> bool:
         return self.max_prompt_chars > UNBOUNDED
 
+    @property
+    def bound_max_model_len(self) -> int | None:
+        """The window that actually bound the budget -- the smaller of declared and served."""
+        if self.budget_source == BUDGET_SOURCE_SERVED:
+            return self.served_max_model_len
+        if self.budget_source == BUDGET_SOURCE_DECLARED:
+            return self.declared_max_model_len
+        return None
+
     def compaction_trigger_chars(self, share: float) -> int:
         """The prompt size at which a `compact` policy folds its older steps into a summary.
 
@@ -93,7 +102,7 @@ def prompt_tokens(prompt_chars: int) -> int:
     one measured UA conversion the budget arithmetic already rests on, so a reported prompt-token
     column and the guard that refused a prompt are on the same scale.
     """
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN
+    from llb.backends.context_fit import CHARS_PER_TOKEN
 
     return int(prompt_chars / CHARS_PER_TOKEN)
 
@@ -156,16 +165,9 @@ def _declared_window(
     ram_mib: int,
 ) -> int:
     """The DECLARED usable window before any live backend probe (0 == cannot bound)."""
-    from llb.optimize.tuning_space import effective_max_context
+    from llb.backends.context_fit import declared_max_context
 
-    window = (
-        effective_max_context(config, model_spec, vram_mib, ram_mib)
-        if model_spec is not None
-        else UNBOUNDED
-    )
-    if config.context_budget:
-        window = min(window, config.context_budget) if window else config.context_budget
-    return window
+    return declared_max_context(config, model_spec, vram_mib, ram_mib)
 
 
 def _budget_from_window(
@@ -176,7 +178,7 @@ def _budget_from_window(
     served_max_model_len: int | None,
     budget_source: str,
 ) -> ContextBudget:
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+    from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
     usable_tokens = window - PROMPT_HEADROOM_TOKENS - config.max_tokens if window else UNBOUNDED
     max_prompt_chars = max(UNBOUNDED, int(usable_tokens * CHARS_PER_TOKEN))

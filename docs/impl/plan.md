@@ -76,41 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### rag-prompt-fit-is-priced-against-the-declared-window
-
-The `rag` lane -- the leaderboard row -- never checks its prompt against any window, and the one
-place that does price a retrieved prompt reads the DECLARED side only: `fits_context`
-(`src/llb/optimize/tuning_space.py`) prices `top_k * chunk_size` against `effective_max_context`,
-and both callers (`src/llb/optimize/tuner.py`, `src/llb/optimize/multi_objective_trial.py`) prune
-on that. The sampled space reaches `top_k` 12 x `chunk_size` 1280 = 15,360 characters, about 5,120
-tokens before headroom -- above what an unpinned Ollama serves on this host, where declared and
-served differ by 32x ([context
-ablation](current/rag-core/context-ablation.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
-A single-objective sweep therefore keeps a trial whose prompt the backend truncates and scores the
-truncated answer as that configuration's quality. (`tune_context_budget` hides this: it pins
-`max_model_len` to the sampled budget, so the served window follows the declared one.) Price the
-retrieved prompt against the served window too, and record which side bound it, the way a document
-lane's manifest does ([context
-ablation](current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation)).
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: CLEAR
-- Dependencies: none. `llb.backends.context_budget` resolves the bound and its provenance, and
-  `launcher_served_window` probes a started launcher.
-- User-visible outcome: a sweep's chosen `top_k` / `chunk_size` is one the backend can actually
-  serve, and a `rag` score is never quietly measured on a prompt the backend cut short.
-- Scope boundary: in scope -- resolving the prune threshold from the served window, the
-  provenance record, and a fixture test per binding direction. Out of scope -- changing what a
-  fitting prompt does, truncation as a policy, skipping a `rag` item (a `rag` overflow is a
-  configuration error, not an item outcome), and the sampled ranges themselves.
-- Data and artifact paths: `$DATA_DIR/tune/<run>/` and `$DATA_DIR/run-eval/<run>/`; no new artifact.
-- Execution path: `make ci` with an injected probe; no GPU run is needed to accept it.
-- Acceptance gates: `make ci` green; a fixture where the declared window admits a sampled
-  `top_k * chunk_size` and the probed one does not prunes the trial, and the run records which
-  window bound it.
-- Documentation target: the context-budget section of
-  [embedders](current/rag-core/embedders.md#context-budget).
-
 #### closed-book-decoding-stability (optional)
 
 A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
@@ -663,9 +628,9 @@ decide deliberately what an unreachable backend should do there: today a pinned 
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
 - Agent status: CLEAR
-- Dependencies: none. `launcher_served_window` (`src/llb/backends/served_window.py`) and the
-  unconditional `OllamaLauncher.ensure_num_ctx` warm both exist; this is the CLI glue that does not
-  call them.
+- Dependencies: none. `probe_served_window` (`src/llb/backends/served_window.py`) already does
+  exactly this warm-then-probe for the Optuna study, so the CLI glue's bespoke copy of it collapses
+  into one call; what remains is the condition and the unreachable-backend decision.
 - User-visible outcome: an agent run's `budget_source` says `served` on an unpinned Ollama host
   instead of `declared`, so a `context_overflow` termination (or its absence) means the same thing
   the document lanes' skips do.

@@ -47,6 +47,7 @@ from llb.executor.runner_setup import (
     _maybe_run_probes,
     _score_options,
     _select_eval_items,
+    check_rag_prompt_window,
 )
 from llb.executor.runner_target import (
     _eval_config_payload,
@@ -143,6 +144,11 @@ def run_eval(
             max_backend_relaunches=max_backend_relaunches,
         )
         with active_launcher as backend:
+            # Resolved here rather than at wiring time: the backend is only now serving, and on
+            # Ollama it reports no window at all until a request has loaded the model.
+            window_warning = check_rag_prompt_window(config, resolved.context_window)
+            if window_warning:
+                _LOG.warning("%s", window_warning)
 
             def relaunch() -> None:
                 backend.stop()
