@@ -145,6 +145,21 @@ class ContextAblationVerdict(TypedDict):
     retrieved_document: NotRequired[RetrievedDocumentVerdict]
 
 
+class SliceReading(TypedDict):
+    """One question type's own derived deltas, contamination, and ablation reading.
+
+    Diagnostic by construction: it is decided on the items of a single question type, so it names
+    the slices retrieval fails to pay for without ever becoming the corpus decision. The
+    `retrieved_document` adoption call is absent here on purpose -- see `per_slice.py`.
+    """
+
+    slice: str
+    n: int
+    derived: list[DerivedComparison]
+    contamination: ContaminationReport
+    verdict: ContextAblationVerdict
+
+
 class LongContextPowerAnalysis(TypedDict):
     """Predeclared sensitivity target plus the reading reached by the new item set."""
 
@@ -189,6 +204,7 @@ class ContextAblationReport(TypedDict):
     item_ids: list[str]
     lanes: dict[str, LaneReport]
     derived: list[DerivedComparison]
+    slice_readings: list[SliceReading]
     contamination: ContaminationReport
     items: list[ItemOutcome]
     verdict: ContextAblationVerdict

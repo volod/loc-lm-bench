@@ -360,6 +360,19 @@ configuration someone could ship it carries an explicit adopt-or-reject verdict 
 calibrated paired interval as every other reading here. Adoption is a per-corpus measured result,
 never a default: `rag` remains the leaderboard row until a run says otherwise.
 
+Both readings the ablation produces are also stated per QUESTION TYPE, because a pooled average over
+a mixed item set cannot say WHICH questions retrieval pays for: a factoid answered by a single span
+and a multi-hop question whose evidence is scattered across documents are different retrieval
+problems, and an operator whose corpus is mostly one of them is not served by the mean of both. Each
+slice is decided on its own items by the same calibrated cut as the pooled reading and carries its
+own item count, contamination rate, and per-lane skip counts, so a slice can be compared against the
+pool it came from. The boundary: a slice reading is DIAGNOSTIC. It says where retrieval fails to pay
+for itself and never becomes the corpus decision -- the pooled verdict is what the ablation
+concludes, and the adopt-or-reject call on `retrieved_document` is not taken per slice at all,
+because a shippable configuration chosen off a dozen items of one question type is what the
+minimum-evidence gate exists to refuse. A gold set carrying no question-type sidecar reports no
+slices rather than one pooled slice under a made-up label.
+
 ### Judge admission
 
 An LLM judge is admitted only after its exact rubric and model clear the configured correlation

@@ -62,6 +62,27 @@ item. The population is scoped to the pair, not to the run: with two document la
 item only `retrieved_document` skipped says nothing about `long_context - rag`, and pooling every
 lane's skips would silently shrink a delta that was fully measured.
 
+Every one of those numbers is ALSO stated per question type, read from the gold set's
+`needle_items.jsonl` / `item_provenance.jsonl` sidecar (`src/llb/rag/question_types.py` joins the
+two). `src/llb/eval/context_ablation/per_slice.py` rebuilds the same derived table over each
+slice's items, with that slice's own bootstrap draw, its own fitting cut, and its own contamination
+report, and judges it through the same `decide_population` the pooled verdict uses
+(`verdict.py`) -- so a slice reading and the corpus reading differ only in which items they saw.
+The artifact leads the section with one summary row per question type (n, closed-book matches,
+`retrieval_uplift`, `long_context_delta`, and the reading that slice reached) and follows it with
+each slice's own per-lane metrics and derived deltas (`report_slices.py`, `report_tables.py`).
+
+Three rules keep a slice honest:
+
+- **A slice is diagnostic.** The pooled verdict stays the corpus decision, and no slice carries the
+  `retrieved_document` adoption call: a shippable configuration picked off a dozen items of one
+  question type is what the minimum-evidence gate exists to refuse.
+- **A fitting cut is scoped to the slice.** A slice no lane skipped carries no fitting row at all;
+  a slice a lane skipped ENTIRELY reports `not measurable` rather than the `0.000` that a mean over
+  no items formats as.
+- **No sidecar, no slices.** A gold set that labels nothing reports the pooled number and says why,
+  instead of inventing a slice label to fill the table.
+
 Verdicts, in check order: `long_context_wins` | `rag_pays_off` | `retrieval_inconclusive` |
 `no_retrieval_gain` | `no_evidence`. Every gate reads the paired INTERVAL, never the point
 estimate. Artifacts: `$DATA_DIR/context-ablation/<run>/{report.md,comparison.json}`, plus one

@@ -89,14 +89,40 @@ def decide(
     n: int,
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> ContextAblationVerdict:
-    """Name the lane the evidence supports, and say what its delta amounts to."""
+    """Name the lane the evidence supports over the whole scored item set."""
+    return decide_population(
+        derived,
+        contamination,
+        baseline=baseline,
+        n=n,
+        skipped={label: len(lane["skipped_item_ids"]) for label, lane in lanes.items()},
+        confidence=confidence,
+    )
+
+
+def decide_population(
+    derived: Sequence[DerivedComparison],
+    contamination: ContaminationReport,
+    *,
+    baseline: str,
+    n: int,
+    skipped: Mapping[str, int],
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> ContextAblationVerdict:
+    """Name the lane the evidence supports over ONE population, and what its delta amounts to.
+
+    The population is the whole run for the corpus verdict and one question type for a slice
+    reading. Both are judged by the same cut on purpose: a slice whose verdict was reached by a
+    softer rule than the pooled one would not be comparable to it, which is the only thing a
+    per-slice reading is for.
+    """
     verdict: ContextAblationVerdict = {
         "baseline": baseline,
         "n": n,
         "decision": VERDICT_NO_EVIDENCE,
         "reason": "",
         "contamination_rate": contamination["rate"],
-        "skipped": {label: len(lane["skipped_item_ids"]) for label, lane in lanes.items()},
+        "skipped": dict(skipped),
     }
     by_label = by_label_of(derived)
     uplift = by_label.get(DERIVED_RETRIEVAL_UPLIFT)

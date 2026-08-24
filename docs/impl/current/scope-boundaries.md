@@ -130,6 +130,13 @@ The one number the ablation is entitled to change is interpretation of a leaderb
 uplift that does not clear zero says the RAG stack is not earning its cost on that corpus, and a
 high closed-book match rate says the item set is measuring memory as much as retrieval.
 
+The per-question-type slices inherit that boundary and add one of their own. A slice reading says
+where retrieval did or did not pay for itself on a KIND of question, decided on that slice's items
+alone, so it is read as a pointer to the next measurement rather than as a statement about the
+corpus -- the pooled reading stays the ablation's conclusion. `retrieved_document`'s adopt-or-reject
+call is not taken per slice at all: it is the one decision here an operator acts on, and a dozen
+items of one question type is not the evidence for it.
+
 `retrieved_document` is the deliberate exception, and the reason the boundary above is a boundary
 rather than a refusal to act. It sends whole documents like `long_context` does, but it picks them
 from the RANKING -- top-N distinct documents off the retrieved chunk list -- so nothing in its path

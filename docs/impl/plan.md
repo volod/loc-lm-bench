@@ -76,33 +76,35 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### context-ablation-question-type-slices (optional)
+#### document-lane-skip-reads-the-served-window
 
-The context ablation slices by question type, but the committed UA fixture ships no
-`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane ([RAG
-core](current/rag-core/context-ablation.md#context-ablation-evidence)). Pooling hides the question
-the lane is most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose
-answer is one span versus a comparative or numeric question whose evidence is scattered. Run the
-ablation on a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted
-multi-hop bundle) so the uplift and the long-context delta are reported per slice, and record which
-slices retrieval fails to pay for.
+Both document lanes promise to SKIP an item whose documents exceed the model's usable window rather
+than truncate it, but the check reads the DECLARED window only: `fits_context_chars`
+(`src/llb/optimize/tuning_space.py`) takes the host planner cap and the roster's `max_context`,
+while Ollama serves `num_ctx` 4096 unless `max_model_len` / `context_budget` pins it
+(`src/llb/executor/runner_backend.py` passes one or neither). On any corpus whose documents exceed
+the served window the backend then truncates a document the report counts as fully delivered, which
+is the one thing the lane's own rule forbids -- and the truncation is silent, so the lane reads as a
+measured long-context result. Take the MINIMUM of declared and probed, the way the agent-loop
+prompt guard already does with `probe_config_served_max_model_len` + `bind_window`
+(`src/llb/backends/served_window.py`), and record which of the two bound the run.
 
 - Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. The slicing is already wired; this needs a labeled item set and the run.
-  Question-type labels come from the needle sidecar
-  ([data prep](current/data-prep.md)).
-- User-visible outcome: the operator learns WHICH questions retrieval pays for on their corpus,
-  instead of one pooled average over a mixed set.
-- Scope boundary: in scope -- the run, the per-slice reading, and a verdict per slice. Out of
-  scope -- new metrics, new lanes, and any ranking-policy change.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies GOLDSET=<sidecar-bearing goldset> CORPUS=<dir>`
-  on the CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the report carries a non-empty slice table with paired
-  intervals per slice and states which slices the uplift interval fails to clear zero on.
-- Documentation target: the context-ablation evidence subsection of
-  [RAG core](current/rag-core.md).
+- Agent status: CLEAR
+- Dependencies: none. `served_window.py` already probes every local backend and `bind_window`
+  already returns the bound plus its provenance label.
+- User-visible outcome: a document lane's skip count means what the report says it means on any
+  corpus, instead of only on one whose documents happen to fit an unpinned 4096-token window.
+- Scope boundary: in scope -- resolving the fit threshold from the served window, recording the
+  binding source in the run manifest and the ablation report, and a fixture test per binding
+  direction. Out of scope -- changing what a lane does with a document that DOES fit, truncation as
+  a policy, and any new lane.
+- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`; no new artifact.
+- Execution path: `make ci` with an injected probe; no GPU run is needed to accept it.
+- Acceptance gates: `make ci` green; a fixture where the declared window admits a document and the
+  probed one does not produces `context_overflow`, and the report names which window bound it.
+- Documentation target: the budget-and-skips paragraph of
+  [context ablation](current/rag-core/context-ablation.md).
 
 #### closed-book-decoding-stability (optional)
 
