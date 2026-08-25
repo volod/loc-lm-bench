@@ -76,66 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Graph retrieval and ontology -- `graph-retrieval`
 
-#### ontology-axiom-layer
-
-The induced ontology is a type INVENTORY, not a set of constraints: `induce_ontology` emits entity
-and relation types with counts, confidence, and examples under the `MAX_ENTITY_TYPES` /
-`MAX_RELATION_TYPES` caps (`src/llb/prep/ontology/extraction/induce.py`, `models.py`), and nothing
-in that artifact can be VIOLATED. The graph build accepts whatever the extractor emits -- `add_fact`
-creates a lightweight `MISC` fact-only node for an unrecognized endpoint rather than refusing the
-fact, and the approved schema states that rule outright ("no grounded fact is dropped", [graph
-ontology schema](../design/graph-ontology-schema.md)). So a corpus ledger can assert that one patent
-has two different durations, that one work has two exclusive owners, or that one entity is both
-`PERSON` and `ORG`, and no stage notices -- after which the drafting pipeline turns those facts into
-gold questions and the graph lane retrieves them as evidence. Build the ledger-side half of the
-validation architecture: an AXIOM layer over the closed vocabulary and the induced relations --
-functional and inverse-functional properties (at most one object per subject, and vice versa),
-`domain`/`range` type constraints per relation, disjoint entity-type pairs, symmetry/asymmetry/
-irreflexivity, and cardinality bounds -- plus a checker that reads an extraction ledger and reports
-every violation with the axiom it breaks and BOTH offending facts' evidence spans.
-
-Serialize the axioms as RDFS/OWL Turtle (`owl:FunctionalProperty`, `owl:InverseFunctionalProperty`,
-`owl:disjointWith`, `rdfs:domain`, `rdfs:range`) so the constraint set is standard, diffable, and
-reviewable by someone who does not read this codebase -- but keep the SHIPPED checker pure Python
-over the existing typed models, so no runtime dependency is added, matching the optional-extras
-discipline the rest of the repo keeps. A standard reasoner (`rdflib` + `owlrl` behind an
-`[ontology]` extra, marked `heavy_env`) rides along in CI as a CROSS-CHECK only: it must agree with
-the in-repo checker on the committed axiom fixture, and a disagreement is a bug in the in-repo
-checker. That keeps OWL semantics as the reference without letting a reasoner into the answer path.
-
-- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
-- Agent status: RUN NEEDED
-- Dependencies: none in code. Reuse the closed vocabulary and `normalize_entity_type` in
-  `src/llb/prep/ontology/extraction/entity_types.py`, the typed `SROFact` / `Entity` / `OntologyCandidate`
-  models in `src/llb/prep/ontology/models.py`, the caps and confidence blend in
-  `src/llb/prep/ontology/constants.py`, the fact ingestion seam in `src/llb/graph/build.py`, and the
-  violation-report renderer pattern from `src/llb/conflicts/report/render.py`.
-- User-visible outcome: a corpus ledger whose logical inconsistencies are visible and named before
-  they become gold questions or retrieved evidence, and a constraint set an operator can read,
-  version, and hand to a domain expert.
-- Scope boundary: in scope -- the axiom schema and its Turtle serialization, the pure checker, the
-  reasoner cross-check, the violation report, the base-rate measurement over the committed corpora,
-  and an opt-in `--refuse-violations` build flag. Out of scope -- inferring axioms from corpus
-  frequency and shipping them unreviewed (a frequency-induced axiom only restates what the extractor
-  emitted; acceptance is `ontology-axiom-signoff`), full OWL DL reasoning, changing the 13-type
-  vocabulary or the relation caps, deleting any fact by default, and touching retrieval.
-- Data and artifact paths: the candidate axiom set committed at `samples/ontology/axioms_uk_v1.ttl`
-  plus its typed JSON form beside it; violation reports under `$DATA_DIR/ontology-validation/<run>/`.
-- Execution path: `make validate-ontology-axioms EXTRACTION=<bundle>/extraction.jsonl
-  AXIOMS=samples/ontology/axioms_uk_v1.ttl` over the drafted bundles of both quickstart corpora on
-  the CUDA host (extraction ledgers already exist; no new inference unless a bundle is missing); CI
-  covers each axiom class over a committed fixture carrying one planted violation per class plus the
-  reasoner cross-check.
-- Acceptance gates: `make ci` green; the pure checker and the `owlrl` reasoner return the identical
-  violation set on the committed fixture; the report states the base rate per axiom class on both
-  quickstart corpora, and a corpus with ZERO violations is recorded as a measured finding (that
-  axiom class buys nothing on that corpus) rather than as a silent pass; the graph build is
-  byte-identical unless `--refuse-violations` is passed; every reported violation cites both facts'
-  exact spans, so a reviewer can adjudicate without re-reading the corpus.
-- Documentation target: the ontology-assisted drafting section of
-  [robustness and ontology](current/robustness-ontology-backends.md#ontology-assisted-drafting) and
-  a constraints section in [graph ontology schema](../design/graph-ontology-schema.md).
-
 #### ontology-validated-answer-gate
 
 Compose the two halves into the shipped two-step gate -- Pydantic at the door, the ontology at the
@@ -158,9 +98,11 @@ declining the hard items looks like a win.
 
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: RUN NEEDED
-- Dependencies: `ontology-axiom-layer` (the axioms to validate against); enabling an axiom at answer
-  time also needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than
-  defaulted. The typed object, its boundary, and its bounded repair are shipped -- validate the
+- Dependencies: the axiom classes, the committed Turtle constraint set, and the pure-Python ledger
+  checker already ship ([robustness and
+  ontology](current/robustness-ontology-backends.md#ontology-axiom-layer)); enabling an axiom at
+  answer time also needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather
+  than defaulted. The typed object, its boundary, and its bounded repair are shipped -- validate the
   envelope's `claims[].triple` and extend the same boundary rather than adding a second one.
   Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff/uncertainty.py` and
   `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
@@ -1739,13 +1681,13 @@ existing store, then report both grounding modes side by side so the gap is visi
 
 #### ontology-axiom-signoff
 
-Accept or reject each candidate axiom from `ontology-axiom-layer`, one at a time, before any of them
-can gate an answer. An axiom is BUSINESS LOGIC, not a measurement: whether "has owner" admits one
-value or many, whether `PERSON` and `ORG` are genuinely disjoint in this domain, and whether a
-relation's range is closed are claims about the world that no corpus statistic can settle. Inducing
-them from corpus frequency would only restate what the extractor happened to emit -- the same
-circularity the conflict tier already hit, where the null and the observed population turned out to
-be the same set ([data
+Accept or reject each candidate axiom in `samples/ontology/axioms_uk_v1.ttl`, one at a time, before
+any of them can gate an answer. An axiom is BUSINESS LOGIC, not a measurement: whether "has owner"
+admits one value or many, whether `PERSON` and `ORG` are genuinely disjoint in this domain, and
+whether a relation's range is closed are claims about the world that no corpus statistic can settle.
+Inducing them from corpus frequency would only restate what the extractor happened to emit -- the
+same circularity the conflict tier already hit, where the null and the observed population turned
+out to be the same set ([data
 prep](current/data-prep/conflict-detection.md#known-limitation-there-is-no-independent-null)) -- and
 the cost of a wrong axiom is asymmetric and silent: at the ledger it deletes a true fact from the
 report's attention, and at the answer gate it converts correct answers into `ontology_violation`.
@@ -1755,9 +1697,11 @@ for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
 
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: HUMAN-GATED
-- Dependencies: `ontology-axiom-layer` supplies the candidate axioms, their Turtle rendering, and
-  the per-axiom evidence (supporting facts, contradicting facts, and the measured base rate on both
-  quickstart corpora). Reuse the review-workbench ledger pattern
+- Dependencies: the candidate axioms, their Turtle rendering, and the per-axiom evidence rows
+  (supporting facts, contradicting facts, and the measured base rate per corpus) already ship as
+  `axiom_evidence.jsonl` beside each validation run ([robustness and
+  ontology](current/robustness-ontology-backends.md#ontology-axiom-layer)). Reuse the
+  review-workbench ledger pattern
   ([review workbench](current/review-workbench.md)) so the decisions are recorded the same way every
   other review ledger is. Human step that gates completion: a domain reviewer decides `accept` or
   `reject` for EVERY candidate axiom and signs the resulting axiom file.
@@ -1766,12 +1710,13 @@ for the form ([graph ontology schema](../design/graph-ontology-schema.md)).
 - Scope boundary: in scope -- the per-axiom review worksheet (each axiom rendered as Turtle plus a
   Ukrainian-language gloss and its supporting/contradicting facts with exact spans), the review
   pass, the signed axiom file, and a recorded reason per rejection. Out of scope -- authoring new
-  axiom CLASSES (that is `ontology-axiom-layer`), changing the 13-type vocabulary or the relation
-  caps, and enabling any axiom the reviewer did not accept.
-- Data and artifact paths: the worksheet under `$DATA_DIR/ontology-validation/<run>/axiom_review.jsonl`;
-  the signed set committed at `samples/ontology/axioms_uk_v1.ttl` with the sign-off line in its
-  header, mirroring the dated sign-off convention of
-  [graph ontology schema](../design/graph-ontology-schema.md).
+  axiom CLASSES or changing the checker, changing the 13-type vocabulary or the relation caps, and
+  enabling any axiom the reviewer did not accept.
+- Data and artifact paths: the worksheet under `$DATA_DIR/ontology-validation/<run>/axiom_review.jsonl`,
+  built from the `axiom_evidence.jsonl` the validation run already writes beside it; the signed set
+  committed at `samples/ontology/axioms_uk_v1.ttl`, where a signature is `dcterms:creator` +
+  `dcterms:date` on that axiom's `owl:Axiom` annotation block, mirroring the dated sign-off
+  convention of [graph ontology schema](../design/graph-ontology-schema.md).
 - Execution path: `make validate-ontology-axioms` to regenerate the candidates and their evidence,
   then `make review-workbench REVIEW_PATH=<axiom-review-jsonl>`; no GPU is required for the review
   itself.

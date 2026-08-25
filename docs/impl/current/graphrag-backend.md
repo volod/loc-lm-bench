@@ -23,6 +23,10 @@ This page is the AREA INDEX: the mechanics and each evidence chain live under
 | [Re-rendering a recorded comparison](graphrag-backend/answer-quality-rerender.md) | How a finished answer-quality run is re-read under an improved report with no model call, and what a drifted bundle set is refused on |
 | [Sidecar-free routing calibration](graphrag-backend/sidecar-free-routing-calibration.md) | What the question-type router is worth when no question-type sidecar exists to route on |
 
+The CONSTRAINT layer over the node vocabulary -- the axiom classes, the committed Turtle set, the
+ledger checker, and its measured base rates -- lives with the drafting pipeline it validates:
+[robustness and ontology](robustness-ontology-backends.md#ontology-axiom-layer).
+
 ## Ontology Scope
 
 Graph nodes use the closed 13-type vocabulary in

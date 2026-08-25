@@ -14,6 +14,7 @@ Committed sample files are grouped by the workflow that consumes them.
 | `text_analysis_bundle_uk/` | Text-analysis category bundle | text-analysis benchmark tests |
 | `verification/` | Human-review sample manifests and worksheets | verification and composite sample smoke checks |
 | `config-example/` | Serving config generator templates | `llb gen-serving-config` |
+| `ontology/` | Candidate ontology axiom set (Turtle + typed JSON mirror) | `make validate-ontology-axioms`, `llb build-graph --axioms`, axiom-layer tests |
 
 Runtime outputs, generated drafts, downloaded datasets, and private corpora belong under
 `$DATA_DIR`, not under `samples/`.

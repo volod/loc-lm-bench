@@ -21,6 +21,7 @@ from llb.graph.model import (
     KnowledgeGraph,
 )
 from llb.prep.ontology.extraction.entity_types import DEFAULT_ENTITY_TYPE
+from llb.prep.ontology.naming import normalize_name
 from llb.prep.ontology.extraction.induce import induce_ontology
 from llb.prep.ontology.coverage.inventory import section_at
 from llb.prep.ontology.models import (
@@ -33,9 +34,9 @@ from llb.prep.ontology.models import (
 _LOG = logging.getLogger(__name__)
 
 
-def _norm(name: str) -> str:
-    """Case/space-insensitive key used to link fact endpoints to entity nodes."""
-    return " ".join(name.split()).casefold()
+# The shared node key: the axiom layer folds subjects and objects the same way, so both stages
+# talk about the same merged entity (`prep/ontology/naming.py`).
+_norm = normalize_name
 
 
 def _mention(span: SourceSpan, sections: list[Section]) -> GraphMention:

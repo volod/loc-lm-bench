@@ -7,3 +7,4 @@ include $(PROJECT_ROOT)/make/data-prep/verification.mk
 include $(PROJECT_ROOT)/make/data-prep/drafting.mk
 include $(PROJECT_ROOT)/make/data-prep/draft-comparison.mk
 include $(PROJECT_ROOT)/make/data-prep/linkage.mk
+include $(PROJECT_ROOT)/make/data-prep/ontology.mk

@@ -19,7 +19,7 @@ PYTEST_CACHE_OPT := -o cache_dir=$(LLB_CACHE_DIR)/pytest
 # (AGENTS.md) and installed by scripts/build_vllm.sh after the editable install on CUDA hosts.
 # CrewAI remains a dedicated environment because its pins conflict with dev/RAG extras.
 # Override for a lean install, e.g. `make venv EXTRAS=dev`.
-EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,linkage,track,board,viz,prep,telemetry,goldset,cutoff,dev
+EXTRAS ?= rag,rag-chroma,rag-qdrant,eval,graph,linkage,ontology,track,board,viz,prep,telemetry,goldset,cutoff,dev
 VENV_INSTALL_VLLM ?= auto
 # `make venv` installs with `uv sync`, so the local venv holds exactly the uv.lock versions GitHub
 # CI installs (.github/workflows/ci.yml) -- an unpinned `uv pip install` on either side is how a

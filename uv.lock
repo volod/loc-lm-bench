@@ -5799,6 +5799,10 @@ mcp = [
     { name = "mcp", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-3-llb-crewai' or (extra == 'extra-3-llb-encoders-legacy' and extra == 'extra-3-llb-rag')" },
     { name = "mcp", version = "1.28.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-3-llb-dev' or extra == 'extra-3-llb-encoders-legacy' or extra == 'extra-3-llb-rag' or extra == 'extra-3-llb-rag-chroma' or extra == 'extra-3-llb-rag-lancedb' or extra != 'extra-3-llb-crewai'" },
 ]
+ontology = [
+    { name = "owlrl" },
+    { name = "rdflib" },
+]
 pdf-quality = [
     { name = "docling", version = "2.95.0", source = { registry = "https://pypi.org/simple" }, extra = ["rapidocr"], marker = "extra == 'extra-3-llb-crewai' or (extra == 'extra-3-llb-encoders-legacy' and extra == 'extra-3-llb-rag')" },
     { name = "docling", version = "2.107.0", source = { registry = "https://pypi.org/simple" }, extra = ["rapidocr"], marker = "extra == 'extra-3-llb-dev' or extra == 'extra-3-llb-encoders-legacy' or extra == 'extra-3-llb-rag' or extra == 'extra-3-llb-rag-chroma' or extra == 'extra-3-llb-rag-lancedb' or extra != 'extra-3-llb-crewai'" },
@@ -5878,6 +5882,7 @@ requires-dist = [
     { name = "optuna", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'finetune'", specifier = ">=3.6" },
     { name = "optuna", marker = "extra == 'track'", specifier = ">=3.6" },
+    { name = "owlrl", marker = "extra == 'ontology'", specifier = ">=6.0" },
     { name = "peft", marker = "extra == 'finetune'", specifier = ">=0.12" },
     { name = "psutil", marker = "extra == 'encoders-legacy'", specifier = ">=5.9" },
     { name = "psutil", marker = "extra == 'telemetry'", specifier = ">=5.9" },
@@ -5891,6 +5896,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qdrant-client", marker = "extra == 'rag-qdrant'", specifier = "==1.18.0" },
     { name = "radon", marker = "extra == 'dev'", specifier = "==6.0.1" },
+    { name = "rdflib", marker = "extra == 'ontology'", specifier = ">=7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6,<0.17" },
     { name = "scipy", marker = "extra == 'encoders-legacy'", specifier = ">=1.11" },
     { name = "scipy", marker = "extra == 'rag'", specifier = ">=1.11" },
@@ -5906,7 +5912,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'pdf-quality'", specifier = ">=0.18" },
 ]
-provides-extras = ["rag", "encoders-legacy", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "linkage", "track", "board", "viz", "prep", "telemetry", "review", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
+provides-extras = ["rag", "encoders-legacy", "eval", "crewai", "rag-chroma", "rag-qdrant", "rag-lancedb", "graph", "linkage", "ontology", "track", "board", "viz", "prep", "telemetry", "review", "finetune", "goldset", "cutoff", "mcp", "pdf-quality", "dev"]
 
 [[package]]
 name = "llvmlite"
@@ -7952,6 +7958,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/36/86/b585f53236dec60aba864e050778b25045f857e17f6e5ea0ae95fe80edd2/overrides-7.7.0.tar.gz", hash = "sha256:55158fa3d93b98cc75299b1e67078ad9003ca27945c76162c1c0766d6f91820a", size = 22812, upload-time = "2024-01-27T21:01:33.423Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/ab/fc8290c6a4c722e5514d80f62b2dc4c4df1a68a41d1364e625c35990fcf3/overrides-7.7.0-py3-none-any.whl", hash = "sha256:c7ed9d062f78b8e4c1a7b70bd8796b35ead4d9f510227ef9c5dc7626c60d7e49", size = 17832, upload-time = "2024-01-27T21:01:31.393Z" },
+]
+
+[[package]]
+name = "owlrl"
+version = "7.6.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rdflib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/08/50dd7fd0c64775d3d6309f35c0cc9a9d635f392f94ee2c4f9122404f7f86/owlrl-7.6.2.tar.gz", hash = "sha256:c743f35c2d908396e77823852bb1ebbce88340cd49961493983bec42c93283a8", size = 48564, upload-time = "2026-07-08T08:38:26.462Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/5e/314be7440bf28dbd47f85321a7434c5b74179a762228487d6493c01bddce/owlrl-7.6.2-py3-none-any.whl", hash = "sha256:83347bf7f133979e87b2b18695d51d25510b99cec3f6919b5df05d4fbf058ae0", size = 55814, upload-time = "2026-07-08T08:38:23.842Z" },
 ]
 
 [[package]]
@@ -10826,6 +10844,18 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/e0/3d3c394448c3527aa99b858647b5404110c5e30a5549f9e2bc4c645bb6b8/rapidocr-3.9.0-py3-none-any.whl", hash = "sha256:f9e624d11315aa1ffe8ecf486a9ae7c2f7bef741d25a1e508fc5e25cb75dfed5", size = 27240223, upload-time = "2026-06-23T02:33:55.29Z" },
+]
+
+[[package]]
+name = "rdflib"
+version = "7.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/f5/18bb77b7af9526add0c727a3b2048959847dc5fb030913e2918bf384fec3/rdflib-7.6.0.tar.gz", hash = "sha256:6c831288d5e4a5a7ece85d0ccde9877d512a3d0f02d7c06455d00d6d0ea379df", size = 4943826, upload-time = "2026-02-13T07:15:55.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/c2/6604a71269e0c1bd75656d5a001432d16f2cc5b8c057140ec797155c295e/rdflib-7.6.0-py3-none-any.whl", hash = "sha256:30c0a3ebf4c0e09215f066be7246794b6492e054e782d7ac2a34c9f70a15e0dd", size = 615416, upload-time = "2026-02-13T07:15:46.487Z" },
 ]
 
 [[package]]

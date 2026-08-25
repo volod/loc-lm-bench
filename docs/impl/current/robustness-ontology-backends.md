@@ -241,6 +241,157 @@ llb prepare-goldset-draft --corpus-root <dir> --model <model> \
   --dedup-against <prior-bundle>,<other-bundle> --dedup-linkage-shadow --graph-dir <graph-store>
 ```
 
+### Ontology Axiom Layer
+
+The induced ontology is a type INVENTORY, not a constraint set: `induce.py` reports which entity
+and relation types the extractor emitted and how often, and nothing in that artifact can be
+violated. `src/llb/prep/ontology/axioms/` adds the other half -- AXIOMS a ledger can break -- so a
+corpus that asserts two different durations for one patent, two exclusive owners for one work, or
+one name that is both `PERSON` and `ORG` is visible before drafting turns it into a gold question
+and the graph lane retrieves it as evidence.
+
+Nine axiom classes, each one standard OWL/RDFS construct:
+
+| class | OWL construct | what a violation is |
+| --- | --- | --- |
+| `functional` | `owl:FunctionalProperty` | one subject carries two objects under the relation |
+| `inverse_functional` | `owl:InverseFunctionalProperty` | one object is claimed by two subjects |
+| `domain` | `rdfs:domain` | the subject's asserted entity type is outside the allowed set |
+| `range` | `rdfs:range` | the object's asserted entity type is outside the allowed set |
+| `disjoint_types` | `owl:disjointWith` | one name carries both types of a disjoint pair |
+| `symmetric` | `owl:SymmetricProperty` | the ledger asserts the edge one way only |
+| `asymmetric` | `owl:AsymmetricProperty` | the ledger asserts both directions |
+| `irreflexive` | `owl:IrreflexiveProperty` | something stands in the relation to itself |
+| `max_cardinality` | `owl:maxCardinality` | one subject carries more objects than the bound |
+
+The constraint set is committed as Turtle at `samples/ontology/axioms_uk_v1.ttl` with its typed
+JSON mirror beside it. Turtle is the source, not a rendering: `turtle.py` is a dependency-free
+reader for the subset the file uses (prefix directives, predicate-object lists, anonymous blank
+nodes, collections), `deserialize.py` interprets the triples, and `serialize.py` writes them back.
+Each axiom's id, Ukrainian gloss, and sign-off ride on a standard `owl:Axiom` annotation block
+(`owl:annotatedSource`/`Property`/`Target`, `rdfs:label`, `rdfs:comment`, `dcterms:creator`,
+`dcterms:date`), so the whole file is ordinary OWL a domain reviewer can read without this
+codebase. A constraint triple with no annotation block is ignored -- an axiom with no id is one
+nobody can accept, reject, or cite. `test_axiom_serialization.py` pins that the two committed forms
+describe the same set and that the Turtle round-trips byte-for-byte.
+
+The SHIPPED checker (`checks/` -- one module per class family -- driven by `checker.py`) is pure
+Python over the existing typed models, so a scoring host never needs an RDF stack. Three reading
+rules make its output a base rate rather than a count:
+
+- **`checked` counts UNITS, not facts** -- subject groups for a cardinality class, facts for a
+  per-fact class, entity names for disjointness -- so `violating / checked` is comparable across
+  corpora.
+- **An untyped endpoint is `unchecked`, never a violation.** A fact endpoint the extractor never
+  typed is the `MISC` fact-only node `graph/build.py` creates; a type constraint has nothing to
+  test there, and calling it either a pass or a failure would be an invention.
+- **A zero is a finding, stated in words.** Each row reads either "did not apply here (no fact
+  carries this relation)" or "held on all N units" -- different measurements that a blank cell
+  would collapse.
+
+Every violation cites each fact it rests on with its exact `SourceSpan`, and the four pairwise
+classes cite both offending facts, so a reviewer adjudicates from the report alone.
+
+```bash
+make validate-ontology-axioms EXTRACTION="<bundle-a> <bundle-b>" \
+  AXIOMS=samples/ontology/axioms_uk_v1.ttl AXIOM_CROSSCHECK=1
+llb validate-ontology-axioms --extraction <bundle-or-extraction-jsonl> \
+  --axioms samples/ontology/axioms_uk_v1.ttl --crosscheck --fail-on-violations
+```
+
+The run writes `report.md`, `violations.jsonl`, `axiom_evidence.jsonl` (the per-axiom
+supporting/contradicting worksheet the sign-off lane reads), and `summary.json` under
+`$DATA_DIR/ontology-validation/<run>/`.
+
+#### The reasoner cross-check
+
+`crosscheck.py` holds the in-repo checker to OWL semantics: it writes the same axioms and the same
+ledger as RDF, computes the OWL 2 RL closure with `owlrl`, and evaluates each rule's antecedent
+over the closure. A disagreement is a bug in the in-repo checker, never a reason to relax the
+comparison. It needs the optional `[ontology]` extra (`rdflib` + `owlrl`) and is marked
+`heavy_env`; it never runs on the answer path.
+
+It covers the five classes whose OWL reading IS an inconsistency condition -- `functional`
+(`prp-fp`), `inverse_functional` (`prp-ifp`), `asymmetric` (`prp-asyp`), `irreflexive` (`prp-irp`),
+and `disjoint_types` (`cax-dw`). The other four are excluded for stated reasons, not convenience:
+`rdfs:domain`/`rdfs:range` ENTAIL the subject's type under OWL's open world rather than refusing a
+different one, `owl:SymmetricProperty` entails the missing counterpart rather than flagging it, and
+the OWL RL rule set covers cardinality 0 and 1 only, so an `N > 1` bound has no reasoner reading to
+agree with. The excluded axioms are kept out of the cross-check RDF graph as well: an axiom the
+comparison does not check would still change the closure of the ones it does.
+
+#### The build boundary
+
+`llb build-graph --axioms <file>` reports a ledger's violations before building; the build itself is
+unchanged, because the axiom layer reports and never edits a fact. `--refuse-violations` can refuse
+the build, and only over an axiom a reviewer SIGNED -- an unsigned candidate is printed and the
+build proceeds, because nobody has accepted it yet. The committed `axioms_uk_v1.ttl` is entirely
+unsigned, so it currently gates nothing; the per-axiom accept/reject pass is the `ontology-axiom-signoff`
+task in [`plan.md`](../plan.md), and the constraint set itself is documented in
+[graph ontology schema](../../design/graph-ontology-schema.md#6-axioms-over-the-vocabulary-and-the-induced-relations).
+
+#### Measured base rates (2026-08-25, RTX 4060 Ti 16 GB CUDA host)
+
+`llb validate-ontology-axioms --crosscheck` over the 21 candidate axioms and three existing draft
+bundles' extraction ledgers -- no new inference, no GPU. The two quickstart-corpus bundles are the
+five-document Ukrainian PDF property/HR corpus (182 entities, 214 grounded facts, 130 distinct
+relations) and the single-document public literature PDF corpus (301 entities, 213 facts, 190
+relations); the third is the 250-document SQuAD-derived corpus (1037 entities, 647 facts, 560
+relations), included because its wider relation vocabulary is where several classes have any
+population at all.
+
+Eleven violations in total, and the reasoner agreed with the checker on all five cross-checked
+classes:
+
+| ledger | axiom | class | broken / checked units |
+| --- | --- | --- | ---: |
+| PDF property corpus | `disjoint-person-org` | `disjoint_types` | 1 / 22 |
+| public literature | `domain-napysav` | `domain` | 1 / 3 |
+| public literature | `disjoint-work-loc` | `disjoint_types` | 1 / 39 |
+| SQuAD-derived | `func-maie-naselennia` | `functional` | 1 / 2 |
+| SQuAD-derived | `disjoint-org-loc` | `disjoint_types` | 1 / 294 |
+| SQuAD-derived | `disjoint-product-org` | `disjoint_types` | 4 / 182 |
+| SQuAD-derived | `sym-mezhuie-z` | `symmetric` | 1 / 1 |
+| SQuAD-derived | `maxcard-ye` | `max_cardinality` | 1 / 19 |
+
+The readings:
+
+- **Disjointness is the class that earns its place on every corpus.** It is the only class with a
+  population on all three ledgers (22, 242 and 205 checked units for `PERSON`/`ORG` alone) and the
+  only one that fires on more than one. Its violations are also the most reviewable: `Міністр
+  оборони України` typed both `PERSON` and `ORG`, `Собор Паризької Богоматері` both `WORK` and
+  `LOC`, `Голландська Республіка` both `ORG` and `LOC` -- three cases a domain reviewer can decide,
+  and three cases where a wrong axiom would be expensive, since a country genuinely is both a place
+  and a polity.
+- **The relation-scoped classes are corpus-specific, and that is the finding.** 11 of the 21 axioms
+  had NO population on the PDF property corpus and 7 had none on the literature corpus, because the
+  relation vocabulary is induced per corpus and runs to a long tail (130 / 190 / 560 distinct
+  relations for 214 / 213 / 647 facts). An axiom naming a relation surface buys nothing on a corpus
+  whose extractor never emitted that surface -- so a relation-scoped axiom set is per-domain work,
+  not a once-and-for-all file, and a signed set should be scoped to the corpus family it was
+  reviewed against.
+- **The single functional violation is the motivating case, and it is real.** `Сан-Дієго` carries
+  both `1 307 402 осіб` and `1,3 мільйона осіб` under `має населення` -- the same quantity written
+  twice at different precision. It is one of only 2 checked units, so the rate (0.5) is a count in
+  disguise; the value is that the contradiction surfaced with both spans attached, not the ratio.
+- **`symmetric` fires on its only unit,** `Вікторія межує з Тасманією` with no counterpart edge.
+  That is a completeness gap in the ledger rather than a contradiction, which is why it stays out
+  of the reasoner comparison.
+- **`inverse_functional`, `range`, and three of the four `functional` axioms held wherever they
+  applied,** on 1-3 units each. Populations that small support no rate at all; they are recorded as
+  "held on all N units" so nobody reads them as evidence the axiom is safe.
+
+What would overturn this: a differently-drafted extraction over the same corpora (the relation
+surfaces are model output, so a different drafter yields a different relation vocabulary and a
+different applicable subset), or a sign-off pass that rejects the disjoint pairs -- `ORG`/`LOC` in
+particular is the axiom this evidence most invites a reviewer to reject.
+
+Tests: `tests/llb/prep/ontology/axioms/` -- a committed fixture ledger
+(`tests/fixtures/ontology/axiom_fixture_extraction.jsonl`, with its source document beside it)
+carrying exactly one planted violation per axiom class, asserted as exact counts so an over-firing
+axiom fails as loudly as a missing one, plus the span-grounding check, the serialization
+round-trip, the CLI bundle, the build refusal boundary, and the `heavy_env` reasoner cross-check.
+
 ## spaCy Adapter And Long Documents
 
 `src/llb/prep/ontology/endpoints/spacy_adapter.py` implements the Python-native NER adapter over spaCy

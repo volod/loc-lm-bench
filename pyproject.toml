@@ -70,6 +70,11 @@ graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-h
 # written against (namespaced `linker.training` / `.inference` / `.clustering`, `SettingsCreator`,
 # `block_on`); a future major is a deliberate port, not a resolver decision.
 linkage = ["splink>=4.0,<5", "duckdb>=1.0"]
+# The OWL reasoner that CROSS-CHECKS the ontology axiom layer in CI. The shipped checker is pure
+# Python over the typed models (`prep/ontology/axioms/`), so a scoring host never needs this; the
+# reasoner exists to prove the checker did not invent its own semantics, and a disagreement is a
+# bug in the checker. Never on the answer path.
+ontology = ["rdflib>=7.0", "owlrl>=6.0"]
 track = ["mlflow>=2.15", "duckdb>=1.0", "optuna>=3.6"]  # pyarrow arrives transitively via mlflow
 board = ["streamlit>=1.36"]
 viz = ["matplotlib>=3.8"]  # `recommend` model-comparison chart

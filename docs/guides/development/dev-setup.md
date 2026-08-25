@@ -153,6 +153,7 @@ The groups installed by `make venv` (and what `EXTRAS=` selects from):
 | `rag-qdrant` | qdrant-client | Qdrant vector-store adapter |
 | `rag-lancedb` | lancedb | LanceDB vector-store adapter, opt-in |
 | `eval` | langgraph | retrieve -> generate eval graph (`run-eval`) |
+| `ontology` | rdflib, owlrl | OWL reasoner CROSS-CHECK of the ontology axiom checker; never on the answer path |
 | `track` | mlflow, duckdb, pyarrow, optuna | tracking + config search |
 | `board` | streamlit | leaderboard |
 | `prep` | litellm | frontier-API prep utils |
