@@ -4,7 +4,14 @@ import pytest
 
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
+from llb.backends.served_window import (
+    BUDGET_SOURCE_DECLARED,
+    BUDGET_SOURCE_SERVED,
+    BUDGET_SOURCE_UNBOUNDED,
+)
 from llb.optimize.tuner import make_objective
+from llb.optimize.tuner_runtime import resolve_study_window
+from llb.backends.context_fit import bound_max_context
 from llb.optimize.tuning_space import (
     EXTENDED_STRATEGIES,
     STRATEGIES,
@@ -25,6 +32,9 @@ SMALL_CTX_SPEC: ModelSpec = {
     "kv_dim": 1024,
     "max_context": 2048,
 }
+
+# The shape the defect lives in: a model card advertising a huge window on a backend serving 4096.
+BIG_CTX_SPEC: ModelSpec = {**SMALL_CTX_SPEC, "max_context": 131072}
 
 
 class FakeTrial:
@@ -208,6 +218,83 @@ def test_objective_prunes_over_context_trial(tmp_path):
     )
     with pytest.raises(optuna.TrialPruned):
         objective(trial)
+
+
+# --- the served window the prune is priced against ------------------------------------------
+
+
+def test_fits_context_prunes_on_the_served_window_the_declared_one_admits():
+    """The whole point: a probed 4096 must prune a trial a declared 131072 would keep.
+
+    An unpinned Ollama serves `num_ctx` 4096 however large a window the model card advertises, so
+    the declared side alone keeps a configuration whose prompt the backend silently truncates.
+    """
+    base = RunConfig(max_tokens=128)
+    big = base.with_overrides(top_k=12, chunk_size=1280)  # 15,360 chars ~ 5,760 tok
+    assert fits_context(big, BIG_CTX_SPEC, 0, 0) is True
+    assert fits_context(big, BIG_CTX_SPEC, 0, 0, 4096) is False
+
+
+def test_the_declared_window_still_prunes_when_the_backend_serves_a_larger_one():
+    """The mirror direction: a generous backend must not widen what the model card declares."""
+    base = RunConfig(max_tokens=128)
+    big = base.with_overrides(top_k=12, chunk_size=1200)
+    assert fits_context(big, SMALL_CTX_SPEC, 0, 0, 131072) is False
+    assert fits_context(big.with_overrides(top_k=3, chunk_size=256), SMALL_CTX_SPEC, 0, 0, 131072)
+
+
+def test_a_served_window_bounds_a_model_the_roster_does_not_price():
+    """A probe IS a measurement, so it bounds the prompt whether or not the manifest lists it."""
+    big = RunConfig(max_tokens=128).with_overrides(top_k=12, chunk_size=1280)
+    assert fits_context(big, None, 0, 0) is True  # no spec, no probe -> cannot judge
+    assert fits_context(big, None, 0, 0, 4096) is False
+
+
+def test_bound_max_context_names_which_side_bound_the_prune():
+    base = RunConfig(max_tokens=128)
+    assert bound_max_context(base, BIG_CTX_SPEC, 0, 0, 4096) == (4096, BUDGET_SOURCE_SERVED)
+    assert bound_max_context(base, SMALL_CTX_SPEC, 0, 0, 131072) == (2048, BUDGET_SOURCE_DECLARED)
+    assert bound_max_context(base, None, 0, 0, None) == (0, BUDGET_SOURCE_UNBOUNDED)
+
+
+def test_objective_prunes_on_the_served_window_and_names_it(tmp_path):
+    optuna = pytest.importorskip("optuna")
+    base = RunConfig(max_tokens=128, data_dir=tmp_path)
+    sampled = {
+        "strategy": "recursive",
+        "chunk_size": 1280,
+        "overlap_frac": 0.1,
+        "retrieval_mode": "flat",
+        "top_k": 12,
+    }
+    kept = make_objective(base, lambda _c: 1.0, model_spec=BIG_CTX_SPEC)
+    assert kept(optuna.trial.FixedTrial(sampled)) == 1.0
+
+    pruned = make_objective(
+        base, lambda _c: 1.0, model_spec=BIG_CTX_SPEC, served_max_model_len=4096
+    )
+    with pytest.raises(optuna.TrialPruned, match="served window of 4096 tok"):
+        pruned(optuna.trial.FixedTrial(sampled))
+
+
+def test_resolve_study_window_takes_an_injected_probe_without_touching_a_backend():
+    """The CI seam: `probe=False` with an explicit served window never opens a socket."""
+    base = RunConfig(max_tokens=128)
+    served, provenance = resolve_study_window(
+        base, model_spec=BIG_CTX_SPEC, vram_mib=0, ram_mib=0, served_max_model_len=4096
+    )
+    assert served == 4096
+    assert provenance == {
+        "declared_max_model_len": 131072,
+        "served_max_model_len": 4096,
+        "budget_source": BUDGET_SOURCE_SERVED,
+    }
+
+    unprobed, unprobed_provenance = resolve_study_window(
+        base, model_spec=BIG_CTX_SPEC, vram_mib=0, ram_mib=0, probe=False
+    )
+    assert unprobed is None
+    assert unprobed_provenance["budget_source"] == BUDGET_SOURCE_DECLARED
 
 
 # --- Optuna tuning backend-aware Optuna: serving params, measured OOM prune, throughput tie-break ----

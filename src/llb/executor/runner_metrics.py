@@ -149,13 +149,36 @@ def _aggregate(
         metrics["stage_latency"] = stage
     if judge_score is not None:
         metrics["judge_score"] = round(judge_score, 4)
+    _attach_guard_metrics(metrics, case_rows)
     _attach_answer_side_metrics(metrics, case_rows)
+    _attach_envelope_metrics(metrics, case_rows)
     return rows, metrics
 
 
 def _mean(case_rows: list[CaseScoreRow], key: str) -> float:
     values = [float(row[key]) for row in case_rows]  # type: ignore[literal-required]
     return sum(values) / len(values) if values else 0.0
+
+
+def _attach_guard_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Run-level rates for the response-integrity guard (`llb.scoring.answer_guard`).
+
+    The denominator is every scored case, exactly as `reliability`'s is, so the three read
+    together: a model can be perfectly reliable by status and still deliver a third of its answers
+    as English deliberation. `mean_reasoning_leak_chars` is what makes the throughput reading
+    honest -- it prices the part of `mean_completion_tokens` that was never an answer.
+    """
+    rows = [row for row in case_rows if "reasoning_leak" in row]
+    if not rows:
+        return
+    n = len(rows)
+    metrics["reasoning_leak_rate"] = round(sum(1 for row in rows if row["reasoning_leak"]) / n, 4)
+    metrics["language_mismatch_rate"] = round(
+        sum(1 for row in rows if row.get("language_mismatch")) / n, 4
+    )
+    metrics["mean_reasoning_leak_chars"] = round(
+        sum(int(row.get("reasoning_leak_chars", 0)) for row in rows) / n, 2
+    )
 
 
 def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
@@ -169,6 +192,34 @@ def _attach_answer_side_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRo
         values = [float(row[key]) for row in case_rows if key in row]
         if values:
             metrics[key] = round(sum(values) / len(values), 4)
+
+
+def _attach_envelope_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Declared-answer-contract rates for the run (typed-rag-answer-envelope), when it ran.
+
+    Conformance is the share of cases whose completion satisfied the contract; the two failure
+    rates are kept apart because "did not emit JSON" and "emitted JSON of the wrong shape" call for
+    different fixes. `envelope_repair_rate` is the share where the bounded reprompt was spent, so
+    first-attempt conformance reads as `1 - envelope_repair_rate` and the repair's contribution as
+    the gap between the two -- a formatting gain, never a reasoning one.
+    """
+    statuses = [str(row["envelope_status"]) for row in case_rows if "envelope_status" in row]
+    if not statuses:
+        return
+    n = len(statuses)
+    metrics["envelope_conformance"] = round(
+        sum(1 for status in statuses if status == eval_common.OK) / n, 4
+    )
+    metrics["envelope_schema_invalid_rate"] = round(
+        sum(1 for status in statuses if status == eval_common.SCHEMA_INVALID) / n, 4
+    )
+    metrics["envelope_malformed_rate"] = round(
+        sum(1 for status in statuses if status == eval_common.MALFORMED) / n, 4
+    )
+    metrics["envelope_repair_rate"] = round(
+        sum(1 for row in case_rows if row.get("repaired")) / n, 4
+    )
+    metrics["mean_claims"] = round(sum(int(row.get("n_claims", 0)) for row in case_rows) / n, 4)
 
 
 def _stage_latency(case_rows: list[CaseScoreRow]) -> dict[str, float]:

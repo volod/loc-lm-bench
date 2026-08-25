@@ -12,6 +12,8 @@ class ModelSpec(TypedDict):
     name: str
     backend: str
     source: str
+    family: NotRequired[str]
+    generation: NotRequired[str]
     min_vram_gb: NotRequired[int | float]
     notes: NotRequired[str]
     license: NotRequired[str]
@@ -32,6 +34,36 @@ class ModelSpec(TypedDict):
     embed_bpw: NotRequired[float]
     hi_precision_params_b: NotRequired[float]
     sources: NotRequired[dict[str, "str | SourceRecord | list[str | SourceRecord]"]]
+
+
+class FamilyUpstream(TypedDict):
+    """Where a currency check reads a family, so a probe never guesses a naming scheme."""
+
+    hf_author: NotRequired[str]
+    hf_prefix: NotRequired[str]
+    ollama_namespace: NotRequired[str]
+
+
+class GenerationSpec(TypedDict):
+    """One generation of a family: its status in the roster and what travels with its weights."""
+
+    id: str
+    status: str
+    label: NotRequired[str]
+    license: NotRequired[str]
+    license_url: NotRequired[str]
+    weights_url: NotRequired[str]
+
+
+class FamilySpec(TypedDict):
+    """One model family in the candidate roster, with the generations it carries."""
+
+    id: str
+    label: str
+    role: str
+    focus: NotRequired[str]
+    upstream: NotRequired[FamilyUpstream]
+    generations: list[GenerationSpec]
 
 
 class SourceRecord(TypedDict):

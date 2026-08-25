@@ -1,6 +1,8 @@
 # Serving tier manifest -- source of truth for `llb gen-serving-config`.
-# Tiers: 12 | 16 | 24 | 32 (GPU VRAM GiB). Primary target ids are model families;
-# each model field picks the largest concrete variant that fits on that tier
+# Tiers: 12 | 16 | 24 | 32 (GPU VRAM GiB). Primary target ids are model FAMILIES and serve the
+# family's current generation (samples/configs/models_uk.yaml `families:` says which that is);
+# each model field picks the largest concrete variant that fits on that tier. A previous
+# generation stays as an extra target so a generation comparison needs no manifest edit
 # (see docs/inference/config-example.md for rationale).
 
 supported_tiers: [12, 16, 24, 32]
@@ -43,7 +45,11 @@ tiers:
       backend: ollama
       model: gemma4:26b
       request_timeout_s: 300
-    qwen3.6:
+    qwen:
+      backend: ollama
+      model: qwen3.8:27b
+      request_timeout_s: 300
+    qwen3.6-35b:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
       request_timeout_s: 300
@@ -85,7 +91,11 @@ tiers:
       backend: ollama
       model: gemma4:26b
       request_timeout_s: 300
-    qwen3.6:
+    qwen:
+      backend: ollama
+      model: qwen3.8:27b
+      request_timeout_s: 300
+    qwen3.6-35b:
       backend: ollama
       model: batiai/qwen3.6-35b:iq3
       request_timeout_s: 300
@@ -129,7 +139,11 @@ tiers:
       backend: ollama
       model: gemma4:26b
       request_timeout_s: 300
-    qwen3.6:
+    qwen:
+      backend: ollama
+      model: qwen3.8:27b
+      request_timeout_s: 300
+    qwen3.6-35b:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300
@@ -173,7 +187,11 @@ tiers:
       gpu_memory_utilization: 0.90
       max_model_len: 8192
       limit_mm_per_prompt: '{"image": 0}'
-    qwen3.6:
+    qwen:
+      backend: ollama
+      model: qwen3.8:27b
+      request_timeout_s: 300
+    qwen3.6-35b:
       backend: ollama
       model: batiai/qwen3.6-35b:iq4
       request_timeout_s: 300

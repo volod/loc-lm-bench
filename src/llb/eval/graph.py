@@ -13,10 +13,14 @@ in `llb.eval.common`; see that module for the failure-taxonomy contract.
 import time
 from typing import Any, Callable, cast
 
+from llb.backends.base import ChatResult
 from llb.core.contracts.common import ChatMessage
 from llb.core.contracts.rag import SourceSpanRecord
 from llb.eval import common as eval_common
-from llb.eval.graph_contracts import ContextSource, RagState
+from llb.eval.answer_envelope import boundary as envelope_boundary
+from llb.eval.answer_envelope import lane as envelope_lane
+from llb.eval.answer_envelope.models import envelope_prompt_values
+from llb.eval.graph_contracts import ContextRefiner, ContextSource, RagState
 from llb.eval.table_headers import HeaderRestorer, prompt_context
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
@@ -40,13 +44,27 @@ SYSTEM_PROMPT = render_text("eval.rag.system")
 CHAT_TEMPLATE = "eval.rag.chat"
 CITED_ANSWER_TEMPLATE = "eval.rag.cited_answer"
 CLOSED_BOOK_TEMPLATE = "eval.rag.closed_book"
+# The declared-answer variant (typed-rag-answer-envelope): the model returns the typed contract
+# instead of prose, and the answer-side signals are read from its fields.
+ENVELOPE_TEMPLATE = "eval.rag.envelope"
+
+# The prompt-level thinking-suppression instruction (thinking-suppression-and-answer-language-guard),
+# appended to the system message when the backend's native suppression flag is not enough for the
+# served tag. It is the LAST lever, not the first: every launcher already sends the native flag.
+NO_REASONING_TEMPLATE = "eval.rag.no_reasoning"
 
 
 # A context source REPLACES store retrieval for a diagnostic context lane. It returns the same
 # partial state update the retrieve node would (`retrieved` / `context`, plus an optional terminal
 # `status`), so the graph, the per-case scoring, and the run-bundle shape are all unchanged.
-def generation_template(cited: bool = False) -> str:
-    """The generation prompt id for this run's answer style."""
+def generation_template(cited: bool = False, answer_format: str = envelope_lane.FREE_TEXT) -> str:
+    """The generation prompt id for this run's answer style.
+
+    The declared answer format supersedes the citation style: the envelope asks for citations as a
+    typed field, so the `[i]`-in-prose instruction would only be a second, weaker way to ask.
+    """
+    if answer_format == envelope_lane.ENVELOPE:
+        return ENVELOPE_TEMPLATE
     return CITED_ANSWER_TEMPLATE if cited else CHAT_TEMPLATE
 
 
@@ -56,22 +74,36 @@ def build_messages(
     prompt_package: Any | None = None,
     cited: bool = False,
     template_id: str | None = None,
+    answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
 ) -> list[ChatMessage]:
-    """Render the generation prompt. `template_id` overrides the `cited` style selection."""
-    augmentation: PromptAugmentation | None = None
+    """Render the generation prompt. `template_id` overrides the `cited` style selection.
+
+    `suppress_reasoning` appends the no-reasoning instruction to the system message, for a tag
+    whose chat template leaks its deliberation into the answer body despite the backend's native
+    suppression flag (thinking-suppression-and-answer-language-guard). It composes with a prompt
+    package rather than replacing it: the package still owns the system PREFIX.
+    """
+    system_prefix = ""
     if prompt_package is not None:
-        augmentation = PromptAugmentation(system_prefix=str(prompt_package.system_prompt))
+        system_prefix = str(prompt_package.system_prompt)
         extra = str(prompt_package.additional_prompt).strip()
         if extra:
             context = render_text(
                 "eval.rag.package_context",
                 {"additional_prompt": extra, "context": context},
             )
-    return render_chat(
-        template_id or generation_template(cited),
-        {"context": context, "question": question},
-        augmentation=augmentation,
+    system_suffix = render_text(NO_REASONING_TEMPLATE) if suppress_reasoning else ""
+    augmentation: PromptAugmentation | None = (
+        PromptAugmentation(system_prefix=system_prefix, system_suffix=system_suffix)
+        if (system_prefix or system_suffix)
+        else None
     )
+    selected = template_id or generation_template(cited, answer_format)
+    values: dict[str, Any] = {"context": context, "question": question}
+    if selected == ENVELOPE_TEMPLATE:
+        values.update(envelope_prompt_values())
+    return render_chat(selected, values, augmentation=augmentation)
 
 
 def make_retrieve_node(
@@ -82,6 +114,7 @@ def make_retrieve_node(
     chunk_filter: Any | None = None,
     context_source: ContextSource | None = None,
     header_restorer: HeaderRestorer | None = None,
+    context_refiner: ContextRefiner | None = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: retrieve top-k chunks; flag retrieval_miss when nothing comes back.
 
@@ -97,6 +130,11 @@ def make_retrieve_node(
     `context_source` replaces store retrieval entirely for a diagnostic context lane
     (rag-vs-long-context-ablation): the store, `k`, the ordering policy, and the query-prep lane
     all belong to retrieval, so a lane that does not retrieve simply supplies its own update.
+
+    `context_refiner` runs AFTER ordinary retrieval and rewrites the update it produced, which is
+    how the `retrieved_document` lane widens the unit of context from the top-ranked chunk to its
+    whole document (rag-vs-long-context-ablation): that lane DOES retrieve, so replacing the node
+    would mean reimplementing query prep, filtering, reranking, and the latency accounting.
 
     `header_restorer` (`llb.eval.table_headers`) is the opt-in prompt-side context-assembly step
     that gives a table row block back its column names (table-header-context-restoration). It
@@ -131,7 +169,8 @@ def make_retrieve_node(
         }
         if not chunks:
             update["status"] = eval_common.RETRIEVAL_MISS
-        return update
+            return update
+        return context_refiner(state, update) if context_refiner is not None else update
 
     return retrieve
 
@@ -155,12 +194,27 @@ def make_generate_node(
     prompt_package: Any | None = None,
     cited: bool = False,
     template_id: str | None = None,
+    answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response.
 
     `template_id` overrides the generation prompt, which is how the closed-book context lane asks
     the model to answer from its own weights instead of from an (empty) context block.
+
+    `answer_format` selects the ANSWER CONTRACT (typed-rag-answer-envelope). `free_text` is the
+    unchanged path -- same prompt, same single call, same state keys, so a run with the envelope
+    off records exactly what it recorded before this seam existed. `envelope` asks for the typed
+    contract and parses it at this boundary, spending at most one repair reprompt.
     """
+
+    def chat(messages: list[ChatMessage]) -> ChatResult:
+        return cast(
+            ChatResult,
+            launcher.chat(
+                messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
+            ),
+        )
 
     def generate(state: RagState) -> RagState:
         if state.get("status") in eval_common.PRE_GENERATION_STATUSES:
@@ -171,10 +225,14 @@ def make_generate_node(
             prompt_package,
             cited=cited,
             template_id=template_id,
+            answer_format=answer_format,
+            suppress_reasoning=suppress_reasoning,
         )
-        result = launcher.chat(
-            messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
-        )
+        result = chat(messages)
+        if answer_format == envelope_lane.ENVELOPE:
+            return envelope_lane.envelope_state(
+                envelope_boundary.complete_envelope(chat, messages, result)
+            )
         return {
             "answer": result.text or "",
             "status": eval_common.classify_response(result.text, result.error),
@@ -205,6 +263,9 @@ def build_rag_graph(
     context_source: ContextSource | None = None,
     template_id: str | None = None,
     header_restorer: HeaderRestorer | None = None,
+    answer_format: str = envelope_lane.FREE_TEXT,
+    suppress_reasoning: bool = False,
+    context_refiner: ContextRefiner | None = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -227,6 +288,7 @@ def build_rag_graph(
                 chunk_filter,
                 context_source=context_source,
                 header_restorer=header_restorer,
+                context_refiner=context_refiner,
             ),
         ),
     )
@@ -242,6 +304,8 @@ def build_rag_graph(
                 prompt_package,
                 cited,
                 template_id=template_id,
+                answer_format=answer_format,
+                suppress_reasoning=suppress_reasoning,
             ),
         ),
     )

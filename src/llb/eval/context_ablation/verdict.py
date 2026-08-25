@@ -1,4 +1,4 @@
-"""Turn the three lanes into one sentence about whether retrieval pays for itself.
+"""Turn the scored lanes into one sentence about whether retrieval pays for itself.
 
 The gate reads the calibrated paired sign-flip p, never the point estimate. The order below is
 deliberate --
@@ -9,6 +9,12 @@ over closed-book is itself separable from zero.
 The contamination rate is reported with every decision, not folded into it. It changes what a
 small uplift MEANS -- items the model already answers were never a retrieval problem -- but the
 decision is still about the measured difference.
+
+The `retrieved_document` lane gets its OWN verdict, in `verdict_adoption.py`, rather than a
+branch inside this one. The ablation verdict is about what retrieval is worth on this corpus; the
+adoption call is about one shippable configuration, and folding a decision an operator acts on
+into a diagnostic reading is how a diagnostic quietly becomes a recommendation. Both read the same
+calibrated paired cut, and the phrasing helpers below are shared so they cannot drift apart.
 """
 
 from collections.abc import Mapping, Sequence
@@ -37,11 +43,11 @@ from llb.rag.fusion_evidence.paired import (
 )
 
 
-def _by_label(derived: Sequence[DerivedComparison]) -> dict[str, DerivedComparison]:
+def by_label_of(derived: Sequence[DerivedComparison]) -> dict[str, DerivedComparison]:
     return {entry["label"]: entry for entry in derived}
 
 
-def _detail(entry: DerivedComparison) -> str:
+def detail(entry: DerivedComparison) -> str:
     delta = entry["paired"]["delta"]
     return (
         f"{entry['label']} {delta['mean']:+.3f} [{delta['lo']:+.3f}, {delta['hi']:+.3f}] "
@@ -49,7 +55,7 @@ def _detail(entry: DerivedComparison) -> str:
     )
 
 
-def _note(*entries: DerivedComparison | None, confidence: float = DEFAULT_CONFIDENCE) -> str:
+def note_of(*entries: DerivedComparison | None, confidence: float = DEFAULT_CONFIDENCE) -> str:
     """The shared qualifier clauses over the derived deltas this verdict was decided on.
 
     `no_retrieval_gain` and `rag_pays_off` are two sides of one cut, so both have to say when a
@@ -62,7 +68,7 @@ def _note(*entries: DerivedComparison | None, confidence: float = DEFAULT_CONFID
     ) + evidence_gate_clause([(entry["label"], entry["paired"]) for entry in measured], confidence)
 
 
-def _long_context_entry(by_label: Mapping[str, DerivedComparison]) -> DerivedComparison | None:
+def long_context_entry(by_label: Mapping[str, DerivedComparison]) -> DerivedComparison | None:
     """The long-context delta the verdict reads: the fitting subset when items were skipped.
 
     A skipped item scores zero, so including it would read a document that never reached the model
@@ -83,18 +89,44 @@ def decide(
     n: int,
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> ContextAblationVerdict:
-    """Name the lane the evidence supports, and say what its delta amounts to."""
+    """Name the lane the evidence supports over the whole scored item set."""
+    return decide_population(
+        derived,
+        contamination,
+        baseline=baseline,
+        n=n,
+        skipped={label: len(lane["skipped_item_ids"]) for label, lane in lanes.items()},
+        confidence=confidence,
+    )
+
+
+def decide_population(
+    derived: Sequence[DerivedComparison],
+    contamination: ContaminationReport,
+    *,
+    baseline: str,
+    n: int,
+    skipped: Mapping[str, int],
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> ContextAblationVerdict:
+    """Name the lane the evidence supports over ONE population, and what its delta amounts to.
+
+    The population is the whole run for the corpus verdict and one question type for a slice
+    reading. Both are judged by the same cut on purpose: a slice whose verdict was reached by a
+    softer rule than the pooled one would not be comparable to it, which is the only thing a
+    per-slice reading is for.
+    """
     verdict: ContextAblationVerdict = {
         "baseline": baseline,
         "n": n,
         "decision": VERDICT_NO_EVIDENCE,
         "reason": "",
         "contamination_rate": contamination["rate"],
-        "skipped": {label: len(lane["skipped_item_ids"]) for label, lane in lanes.items()},
+        "skipped": dict(skipped),
     }
-    by_label = _by_label(derived)
+    by_label = by_label_of(derived)
     uplift = by_label.get(DERIVED_RETRIEVAL_UPLIFT)
-    long_context = _long_context_entry(by_label)
+    long_context = long_context_entry(by_label)
     if uplift is None:
         verdict["reason"] = (
             "the comparison has no retrieval uplift to state: it needs both the "
@@ -121,25 +153,25 @@ def _judge(
         f"the closed-book lane already answers {contamination['n_contaminated']}/"
         f"{contamination['n']} items ({contamination['rate']:.0%})"
     )
-    cut = _note(uplift, long_context, confidence=confidence)
+    cut = note_of(uplift, long_context, confidence=confidence)
     if long_context is not None and separates(long_context["paired"], confidence):
         return VERDICT_LONG_CONTEXT_WINS, (
             f"laying the whole source document into the prompt beats chunked retrieval "
-            f"({_detail(long_context)}); {note}" + cut
+            f"({detail(long_context)}); {note}" + cut
         )
     uplift_delta = uplift["paired"]["delta"]
     if separates(uplift["paired"], confidence):
         return VERDICT_RAG_PAYS_OFF, (
             f"retrieval buys a measured gain over answering from the weights "
-            f"({_detail(uplift)}); {note}" + cut
+            f"({detail(uplift)}); {note}" + cut
         )
     if uplift_delta["mean"] > 0.0:
         return VERDICT_RETRIEVAL_INCONCLUSIVE, (
             f"retrieval gains {uplift_delta['mean']:+.3f} objective but the calibrated test does "
-            f"not separate ({_detail(uplift)}); a larger scored set is needed to separate the lanes, "
+            f"not separate ({detail(uplift)}); a larger scored set is needed to separate the lanes, "
             f"and {note}" + cut
         )
     return VERDICT_NO_RETRIEVAL_GAIN, (
-        f"retrieval does not answer better than the model's own weights ({_detail(uplift)}); {note}"
+        f"retrieval does not answer better than the model's own weights ({detail(uplift)}); {note}"
         + cut
     )

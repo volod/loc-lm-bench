@@ -79,8 +79,10 @@ llb gen-serving-config --gpu-gb 32
 ```
 
 The generated directory contains `tier.json`, serve scripts, and `run-eval` YAML/scripts. Primary
-tier targets are MamayLM, Lapa, Gemma 4, Qwen3.6, and Mistral; extra tier entries such as smaller
-vLLM Gemma variants are emitted after those primary targets. This path lets another physical GPU
+tier targets are the registered families -- MamayLM, Lapa, Gemma 4, Qwen, and Mistral -- each
+serving the generation the roster marks `current` ([model roster](model-roster.md)); extra tier
+entries such as smaller vLLM Gemma variants and previous-generation Qwen tags are emitted after
+those primary targets. This path lets another physical GPU
 host contribute comparable manifest rows without hardcoding host paths.
 Target ids are family-level keys; for example `gemma-4` generates `serve_gemma_4.sh` while the
 tier manifest selects the concrete largest model variant that fits the host.

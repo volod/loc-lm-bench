@@ -41,6 +41,12 @@ _JOURNALED_STATE_KEYS = (
     "table_headers_restored",
     "table_header_chars",
     "prompt_chunks",
+    # The declared answer contract (`llb.eval.answer_envelope`): the validated envelope and its
+    # parse verdict, for the same reason -- a resumed envelope case must re-score to the same row.
+    "envelope",
+    "envelope_status",
+    "envelope_error",
+    "envelope_repaired",
 )
 
 

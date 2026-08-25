@@ -20,6 +20,26 @@ def test_score_case_records_semantic_with_embedder():
     assert row["semantic"] == 1.0
 
 
+def test_score_case_records_answer_side_span_coverage():
+    """answer-side-span-coverage-metric: every case row says whether the ANSWER carried the
+    item's gold spans, so the answer-quality lane can read it beside the objective."""
+    from llb.executor.cases import score_case
+
+    item = gold_item("x", "Яка столиця України?", "Київ", "Київ")
+    state = {"answer": "Столиця - Київ.", "status": common.OK, "retrieved": [], "usage": {}}
+
+    row = score_case(item, state)
+
+    assert row["answer_span_coverage"] == 1.0
+    assert row["answer_all_spans"] == 1.0
+    assert row["answer_spans_measured"] == 1
+
+    missed = score_case(item, {**state, "answer": "Невідомо."})
+
+    assert missed["answer_span_coverage"] == 0.0
+    assert missed["answer_all_spans"] == 0.0
+
+
 def test_make_launcher_resolves_vllm():
     from llb.backends.vllm import VllmLauncher
     from llb.executor.runner_backend import _make_launcher

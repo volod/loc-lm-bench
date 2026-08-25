@@ -26,6 +26,13 @@ def run_eval_cmd(
         help="registered adapter id, id prefix, or label (`llb list-adapters`); the contamination "
         "guard then reads the registry's recorded digests, not the adapter directory's manifest",
     ),
+    max_tokens: Optional[int] = typer.Option(
+        None,
+        "--max-tokens",
+        help="completion token budget per case (overrides the config). Raise it for "
+        "--answer-format envelope: a typed answer is several times longer than a short free-text "
+        "one, and a completion cut off at the cap is scored as a format failure",
+    ),
     max_model_len: Optional[int] = typer.Option(
         None, help="vLLM/llama.cpp served context window (overrides the config; no YAML needed)"
     ),
@@ -134,9 +141,17 @@ def run_eval_cmd(
     ),
     context_strategy: Optional[str] = typer.Option(
         None,
-        help="DIAGNOSTIC context lane (rag-vs-long-context-ablation): rag (retrieve, the default "
-        "and the leaderboard row) | closed_book (no context; the model answers from its weights) "
-        "| long_context (the item's whole source document, skipped when it does not fit)",
+        help="context lane (rag-vs-long-context-ablation): rag (retrieve, the default and the "
+        "leaderboard row) | closed_book (no context; the model answers from its weights) "
+        "| retrieved_document (retrieve, then send the whole document the top chunk came from) "
+        "| long_context (the item's whole GOLD document; DIAGNOSTIC, it reads the gold label). "
+        "Both document lanes skip an item whose documents do not fit",
+    ),
+    retrieved_document_top_n: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="how many DISTINCT retrieved documents the retrieved_document lane lays in, walking "
+        "the ranked chunk list best-first (default 1)",
     ),
     query_prep: Optional[str] = typer.Option(
         None,
@@ -178,6 +193,20 @@ def run_eval_cmd(
         "--score-groundedness/--no-score-groundedness",
         help="record the deterministic groundedness fraction (share of answer claims supported by "
         "the retrieved context) as an additive per-case column",
+    ),
+    answer_format: Optional[str] = typer.Option(
+        None,
+        "--answer-format",
+        help="free_text (default) | envelope -- ask for the typed answer contract, validate it at "
+        "the generation boundary, and read the answer-side signals from declared fields "
+        "(typed-rag-answer-envelope)",
+    ),
+    suppress_reasoning_prompt: Optional[bool] = typer.Option(
+        None,
+        "--suppress-reasoning-prompt/--no-suppress-reasoning-prompt",
+        help="append a prompt-level no-reasoning instruction on top of the backend's native "
+        "thinking-suppression flag, for a tag whose chat template leaks deliberation into the "
+        "answer body (thinking-suppression-and-answer-language-guard)",
     ),
     insufficient_context_probes: Optional[int] = typer.Option(
         None,

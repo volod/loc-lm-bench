@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from llb.bench.agentic.context_budget import unbounded_budget
+from llb.backends.context_budget import unbounded_budget
 from llb.bench.agentic.controller_channel import (
     CHANNEL_CONTROLLER,
     CHANNEL_OBSERVATION,

@@ -1,4 +1,4 @@
-"""rag-vs-long-context-ablation -- three context lanes over one identical item set.
+"""rag-vs-long-context-ablation -- the context lanes over one identical item set.
 
 Pure and file-driven: the comparison consumes canonical per-case rows, the context sources are
 plain state->state closures, and the orchestration takes an injected lane runner, so the whole
@@ -14,6 +14,7 @@ from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     LANE_LONG_CONTEXT,
     LANE_RAG,
+    LANE_RETRIEVED_DOCUMENT,
 )
 from llb.goldset.schema import GoldItem
 
@@ -38,8 +39,15 @@ def _row(item_id: str, objective: float, hit: float = 1.0, **extra) -> dict:
     }
 
 
-def _lanes(closed: list[dict], rag: list[dict], long_context: list[dict] | None = None) -> dict:
+def _lanes(
+    closed: list[dict],
+    rag: list[dict],
+    long_context: list[dict] | None = None,
+    retrieved_document: list[dict] | None = None,
+) -> dict:
     lanes = {LANE_CLOSED_BOOK: closed, LANE_RAG: rag}
+    if retrieved_document is not None:
+        lanes[LANE_RETRIEVED_DOCUMENT] = retrieved_document
     if long_context is not None:
         lanes[LANE_LONG_CONTEXT] = long_context
     return lanes
@@ -80,7 +88,12 @@ def _write_bundle(goldset: Path, verified: bool = True) -> None:
 
 def _recording_lane(tmp_path: Path, seen: list[tuple[str, str, tuple[str, ...]]]):
     """A fake lane runner whose objective rises with the amount of context each lane laid in."""
-    objective = {LANE_CLOSED_BOOK: 0.0, LANE_RAG: 0.5, LANE_LONG_CONTEXT: 1.0}
+    objective = {
+        LANE_CLOSED_BOOK: 0.0,
+        LANE_RAG: 0.5,
+        LANE_RETRIEVED_DOCUMENT: 0.75,
+        LANE_LONG_CONTEXT: 1.0,
+    }
 
     def fake_lane(config: RunConfig, items: list[GoldItem], split: str) -> Path:
         seen.append((config.run_name, config.context_strategy, tuple(i.id for i in items)))

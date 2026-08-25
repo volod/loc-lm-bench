@@ -1,0 +1,5 @@
+{
+  "id": "eval.rag.no_reasoning",
+  "kind": "text",
+  "template": "no_reasoning.txt"
+}

@@ -16,8 +16,14 @@ Core locations:
 
 - `src/llb/bench/agentic/context.py`: the policy vocabulary, observation trimming, transcript
   assembly, compaction, and the per-episode telemetry;
-- `src/llb/bench/agentic/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
+- `src/llb/backends/context_fit.py`: the window arithmetic itself (`CHARS_PER_TOKEN`, the declared
+  window, the `min(declared, served)` bind) -- shared by the agent loop, the context-ablation
+  document lanes, the `rag` prompt check, and the Optuna over-context prune, so none of them can
+  disagree about what fits on one host;
+- `src/llb/backends/context_budget.py`: the per-step prompt budget (`ContextBudget`) and its
   resolution from the declared + probed usable window;
+- `src/llb/backends/prompt_window.py`: `PromptWindow`, the lazy launcher-bound resolution one RUN
+  uses ([context ablation](../rag-core/context-ablation.md));
 - `src/llb/backends/served_window.py`: per-backend probe of the window the runtime is actually
   serving (Ollama `/api/ps`, vLLM `/v1/models`, llama.cpp `/props`);
 - `src/llb/bench/agentic/episode.py`: `build_agent_prompt_lines` (the policy seam) and the
@@ -68,7 +74,7 @@ The four policies (each a fresh episode over the identical task set):
 
 Underneath all four sits the guard the loop never had. `ContextBudget` resolves the usable prompt
 budget ONCE per run from the DECLARED window (host planner cap, model window, `max_model_len`,
-explicit `context_budget` via `effective_max_context` in `src/llb/optimize/tuning_space.py`) and a
+explicit `context_budget` via `declared_max_context` in `src/llb/backends/context_fit.py`) and a
 LIVE probe of what the backend is serving (`src/llb/backends/served_window.py`). The budget is the
 MINIMUM of those two; `budget_source` names which side bound it (`declared` or `served`), and both
 `declared_max_model_len` and `served_max_model_len` are recorded in the
@@ -88,8 +94,9 @@ When the URL points at a different host (a non-Ollama OpenAI-compat backend), th
 that does not fit is NEVER SENT: the episode terminates as `context_overflow` -- the status already
 in the shared taxonomy (`src/llb/eval/common.py`) that the context-ablation lane raises for the same
 reason -- so an unusable configuration is a typed outcome instead of a wrong answer. An unresolvable
-window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, matching
-`fits_context_chars`: an unknown model never silently declares a prompt unusable. A refused prompt
+window (no model spec, no served cap, no explicit budget, no probe) refuses nothing, the same rule
+the context-ablation document lanes follow off the same resolution: an unknown model never silently
+declares a prompt unusable. A refused prompt
 is the one thing the loop builds that neither `complete` nor `chat` is handed, so `run_episode`
 offers an optional `on_refused_prompt` observer for callers that must compare it -- inert on a run
 that sends everything it builds, and used by the policy-change replay

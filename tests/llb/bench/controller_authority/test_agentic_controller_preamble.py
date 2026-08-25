@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic.context_budget import unbounded_budget
+from llb.backends.context_budget import unbounded_budget
 from llb.bench.agentic.controller_channel import (
     CHANNEL_OBSERVATION,
     CHANNEL_PREAMBLE,

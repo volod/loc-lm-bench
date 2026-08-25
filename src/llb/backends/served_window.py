@@ -160,6 +160,67 @@ def probe_served_max_model_len(
     return None
 
 
+def launcher_served_window(launcher: object) -> int | None:
+    """The window a STARTED launcher is serving, warm-loading the model when that is what it takes.
+
+    vLLM and llama.cpp know their `n_ctx` the moment they answer readiness, so `served_context()`
+    is already populated by `start()`. Ollama does not: it loads a model on first request and
+    `/api/ps` reports nothing until then, so a probe taken before the first generation reads
+    "unknown" exactly when the default 4096 window is about to truncate. `ensure_num_ctx` sends a
+    one-token warm request so the probe observes the window the run will actually use.
+
+    None means "could not observe it" -- never "unbounded". The caller falls back to the declared
+    window and records that the probe was unavailable.
+    """
+    served = getattr(launcher, "served_context", None)
+    window = served() if callable(served) else None
+    if isinstance(window, int) and window > 0:
+        return window
+    warm = getattr(launcher, "ensure_num_ctx", None)
+    if not callable(warm):
+        return None
+    try:
+        window = warm()
+    except Exception:  # a warm request is best-effort telemetry, never a run failure
+        _LOG.info("[served-window] warm request failed; falling back to the declared window")
+        return None
+    return window if isinstance(window, int) and window > 0 else None
+
+
+def probe_served_window(config: Any, *, http_get: HttpGet | None = None) -> int | None:
+    """The window `config`'s backend is serving right now, warm-loading Ollama so it can answer.
+
+    For a caller that HAS a started launcher, `launcher_served_window` is the thing to use. This is
+    for a caller that does not -- an Optuna study resolving its prune threshold before the first
+    trial launches anything. Ollama is the case that needs the warm: it runs as a host daemon that
+    is up long before any run, but `/api/ps` reports nothing until a request has loaded the model,
+    so a probe taken up front reads "unknown" exactly where its 4096 default would bind. vLLM and
+    llama.cpp are launched per run and answer their own `n_ctx`, so for them this is the ordinary
+    HTTP probe against whatever is serving now.
+
+    Best-effort throughout: an unreachable backend returns None and the caller falls back to the
+    declared window, exactly as a missed HTTP probe does.
+    """
+    if getattr(config, "backend", None) != "ollama":
+        return probe_config_served_max_model_len(config, http_get=http_get)
+    from llb.backends.ollama import OllamaLauncher
+
+    launcher = OllamaLauncher(
+        config.model,
+        host=getattr(config, "ollama_host", DEFAULT_OLLAMA_HOST),
+        num_ctx=getattr(config, "max_model_len", None) or getattr(config, "context_budget", None),
+    )
+    try:
+        launcher.start()
+    except (RuntimeError, OSError):
+        _LOG.info("[served-window] ollama not reachable; falling back to the declared window")
+        return None
+    try:
+        return launcher_served_window(launcher)
+    finally:
+        launcher.stop()
+
+
 def bind_window(declared: int, served: int | None) -> tuple[int, str]:
     """Take the minimum of declared and probed windows; name which one bound the result.
 

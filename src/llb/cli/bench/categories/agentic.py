@@ -84,7 +84,7 @@ def bench_agentic_cmd(
     task_set = load_tasks_file(tasks)
     vram_reader, pid_reader = best_effort_gpu_readers()
     meter = ThroughputMeter()
-    from llb.bench.agentic.context_budget import resolve_context_budget
+    from llb.backends.context_budget import resolve_context_budget
 
     budget = resolve_context_budget(cfg, probe=True)
     policy = ContextPolicy(name=context_policy)

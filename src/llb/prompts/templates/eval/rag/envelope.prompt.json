@@ -1,0 +1,8 @@
+{
+  "id": "eval.rag.envelope",
+  "kind": "chat",
+  "messages": [
+    {"role": "system", "template": "envelope_system.txt"},
+    {"role": "user", "template": "envelope_user.txt"}
+  ]
+}

@@ -34,7 +34,7 @@ from llb.bench.policy_change.audit import (
     coerce_policy_value,
 )
 from llb.bench.policy_change.geometry import declared_geometry, load_audited_design
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.memory.boundary.probe import oracle_compacting_controller
 from llb.bench.policy_change.replay import AUDITED_POLICIES, arm_comparison

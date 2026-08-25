@@ -212,3 +212,97 @@ def test_drafted_items_are_skipped_unless_asked_for_and_then_marked_in_the_manif
     assert result["manifest"].config["item_grounding"] == ITEM_GROUNDING_DRAFTED
     persisted = json.loads(Path(result["paths"]["manifest"]).read_text(encoding="utf-8"))
     assert persisted["config"]["item_grounding"] == ITEM_GROUNDING_DRAFTED
+
+
+def test_response_guard_flags_reach_the_persisted_bundle(tmp_path):
+    """Leaked reasoning and off-language answers are named per-case, not scored as content.
+
+    The three fake generations are the shapes measured on this host (see the roster suppression
+    verdicts in the backend-telemetry docs): a bounded-budget leak with no terminator, a leak whose
+    bare `</think>` survived the chat template, and a clean Ukrainian answer. All three are `ok` by
+    status -- which is exactly why the guard exists.
+    """
+    leak_q = "Що таке авторське право?"
+    tail_q = "Скільки років діють майнові права?"
+    clean_q = "Яка столиця України?"
+    items = [
+        gold_item("uk-1", leak_q, "Київ", "Київ"),
+        gold_item("uk-2", tail_q, "Київ", "Київ"),
+        gold_item("uk-3", clean_q, "Київ", "Київ"),
+    ]
+    answers = {
+        leak_q: "Okay, I need to explain what copyright is. First, I need to check the context.",
+        tail_q: "Okay, let's see. The context states the term of the rights.\n</think>\n\nКиїв",
+        clean_q: "Київ",
+    }
+    cfg = RunConfig(data_dir=tmp_path, run_name="guard-test", model="fake-uk")
+
+    def runner_fn(item):
+        return {
+            "answer": answers[item.question],
+            "status": common.OK,
+            "retrieved": [],
+            "usage": {"completion_tokens": 32},
+        }
+
+    result = run_eval(
+        cfg,
+        items=items,
+        launcher=FakeLauncher(lambda messages: ChatResult(text="")),
+        runner_fn=runner_fn,
+        mirror=lambda *a: None,
+        emit=False,
+    )
+
+    run_dir = cfg.run_dir(result["run_timestamp"])
+    rows = {
+        json.loads(line)["item_id"]: json.loads(line)
+        for line in (run_dir / "scores.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    # Every case stays `ok`: the guard is additive and never rewrites the failure taxonomy.
+    assert {row["status"] for row in rows.values()} == {common.OK}
+
+    assert rows["uk-1"]["reasoning_leak"] and rows["uk-1"]["reasoning_leak_marker"] == "okay,"
+    assert rows["uk-1"]["reasoning_leak_chars"] == len(answers[leak_q])
+    assert rows["uk-1"]["answer_language"] == "en" and rows["uk-1"]["language_mismatch"]
+
+    assert rows["uk-2"]["reasoning_leak"] and rows["uk-2"]["reasoning_leak_marker"] == "</think>"
+    assert rows["uk-2"]["reasoning_leak_chars"] < len(answers[tail_q])
+
+    assert not rows["uk-3"]["reasoning_leak"]
+    assert rows["uk-3"]["reasoning_leak_chars"] == 0
+    assert rows["uk-3"]["answer_language"] == "uk"
+    assert not rows["uk-3"]["language_mismatch"]
+
+    # The run-level rates share `reliability`'s denominator, and both reach the manifest on disk.
+    metrics = result["metrics"]
+    assert metrics["reliability"] == 1.0
+    assert metrics["reasoning_leak_rate"] == round(2 / 3, 4)
+    assert metrics["language_mismatch_rate"] == round(2 / 3, 4)
+    assert metrics["mean_reasoning_leak_chars"] > 0
+    persisted = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))["metrics"]
+    assert persisted["reasoning_leak_rate"] == metrics["reasoning_leak_rate"]
+    assert persisted["language_mismatch_rate"] == metrics["language_mismatch_rate"]
+
+
+def test_suppress_reasoning_prompt_appends_the_instruction_to_the_system_message():
+    """The prompt-level lever is off by default and composes with a prompt package."""
+    plain = graph.build_messages("Питання?", "CTX")
+    guarded = graph.build_messages("Питання?", "CTX", suppress_reasoning=True)
+    instruction = graph.render_text(graph.NO_REASONING_TEMPLATE)
+
+    assert instruction not in plain[0]["content"]
+    assert guarded[0]["content"].startswith(graph.SYSTEM_PROMPT)
+    assert guarded[0]["content"].endswith(instruction)
+    assert plain[1] == guarded[1]  # the user message is untouched
+
+    pkg = PromptPackage(
+        system_prompt="SYS PROMPT",
+        additional_prompt="",
+        fields=TemplateFields(),
+        dropped_context={"budget_tokens": 10, "used_tokens": 1, "sections": []},
+    )
+    both = graph.build_messages("Питання?", "CTX", pkg, suppress_reasoning=True)
+    assert both[0]["content"].startswith("SYS PROMPT")
+    assert both[0]["content"].endswith(instruction)

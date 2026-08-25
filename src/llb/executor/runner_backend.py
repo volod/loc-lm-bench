@@ -11,9 +11,10 @@ import shutil
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from llb.backends.base import BackendLauncher
+from llb.backends.prompt_window import PromptWindow
 from llb.core.config import RunConfig
 from llb.executor.runner_retrieval import _load_store
 from llb.executor.runner_setup import _default_runner_fn
@@ -149,6 +150,21 @@ def _guard_vllm_contention(
     return report
 
 
+class ResolvedRunner(NamedTuple):
+    """Everything `run_eval` needs to score cases, plus what the manifest records about the wiring.
+
+    `context_window` is the run's usable prompt window -- what a document lane skips against and
+    what the `rag` prompt is checked against. An INJECTED `runner_fn` leaves it None: the caller
+    built its own graph, so this module never resolved a window for it.
+    """
+
+    launcher: BackendLauncher
+    runner_fn: Callable[[GoldItem], RagState]
+    store: Any
+    contention: "ContentionReport | None"
+    context_window: PromptWindow | None = None
+
+
 def _resolve_eval_runner(
     config: RunConfig,
     *,
@@ -159,8 +175,9 @@ def _resolve_eval_runner(
     staging_dir: Path,
     evict: bool,
     wait: bool,
-) -> tuple[BackendLauncher, Callable[[GoldItem], RagState], Any, "ContentionReport | None"]:
+) -> ResolvedRunner:
     contention: ContentionReport | None = None
+    context_window: PromptWindow | None = None
     if launcher is None:
         launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
         if config.backend == "vllm":
@@ -168,8 +185,8 @@ def _resolve_eval_runner(
     if runner_fn is None:
         if store is None:
             store = _load_store(config)
-        runner_fn = _default_runner_fn(config, store, launcher, prompt_package)
-    return launcher, runner_fn, store, contention
+        runner_fn, context_window = _default_runner_fn(config, store, launcher, prompt_package)
+    return ResolvedRunner(launcher, runner_fn, store, contention, context_window)
 
 
 def _preserve_failed_staging(

@@ -14,7 +14,7 @@ from llb.bench.agentic.context_policy import (
     ContextPolicy,
 )
 from llb.bench.agentic.context_summary import summary_prompt_overhead_chars
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.episode_prompt import summary_input_cap_chars
 from llb.bench.memory.boundary.probe import compact_fold_input_probe, oracle_controller
 from llb.bench.memory.summary_cap.run import analyze_summary_cap, run_summary_cap_arms

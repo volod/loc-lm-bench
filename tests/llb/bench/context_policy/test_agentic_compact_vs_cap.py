@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.memory.transcript import build_memory_dependent_tasks
 from llb.bench.context_policy.compact_vs_cap import run_compact_vs_cap

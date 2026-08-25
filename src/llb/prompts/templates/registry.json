@@ -775,6 +775,42 @@
         }
       ]
     },
+    "eval.rag.envelope": {
+      "kind": "chat",
+      "descriptor": "eval/rag/envelope.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "eval/rag/envelope_system.txt",
+            "sha256": "4270df3a66623f02768da5b74c72a114754f5b34b426fb5989079904b640ede6"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "eval/rag/envelope_user.txt",
+            "sha256": "d287ed8b6ee37ee4c6983e32a8137ce20769ae1997f2537e0e67f88a6c93b735"
+          }
+        }
+      ]
+    },
+    "eval.rag.envelope_repair": {
+      "kind": "text",
+      "descriptor": "eval/rag/envelope_repair.prompt.json",
+      "template": {
+        "path": "eval/rag/envelope_repair.txt",
+        "sha256": "db8375bd62607de8fa74d41ef0551696c51e17a8526c9d1b33b98a5e7d1437e6"
+      }
+    },
+    "eval.rag.no_reasoning": {
+      "kind": "text",
+      "descriptor": "eval/rag/no_reasoning.prompt.json",
+      "template": {
+        "path": "eval/rag/no_reasoning.txt",
+        "sha256": "d2177cacf5f27850be77019ec3011e3fe8e6de5ef2f192771f849fdb119d359b"
+      }
+    },
     "eval.rag.package_context": {
       "kind": "text",
       "descriptor": "eval/rag/package_context.prompt.json",

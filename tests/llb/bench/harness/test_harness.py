@@ -67,7 +67,7 @@ def test_loop_harness_matches_run_episode():
 def test_agent_node_stages_tool_call():
     from llb.bench.agentic.context import ContextState
     from llb.bench.agentic.context_policy import ContextPolicy
-    from llb.bench.agentic.context_budget import unbounded_budget
+    from llb.backends.context_budget import unbounded_budget
 
     node = lg.make_agent_node(
         scripted(['{"name":"db_get","arguments":{"key":"k"}}']),
@@ -83,7 +83,7 @@ def test_agent_node_stages_tool_call():
 def test_agent_node_finish_and_prose():
     from llb.bench.agentic.context import ContextState
     from llb.bench.agentic.context_policy import ContextPolicy
-    from llb.bench.agentic.context_budget import unbounded_budget
+    from llb.backends.context_budget import unbounded_budget
 
     finish = lg.make_agent_node(
         scripted(['{"name":"finish","arguments":{"answer":"ok"}}']),

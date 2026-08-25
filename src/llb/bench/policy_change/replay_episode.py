@@ -13,7 +13,7 @@ import hashlib
 from dataclasses import dataclass, field
 
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import STATUS_CONTEXT_OVERFLOW, AgenticTask, Episode
 from llb.bench.common import LLMComplete

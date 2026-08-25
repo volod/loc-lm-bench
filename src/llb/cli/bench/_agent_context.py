@@ -1,6 +1,6 @@
 """Shared CLI setup for agent context-policy benchmark lanes."""
 
-from llb.bench.agentic.context_budget import (
+from llb.backends.context_budget import (
     ContextBudget,
     fixed_budget,
     resolve_context_budget,

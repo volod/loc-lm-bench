@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from llb.bench.agentic.context import ContextState
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.controller_channel import (
     CONTROLLER_CHANNELS,
     ControllerChannel,

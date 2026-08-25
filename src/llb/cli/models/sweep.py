@@ -6,6 +6,7 @@ from typing import Optional
 
 import typer
 
+from llb.backends.context_budget import resolve_model_spec
 from llb.cli.app import app
 from llb.cli.helpers import (
     best_effort_gpu_readers,
@@ -183,10 +184,11 @@ def tune_cmd(
         corpus_root=corpus,
         max_model_len=max_model_len,
     )
-    spec = next(
-        (m for m in load_models(manifest) if m["source"] == model or m.get("name") == model),
-        None,
-    )
+    # Through `candidate_sources`, so an Ollama GGUF tag resolves to its roster entry priced at
+    # the right quant. Matching the manifest's top-level `source`/`name` alone missed every
+    # per-backend artifact, leaving `model_spec=None` -- and with no declared window, the
+    # over-context prune could never fire.
+    spec = resolve_model_spec(model, backend, manifest)
     gpus = detect_gpus()
     vram_reader, pid_reader = best_effort_gpu_readers() if isolate else (None, None)
     study_name = study or f"tune-{model.replace('/', '_').replace(':', '_')}"

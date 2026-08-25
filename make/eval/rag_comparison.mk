@@ -94,7 +94,7 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
-compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
+compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs retrieved-document vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES=closed_book,rag,retrieved_document,long_context RETRIEVED_DOCUMENT_TOP_N= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-context-strategies $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -102,6 +102,7 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
 		$(if $(CORPUS),--corpus "$(CORPUS)",) \
 		$(if $(CONTEXT_LANES),--lanes "$(CONTEXT_LANES)",) \
+		$(if $(RETRIEVED_DOCUMENT_TOP_N),--retrieved-document-top-n $(RETRIEVED_DOCUMENT_TOP_N),) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(CONTEXT_ABLATION_LIMIT),--limit $(CONTEXT_ABLATION_LIMIT),) \
 		$(if $(CONTEXT_POWER_REFERENCE),--power-reference "$(CONTEXT_POWER_REFERENCE)",) \

@@ -59,8 +59,12 @@ def split_claims(answer: str) -> list[str]:
     return [claim.strip() for claim in _CLAIM_SPLIT_RE.split(answer or "") if claim.strip()]
 
 
-def _content_tokens(text: str) -> list[str]:
-    """Normalized content tokens of `text` with `[i]` markers removed."""
+def content_tokens(text: str) -> list[str]:
+    """Normalized content tokens of `text` with `[i]` markers removed.
+
+    Shared with the declared-answer scorers (`llb.eval.answer_envelope.metrics`) so a claim the
+    model DECLARED and a claim segmented out of prose are counted by the same rule.
+    """
     return normalize(strip_citations(text)).split()
 
 
@@ -70,7 +74,7 @@ def chunk_supports_claim(claim: str, chunk_text: str) -> bool:
     Token-recall overlap over normalized text -- deterministic, morphology-agnostic, and symmetric
     with the correctness scorer's normalization. A claim with no content tokens is unsupported.
     """
-    claim_tokens = _content_tokens(claim)
+    claim_tokens = content_tokens(claim)
     if not claim_tokens:
         return False
     chunk_tokens = set(normalize(chunk_text).split())
@@ -88,7 +92,7 @@ def groundedness_fraction(answer: str, ordered_chunks: list[ChunkRecord]) -> flo
     Claims shorter than `MIN_CLAIM_TOKENS` content tokens are ignored (too short to judge). Returns
     0.0 when there is no countable claim (an empty or purely-fragmentary answer is not grounded).
     """
-    claims = [c for c in split_claims(answer) if len(_content_tokens(c)) >= MIN_CLAIM_TOKENS]
+    claims = [c for c in split_claims(answer) if len(content_tokens(c)) >= MIN_CLAIM_TOKENS]
     if not claims:
         return 0.0
     texts = [_chunk_text(c) for c in ordered_chunks]
@@ -130,7 +134,7 @@ def citation_report(answer: str, ordered_chunks: list[ChunkRecord]) -> CitationR
     n_covered = 0
     for claim in split_claims(answer):
         citations = parse_citations(claim)
-        if len(_content_tokens(claim)) >= MIN_CLAIM_TOKENS:
+        if len(content_tokens(claim)) >= MIN_CLAIM_TOKENS:
             n_claims += 1
             if citations:
                 n_covered += 1

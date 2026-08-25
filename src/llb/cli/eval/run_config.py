@@ -8,6 +8,7 @@ _CONFIG_OPTIONS = {
     "model": "model",
     "backend": "backend",
     "goldset": "goldset_path",
+    "max_tokens": "max_tokens",
     "max_model_len": "max_model_len",
     "gpu_memory_utilization": "gpu_memory_utilization",
     "gpu_layers": "n_gpu_layers",
@@ -33,6 +34,7 @@ _CONFIG_OPTIONS = {
     "context_order": "context_order",
     "restore_table_headers": "restore_table_headers",
     "context_strategy": "context_strategy",
+    "retrieved_document_top_n": "retrieved_document_top_n",
     "query_glossary": "query_glossary_path",
     "query_prep_typo_guard": "query_prep_typo_guard",
     "query_prep_dense_case": "query_prep_dense_case",
@@ -40,6 +42,8 @@ _CONFIG_OPTIONS = {
     "cited_answers": "cited_answers",
     "score_groundedness": "score_groundedness",
     "insufficient_context_probes": "insufficient_context_probes",
+    "answer_format": "answer_format",
+    "suppress_reasoning_prompt": "suppress_reasoning_prompt",
     "telemetry": "measure_telemetry",
 }
 _FALSE_MEANS_UNSET = {

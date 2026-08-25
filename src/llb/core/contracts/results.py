@@ -41,6 +41,35 @@ class CaseScoreRow(TypedDict):
     # supplied its own context, so an off lane and an on lane compare the same measured column.
     table_headers_restored: NotRequired[int]
     table_header_chars: NotRequired[float]
+    # Declared answer contract (typed-rag-answer-envelope). Present only on an envelope-format
+    # run, so a free-text bundle keeps exactly the shape it had. `envelope_status` is the parse
+    # verdict (`ok` / `malformed` / `schema_invalid`), `repaired` says the one bounded repair
+    # reprompt was spent on this case (first-attempt conformance is `1 - repair_rate`), and
+    # `n_claims` / `envelope_abstained` are read off the declaration itself.
+    envelope_status: NotRequired[str]
+    repaired: NotRequired[bool]
+    n_claims: NotRequired[int]
+    envelope_abstained: NotRequired[bool]
+    # Answer-side gold-span coverage (`llb.scoring.answer_spans`): whether the ANSWER states each
+    # labeled span's fact, and the all-spans gate over them. Every current run writes all three;
+    # they are optional only so a bundle recorded before the metric existed still re-reads.
+    answer_span_coverage: NotRequired[float]
+    answer_all_spans: NotRequired[float]
+    answer_spans_measured: NotRequired[int]
+    # Response-integrity guard (`llb.scoring.answer_guard`): did the completion leak deliberation
+    # into the answer body despite the backend's native thinking-suppression flag, and did the
+    # model answer in the question's language? Both are ADDITIVE -- they never change `status` or
+    # the objective, they name a delivery failure the correctness columns cannot express. Every
+    # current run writes all five; they are optional only so a bundle recorded before the guard
+    # existed still re-reads. `reasoning_leak_marker` names the signal that fired (a reasoning
+    # delimiter, or the deliberation opener of a leak whose terminator the token budget cut off),
+    # and `reasoning_leak_chars` is how much of the generation the leak accounts for -- the term
+    # that inflates `completion_tokens`, and with it throughput and cost.
+    reasoning_leak: NotRequired[bool]
+    reasoning_leak_marker: NotRequired[str]
+    reasoning_leak_chars: NotRequired[int]
+    answer_language: NotRequired[str]
+    language_mismatch: NotRequired[bool]
     groundedness: NotRequired[float]
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]

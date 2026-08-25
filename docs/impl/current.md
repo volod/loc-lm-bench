@@ -52,6 +52,7 @@ closed each one and what would make it worth reopening.
 | [Knowledge cutoff](current/knowledge-cutoff.md) | Effective real-world knowledge cutoff for local models | page |
 | [Prompt templates](current/prompt-templates.md) | Prompt template registry and review workflow | page |
 | [Host validation](current/host-validation.md) | Host acceptance checklist and repeatable smoke runs | page |
+| [Model roster](current/model-roster.md) | Model family/generation register, the generated family tables, and generation upgrades | page |
 | [Product decisions](current/scope-boundaries.md) | Settled scope and decision motivation | page |
 
 ## Frequent lookups
@@ -63,6 +64,8 @@ Questions that land deeper than an area page. Everything else is one hop from th
 | Need | Read |
 | --- | --- |
 | Headline token precision/recall/found-rate decomposition and declared format weight | [Generation graph and scoring](current/rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy) |
+| Whether an answer carried BOTH facts of a multi-hop item, not just how much it overlaps the reference | [Answer-side gold-span coverage](current/rag-core/scoring.md#answer-side-gold-span-coverage-answer-side-span-coverage-metric) |
+| Whether a model leaked its reasoning into the answer or replied in the wrong language, and which roster tags need suppression | [Response-integrity guard](current/rag-core/scoring.md#response-integrity-guard-thinking-suppression-and-answer-language-guard) and [the per-tag verdicts](current/backend-telemetry.md#thinking-suppression-verdicts-per-roster-tag) |
 | Whether RAG pays for itself: closed-book vs rag vs long-context lanes | [Context ablation](current/rag-core/context-ablation.md) |
 | How much repeated text an index still holds, and which collapse tier to build with | [Retrieval store](current/rag-core/retrieval-store.md#near-duplicate-residue-and-the-collapse-tiers) |
 | Cold/warm encoder throughput on CUDA hosts (load vs compile vs steady encode) | [Embedders](current/rag-core/embedders.md#blackwell-encoder-throughput-decomposition) |

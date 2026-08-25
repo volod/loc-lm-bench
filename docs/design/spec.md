@@ -280,11 +280,45 @@ recorded because a model name alone is not a reproducible runtime identity.
 One heavyweight model runs at a time. Sequential execution avoids VRAM contention, cross-run cache
 effects, and biased telemetry.
 
+## Model Roster and Family Currency
+
+The candidate roster is a register of model FAMILIES, not a list of tags. A family carries one or
+more GENERATIONS, and a generation carries the logical models and per-backend artifacts that serve
+it. Exactly one generation of a family is `current`; a superseded generation is retained as
+`previous` only while a carried model still serves from it, so a family result reads as a generation
+comparison rather than a single point and an upgrade that costs quality is visible instead of
+inferred. A generation with no carried model is dropped rather than kept: the roster answers what
+runs now and what it replaced, not what has ever existed.
+
+Because the register is the source of truth, the published family, generation, and license tables
+are GENERATED from it. A roster restated in prose drifts the moment a generation lands, and a reader
+cannot tell which of the two statements is current; a generated table cannot disagree with the
+manifest without failing the check that regenerates it.
+
+An upgrade is a decision, so the product supports one rather than performing it. Currency is read
+from the upstream registries a family's artifacts already come from -- the Ollama library and the
+Hugging Face model API -- and reported per family as the newest generation upstream offers beside
+the one the roster carries, with what was read and when. The report never edits the roster, pulls
+weights, or promotes a generation. Adopting one is an operator act, and it is reported together with
+what it invalidates: every measurement taken against the generation being replaced.
+
+The boundary: this capability owns family and generation identity, the published metadata derived
+from it, and the currency report. It does NOT own serving decisions -- which artifact serves on
+which host stays with the resolver and planner -- and it does not judge whether a newer generation
+is BETTER, which is a measurement the sweep makes rather than a fact a register can carry.
+
 ## Scoring Policy
 
 Objective task metrics are always available. RAG scoring includes exact/contains/token overlap,
 semantic diagnostics, retrieval evidence, groundedness, citation validity, and abstention probes
 when configured.
+
+A single overlap score against the reference answer cannot say WHICH of a multi-evidence item's
+facts an answer states, so the answer side reports coverage of the item's own gold spans beside it:
+per labeled span, whether the answer carries the fact that span contributes, and the all-spans gate
+over them. It is the answer-side counterpart of the retrieval-side span coverage, it is additive --
+never a replacement for the ranking objective -- and it is a recall-side reading, so it is read
+beside the format component that prices verbosity rather than alone.
 
 Quality, throughput, VRAM, and power are retained as separate measurements. Recommendations may
 combine them for a named operator goal, such as best accuracy or best quality per watt, but the raw
@@ -293,12 +327,51 @@ dimensions remain visible.
 Answer-side signals should be read from a declared answer contract wherever the workload allows one,
 rather than recovered from free text by heuristics after the fact. A status, an abstention, and a
 citation that the model DECLARED are evidence; the same three recovered by regex are an estimate of
-evidence, and the difference belongs in the record.
+evidence, and the difference belongs in the record. A completion that does not satisfy the declared
+contract ends in a typed status -- distinguishing "not the requested format at all" from "the
+requested format, wrong shape" -- after at most one bounded repair, rather than being scored as a
+wrong answer: an operator has to be able to tell a model that does not KNOW the answer from one
+that cannot EMIT it.
+
+A completion can be well-formed, on-topic, and still not be an answer. Two delivery failures are
+therefore read per response and recorded beside the failure taxonomy rather than folded into
+correctness: deliberation the model leaked into the answer body despite the serving backend's
+thinking-suppression flag, and an answer delivered in a language other than the question's. Both
+are scored as ordinary content otherwise -- a low overlap score that reads identically to a wrong
+answer -- and the leak additionally inflates the generated-token count that throughput and cost are
+derived from, so it corrupts a measurement the operator reads as hardware fact. The guard names
+them; it never changes the case's status or the objective, because what it detects is a property of
+the serving configuration, not of the model's knowledge. Suppression is therefore a per-model
+verdict backed by a measured leak rate -- the backend flag, a prompt-level instruction on top of
+it, or neither, in which case the tag is not scoreable as a non-thinking model and the roster, not
+the scorer, is what has to change.
 
 Context-ablation lanes (`closed_book`, `long_context`) are measurement lanes, never default
 retrieval policies and never leaderboard rows. `long_context` is oracle-grounded -- it reads the
 item's own gold document ids -- so its gap sizes what chunking still loses rather than what an
 operator would gain.
+
+An oracle ceiling is only actionable once it is split, so the ablation also carries a lane that is
+NOT a diagnostic: `retrieved_document` retrieves exactly as the ranked lane does and then widens
+the unit of context from the top-ranked chunk to the whole document that chunk came from, with no
+gold label anywhere in the path. It divides the oracle gap into the part an operator captures by
+changing a configuration value and the part that was the gold label all along, and because it is a
+configuration someone could ship it carries an explicit adopt-or-reject verdict read off the same
+calibrated paired interval as every other reading here. Adoption is a per-corpus measured result,
+never a default: `rag` remains the leaderboard row until a run says otherwise.
+
+Both readings the ablation produces are also stated per QUESTION TYPE, because a pooled average over
+a mixed item set cannot say WHICH questions retrieval pays for: a factoid answered by a single span
+and a multi-hop question whose evidence is scattered across documents are different retrieval
+problems, and an operator whose corpus is mostly one of them is not served by the mean of both. Each
+slice is decided on its own items by the same calibrated cut as the pooled reading and carries its
+own item count, contamination rate, and per-lane skip counts, so a slice can be compared against the
+pool it came from. The boundary: a slice reading is DIAGNOSTIC. It says where retrieval fails to pay
+for itself and never becomes the corpus decision -- the pooled verdict is what the ablation
+concludes, and the adopt-or-reject call on `retrieved_document` is not taken per slice at all,
+because a shippable configuration chosen off a dozen items of one question type is what the
+minimum-evidence gate exists to refuse. A gold set carrying no question-type sidecar reports no
+slices rather than one pooled slice under a made-up label.
 
 ### Judge admission
 
@@ -453,18 +526,19 @@ Four rules settle it, in order:
 | 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
 | 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
 | 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; miss classification into retrieval, generation, refusal, artifact, judge | [Scoring](../impl/current/rag-core/scoring.md) |
+| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 9 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 10 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 11 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 12 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 13 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 14 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 15 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 16 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits | [Model roster](../impl/current/model-roster.md) |
+| 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 14 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 15 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 16 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 17 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 

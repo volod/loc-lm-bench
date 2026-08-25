@@ -21,7 +21,7 @@ from llb.bench.agentic.context_policy import (
     ContextPolicy,
 )
 from llb.bench.agentic.context_summary import compact_state
-from llb.bench.agentic.context_budget import (
+from llb.backends.context_budget import (
     ContextBudget,
     fixed_budget,
     prompt_tokens,
@@ -285,7 +285,7 @@ def test_fixed_budget_reports_its_trigger_share_and_degrades_to_unbounded_at_zer
 
 
 def test_prompt_tokens_uses_the_shared_chars_per_token_conversion():
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN
+    from llb.backends.context_fit import CHARS_PER_TOKEN
 
     assert prompt_tokens(3000) == int(3000 / CHARS_PER_TOKEN)
 
@@ -691,9 +691,9 @@ def test_the_board_ignores_a_model_with_no_context_policy_runs(tmp_path: Path):
 
 
 def test_resolve_context_budget_bounds_the_prompt_from_an_explicit_context_budget():
-    from llb.bench.agentic.context_budget import resolve_context_budget
+    from llb.backends.context_budget import resolve_context_budget
     from llb.core.config import RunConfig
-    from llb.optimize.tuning_space import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
+    from llb.backends.context_fit import CHARS_PER_TOKEN, PROMPT_HEADROOM_TOKENS
 
     config = RunConfig().with_overrides(model="unlisted-model", context_budget=4096)
     budget = resolve_context_budget(config, model_spec=None, vram_mib=0, ram_mib=0)
@@ -706,7 +706,7 @@ def test_resolve_context_budget_bounds_the_prompt_from_an_explicit_context_budge
 
 
 def test_resolve_context_budget_cannot_bound_an_unknown_model():
-    from llb.bench.agentic.context_budget import resolve_context_budget
+    from llb.backends.context_budget import resolve_context_budget
     from llb.core.config import RunConfig
 
     budget = resolve_context_budget(

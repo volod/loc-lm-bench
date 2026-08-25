@@ -4,7 +4,7 @@ from typing import Callable
 
 from typing_extensions import TypedDict
 
-from llb.core.contracts.common import UsageRecord
+from llb.core.contracts.common import JsonObject, UsageRecord
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 
 
@@ -29,6 +29,15 @@ class RagState(TypedDict, total=False):
     query_hypothetical_answer: str
     query_decomposition: str
     query_subqueries: list[str]
+    # The declared answer contract (typed-rag-answer-envelope), present only on an envelope-format
+    # run. `envelope` is the VALIDATED envelope as a plain dict so the durability journal can carry
+    # it; `envelope_status` is the parse verdict (ok / malformed / schema_invalid), `envelope_error`
+    # the validator complaint behind a non-ok verdict, and `envelope_repaired` says whether the
+    # bounded repair reprompt was spent on this case.
+    envelope: JsonObject
+    envelope_status: str
+    envelope_error: str
+    envelope_repaired: bool
     # Prompt-side table-header restoration accounting: how many retrieved chunks were given back
     # their column names, and what that added in characters (0 / 0 when the step is off).
     table_headers_restored: int
@@ -36,3 +45,9 @@ class RagState(TypedDict, total=False):
 
 
 ContextSource = Callable[[RagState], RagState]
+
+# A context refiner runs AFTER ordinary retrieval and rewrites what the prompt carries, given the
+# case state and the retrieve node's own update. It is how the `retrieved_document` context lane
+# widens the unit of context from the top-ranked chunk to the document that chunk came from
+# without reimplementing query prep, filtering, reranking, or the latency accounting.
+ContextRefiner = Callable[[RagState, RagState], RagState]

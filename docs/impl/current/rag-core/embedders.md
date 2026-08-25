@@ -408,13 +408,10 @@ Optuna loop, fans out once per new chunking fingerprint, and may reload from
 `$DATA_DIR/optuna/<study>/stores/`. It never reuses a store built under a different embedder. See
 [evaluation rigor](../rigor-board-judge/tuning-and-search.md#multi-objective-rag-tuner).
 
-## Context budget
+## Store and API embedder conventions
 
-`RunConfig.context_budget` is an optional token budget that couples `top_k`, `chunk_size`, and
-(for vLLM) `max_model_len`. When set, `fits_context` prunes configs whose estimated retrieved
-prompt exceeds the budget, and multi-objective search samples the budget from
-`{2048, 4096, 8192, 16384}` then sets `max_model_len` to that value on vLLM backends. Single-objective
-`llb tune` leaves the budget unset unless the operator pins it in the run config.
+What a retrieved prompt is PRICED against -- the declared window, the served one, the Optuna
+over-context prune -- is [the context budget](context-budget.md).
 
 Store/query embedder fingerprint: `store_meta.json` records the `embedding_model` a store was built
 with, and `_load_store` refuses a run whose `config.embedding_model` differs

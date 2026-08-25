@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llb.bench.agentic.context_budget import fixed_budget
+from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,

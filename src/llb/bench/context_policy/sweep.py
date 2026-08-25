@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.backends.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.model import DEFAULT_MAX_STEPS, AgenticTask
 from llb.bench.context_policy.run import run_policy, task_set_digest
 from llb.bench.context_policy.report import (

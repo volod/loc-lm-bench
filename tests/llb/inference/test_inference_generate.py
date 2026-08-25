@@ -35,7 +35,7 @@ def test_manifest_has_supported_tiers() -> None:
     for tier in (12, 16, 24, 32):
         assert tier in manifest["tiers"] or str(tier) in manifest["tiers"]
         entries = manifest["tiers"].get(tier) or manifest["tiers"].get(str(tier))
-        for target in ("mamaylm", "lapa", "gemma-4", "qwen3.6", "mistral"):
+        for target in ("mamaylm", "lapa", "gemma-4", "qwen", "mistral"):
             assert target in entries
 
 
@@ -116,6 +116,8 @@ def test_generate_serving_configs_for_tier_16(tmp_path: Path) -> None:
     _assert_tier16_mistral(out)
     targets = {item["target"]: item for item in tier["targets"]}
     assert targets["gemma-4-26b"]["model"] == "gemma4:26b"
+    # the `qwen` family target carries the CURRENT generation; 3.6 stays as an extra target
+    assert targets["qwen"]["model"] == "qwen3.8:27b"
     assert targets["qwen3.6-27b"]["model"] == "qwen3.6:27b"
 
 
@@ -173,6 +175,7 @@ def test_generate_serving_configs_for_tier_32(tmp_path: Path) -> None:
     targets = {item["target"]: item for item in tier["targets"]}
     assert targets["gemma-4-26b"]["backend"] == "vllm"
     assert targets["gemma-4-26b"]["model"].endswith("FP8-dynamic")
+    assert targets["qwen"]["model"] == "qwen3.8:27b"
     assert targets["qwen3.6-27b"]["backend"] == "ollama"
     rel = out / "run_eval_mamaylm.sh"
     assert "../../../.." in rel.read_text(encoding="utf-8")

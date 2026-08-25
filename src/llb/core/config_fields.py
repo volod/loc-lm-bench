@@ -50,7 +50,11 @@ RestorationRankOrder = Literal["morphology", "context"]
 # Context strategy (rag-vs-long-context-ablation): where the prompt's evidence comes from.
 # "rag" retrieves; "closed_book" retrieves nothing; "long_context" lays the item's whole source
 # document(s) into the prompt.
-ContextStrategy = Literal["rag", "closed_book", "long_context"]
+ContextStrategy = Literal["rag", "closed_book", "retrieved_document", "long_context"]
+
+# Answer contract of the generation lane (typed-rag-answer-envelope): free prose (the default,
+# byte-for-byte the pre-envelope path) or the typed `AnswerEnvelope` parsed at the boundary.
+AnswerFormat = Literal["free_text", "envelope"]
 # Duplicate-collapse tier (llb.rag.duplicates.tiers): when do two chunk texts count as ONE
 # passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
 # coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
@@ -163,12 +167,21 @@ class RunConfigFields(BaseModel):
     # all, and reads the header text from `corpus_root`.
     restore_table_headers: bool = False
 
-    # Context strategy (rag-vs-long-context-ablation): a DIAGNOSTIC lane selector, not a ranking
-    # policy -- "rag" (the default) is the leaderboard row. "closed_book" sends no context at all,
-    # so the score is what the model already knows; "long_context" lays the item's whole source
-    # document(s) into the prompt, and skips (never truncates) an item whose document does not fit
-    # the model's usable window. Recorded in the manifest fingerprint like every other knob.
+    # Context strategy (rag-vs-long-context-ablation): a lane selector, not a ranking policy --
+    # "rag" (the default) is the leaderboard row. "closed_book" sends no context at all, so the
+    # score is what the model already knows; "long_context" lays the item's whole GOLD source
+    # document(s) into the prompt. Both are diagnostics. "retrieved_document" is the shippable
+    # sibling of "long_context": it retrieves as configured and then widens the unit of context
+    # from the top-ranked chunk to the whole document that chunk came from, with no gold label
+    # anywhere in the path. Every document lane skips (never truncates) an item whose documents do
+    # not fit the model's usable window. Recorded in the manifest fingerprint like every other knob.
     context_strategy: ContextStrategy = "rag"
+
+    # How many DISTINCT retrieved documents the "retrieved_document" lane lays into the prompt,
+    # walking the ranked chunk list best-first (1 = the top-ranked chunk's document only). It is
+    # the lane's document-selection rule, so it is recorded in the fingerprint: widening it trades
+    # a higher chance of covering the answer against a longer prompt and more skipped items.
+    retrieved_document_top_n: int = Field(default=1, ge=1)
 
     # Query-side processing lane (uk-query-processing): an ORDERED, opt-in list of query-prep
     # steps applied between the user question and retrieval (never mutating the stored corpus).
@@ -273,6 +286,24 @@ class RunConfigFields(BaseModel):
     cited_answers: bool = False
     score_groundedness: bool = False
     insufficient_context_probes: int = Field(default=0, ge=0)
+
+    # Prompt-level thinking suppression (thinking-suppression-and-answer-language-guard), ON TOP
+    # of the backend's native flag (Ollama `think: false`, vLLM `enable_thinking=false`), which
+    # every launcher already sends. Off by default because the flag alone is sufficient on every
+    # roster tag but one: a chat template that emits the reasoning block into the answer body
+    # ignores the flag, and the instruction is the only lever left. It is a PROMPT change, so it is
+    # adopted per model with the guard's leak rate as evidence, never switched on roster-wide --
+    # an instruction the model did not need still changes what it was asked.
+    suppress_reasoning_prompt: bool = False
+
+    # Declared answer contract (typed-rag-answer-envelope). "free_text" keeps the shipped prose
+    # path unchanged. "envelope" swaps in the typed-answer generation prompt, validates the
+    # completion at the generation boundary, spends at most one bounded repair reprompt carrying
+    # the validation error, and ends a completion that still does not satisfy the contract in a
+    # typed status (`malformed` / `schema_invalid`) instead of scoring it as a wrong answer. The
+    # answer-side signals then read DECLARED fields instead of regexes over prose. Off by default:
+    # the format is adopted per model with evidence, never by construction.
+    answer_format: AnswerFormat = "free_text"
 
     # Paths (resolved against the project / DATA_DIR, never hardcoded)
     data_dir: Path = Path(".data")

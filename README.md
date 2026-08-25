@@ -68,7 +68,7 @@ defaults.
 | Question-type routing | Tune sidecar-free graph-fusion routing thresholds on one split with the question-type labels hidden from every routing decision, freeze one policy, then score it on held-out final data. See [graph-vector fusion](docs/impl/current/rag-core/graph-vector-fusion.md) and [what the calibration measured](docs/impl/current/graphrag-backend/sidecar-free-routing-calibration.md). | `make calibrate-fusion-routing GOLDSET=<gs>` |
 | Ukrainian query-side processing | Improve Ukrainian queries before retrieval without touching the corpus: casefold/apostrophe/transliteration normalization, corpus-vocabulary typo tolerance, alias/glossary expansion, and an opt-in logged LLM rewrite -- with an A/B report proving each step's recall/MRR delta. What the typo step's conservative constants COST is measured rather than assumed: one sweep prices each constant on retrieval plus a per-edit audit that separates "restored the user's word" from "rewrote the question into something the corpus contains", and returns pin / adopt / expose per constant. Russian and code-switched queries against the same Ukrainian corpus are measured on the same bench. See [query-side processing](docs/impl/current/rag-core/rerank-and-query.md#query-side-processing-uk-query-processing), [the restoration sweep](docs/impl/current/rag-core/rerank-and-query.md#restoration-constraint-sweep-restoration-constraint-threshold-sweep), and [the cross-lingual lane](docs/impl/current/rigor-board-judge/robustness-benchmarks.md#cross-lingual-query-lane). | `make build-query-glossary BUNDLE=<draft>` -> `make validate-retrieval QUERY_PREP=normalize,typos,glossary QUERY_PREP_AB=1` -> `make sweep-restoration-constraints GOLDSET=<gs>` -> `make run-eval QUERY_PREP=normalize,typos,glossary` |
 | Why a multi-hop item misses | When `all-spans@k` will not move for any ranking knob, ranking is not the explanation. The probe ranks every labeled span twice -- by the item's question and by the span's own text as the retrievability control -- and classifies each item by its worst hop into `covered` / `budget` / `query` / `unreachable`, which point at opposite fixes. Pair it with a decomposition lane and the report counts conversions and regressions against the ORIGINAL diagnosis cohorts. See [per-hop evidence](docs/impl/current/graphrag-backend/retrieval-budget-evidence.md#the-per-hop-probe-lane). | `make probe-multihop-hops CONFIG=<run-config.yaml> GOLDSET=<gs> HOP_PROBE_BUDGETS=10,25,50` (add `QUERY_PREP=decompose QUERY_PREP_MODEL=<local-model>` for the paired lane) |
-| Does retrieval pay for itself? | Score one item set closed-book vs RAG vs whole-document long context with paired uplift intervals, per-question-type slices, and a contamination flag for items answered with no evidence -- then compare the ANSWERS two retrieval lanes produce on identical items, scored under a second model reading byte-identical context so that "the extra evidence does not reach the answer" separates from "this one tune does not use it". See [context ablation](docs/impl/current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation) and [answer-quality evidence](docs/impl/current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence). | `make compare-context-strategies MODEL=<model> GOLDSET=<gs>` -> `make compare-answer-quality MODEL=<model> FUSION_COMPARISON=<sweep>/comparison.json` |
+| Does retrieval pay for itself? | Score one item set closed-book vs RAG vs the retrieved document vs whole-document oracle context, with paired uplift intervals, per-question-type slices, a contamination flag for items answered with no evidence, and an adopt-or-reject call on the one lane that ships (send the whole document the top-ranked chunk came from) -- then compare the ANSWERS two retrieval lanes produce on identical items, scored under a second model reading byte-identical context so that "the extra evidence does not reach the answer" separates from "this one tune does not use it". See [context ablation](docs/impl/current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation) and [answer-quality evidence](docs/impl/current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence). | `make compare-context-strategies MODEL=<model> GOLDSET=<gs>` -> `make compare-answer-quality MODEL=<model> FUSION_COMPARISON=<sweep>/comparison.json` |
 
 ### 5. Answer quality and failure analysis
 
@@ -78,6 +78,7 @@ guessing.
 | Capability | What it gives you | Pipeline commands |
 |---|---|---|
 | Groundedness and citation metrics | Deterministic groundedness fraction, `[i]` citation validity + hallucinated-citation rate, and insufficient-context abstention probes (gold evidence removed -> the model should decline). Additive columns that never change the headline. See [groundedness and citation metrics](docs/impl/current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics). | `make run-eval CITED_ANSWERS=1 SCORE_GROUNDEDNESS=1 INSUFFICIENT_CONTEXT_PROBES=20` |
+| Typed answer envelope | Ask the model for a DECLARED answer -- text, an explicit abstention flag, and per-claim citations -- validated at the generation boundary, so a completion in the wrong shape ends in a typed status (`malformed` vs `schema_invalid`) after one bounded repair instead of being scored as a wrong answer, and every answer-side metric reads a field instead of a regex over prose. See [the typed answer envelope](docs/impl/current/rag-core/scoring.md#typed-rag-answer-envelope-typed-rag-answer-envelope). | `make run-eval ANSWER_FORMAT=envelope MAX_TOKENS=768 MODEL=<model>` -> `make analyze-answer-envelope RUN_DIRS="<bundle> <bundle>"` |
 | Headline decomposition | Read one fixed item set under token F1, recall, found-rate, and the declared format policy, so a verbosity difference cannot pass for a quality difference. See [scoring](docs/impl/current/rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy). | `make analyze-verbosity RUN_DIRS="<bundle> <bundle>"` |
 | Failure analysis and robustness probes | Classify and cluster one bundle's misses (retrieval vs generation vs scoring), benchmark noisy Ukrainian queries -- keyboard layout, apostrophe variants, transliteration -- against each mitigation lane, and probe lost-in-the-middle by planting the gold chunk at head/middle/tail. See [miss analysis](docs/impl/current/rigor-board-judge/diagnostics.md#miss-analysis-analyze-misses), [query robustness](docs/impl/current/rigor-board-judge/robustness-benchmarks.md#ukrainian-query-robustness-benchmark), and [context position](docs/impl/current/rigor-board-judge/diagnostics.md#context-position-probe-probe-context-position). | `make analyze-misses RUN_DIR=<bundle>` -> `make bench-query-robustness MODEL=<model>` -> `make probe-context-position MODEL=<model>` |
 
@@ -135,29 +136,31 @@ and contributor guardrails live in [AGENTS.md](AGENTS.md).
 
 ## Model Families and Licenses
 
-The default candidate sweep compares five open-weight families -- two Ukrainian-specialized and
-three multilingual baselines. Each links to its upstream weights; comply with the listed license
-when serving or redistributing.
+<!-- generated: model-families (make sync-model-family-docs) -->
 
-| Family | Focus | Default weights | License |
-| --- | --- | --- | --- |
-| MamayLM v2 (INSAIT) | Ukrainian-specialized | [MamayLM v2.0 (Gemma 3) collection][mamay-col] | [Gemma Terms][gemma-lic] |
-| Lapa v0.1.2 (lang-uk) | Ukrainian-specialized | [lapa-llm/lapa-v0.1.2-instruct][lapa-repo] | [Gemma Terms][gemma-lic] |
-| Gemma 4 (Google) | Multilingual baseline | [google/gemma-4 collection][gemma-col] | [Apache 2.0][apache-lic] |
-| Qwen 3.6 (Alibaba) | Multilingual baseline | [Qwen/Qwen3.6-35B-A3B][qwen-repo] | [Apache 2.0][apache-lic] |
-| Mistral Small 3.1 (Mistral AI) | Multilingual baseline | [mistralai/Mistral-Small-3.1-24B-Instruct-2503][mistral-repo] | [Apache 2.0][apache-lic] |
+The default candidate sweep carries 5 open-weight families (2 Ukrainian-specialized, 3
+multilingual baselines) across 7 generations -- one current per family plus 2 retained for
+generation comparison -- and 11 logical models. Comply with the listed license when serving or
+redistributing.
 
-What each family is in the sweep to answer, which artifact serves on which VRAM tier, the serving
-traps, gated-model handling, and how to add a family:
-**[model families, tiers, and licenses](docs/reference/model-families.md)**.
+| Family | Role in the sweep | Current generation | Also carried | License |
+| --- | --- | --- | --- | --- |
+| MamayLM (INSAIT) | Ukrainian-specialized | [MamayLM v2.0 (Gemma 3)](https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3) | -- | [Gemma](https://ai.google.dev/gemma/terms) |
+| Lapa (lang-uk) | Ukrainian-specialized | [Lapa v0.1.2 instruct](https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct) | -- | [Gemma](https://ai.google.dev/gemma/terms) |
+| Gemma (Google) | Multilingual baseline | [Gemma 4](https://huggingface.co/collections/google/gemma-4) | -- | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Qwen (Alibaba) | Multilingual baseline | [Qwen3.8](https://huggingface.co/Qwen/Qwen3.8-27B) | Qwen3.6, Qwen3 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| Mistral Small (Mistral AI) | Multilingual baseline | [Mistral Small 3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503) | -- | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 
-[mamay-col]: https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
-[lapa-repo]: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
-[gemma-col]: https://huggingface.co/collections/google/gemma-4
-[qwen-repo]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
-[mistral-repo]: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
-[gemma-lic]: https://ai.google.dev/gemma/terms
-[apache-lic]: https://www.apache.org/licenses/LICENSE-2.0
+<!-- end generated: model-families -->
+
+What each family is in the sweep to answer, which generation it carries now, which artifact serves
+on which VRAM tier, the serving traps, gated-model handling, and how to add a family or a
+generation: **[model families, tiers, and licenses](docs/reference/model-families.md)**.
+
+The table above is not maintained by hand -- it is generated from the family register in
+[`samples/configs/models_uk.yaml`](samples/configs/models_uk.yaml). Add a family or a generation
+there and run `make sync-model-family-docs`; `make ci` fails while the docs and the register
+disagree. `make list-model-families` prints the same register in the terminal.
 
 ## Data Licenses
 

@@ -30,6 +30,14 @@ def _row(item_id: str, objective: float, hit: float = 1.0) -> dict:
     }
 
 
+def _answer_coverage(coverage: float) -> dict:
+    """The answer-side span columns a scored case row carries (`llb.scoring.answer_spans`)."""
+    return {
+        "answer_span_coverage": coverage,
+        "answer_all_spans": 1.0 if coverage == 1.0 else 0.0,
+    }
+
+
 def _lanes(vector: list[dict], fused: list[dict]) -> dict[str, list[dict]]:
     return {VECTOR: vector, FUSED: fused}
 

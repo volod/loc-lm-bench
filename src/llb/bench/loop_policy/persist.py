@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.loop_policy.report import METHOD, LoopPolicyReport
 from llb.bench.common import Mirror, persist_category_run
 

@@ -47,6 +47,7 @@ from llb.executor.runner_setup import (
     _maybe_run_probes,
     _score_options,
     _select_eval_items,
+    check_rag_prompt_window,
 )
 from llb.executor.runner_target import (
     _eval_config_payload,
@@ -121,7 +122,7 @@ def run_eval(
     active_launcher: BackendLauncher | None = None
     counters = durability_journal.DurabilityCounters()
     try:
-        active_launcher, runner_fn, store, contention = _resolve_eval_runner(
+        resolved = _resolve_eval_runner(
             config,
             store=store,
             launcher=launcher,
@@ -131,6 +132,8 @@ def run_eval(
             evict=evict,
             wait=wait,
         )
+        active_launcher, runner_fn, store = resolved.launcher, resolved.runner_fn, resolved.store
+        contention = resolved.contention
         embedder = (
             store.embedder if (config.score_semantic and hasattr(store, "embedder")) else None
         )
@@ -141,6 +144,11 @@ def run_eval(
             max_backend_relaunches=max_backend_relaunches,
         )
         with active_launcher as backend:
+            # Resolved here rather than at wiring time: the backend is only now serving, and on
+            # Ollama it reports no window at all until a request has loaded the model.
+            window_warning = check_rag_prompt_window(config, resolved.context_window)
+            if window_warning:
+                _LOG.warning("%s", window_warning)
 
             def relaunch() -> None:
                 backend.stop()
@@ -198,6 +206,11 @@ def run_eval(
         durability=counters.as_status(),
         prompt_system_provenance=dict(prompt_system_provenance)
         if prompt_system_provenance is not None
+        else None,
+        # Which window a document lane's skips were measured against -- declared, or the smaller
+        # one the backend turned out to be serving. None whenever nothing was checked.
+        context_window=resolved.context_window.provenance()
+        if resolved.context_window is not None
         else None,
         n_cases=len(batch.rows),
     )

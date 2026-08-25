@@ -69,5 +69,12 @@ def _emit_answer_side(metrics: RunMetrics | None) -> None:
         parts.append(
             f"abstention_acc={metrics['abstention_accuracy']:.3f} (n={metrics.get('n_probes', 0)})"
         )
+    if "envelope_conformance" in metrics:
+        parts.append(
+            f"envelope_conformance={metrics['envelope_conformance']:.3f} "
+            f"(schema_invalid={metrics.get('envelope_schema_invalid_rate', 0.0):.3f} "
+            f"malformed={metrics.get('envelope_malformed_rate', 0.0):.3f} "
+            f"repaired={metrics.get('envelope_repair_rate', 0.0):.3f})"
+        )
     if parts:
         _LOG.info("[run-eval] answer-side: %s", " ".join(parts))

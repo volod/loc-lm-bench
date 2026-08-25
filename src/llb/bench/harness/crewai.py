@@ -18,7 +18,7 @@ while the real CrewAI path is exercised only on a host that has the extra instal
 
 from llb.bench.agentic.context import ContextTelemetry
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget
+from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     AgenticTask,

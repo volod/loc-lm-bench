@@ -2,11 +2,16 @@
 
 Pure and import-light (no `optuna`), so the ranges, the context-fit prune, and the OOM
 classification are unit-testable on their own. `llb.optimize.tuner` drives them.
+
+The window arithmetic a prune rests on is NOT here -- it is `llb.backends.context_fit`, beside the
+launchers it asks about, so a sweep, an eval run, and an agent loop on one host cannot disagree
+about what fits. What is here is the RETRIEVED shape of it: `top_k x chunk_size` is a search-space
+quantity, and pricing it is the prune.
 """
 
 from typing import Any, Callable, Sequence
 
-from llb.backends.planner.plan import plan_model
+from llb.backends.context_fit import estimate_context_tokens, fits_context_chars
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
 
@@ -38,10 +43,6 @@ RERANK_CANDIDATES_RANGE = (15, 60)
 
 # Token budgets that couple top_k, chunk_size, and max_model_len in multi-objective search.
 CONTEXT_BUDGET_CHOICES = [2048, 4096, 8192, 16384]
-
-CHARS_PER_TOKEN = 3.0  # UA measured ~0.33 tok/char in real-model validation -> ~3 chars/token
-
-PROMPT_HEADROOM_TOKENS = 512  # system prompt + question + answer headroom
 
 # float | (quality, throughput) | TrialMetrics-shaped outcomes from evaluate hooks.
 Objective = Callable[[RunConfig], Any]
@@ -160,57 +161,26 @@ def suggest_overrides(
     return overrides
 
 
-def estimate_context_tokens(config: RunConfig, context_chars: int) -> int:
-    """Rough tokens consumed by `context_chars` of context + headroom + the requested completion."""
-    return int(context_chars / CHARS_PER_TOKEN) + PROMPT_HEADROOM_TOKENS + config.max_tokens
-
-
 def estimate_prompt_tokens(config: RunConfig) -> int:
     """Rough tokens consumed by the retrieved context + headroom + the requested completion."""
     return estimate_context_tokens(config, config.top_k * config.chunk_size)
 
 
-def effective_max_context(
-    config: RunConfig, model_spec: ModelSpec, vram_mib: int, ram_mib: int
-) -> int:
-    """The smallest of: the planner's max context for the host, the model window, the
-    served `max_model_len` cap, and an explicit `context_budget`. 0 means "cannot bound"."""
-    row = plan_model(model_spec, vram_mib, ram_mib)
-    ctx = row["ctx_max"] or int(model_spec.get("max_context") or 0)
-    if config.max_model_len:
-        ctx = min(ctx, config.max_model_len) if ctx else config.max_model_len
-    if config.context_budget:
-        ctx = min(ctx, config.context_budget) if ctx else config.context_budget
-    return ctx
-
-
-def fits_context_chars(
+def fits_context(
     config: RunConfig,
     model_spec: ModelSpec | None,
     vram_mib: int,
     ram_mib: int,
-    context_chars: int,
+    served_max_model_len: int | None = None,
 ) -> bool:
-    """True if a prompt carrying `context_chars` of context fits the window / explicit budget.
-
-    Without a `model_spec` only an explicit `context_budget` can bound the prompt, so an unknown
-    model never silently declares a document unusable.
-    """
-    estimated = estimate_context_tokens(config, context_chars)
-    if config.context_budget is not None and estimated > config.context_budget:
-        return False
-    if model_spec is None:
-        return True
-    ctx = effective_max_context(config, model_spec, vram_mib, ram_mib)
-    return ctx <= 0 or estimated <= ctx
-
-
-def fits_context(
-    config: RunConfig, model_spec: ModelSpec | None, vram_mib: int, ram_mib: int
-) -> bool:
-    """True if the retrieved prompt fits the effective context / explicit budget."""
+    """True if the retrieved prompt fits the usable window / explicit budget."""
     return fits_context_chars(
-        config, model_spec, vram_mib, ram_mib, config.top_k * config.chunk_size
+        config,
+        model_spec,
+        vram_mib,
+        ram_mib,
+        config.top_k * config.chunk_size,
+        served_max_model_len,
     )
 
 

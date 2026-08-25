@@ -13,6 +13,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
@@ -23,6 +24,7 @@ from llb.eval.context_ablation.lanes import default_lanes, lane_config
 from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     ContextAblationReport,
+    ContextWindowBinding,
     LongContextPowerAnalysis,
 )
 from llb.eval.context_ablation.power import (
@@ -90,6 +92,39 @@ def score_lanes(
     return rows, run_dirs
 
 
+def lane_context_windows(
+    run_dirs: Mapping[str, Sequence[str]],
+) -> dict[str, ContextWindowBinding | None]:
+    """Which window each lane's skips were measured against, read back off its run manifests.
+
+    The binding is recorded by the run that did the skipping, not by the comparison, so it is read
+    here rather than recomputed: a comparison assembled on another host, or months later, still
+    reports the window the lane actually ran under. A lane with no manifest (an injected runner in
+    CI) or no recorded binding (no document was ever checked) reports None.
+    """
+    windows: dict[str, ContextWindowBinding | None] = {}
+    for label, dirs in run_dirs.items():
+        windows[label] = next(
+            (
+                binding
+                for run_dir in dirs
+                if (binding := _manifest_context_window(Path(run_dir))) is not None
+            ),
+            None,
+        )
+    return windows
+
+
+def _manifest_context_window(run_dir: Path) -> ContextWindowBinding | None:
+    manifest = run_dir / "manifest.json"
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    binding = payload.get("context_window") if isinstance(payload, dict) else None
+    return cast(ContextWindowBinding, binding) if isinstance(binding, dict) else None
+
+
 def run_context_ablation(
     config: RunConfig,
     lanes: Sequence[str] | None = None,
@@ -139,6 +174,7 @@ def run_context_ablation(
         load_question_types(config.goldset_path),
         baseline=LANE_CLOSED_BOOK,
         run_dirs=run_dirs,
+        context_windows=lane_context_windows(run_dirs),
         resamples=resamples,
         confidence=confidence,
         seed=seed,

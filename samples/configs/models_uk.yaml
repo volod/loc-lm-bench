@@ -10,7 +10,8 @@
 # Repo ids below were taken from the linked HF collections (verified live):
 #   Gemma 4            https://huggingface.co/collections/google/gemma-4
 #   Gemma 4 QAT Q4_0   https://huggingface.co/collections/google/gemma-4-qat-q4-0
-#   Qwen3.6            https://huggingface.co/collections/Qwen/qwen36
+#   Qwen3.8            https://huggingface.co/Qwen/Qwen3.8-27B (current Qwen generation)
+#   Qwen3.6            https://huggingface.co/collections/Qwen/qwen36 (previous generation)
 #   MamayLM v2.0       https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
 #
 # Notes that shape these picks for a 16 GB RTX 4060 Ti:
@@ -43,9 +44,111 @@
 #     quants only).  hi_precision_params_b  override (billions of params kept at 16-bit) for
 #     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
 
+# Family register (capability `model-roster-currency`): the sweep carries FAMILIES, not tags.
+# Each family names its generations; exactly one is `current` and a superseded one is kept as
+# `previous` only while a model below still serves from it. `upstream` records where a currency
+# check reads the family (Ollama library namespace, Hugging Face author + repo prefix) so the
+# probe never has to guess a naming scheme. The published family/licence tables in README.md and
+# docs/reference/model-families.md are GENERATED from this block plus the `family` / `generation`
+# fields on every model -- run `make sync-model-family-docs` after editing either.
+families:
+  - id: mamaylm
+    label: MamayLM (INSAIT)
+    role: ua-specialized
+    focus: Ukrainian-specialized; the UA-tuned reference the baselines must beat
+    upstream:
+      hf_author: INSAIT-Institute
+      hf_prefix: MamayLM
+      ollama_namespace: hf.co/INSAIT-Institute
+    generations:
+      - id: v2.0
+        status: current
+        label: MamayLM v2.0 (Gemma 3)
+        license: Gemma
+        license_url: https://ai.google.dev/gemma/terms
+        weights_url: https://huggingface.co/collections/INSAIT-Institute/mamaylm-v20-gemma-3
+
+  - id: lapa
+    label: Lapa (lang-uk)
+    role: ua-specialized
+    focus: Ukrainian-specialized; a second, independently tuned UA lineage
+    upstream:
+      hf_author: lapa-llm
+      hf_prefix: lapa
+      ollama_namespace: hf.co/lapa-llm
+    generations:
+      - id: v0.1.2
+        status: current
+        label: Lapa v0.1.2 instruct
+        license: Gemma
+        license_url: https://ai.google.dev/gemma/terms
+        weights_url: https://huggingface.co/lapa-llm/lapa-v0.1.2-instruct
+
+  - id: gemma
+    label: Gemma (Google)
+    role: multilingual-baseline
+    focus: Multilingual baseline; the shared architecture the UA models derive from
+    upstream:
+      hf_author: google
+      hf_prefix: gemma
+      ollama_namespace: gemma
+    generations:
+      - id: "4"
+        status: current
+        label: Gemma 4
+        license: Apache-2.0
+        license_url: https://www.apache.org/licenses/LICENSE-2.0
+        weights_url: https://huggingface.co/collections/google/gemma-4
+
+  - id: qwen
+    label: Qwen (Alibaba)
+    role: multilingual-baseline
+    focus: Multilingual baseline; the MoE lane that serves on every tier
+    upstream:
+      hf_author: Qwen
+      hf_prefix: Qwen
+      ollama_namespace: qwen
+    generations:
+      - id: "3.8"
+        status: current
+        label: Qwen3.8
+        license: Apache-2.0
+        license_url: https://www.apache.org/licenses/LICENSE-2.0
+        weights_url: https://huggingface.co/Qwen/Qwen3.8-27B
+      - id: "3.6"
+        status: previous
+        label: Qwen3.6
+        license: Apache-2.0
+        license_url: https://www.apache.org/licenses/LICENSE-2.0
+        weights_url: https://huggingface.co/collections/Qwen/qwen36
+      - id: "3"
+        status: previous
+        label: Qwen3
+        license: Apache-2.0
+        license_url: https://www.apache.org/licenses/LICENSE-2.0
+        weights_url: https://huggingface.co/Qwen/Qwen3-30B-A3B
+
+  - id: mistral
+    label: Mistral Small (Mistral AI)
+    role: multilingual-baseline
+    focus: Multilingual baseline; a non-Gemma, non-Qwen dense control
+    upstream:
+      hf_author: mistralai
+      hf_prefix: Mistral-Small
+      ollama_namespace: mistral-small
+    generations:
+      - id: "3.1"
+        status: current
+        label: Mistral Small 3.1
+        license: Apache-2.0
+        license_url: https://www.apache.org/licenses/LICENSE-2.0
+        weights_url: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503
+
 models:
   # --- Gemma 4 int4 (w4a16) via vLLM -- candidates that fit a 16 GB card. ---
   - name: gemma-4-e4b-it-w4a16
+    family: gemma
+    generation: "4"
     backend: vllm
     source: google/gemma-4-E4B-it-qat-w4a16-ct
     min_vram_gb: 13    # weights load ~9.8 GiB; vLLM serving overhead makes this a 16 GiB target
@@ -76,6 +179,8 @@ models:
         min_vram_gb: 10
 
   - name: gemma-4-12b-it-w4a16
+    family: gemma
+    generation: "4"
     backend: vllm
     source: google/gemma-4-12B-it-qat-w4a16-ct
     min_vram_gb: 10
@@ -104,6 +209,8 @@ models:
   # vLLM can use bf16 on a large tier or Red Hat's FP8 conversion on 32 GiB; 12/16 GiB uses the
   # first-party Ollama/GGUF Q4 artifact with CPU offload.
   - name: gemma-4-26b-a4b
+    family: gemma
+    generation: "4"
     backend: vllm
     source: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
     min_vram_gb: 30
@@ -136,7 +243,46 @@ models:
         min_vram_gb: 8
 
   # --- Larger current-gen candidates: offload or a bigger GPU on 16 GB (flagged by list-models). ---
+  # Qwen3.8 is the CURRENT Qwen generation and the local default; the 3.6 entries below stay as the
+  # previous generation so a Qwen result reads as a generation comparison, not a single point.
+  - name: qwen3.8-27b
+    family: qwen
+    generation: "3.8"
+    backend: vllm
+    source: Qwen/Qwen3.8-27B-FP8
+    min_vram_gb: 40
+    params_b: 27.3
+    quant: fp8
+    n_layers: 64
+    kv_layers: 16       # full_attention_interval 4: 16 of 64 layers own a growing KV cache
+    kv_dim: 1024        # 4 KV heads * 256 head_dim
+    max_context: 262144
+    vocab_size: 248320
+    hidden_size: 5120
+    tie_word_embeddings: false
+    license: Apache-2.0
+    license_url: https://huggingface.co/Qwen/Qwen3.8-27B
+    notes: Qwen3.8 dense 27B (qwen3_5 arch, hybrid linear/full attention); the current Qwen generation and the 16 GiB local default via the q4_k_m Ollama tag; needs Ollama >= 0.32.12 for the architecture
+    sources:
+      vllm:
+        - source: Qwen/Qwen3.8-27B
+          quant: bf16
+          min_vram_gb: 58
+        - source: Qwen/Qwen3.8-27B-FP8
+          quant: fp8
+          min_vram_gb: 40
+      ollama:
+        source: qwen3.8:27b
+        quant: q4_k_m
+        min_vram_gb: 8
+      llamacpp:
+        source: hf.co/unsloth/Qwen3.8-27B-GGUF:Q4_K_M
+        quant: q4_k_m
+        min_vram_gb: 8
+
   - name: qwen3.6-27b
+    family: qwen
+    generation: "3.6"
     backend: vllm
     source: Qwen/Qwen3.6-27B-FP8
     min_vram_gb: 40
@@ -170,6 +316,8 @@ models:
         min_vram_gb: 8
 
   - name: qwen3.6-35b-a3b-fp8
+    family: qwen
+    generation: "3.6"
     backend: vllm
     source: Qwen/Qwen3.6-35B-A3B-FP8
     min_vram_gb: 40
@@ -210,6 +358,8 @@ models:
   #     serves on EVERY CUDA tier (q4_k_m weights ~18.6 GiB -- VRAM-resident on 24/32 GB,
   #     CPU-offloaded via Ollama on 12/16 GB; vLLM has no equivalent single-artifact path).
   - name: qwen3-30b-a3b
+    family: qwen
+    generation: "3"
     backend: ollama
     source: qwen3:30b
     min_vram_gb: 8
@@ -232,6 +382,8 @@ models:
         min_vram_gb: 8
 
   - name: mistral-small-3.1-24b
+    family: mistral
+    generation: "3.1"
     backend: vllm
     source: RedHatAI/Mistral-Small-3.1-24B-Instruct-2503-quantized.w4a16
     min_vram_gb: 20
@@ -271,6 +423,8 @@ models:
         min_vram_gb: 8
 
   - name: mamaylm-v2-12b
+    family: mamaylm
+    generation: v2.0
     backend: vllm
     source: INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0
     min_vram_gb: 26
@@ -295,6 +449,8 @@ models:
         min_vram_gb: 8
 
   - name: mamaylm-v2-27b-fp8
+    family: mamaylm
+    generation: v2.0
     backend: vllm
     source: INSAIT-Institute/MamayLM-Gemma-3-27B-IT-v2.0-FP8-dynamic
     min_vram_gb: 30
@@ -320,6 +476,8 @@ models:
         min_vram_gb: 8
 
   - name: lapa-v0.1.2-instruct
+    family: lapa
+    generation: v0.1.2
     backend: vllm
     source: lapa-llm/lapa-v0.1.2-instruct
     min_vram_gb: 26

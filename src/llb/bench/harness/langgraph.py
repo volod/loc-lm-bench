@@ -17,7 +17,7 @@ from typing_extensions import TypedDict
 
 from llb.bench.agentic.context import ContextState
 from llb.bench.agentic.context_policy import ContextPolicy
-from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.backends.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.episode_prompt import step_prompt
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,

@@ -42,7 +42,7 @@ def _default_teacher_fn(
 
     staging = root / "teacher-backend"
     staging.mkdir(parents=True, exist_ok=True)
-    launcher, runner_fn, _store, _contention = _resolve_eval_runner(
+    resolved = _resolve_eval_runner(
         config,
         store=None,
         launcher=None,
@@ -53,9 +53,9 @@ def _default_teacher_fn(
         wait=False,
     )
     responses: list[TeacherResponse] = []
-    with launcher:
+    with resolved.launcher:
         for item in items:
-            state = runner_fn(item)
+            state = resolved.runner_fn(item)
             responses.append(
                 TeacherResponse(
                     item_id=item.id,

@@ -76,207 +76,27 @@ Take the first task of the earliest group that still has one; see
 
 ### Answer scoring -- `answer-scoring`
 
-#### typed-rag-answer-envelope
-
-The RAG answer path emits FREE TEXT and every answer-side signal is recovered from that text after
-the fact by a heuristic: `classify_response` maps a completion to a status with regex markers,
-`is_abstention` reads first-person refusal stems, `parse_citations` scrapes `[i]` markers out of
-prose, and groundedness re-segments the answer into "sentence-ish claims" by punctuation
-([RAG core](current/rag-core/scoring.md#groundedness-and-citation-metrics-groundedness-citation-metrics)).
-The repo already validates typed model output with Pydantic -- but only inside the structured-output
-BENCHMARK lane, where `build_model` compiles a per-case schema and `is_conformant` reports whether
-the completion satisfies it (`src/llb/scoring/structured/schema.py`); nothing on the answer path an
-operator would actually ship is typed. Two consequences: the measured citation gap is unreadable
-(the durable 3B run scored citation validity 0.000 because the model mostly did not cite at all, a
-FORMAT failure scored as a grounding failure), and there is nowhere for a semantic validator to
-attach -- checking business rules requires a typed object to check, which is the door this task
-builds. Ship an `AnswerEnvelope` at the generation boundary -- the Ukrainian `answer`, `claims[]`
-(claim text, the chunk indices it cites, and an optional subject/relation/object triple typed
-against the closed 13-type entity vocabulary), an explicit `abstained` flag, and the evidence spans
--- parsed and validated in ONE place, with a completion that does not satisfy it ending in a typed
-status rather than being scored as a wrong answer.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none, and it must land before `ontology-validated-answer-gate` (which validates the
-  object this task defines). Reuse `build_model` / `parse_output` / `is_conformant` in
-  `src/llb/scoring/structured/schema.py` wholesale (they take a field schema, not a benchmark case),
-  the status taxonomy and `format_context` numbering in `src/llb/eval/common.py`, the claim
-  segmentation and citation parsing in `src/llb/scoring/groundedness.py`, and the
-  `eval.rag.cited_answer` template as the envelope prompt's starting point.
-- User-visible outcome: an operator can tell a model that does not KNOW the answer from a model that
-  cannot EMIT the answer in the requested shape, and every answer-side metric reads a declared field
-  instead of a regex over prose.
-- Scope boundary: in scope -- the envelope model, the boundary parse/validate function, the two new
-  statuses (`malformed` stays "not JSON at all"; a new `schema_invalid` covers JSON that fails the
-  envelope, because the two call for different fixes and today collapse into one number), one
-  bounded `repair_once` reprompt carrying the validation error (the same policy shape measured by
-  the [agent loop-policy
-  lane](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
-  for tool calls), the per-case columns, and a roster conformance study. Out of scope -- any
-  SEMANTIC check on the envelope's contents (that is `ontology-validated-answer-gate`), changing the
-  headline objective, constrained/grammar decoding in the backends, and making the envelope the
-  default before the study supports it.
-- Data and artifact paths: additive per-case columns (`envelope_status`, `n_claims`, `repaired`) in
-  the standard `$DATA_DIR/run-eval/` bundles; the conformance study under
-  `$DATA_DIR/answer-envelope/<run>/`.
-- Execution path: `make run-eval ANSWER_FORMAT=envelope MODEL=<model> BACKEND=<backend>` over at
-  least two roster models on the CUDA host, since envelope conformance is a property of the MODEL;
-  CI drives parse, validate, repair, and each terminal status over the fake completer -- no GPU.
-- Acceptance gates: `make ci` green; with the envelope off every recorded bundle reproduces
-  bit-identically (the seam adds nothing to the free-text path); the study reports per-model
-  conformance, `schema_invalid` rate, and repair rate SEPARATELY from correctness, so a repair gain
-  is attributable to formatting rather than to reasoning; each claim's cited indices are validated
-  in prompt-layout order, so `reverse_rank` renumbering is respected exactly as citation validity
-  already respects it; an envelope answer's objective score matches the free-text score of the same
-  `answer` string.
-- Documentation target: the scoring and groundedness sections of
-  [RAG core](current/rag-core/scoring.md#scoring), plus a validation-architecture subsection that
-  names the boundary.
-
-#### answer-side-span-coverage-metric
-
-The retrieval side distinguishes "carried one hop" from "carried both" (`span_coverage_at_k` /
-`all_spans_at_k`, [RAG core](current/rag-core/retrieval-metrics.md#retrieval-metrics)); the ANSWER
-side has no such distinction. `objective_score` is reference-answer token F1, so a two-hop answer
-that states one fact fluently and omits the other scores roughly half -- the same value a vague
-answer touching both facts gets. Every multi-hop answer-quality verdict therefore rests on a metric
-that cannot say whether the model used both hops, which is precisely the question the lane exists to
-ask ([GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence)). Build
-the answer-side counterpart: per gold span, decide whether the ANSWER carries that span's content
-(lemma and numeral overlap against the span text, thresholded and Ukrainian-aware, reusing the
-correctness tokenizer), then report `answer_span_coverage` and `answer_all_spans` beside the
-objective and let the multi-hop verdict read them.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the scoring tokenizer in `src/llb/scoring/correctness.py`, the
-  multi-span retrieval metrics in `src/llb/rag/retrieval.py`, and the per-slice comparison in
-  `src/llb/eval/answer_quality/`.
-- User-visible outcome: the operator learns whether a multi-hop answer actually contains BOTH
-  facts, instead of inferring it from a token-overlap score that a half-answer can earn.
-- Scope boundary: in scope -- the answer-side coverage metric, its per-case columns, and wiring it
-  into the answer-quality slices and verdict as an additive signal. Out of scope -- replacing
-  `objective_score` as the leaderboard ranking metric, judge re-calibration, and any change to the
-  retrieval metrics.
-- Data and artifact paths: additive per-case columns in the standard `$DATA_DIR/run-eval/` bundles;
-  comparison under the existing `$DATA_DIR/graph-vector-fusion-multihop/<run>/answer-quality/`.
-- Execution path: `make compare-answer-quality` on the drafted multi-hop bundle; CI covers the
-  metric on committed two-span fixtures (both facts, one fact, neither, paraphrased).
-- Acceptance gates: `make ci` green; on single-span items the answer-side coverage agrees with the
-  existing exact/contains signals; the multi-hop re-run reports the new columns with paired
-  intervals and states whether they change the recorded verdict.
-- Documentation target: [RAG core](current/rag-core/scoring.md#scoring) and the answer-quality evidence
-  subsection of [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence).
-
-#### thinking-suppression-and-answer-language-guard
-
-`qwen3:30b` answers a Ukrainian benchmark prompt with first-person English deliberation ("Okay, I
-need to explain...") even though the launcher sends Ollama's native `think: false` on every call,
-so the thinking suppression the manifest relies on is not sufficient for that tag. Two scoring
-risks follow: reasoning text inflates the generated-token count that throughput and cost are
-derived from, and an English answer to a Ukrainian prompt is scored as content rather than caught
-as an off-language response. Add a per-response guard that detects a leaked-reasoning prefix and a
-dominant-script/language mismatch against the prompt, record both as named per-case flags in the
-run bundle beside the existing reliability fields, and decide per model whether suppression needs a
-prompt-level instruction on top of the API flag. Evidence for the observation is in the full-roster
-throughput baseline in [backend telemetry](current/backend-telemetry.md).
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: the throughput protocol in
-  [backend telemetry](current/backend-telemetry.md#telemetry-fields) and the correctness/reliability
-  fields in [RAG core](current/rag-core/scoring.md#scoring).
-- User-visible outcome: a run bundle shows how many answers leaked reasoning or answered in the
-  wrong language, per model, instead of silently scoring them as ordinary content.
-- Scope boundary: in scope -- the detection flags, their manifest fields, and a per-model
-  suppression verdict. Out of scope -- rewriting the judge or changing the objective's definition.
-- Execution path: re-run the roster throughput protocol capturing generations, then a bounded
-  `run-eval` cell per affected tag.
-- Acceptance gates: `make ci` green with injected fake generations covering leaked-reasoning,
-  off-language, and clean answers; the flags appear in the persisted manifest; every roster tag
-  carries an explicit suppression verdict, including the tags where no leak was observed.
-- Documentation target: the roster baseline in
-  [backend telemetry](current/backend-telemetry.md) and the scoring fields in
-  [RAG core](current/rag-core/scoring.md#scoring).
-
-#### retrieved-document-long-context-lane
-
-The measured long-context lane is oracle-grounded -- it reads the item's own gold `doc_id`s, so it
-sizes a CEILING and cannot be adopted
-([product decisions](current/scope-boundaries.md#context-ablation-lanes-stay-diagnostic)). Add the
-shippable sibling: a `retrieved_document` context strategy that takes the top-ranked RETRIEVED
-chunk's document (no gold label), lays that whole document into the prompt under the same budget
-check and `context_overflow` skip rule, and reports beside the existing lanes. The measured
-oracle-versus-rag gap (+0.142 / +0.080 objective on two roster models) then splits into the part
-an operator can actually capture by widening the unit of retrieval from a chunk to its document,
-and the part that was pure oracle advantage.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the context-source seam, `fits_context_chars`, and the comparison in
-  [RAG core](current/rag-core/context-ablation.md#context-ablation-does-rag-pay-for-itself-rag-vs-long-context-ablation).
-- User-visible outcome: the operator learns whether "retrieve the chunk, send the document" is a
-  real configuration worth shipping, or whether the long-context gain was the gold label all along.
-- Scope boundary: in scope -- the strategy, its document-selection rule (top-1 versus top-k
-  distinct documents), the budget/skip path, and a four-lane comparison. Out of scope -- changing
-  the chunker, the ranking policy, and context-window extension tricks.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies CONTEXT_LANES=closed_book,rag,retrieved_document,long_context`;
-  CI covers document selection and the skip rule over fake lane stores.
-- Acceptance gates: `make ci` green; the three existing lanes reproduce their current rows exactly;
-  a heavy run on both scored roster models reports the four-lane table with paired intervals and an
-  explicit adopt-or-reject verdict for the new lane.
-- Documentation target: the context-ablation section of [RAG core](current/rag-core.md) and the
-  diagnostic-lane boundary in [product decisions](current/scope-boundaries.md).
-
-#### context-ablation-question-type-slices (optional)
-
-The context ablation slices by question type, but the committed UA fixture ships no
-`needle_items.jsonl` sidecar, so every heavy run so far reported ONE pooled number per lane ([RAG
-core](current/rag-core/context-ablation.md#context-ablation-evidence)). Pooling hides the question
-the lane is most useful for: retrieval almost certainly pays for itself unevenly -- a factoid whose
-answer is one span versus a comparative or numeric question whose evidence is scattered. Run the
-ablation on a gold set that HAS the sidecar (the quickstart-PDF accepted goldset, or a drafted
-multi-hop bundle) so the uplift and the long-context delta are reported per slice, and record which
-slices retrieval fails to pay for.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. The slicing is already wired; this needs a labeled item set and the run.
-  Question-type labels come from the needle sidecar
-  ([data prep](current/data-prep.md)).
-- User-visible outcome: the operator learns WHICH questions retrieval pays for on their corpus,
-  instead of one pooled average over a mixed set.
-- Scope boundary: in scope -- the run, the per-slice reading, and a verdict per slice. Out of
-  scope -- new metrics, new lanes, and any ranking-policy change.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: `make compare-context-strategies GOLDSET=<sidecar-bearing goldset> CORPUS=<dir>`
-  on the CUDA host; no new CI coverage.
-- Acceptance gates: `make ci` green; the report carries a non-empty slice table with paired
-  intervals per slice and states which slices the uplift interval fails to clear zero on.
-- Documentation target: the context-ablation evidence subsection of
-  [RAG core](current/rag-core.md).
-
 #### closed-book-decoding-stability (optional)
 
 A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
 same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
-the `rag` and `long_context` lanes were byte-identical ([RAG
+the `rag` and `long_context` lanes were byte-identical WITHIN that host state -- across a month of
+host and roster change they drift too, 5-7 of 82 answers on the same pinned retrieval ([RAG
 core](current/rag-core/context-ablation.md#context-ablation-evidence)). An ungrounded prompt leaves
-a much flatter next-token distribution, so kernel-level nondeterminism flips tokens. The drift
-stayed well inside the uplift interval and changed no verdict, but a contamination rate quoted to
-one decimal place is currently over-stated precision. Measure it: repeat the closed-book lane N
-times at a fixed seed, report the between-repeat spread of the lane mean and of the contamination
-rate, and either quote the ablation's closed-book numbers with that spread or make the lane
-reproducible (pinned sampler / seeded backend options) if the backend allows it.
+a much flatter next-token distribution, so kernel-level nondeterminism flips more tokens there. The
+drift stayed well inside the uplift interval and changed no verdict, but a contamination rate
+quoted to one decimal place is currently over-stated precision. Measure it: repeat the closed-book
+lane N times at a fixed seed, report the between-repeat spread of the lane mean and of the
+contamination rate against the grounded lanes' own spread, and either quote the ablation's numbers
+with that spread or make the lanes reproducible (pinned sampler / seeded backend options) if the
+backend allows it.
 
 - Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
 - Agent status: RUN NEEDED
 - Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
   existing paired-bootstrap reporting.
 - User-visible outcome: the operator knows how much of a closed-book delta is measurement noise
-  before reading it as parametric knowledge.
+  before reading it as parametric knowledge, and how much smaller that noise is on a grounded lane.
 - Scope boundary: in scope -- repeat runs, the spread statistic, and whichever of the two remedies
   the measurement supports. Out of scope -- changing the objective metric and swapping backends.
 - Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
@@ -352,8 +172,9 @@ checker. That keeps OWL semantics as the reference without letting a reasoner in
 #### ontology-validated-answer-gate
 
 Compose the two halves into the shipped two-step gate -- Pydantic at the door, the ontology at the
-ledger. Step one is `typed-rag-answer-envelope`: the completion either parses into a typed answer
-object or ends in a typed status. Step two is new: the envelope's asserted triples are checked
+ledger. Step one already ships: the completion either parses into the typed `AnswerEnvelope` or ends
+in a typed status ([RAG core](current/rag-core/scoring.md#typed-rag-answer-envelope-typed-rag-answer-envelope)).
+Step two is new: the envelope's asserted triples are checked
 against the accepted axiom set AND against the corpus ledger the retrieved context came from, so an
 answer that violates a functional property, a `domain`/`range` constraint, or a disjointness pair --
 or that contradicts a ledger fact whose evidence is IN the retrieved chunks -- ends as
@@ -370,9 +191,10 @@ declining the hard items looks like a win.
 
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: RUN NEEDED
-- Dependencies: `typed-rag-answer-envelope` (the typed object to validate) and
-  `ontology-axiom-layer` (the axioms to validate it against); enabling an axiom at answer time also
-  needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than defaulted.
+- Dependencies: `ontology-axiom-layer` (the axioms to validate against); enabling an axiom at answer
+  time also needs `ontology-axiom-signoff`, so the unsigned-axiom path must be refused rather than
+  defaulted. The typed object, its boundary, and its bounded repair are shipped -- validate the
+  envelope's `claims[].triple` and extend the same boundary rather than adding a second one.
   Reuse the paired verdict machinery in `src/llb/rag/embedding_bakeoff/uncertainty.py` and
   `separates()` in `src/llb/rag/fusion_evidence/stats.py`, the lane-comparison shape of
   `compare-answer-quality`, and the ledger lookup in `src/llb/graph/retrieval.py`.
@@ -441,6 +263,63 @@ re-measure the floor.
 
 ### Host fit and serving -- `host-fit-serving`
 
+#### current-qwen-generation-throughput-row
+
+The roster's Qwen lane now serves its current generation (`qwen3.8-27b`) on this host, but the
+full-roster throughput baseline in [backend telemetry](current/backend-telemetry.md) has a row for
+the generation it replaced and none for the one that runs. A per-model result read off that table
+therefore compares a served model against a number measured on a different generation. Measure the
+current Qwen entry under the same roster throughput protocol and record it beside the outgoing row,
+so the two generations are readable side by side rather than one silently standing in for the other.
+
+- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
+- Agent status: RUN NEEDED
+- Dependencies: the family register that says which generation is current, in
+  [model roster](current/model-roster.md).
+- User-visible outcome: the roster baseline table carries a measured row for the current Qwen
+  generation, with the previous generation's row kept and labelled as such.
+- Scope boundary: in scope -- the throughput, VRAM, and offload-split measurement for the current
+  generation on the documented host, under the protocol the existing rows used. Out of scope --
+  re-measuring the rest of the roster, and any quality claim from a throughput run.
+- Acceptance gates: the refreshed table states what ran on what and when, per the evidence rules in
+  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md); the offload split and
+  peak VRAM are recorded beside tok/s.
+- Documentation target: the roster baseline in [backend telemetry](current/backend-telemetry.md).
+
+#### vllm-thinking-suppression-flag
+
+The Ollama launcher sends the backend's native thinking-suppression flag (`think: false`) on every
+call; `VllmLauncher.chat` sends nothing. On this 16 GiB host that costs nothing -- no vLLM-served
+roster model has a reasoning template -- but the roster names vLLM as the PRIMARY backend for the
+Qwen entries, which do, so on a larger tier those models would be scored with their reasoning
+unsuppressed. The response-integrity guard already DETECTS that
+([scoring](current/rag-core/scoring.md#response-integrity-guard-thinking-suppression-and-answer-language-guard));
+what is missing is the lever. Forward the reasoning controls vLLM exposes through `extra_body`,
+reusing the shape already written for the ontology endpoints in
+`src/llb/prep/ontology/endpoints/client.py` rather than a second copy of it. Whether an older
+vLLM rejects the unknown request fields is the open question -- it is why the flag was not simply
+switched on with the guard, and a launcher that breaks every vLLM run is worse than one that sends
+no flag, so the fields must be sent only behind a verified-once probe or an explicit opt-in.
+
+- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
+- Agent status: RUN NEEDED
+- Dependencies: the per-tag suppression verdicts in
+  [backend telemetry](current/backend-telemetry.md#thinking-suppression-verdicts-per-roster-tag),
+  which record which tags have a reasoning template at all.
+- User-visible outcome: a reasoning-capable model served through vLLM is scored with its thinking
+  suppressed, the same way the Ollama path already is, instead of silently spending its token
+  budget on deliberation.
+- Scope boundary: in scope -- the launcher-side request fields, the compatibility probe or opt-in
+  that guards them, and the shared helper both call sites use. Out of scope -- the prompt-level
+  instruction (shipped) and any change to the guard's detection rules.
+- Execution path: a bounded `run-eval` cell on a reasoning-capable model served by vLLM, read
+  against its `reasoning_leak_rate`; CI covers the request-body shape against a fake client.
+- Acceptance gates: `make ci` green; a vLLM run of a NON-reasoning model is byte-identical in
+  request shape to today's unless the flag is enabled; the measured cell shows the leak rate
+  falling to zero, or records that it does not.
+- Documentation target: the vLLM launcher section and the verdict table in
+  [backend telemetry](current/backend-telemetry.md).
+
 #### gemma4-gguf-runner-gap (optional)
 
 The host Ollama cannot serve a `gemma4` GGUF at all: 0.20 answers both the curated `gemma4:12b`
@@ -469,6 +348,58 @@ the entry on Ollama so the roster is served by one backend end to end.
 - Documentation target: the roster baseline in
   [backend telemetry](current/backend-telemetry.md) and the host setup notes in
   [host validation](current/host-validation.md).
+
+### Model roster currency -- `model-roster-currency`
+
+#### upstream-generation-currency-probe
+
+The roster names each family's current and previous generation, and the published tables are
+generated from it, but nothing reads UPSTREAM: a family goes stale silently until somebody happens
+to notice a new tag, and the only way to answer "is this still the current Qwen" is to open a
+browser. Add a currency probe that asks, per registered family, what the Ollama library and the
+Hugging Face model API currently offer for that family's namespace, compares the newest upstream
+generation with the carried one, and reports the gap.
+
+- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
+- Agent status: CLEAR
+- Dependencies: the family/generation register and its manifest fields in
+  [model roster](current/model-roster.md).
+- User-visible outcome: one command reports every registered family as `current`, `behind`
+  (naming the upstream generation and where it was read), or `unknown` (naming the registry that
+  did not answer), with the read timestamp beside each row; a family that is already current is a
+  reported row, never silence.
+- Scope boundary: in scope -- reading the two upstream registries, matching a response to a
+  family's generation namespace, the report, and an offline mode that replays recorded responses.
+  Out of scope -- editing the roster, pulling weights, promoting a generation, and any claim about
+  whether the newer generation is better.
+- Execution path: add a probe module beside the register with one adapter per registry, record
+  response fixtures for a behind family and an up-to-date family, and wire the report into a make
+  target.
+- Acceptance gates: `make ci` green; a fixture run reproduces a `behind` verdict and a `current`
+  verdict without network; a registry error degrades that family's row to `unknown` with its reason
+  instead of failing the report; the report names each registry response's read time.
+- Documentation target: [model roster](current/model-roster.md).
+
+#### generation-adoption-invalidation-report (optional)
+
+Adopting a new generation invalidates every measurement taken against the generation it replaces,
+and today that list is reconstructed by hand from the board. Given a family and a target generation,
+report which committed run records, published numbers, and baseline tables were measured on the
+outgoing generation, so an operator sees the re-measurement cost before the swap rather than after.
+
+- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
+- Agent status: CLEAR
+- Dependencies: the currency probe above; published-number provenance in
+  [published values](current/extended-workflows/published-values.md).
+- User-visible outcome: one report lists, for a proposed generation swap, every published value and
+  committed aggregate whose model field resolves to the outgoing generation, and states plainly when
+  nothing is affected.
+- Scope boundary: in scope -- resolving recorded model identities to family generations and listing
+  what a swap invalidates. Out of scope -- re-running anything, editing the board, and deciding
+  whether to adopt.
+- Acceptance gates: `make ci` green; a fixture bundle measured on the outgoing generation is listed
+  and one measured on an unrelated family is not.
+- Documentation target: [model roster](current/model-roster.md).
 
 ### Optimization search -- `optimization-search`
 
@@ -681,6 +612,37 @@ fold count. This separates a robust fold-count rule from a ceiling result on two
   rule across families or names the first family/fold where it fails.
 - Documentation target:
   [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
+
+#### agent-loop-budget-warms-an-unpinned-ollama (optional)
+
+The agent-loop prompt guard takes the minimum of the declared and the probed window, but it only
+gets a probe worth having when a run pins one: `resolve_agent_context_budget`
+(`src/llb/cli/bench/_agent_context.py`) warm-loads Ollama only under `if cfg.backend == "ollama"
+and ollama_num_ctx`, and without a warm request `/api/ps` reports nothing at all, so an UNPINNED
+run resolves its guard from the declared window alone -- on a host where declared and served differ
+by 32x ([context
+ablation](current/rag-core/context-ablation.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
+Warm unconditionally for Ollama, the way `launcher_served_window` does for the document lanes, and
+decide deliberately what an unreachable backend should do there: today a pinned run raises out of
+`warm.start()`, while the budget probe it feeds is documented as best-effort.
+
+- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
+- Agent status: CLEAR
+- Dependencies: none. `probe_served_window` (`src/llb/backends/served_window.py`) already does
+  exactly this warm-then-probe for the Optuna study, so the CLI glue's bespoke copy of it collapses
+  into one call; what remains is the condition and the unreachable-backend decision.
+- User-visible outcome: an agent run's `budget_source` says `served` on an unpinned Ollama host
+  instead of `declared`, so a `context_overflow` termination (or its absence) means the same thing
+  the document lanes' skips do.
+- Scope boundary: in scope -- the warm condition, the unreachable-backend behavior, and a fixture
+  test per binding direction on the CLI wrapper. Out of scope -- changing `ContextBudget`
+  arithmetic, the compaction trigger share, and any policy default.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout; no new artifact.
+- Execution path: `make ci` with an injected launcher; no GPU run is needed to accept it.
+- Acceptance gates: `make ci` green; a fixture where the backend serves less than the config
+  declares resolves `budget_source=served` with no `--max-model-len` passed.
+- Documentation target: the prompt-guard paragraph of
+  [agent context policies](current/extended-workflows/agent-context-policies.md).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 

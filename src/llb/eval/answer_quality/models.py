@@ -29,6 +29,16 @@ METRIC_ALL_SPANS = "all_spans_at_k"
 METRIC_SPAN_COVERAGE = "span_coverage"
 COVERAGE_METRICS = (METRIC_ALL_SPANS, METRIC_SPAN_COVERAGE)
 
+# Answer-side gold-span coverage, written into every case row by the scorer
+# (`llb.scoring.answer_spans`) rather than recomputed here. It answers the question `objective_score`
+# cannot: a two-hop answer that states one fact fluently and omits the other earns roughly the same
+# token F1 as a vague answer touching both, so the objective alone can never say whether the model
+# USED both hops. Reported only when every lane measured it, which a bundle recorded before the
+# metric existed did not.
+METRIC_ANSWER_SPAN_COVERAGE = "answer_span_coverage"
+METRIC_ANSWER_ALL_SPANS = "answer_all_spans"
+ANSWER_COVERAGE_METRICS = (METRIC_ANSWER_SPAN_COVERAGE, METRIC_ANSWER_ALL_SPANS)
+
 # The coverage metric the retrieval-only verdict is stated on: the most SENSITIVE one every lane
 # measured, falling back through the coarser ones. `span_coverage` leads because it is graded --
 # on a hard multi-hop slice `all_spans_at_k` can be uniformly 0.0 for every lane (no item gets both

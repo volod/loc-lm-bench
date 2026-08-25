@@ -75,13 +75,15 @@ class OllamaLauncher(BackendLauncher):
         return self._served_context
 
     def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
-        """Warm-load so `/api/ps` reports the `num_ctx` this launcher will serve.
+        """Warm-load so `/api/ps` reports the window this launcher will serve.
 
-        Ollama keeps a previously loaded context until a request asks for a different one. Calling
-        this before a budget probe makes the probe observe the window the run will actually use.
+        Ollama keeps a previously loaded context until a request asks for a different one, and
+        reports nothing at all until some request has loaded the model. Calling this before a
+        budget probe makes the probe observe the window the run will actually use. It warms even
+        with no `num_ctx` pinned, because THAT is the case the probe exists for: unpinned, Ollama
+        serves its 4096 default however large a window the GGUF advertises, and a probe that reads
+        "unknown" there leaves the declared window to bound a run it cannot bound.
         """
-        if self.num_ctx is None or self.num_ctx <= 0:
-            return self._read_served_context()
         self.chat(
             [{"role": "user", "content": " "}],
             max_tokens=1,

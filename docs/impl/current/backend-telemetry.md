@@ -157,13 +157,17 @@ What the full roster adds beyond the three-row table above:
   confound documented for token-F1 scoring in [RAG core](rag-core/scoring.md#scoring).
 - **`think=false` did not stop `qwen3:30b` from emitting visible reasoning.** The launcher sends
   Ollama's native `think: false` on every call, yet this tag returned first-person deliberation in
-  the answer body. Treat the manifest's "disable thinking for scoring" note as necessary but not
-  sufficient for this tag until re-checked.
-- **`gemma-4-12b` has no Ollama path on this host.** Ollama 0.20 rejects the `gemma4` architecture in
-  a raw GGUF (`unknown model architecture: 'gemma4'`), so both the curated `gemma4:12b` tag and the
-  first-party QAT `q4_0` GGUF fail to load; its row is measured on the manifest-primary vLLM w4a16
-  checkpoint instead. The curated `gemma4:e4b` / `:26b` tags are unaffected because Ollama's own
-  engine serves them.
+  the answer body. Re-checked across the whole roster and resolved in
+  [thinking-suppression verdicts](#thinking-suppression-verdicts-per-roster-tag) below: it is this
+  ONE tag, no lever fixes it, and the flag is sufficient everywhere else.
+- **`gemma-4-12b` had no Ollama path when this baseline was measured.** Ollama 0.20 rejected the
+  `gemma4` architecture in a raw GGUF (`unknown model architecture: 'gemma4'`), so both the curated
+  `gemma4:12b` tag and the first-party QAT `q4_0` GGUF failed to load and the row above is measured
+  on the manifest-primary vLLM w4a16 checkpoint instead. The curated `gemma4:e4b` / `:26b` tags were
+  unaffected because Ollama's own engine serves them. **This no longer holds:** on Ollama 0.32.15
+  (2026-08-23, same host) `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` loads and answers
+  normally. The throughput row above is NOT re-measured -- re-run the protocol before quoting a
+  `gemma-4-12b` Ollama rate.
 
 The per-model JSON for this baseline is a scratch artifact, not a run bundle: re-measure with the
 same protocol rather than citing the numbers after a backend or driver upgrade.
@@ -173,6 +177,67 @@ sliding-window attention), see the
 [LLM architecture gallery](https://sebastianraschka.com/llm-architecture-gallery/). To size a run
 on THIS host, read `tokens_per_s` from prior run manifests (or the `recommend` chart's throughput
 panel) rather than extrapolating from parameters; `list-models` estimates VRAM fit, not speed.
+
+## Thinking Suppression Verdicts Per Roster Tag
+
+2026-08-23, RTX 4060 Ti 16 GiB, Ollama 0.32.15. Every logical entry of
+`samples/configs/models_uk.yaml` was sent the same Ukrainian RAG-shaped prompt through the
+launcher's own path (`/api/chat`, `think: false`, `num_ctx` 4096, temperature 0, 256-token budget),
+and the four tags that matter were then measured on a bounded 20-case `run-eval` cell over the
+committed `ua_squad_postedited_v1` final split (`MAX_TOKENS=512`, pinned retrieval: recall@5 =
+0.900, MRR 0.787 for every row) so the guard's rates come from real bundles rather than a probe.
+A verdict is recorded for EVERY tag, including the ones that never leaked.
+
+| tag | serves via | reasoning template | native flag enough | verdict |
+| --- | --- | --- | --- | --- |
+| `gemma4:e4b` | ollama | no | n/a | flag alone; measured leak rate 0.00 on the eval cell |
+| `gemma4:26b` | ollama | no | n/a | flag alone |
+| `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` | ollama | no | n/a | flag alone |
+| `gemma-4-12b-it-w4a16` | vllm | no | n/a | nothing to suppress; the vLLM launcher sends no thinking flag and does not need one |
+| `qwen3.8:27b` | ollama | YES | YES | flag alone; measured leak rate 0.00 on the eval cell |
+| `qwen3.6:27b` | ollama | yes | YES | flag alone |
+| `batiai/qwen3.6-35b:iq3` | ollama | yes | YES | flag alone |
+| `qwen3:30b` | ollama | YES | **NO** | **not scoreable as a non-thinking tag** -- see below |
+| `mistral-small3.1:24b` | ollama | no | n/a | flag alone |
+| MamayLM v2.0 12B / 27B GGUF | ollama | no | n/a | flag alone |
+| `lapa-v0.1.2-instruct` GGUF | ollama | no | n/a | flag alone |
+
+**The current Qwen generation fixes it; the superseded one cannot be fixed.** `qwen3.8:27b` is a
+thinking model -- with `think: true` Ollama returns a populated `thinking` field beside the answer
+-- and with `think: false` it returns clean Ukrainian prose and an empty `thinking` field. Its
+20-case eval cell reads `reasoning_leak_rate` 0.00, `language_mismatch_rate` 0.00, mean completion
+15.1 tokens, objective 0.410. `qwen3:30b`, on the same cell, reads `reasoning_leak_rate` **1.00**,
+mean completion **465.2** tokens, objective **0.036** -- and reliability 1.000, because every case
+is `ok` by status. That contrast is the whole reason the guard exists: nothing in the pre-guard
+record distinguishes "answered badly" from "never answered".
+
+**The prompt-level instruction made it worse, and the negative result is the verdict.** Re-running
+the same cell with `SUPPRESS_REASONING_PROMPT=1` (the `eval.rag.no_reasoning` system-prompt suffix,
+on top of the unchanged `think: false`):
+
+| `qwen3:30b` lane | leak rate | language mismatch | mean leak chars | mean completion tokens | objective |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| native flag only | 1.00 | 0.00 | 936 | 465.2 | 0.036 |
+| native flag + prompt instruction | 1.00 | 0.95 | 1363 | 395.9 | 0.023 |
+
+Naming `<think>` in the instruction did not suppress the block -- it primed the tag into its English
+reasoning register. The leak markers flip from a Ukrainian deliberation frame (12 of 20 open
+"Давайте проаналізуємо контекст...") to a bare `</think>` plus English openers (15 + 5), the
+answers go from 20/20 Ukrainian to 19/20 English, the leaked text grows 46%, and the objective
+drops. So: for `qwen3:30b`, neither lever works, and the fix is the ROSTER, not the scorer -- score
+`qwen3.8:27b` as the current Qwen generation and treat any `qwen3:30b` row as a measurement of the
+serving configuration rather than of the model.
+
+**Read `mean_reasoning_leak_chars` before quoting a throughput number for a leaking tag.**
+`qwen3:30b` posts the highest tok/s of the four cells (57.5) precisely because it is emitting 465
+tokens of deliberation per case; `qwen3.8:27b` posts 11.2 while delivering the best objective. A
+decode rate over text that was never an answer is not a rate an operator can spend.
+
+The guard's fields, detection rules, and the reasoning behind each are in
+[scoring](rag-core/scoring.md#response-integrity-guard-thinking-suppression-and-answer-language-guard).
+What would overturn these verdicts: an Ollama release that changes a chat template (the `qwen3:30b`
+leak is a template artefact, not a weights property), or a new roster generation -- re-run the probe
+and the two eval cells rather than carrying these rows forward.
 
 ## Manifest Semantics
 

@@ -30,8 +30,22 @@ class RunMetrics(TypedDict):
     citation_validity: NotRequired[float]
     citation_coverage: NotRequired[float]
     hallucinated_citation_rate: NotRequired[float]
+    # Response-integrity guard (`llb.scoring.answer_guard`), reported beside `reliability` over
+    # the same case denominator: the share of cases whose completion leaked deliberation into the
+    # answer body despite the backend's thinking-suppression flag, the share that answered in a
+    # language other than the question's, and the mean characters the leaks accounted for -- the
+    # term that inflates `mean_completion_tokens` and, through it, throughput and cost.
+    reasoning_leak_rate: NotRequired[float]
+    language_mismatch_rate: NotRequired[float]
+    mean_reasoning_leak_chars: NotRequired[float]
     abstention_accuracy: NotRequired[float]
     n_probes: NotRequired[int]
+    # Declared answer contract (typed-rag-answer-envelope); present only on an envelope run.
+    envelope_conformance: NotRequired[float]
+    envelope_schema_invalid_rate: NotRequired[float]
+    envelope_malformed_rate: NotRequired[float]
+    envelope_repair_rate: NotRequired[float]
+    mean_claims: NotRequired[float]
 
 
 class RunEnvironment(TypedDict):

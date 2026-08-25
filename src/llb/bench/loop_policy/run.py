@@ -4,7 +4,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from llb.bench.agentic.context_budget import ContextBudget, unbounded_budget
+from llb.backends.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.episode_state import Clock
 from llb.bench.agentic.loop_policy import DEFAULT_REPEAT_FEEDBACK
 from llb.bench.agentic.model import AgenticTask

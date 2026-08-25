@@ -29,7 +29,7 @@ from llb.bench.agentic.context_policy import (
     ContextPolicy,
 )
 from llb.bench.agentic.context_summary import is_summary_prompt
-from llb.bench.agentic.context_budget import fixed_budget, unbounded_budget
+from llb.backends.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.memory.fold_step.ladder import measured_cap_peak
