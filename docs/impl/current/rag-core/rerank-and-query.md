@@ -122,9 +122,13 @@ it), yet the end-to-end objective moved the other way: 0.378 [0.194, 0.584] rera
 itself is ~0.56 s/query, so reranking roughly doubles per-question cost). Retrieval uplift did
 not translate into answer quality for this model at n=14 -- the off-by-default verdict stands
 even in the reranker's best-case retrieval regime, and flipping it on should be justified with
-end-to-end (not retrieval-only) evidence on the operator's own model + corpus. Run bundles:
-`$DATA_DIR/run-eval/20260710T074826*` (off) / `20260710T074854*` (on) under the
-`quickstart-pdf-corpus-rag` data dir, sweep id `rerank-crosscheck`.
+end-to-end (not retrieval-only) evidence on the operator's own model + corpus. Boundaries: n=14
+with overlapping intervals cannot separate the two arms, so this is a "no measured gain" reading,
+not a measured loss; and `llama3.2:3b` is below the project's >=7B evidence floor, which bounds the
+answer-side half further. What would overturn it: the same cross-check at n large enough to
+separate 0.378 from 0.312, on a >=7B model. The two `rerank-crosscheck` run bundles (sweep id
+`rerank-crosscheck`, under the `quickstart-pdf-corpus-rag` data dir) are not retained on either GPU
+host; the numbers above are the record.
 
 ## Query-Side Processing (uk-query-processing)
 

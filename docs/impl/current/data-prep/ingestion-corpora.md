@@ -94,16 +94,16 @@ and grounded events as draft targets. Seeds carry document, section, difficulty,
 coverage strata, so a full-corpus draft can spread questions across manuals, dictionaries, and
 after-action-style documents even when a document has few SRO facts.
 
-Three opt-in yield-max knobs raise the meaningful-question yield of a draft: `DRAFT_COVERAGE_TARGET=N`
-drafts up to N seeds per stratum bucket (with a `coverage_matrix` exhaustion report) instead of a
-flat `DRAFT_MAX_ITEMS` cap; `DRAFT_MULTI_HOP=1` adds multi-span chain questions walked from 2-hop
-knowledge-graph paths (each carrying >= 2 grounded spans); and `DRAFT_DEDUP_AGAINST=<bundle[,bundle]>`
-drops questions that are pinned-E5 near-duplicates of prior bundles (add
-`DRAFT_DEDUP_LINKAGE_SHADOW=1` to score the record-linkage model beside that constant and get each
-rejection's match probability and level agreements -- see
-[the gold-item lane](../entity-resolution.md#the-gold-item-lane)). Every drafted item is tagged
-with a `question_type` and `difficulty` label reviewers and the miss analyzer can filter on. See
-[robust backends and ontology drafting](../robustness-ontology-backends.md) for the module map, report
+Three opt-in yield-max knobs raise the meaningful-question yield of a draft:
+`DRAFT_COVERAGE_TARGET=N` drafts up to N seeds per stratum bucket (with a `coverage_matrix`
+exhaustion report) instead of a flat `DRAFT_MAX_ITEMS` cap; `DRAFT_MULTI_HOP=1` adds multi-span
+chain questions walked from 2-hop knowledge-graph paths (each carrying >= 2 grounded spans); and
+`DRAFT_DEDUP_AGAINST=<bundle[,bundle]>` drops questions that are pinned-E5 near-duplicates of prior
+bundles (add `DRAFT_DEDUP_LINKAGE_SHADOW=1` to score the record-linkage model beside that constant
+and get each rejection's match probability and level agreements -- see [the gold-item
+lane](../entity-resolution.md#the-gold-item-lane)). Every drafted item is tagged with a
+`question_type` and `difficulty` label reviewers and the miss analyzer can filter on. See [robust
+backends and ontology drafting](../robustness-ontology-backends.md) for the module map, report
 fields, and command reference.
 
 `DRAFT_MULTI_HOP=1` alone walks strict directed `A -r1-> B -r2-> C` chains, which extracted
@@ -167,18 +167,22 @@ For text-only bundles, where the PDF citation-needle sidecar is intentionally em
 `multi_hop_only` provenance setting provides the lossless label fallback needed for carry-forward
 and prior-span exclusion.
 
-CUDA acceptance evidence is under
-`$DATA_DIR/graph-vector-fusion-multihop/20260728T-relation-strata-cuda/`. The final bounded lane used
-the committed seven-document Ukrainian conflict corpus and `qwen3:14b`. Its initial bundle supplied
-one carried multi-hop row. The widening pass reused all 48 extracted facts with zero extraction
-calls, selected all 30 unseen candidates, and spent 30 drafting calls. Of 22 grounded model rows,
-three exact intra-batch repeats and one prior-bundle near-duplicate were rejected, leaving 18 new
-rows plus the carried row in one worksheet. Five selected paths were same-document and 25 were
-cross-document; six source documents were covered and the document with no available path was
-explicitly exhausted. The final audit reports exact spans and Ukrainian output for every row,
-`path_strata_ready: true`, relative review headroom of 18.0 against the declared 0.15 minimum, and
-`ready_for_human_review: true`. This small carried baseline validates the workflow and gate
-composition; it is not a substitute for the human-reviewed goods ledger.
+CUDA acceptance was run 2026-07-28 on the RTX PRO 3000 Blackwell 12 GiB CUDA host. The final bounded
+lane used the committed seven-document Ukrainian conflict corpus and `qwen3:14b` over Ollama. Its
+initial bundle supplied one carried multi-hop row. The widening pass reused all 48 extracted facts
+with zero extraction calls, selected all 30 unseen candidates, and spent 30 drafting calls. Of 22
+grounded model rows, three exact intra-batch repeats and one prior-bundle near-duplicate were
+rejected, leaving 18 new rows plus the carried row in one worksheet. Five selected paths were
+same-document and 25 were cross-document; six source documents were covered and the document with no
+available path was explicitly exhausted. The final audit reports exact spans and Ukrainian output
+for every row, `path_strata_ready: true`, relative review headroom of 18.0 against the declared 0.15
+minimum, and `ready_for_human_review: true`. Reading: the widening pass is CHEAP where it matters --
+zero extraction calls because all 48 facts were reused, 30 drafting calls for 18 surviving new rows
+-- and the composed gates catch what they are meant to, since 4 of 22 grounded rows were rejected as
+repeats rather than silently kept. This small carried baseline validates the workflow and gate
+composition; it is not a substitute for the human-reviewed goods ledger, and one prior-bundle
+near-duplicate rejection exercises that rule far more lightly than a corpus with a wide prior bundle
+would. Lookup key: `graph-vector-fusion-multihop` run `relation-strata-cuda`.
 
 ## Yield-max empirical acceptance
 

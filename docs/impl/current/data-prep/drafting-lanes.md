@@ -138,8 +138,15 @@ host, while both larger local artifacts fit sequentially. The override-free 2026
 gates. Qwen kept 8/12 (66.7%) with 52.134 seconds of draft-call latency; Gemma kept 6/12 (50.0%)
 with 21.326 seconds. The 16.7-point yield advantage and Gemma latency advantage have the same
 direction as the reviewed 16 GiB result. This new bundle is not human-reviewed, so it supports host
-fit, parsing, calibration, and sequential unload only; it does not add a human accept-rate claim.
-Artifact: `$DATA_DIR/draft-compare-local/20260728T095500Z-blackwell12-default/`. The selector
+fit, parsing, calibration, and sequential unload only; it does not add a human accept-rate
+claim -- both lanes' `verify_sample` records read `pending-human-review` with 0 decided. The run
+resolved its own models rather than taking an override: tier 12 detected from the 12,227 MiB device
+name, `baseline_source` and `probe_source` both `profile`, `num_ctx` 8192, `qwen3:14b` shared as
+the extraction model, and unload between lanes enforced. Both lanes drew the SAME 12 seed
+fingerprints, which is what makes the 8-versus-6 kept counts comparable at all. What would overturn
+it: a human review pass that accepts the two lanes at different rates -- the one claim this bundle
+cannot make, and the reviewed 16 GiB run above could not separate them either. Lookup key:
+`draft-compare-local` run `blackwell12-default`. The selector
 regression is in `tests/llb/prep/ontology/test_local_compare.py`, and the operator table is in
 `docs/guides/data-prep/goldset-from-scratch.md`.
 

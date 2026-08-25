@@ -95,9 +95,8 @@ older eight-pair report. The negative decision does not hinge on that drift: cro
 loses to the fixture rank baseline and floods goods; every stricter candidate already loses to the
 fixture baseline or is not an independent null.
 
-Artifacts are under
-`$DATA_DIR/corpus-conflicts/null-research/20260811T115543Z/`; the directory includes the corrected
-five/eight-document input snapshots, their real E5 stores, `summary.json`, and `report.md`. The
+The first generation ran 2026-08-11 on the RTX PRO 3000 Blackwell 12 GiB CUDA host over the
+corrected five- and eight-document input snapshots with real E5 stores. The
 verdict is **negative**: keep `--max-candidate-pairs` framed as a rank cutoff, keep semantic output
 provisional, and pursue the domain-matched/control-mixture or claim-tier precision directions in
 the forward plan before considering another default.
@@ -200,9 +199,9 @@ conflict relations. Construction provenance proves what changed; it does not pro
 Its 1,908 unique HR source texts yield only 19.08 expected observations at the 1% tail, so even that
 largest lane misses the effective-tail gate; multiple edits of one source do not add source units.
 
-Artifacts are under `$DATA_DIR/corpus-conflicts/null-research/20260811T131139Z/`, including the
-domain-reference snapshot and store, `summary.json`, `report.md`, and the full counterfactual trace
-ledger. The verdict remains **negative**. No audit default changes, no FPR is exposed, and semantic
+The second generation ran 2026-08-11 on the same 12 GiB Blackwell CUDA host, over the
+domain-reference snapshot and its store, with the full counterfactual trace ledger retained. The
+verdict remains **negative**. No audit default changes, no FPR is exposed, and semantic
 output remains a ranked input to claim adjudication. The forward task now requires a much larger
 independent-unit bank, relation-verified controls, cross-fitted exchangeability, two-way clustered
 inference, and a claim-tier precision fallback.
@@ -388,10 +387,13 @@ unidentifiable at the resolution an operating point needs; and the one control f
 exact provenance is now proven to be planted positives. The measurable operator-facing quantity is
 claim-tier precision, which this run establishes with a calibrated adjudicator and a clustered bound.
 
-Artifacts are under `$DATA_DIR/corpus-conflicts/null-research/20260811T145837Z/`: `summary.json`
-(every lane, every gate, all 150 adjudication verdicts and 93 verifier verdicts), `report.md`, and
-`counterfactual_traces.jsonl` (6,180 traced edits). The run reuses the initial and second-generation
-snapshots and stores, so the three generations are directly comparable.
+The third generation ran 2026-08-11 on the same 12 GiB Blackwell CUDA host, covering every lane
+and gate over 150 adjudication verdicts, 93 verifier verdicts, and 6,180 traced counterfactual
+edits. It reuses the first- and second-generation snapshots and stores, so the three generations are
+directly comparable. What would overturn the standing negative: a control bank of roughly 1.9M
+independent claims (the banks here supply 198), or an operator-facing quantity other than cosine --
+which is why claim-tier precision, not a false-positive rate, is what this generation leaves
+behind.
 
 The three directions this verdict left open -- generating controls inside the target's covariate
 support, scoring relations with a cross-encoder, and certifying the tail from units instead of rows

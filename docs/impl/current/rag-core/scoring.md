@@ -103,10 +103,9 @@ duplicate models, missing decomposition columns, or an `objective_score` that is
 bit-identical to `token_f1`. The JSON contains each model's rank under token F1, recall-only,
 found-rate, and the selected policy, plus per-model and roster length correlations.
 
-CUDA-host evidence over three locally installed models on the same 82-item final fixture, flat
-recursive retrieval, and pinned recall@5 = 0.951 is under
-`$DATA_DIR/verbosity-sensitivity/20260728T142750.517338Z-c0d8009a807d/`. Candidate inference ran
-on the RTX PRO 3000 Blackwell GPU while the pinned embedder stayed on CPU for VRAM headroom:
+Measured 2026-07-28 on the RTX PRO 3000 Blackwell 12 GiB CUDA host over three locally installed
+models, the same 82-item final fixture, flat recursive retrieval, and pinned recall@5 = 0.951.
+Candidate inference ran on the GPU while the pinned embedder stayed on CPU for VRAM headroom:
 
 | model | precision | recall | token F1 | found-rate | policy quality | mean completion tokens | r(length, F1) | F1 rank | policy rank |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -118,11 +117,17 @@ Length versus token F1 is negative within every model and across the three-row r
 (`r=-0.665`). Length versus the selected policy is positive across this small roster (`r=0.381`),
 which makes the policy tradeoff visible instead of silently treating brevity as correctness.
 The named rank changes are MamayLM from F1 rank 1 to policy rank 3 and Gemma 4 E4B from F1 rank 3
-to policy rank 1. Qwen3 stays rank 2. The raw run bundles are:
+to policy rank 1. Qwen3 stays rank 2.
 
-- `$DATA_DIR/run-eval/20260728T141559.740730Z-2cda419dc495/` (MamayLM)
-- `$DATA_DIR/run-eval/20260728T141903.934343Z-8f357a77ea1a/` (Qwen3)
-- `$DATA_DIR/run-eval/20260728T142339.216084Z-ddc692ec71d8/` (Gemma 4 E4B)
+Reading: which model is "best" depends on a scoring choice nobody had been declaring. Token F1
+rewards MamayLM's terse 17.3-token answers; the found-rate policy rewards Gemma 4 E4B's verbose
+29.9-token ones, and the two orderings are exact reverses. That is the point of the study -- the
+roster order is not a fact about the models alone. Boundaries: three models is a roster small enough
+that the across-roster correlations (`r=-0.665` length/F1, `r=+0.381` length/policy) are directional
+only, and retrieval is pinned so nothing here transfers to a differently-retrieving stack. What
+would overturn it: a wider roster whose length/policy correlation goes the other way. Lookup keys
+for the three raw bundles: run ids `2cda419dc495` (MamayLM), `8f357a77ea1a` (Qwen3), and
+`ddc692ec71d8` (Gemma 4 E4B).
 
 The per-case decomposition, verbose-correct / terse-partial fixture, rank reversal, legacy-bundle
 refusal, ASCII report, aggregate rendering, board reload, and unchanged token-F1 objective are

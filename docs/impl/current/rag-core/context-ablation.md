@@ -336,11 +336,10 @@ remove the need to retrieve or route to that source.
 [`retrieved_document`](#the-shippable-sibling-retrieved_document) is the lane that closes that
 distance, and its own evidence below says how much of this gap it reaches.
 
-Artifact:
-`$DATA_DIR/context-ablation/20260725T-power-resolution/{power-plan.json,comparison.json,report.md}`.
 The `final` split inside the pooled run independently reproduces the earlier grounded rows exactly
 (`rag` 0.554, `long_context` 0.615), so the changed verdict comes from added items rather than a
-changed lane.
+changed lane. The `power-resolution` run bundle is not retained on either GPU host; the counts,
+intervals, and ledgers above are the record.
 
 ### MamayLM 12B rerun on 12 GiB Blackwell (2026-07-28)
 
@@ -351,8 +350,13 @@ the RTX PRO 3000 Blackwell and the same 311-chunk e5-base store. Closed-book sco
 `[+0.051, +0.180]`. Both readings are separated at the neighbouring confidence conventions, no
 item was skipped, 11/82 closed-book answers matched, and the verdict remained
 `long_context_wins`. A new powered run was unnecessary for this host/model pair because the
-82-item long-context reading is not borderline. Artifact:
-`$DATA_DIR/context-ablation/20260728T113000Z-blackwell12-mamaylm12b/`.
+82-item long-context reading is not borderline. Reading: the verdict survives a change of GPU
+generation, driver, and quantized runtime -- the 12 GiB rerun lands +0.114 [+0.051, +0.180] against
+the 16 GiB host's +0.142 [+0.083, +0.206], overlapping intervals on the same 82 items -- so
+`long_context_wins` is a property of this model and corpus rather than of one box. What would
+overturn it: a corpus of documents long enough that whole-document stuffing stops fitting the
+served window, which the SQuAD-derived ~1.5k-character documents here never test. Lookup key:
+`context-ablation` run `blackwell12-mamaylm12b`.
 
 Durable evidence (2026-07-22, CUDA host, Ollama, committed UA fixture
 `samples/goldsets/ua_squad_postedited_v1/` -- 82 verified `final` items, 250-document corpus,
@@ -394,8 +398,9 @@ flatter next-token distribution for GGUF kernel nondeterminism to flip. The drif
 the uplift interval half-width (~0.08) and changed no verdict, but a closed-book number is a
 noisier measurement than a grounded one and should be quoted with that in mind.
 
-Reports: `$DATA_DIR/context-ablation/20260722T142639Z/` (MamayLM),
-`.../20260722T143030Z/` (Lapa), `.../20260722T143459Z/` (the budget-constrained skip run).
+None of the three 2026-07-22 run bundles (MamayLM, Lapa, and the budget-constrained skip run) is
+retained on either GPU host; the tables, intervals, and ledgers above are the record. The 12 GiB
+rerun of the MamayLM row, which IS held on the Blackwell host, is the section above.
 
 ### Roster-wide ablation cohort (2026-07-24)
 
@@ -411,8 +416,8 @@ are answer-side. Throughput is the `rag` lane's measured tokens/s.
 | `gemma4:e4b` | 0.062 | 0.365 | 0.470 | +0.303 [+0.242, +0.364] | +0.105 [+0.056, +0.163] | 5/82 (6.1%) | 31.8 | `long_context_wins` |
 | `gemma4:26b` | 0.097 | 0.288 | 0.410 | +0.190 [+0.138, +0.240] | +0.122 [+0.081, +0.169] | 11/82 (13.4%) | 12.1 | `long_context_wins` |
 
-Reports: `$DATA_DIR/context-ablation/20260724T0{65410,70414,73659,74544,75718}Z/` (gemma4:e4b,
-gemma4:26b, MamayLM-12B, Qwen3.6-35B-A3B, MamayLM-27B).
+None of the five 2026-07-24 cohort run bundles (gemma4:e4b, gemma4:26b, MamayLM-12B,
+Qwen3.6-35B-A3B, MamayLM-27B) is retained on either GPU host; the table above is the record.
 
 What the wider cohort adds beyond the two-model result:
 

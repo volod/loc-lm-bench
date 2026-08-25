@@ -94,16 +94,15 @@ for both models:
   Transliteration objective was 0.2497 raw, 0.3763 under `normalize` (+0.1267) and 0.3320 under
   `normalize,typos` (+0.0823); `mixed_script` was 0.4346 raw and 0.4641 under both mitigations
   (+0.0296); `apostrophe_variant` was 0.4747 raw -- clean to four decimals -- and 0.4903 mitigated;
-  keyboard typos were 0.4451 raw, 0.4375 (-0.0076) and 0.4340 (-0.0111). Artifact:
-  `$DATA_DIR/query-robustness/20260724T121701.652129Z-6feeb0cd727e/`; clean baseline:
-  `$DATA_DIR/run-eval/20260724T113233.376054Z-7f2b659f138a/`.
+  keyboard typos were 0.4451 raw, 0.4375 (-0.0076) and 0.4340 (-0.0111). Neither the perturbation
+  bundle nor its clean baseline is retained on either GPU host; the objectives and deltas above are
+  the record, and the 2026-08-19 rerun below reproduces the transliteration pair to four decimals.
 - `hf.co/lapa-llm/lapa-v0.1.2-instruct-GGUF:Q4_K_M`: clean objective 0.4970.
   Transliteration objective was 0.3827 raw, 0.5069 (+0.1242) and 0.5194 (+0.1367);
   `mixed_script` was 0.5240 raw and 0.5120 mitigated (-0.0121); `apostrophe_variant` was 0.4970 raw
   -- again exactly clean -- and 0.5127 mitigated; keyboard typos were 0.4048 raw, 0.3840 (-0.0208)
-  and 0.4140 (+0.0092). Artifact:
-  `$DATA_DIR/query-robustness/20260724T124802.064874Z-526a1af2007d/`; clean baseline:
-  `$DATA_DIR/run-eval/20260724T121702.998145Z-b09c3af6a01f/`.
+  and 0.4140 (+0.0092). Neither the perturbation bundle nor its clean baseline is retained on
+  either GPU host; the objectives and deltas above are the record.
 
 Verdict per mechanism, re-read on the split classes:
 
@@ -300,9 +299,10 @@ normalization nor unconditional retrieval translation is supported as a default.
 retrieves Russian well; a future mitigation should target answer-language behavior and must be
 tested independently from retrieval translation.
 
-Artifacts:
-`$DATA_DIR/query-robustness/20260817T114944.878514Z-520175273d85/`; clean baseline:
-`$DATA_DIR/run-eval/20260817T112544.907869Z-ff6ece00b522/`. Focused fixture, lane, report, MRR, and
+What would overturn it: an answer-side mitigation measured independently of retrieval translation
+-- the two are confounded in every lane above, which is exactly why neither is supported as a
+default. Lookup keys: `query-robustness` run id `520175273d85`, clean baseline run
+`query-robustness-clean`, run id `ff6ece00b522`. Focused fixture, lane, report, MRR, and
 translation-upper-bound coverage lives in
 `tests/llb/eval/test_query_robustness_languages.py`, alongside the existing robustness tests.
 

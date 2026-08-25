@@ -625,15 +625,38 @@ separate change to that `select` list.
 
 ## Documentation And Specification Gates
 
-Three checks keep the written product and the built product from drifting apart. The first two run
-in `make lint-md` (the full local `make test` flow); the third runs in `make ci-checks`, so it fails
+Four checks keep the written product and the built product from drifting apart. The first three run
+in `make lint-md` (the full local `make test` flow); the last runs in `make ci-checks`, so it fails
 in the change that caused it rather than at the next doc lint.
 
 | Check | Command | What it refuses |
 | --- | --- | --- |
 | Markdown style | `make lint-md` | pymarkdown findings; config in `pyproject.toml` `[tool.pymarkdown]`. Fix BY HAND -- `pymarkdown fix` corrupts prose on 0.9.38 |
 | Link landing | `make lint-doc-links` | A relative link whose file is missing or whose `#anchor` no heading produces (`llb.quality.doc_links`) |
+| Citation form | `make lint-doc-links` | A measured result cited by a run directory or a bare run label (`llb.quality.doc_citations`) |
 | Spec/plan integrity | `make lint-spec-plan` | A disagreement between the spec's capability registry and `plan.md` (`llb.quality.spec_plan_integrity`) |
+
+### Why a run path is not a citation
+
+`$DATA_DIR/<method>/<run-id>/` is host-local and temporary: it is gone after a cleanup, absent on a
+fresh checkout, and absent on every other GPU host. A bare `<timestamp>-<slug>` run label is no
+better -- it is a lookup key into a directory the reader does not have. Either one leaves a page
+that stops being checkable the moment the run is deleted, which is what `llb.quality.doc_citations`
+now refuses. The positive form is in [AGENTS.md](../../../AGENTS.md) ("Citing a measured result")
+and [heavy runs and evidence](../../guides/development/heavy-runs-and-evidence.md): what ran on
+what, the date and host, every load-bearing number AND its reading, and what would overturn it.
+
+Three shapes stay legal, because none of them makes a host-local claim: a `$DATA_DIR` TEMPLATE with
+no run segment (that documents where a command WRITES), a run label inside a table row (where the
+row is the description the label trails), and a fenced block quoting a command someone ran. The
+guide that STATES the rule is exempt by name in `RULE_DEFINING_DOCS`, because stating it means
+quoting the shape it forbids -- and it is the only exemption, `plan.md` included.
+
+The conversion behind the check ran on both GPU hosts, since inlining a run's numbers requires the
+machine that holds the bundle. Where a bundle survived on neither host, the page says so and the
+numbers already written into it are the record -- 12 of the citations converted on the 12 GiB
+Blackwell host were in that state, chiefly older 16 GiB-host runs under `context-ablation`,
+`compare-embeddings`, and `query-robustness`.
 
 `lint-spec-plan` is the join between three documents that are otherwise only related by convention:
 [the spec](../../design/spec.md) says what the product does, its

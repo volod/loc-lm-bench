@@ -1198,49 +1198,6 @@ outcome and closes the question.
 
 ### Documentation integrity -- `documentation-integrity`
 
-#### temp-artifact-citations-on-the-12gb-host
-
-The delivered docs must not cite evidence by a `$DATA_DIR/<method>/<run-id>/` path: that directory
-is host-local and temporary, so it is gone after a cleanup, absent on a fresh checkout, and absent
-on every other machine -- and a bare run label like `20260815T-bare-id-squad-cos060` is no better,
-because it identifies nothing a reader can use ([AGENTS.md](../../AGENTS.md), "Citing a measured
-result"). The pages whose runs live on THIS host now carry the description, the date, the host, and
-the numbers instead. What remains is 59 path citations and 6 bare run labels, across 20 pages whose
-runs were measured on the OTHER GPU host (the
-12 GiB box -- the `blackwell12`, `context-ablation`, `encoder-throughput`, `verbosity-sensitivity`,
-`query-robustness`, and `agentic-compact-window-elision` families among them). They were left alone
-deliberately: converting a citation means reading the run's own numbers out of the bundle and
-inlining them, which cannot be done from a host that does not hold it. Run this task ON that host.
-
-- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
-- Agent status: BLOCKED BY HUMAN (needs a session on the 12 GiB GPU host; no human judgment beyond
-  running it there)
-- Dependencies: none in code. The citation rule and the target shape are in
-  [AGENTS.md](../../AGENTS.md); the already-converted pages under
-  [GraphRAG](current/graphrag-backend/answer-quality-evidence.md#answer-quality-evidence) are the
-  worked example.
-- User-visible outcome: every measured result in the delivered docs stays checkable from the page
-  alone, on any machine, after every run directory is deleted.
-- Scope boundary: in scope -- replacing each remaining path citation with a run-label citation plus
-  the load-bearing numbers read out of that run's own bundle, and adding the reproduction recipe and
-  boundaries the page is missing. Out of scope -- re-running any measurement, changing any recorded
-  number, converting a citation whose bundle is missing on that host too (record it as unrecoverable
-  in the page instead), and touching the `$DATA_DIR` path TEMPLATES that document where a command
-  writes.
-- Data and artifact paths: read-only over that host's own `$DATA_DIR`; this task writes only docs.
-- Execution path: enumerate the remaining citations with a scan for BOTH forms -- a backticked
-  `$DATA_DIR/` or `.data/` span whose path carries a `<8-digit>T` run segment, and a backticked bare
-  `<8-digit>T...` run label outside a table row -- convert each page, then re-scan to confirm none
-  is left; `make lint-md` covers wrapping and links.
-- Acceptance gates: `make ci` green; `make lint-md` green; the scan above returns zero of BOTH
-  forms across `docs/`; every page it touched states, for each result, what was measured on what,
-  the date, the host, the numbers the verdict rests on, and the reading those numbers support.
-  Once the scan is clean on both hosts,
-  add it to `make lint-doc-links` so a re-introduced path citation fails the build instead of being
-  found by the next reader.
-- Documentation target: the 19 pages the scan names, and
-  [overview](current/overview.md#documentation-and-specification-gates) for the new check.
-
 #### conflict-bundle-record-page-is-past-the-split-threshold (optional)
 
 [bundle record](current/data-prep/conflict-bundle-record.md) is ~740 lines and its headings describe
@@ -1548,6 +1505,40 @@ its item set or of the drafting, which only an accepted ledger over that corpus 
   restated as reproduced, corrected, or retired.
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core/hybrid-retrieval.md#hybrid-retrieval-dense--bm25--rrf).
+
+#### reranker-end-to-end-crosscheck-on-an-evidence-model
+
+The off-by-default reranker verdict asks to be overturned with END-TO-END evidence, and the only
+end-to-end run behind it cannot supply that: it scored `llama3.2:3b` -- below the project's >=7B
+live-evidence floor -- on n=14, where the two arms' intervals overlap so widely that the reading is
+"no measured gain" rather than a measured loss, and its bundles are retained on no host
+([rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order)).
+The retrieval half still stands on its own at that small k. So the open question is narrow -- does
+that retrieval lift reach the ANSWER on a model the project accepts for evidence? Re-run the same
+`rerank_candidates=0,30` cross-check on a >=7B local model, at an n predeclared to separate the two
+recorded objectives, and restate the off-by-default verdict as reproduced, corrected, or retired. A
+negative result -- the lift still does not reach the answer -- is the valuable outcome, because it
+is what the shipped default rests on.
+
+- Serves: `retrieval-evidence` -- [RAG core](../design/spec.md#capability-registry)
+- Agent status: RUN NEEDED
+- Dependencies: none in code. `make sweep` already takes the grid, and the paired lane already
+  supplies the interval and the minimum-evidence gate
+  ([paired verdicts](current/rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading)).
+- User-visible outcome: an operator deciding whether to pay ~0.96 s/query for reranking gets an
+  answer measured on a model they would actually serve, instead of one bounded by a 3B smoke model.
+- Scope boundary: in scope -- the predeclared n, the two-arm run on a >=7B model, and the restated
+  verdict. Out of scope -- changing the shipped `rerank_candidates` default before the run supports
+  it, widening the pool grid, and swapping the reranker.
+- Data and artifact paths: one `$DATA_DIR/run-eval/<run>/` per arm under the sweep's own root.
+- Execution path: `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"
+  RERANKER=BAAI/bge-reranker-v2-m3` on a CUDA host with a >=7B model resident; CI is unchanged.
+- Acceptance gates: `make ci` green; the model is >=7B; the predeclared n is stated BEFORE the run
+  and met; both arms report objective with paired intervals and the win/loss/tie ledger; the reading
+  states whether the retrieval lift reaches the answer, and whether the minimum-evidence gate is
+  cleared.
+- Documentation target:
+  [rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
 
 #### fusion-routing-calibration-power (optional)
 
