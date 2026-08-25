@@ -6,9 +6,9 @@ and one Markdown block instead of each shaping the same numbers. The measurement
 free of presentation.
 """
 
+from llb.rag.fusion_evidence.spread import format_band
 from llb.rag.noise_floor.models import (
     FloorMargin,
-    MetricSpread,
     NoiseFloorReport,
 )
 
@@ -25,8 +25,8 @@ def format_noise_floor(report: NoiseFloorReport) -> list[str]:
         for label in sorted(lanes):
             lane = lanes[label]
             lines.append(
-                f"    {label.ljust(width)}   recall@k {_band(lane['recall_at_k'])}"
-                f"   mrr {_band(lane['mrr'])}"
+                f"    {label.ljust(width)}   recall@k {format_band(lane['recall_at_k'])}"
+                f"   mrr {format_band(lane['mrr'])}"
                 f"   fragile {lane['fragile_items']}/{lane['n']}"
             )
     for label in report["unscored"]:
@@ -108,7 +108,7 @@ def render_noise_floor_markdown(
     for label in sorted(lanes):
         lane = lanes[label]
         lines.append(
-            f"| {label} | {_band(lane['recall_at_k'])} | {_band(lane['mrr'])} "
+            f"| {label} | {format_band(lane['recall_at_k'])} | {format_band(lane['mrr'])} "
             f"| {lane['fragile_items']}/{lane['n']} |"
         )
     lines.append("")
@@ -125,7 +125,3 @@ def render_noise_floor_markdown(
         lines.extend(["", f"**Reading:** {format_margin(margin)}."])
     lines.append("")
     return lines
-
-
-def _band(spread: MetricSpread) -> str:
-    return f"{spread['min']:.3f}-{spread['max']:.3f} (+/-{spread['half_width']:.3f})"

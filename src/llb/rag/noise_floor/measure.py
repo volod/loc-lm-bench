@@ -25,15 +25,14 @@ floor or not (`margin`), so a sub-item delta cannot be read as a ranking.
 """
 
 import random
-import statistics
 import zlib
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
 from llb.rag.comparison.models import CompareItem, Retriever
+from llb.rag.fusion_evidence.spread import value_spread
 from llb.rag.noise_floor.models import (
     FloorMargin,
     LaneFloor,
-    MetricSpread,
     NoiseFloorReport,
 )
 from llb.rag.retrieval import evaluate_retrieval
@@ -232,8 +231,8 @@ def _lane_floor(
         for rng in (random.Random(lane_seed + r) for r in range(replicates))
     ]
     return {
-        "recall_at_k": _spread(base["recall_at_k"], [m["recall_at_k"] for m in sampled]),
-        "mrr": _spread(base["mrr"], [m["mrr"] for m in sampled]),
+        "recall_at_k": value_spread(base["recall_at_k"], [m["recall_at_k"] for m in sampled]),
+        "mrr": value_spread(base["mrr"], [m["mrr"] for m in sampled]),
         "n": len(pools),
         "fragile_items": sum(_is_fragile(pool, k, jitter) for pool, _ in pools),
     }
@@ -265,18 +264,6 @@ def _jittered_top_k(
     scored = [(-(_score(chunk) + rng.gauss(0.0, jitter)), i, chunk) for i, chunk in enumerate(pool)]
     scored.sort(key=lambda row: (row[0], row[1]))  # index tie-break keeps the sort deterministic
     return [chunk for _, _, chunk in scored[:k]]
-
-
-def _spread(base: float, values: list[float]) -> MetricSpread:
-    low, high = min(values), max(values)
-    return {
-        "base": base,
-        "min": low,
-        "max": high,
-        "mean": statistics.fmean(values),
-        "std": statistics.pstdev(values),
-        "half_width": (high - low) / 2.0,
-    }
 
 
 def _worst(lanes: dict[str, LaneFloor], metric: str) -> float:

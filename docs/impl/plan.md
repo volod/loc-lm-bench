@@ -74,39 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Answer scoring -- `answer-scoring`
-
-#### closed-book-decoding-stability (optional)
-
-A closed-book score is a noisier measurement than a grounded one: two identical invocations of the
-same lane on the same 82 items differed on 11 answers and moved the lane mean 0.160 -> 0.153, while
-the `rag` and `long_context` lanes were byte-identical WITHIN that host state -- across a month of
-host and roster change they drift too, 5-7 of 82 answers on the same pinned retrieval ([RAG
-core](current/rag-core/context-ablation.md#context-ablation-evidence)). An ungrounded prompt leaves
-a much flatter next-token distribution, so kernel-level nondeterminism flips more tokens there. The
-drift stayed well inside the uplift interval and changed no verdict, but a contamination rate
-quoted to one decimal place is currently over-stated precision. Measure it: repeat the closed-book
-lane N times at a fixed seed, report the between-repeat spread of the lane mean and of the
-contamination rate against the grounded lanes' own spread, and either quote the ablation's numbers
-with that spread or make the lanes reproducible (pinned sampler / seeded backend options) if the
-backend allows it.
-
-- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse `compare-context-strategies` with a repeated `closed_book` lane and the
-  existing paired-bootstrap reporting.
-- User-visible outcome: the operator knows how much of a closed-book delta is measurement noise
-  before reading it as parametric knowledge, and how much smaller that noise is on a grounded lane.
-- Scope boundary: in scope -- repeat runs, the spread statistic, and whichever of the two remedies
-  the measurement supports. Out of scope -- changing the objective metric and swapping backends.
-- Data and artifact paths: `$DATA_DIR/context-ablation/<run>/`.
-- Execution path: N repeats of the closed-book lane on the committed UA fixture on the CUDA host;
-  CI covers the spread statistic over committed fixture rows.
-- Acceptance gates: `make ci` green; the report states the between-repeat spread of the lane mean
-  and the contamination rate, and the ablation docs quote closed-book numbers accordingly.
-- Documentation target: the context-ablation evidence subsection of
-  [RAG core](current/rag-core.md).
-
 ### Graph retrieval and ontology -- `graph-retrieval`
 
 #### ontology-axiom-layer
@@ -621,7 +588,7 @@ gets a probe worth having when a run pins one: `resolve_agent_context_budget`
 and ollama_num_ctx`, and without a warm request `/api/ps` reports nothing at all, so an UNPINNED
 run resolves its guard from the declared window alone -- on a host where declared and served differ
 by 32x ([context
-ablation](current/rag-core/context-ablation.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
+ablation](current/rag-core/context-ablation-evidence.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
 Warm unconditionally for Ollama, the way `launcher_served_window` does for the document lanes, and
 decide deliberately what an unreachable backend should do there: today a pinned run raises out of
 `warm.start()`, while the budget probe it feeds is documented as best-effort.

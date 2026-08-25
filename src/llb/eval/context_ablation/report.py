@@ -26,6 +26,7 @@ from llb.rag.fusion_evidence.stability import boundary_table
 from llb.rag.fusion_evidence.paired import gated_readings
 from llb.eval.context_ablation.report_power import power_section
 from llb.eval.context_ablation.report_slices import slice_sections
+from llb.eval.context_ablation.report_stability import stability_note, stability_section
 from llb.eval.context_ablation.report_tables import derived_table, metric_table
 
 # Item rows worth printing: at a few dozen items the flagged ones ARE the evidence, and a full
@@ -172,7 +173,8 @@ def format_report(
         f"- baseline lane: `{report['baseline']}`",
         f"- scored items: {report['n']} (identical item set in every lane)",
         f"- closed-book matches: {contamination['n_contaminated']}/{contamination['n']} "
-        f"({contamination['rate']:.1%}) -- parametric knowledge or corpus contamination",
+        f"({contamination['rate']:.1%}{stability_note(report)}) -- parametric knowledge or "
+        "corpus contamination",
         f"- bootstrap: {report['resamples']} resamples, seed {report['seed']}",
         f"- verdict: **{verdict['decision']}**"
         + (f" -- {verdict['reason']}" if verdict["reason"] else ""),
@@ -185,6 +187,7 @@ def format_report(
     lines += derived_table(report["derived"])
     lines += _gate_summary(report)
     lines += _boundary_section(report)
+    lines += stability_section(report)
     lines += metric_table(report, None, "Per lane", "Every scored item")
     lines += slice_sections(report)
     lines += _item_table(report)

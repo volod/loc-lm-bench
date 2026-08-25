@@ -94,7 +94,7 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
-compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs retrieved-document vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES=closed_book,rag,retrieved_document,long_context RETRIEVED_DOCUMENT_TOP_N= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
+compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs retrieved-document vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES=closed_book,rag,retrieved_document,long_context RETRIEVED_DOCUMENT_TOP_N= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= CONTEXT_REPEATS=3 INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-context-strategies $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -108,6 +108,7 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(CONTEXT_POWER_REFERENCE),--power-reference "$(CONTEXT_POWER_REFERENCE)",) \
 		$(if $(CONTEXT_MDE),--minimum-detectable-delta "$(CONTEXT_MDE)",) \
 		$(if $(CONTEXT_TARGET_POWER),--target-power "$(CONTEXT_TARGET_POWER)",) \
+		$(if $(CONTEXT_REPEATS),--repeats $(CONTEXT_REPEATS),) \
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 

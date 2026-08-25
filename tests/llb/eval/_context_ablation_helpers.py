@@ -86,6 +86,41 @@ def _write_bundle(goldset: Path, verified: bool = True) -> None:
     )
 
 
+def _repeating_lane(
+    tmp_path: Path,
+    objectives: dict[str, list[float]],
+    seen: list[tuple[str, str, tuple[str, ...]]] | None = None,
+):
+    """A fake lane runner that answers DIFFERENTLY on each repeat of the same lane.
+
+    `objectives[lane]` is that lane's per-repeat objective, cycled when the run asks for more
+    repeats than it lists -- which is how a lane that reproduces exactly is written as one value.
+    Each repeat writes its own bundle directory, exactly as `run-eval` does.
+    """
+    passes: dict[str, int] = {}
+
+    def fake_lane(config: RunConfig, items: list[GoldItem], split: str) -> Path:
+        lane = config.context_strategy
+        if seen is not None:
+            seen.append((config.run_name, lane, tuple(i.id for i in items)))
+        values = objectives[lane]
+        objective = values[passes.get(lane, 0) % len(values)]
+        passes[lane] = passes.get(lane, 0) + 1
+        run_dir = tmp_path / "run-eval" / f"{config.run_name}-{split}-{passes[lane]}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        scores = run_dir / "scores.jsonl"
+        scores.write_text(
+            "".join(
+                json.dumps(_row(item.id, objective, answer_preview=f"{lane}-{objective}")) + "\n"
+                for item in items
+            ),
+            encoding="utf-8",
+        )
+        return scores
+
+    return fake_lane
+
+
 def _recording_lane(tmp_path: Path, seen: list[tuple[str, str, tuple[str, ...]]]):
     """A fake lane runner whose objective rises with the amount of context each lane laid in."""
     objective = {

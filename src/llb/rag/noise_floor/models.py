@@ -1,24 +1,20 @@
-"""Contracts for retrieval measurement-floor reports."""
+"""Contracts for retrieval measurement-floor reports.
+
+The per-metric band is the shared `ValueSpread` (`llb.rag.fusion_evidence.spread`): a floor and a
+decode-stability report state the identical statistic over their replicates, so a reader comparing
+the two is reading the same columns.
+"""
 
 from typing_extensions import NotRequired, TypedDict
 
-
-class MetricSpread(TypedDict):
-    """Spread of one metric across the jitter replicates, plus its unjittered value."""
-
-    base: float
-    min: float
-    max: float
-    mean: float
-    std: float
-    half_width: float  # (max - min) / 2 -- the "+/-" to read beside the metric
+from llb.rag.fusion_evidence.spread import ValueSpread
 
 
 class LaneFloor(TypedDict):
     """One lane's metric bands plus the fragility that explains how wide they are."""
 
-    recall_at_k: MetricSpread
-    mrr: MetricSpread
+    recall_at_k: ValueSpread
+    mrr: ValueSpread
     n: int
     fragile_items: int  # items whose rank-k and rank-(k+1) scores sit within `jitter`
 

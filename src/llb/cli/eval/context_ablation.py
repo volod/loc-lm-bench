@@ -69,6 +69,14 @@ def compare_context_strategies_cmd(
         max=0.999,
         help="target power for the paired normal-approximation item count",
     ),
+    repeats: int = typer.Option(
+        1,
+        min=1,
+        help="score every lane this many times with the IDENTICAL config and items, and report "
+        "the between-repeat band of each lane's mean and match rate. The comparison is still "
+        "taken over the first repeat; 2+ measures what the DECODE contributes, which no bootstrap "
+        "over the item sample can see",
+    ),
 ) -> None:
     """Score one item set under every context lane and report whether RAG pays for itself.
 
@@ -124,6 +132,7 @@ def compare_context_strategies_cmd(
             power_reference=power_reference,
             minimum_detectable_delta=minimum_detectable_delta,
             target_power=target_power,
+            repeats=repeats,
         )
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
@@ -137,4 +146,7 @@ def compare_context_strategies_cmd(
     adoption = verdict.get("retrieved_document")
     if adoption is not None and adoption["decision"] != RETRIEVED_DOCUMENT_NOT_MEASURED:
         typer.echo(f"[compare-context-strategies] {adoption['decision']}: {adoption['reason']}")
+    stability = run.report.get("decoding_stability")
+    if stability is not None:
+        typer.echo(f"[compare-context-strategies] {stability['reading']}: {stability['reason']}")
     typer.echo(f"[compare-context-strategies] report -> {run.paths['report']}")

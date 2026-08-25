@@ -21,6 +21,7 @@ from typing_extensions import NotRequired, TypedDict
 
 from llb.rag.fusion_evidence.slices import SliceReport
 from llb.rag.fusion_evidence.paired import PairedComparison
+from llb.rag.fusion_evidence.spread import ValueSpread
 
 # The four context lanes, ordered by how much context each one is entitled to see; each label is
 # also the `RunConfig.context_strategy` it selects, so a lane's numbers are reproducible by
@@ -75,6 +76,12 @@ ADOPT_RETRIEVED_DOCUMENT = "adopt_retrieved_document"
 REJECT_RETRIEVED_DOCUMENT = "reject_retrieved_document"
 RETRIEVED_DOCUMENT_INCONCLUSIVE = "retrieved_document_inconclusive"
 RETRIEVED_DOCUMENT_NOT_MEASURED = "retrieved_document_not_measured"
+
+# Decoding stability: what a lane's own numbers do when the IDENTICAL configuration is scored
+# again on the identical items. `reproducible` is every measured band being exactly zero; anything
+# else is `drifts`, and the report then states how wide the drift is per lane.
+STABILITY_REPRODUCIBLE = "reproducible"
+STABILITY_DRIFTS = "drifts"
 
 POWER_RESOLUTION_SEPARATED = "separated"
 POWER_RESOLUTION_FLAT = "flat"
@@ -210,6 +217,69 @@ class LongContextPowerAnalysis(TypedDict):
     reason: NotRequired[str]
 
 
+class LaneDecodingSpread(TypedDict):
+    """One lane's between-repeat band: how far re-running it moves its own numbers.
+
+    `divergent_items` counts items whose objective changed at all, which is what MOVES the mean;
+    `answer_divergent_items` counts items whose recorded answer text changed, which is what caused
+    it. The second is read off the persisted answer PREVIEW, so a divergence past that cut is not
+    counted and the number is a lower bound, and an answer can be reworded without moving its
+    score at all.
+
+    `outcome_groups` is the shape of the drift rather than its size: the sizes of the groups of
+    repeats that produced the IDENTICAL per-item objective vector, in first-appearance order. `[4]`
+    is a lane that reproduced throughout; `[1, 3]` is one that answered differently once and then
+    settled; `[1, 1, 1, 1]` is one that never repeated itself. The three are the same half-width
+    and completely different findings.
+    """
+
+    lane: str
+    grounded: bool  # False for the baseline lane, whose prompt carries no evidence at all
+    run_dirs: list[str]  # every bundle this lane was scored in, repeat by repeat, split by split
+    objective: ValueSpread
+    token_f1: ValueSpread
+    match_rate: ValueSpread  # `exact`/`contains` hit rate -- the contamination rate on the baseline
+    divergent_items: int
+    answer_divergent_items: int
+    outcome_groups: list[int]
+
+
+class DecodingFloorMargin(TypedDict):
+    """One derived delta read against the decoding floor of the two lanes it is taken over.
+
+    The floor is the SUM of the two lanes' half-widths rather than their quadrature: the repeats
+    are few, so the conservative bound is the honest one, and a delta that clears it is not decode
+    noise.
+    """
+
+    label: str
+    n: int
+    delta: float
+    floor: float
+    clears_floor: bool
+    floor_multiple: float | None  # `|delta| / floor`; null at a zero floor
+
+
+class DecodingStabilityReport(TypedDict):
+    """Between-repeat spread of every lane, and what it does to the derived deltas.
+
+    The paired bootstrap prices the item sample; this prices the DECODE. A closed-book prompt
+    leaves a much flatter next-token distribution than a grounded one, so the two are not equally
+    reproducible and a contamination rate quoted to one decimal place has to say which it is.
+    """
+
+    repeats: int
+    n: int
+    baseline: str
+    lanes: dict[str, LaneDecodingSpread]
+    baseline_floor: float  # half-width of the baseline lane's own mean objective
+    grounded_floor: float  # the widest half-width any grounded lane showed
+    noise_multiple: float | None  # `baseline_floor / grounded_floor`; null at a zero grounded floor
+    deltas: list[DecodingFloorMargin]
+    reading: str
+    reason: str
+
+
 class ContextAblationReport(TypedDict):
     """The full lane artifact: per-lane slices, derived deltas, contamination, item ledger."""
 
@@ -227,3 +297,4 @@ class ContextAblationReport(TypedDict):
     items: list[ItemOutcome]
     verdict: ContextAblationVerdict
     power_analysis: NotRequired[LongContextPowerAnalysis]
+    decoding_stability: NotRequired[DecodingStabilityReport]

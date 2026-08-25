@@ -46,6 +46,7 @@ rather than restated per lane:
 | What a withdrawn reading needs before it may be read again | [The re-decision](rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs) |
 | When a rank-quality gain is worth adopting at all | [The scoped first-hit-rank adoption bar](rag-core/first-hit-rank-adoption.md) |
 | Does RAG pay for itself against closed-book and long-context lanes? | [Context ablation](rag-core/context-ablation.md) |
+| What every context-ablation run measured, and what it licenses | [Context-ablation evidence](rag-core/context-ablation-evidence.md) |
 
 ## Where the evidence sits
 

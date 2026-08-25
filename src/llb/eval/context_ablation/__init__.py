@@ -14,6 +14,7 @@ carries its own adopt-or-reject verdict.
 """
 
 from llb.eval.context_ablation.compare import compare_context_strategies
+from llb.eval.context_ablation.decoding_stability import measure_decoding_stability
 from llb.eval.context_ablation.lanes import default_lanes, lane_config, parse_lanes
 from llb.eval.context_ablation.models import LANES
 from llb.eval.context_ablation.report import format_report
@@ -27,6 +28,7 @@ __all__ = [
     "default_lanes",
     "format_report",
     "lane_config",
+    "measure_decoding_stability",
     "parse_lanes",
     "run_context_ablation",
 ]

@@ -113,7 +113,7 @@ frozen labels.
 default retrieval policies and never leaderboard rows; `rag` remains the ranked lane. This is a
 decision, not an omission, and it survives the measured result that `long_context` beat `rag` on
 both scored roster models
-([RAG core](rag-core/context-ablation.md#context-ablation-evidence)):
+([RAG core](rag-core/context-ablation-evidence.md)):
 
 - `long_context` is **oracle-grounded**. It reads the item's own gold `doc_id`s, so it knows the
   answer's document for free. That is a legitimate ceiling to measure a retrieval layer against
@@ -151,7 +151,7 @@ On the committed UA fixture that split is now measured, and the answer is do not
 retrieval depth the lane is -0.017 [-0.034, -0.004] objective on MamayLM 12B (a verbosity cost --
 same found-rate, same span coverage) and +0.002 [-0.027, +0.035] on Lapa, while
 `oracle_document_gap` stays separated above zero in all four runs
-([RAG core](rag-core/context-ablation.md#the-shippable-document-lane-does-not-pay-reject-2026-08-23)).
+([RAG core](rag-core/context-ablation-evidence.md#the-shippable-document-lane-does-not-pay-reject-2026-08-23)).
 The lane stays in the product as the measurement that keeps the boundary honest -- an operator on
 another corpus runs it and gets their own verdict -- not as a recommended configuration.
 
