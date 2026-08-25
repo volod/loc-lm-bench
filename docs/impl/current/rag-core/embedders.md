@@ -171,16 +171,19 @@ the zero measurement floor with no fragile items, and the `retain` verdict with 
 question for e5-large. Every row records `device=cuda`. Throughput on this 80 W laptop GPU was
 25.6 chunks/s for e5-base, 6.8 for e5-large, 5.9 for BGE-M3, and 6.1 for the paraphrase model in
 the one-pass store build; those rates mixed cold load with encoding, which the warm decomposition
-below separates. Artifact:
-`$DATA_DIR/compare-embeddings/20260728T110500Z-blackwell12/{report.md,report.json}`.
+below separates. Reading: the bake-off's QUALITY half is host-independent -- a different GPU
+generation, driver, and power envelope reproduced every recall, MRR, bound, and ledger exactly, so
+the `retain` verdict is a property of the corpus and the encoders, not of the box. Only the
+throughput half is host-conditioned, and this host is ~4x slower per chunk than the 16 GiB one at a
+quarter its power budget. Lookup key: `compare-embeddings` run `blackwell12`.
 
 ## Blackwell encoder throughput decomposition
 
 `make compare-embeddings ... EMBED_ENCODER_THROUGHPUT=1 EMBED_ENCODER_COMPARE_CPU=1` on the same
 12,227 MiB RTX PRO 3000 Blackwell host (power limit held at 80 W) over the 311-chunk committed UA
 fixture. Each candidate records cold load, first-pass (compile+encode), and adaptive warm encodes
-until IQR/median <= 0.05 or a pass/time cap. Additive fields land on the bake-off bundle; the host
-summary is `$DATA_DIR/encoder-throughput/20260729T124909.208587Z-cb457ea736f4/`.
+until IQR/median <= 0.05 or a pass/time cap. Additive fields land on the bake-off bundle.
+Lookup key: `encoder-throughput` run id `cb457ea736f4`.
 
 CUDA warm rates (311 texts; median over warm passes that cleared 0.05 relative precision):
 
@@ -336,11 +339,10 @@ the gate is refused BEFORE its store is built rather than scored on numbers that
 
 `DEFAULT_LOCAL_CANDIDATES` now includes `intfloat/multilingual-e5-small` (same `e5` query/passage
 convention as base/large). Full five-candidate bake-off + warm decomposition on the committed UA
-fixture (n=82 final; 311 chunks; RTX PRO 3000 / 12 GiB / ~80 W):
-`$DATA_DIR/compare-embeddings/20260729T131520.054732Z-1d36908e745c/` and
-`$DATA_DIR/encoder-throughput/20260729T131520.054732Z-1d36908e745c/`. Corrected per-candidate
-VRAM after the release fix (base vs small only):
-`$DATA_DIR/encoder-throughput/20260729T133400.407347Z-c79df0776706/`.
+fixture, run 2026-07-29 (n=82 final; 311 chunks; RTX PRO 3000 Blackwell / 12 GiB / ~80 W). The
+bake-off and the warm decomposition share run id `1d36908e745c`; the corrected per-candidate VRAM
+column below comes from a second `encoder-throughput` run, id `c79df0776706`, taken after the
+release fix and covering base vs small only.
 
 | model | recall@10 | mrr | dim | warm CUDA c/s | peak_vram_MB (corrected) | d_recall vs base |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -451,6 +453,8 @@ constraint. bge-m3 trails e5-large on both axes at the same cost, and the paraph
 saturation, not quality) -- the "paraphrase objective loses to retrieval-tuned encoders"
 hypothesis is supported by this corpus. Embed VRAM peaked ~4 GB (sequential model loads),
 so every candidate fits the 16 GB host with a co-resident judge stopped; steady-state GPU
-throughput at 1139 chunks is no longer cold-load-dominated. Reports:
-`$DATA_DIR/compare-embeddings/20260710T044652*/report.md` (k=20) and
-`.../20260710T044914*/report.md` (k=10).
+throughput at 1139 chunks is no longer cold-load-dominated. What would overturn it: a corpus where
+the paraphrase objective's weakness does not show, or a reranked lane that makes MRR rather than
+recall@10 the binding metric -- the e5-large row is written to be picked up in exactly that case.
+Measured 2026-07-10 on the 16 GiB RTX 4060 Ti CUDA host at k=20 and k=10; neither report bundle is
+retained on either GPU host, so the numbers above are the record.

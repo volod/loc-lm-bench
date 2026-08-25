@@ -43,12 +43,14 @@ The current default common base for a 16 GB CUDA host is Gemma 4 E4B IT:
 If a requested larger base has no matching artifact for one backend, prefer an actually comparable
 common base over mixing unrelated checkpoints.
 
-Quickstart validation on the 16 GiB RTX 4060 Ti host used
-`.data/quickstart-leaderboard/run-eval/20260630T053945.651376Z-5544ffad36c2/manifest.json`:
-Ollama `gemma4:e4b`, 20 final cases, objective `0.420`, reliability `0.750`, `60.04` tok/s,
-peak VRAM `13717` MB, `120.03` W mean power, `0.5002` tokens/W, and retrieval
-`recall@5=0.900`, `mrr=0.7875`. vLLM and llama.cpp rows were skipped because their serving
-executables were not installed.
+Quickstart validation ran 2026-06-30 on the 16 GiB RTX 4060 Ti CUDA host: Ollama `gemma4:e4b`,
+20 final cases, objective `0.420`, reliability `0.750`, `60.04` tok/s, peak VRAM `13717` MB,
+`120.03` W mean power, `0.5002` tokens/W, retrieval `recall@5=0.900`, `mrr=0.7875`. Reading: the
+common base serves comfortably inside a 16 GiB budget with ~2 GiB spare, and reliability `0.750` --
+not the objective -- is the figure that bounds what this row licenses. vLLM and llama.cpp rows were
+skipped because their serving executables were not installed, so this validates ONE backend cell,
+not the matrix. The run bundle is not retained on either GPU host; the numbers above are the
+record.
 
 ## Power Metrics
 
@@ -169,9 +171,12 @@ Smoke-validated on the 16 GiB RTX 4060 Ti host: `make list-models` rates the Mis
 (w4a16 ~14.4 GiB weights, `ctx_gpu=828` so vLLM does not clear the GPU window -> offload), the
 resolver picks `mistral-small3.1:24b` on Ollama, and a 3-case `run-eval --telemetry` on the
 committed `ua_squad_postedited_v1` final split served via Ollama CPU offload with `recall@5=1.000`,
-`reliability=1.000`, `12.7` tok/s, peak VRAM `15977` MB
-(`.data/quickstart-leaderboard/run-eval/20260630T152748.480864Z-e1bb196e19d9/`). The vLLM w4a16
-(24 GiB) and fp8 (32 GiB) rows are bigger-GPU-host runs, not exercised on this 16 GiB box.
+`reliability=1.000`, `12.7` tok/s, peak VRAM `15977` MB -- 2026-06-30, 16 GiB RTX 4060 Ti. Reading:
+peak VRAM `15977` MB of 16,380 is the number that matters; the 24B entry RUNS on this tier only by
+CPU offload, and `12.7` tok/s is what that costs. n=3 supports the resolution and serving claims and
+nothing about quality. The vLLM w4a16 (24 GiB) and fp8 (32 GiB) rows are bigger-GPU-host runs, not
+exercised on this 16 GiB box. The run bundle is not retained on either GPU host; the numbers above
+are the record.
 
 ## Multi-Quant vLLM Resolution
 

@@ -49,10 +49,10 @@ counts). `src/llb/conflicts/grouping/census.py` computes the census and the grou
 Why the table is not ranked on score: a score is the model's confidence in ONE pair and says nothing
 about how much the group holding it is worth. Measured on the goods semantic bundle (100 rows, 6
 groups) a 0.002 score difference put the 14-row decision ahead of the 29-row one; on the goods
-budget-100 claim bundle four groups tie at 1.000, so three of them were ordered by the claim-identity
-tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves above the 14-row
-one and the 3-row decision above the 2-row one, while the group holding the only actionable row
-still leads the claim bundle.
+budget-100 claim bundle four groups tie at 1.000, so three of them were ordered by the
+claim-identity tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves
+above the 14-row one and the 3-row decision above the 2-row one, while the group holding the only
+actionable row still leads the claim bundle.
 
 ### To decide and to review are two counts, never one
 
@@ -71,14 +71,17 @@ per group. The vocabulary is defined once in `src/llb/conflicts/constants.py` (`
 `REVIEW_LABEL`, `decide_count`); `FindingGroup.decide_rows` and `group_decisions` are its two
 consumers.
 
-They diverge in BOTH directions, measured on the two goods bundles:
+They diverge in BOTH directions, measured 2026-08-12 on the RTX PRO 3000 Blackwell 12 GiB CUDA host
+over the two goods bundles:
 
-- **Goods budget-100 claim bundle** (`.data/corpus-conflicts/20260812T-two-counts-census-goods-budget100/`):
+- **Goods budget-100 claim bundle** (5 markdown documents, claim tier at `MAX_CANDIDATE_PAIRS=100`;
+  lookup key `corpus-conflicts` run `two-counts-census-goods-budget100`):
   **1 to decide, 0 to review.** The single `subsumed_by` row is work by the relation vocabulary --
   it is what the precision block measures and what leads `findings.jsonl` -- but the conservative
   policy resolves subsumption as `keep_both` plus an annotation, so it costs a human nothing. An
   operator funding one review off the audit report would have funded a review that does not exist.
-- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-two-counts-goods-semantic/`):
+- **Goods semantic bundle** (the same 5 documents at the semantic tier; lookup key
+  `corpus-conflicts` run `two-counts-goods-semantic`):
   **100 to decide, 100 to review**, group for group (51/51, 29/29, 14/14, 3/3, 2/2, 1/1). Every
   semantic-tier duplicate needs review under every policy because that tier has no deletion
   authority, so the two counts coincide exactly -- and this is the bundle an operator meets first,
@@ -113,12 +116,12 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
 
 - **Opt-in, and off by default.** Without the flag nothing about the report changes. Measured: a
   control run of the goods semantic bundle re-rendered with this code is byte-identical to the
-  bundle rendered before it existed, apart from the corpus path and one tier's `seconds` column
-  (`.data/corpus-conflicts/20260812T-projection-control-goods-semantic/report.md` against
-  `20260812T-two-counts-goods-semantic/report.md`). Both of those reports predate the
-  [granularity section](#how-many-decisions-the-row-count-is), which every report now carries; the
-  claim is about the projection, so re-checking it means comparing two reports rendered by the same
-  code with and without the flag.
+  bundle rendered before it existed, apart from the corpus path and one tier's `seconds` column (the
+  `projection-control-goods-semantic` report against the `two-counts-goods-semantic` one, both
+  `corpus-conflicts` runs of 2026-08-12 on the 12 GiB Blackwell host). Both of those reports predate
+  the [granularity section](#how-many-decisions-the-row-count-is), which every report now carries;
+  the claim is about the projection, so re-checking it means comparing two reports rendered by the
+  same code with and without the flag.
 - **What it adds.** A headline line per policy, one `to review (projected, <policy>)` column per
   policy in the decision-groups table, and `policy_projection` in `summary.json`
   (`schema_version: 3`, `kind: projection`, `basis`, `policies`, `by_policy` with each policy's
@@ -159,9 +162,10 @@ make audit-corpus-conflicts CORPUS=<dir> EFFORT=semantic STORE=<store> \
 - **One policy renders exactly the column it always did.** With a single `--project-policy` value
   the header is `to review (projected)` with no policy suffix and no delta column, and the report
   is byte-identical to the one the single-policy path produced. Measured: the group-table header of
-  `.data/corpus-conflicts/20260812T-policy-choice-goods-single/report.md` is identical to the one
-  in `20260812T-projected-review-goods-semantic/report.md`, and a CI test asserts the two rendering
-  paths agree byte for byte on the same rows.
+  the `policy-choice-goods-single` report is identical to the one in the
+  `projected-review-goods-semantic` report (both `corpus-conflicts` runs of 2026-08-12 on the 12 GiB
+  Blackwell host), and a CI test asserts the two rendering paths agree byte for byte on the same
+  rows.
 - **Equal to what the resolver measures, column by column.** Each column replays the shipped
   `resolve_finding` over the audit's own rows and counts `review_required` per group, so it must
   equal `plan.json`'s `review_rows` group for group under that policy -- N columns are N READINGS
@@ -187,18 +191,19 @@ well rather than replaced: every mention of the projection names `resolve-corpus
 where the measured count lives, because the resolver without `--apply` already plans without
 touching a corpus byte and remains the only thing that MEASURES the count.
 
-Measured on the two goods bundles, which are the two ends of the divergence:
+Measured 2026-08-12 on the 12 GiB Blackwell CUDA host over the two goods bundles, which are the two
+ends of the divergence:
 
-- **Goods semantic bundle** (`.data/corpus-conflicts/20260812T-projected-review-goods-semantic/`,
-  100 rows, 6 groups): projected `{G1: 51, G2: 14, G3: 29, G4: 3, G5: 1, G6: 2}` = 100 rows in 6
-  groups, equal group for group to the `review_rows` the resolver then wrote into `plan.json` in
-  the same directory, and equal to `decide_rows` as well -- every semantic-tier duplicate is to
-  review under every policy. Here the projection confirms the headline instead of correcting it --
-  and this is the bundle an operator meets first, which is exactly why the coincidence is easy to
-  mistake for a rule that the claim bundle below breaks.
+- **Goods semantic bundle** (100 rows, 6 groups; lookup key `corpus-conflicts` run
+  `projected-review-goods-semantic`): projected `{G1: 51, G2: 14, G3: 29, G4: 3, G5: 1, G6: 2}` =
+  100 rows in 6 groups, equal group for group to the `review_rows` the resolver then wrote into
+  `plan.json` in the same directory, and equal to `decide_rows` as well -- every semantic-tier
+  duplicate is to review under every policy. Here the projection confirms the headline instead of
+  correcting it -- and this is the bundle an operator meets first, which is exactly why the
+  coincidence is easy to mistake for a rule that the claim bundle below breaks.
 - **Goods budget-100 claim bundle**
-  (`.data/corpus-conflicts/20260812T-projected-review-goods-budget100/`, CUDA host, RTX PRO 3000
-  Blackwell, 954-chunk store at resolved cosine 0.3604, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M
+  (lookup key `corpus-conflicts` run `projected-review-goods-budget100`; RTX PRO 3000
+  Blackwell 12 GiB, 954-chunk store at resolved cosine 0.3604, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M
   agreeing with all 24 frozen probe pairs, 8 min 52 s of adjudication): the divergent end. The
   report reads `to decide: 1 of 100 rows` and `to review (PROJECTED under policy conservative): 0
   rows in 0 decision groups` -- the corpus's one actionable row is a `subsumed_by` the conservative
@@ -220,9 +225,10 @@ corpus of thousands are the same sign and completely different decisions, so eve
 read as a SHARE of the rows the audit calls work: `moved_rows` of `actionable_rows`, rendered
 `moves 2 of 9 actionable rows (22.2%)`. That is the number that transfers between corpora.
 
-CUDA host, RTX PRO 3000 Blackwell, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M adjudicating, one claim-tier
-run per corpus present on this host with `PROJECT_POLICY=conservative,prefer-newer`. Every run
-agreed with all 24 frozen probe pairs before its rows were adjudicated.
+Measured 2026-08-13 on the RTX PRO 3000 Blackwell 12 GiB CUDA host, MamayLM-Gemma-3-12B-IT-v2.0
+Q4_K_M adjudicating, one claim-tier run per corpus present on this host with
+`PROJECT_POLICY=conservative,prefer-newer`. Every run agreed with all 24 frozen probe pairs before
+its rows were adjudicated.
 
 | bundle | rows | to decide | `conservative` | `prefer-newer` | delta | groups moved | rows moved |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -231,27 +237,27 @@ agreed with all 24 frozen probe pairs before its rows were adjudicated.
 | quickstart-PDF, claim budget 100 | 100 | 0 | 0 | 0 | 0 | none | 0 of 0 |
 | goods, semantic (re-read) | 100 | 100 | 100 | 100 | 0 | none | 0 of 100 (0.0%) |
 
-The first three rows are runs under `.data/corpus-conflicts/20260813T-policy-share-{fixture,goods,
-quickstart-pdf}-claim/`. The fourth is the committed semantic bundle
-(`20260812T-policy-choice-goods-semantic/findings.jsonl`) re-read through `project_policies`: the
+The first three rows are the `corpus-conflicts` runs `policy-share-fixture-claim`,
+`policy-share-goods-claim`, and `policy-share-quickstart-pdf-claim`. The fourth is the committed
+semantic bundle (`policy-choice-goods-semantic`, 2026-08-12) re-read through `project_policies`: the
 share is a pure function of the rows, so an audit already on disk gets its share back with no model
 call and no store.
 
 - **The corpus where the choice is not free** is the committed fixture at
   `samples/corpora/conflicts_uk_v1/`, which already plants a dated supersession (the 2021 vs 2024
   thirty-versus-fifteen-day deadline, with `effective_date` on both documents) -- so nothing had to
-  be planted for this. Run:
-  `make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim
-  STORE=<heading@600 store> MIN_CLAIM_TOKENS=10 PROJECT_POLICY=conservative,prefer-newer`
-  (`.data/corpus-conflicts/20260813T-policy-share-fixture-claim/`, 19-chunk `multilingual-e5-base`
-  `heading@600` store, 14 rows adjudicated in 49 s). It returns **17 findings in 4 groups, 9 to
-  decide**, including 2 `superseded_by` rows, and the report reads `policy choice conservative ->
-  prefer-newer: -2 rows to review, falling in 1 decision group (G3). The choice moves 2 of 9
-  actionable rows (22.2%)`. Both columns were checked against the thing they project: running
-  `resolve-corpus-conflicts` on the same rows under each policy wrote `plan.json` decisions equal
-  to the projection group for group (`{G1: 0, G2: 0, G3: 2, G4: 0}` and all zeros), under
-  `.../20260813T-policy-share-fixture-claim/resolve-{conservative,prefer-newer}/`. The same check
-  passed on the other two bundles, where both policies leave every group at zero.
+  be planted for this. Run: `make audit-corpus-conflicts
+  CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim STORE=<heading@600 store>
+  MIN_CLAIM_TOKENS=10 PROJECT_POLICY=conservative,prefer-newer` (lookup key `corpus-conflicts` run
+  `policy-share-fixture-claim`; 19-chunk `multilingual-e5-base` `heading@600` store, 14 rows
+  adjudicated in 49 s). It returns **17 findings in 4 groups, 9 to decide**, including 2
+  `superseded_by` rows, and the report reads `policy choice conservative -> prefer-newer: -2 rows to
+  review, falling in 1 decision group (G3). The choice moves 2 of 9 actionable rows (22.2%)`. Both
+  columns were checked against the thing they project: running `resolve-corpus-conflicts` on the
+  same rows under each policy wrote `plan.json` decisions equal to the projection group for group
+  (`{G1: 0, G2: 0, G3: 2, G4: 0}` and all zeros), in that same run's `resolve-conservative/` and
+  `resolve-prefer-newer/` sub-bundles. The same check passed on the other two bundles, where both
+  policies leave every group at zero.
 - **The corpora where it is free are free for a reason that is not about their knowledge.**
   `superseded_by` is derived from `compare_editions`, which needs `effective_date` or `version` on
   BOTH sides, and neither quickstart corpus carries either field on any document: 0 of 5 goods
@@ -285,17 +291,19 @@ Three limits of this measurement, all worth stating because they bound what the 
   have one, not an estimate of what a production corpus carries. The 8-document HR corpus is
   operator data and absent from this host; measuring a real dated corpus stays open work in
   [`plan.md`](../../plan.md) (`conflict-policy-delta-on-an-operator-corpus-with-dated-revisions`).
-- **Group ids are stable inside a run, not across two.** The fixture was audited twice
-  (`20260812T-policy-choice-fixture-claim` and `20260813T-policy-share-fixture-claim`) and returned
-  the same 17 rows, the same relations, and the same document pairs both times -- but the
-  adjudicator's scores are not bit-reproducible, the row order is score-ranked, and so the group
-  holding the supersession was `G4` in the first run and `G3` in the second. Nothing joins across
-  runs today (`source_findings_sha256` pins a plan to its own rows), so no artifact is wrong; a
-  reader comparing two audit reports by group label would be. A row-derived group key is tracked in
-  [`plan.md`](../../plan.md) (`conflict-group-ids-that-survive-a-re-run`).
+- **Group ids are stable inside a run, not across two.** The fixture was audited twice -- the
+  `corpus-conflicts` runs `policy-choice-fixture-claim` (2026-08-12) and
+  `policy-share-fixture-claim` (2026-08-13) -- and returned the same 17 rows, the same relations,
+  and the same document pairs both times -- but the adjudicator's scores are not bit-reproducible,
+  the row order is score-ranked, and so the group holding the supersession was `G4` in the first run
+  and `G3` in the second. Nothing joins across runs today (`source_findings_sha256` pins a plan to
+  its own rows), so no artifact is wrong; a reader comparing two audit reports by group label would
+  be. A row-derived group key is tracked in [`plan.md`](../../plan.md)
+  (`conflict-group-ids-that-survive-a-re-run`).
 - **And the share itself is not reproducible across runs.** A third audit of the same fixture at
-  the same settings (`20260813T-governance-coverage-fixture-claim`, same 7 documents, same 19-chunk
-  store, same 24/24 frozen probe, same 14 adjudicated rows, same 0.4286 claim-tier precision)
+  the same settings (`corpus-conflicts` run `governance-coverage-fixture-claim`, 2026-08-13: same 7
+  documents, same 19-chunk store, same 24/24 frozen probe, same 14 adjudicated rows, same 0.4286
+  claim-tier precision)
   returned the same 17 rows and 9 actionable rows but a different relation MIX: one row the earlier
   two runs called `superseded_by` came back `subsumed_by`, so the delta read **-1 row, 1 of 9
   (11.1%)** in `G4` instead of -2 and 22.2%. The adjudication endpoint runs at temperature 0.2 with
@@ -336,9 +344,9 @@ The middle count is what names the STAGE a run lost an orderable pair at, and it
 level exists: two corpora an operator would fix in opposite ways used to print the same structural
 line. `orderable_document_pairs` is derived from the distinct ordering KEYS rather than by
 enumerating pairs -- inclusion-exclusion over the date-key and version-key multisets
-(`document_pair_orderability`, with `edition_key` in `src/llb/conflicts/governance/editions.py` as the
-shared key function) -- so a corpus of thousands of documents stays off a quadratic path. The unit
-test pins that count against enumerating `compare_editions` over every pair of every corpus
+(`document_pair_orderability`, with `edition_key` in `src/llb/conflicts/governance/editions.py` as
+the shared key function) -- so a corpus of thousands of documents stays off a quadratic path. The
+unit test pins that count against enumerating `compare_editions` over every pair of every corpus
 drawable from a governance pool covering present, absent, blank, shared, and unparseable fields.
 
 **Where it appears.** `governance_coverage` rides in `summary.json` on every run, projection or
@@ -378,9 +386,9 @@ purpose-built dated corpus rather than found in the archive; the two runs below 
 demonstration.
 
 The shipped command was then run end to end on the fixture to check the live path rather than the
-recompute (CUDA host, RTX PRO 3000 Blackwell, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M, 24/24 frozen
-probe pairs, 14 rows adjudicated in 54 s,
-`.data/corpus-conflicts/20260813T-governance-coverage-fixture-claim/`):
+recompute (2026-08-13, RTX PRO 3000 Blackwell 12 GiB, MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M, 24/24
+frozen probe pairs, 14 rows adjudicated in 54 s; lookup key `corpus-conflicts` run
+`governance-coverage-fixture-claim`):
 
 ```text
 make audit-corpus-conflicts CORPUS=samples/corpora/conflicts_uk_v1/corpus EFFORT=claim \
@@ -405,7 +413,8 @@ copies of one edition and a third carrying a later edition of a claim that contr
 (`.data/corpus-governance-stage-demo/`). The hash tier returns exactly one pair -- the two copies,
 which share an edition and order no better than two undated documents -- so the run has orderable
 document pairs and no orderable returned pair, which is the reading the count was added for
-(`.data/corpus-conflicts/20260813T-doc-pair-orderability-retrieval-miss-hash/`):
+(2026-08-13, 12 GiB Blackwell host; lookup key `corpus-conflicts` run
+`doc-pair-orderability-retrieval-miss-hash`):
 
 ```text
 make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=hash \
@@ -422,15 +431,15 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=hash \
 ```
 
 That four-knob tail is quoted as it was printed; the same command now ends in the one knob the
-[stage attribution](#which-stage-lost-the-orderable-pair) picked
-(`.data/corpus-conflicts/20260813T-stage-attribution-effort-hash/`).
+[stage attribution](#which-stage-lost-the-orderable-pair) picked (`corpus-conflicts` run
+`stage-attribution-effort-hash`).
 
 Before this count, that run printed the ingestion line -- advice that would have changed nothing on
 a corpus already dated end to end. Taking the advice it prints now recovers the pair: the same
 corpus at `--effort semantic` against a store of its own returns the cross-edition pair as well,
-and the reading moves to KNOWLEDGE with the delta still zero
-(`.data/corpus-conflicts/20260813T-doc-pair-orderability-retrieval-recovered-semantic/`, store
-`.data/llb/rag-governance-stage-demo`; the documents are one sentence each, so the run needs
+and the reading moves to KNOWLEDGE with the delta still zero (2026-08-13, 12 GiB Blackwell host;
+lookup key `corpus-conflicts` run `doc-pair-orderability-retrieval-recovered-semantic`, against a
+store built over the demo corpus itself; the documents are one sentence each, so the run needs
 `MIN_CLAIM_TOKENS=8` and `COS_THRESHOLD=0.7` to keep them above the claim floor):
 
 ```text
@@ -501,8 +510,8 @@ stage added with a knob takes its pipeline position automatically.
 **What the scan costs.** Every stage below the effort dial is a property of one DOCUMENT rather than
 of a pair (no stored chunk, no comparable chunk), so the documents that can demonstrate a stage are
 found in a single pass over the corpus and only THEIR pairs are ever tested: linear in the corpus
-per stage, with the quadratic sweep reached only for `candidates`, which is the cost the corpus-order
-scan already paid. Every hit is confirmed against the pair rule, which stays the single
+per stage, with the quadratic sweep reached only for `candidates`, which is the cost the
+corpus-order scan already paid. Every hit is confirmed against the pair rule, which stays the single
 implementation of the stage order. CI pins the bound by counting the document pairs each rule tests
 on a 60-document corpus whose only lost pair is the last one in corpus order: **59 against 1,770**.
 
@@ -520,31 +529,31 @@ there). `DocumentChunks` lives in `src/llb/conflicts/bundle/document_chunks.py` 
 `tests/llb/conflicts/test_governance_stage.py` pins each stage, the earliest-stage rule, its cost
 bound, and the silence.
 
-**Measured, one run per stage** (CUDA host; the semantic runs read real e5-base store vectors, no
-model call):
+**Measured 2026-08-13 on the 12 GiB Blackwell CUDA host, one run per stage** (the semantic runs read
+real e5-base store vectors, no model call). Each row names its `corpus-conflicts` run:
 
 | run | stage named | pair |
 | --- | --- | --- |
-| `20260813T-stage-attribution-effort-hash` (demo corpus, `--effort hash`) | `effort` | `handbook_2026.md` + `policy_2024.md` |
-| `20260813T-stage-attribution-claim-floor` (demo corpus, `--effort semantic`, default floor) | `claim_token_floor` | the same pair |
-| `20260813T-stage-attribution-recovered` (demo corpus, `MIN_CLAIM_TOKENS=8`) | `duplicate_collapse` | `handbook_2026.md` + `policy_2024_copy.md` |
-| `20260813T-stage-attribution-fixture-semantic` (7-document fixture, 19-chunk store) | `candidates` | `archive-policy.md` + `deadline-note.md` |
-| `20260813T-stage-earliest-chunking-gap` (3-document corpus, store built before its third document) | `chunking` | `a-archive.md` + `z-travel.md` |
+| `stage-attribution-effort-hash` (demo corpus, `--effort hash`) | `effort` | `handbook_2026.md` + `policy_2024.md` |
+| `stage-attribution-claim-floor` (demo corpus, `--effort semantic`, default floor) | `claim_token_floor` | the same pair |
+| `stage-attribution-recovered` (demo corpus, `MIN_CLAIM_TOKENS=8`) | `duplicate_collapse` | `handbook_2026.md` + `policy_2024_copy.md` |
+| `stage-attribution-fixture-semantic` (7-document fixture, 19-chunk store) | `candidates` | `archive-policy.md` + `deadline-note.md` |
+| `stage-earliest-chunking-gap` (3-document corpus, store built before its third document) | `chunking` | `a-archive.md` + `z-travel.md` |
 
 The three demo-corpus runs are one corpus read three ways, and they walk an operator through the
 fix: at `--effort hash` the knob is the effort dial, and raising it moves the attribution to the
-claim-token floor -- which is exactly the knob the recovery run above had to turn (`MIN_CLAIM_TOKENS=8`,
-its documents being one sentence each) and which the four-knob list did not mention at all. Lowering
-the floor then returns the cross-edition pair, and what is left is the `duplicate_collapse` case:
-`policy_2024_copy.md` is byte-identical to `policy_2024.md`, the store holds one chunk set for both,
-and the pair through the collapsed copy can never be returned. That is the stage whose knob is
-*none*, and it is why "rebuild the store" is not the advice for every chunkless document -- a
-rebuild would collapse the duplicate again.
+claim-token floor -- which is exactly the knob the recovery run above had to turn
+(`MIN_CLAIM_TOKENS=8`, its documents being one sentence each) and which the four-knob list did not
+mention at all. Lowering the floor then returns the cross-edition pair, and what is left is the
+`duplicate_collapse` case: `policy_2024_copy.md` is byte-identical to `policy_2024.md`, the store
+holds one chunk set for both, and the pair through the collapsed copy can never be returned. That is
+the stage whose knob is *none*, and it is why "rebuild the store" is not the advice for every
+chunkless document -- a rebuild would collapse the duplicate again.
 
-That run re-executed under the earliest-stage rule
-(`.data/corpus-conflicts/20260813T-stage-earliest-claim-floor/`) names the same stage and the same
-pair, which is the knobless-stage rule doing its job -- the corpus loses a second pair at duplicate
-collapse, and a strict pipeline order would have answered with it:
+That run re-executed under the earliest-stage rule (`corpus-conflicts` run
+`stage-earliest-claim-floor`) names the same stage and the same pair, which is the knobless-stage
+rule doing its job -- the corpus loses a second pair at duplicate collapse, and a strict pipeline
+order would have answered with it:
 
 ```text
 make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own-store> \
@@ -561,8 +570,8 @@ make audit-corpus-conflicts CORPUS=<dated-corpus> EFFORT=semantic STORE=<its-own
 
 The claim-floor sentence above is the reading BEFORE the per-document exclusion record: the
 disjunction is what a run that kept one exclusion total could offer. A run under the current build
-names the reason per document and the floor value that returns the pair
-([bundle record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it));
+names the reason per document and the floor value that returns the pair ([bundle
+record](conflict-bundle-record.md#why-a-document-is-not-comparable-and-the-floor-that-returns-it));
 the stage and the pair are unchanged.
 
 **Do the two rules ever disagree? Not on a single bundle this host had.** Recomputed over every
@@ -584,11 +593,11 @@ built from, so each run loses its pairs at ONE stage with a knob. The change dec
 that loses pairs at two such stages -- which is the case the fixture in CI pins and the run below
 builds, and which is what a real operator corpus looks like.
 
-**The disagreement, run end to end** (`.data/corpus-conflicts/20260813T-stage-earliest-chunking-gap/`,
-CUDA host, real e5-base store vectors, no model call). Three dated documents at
-`.data/corpus-stage-earliest-demo/`, two of them unrelated to each other, and a store built over an
-earlier state of the corpus that did not yet contain the third -- the ordinary shape of a store one
-ingest behind its corpus:
+**The disagreement, run end to end** (2026-08-13, 12 GiB Blackwell CUDA host, real e5-base store
+vectors, no model call; lookup key `corpus-conflicts` run `stage-earliest-chunking-gap`). Three
+dated documents in a purpose-built demo corpus, two of them unrelated to each other, and a store
+built over an earlier state of the corpus that did not yet contain the third -- the ordinary shape
+of a store one ingest behind its corpus:
 
 ```text
 make build-index CORPUS=<corpus-before-the-third-document> CHUNK_STRATEGY=heading CHUNK_SIZE=600
@@ -659,12 +668,12 @@ the bundles where the two readings PART. A bundle written before the record answ
 recomputable" and keeps its recorded attribution: no answer is the correct answer there, since the
 only thing left to derive one from is a store that has moved since.
 
-**Measured over the whole archive** (31 bundles under `.data/corpus-conflicts/`, CUDA host, no model
-call; `.data/corpus-conflict-stage/20260813T-archive-replay/`):
+**Measured 2026-08-13 over the whole archive** (31 audit bundles on the 12 GiB Blackwell CUDA host,
+no model call; lookup key `corpus-conflict-stage` run `archive-replay`):
 
 | bundles | recomputed | reading |
 | --- | --- | --- |
-| 5 (`20260813T-stage-replay-*`, one per stage) | `effort`, `chunking`, `claim_token_floor`, `duplicate_collapse`, `candidates` | **same stage and same pair as the run recorded, on all five** |
+| 5 (the `stage-replay-*` runs, one per stage) | `effort`, `chunking`, `claim_token_floor`, `duplicate_collapse`, `candidates` | **same stage and same pair as the run recorded, on all five** |
 | 1 (goods, budget 100, 954 chunks) | nothing lost -- the corpus orders no document pair | recomputable and empty, which is the run's own answer |
 | 25 (every bundle written before the record) | none | not recomputable, recorded attribution intact |
 
@@ -710,8 +719,9 @@ joins the audit, the plan, and the review ledger without any consumer re-derivin
 sides nonetheless compute the grouping from `findings.jsonl` ROWS through one function, and the
 audit writes the rows and the sidecar from one list, so a consumer that never reads the sidecar --
 including an audit run from before it existed -- derives identical groups by grouping the file in
-its own order. [Conflict resolution](conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger)
-is the first consumer.
+its own order. [Conflict
+resolution](conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger) is the first
+consumer.
 
 ### Measured on the goods corpus
 
@@ -735,8 +745,8 @@ above, the group count from below. That upper bound is now
 [measured rather than the row count](#how-many-decisions-the-row-count-is): the same 51-row group
 holds 23 distinct pieces of shared evidence, and the bundle's range is 6 to 46, not 6 to 100.
 
-Artifacts: `$DATA_DIR/corpus-conflicts/20260812T-census-goods-budget100/`. This is a different store
-generation from the
+Measured 2026-08-12; lookup key `corpus-conflicts` run `census-goods-budget100`. This is a different
+store generation from the
 [budget-100 precision runs](conflict-detection.md#measured-both-quickstart-corpora)
 (954 chunks at cosine 0.3604 against 1,139 at 0.3648), and it returned 1 actionable row where that
 run returned 8; the candidate list at a fixed budget is a rank cutoff into the store's own
@@ -754,11 +764,11 @@ audit states which one it quotes and why.
 | `transitive` (quoted) | rows joined by the transitive closure over a shared unit | a PARTITION: every row is in exactly one group, so the sizes sum to the row count |
 | `shared_unit` | one unit that more than one row rests on, plus one group per row that shares no unit | a COVER: a row carrying two shared units joins two groups |
 
-`src/llb/conflicts/grouping/granularity.py` computes both (`QUOTED_RULE` names the quoted one, and every
-renderer reads it from there); `report/granularity.py` renders them. Two units that join exactly
-the same rows are ONE group -- a left and a right chunk that only ever appear together are one
-piece of evidence seen from both ends. Every shared-unit group is a subset of one transitive group
-by construction, so the cover REFINES the partition and the per-group split adds up:
+`src/llb/conflicts/grouping/granularity.py` computes both (`QUOTED_RULE` names the quoted one, and
+every renderer reads it from there); `report/granularity.py` renders them. Two units that join
+exactly the same rows are ONE group -- a left and a right chunk that only ever appear together are
+one piece of evidence seen from both ends. Every shared-unit group is a subset of one transitive
+group by construction, so the cover REFINES the partition and the per-group split adds up:
 `quoted_group_split` reports, per quoted group id, how many distinct pieces of shared evidence its
 chain runs through, which is what tells a 6-row fan on one chunk apart from a 51-row chain.
 
@@ -779,10 +789,10 @@ make compare-conflict-granularity GRANULARITY_RUNS="<audit-run-dir> <audit-run-d
 
 ### Measured, four bundles
 
-CUDA host (RTX PRO 3000 Blackwell, 12 GiB). No adjudication and no encoding: the two goods bundles
-are the committed budget-100 artifacts re-read, and the two new bundles are semantic-tier runs over
-stored vectors. Artifacts:
-`$DATA_DIR/corpus-conflict-granularity/20260812T-both-rules-three-corpora/`.
+Measured 2026-08-12 on the RTX PRO 3000 Blackwell 12 GiB CUDA host. No adjudication and no
+encoding: the two goods bundles are the committed budget-100 artifacts re-read, and the two new
+bundles are semantic-tier runs over stored vectors. Lookup key: `corpus-conflict-granularity` run
+`both-rules-three-corpora`.
 
 | bundle | rows | transitive | shared unit | decision range | rows in 2 groups | memberships |
 | --- | --- | --- | --- | --- | --- | --- |

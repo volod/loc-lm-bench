@@ -56,10 +56,18 @@ joint-search successor controls are explicitly resource/structural. `make ci` an
 `scripts/code_quality.sh` run the check-only form, which fails on an unexplained absolute trial,
 sample, or acceptance control.
 
-The 2026-07-28 inventory at
-`$DATA_DIR/acceptance-gate-audit/20260728T135530Z/inventory.json` passed with 27 declarations, 20
-live absolute-control discoveries, and no findings. Validation completed with `make lint-md` and
-`make ci`; the latter passed 2,332 tests with 43 slow or opt-in tests deselected.
+The 2026-07-28 inventory, run on the RTX PRO 3000 Blackwell 12 GiB CUDA host, PASSED: 27
+declarations against 20 live absolute-control discoveries, zero findings. The 27 declarations split
+17 `resource_cap`, 6 `inferential_gate`, and 4 `safety_cap`, and the retired
+`ua-model-roster-long-run` control is recorded `absent` with `JOINT_SEARCH_TRIALS` /
+`JOINT_SEARCH_MIN_FINALISTS` named as its successors and classified resource/structural rather than
+inferential. Reading: every absolute number the pipeline reaches for is accounted for, and only 6 of
+the 27 are gates that decide whether evidence is believed -- the rest bound cost or protect a
+structure, so a reviewer arguing about a threshold has 6 places to look, not 27. What would overturn
+it: a new absolute trial, sample, or acceptance constant landing in `make/config.mk` or a planner
+without a declaration -- which is exactly what the check-only form run by `make ci` and
+`scripts/code_quality.sh` fails on. Validation completed with `make lint-md` and `make ci`; the
+latter passed 2,332 tests with 43 slow or opt-in tests deselected.
 
 The rationale is anti-anchoring and auditability: automated cross-check context can be shown to a
 reviewer, but it is hidden by default; the accepted ledger is a new reviewed artifact rather than an

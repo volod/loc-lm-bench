@@ -278,11 +278,14 @@ deterministic Monte Carlo tail with the plus-one correction. Each `PairedCompari
   at or below the nominal 2.5%.
 - `make audit-paired-readings` reconstitutes vector-backed embedder bake-off, adoption-bar, and
   context-ablation artifacts without model calls, lists every comparison reading that changes,
-  and restates every artifact verdict. The CUDA-host re-read is under
-  `$DATA_DIR/paired-reading-audit/20260728T-randomization-calibrated/`: the two vector-backed
-  artifacts available on this host supplied 19 paired blocks; the recorded bake-off stayed
-  `retain`, the context ablation stayed `long_context_wins`, and no per-row reading changed. The
-  host inventory contained no adoption-bar comparison bundle to re-read. The audit's fixture test
+  and restates every artifact verdict. The 2026-07-28 re-read on the RTX PRO 3000 Blackwell 12 GiB
+  CUDA host found 2 vector-backed artifacts supplying 19 paired blocks and recorded ZERO reading
+  changes: the embedder bake-off stayed `retain`, the context ablation stayed
+  `long_context_wins`. Reading: moving those two artifacts onto the calibrated randomization p
+  shifted no verdict and no per-row reading, so the calibration tightens the inference rather than
+  re-litigating the recorded results. Boundary: 2 artifacts is a narrow base -- the host inventory
+  held no adoption-bar comparison bundle, which is the shape most likely to move, and the fixture
+  test below is what covers it instead. The audit's fixture test
   covers the previously vulnerable bake-off `adopt` shape and confirms it is restated `retain`
   when its calibrated p is 0.0352.
 

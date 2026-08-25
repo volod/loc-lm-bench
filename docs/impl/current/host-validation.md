@@ -78,16 +78,26 @@ Acceptance results:
 - The 250-item published gold set passed validation. A CPU-pinned e5-base rebuild wrote 311 chunks,
   and `make validate-retrieval RAG_K=10` scored the 82-item final split at recall@10 0.976 and MRR
   0.838.
-- The generated Gemma 4 12B vLLM config ran one item with embeddings on CPU. The contention guard
-  accepted 0.90 utilization with 11,696 MiB free; native sampling, Triton attention, Marlin W4A16,
-  16 GiB CPU weight offload, and 32 GiB KV offload served a 16,384-token context at 3.32 tok/s and
+- The generated Gemma 4 12B vLLM config (`google/gemma-4-12B-it-qat-w4a16-ct`, seed 13, k=5) ran
+  ONE item with embeddings on CPU -- a serving smoke, not a quality reading. The contention guard
+  accepted 0.90 utilization with 11,696 MiB free of 12,227 MiB (weight floor 7,817 MiB, not
+  derated); native sampling, Triton attention, Marlin W4A16, 16 GiB CPU weight offload, and 32 GiB
+  KV offload served the full requested 16,384-token context at 3.32 tok/s steady, 51.99 W mean, and
   11,511 MiB peak VRAM. The load took 246.07 seconds, chiefly CUDA-graph capture. FlashInfer 0.6.12
-  could not supply its sampler on SM 12.0 and the recorded native-sampler fallback worked. Artifact:
-  `$DATA_DIR/run-eval/20260728T065519.474285Z-2f08bcd131d7/`.
-- The 20-item Ollama path used the Ukrainian MamayLM Gemma 3 12B Q4_K_M model with CUDA embeddings.
-  It scored objective 0.406, reliability 1.0, retrieval recall@5 0.900 / MRR 0.787, 39.16 tok/s,
-  and 9,932 MiB peak VRAM. Artifact:
-  `$DATA_DIR/run-eval/20260728T075902.053333Z-7e94edc3fe16/`.
+  could not supply its sampler on SM 12.0 and the recorded native-sampler fallback worked. The one
+  item scored objective 0.200 with recall@5 1.0 and reliability 1.0; retrieve took 11.75 s against
+  1.44 s of generation. Reading: the 12 GiB tier SERVES a 12B W4A16 model at its declared window
+  with headroom to spare, and 3.32 tok/s is the price of the CPU/KV offload it needs to do so. n=1
+  supports the serving claim and nothing about quality. Lookup key: run
+  `serving-12gb-gemma-4-12b-vllm`, run id `2f08bcd131d7`.
+- The 20-item Ollama path used the Ukrainian MamayLM Gemma 3 12B Q4_K_M model
+  (`hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M`, seed 13, k=5) with CUDA
+  embeddings on the 20-item final split. It scored objective 0.406, reliability 1.0, retrieval
+  recall@5 0.900 / MRR 0.787, 39.16 tok/s steady at 79.42 W mean (0.493 tokens/W), and 9,932 MiB
+  peak VRAM, with retrieve 0.53 s against generate 1.44 s per item. Reading: the Ollama lane is the
+  usable everyday path on this tier -- ~12x the vLLM lane's throughput at 2 GiB less peak VRAM,
+  because a Q4_K_M GGUF fits without the offload the W4A16 config needed. Objective 0.406 on n=20 is
+  a smoke figure, not a leaderboard one. Lookup key: run `rag-eval`, run id `7e94edc3fe16`.
 - llama.cpp was not an available backend on this host (`llama-server` was absent), so no llama.cpp
   cell was claimed.
 - The repository gate selects only current implementation coverage: obsolete unpublished-artifact
@@ -106,9 +116,9 @@ fixture at the 80 W power limit. Warm CUDA rates are ~638 chunks/s for e5-small,
 ~62 for e5-large and BGE-M3, and ~334 for the paraphrase model; cold load (~5.7 s) dominated the
 earlier one-pass rates, but the e5-base vs large spread survives warm measurement. Prefer warm
 chunks/s for host cost columns. e5-small is the named cheap CUDA alternative (~3.05x base, lower
-peak VRAM) when quality is flat; the paired verdict still RETAINs e5-base on n=82. Artifacts:
-`$DATA_DIR/encoder-throughput/20260729T131520.054732Z-1d36908e745c/` (full roster) and
-`$DATA_DIR/encoder-throughput/20260729T133400.407347Z-c79df0776706/` (VRAM after release fix).
+peak VRAM) when quality is flat; the paired verdict still RETAINs e5-base on n=82. Lookup keys: run
+id `1d36908e745c` (full roster) and `c79df0776706` (VRAM after the release fix); the per-encoder
+numbers those two carry are tabulated on the RAG-core page linked below rather than repeated here.
 See [RAG core](rag-core/embedders.md#blackwell-sub-base-encoder-roster-e5-small).
 
 ## Category Smoke Path
@@ -248,18 +258,17 @@ an installer entrypoint executes everything that entrypoint does, including prob
 sits in front of.
 
 **So the tier's no-GPU promise is a check now, not a convention.** `tests/conftest.py` wraps every
-test in an autouse guard (`llb.quality.gpu_guard.guard`) that watches this process and denies the device
-to the children of an unmarked test. The watch snapshots two effects before the test and reads them
-again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules` (its first
-sampling call is the JIT build). An unmarked test that flips either one fails at
+test in an autouse guard (`llb.quality.gpu_guard.guard`) that watches this process and denies the
+device to the children of an unmarked test. The watch snapshots two effects before the test and
+reads them again after: `torch.cuda.is_initialized()`, and whether `flashinfer` is in `sys.modules`
+(its first sampling call is the JIT build). An unmarked test that flips either one fails at
 teardown, naming the test, what it did, and the ways out. Both reads come out of `sys.modules` and
 neither imports anything, so the guard no-ops where torch is absent -- GitHub CI installs no torch
 and must not start -- and costs two dict lookups per test: the whole non-slow suite runs in 101-102s
 with it and 105s under `LLB_GPU_GUARD=off`, which is run-to-run noise on this box. Importing torch
-is deliberately not a
-finding: `import torch`, `torch.cuda.is_available()`, and a test's own fake `torch` module all leave
-`is_initialized()` False, which is what keeps the many tests that pull torch in without touching the
-device green.
+is deliberately not a finding: `import torch`, `torch.cuda.is_available()`, and a test's own fake
+`torch` module all leave `is_initialized()` False, which is what keeps the many tests that pull
+torch in without touching the device green.
 
 **It refuses rather than reports, decided on the evidence.** All tests of the non-slow suite
 are clean under it on this CUDA host, so a finding is a new violation on the commit that adds it
@@ -297,11 +306,12 @@ for one that starts the child with an empty `CUDA_VISIBLE_DEVICES` -- whatever e
 caller passed. `subprocess.Popen` is the seam that `run` / `call` / `check_output` all reach for at
 call time. That closes the shape that motivated the guard: `test_build_helper.py` drives
 `scripts/build_vllm.sh` through `subprocess.run`, so its flashinfer probe lives in a python no
-in-process fixture can inspect. Remove the seeded verdict as an experiment and the prebuilt-installer
-test costs 5.99s under `LLB_GPU_GUARD=off` -- the child JIT-builds the sampler kernel on the real
-GPU -- against 0.81s with the denial, where the child finds no device and the probe returns `native`
-in milliseconds. It passes either way. The seeded verdict stays regardless: it is what keeps the
-cost off a run with the guard disabled, and it states the intent at the call site.
+in-process fixture can inspect. Remove the seeded verdict as an experiment and the
+prebuilt-installer test costs 5.99s under `LLB_GPU_GUARD=off` -- the child JIT-builds the sampler
+kernel on the real GPU -- against 0.81s with the denial, where the child finds no device and the
+probe returns `native` in milliseconds. It passes either way. The seeded verdict stays regardless:
+it is what keeps the cost off a run with the guard disabled, and it states the intent at the call
+site.
 
 **Child-only is the mechanism, not a shortcut.** Setting `CUDA_VISIBLE_DEVICES` in the pytest
 process would poison the session: `torch.cuda.is_available()` caches, and on torch 2.11 it keeps
@@ -338,12 +348,12 @@ whole `spawnv*` / `spawnl*` family through `_spawnvef`. `multiprocessing(fork)` 
 **Forkserver state is kept per-test too.** A forkserver inherits its environment once, then forks
 all later children from that long-lived process. Rewriting only its launch would therefore miss an
 unmarked test when a visible-device server already existed, and would leak a denied server into a
-later `gpu_env` test. `gpu_guard_spawn_multiprocessing.stop_forkserver` uses CPython's test lifecycle
-hook before and after each `denied_children()` context: the denied test gets a fresh denied server,
-and the next exempt test gets a fresh visible-device server. The real-child matrix in
+later `gpu_env` test. `gpu_guard_spawn_multiprocessing.stop_forkserver` uses CPython's test
+lifecycle hook before and after each `denied_children()` context: the denied test gets a fresh
+denied server, and the next exempt test gets a fresh visible-device server. The real-child matrix in
 `tests/llb/quality/test_gpu_guard_spawn_children.py` exercises all three start methods with and
-without the seams. Both `spawn` and `forkserver` exit successfully and write their environment;
-that successful bootstrap is the end-to-end evidence that the passed data and resource-tracker
+without the seams. Both `spawn` and `forkserver` exit successfully and write their environment; that
+successful bootstrap is the end-to-end evidence that the passed data and resource-tracker
 descriptors survived. `make test` is the standard repository verification; the complete quality
 package passes with these cases included.
 
@@ -374,10 +384,10 @@ caching reason above.
 so the first unmarked test to open one is named and a later one that would have runs unobserved. The
 denial still misses five paths, all stated in the `gpu_guard_spawn` docstring: explicit `spawn` /
 `forkserver` on a Python without `POSIX_SPAWN_CLOSEFROM`; a caller reaching the private
-`_posixsubprocess.fork_exec` directly instead of the patched public helper; a native
-extension that calls `fork(2)` / `execve(2)` / `system(3)` in C without coming back through `os`; a
-child that sets `CUDA_VISIBLE_DEVICES` back itself, since the denial is a default and not a sandbox;
-and the `os.system` mechanism being POSIX-shell-specific. As before, it hides the device from the CUDA
+`_posixsubprocess.fork_exec` directly instead of the patched public helper; a native extension that
+calls `fork(2)` / `execve(2)` / `system(3)` in C without coming back through `os`; a child that sets
+`CUDA_VISIBLE_DEVICES` back itself, since the denial is a default and not a sandbox; and the
+`os.system` mechanism being POSIX-shell-specific. As before, it hides the device from the CUDA
 runtime, not from NVML: `nvidia-smi` still lists the GPU under an empty `CUDA_VISIBLE_DEVICES`, so a
 child that only ASKS whether hardware exists still gets yes -- it just cannot open a context.
 
@@ -386,21 +396,20 @@ written on.** Both halves above are CPython-specific -- the `os` seams cover the
 because `os.py` builds them in Python, and the multiprocessing coverage depends on the public POSIX
 helper above its private C call -- and a Python upgrade can move either without failing anything,
 since a name the seam set never heard of is indistinguishable from one it deliberately excluded.
-`llb.quality.gpu_guard.surface` closes that by ENUMERATING the process-starting names the
-running interpreter exposes (a rule, not a list: every `os` name in the exec / fork / spawn /
-posix_spawn families plus `system` / `popen` / `startfile`, and every public non-exception callable
-of `subprocess`, plus `multiprocessing.util.spawnv_passfds` -- 31 names on Python 3.13) and declaring
-each one in one of four states: a seam
-`spawn_seams()` patches, a delegation to another declared name, a residual with its reason, or not an
-entry point at all (`subprocess.CompletedProcess`). A delegation is CHECKED rather than believed:
-`delegation_is_live` reads the callable's code object and asks whether the target is still a name it
-resolves at call time, so `os.spawnv` rewritten in C -- or pointed somewhere else -- stops being
-covered loudly. `llb.quality.gpu_guard.surface_audit` refuses six shapes: an undeclared name, a
-delegation the interpreter no longer makes, a delegation chain that ends outside the seam set, a name
-declared a seam that `spawn_seams()` does not patch, a patched seam no declaration names, and -- the
-`multiprocessing` half -- a start method the interpreter offers that is undeclared, or a DEFAULT
-start method that is a platform residual because the POSIX helper is unavailable. A declaration
-naming nothing on this host (`os.startfile`,
+`llb.quality.gpu_guard.surface` closes that by ENUMERATING the process-starting names the running
+interpreter exposes (a rule, not a list: every `os` name in the exec / fork / spawn / posix_spawn
+families plus `system` / `popen` / `startfile`, and every public non-exception callable of
+`subprocess`, plus `multiprocessing.util.spawnv_passfds` -- 31 names on Python 3.13) and declaring
+each one in one of four states: a seam `spawn_seams()` patches, a delegation to another declared
+name, a residual with its reason, or not an entry point at all (`subprocess.CompletedProcess`). A
+delegation is CHECKED rather than believed: `delegation_is_live` reads the callable's code object
+and asks whether the target is still a name it resolves at call time, so `os.spawnv` rewritten in C
+-- or pointed somewhere else -- stops being covered loudly. `llb.quality.gpu_guard.surface_audit`
+refuses six shapes: an undeclared name, a delegation the interpreter no longer makes, a delegation
+chain that ends outside the seam set, a name declared a seam that `spawn_seams()` does not patch, a
+patched seam no declaration names, and -- the `multiprocessing` half -- a start method the
+interpreter offers that is undeclared, or a DEFAULT start method that is a platform residual because
+the POSIX helper is unavailable. A declaration naming nothing on this host (`os.startfile`,
 `subprocess.STARTUPINFO`) is reported by `absent_declarations`, never refused: that is a host
 difference, the same reason the seam builder tolerates a missing attribute. The default start method
 is read WITHOUT resolving the parent: `get_start_method(allow_none=True)` supplies an already-set
@@ -415,31 +424,30 @@ now.** Everything else in the stdlib that starts a child was covered only becaus
 calls resolves an `os` / `subprocess` name or the exact `multiprocessing` helper -- a sentence, not
 a check. `llb.quality.gpu_guard.reach.scan` reads the stdlib instead: every `*.py` under the stdlib
 root is parsed and its process-starting CALL SITES are resolved through that module's own imports
-(`os.fork`, `from subprocess import Popen`,
-`import os as operating`), against an alphabet taken from the declared surface plus the C modules
-under it -- `posix` / `nt`, which `os` re-exports, and `_posixsubprocess` / `_winapi`, which
-`subprocess` and `multiprocessing` call below any patchable name. On CPython 3.13 that finds **25
-stdlib modules that start a child, 23 of which resolve a declared name** (`pty.py` ->
-`os.fork` / `os.forkpty` / `os.execlp`, `asyncio/unix_events.py`, `socketserver.py`,
-`http/server.py`, `webbrowser.py`, `uuid.py`, `venv/__init__.py`, `platform.py`, `ctypes/util.py`,
-`ensurepip`, `imaplib.py`, the idlelib trio, and the rest). The three that do not are the ones
-already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` itself, whose
-`_posixsubprocess` / `_winapi` starts are reached only from inside the patched `Popen`, and
+(`os.fork`, `from subprocess import Popen`, `import os as operating`), against an alphabet taken
+from the declared surface plus the C modules under it -- `posix` / `nt`, which `os` re-exports, and
+`_posixsubprocess` / `_winapi`, which `subprocess` and `multiprocessing` call below any patchable
+name. On CPython 3.13 that finds **25 stdlib modules that start a child, 23 of which resolve a
+declared name** (`pty.py` -> `os.fork` / `os.forkpty` / `os.execlp`, `asyncio/unix_events.py`,
+`socketserver.py`, `http/server.py`, `webbrowser.py`, `uuid.py`, `venv/__init__.py`, `platform.py`,
+`ctypes/util.py`, `ensurepip`, `imaplib.py`, the idlelib trio, and the rest). The three that do not
+are the ones already on the record and are declared as `DECLARED_REACHERS`: `subprocess.py` itself,
+whose `_posixsubprocess` / `_winapi` starts are reached only from inside the patched `Popen`, and
 `multiprocessing/util.py`, whose low-level start is behind the new public helper seam, and
 `multiprocessing/popen_spawn_win32.py`, which remains the Windows residual.
-`llb.quality.gpu_guard.reach.audit` refuses a
-module reaching an undeclared name, an excuse whose seam is no longer patched, and -- the failure
-mode a source scan invites -- a scan that read NO source, which says where the tree is rather than
-what is in it (`SpawnScan.files_read` is what tells "read and quiet" apart from "never read"; the
-unmeasured middle between those is `audit_read_coverage`, below). CPython's own regression suite
-(`test/`, `*/tests/`, `idlelib/idle_test`) is excluded by a stated rule: a corpus that starts
-children on purpose, costing 4s and one extra declaration to include. The
-stdlib scan is ~0.9s on this host (631 files read, 372 parsed), run once per session by a
-module-scoped fixture in `tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it over
-fabricated trees for the cases the host cannot produce (an aliased import, a local helper that merely
-shares a name with a spawn entry point, a file that will not parse, a module reaching past every
-patchable name). The per-file half -- resolving a source buffer's call sites through its own imports
--- is `llb.quality.gpu_guard.spawn_source`, shared by both scans.
+`llb.quality.gpu_guard.reach.audit` refuses a module reaching an undeclared name, an excuse whose
+seam is no longer patched, and -- the failure mode a source scan invites -- a scan that read NO
+source, which says where the tree is rather than what is in it (`SpawnScan.files_read` is what tells
+"read and quiet" apart from "never read"; the unmeasured middle between those is
+`audit_read_coverage`, below). CPython's own regression suite (`test/`, `*/tests/`,
+`idlelib/idle_test`) is excluded by a stated rule: a corpus that starts children on purpose, costing
+4s and one extra declaration to include. The stdlib scan is ~0.9s on this host (631 files read, 372
+parsed), run once per session by a module-scoped fixture in
+`tests/llb/quality/test_gpu_guard_spawn_reach.py`, which also drives it over fabricated trees for
+the cases the host cannot produce (an aliased import, a local helper that merely shares a name with
+a spawn entry point, a file that will not parse, a module reaching past every patchable name). The
+per-file half -- resolving a source buffer's call sites through its own imports -- is
+`llb.quality.gpu_guard.spawn_source`, shared by both scans.
 
 **The scan says what it FAILED to read, so the result is about the stdlib rather than about
 whichever files this host shipped.** A file count says how much was read, not what was missed: a
@@ -536,25 +544,24 @@ source, and it is read rather than refused -- below.
 **The installed packages are read the same way, for the one question that can differ there.** This
 repo runs on dependencies that start children constantly (torch dataloader workers, vLLM engine
 processes, uv, the build scripts), and each was covered only by that same unstated assumption.
-`llb.quality.gpu_guard.reach.installed.installed_spawn_reaches` reads the venv's site-packages
-with a narrower alphabet --
-`below_the_seams()`: `posix`, `_posixsubprocess`, `_winapi` -- because a dependency calling
-`subprocess.Popen` says nothing the declaration does not already say, while scanning for the covered
-names too means parsing 7420 files instead of 301 (measured). A one-off full-alphabet pass over this
-host's 40119 site-packages files found **362 packages that start a child and exactly 5 files that go
-below the seams**, in two packages: `joblib`'s vendored `loky` (3 files -- `backend/fork_exec.py` ->
-`_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in `backend/popen_loky_win32.py` and
-`backend/resource_tracker.py`) and `multiprocess` (2 files -- a `dill`-based fork of
-`multiprocessing`, carrying a private copy of the low-level bypass in `util.py` and the Windows
-residual in `popen_spawn_win32.py`). Neither private implementation reaches the stdlib helper seam,
-so both remain declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than by
-file, since a release moves its modules and the decision an operator makes is about the dependency. A
-THIRD package arriving is what `gpu_guard_spawn_reach_installed_audit.audit_installed_reach`
-refuses; an excuse is looked up as the exact
-path first and then the top-level package, so the stdlib and package tables read through one lookup.
-`nt` is deliberately absent from the installed alphabet: it is the Windows twin of names `os`
-re-exports, and its two-letter module name matches too much text to prefilter on, so including it
-would cost a full-tree parse on every host for a platform whose denial mechanism is already a
+`llb.quality.gpu_guard.reach.installed.installed_spawn_reaches` reads the venv's site-packages with
+a narrower alphabet -- `below_the_seams()`: `posix`, `_posixsubprocess`, `_winapi` -- because a
+dependency calling `subprocess.Popen` says nothing the declaration does not already say, while
+scanning for the covered names too means parsing 7420 files instead of 301 (measured). A one-off
+full-alphabet pass over this host's 40119 site-packages files found **362 packages that start a
+child and exactly 5 files that go below the seams**, in two packages: `joblib`'s vendored `loky` (3
+files -- `backend/fork_exec.py` -> `_posixsubprocess.fork_exec`, plus `_winapi.CreateProcess` in
+`backend/popen_loky_win32.py` and `backend/resource_tracker.py`) and `multiprocess` (2 files -- a
+`dill`-based fork of `multiprocessing`, carrying a private copy of the low-level bypass in `util.py`
+and the Windows residual in `popen_spawn_win32.py`). Neither private implementation reaches the
+stdlib helper seam, so both remain declared in `DECLARED_PACKAGE_REACHERS` -- by PACKAGE rather than
+by file, since a release moves its modules and the decision an operator makes is about the
+dependency. A THIRD package arriving is what
+`gpu_guard_spawn_reach_installed_audit.audit_installed_reach` refuses; an excuse is looked up as the
+exact path first and then the top-level package, so the stdlib and package tables read through one
+lookup. `nt` is deliberately absent from the installed alphabet: it is the Windows twin of names
+`os` re-exports, and its two-letter module name matches too much text to prefilter on, so including
+it would cost a full-tree parse on every host for a platform whose denial mechanism is already a
 residual.
 
 **A package excuse carries the reach it was MEASURED against, so a widened vendored backend arrives
@@ -562,17 +569,16 @@ as a line to re-read.** Package granularity is the right unit for surviving a re
 wrong unit for a residual: it excuses every module in the package, so a future `joblib` that starts
 children a second way, from a file the reason never saw, would be covered by a line written about
 `loky`. Narrowing it back to per-file declarations would reintroduce the churn the package unit
-exists to avoid, so each declaration is a `PackageReacher` instead -- the `SpawnCoverage` reason plus
-the primitives and the file count it was written on (`joblib`: 3 files,
-`multiprocess`: 2, both through `_posixsubprocess.fork_exec` + `_winapi.CreateProcess`). A
-declaration cannot be added without that record: `PackageReacher.__post_init__` refuses an empty
-primitive list or a zero file count. `gpu_guard_spawn_reach_installed_audit.outgrown_reachers` then
-reports a
-declared package that reaches a primitive its excuse was not measured on, or starts children from
-more files than it was (naming those files), and `audit_installed_reach` includes those findings, so
-the widening turns the suite red on the release that introduces it rather than passing under the old
-reason. Growth only: a package reaching the same way from FEWER files -- a dropped backend, a slimmer
-build -- is not a decision to revisit, and an excuse that matches nothing at all is already what
+exists to avoid, so each declaration is a `PackageReacher` instead -- the `SpawnCoverage` reason
+plus the primitives and the file count it was written on (`joblib`: 3 files, `multiprocess`: 2, both
+through `_posixsubprocess.fork_exec` + `_winapi.CreateProcess`). A declaration cannot be added
+without that record: `PackageReacher.__post_init__` refuses an empty primitive list or a zero file
+count. `gpu_guard_spawn_reach_installed_audit.outgrown_reachers` then reports a declared package
+that reaches a primitive its excuse was not measured on, or starts children from more files than it
+was (naming those files), and `audit_installed_reach` includes those findings, so the widening turns
+the suite red on the release that introduces it rather than passing under the old reason. Growth
+only: a package reaching the same way from FEWER files -- a dropped backend, a slimmer build -- is
+not a decision to revisit, and an excuse that matches nothing at all is already what
 `absent_reachers` reports. What this does NOT do is close either vendored residual or check the
 declarations of third-party packages per file; both remain what they were. Residual: the record is a
 COUNT and a primitive set, not the file identities, so a release that renames one backend while
@@ -585,52 +591,52 @@ with no package directory to walk -- a zipped egg, a `--zip-ok` install, any `sy
 is an archive rather than a directory -- was parsed by nothing and reported by nothing, so
 `audit_installed_reach` returned clean for a venv half of which it never opened. That is worse here
 than one tree over, because site-packages is where the packages that start children constantly live.
-`llb.quality.gpu_guard.reach.installed_archive` reads the archives on the import path --
-`sys.path` entries that open as a zip, plus `*.egg` / `*.zip` under the scan root, minus the stdlib's
-own `pythonXY.zip`, which the stdlib half already accounts for and which reporting here would be the
+`llb.quality.gpu_guard.reach.installed_archive` reads the archives on the import path -- `sys.path`
+entries that open as a zip, plus `*.egg` / `*.zip` under the scan root, minus the stdlib's own
+`pythonXY.zip`, which the stdlib half already accounts for and which reporting here would be the
 same finding twice. And the read-or-refuse call the stdlib half deferred is taken the OTHER way,
-because the evidence differs: a zip-shipped stdlib is `.pyc`-only (what the embeddable builds carry),
-while a zip-shipped dependency carries `.py` -- `bdist_egg` zips the source tree -- which the tests
-establish rather than assume by fabricating an egg-shaped archive, importing it through `zipimport`
-on this interpreter, and reading its source back out with `zipfile`. So a `.py` entry is parsed out
-of the archive (the same bytes through the same parser and the same import resolution as a file on
-disk) and counted as read, with `ModuleReach.container` naming the zip it came from; the reach it finds
-is weighed against the same `DECLARED_PACKAGE_REACHERS` excuse a file on disk would be, since the
-top-level package of `pkg/backend/start.py` is the same `pkg` either way. Both halves fold into ONE
-`SpawnScan` (`with_archives`) so `files_read` adds up over the whole import path -- a venv that ships
-only zipped is then a scan that read source, not a tree refused as `unscanned` while its source sat
-in a zip nobody opened. What is left over is refused by
-`gpu_guard_spawn_reach_installed_audit.unread_archived_packages` as the same `unread-module` problem:
-a module an archive ships compiled with no source anywhere -- not in that archive, not in another one
-on the same path, not as a copy in the directory tree. Per PACKAGE, because that is the unit the
-excuses are written at and an operator acts on, so a `.pyc`-only egg is one line naming the modules
-it hid rather than one line per module; and a package the declarations already name is not refused at
-all, because the declaration IS the decision that it starts children and that this is accepted. **On
-this host: 0 archives on the import path, 0 unread archived** -- every dependency here installs as a
-directory tree -- and the discovery costs 0.0013s. Residual: an archive is only as readable as its
-entries, so a `.pyc`-only dependency is still a refusal rather than a measurement, which is the same
-statement the stdlib half makes and for the same reason.
+because the evidence differs: a zip-shipped stdlib is `.pyc`-only (what the embeddable builds
+carry), while a zip-shipped dependency carries `.py` -- `bdist_egg` zips the source tree -- which
+the tests establish rather than assume by fabricating an egg-shaped archive, importing it through
+`zipimport` on this interpreter, and reading its source back out with `zipfile`. So a `.py` entry is
+parsed out of the archive (the same bytes through the same parser and the same import resolution as
+a file on disk) and counted as read, with `ModuleReach.container` naming the zip it came from; the
+reach it finds is weighed against the same `DECLARED_PACKAGE_REACHERS` excuse a file on disk would
+be, since the top-level package of `pkg/backend/start.py` is the same `pkg` either way. Both halves
+fold into ONE `SpawnScan` (`with_archives`) so `files_read` adds up over the whole import path -- a
+venv that ships only zipped is then a scan that read source, not a tree refused as `unscanned` while
+its source sat in a zip nobody opened. What is left over is refused by
+`gpu_guard_spawn_reach_installed_audit.unread_archived_packages` as the same `unread-module`
+problem: a module an archive ships compiled with no source anywhere -- not in that archive, not in
+another one on the same path, not as a copy in the directory tree. Per PACKAGE, because that is the
+unit the excuses are written at and an operator acts on, so a `.pyc`-only egg is one line naming the
+modules it hid rather than one line per module; and a package the declarations already name is not
+refused at all, because the declaration IS the decision that it starts children and that this is
+accepted. **On this host: 0 archives on the import path, 0 unread archived** -- every dependency
+here installs as a directory tree -- and the discovery costs 0.0013s. Residual: an archive is only
+as readable as its entries, so a `.pyc`-only dependency is still a refusal rather than a
+measurement, which is the same statement the stdlib half makes and for the same reason.
 
-**The tree this repo itself ships is read too, because a `.pth` file is the third kind of import-path
-entry.** An archive is not the only thing on the path that is not the scanned directory: a `.pth`
-file adds other DIRECTORIES to it, and that is not an exotic layout -- it is how this repo is
-installed. `__editable__.llb-0.1.0.pth` holds one line, `<repo>/src`, so `llb`'s own modules were
+**The tree this repo itself ships is read too, because a `.pth` file is the third kind of
+import-path entry.** An archive is not the only thing on the path that is not the scanned directory:
+a `.pth` file adds other DIRECTORIES to it, and that is not an exotic layout -- it is how this repo
+is installed. `__editable__.llb-0.1.0.pth` holds one line, `<repo>/src`, so `llb`'s own modules were
 parsed by neither scan while every dependency around them was held to the question, and the code an
 unmarked test runs the most was the one tree nobody asked it of.
-`llb.quality.gpu_guard.reach.installed_sites` reads those files with `site.addpackage`'s own
-rule -- a line starting with the word `import` plus a space or a tab is CODE the interpreter runs, a
-comment or a blank line is nothing, anything else is a path resolved against the file's directory --
-and `installed_spawn_reaches` folds the resulting trees into the same `SpawnScan` (`SpawnScan.sites`
+`llb.quality.gpu_guard.reach.installed_sites` reads those files with `site.addpackage`'s own rule --
+a line starting with the word `import` plus a space or a tab is CODE the interpreter runs, a comment
+or a blank line is nothing, anything else is a path resolved against the file's directory -- and
+`installed_spawn_reaches` folds the resulting trees into the same `SpawnScan` (`SpawnScan.sites`
 records which), so `files_read` and `modules_read` now add up over the whole import path. The `.pth`
 files are read rather than `sys.path`, deliberately: `sys.path` would answer too, and would answer
 wrong under pytest, which puts the repo root and the test directories on it, so a scan of those
 walks the venv it is trying to describe. One entry is left alone for a stated reason: a path INSIDE
 the scan root, which the directory pass already walked (`nvidia-cutlass-dsl` ships one, making
 `cutlass` importable out of a subdirectory of site-packages -- reading it again would count those
-files twice and report one file under two package names, `cutlass` here and the
-`nvidia_cutlass_dsl` its distribution publishes there, which is the name an excuse would be written
-at). A reach found in an added tree carries it as `ModuleReach.container`, so the finding names the
-file an operator has to open rather than a path that reads like site-packages and is not.
+files twice and report one file under two package names, `cutlass` here and the `nvidia_cutlass_dsl`
+its distribution publishes there, which is the name an excuse would be written at). A reach found in
+an added tree carries it as `ModuleReach.container`, so the finding names the file an operator has
+to open rather than a path that reads like site-packages and is not.
 
 **Executable `.pth` lines are now resolved or refused, never silently skipped.** Setuptools' common
 flat-layout form writes `import __editable___pkg_finder; __editable___pkg_finder.install()` and

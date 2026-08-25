@@ -162,8 +162,10 @@ Two caveats the numbers carry:
 The widened-space acceptance run (2026-07-10, finetune-hparams-effective-batch-axis): a 6-trial
 search for `google/gemma-3-1b-it` over the `ua_squad_postedited_v1` tuning split (82 items ->
 62 train / 20 dev, `seed=13`; full-split base tuning objective `0.3050`), study
-`.data/finetune-hparams/google-gemma-3-1b-it/20260710T121020*/hparams_manifest.json`, ~2 min per
-trial end to end (QLoRA fine-tune + vLLM LoRA dev eval):
+`finetune-hparams-effective-batch-axis` over `google/gemma-3-1b-it`, ~2 min per trial end to end
+(QLoRA fine-tune + vLLM LoRA dev eval). The study bundle itself is NOT retained on either GPU host,
+so the table below is the record: every trial's dev objective, geometry, and hyper-parameters are
+inlined here rather than recoverable from an artifact.
 
 | trial | dev objective | geometry | eff. batch | max_length | rank | lr | preset |
 | --- | ---: | --- | ---: | ---: | ---: | --- | --- |

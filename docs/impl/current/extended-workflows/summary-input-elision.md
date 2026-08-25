@@ -64,8 +64,13 @@ elision, and fold counts exactly, avoid overflow, and pass the fitting-control c
 CUDA evidence (2026-08-11, RTX PRO 3000 Blackwell Laptop GPU, 12 GiB): `qwen3:14b`, four tasks,
 23.22 tok/s. Both arms completed 4/4; all four exact pairs were unchanged. The 2134-char elision was
 free on this typed-memory shape because the required early fact has a machine-preserved marker and
-the removed middle contains padding and workflow checkpoints. The accepted aggregate is
-`$DATA_DIR/agentic-compact-window-elision/20260811T102009.512985Z-38ad58e7a0dd/manifest.json`.
+the removed middle contains padding and workflow checkpoints. Reading: eliding 2,134 of 15,402
+folded chars (13.9%) cost NOTHING measurable here -- but only because the typed marker survives
+elision by construction, so this is evidence about the memory TYPE, not about elision in general.
+The positional control the shape cannot give is the transfer run below. Boundary: four tasks and
+4/4 completion in both arms is a ceiling, so the run can show no loss and could not have shown a
+small one. Lookup key: run `agent-context-policy-summary-elision-under-window-bound`, run id
+`38ad58e7a0dd`.
 
 ```bash
 make bench-agentic-context-compact-window-elision
@@ -93,8 +98,8 @@ and refuses boundary overlap, task-byte drift, trigger drift, or a nonidentical 
 The first control pilot exposed an attention confound rather than elision: Qwen and Gemma4 each
 completed 4/6 with both failures at stage 0, while Mamay-Gemma 12B completed 0/6. Moving the head
 control to stage 4 kept it strictly inside the retained head but removed the absolute-first-line
-confound. The rejected pilot remains at
-`$DATA_DIR/agentic-compact-window-elision-transfer/20260811T110615.252883Z-b878af73e434/manifest.json`.
+confound. That rejected pilot is retained as evidence of the refusal, not of elision (lookup key:
+run `agent-context-policy-middle-critical-window-elision-transfer`, run id `b878af73e434`).
 
 CUDA evidence (2026-08-11, same 12 GiB host): `qwen3:14b` at 22.24 tok/s and `gemma4:e4b` at
 41.71 tok/s. Both qualified by completing every fitting-control task and reproduced the exact
@@ -120,9 +125,11 @@ families without changing any head/tail outcome. Both strategies send exactly 13
 prompt chars per case, so the recovery is entry placement rather than extra context. The prototype
 does not change the shipped `head_tail` default.
 
-The accepted aggregate is
-`$DATA_DIR/agentic-compact-window-elision-transfer/20260811T112518.130381Z-069978ce07e2/manifest.json`;
-its aggregate measured throughput is 31.72 tok/s.
+What would overturn the verdict: a family that keeps middle completion under `head_tail`, or a
+middle stratum whose answer span survives the cut by accident -- validation refuses boundary
+overlap precisely so the second cannot happen silently. The accepted aggregate measured 31.72 tok/s
+across both families. Lookup key: run
+`agent-context-policy-middle-critical-window-elision-transfer`, run id `069978ce07e2`.
 
 ```bash
 make bench-agentic-context-compact-window-elision-transfer

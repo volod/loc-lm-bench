@@ -199,9 +199,9 @@ The outcome is grouped by the fold count each REAL episode measured, not the ora
 The one-fold control is also an eligibility gate: every control case must complete and measure
 exactly one fold before any later cell runs. A model that never reaches the control's fold cannot
 anchor a decay claim. This refusal was necessary in practice: the first MamayLM 12B pilot completed
-0/2 control cases and measured zero folds in both, so its aggregate at
-`$DATA_DIR/agentic-compact-vs-cap/20260811T095058.044331Z-1376371810ac/manifest.json` is retained as
-a rejected pilot and is not completion evidence.
+0/2 control cases and measured zero folds in both, so that aggregate is retained as a rejected
+pilot and is not completion evidence (lookup key: run
+`agent-context-policy-repeated-fold-completion-cost`, run id `1376371810ac`).
 
 CUDA host evidence (2026-08-11, RTX PRO 3000 Blackwell Laptop GPU, 12 GiB): `qwen3:14b` on Ollama
 at 22.64 tok/s. The control passed 2/2 with one fold per case, and all six shipped-policy cases
@@ -223,8 +223,11 @@ evidence-only `preserve_memory_markers=false` arm: `fold_memory_markers` no long
 `[memory: ...]` record into the running summary, leaving only what the model writes. That ablation
 also completed 6/6, with no paired loss, so **the model-written summary was sufficient** here; the
 typed marker was not required for any measured completion. The shipped default remains marker
-preservation enabled. The accepted aggregate is
-`$DATA_DIR/agentic-compact-vs-cap/20260811T095957.285590Z-9ce2d99c7a89/manifest.json`.
+preservation enabled -- the ablation shows the marker is not load-bearing on THIS task set, which is
+a reason to keep it cheap, not a reason to drop it. What would overturn the stability verdict: a
+cell that measures four or more folds, or a model that qualifies on the control and then loses a
+case at two or three folds; neither exists in this run, which is why the claim stops at three.
+Lookup key: run `agent-context-policy-repeated-fold-completion-cost`, run id `9ce2d99c7a89`.
 
 ```bash
 make bench-agentic-context-compact-repeated-fold

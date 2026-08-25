@@ -62,12 +62,20 @@ The planner derives the grouping from the rows it reads, so an audit bundle writ
 `groups.json` existed still plans by decision; `tests/llb/conflicts/test_decision_groups.py` asserts
 the derived groups equal the sidecar's.
 
-Measured on the goods corpus (`$DATA_DIR/corpus-conflicts/20260812T-groups-goods-semantic/`, 5
-documents, semantic tier at `MAX_CANDIDATE_PAIRS=100`): **100 rows in 6 decision groups, largest 51**
+Measured 2026-08-12 on the RTX PRO 3000 Blackwell 12 GiB CUDA host over the 5-document goods
+corpus, semantic tier at `MAX_CANDIDATE_PAIRS=100`, cosine threshold 0.360 calibrated as the 0.9982
+quantile of a 55,865-pair exhaustive null, 954 chunks of which 898 were comparable:
+**100 rows in 6 decision groups, largest 51**
 -- all 100 escalate, as the semantic tier has no deletion authority, so a reviewer previously faced
 100 undifferentiated records. Six group-wide `keep_both` rows settle all of them
 (`action_counts: {keep_both: 100}`, every decision `accepted`, no suppression in the overlay), which
-is the review the corpus actually requires.
+is the review the corpus actually requires. Reading: grouping turns a 100-record queue into a
+6-decision one -- a ~94% cut in what a reviewer must open -- and it costs no authority here because
+all 100 findings are `duplicate` relations over 79 chunk units and 6 document pairs, so one unit
+really is one decision. What would overturn it: a corpus whose findings span several relations,
+where one group can hold rows a reviewer would settle differently; the group-wide `drop_a`/`drop_b`
+refusal exists because that case is not hypothetical. Lookup key: `corpus-conflicts` run
+`groups-goods-semantic`.
 
 The CLI summary names both counts on every run, so the number an operator carries out of the
 terminal is labelled:

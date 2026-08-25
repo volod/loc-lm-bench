@@ -156,9 +156,10 @@ lint-md: ## Lint Markdown docs with pymarkdown (config in pyproject; MD_PATHS ov
 	$(PY) -m pymarkdown scan -r --respect-gitignore $(MD_PATHS)
 	$(MAKE) lint-doc-links
 
-lint-doc-links: ## Check every relative docs link resolves (file exists, #anchor is a real heading)
+lint-doc-links: ## Check every relative docs link resolves and no result is cited by run path
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.doc_links
+	$(PY) -m llb.quality.doc_citations
 
 lint-spec-plan: ## Check the spec's capability registry and plan.md agree (also runs in ci-checks)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

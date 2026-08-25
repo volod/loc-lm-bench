@@ -61,6 +61,14 @@ its unsupported path):
 | `observation_cap` | loop | 0.250 | 6.00 | 906.2 | yes |
 | `observation_cap` | langgraph | 0.250 | 6.00 | 906.2 | yes |
 
-Loop and LangGraph matched item-for-item on completion and prompt tokens under both policies
-(seed-task observations sit under the 800-char cap, so `observation_cap` is a no-op on this set --
-the transfer seam is what the run proves). Bundles under `.data/agentic/20260729T12*`.
+Run on the RTX PRO 3000 Blackwell 12 GiB CUDA host; four bundles, one per policy/harness cell.
+
+Loop and LangGraph matched item-for-item on completion and prompt tokens under both policies, and
+throughput separates them by less than half a percent (5.47 / 5.49 tok/s under `full`, 5.48 / 5.49
+under `observation_cap`). Reading: the harness is a SEAM, not a variable -- swapping the executor
+changes nothing an operator measures, which is what licenses running the cheap loop locally and
+LangGraph only where its tooling is wanted. Boundaries: `observation_cap` is a no-op on this set
+because every seed-task observation sits under the 800-char cap, so this run proves the transfer
+seam and NOT that the cap works; completion 0.250 on a 4-task seed is a smoke figure with no
+confidence attached, and `reliability` is 0.0 across all four cells. What would overturn it: a task
+set with observations past the cap, where the two harnesses could truncate at different points.
