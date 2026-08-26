@@ -168,7 +168,7 @@ class GraphStore:
         rows = self.connection.execute(_KHOP_SQL, [seeds, self.khop_depth]).fetchall()
         # relevance decays with hop distance from the seeds (seed mentions rank first)
         node_relevance = {int(node_id): 1.0 / (1 + int(depth)) for node_id, depth in rows}
-        return serialize_subgraph(self.graph, node_relevance, k)
+        return serialize_subgraph(self.graph, node_relevance, k, question)
 
     def _retrieve_global_community(self, question: str, k: int) -> list[ChunkRecord]:
         community_ids = link_communities(self.graph, question, self.n_communities)
@@ -179,7 +179,7 @@ class GraphStore:
         node_relevance = {
             int(row[0]): link.get(int(row[0]), 0.0) + _UNMATCHED_MEMBER_FLOOR for row in member_rows
         }
-        return serialize_subgraph(self.graph, node_relevance, k)
+        return serialize_subgraph(self.graph, node_relevance, k, question)
 
     def save(self, graph_dir: Path | str) -> None:
         graph_dir = Path(graph_dir)

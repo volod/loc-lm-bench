@@ -319,6 +319,11 @@ class RunConfigFields(BaseModel):
     answer_validation: AnswerValidation = "off"
     ontology_axioms: Path | None = None
     ontology_ledger: Path | None = None
+    # Optional: the node overlay the entity-resolution lane proposed for this corpus
+    # (`resolve-graph-entities`). The gate folds a declared endpoint through it before comparing,
+    # so an answer naming an entity the graph lane merged is not read as a second value. Optional
+    # because an overlay is a PROPOSAL at one threshold, not a fact about the corpus.
+    ontology_overlay: Path | None = None
 
     # Paths (resolved against the project / DATA_DIR, never hardcoded)
     data_dir: Path = Path(".data")

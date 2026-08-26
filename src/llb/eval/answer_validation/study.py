@@ -5,7 +5,8 @@ make that visible rather than to make the gate look good:
 
   - CATCH and FALSE REJECTION are separate numbers, per axiom class, read off the gated lane's own
     rows: a refused answer the reference scores correct is a false rejection, whatever else the
-    gate got right.
+    gate got right. WHICH refusals count as correct is decided in `labelling`, over a signal that
+    survives Ukrainian inflection rather than over surface tokens alone.
   - the objective delta is read on the COMMONLY ANSWERED items -- the items every lane ended `ok`
     on -- because a gate that improves the mean by declining the hard items would otherwise look
     like a win. Abstention rate and answered count are reported beside it so the decline is
@@ -27,6 +28,8 @@ from llb.eval.answer_validation.constants import (
     LANE_OFF,
     REFERENCE_CORRECT_COLUMN,
 )
+from llb.eval.answer_validation.equivalence import Lemmatizer
+from llb.eval.answer_validation.labelling import RefusalLabel, label_refusals, relabelled
 from llb.eval.answer_validation.verdict import class_verdicts, lane_decision
 from llb.eval.paired_cases import CaseRows, rows_by_item, shared_item_ids
 from llb.rag.fusion_evidence.paired import PairedComparison, paired_comparison
@@ -74,16 +77,16 @@ class Refusal(TypedDict):
     item_id: str
     axiom_classes: list[str]
     axiom_ids: list[str]
-    labelled: str  # CATCH | FALSE_REJECTION, as the reference proxy scored it
+    labelled: str  # CATCH | FALSE_REJECTION, under the inflection-tolerant reading
+    label_signals: list[str]  # which correctness signals said the refused answer was right
+    shipped_label: str  # what `contains` alone said, so the two readings sit side by side
     contains: float
     objective_score: float
+    semantic: float | None  # the `--score-semantic` cosine, reported and never thresholded
+    reference: str
     repaired: bool
     completion_tokens: int
     answer_preview: str
-
-
-LABEL_CATCH = "catch"
-LABEL_FALSE_REJECTION = "false_rejection"
 
 
 class LaneReading(TypedDict):
@@ -176,26 +179,27 @@ def lane_reading(
     }
 
 
-def refusals(rows: CaseRows) -> list[Refusal]:
-    """Every case the gate refused, in item order, with the label the reference proxy gave it."""
+def refusals(rows: CaseRows, labels: Mapping[str, RefusalLabel]) -> list[Refusal]:
+    """Every case the gate refused, in item order, with the label and the signals behind it."""
     refused = [row for row in rows if str(row.get("status")) == eval_common.ONTOLOGY_VIOLATION]
     return [
         {
             "item_id": str(row["item_id"]),
             "axiom_classes": [str(name) for name in row.get("validation_classes", [])],
             "axiom_ids": [str(name) for name in row.get("validation_axioms", [])],
-            "labelled": (
-                LABEL_FALSE_REJECTION
-                if float(row.get(REFERENCE_CORRECT_COLUMN, 0.0) or 0.0) >= 1.0
-                else LABEL_CATCH
-            ),
+            "labelled": labels[str(row["item_id"])].label,
+            "label_signals": list(labels[str(row["item_id"])].signals),
+            "shipped_label": labels[str(row["item_id"])].shipped_label,
             "contains": float(row.get(REFERENCE_CORRECT_COLUMN, 0.0) or 0.0),
             "objective_score": float(row.get("objective_score", 0.0) or 0.0),
+            "semantic": None if row.get("semantic") is None else float(row["semantic"]),
+            "reference": str(row.get("reference", "")),
             "repaired": bool(row.get("validation_repaired")),
             "completion_tokens": int(row.get("completion_tokens", 0) or 0),
             "answer_preview": str(row.get("answer_preview", "")),
         }
         for row in sorted(refused, key=lambda row: str(row["item_id"]))
+        if str(row["item_id"]) in labels
     ]
 
 
@@ -205,6 +209,8 @@ def analyze(
     baseline: str = LANE_OFF,
     run_dirs: Mapping[str, list[str]] | None = None,
     gated_lane: str | None = None,
+    references: Mapping[str, str] | None = None,
+    lemmatize: Lemmatizer | None = None,
     resamples: int = DEFAULT_RESAMPLES,
     confidence: float = DEFAULT_CONFIDENCE,
     seed: int = DEFAULT_SEED,
@@ -220,6 +226,9 @@ def analyze(
     index_sets = bootstrap_index_sets(len(item_ids), resamples, seed) if item_ids else []
     gated_rows = list(lanes.get(gated_lane or "", []))
     gate_index_sets = bootstrap_index_sets(len(gated_rows), resamples, seed) if gated_rows else []
+    # One labelling decides both the per-class verdict and the refusal table: two readings of the
+    # same rejection would let the adopt-or-reject verdict disagree with the evidence beside it.
+    labels = label_refusals(gated_rows, references, lemmatize)
     return {
         "baseline": baseline,
         "gated_lane": gated_lane,
@@ -232,10 +241,23 @@ def analyze(
             for label in lanes
             if label != baseline
         ],
-        "axiom_classes": class_verdicts(gated_rows, gate_index_sets, confidence),
-        "refusals": refusals(gated_rows),
+        "axiom_classes": class_verdicts(gated_rows, labels, gate_index_sets, confidence),
+        "refusals": refusals(gated_rows, labels),
+        "relabelled": list(relabelled(labels)),
         "settings": {"resamples": resamples, "confidence": confidence, "seed": seed},
     }
+
+
+def with_references(rows: CaseRows, references: Mapping[str, str] | None) -> CaseRows:
+    """The lane's rows with each item's REFERENCE answer attached, for the refusal table.
+
+    Attached rather than recorded: `scores.jsonl` never carried the reference, and adding a column
+    to every run bundle to quote it in a handful of refusals would be the wrong trade. A row whose
+    item the gold set no longer holds simply carries no reference.
+    """
+    if not references:
+        return rows
+    return [{**row, "reference": references.get(str(row.get("item_id")), "")} for row in rows]
 
 
 def _paired(

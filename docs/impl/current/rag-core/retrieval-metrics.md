@@ -272,6 +272,17 @@ the jitter, so their top-k membership is decided by noise or by the backend's ar
 an exact tie. That count explains the band's width and is the number to act on: acting on it is
 exactly what [duplicate chunk collapse](retrieval-store.md#duplicate-chunk-collapse) did.
 
+Beside it the lane reports a TIE CENSUS -- `exact-tie cut N/n` and `cut block` -- because the
+fragile count mixes two causes that call for opposite fixes. An exact-tie cut is one score shared
+by many candidates: the lane never scored them apart, no amount of numeric precision narrows that
+band, and only a finer relevance signal does. The rest of the fragile items carry a real but
+sub-jitter difference, which is precision (a lane that ROUNDS its published score manufactures
+these). `cut block` is how many candidates share the rank-k score over the tied items, so a lane
+reporting `exact-tie cut 62/79` and `cut block 9.7` is saying a tenth of its returned context is
+one undifferentiated block. Acting on THAT count is what the graph lane's [per-span affinity
+term](../graphrag-backend/fusion-sweep-evidence.md#scoring-the-graph-lane-below-its-node-relevance-levels)
+did.
+
 Measured floors on the chunker lane (CUDA host, pinned e5-base, k=10, `sentence` vs `recursive`;
 reports under `$DATA_DIR/retrieval-noise-floor/<run>/`):
 
@@ -292,18 +303,29 @@ the tables the floors are read against):
 | `compare-graph-fusion`, every item | drafted goods multi-hop bundle | 95 | 68/95 | +/-0.021 | +/-0.044 |
 | `compare-graph-fusion`, multi-hop slice | the same bundle's focus slice | 35 | 33/35 | +/-0.043 | +/-0.074 |
 
+The two `compare-graph-fusion` rows above were measured BEFORE the graph lane scored below its
+node-relevance levels, and no run since has reproduced them: that bundle is gone from every host
+here. The paired before/after on a replayed 79-item bundle (2026-08-26, RTX PRO 3000 Blackwell
+12 GB) takes the worst-lane graph floor from +/-0.025 to +/-0.006 overall and from +/-0.044 to
++/-0.015 on the multi-hop slice, with the fragile counts falling from 62/79 to 36/79 and from 31/34
+to 18/34 -- read it in [fusion sweep
+evidence](../graphrag-backend/fusion-sweep-evidence.md#scoring-the-graph-lane-below-its-node-relevance-levels),
+which also carries the tie-block census the change was chosen from.
+
 The two dense-only lanes have nothing to arbitrate: with duplicates collapsed no item's rank-10 /
 rank-11 cosine scores sit within `1e-6`, so a delta of any size in those tables is a real ranking
 difference (still subject to SAMPLING uncertainty, which the floor does not answer). The fusion
-sweep is the opposite case, and its cause is measured: the GRAPH lanes score by link relevance, a
-sum over a small integer-ish set of link weights, so their candidate lists carry long exact-tie
-blocks (`5.0077, 5.0075, 2.5042, ... , 0.001, 0.001, 0.001, ...` -- eight identical `0.001` tails
-are typical), and the rank-10 cut falls inside such a block for 68 of 95 questions. `_rank_dedup`
-in `src/llb/graph/retrieval.py` breaks those ties deterministically on `(doc_id, char_start,
-char_end)`, so the ranking is REPRODUCIBLE -- but reproducible is not the same as retrieved: which
-equally-scored span lands in the top 10 is decided by a document id, not by relevance. Every fused
-row at a non-endpoint weight inherits a `+/-0.000` band, because RRF ranks are integers and the
-tie block is far below the cut once the vector lane contributes.
+sweep is the opposite case, and its cause is measured: the GRAPH lanes score a NODE by link
+relevance -- a sum over a small integer-ish set of link weights -- and then emit every one of that
+node's mention spans at the node's score, so their candidate lists carried long exact-tie blocks
+(`5.0077, 5.0075, 2.5042, ... , 0.001, 0.001, 0.001, ...` -- eight identical `0.001` tails were
+typical) and the rank-10 cut fell inside such a block for 68 of 95 questions. `_rank_dedup` in
+`src/llb/graph/retrieval.py` breaks a remaining tie deterministically on `(doc_id, char_start,
+char_end)`, which is reproducible but is not relevance -- so the lane now scores each span BELOW
+its node's relevance level by that span's own question affinity, and `_rank_dedup` arbitrates only
+what the affinity term could not separate. Every fused row at a non-endpoint weight inherits a
+`+/-0.000` band either way, because RRF ranks are integers and the tie block is far below the cut
+once the vector lane contributes.
 
 The floor tracks DUPLICATE CHUNKS, not gold-set size, and that is why the measured floor is now zero
 on every corpus: the goods corpus at `size=200` HAD 37.7% of its chunks byte-identical to another

@@ -183,19 +183,22 @@ it reports the gap a missing counterpart is, and an answer is never asked to sta
 of a symmetric relation, so enabling it would refuse correct one-way answers whatever a run
 measured. That exclusion is itself covered by an adversarial fixture case.
 
-The record, from the one heavy run taken so far (MamayLM-Gemma-3-12B over the committed 82-item
-`ua_squad_postedited_v1` final split, against a provisionally-signed candidate set; full reading in
-[RAG core](rag-core/answer-validation.md#measured-the-gate-is-not-worth-its-cost-on-this-corpus-and-no-class-ships-enabled)):
+The record, from two heavy runs (MamayLM-Gemma-3-12B over the committed 82-item
+`ua_squad_postedited_v1` final split, against a provisionally-signed candidate set; each against
+its own extraction ledger, so they are two measurements rather than a paired before/after -- full
+readings in [RAG core](rag-core/answer-validation.md#measured-earlier-run-the-gate-is-not-worth-its-cost-and-no-class-ships-enabled)
+and [after the equivalence fix](rag-core/answer-validation.md#measured-again-after-the-equivalence-fix-the-same-verdict-and-value-equivalence-never-fired)):
 
 | Axiom class | Verdict | On what |
 | --- | --- | --- |
-| `disjoint_types` | measured, not adopted | refused 1 answer, which was correct: the model's declared type disagreed with the extractor's, which is not a logical impossibility |
-| `max_cardinality` | measured, not adopted | refused 1 answer scored wrong by `contains` and correct on inspection -- a morphology artifact of the proxy, not a catch |
-| `functional`, `inverse_functional`, `domain`, `range`, `asymmetric`, `irreflexive` | not measured | never fired on this corpus; absence of a rejection is absence of evidence, not a pass |
+| `disjoint_types` | measured, not adopted, TWICE | refused 1 then 4 answers; every one of them correct. Both times the disjointness came from the model's declared type disagreeing with the extractor's -- two fallible taggers, not a logical impossibility. It is the only class either run has been able to price |
+| `max_cardinality` | measured, not adopted | refused 1 answer scored wrong by `contains` and correct on inspection -- a morphology artifact of the proxy, not a catch. Did not fire on the second run |
+| `functional`, `inverse_functional` | not measured, and structurally hard to measure here | never fired on either corpus. These are the classes value equivalence exists to keep honest, and an extraction pass that types 28 of 1350 entities as a value type gives them almost no population to fire on |
+| `domain`, `range`, `asymmetric`, `irreflexive` | not measured | never fired; absence of a rejection is absence of evidence, not a pass |
 | `symmetric` | excluded by construction | reports a ledger gap an answer is never asked to fill |
 
 No class is adopted, so the shipped default stays `answer_validation=off`. A class moves out of
-this table only on an operator's own measured run, never on this one.
+this table only on an operator's own measured run, never on these.
 
 ## Agentic Framework Scope
 

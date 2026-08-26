@@ -123,6 +123,22 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
 Both strategies return chunk-like records with exact source spans so the normal retrieval metric
 applies.
 
+Both also score a NODE, not a span, and then emit every one of that node's mention spans at the
+node's score -- so a node with twenty mentions contributes twenty exactly-tied candidates and the
+rank-k cut routinely lands inside one such block. `llb.graph.span_affinity` supplies the missing
+per-span term: the share of the question's content tokens that the span's own text covers, plus its
+containing section title at `SECTION_TITLE_MATCH_WEIGHT`, scored with the entity linker's own
+tokenizer, stem key, and exact-over-stem weighting rather than a second notion of "matches the
+question". `serialize_subgraph` places each span inside its own relevance level, at most
+`SPAN_AFFINITY_BAND` of the gap down to the next distinct level, so the term orders spans the lane
+had not scored apart and can never move one across a hop, a link-score, or a community level. A
+question with no content tokens opens no band at all and leaves every level exactly tied.
+
+The published `retrieval_score` is the refined score, unrounded -- the score the row was ranked on,
+which is what a [measurement floor](../rag-core/retrieval-metrics.md#measurement-floor---noise-floor)
+has to perturb. What that refinement is worth is measured in [fusion sweep
+evidence](fusion-sweep-evidence.md#scoring-the-graph-lane-below-its-node-relevance-levels).
+
 ## CLI
 
 ```bash

@@ -25,6 +25,7 @@ floor or not (`margin`), so a sub-item delta cannot be read as a ranking.
 """
 
 import random
+import statistics
 import zlib
 
 from llb.core.contracts.rag import ChunkRecord, RetrievalMetrics, SourceSpanRecord
@@ -230,11 +231,14 @@ def _lane_floor(
         )
         for rng in (random.Random(lane_seed + r) for r in range(replicates))
     ]
+    tied = [pool for pool, _ in pools if _is_tied(pool, k)]
     return {
         "recall_at_k": value_spread(base["recall_at_k"], [m["recall_at_k"] for m in sampled]),
         "mrr": value_spread(base["mrr"], [m["mrr"] for m in sampled]),
         "n": len(pools),
         "fragile_items": sum(_is_fragile(pool, k, jitter) for pool, _ in pools),
+        "tie_items": len(tied),
+        "cut_block": statistics.fmean([_cut_block(pool, k) for pool in tied]) if tied else 1.0,
     }
 
 
@@ -247,6 +251,22 @@ def _is_fragile(pool: list[ChunkRecord], k: int, jitter: float) -> bool:
     if len(pool) <= k:
         return False
     return abs(_score(pool[k - 1]) - _score(pool[k])) <= jitter
+
+
+def _is_tied(pool: list[ChunkRecord], k: int) -> bool:
+    """True when the cut falls INSIDE a block of candidates carrying one identical score.
+
+    The strict subset of fragility no amount of numeric precision removes: the lane assigned the
+    same relevance to both sides of its own cut, so which of them is retrieved is settled by
+    whatever the backend's tie-break happens to sort on.
+    """
+    return len(pool) > k and _score(pool[k - 1]) == _score(pool[k])
+
+
+def _cut_block(pool: list[ChunkRecord], k: int) -> float:
+    """How many candidates share the rank-k score -- the width of the block the cut falls in."""
+    cut = _score(pool[k - 1])
+    return float(sum(_score(chunk) == cut for chunk in pool))
 
 
 def _score(chunk: ChunkRecord) -> float:

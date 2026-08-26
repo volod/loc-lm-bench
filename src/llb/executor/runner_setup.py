@@ -138,7 +138,9 @@ def build_answer_validator(config: RunConfig) -> Any:
 
     assert config.ontology_axioms is not None  # refused by RunConfig
     assert config.ontology_ledger is not None
-    gate = load_gate_from_paths(config.ontology_axioms, config.ontology_ledger)
+    gate = load_gate_from_paths(
+        config.ontology_axioms, config.ontology_ledger, config.ontology_overlay
+    )
     return gate.check
 
 

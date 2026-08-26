@@ -387,6 +387,12 @@ Applying an overlay builds a new `KnowledgeGraph`:
 The source graph is never mutated, and the run copies the pre-merge store into the bundle so the
 reading can be redone without the overlay.
 
+A written overlay is also readable WITHOUT a graph: `read_overlay_surfaces` returns the member ->
+canonical NAME map its rows already carry for their reader. That is what lets a consumer holding
+only an extraction ledger reuse the identity this lane proposed instead of inventing a second one
+-- the ontology answer gate folds a declared endpoint through it under
+`ONTOLOGY_OVERLAY=<overlay.jsonl>` ([RAG core](rag-core/answer-validation.md#which-surfaces-are-one-thing)).
+
 ### Artifacts
 
 `$DATA_DIR/graph-entity-resolution/<run>/`:

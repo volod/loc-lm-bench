@@ -1,26 +1,25 @@
-"""The corpus ledger the retrieved context came from, and the identities it already carries.
+"""WHICH ledger facts the retrieved context put in front of the model -- the gate's per-case scope.
 
-Two questions decide whether an answer contradicts the corpus, and both are answered here rather
-than in the gate:
+Only the facts and type assertions whose evidence span falls inside a chunk the prompt actually
+carried. A fact the model never saw cannot be a contradiction it committed; scoring it as one
+would refuse an answer for the corpus's content rather than for the answer's, which is exactly the
+failure mode a validator has to avoid.
 
-  - WHICH ledger facts are in scope. Only the facts and type assertions whose evidence span falls
-    inside a chunk the prompt actually carried. A fact the model never saw cannot be a
-    contradiction it committed; scoring it as one would refuse an answer for the corpus's content
-    rather than for the answer's, which is exactly the failure mode a validator has to avoid.
-  - WHICH surfaces are the same entity. The extraction ledger already records an entity's aliases,
-    so `Організація Об'єднаних Націй` and `ООН` are one node in the graph the answer is checked
-    against. Folding the declared triple's endpoints through that recorded alias map is what stops
-    a legitimate PARAPHRASE from reading as a second value of a functional relation. Nothing is
-    invented here: an alias the corpus does not carry does not fold.
+The other half of "does this answer contradict the corpus" -- WHICH surfaces are the same thing --
+has its own module (`llb.eval.answer_validation.identity`): the corpus's recorded aliases, the node
+overlay the entity-resolution lane proposes, and value equivalence for the types whose members are
+values. This module owns only the scoping and hands identity to that one, so the two cannot drift.
 """
 
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 from llb.core.contracts.rag import ChunkRecord
+from llb.eval.answer_validation.equivalence import Lemmatizer
+from llb.eval.answer_validation.identity import SurfaceIdentity
 from llb.goldset.schema import SourceSpan
 from llb.prep.ontology.extraction.entity_types import DEFAULT_ENTITY_TYPE
 from llb.prep.ontology.models import DocExtraction, Entity
-from llb.prep.ontology.naming import normalize_name
 
 # A (doc_id, char_start, char_end) window the prompt carried.
 Window = tuple[str, int, int]
@@ -52,15 +51,21 @@ def _visible(span: SourceSpan, windows: Iterable[Window]) -> bool:
 
 
 class CorpusLedger:
-    """The whole extraction ledger, with the per-case scoping and alias folding the gate needs."""
+    """The whole extraction ledger, with the per-case scoping and identity fold the gate needs."""
 
-    def __init__(self, extractions: Sequence[DocExtraction]) -> None:
+    def __init__(
+        self,
+        extractions: Sequence[DocExtraction],
+        *,
+        overlay: Path | str | None = None,
+        lemmatize: Lemmatizer | None = None,
+    ) -> None:
         self._extractions = list(extractions)
         # Indexed by document because scoping is a per-CASE operation over a handful of retrieved
         # documents: scanning the whole ledger once per answer would make the gate's cost scale
         # with the corpus rather than with the context.
         self._by_doc = {extraction.doc_id: extraction for extraction in self._extractions}
-        self._aliases = _alias_map(self._extractions)
+        self.identity = SurfaceIdentity(self._extractions, overlay=overlay, lemmatize=lemmatize)
 
     @property
     def n_docs(self) -> int:
@@ -70,9 +75,9 @@ class CorpusLedger:
     def n_facts(self) -> int:
         return sum(len(extraction.facts) for extraction in self._extractions)
 
-    def canonical(self, name: str) -> str:
-        """The entity surface the corpus records this one under, or the name itself."""
-        return self._aliases.get(normalize_name(name), name)
+    def canonical(self, name: str, entity_type: str = "") -> str:
+        """The surface the corpus records this endpoint under, given the type it was declared as."""
+        return self.identity.fold(name, entity_type)
 
     def scoped(self, chunks: Sequence[ChunkRecord]) -> list[DocExtraction]:
         """The ledger restricted to the evidence the retrieved chunks carried.
@@ -124,21 +129,3 @@ def _scoped_entities(entities: Sequence[Entity], windows: Sequence[Window]) -> l
                 )
             )
     return kept
-
-
-def _alias_map(extractions: Sequence[DocExtraction]) -> dict[str, str]:
-    """folded alias surface -> the entity NAME the corpus records it under.
-
-    Corpus-wide on purpose: an alias is an identity the corpus states once, not evidence the
-    retrieved chunk has to repeat. An alias claimed by two different names is dropped rather than
-    resolved -- collapsing an ambiguous surface would invent the very identity a reviewer has not
-    accepted.
-    """
-    claims: dict[str, set[str]] = {}
-    for extraction in extractions:
-        for entity in extraction.entities:
-            for surface in (entity.name, *entity.aliases):
-                key = normalize_name(surface)
-                if key:
-                    claims.setdefault(key, set()).add(entity.name)
-    return {key: next(iter(names)) for key, names in claims.items() if len(names) == 1}

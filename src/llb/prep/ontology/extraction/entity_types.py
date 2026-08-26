@@ -17,6 +17,12 @@ one module (the prompt + the normalizer + the docs/tests all read from here).
 """
 
 MISC = "MISC"
+# The three types whose members are VALUES rather than names. They are named here because the
+# answer gate folds two written forms of one value onto one key for exactly these three
+# (`llb.eval.answer_validation.equivalence`), and a magic string there would drift from this list.
+DATE = "DATE"
+DURATION = "DURATION"
+QUANTITY = "QUANTITY"
 
 # (canonical type, short Ukrainian gloss). The order is the order shown to the extractor.
 ENTITY_TYPE_GLOSSES: tuple[tuple[str, str], ...] = (
@@ -31,10 +37,10 @@ ENTITY_TYPE_GLOSSES: tuple[tuple[str, str], ...] = (
     ),
     ("PRODUCT", "продукт, товар, технологія, послуга"),
     ("EVENT", "подія, процес або процедура"),
-    ("DATE", "дата або момент часу"),
-    ("DURATION", "тривалість чи період часу, напр. двадцять років"),
+    (DATE, "дата або момент часу"),
+    (DURATION, "тривалість чи період часу, напр. двадцять років"),
     ("MONEY", "грошова сума"),
-    ("QUANTITY", "вимірювана величина з одиницею або відсоток"),
+    (QUANTITY, "вимірювана величина з одиницею або відсоток"),
     (MISC, "інше: абстрактне поняття, право, термін"),
 )
 

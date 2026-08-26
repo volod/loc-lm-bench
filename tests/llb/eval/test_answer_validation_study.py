@@ -154,7 +154,7 @@ def test_a_class_that_never_fired_is_not_measured_rather_than_adopted():
     from llb.eval.answer_validation.verdict import class_verdicts
 
     rows = [_row("q1", validation_classes=["domain"], validation_checked_triples=1)]
-    assert class_verdicts(rows, [], 0.95)[0]["decision"] == DECISION_NOT_MEASURED
+    assert class_verdicts(rows, {}, [], 0.95)[0]["decision"] == DECISION_NOT_MEASURED
 
 
 def test_a_rejection_is_read_against_the_reference_not_against_the_gate():
@@ -256,6 +256,18 @@ def _recording_lane(tmp_path: Path, seen: list[tuple[str, str, str]]):
             for item in items
         ]
         scores.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        # An ordinary run bundle records the whole config it ran under; the re-render is what
+        # reads it back, and refuses a bundle that no longer describes its lane.
+        (run_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "run_name": config.run_name,
+                    "split": split,
+                    "config": json.loads(config.model_dump_json()),
+                }
+            ),
+            encoding="utf-8",
+        )
         return scores
 
     return fake_lane
@@ -404,3 +416,86 @@ def test_both_typed_statuses_and_the_repair_path_are_covered_by_the_gated_lane()
         envelope_lane.ENVELOPE, gate.check, ChatResult(text=WRONG), ChatResult(text=RIGHT)
     )
     assert rescued["status"] == common.OK and rescued["validation_repaired"] is True
+
+
+# --- re-reading a recorded comparison from its own run bundles -----------------------------------
+
+
+def _recorded_comparison(tmp_path: Path) -> Path:
+    goldset = tmp_path / "goldset.jsonl"
+    _write_goldset(goldset)
+    run = run_answer_validation(
+        RunConfig(data_dir=tmp_path, goldset_path=goldset),
+        [LANE_OFF, LANE_PYDANTIC, LANE_PYDANTIC_ONTOLOGY],
+        axioms=Path("samples/ontology/axioms_uk_v1.ttl"),
+        ledger=Path("samples/ontology/axioms_uk_v1.json"),
+        out_dir=tmp_path / "answer-validation",
+        resamples=50,
+        run_lane=_recording_lane(tmp_path, []),
+    )
+    return Path(run.paths["comparison"])
+
+
+def test_a_recorded_comparison_re_renders_from_its_bundles_with_no_lane_run(tmp_path: Path):
+    # The whole reason this path exists: a re-labelling of what counts as a false rejection has to
+    # be able to reach a FINISHED run, or the old and new readings could only be compared by
+    # spending the three lanes again.
+    from llb.eval.answer_validation.rerender import (
+        RERENDER_SOURCE_KEY,
+        RERENDER_TIMESTAMP_KEY,
+        rerender_from_bundles,
+    )
+
+    comparison = _recorded_comparison(tmp_path)
+    recorded = json.loads(comparison.read_text(encoding="utf-8"))
+    rerendered = rerender_from_bundles(
+        comparison, out_dir=tmp_path / "answer-validation-rerender", timestamp="stamp"
+    )
+    assert rerendered.out_dir != comparison.parent  # the recorded artifact is never written to
+    assert rerendered.report["commonly_answered"] == recorded["commonly_answered"]
+    assert rerendered.report["lanes"] == recorded["lanes"]
+    assert rerendered.report["refusals"] == recorded["refusals"]
+    payload = json.loads(Path(rerendered.paths["comparison"]).read_text(encoding="utf-8"))
+    assert payload["metadata"][RERENDER_SOURCE_KEY] == str(comparison)
+    assert payload["metadata"][RERENDER_TIMESTAMP_KEY] == "stamp"
+    # Strip the two added keys and the metadata is exactly what the generations produced.
+    kept = {
+        k: v
+        for k, v in payload["metadata"].items()
+        if k not in (RERENDER_SOURCE_KEY, RERENDER_TIMESTAMP_KEY)
+    }
+    assert kept == recorded["metadata"]
+
+
+def test_a_drifted_bundle_set_is_refused_rather_than_re_rendered(tmp_path: Path):
+    # A bundle that no longer describes the lane its label claims would re-render into a DIFFERENT
+    # comparison wearing the recorded one's provenance.
+    from llb.eval.answer_validation.rerender import BundleMismatch, rerender_from_bundles
+
+    comparison = _recorded_comparison(tmp_path)
+    recorded = json.loads(comparison.read_text(encoding="utf-8"))
+    bundle = Path(recorded["lanes"][LANE_PYDANTIC_ONTOLOGY]["run_dirs"][0]) / "manifest.json"
+    payload = json.loads(bundle.read_text(encoding="utf-8"))
+    payload["config"]["answer_validation"] = "off"
+    bundle.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundleMismatch, match="answer_validation is off"):
+        rerender_from_bundles(comparison, out_dir=tmp_path / "rerender")
+
+
+def test_a_missing_bundle_is_refused_by_name(tmp_path: Path):
+    from llb.eval.answer_validation.rerender import BundleMismatch, rerender_from_bundles
+
+    comparison = _recorded_comparison(tmp_path)
+    recorded = json.loads(comparison.read_text(encoding="utf-8"))
+    (Path(recorded["lanes"][LANE_OFF]["run_dirs"][0]) / "manifest.json").unlink()
+    with pytest.raises(BundleMismatch, match="no manifest.json"):
+        rerender_from_bundles(comparison, out_dir=tmp_path / "rerender")
+
+
+def test_an_artifact_that_is_not_a_validation_comparison_is_refused(tmp_path: Path):
+    from llb.eval.answer_validation.rerender import BundleMismatch, rerender_from_bundles
+
+    other = tmp_path / "comparison.json"
+    other.write_text(json.dumps({"lanes": {}, "item_ids": []}), encoding="utf-8")
+    with pytest.raises(BundleMismatch, match="not a compare-answer-validation comparison"):
+        rerender_from_bundles(other, out_dir=tmp_path / "rerender")

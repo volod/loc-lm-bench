@@ -99,6 +99,32 @@ def test_fragile_items_count_the_ties_at_the_cut():
     assert separated["lanes"]["faiss"]["fragile_items"] == 0
 
 
+def test_tie_census_separates_an_exact_tie_from_a_sub_jitter_gap():
+    # Both cuts are fragile, and the two call for different fixes: the first is one score shared
+    # by four candidates (only a finer signal splits it), the second is a real difference the
+    # jitter simply swallows (more numeric precision would).
+    tied = measure_noise_floor(
+        {"faiss": _ScoredStore(_tied_hits(k=3))}, _items(), k=3, replicates=REPLICATES
+    )["lanes"]["faiss"]
+    assert tied["fragile_items"] == 1 and tied["tie_items"] == 1
+    assert tied["cut_block"] == 4.0  # the three fillers and the gold chunk all score 0.5
+
+    nearly = [_chunk("d2", i * 10, i * 10 + 5, 0.5 - i * 1e-9) for i in range(3)]
+    nearly.append(_chunk("d1", 0, 10, 0.5 - 3e-9))
+    lane = measure_noise_floor(
+        {"faiss": _ScoredStore(nearly)}, _items(), k=3, replicates=REPLICATES
+    )["lanes"]["faiss"]
+    assert lane["fragile_items"] == 1 and lane["tie_items"] == 0
+    assert lane["cut_block"] == 1.0  # no candidate shares the cut score
+
+
+def test_tie_census_of_a_separated_lane_reports_no_block():
+    lane = measure_noise_floor(
+        {"faiss": _ScoredStore(_separated_hits())}, _items(), k=2, replicates=REPLICATES
+    )["lanes"]["faiss"]
+    assert lane["tie_items"] == 0 and lane["cut_block"] == 1.0
+
+
 def test_floor_is_reproducible_for_the_same_seed_and_differs_per_lane():
     hits = _tied_hits(k=3)
     stores = {"a": _ScoredStore(hits), "b": _ScoredStore(list(hits))}

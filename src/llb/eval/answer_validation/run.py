@@ -27,7 +27,7 @@ from llb.eval.answer_validation.constants import (
     VALIDATION_LANES,
 )
 from llb.eval.answer_validation.report import format_report
-from llb.eval.answer_validation.study import analyze
+from llb.eval.answer_validation.study import analyze, with_references
 from llb.eval.paired_cases import CaseRows
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
@@ -60,7 +60,11 @@ def parse_lanes(spec: str) -> list[str]:
 
 
 def lane_config(
-    config: RunConfig, lane: str, axioms: Path | None, ledger: Path | None
+    config: RunConfig,
+    lane: str,
+    axioms: Path | None,
+    ledger: Path | None,
+    overlay: Path | None = None,
 ) -> RunConfig:
     """`config` with this lane's answer-contract knobs applied and a lane-identifying run name.
 
@@ -75,6 +79,7 @@ def lane_config(
         answer_validation="ontology" if lane == LANE_PYDANTIC_ONTOLOGY else "off",
         ontology_axioms=axioms if lane == LANE_PYDANTIC_ONTOLOGY else None,
         ontology_ledger=ledger if lane == LANE_PYDANTIC_ONTOLOGY else None,
+        ontology_overlay=overlay if lane == LANE_PYDANTIC_ONTOLOGY else None,
     )
     return RunConfig.model_validate(values)
 
@@ -98,13 +103,14 @@ def score_lanes(
     *,
     axioms: Path | None,
     ledger: Path | None,
+    overlay: Path | None,
     run_lane: LaneRunner,
 ) -> tuple[dict[str, CaseRows], dict[str, list[str]]]:
     """Run every lane over the SAME items and read back its per-case rows."""
     rows: dict[str, CaseRows] = {}
     run_dirs: dict[str, list[str]] = {}
     for lane in lanes:
-        config_for_lane = lane_config(config, lane, axioms, ledger)
+        config_for_lane = lane_config(config, lane, axioms, ledger, overlay)
         lane_rows: CaseRows = []
         lane_dirs: list[str] = []
         for split, items in items_by_split.items():
@@ -122,6 +128,7 @@ def run_answer_validation(
     *,
     axioms: Path | None = None,
     ledger: Path | None = None,
+    overlay: Path | None = None,
     splits: Sequence[str] = ("final",),
     limit: int | None = None,
     resamples: int = DEFAULT_RESAMPLES,
@@ -140,25 +147,30 @@ def run_answer_validation(
             "extraction ledger; name both rather than running an ungated lane under its name"
         )
     items_by_split = select_items(config, splits, limit, verified_only)
+    references = {
+        item.id: item.reference_answer for items in items_by_split.values() for item in items
+    }
     rows, run_dirs = score_lanes(
         config,
         lanes,
         items_by_split,
         axioms=axioms,
         ledger=ledger,
+        overlay=overlay,
         run_lane=run_lane or eval_lane_runner(verified_only=verified_only),
     )
     report = analyze(
-        rows,
+        {lane: with_references(lane_rows, references) for lane, lane_rows in rows.items()},
         baseline=LANE_OFF,
         run_dirs=run_dirs,
         gated_lane=LANE_PYDANTIC_ONTOLOGY if LANE_PYDANTIC_ONTOLOGY in rows else None,
+        references=references,
         resamples=resamples,
         confidence=confidence,
         seed=seed,
     )
     target = Path(out_dir) if out_dir is not None else default_out_dir(config)
-    metadata = _metadata(config, lanes, splits, axioms, ledger)
+    metadata = _metadata(config, lanes, splits, axioms, ledger, overlay)
     paths = write_artifacts(report, target, metadata=metadata)
     return AnswerValidationRun(report, target, paths)
 
@@ -176,6 +188,7 @@ def _metadata(
     splits: Sequence[str],
     axioms: Path | None,
     ledger: Path | None,
+    overlay: Path | None,
 ) -> dict[str, Any]:
     return {
         "model": config.model,
@@ -185,6 +198,7 @@ def _metadata(
         "lanes": ",".join(lanes),
         "axioms": str(axioms) if axioms is not None else "-",
         "ledger": str(ledger) if ledger is not None else "-",
+        "overlay": str(overlay) if overlay is not None else "-",
         "max_tokens": config.max_tokens,
         "top_k": config.top_k,
     }

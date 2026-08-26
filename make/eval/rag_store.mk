@@ -44,10 +44,10 @@ measure-duplicate-residue: ## What repetition a built store still holds after co
 		$(if $(RESIDUE_EXAMPLES),--examples $(RESIDUE_EXAMPLES),) \
 		$(if $(RESIDUE_OUT),--out "$(RESIDUE_OUT)",)
 
-build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=...; needs ".[graph]")
+build-graph: ## GraphRAG backend: build the GraphRAG store from an ontology-assisted draft bundle (BUNDLE=... CONFIG=...; needs ".[graph]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BUNDLE)" || { echo "ERROR: set BUNDLE=<prepare-goldset dir> (extraction.jsonl + corpus/)"; exit 1; }
-	$(PY) -m llb.main build-graph --bundle "$(BUNDLE)"
+	$(PY) -m llb.main build-graph $(if $(CONFIG),--config "$(CONFIG)",) --bundle "$(BUNDLE)"
 
 resolve-graph-entities: ## Entity resolution: propose a graph node-cluster overlay and price it on the graph lane (GOLDSET= SPLIT= RAG_K= RESOLVE_THRESHOLDS= RESOLVE_STRATEGIES= RESOLVE_NO_EMBEDDINGS=1 RESOLVE_WITH_VECTOR=1 CORPUS= RESOLVE_OUT_DIR=; needs ".[linkage]")
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

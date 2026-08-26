@@ -1,7 +1,8 @@
 """The three-lane answer-validation comparison and the committed gate fixture."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -44,6 +45,19 @@ def compare_answer_validation_cmd(
         help="the corpus extraction.jsonl (or its draft bundle dir) the answers are checked "
         "against, scoped per case to the retrieved chunks",
     ),
+    overlay: Optional[Path] = typer.Option(
+        None,
+        "--overlay",
+        help="optional node overlay from `resolve-graph-entities`; a declared endpoint folds "
+        "through the identity that lane PROPOSED, so an answer naming an entity the graph merged "
+        "is not read as a second value",
+    ),
+    from_bundles: Optional[Path] = typer.Option(
+        None,
+        "--from-bundles",
+        help="re-render a recorded comparison.json from the run bundles it named, under the "
+        "CURRENT reading -- no lane runs, no model call",
+    ),
     include_drafted: bool = typer.Option(
         False,
         "--include-drafted",
@@ -65,6 +79,9 @@ def compare_answer_validation_cmd(
     """
     from llb.eval.answer_validation.run import parse_lanes, run_answer_validation
 
+    if from_bundles is not None:
+        _rerender(from_bundles, config, out_dir)
+        return
     cfg = load_config(
         config, model=model, backend=backend, goldset_path=goldset, max_tokens=max_tokens
     )
@@ -83,6 +100,7 @@ def compare_answer_validation_cmd(
             selected,
             axioms=axioms,
             ledger=ledger,
+            overlay=overlay,
             splits=splits,
             limit=limit,
             resamples=resamples,
@@ -94,13 +112,44 @@ def compare_answer_validation_cmd(
     except ValueError as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from None
-    for reading in run.report["readings"]:
+    _echo_verdicts(run.report)
+    typer.echo(f"[compare-answer-validation] report -> {run.paths['report']}")
+
+
+def _echo_verdicts(report: Mapping[str, Any]) -> None:
+    """The lane readings, the per-class verdicts, and any refusal the new labelling moved."""
+    for reading in report["readings"]:
         typer.echo(f"[compare-answer-validation] {reading['decision']}: {reading['reason']}")
-    for verdict in run.report["axiom_classes"]:
+    for verdict in report["axiom_classes"]:
         typer.echo(
             f"[compare-answer-validation] {verdict['axiom_class']}: {verdict['decision']} "
             f"-- {verdict['reason']}"
         )
+    moved = report.get("relabelled") or []
+    if moved:
+        typer.echo(
+            f"[compare-answer-validation] {len(moved)} refusal(s) re-labelled against the "
+            f"surface-token reading: {', '.join(moved)}"
+        )
+
+
+def _rerender(comparison: Path, config: Optional[Path], out_dir: Optional[Path]) -> None:
+    """Re-read a recorded comparison from its own run bundles -- no lane runs, no model call."""
+    from llb.eval.answer_validation.rerender import BundleMismatch, rerender_from_bundles
+
+    cfg = load_config(config)
+    typer.echo(
+        f"[compare-answer-validation] re-rendering {comparison} from its recorded run bundles"
+    )
+    try:
+        run = rerender_from_bundles(comparison, config=cfg, out_dir=out_dir)
+    except BundleMismatch as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    except (OSError, KeyError, ValueError) as exc:
+        typer.echo(f"[error] {comparison}: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    _echo_verdicts(run.report)
     typer.echo(f"[compare-answer-validation] report -> {run.paths['report']}")
 
 
