@@ -1,4 +1,4 @@
-run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= RESTORE_TABLE_HEADERS=1 CONTEXT_STRATEGY= RETRIEVED_DOCUMENT_TOP_N= ANSWER_FORMAT=envelope SUPPRESS_REASONING_PROMPT=1 MAX_TOKENS= QUERY_PREP=... RESUME=<run-dir>
+run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fused GRAPH_WEIGHT=0.3 RETRIEVAL_MODE=hybrid ACL_LABEL=tag RERANKER= CONTEXT_ORDER= RESTORE_TABLE_HEADERS=1 CONTEXT_STRATEGY= RETRIEVED_DOCUMENT_TOP_N= ANSWER_FORMAT=envelope ANSWER_VALIDATION=ontology ONTOLOGY_AXIOMS= ONTOLOGY_LEDGER= SUPPRESS_REASONING_PROMPT=1 MAX_TOKENS= QUERY_PREP=... RESUME=<run-dir>
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main run-eval $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -23,6 +23,9 @@ run-eval: ## Run the eval; MODEL= BACKEND= GOLDSET= SPLIT= RETRIEVAL_BACKEND=fus
 		$(if $(QUERY_PREP_TYPO_GUARD),--query-prep-typo-guard,) \
 		$(if $(QUERY_PREP_DENSE_CASE),--query-prep-dense-case,) \
 		$(if $(ANSWER_FORMAT),--answer-format "$(ANSWER_FORMAT)",) \
+		$(if $(ANSWER_VALIDATION),--answer-validation "$(ANSWER_VALIDATION)",) \
+		$(if $(ONTOLOGY_AXIOMS),--ontology-axioms "$(ONTOLOGY_AXIOMS)",) \
+		$(if $(ONTOLOGY_LEDGER),--ontology-ledger "$(ONTOLOGY_LEDGER)",) \
 		$(if $(SUPPRESS_REASONING_PROMPT),--suppress-reasoning-prompt,) \
 		$(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS),) \
 		$(if $(CITED_ANSWERS),--cited-answers,) \

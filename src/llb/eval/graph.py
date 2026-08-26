@@ -19,11 +19,17 @@ from llb.core.contracts.rag import SourceSpanRecord
 from llb.eval import common as eval_common
 from llb.eval.answer_envelope import boundary as envelope_boundary
 from llb.eval.answer_envelope import lane as envelope_lane
-from llb.eval.answer_envelope.models import envelope_prompt_values
+from llb.eval.answer_envelope.models import AnswerEnvelope, envelope_prompt_values
+from llb.eval.answer_validation.models import GateVerdict
 from llb.eval.graph_contracts import ContextRefiner, ContextSource, RagState
 from llb.eval.table_headers import HeaderRestorer, prompt_context
 from llb.prompts.engine import PromptAugmentation
 from llb.prompts.registry import render_chat, render_text
+
+# Step two of the answer gate: the declared envelope plus the chunks the PROMPT carried, in, the
+# accepted axioms they broke, out. It takes the chunks rather than closing over them because the
+# gate's ledger scope is per case -- the corpus facts the model could actually read.
+AnswerValidator = Callable[[AnswerEnvelope, list[Any]], GateVerdict]
 
 __all__ = [
     "SYSTEM_PROMPT",
@@ -196,6 +202,7 @@ def make_generate_node(
     template_id: str | None = None,
     answer_format: str = envelope_lane.FREE_TEXT,
     suppress_reasoning: bool = False,
+    validator: "AnswerValidator | None" = None,
 ) -> Callable[[RagState], RagState]:
     """Closure: call the backend on the retrieved context; classify the response.
 
@@ -206,6 +213,10 @@ def make_generate_node(
     unchanged path -- same prompt, same single call, same state keys, so a run with the envelope
     off records exactly what it recorded before this seam existed. `envelope` asks for the typed
     contract and parses it at this boundary, spending at most one repair reprompt.
+
+    `validator` adds step two of the gate (ontology-validated-answer-gate) at the SAME boundary: it
+    is bound here to the chunks the prompt carried, so the accepted axioms are checked against the
+    corpus facts the model could actually read rather than against the whole ledger.
     """
 
     def chat(messages: list[ChatMessage]) -> ChatResult:
@@ -230,8 +241,10 @@ def make_generate_node(
         )
         result = chat(messages)
         if answer_format == envelope_lane.ENVELOPE:
+            chunks = state.get("prompt_chunks") or state.get("retrieved") or []
+            validate = None if validator is None else (lambda env: validator(env, chunks))
             return envelope_lane.envelope_state(
-                envelope_boundary.complete_envelope(chat, messages, result)
+                envelope_boundary.complete_envelope(chat, messages, result, validate)
             )
         return {
             "answer": result.text or "",
@@ -266,6 +279,7 @@ def build_rag_graph(
     answer_format: str = envelope_lane.FREE_TEXT,
     suppress_reasoning: bool = False,
     context_refiner: ContextRefiner | None = None,
+    validator: "AnswerValidator | None" = None,
 ) -> Any:
     """Compile the retrieve -> generate LangGraph app. Needs the `[eval]` extra."""
     try:
@@ -306,6 +320,7 @@ def build_rag_graph(
                 template_id=template_id,
                 answer_format=answer_format,
                 suppress_reasoning=suppress_reasoning,
+                validator=validator,
             ),
         ),
     )

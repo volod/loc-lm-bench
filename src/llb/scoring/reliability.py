@@ -1,8 +1,9 @@
 """category expansion reliability scoring -- aggregate the typed failure taxonomy into a first-class score.
 
 Every eval case ends in exactly one TYPED status (`llb.eval.common`): ok / empty / malformed /
-refusal / retrieval_miss plus the transport tokens timeout / backend_error (and any further typed
-failure a backend surfaces: context_truncation / oom / judge_failure). This module rolls those
+schema_invalid / ontology_violation / refusal / retrieval_miss plus the transport tokens timeout /
+backend_error (and any further typed failure a backend surfaces: context_truncation / oom /
+judge_failure). This module rolls those
 per-case statuses up into a reliability score (fraction ok) + a per-failure-type breakdown, over
 the per-case scores of ANY run (RAG board or a category). Pure + unit-tested.
 """
@@ -18,6 +19,8 @@ from llb.eval.common import OK
 KNOWN_FAILURES = (
     "empty",
     "malformed",
+    "schema_invalid",
+    "ontology_violation",
     "refusal",
     "timeout",
     "backend_error",

@@ -220,6 +220,29 @@ def _attach_envelope_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow])
         sum(1 for row in case_rows if row.get("repaired")) / n, 4
     )
     metrics["mean_claims"] = round(sum(int(row.get("n_claims", 0)) for row in case_rows) / n, 4)
+    _attach_validation_metrics(metrics, case_rows)
+
+
+def _attach_validation_metrics(metrics: RunMetrics, case_rows: list[CaseScoreRow]) -> None:
+    """Step-two gate rates (ontology-validated-answer-gate), when the gate ran.
+
+    The refusal rate is reported beside the share of cases the gate could TEST at all: an envelope
+    that declared no triple was unchecked, and a run whose model rarely types its claims would
+    otherwise report a clean gate that never looked at anything.
+    """
+    gated = [row for row in case_rows if "validation_checked_triples" in row]
+    if not gated:
+        return
+    n = len(gated)
+    metrics["ontology_violation_rate"] = round(
+        sum(1 for row in gated if str(row.get("status")) == eval_common.ONTOLOGY_VIOLATION) / n, 4
+    )
+    metrics["validation_checked_rate"] = round(
+        sum(1 for row in gated if int(row.get("validation_checked_triples", 0)) > 0) / n, 4
+    )
+    metrics["validation_repair_rate"] = round(
+        sum(1 for row in gated if row.get("validation_repaired")) / n, 4
+    )
 
 
 def _stage_latency(case_rows: list[CaseScoreRow]) -> dict[str, float]:

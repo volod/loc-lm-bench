@@ -55,6 +55,11 @@ ContextStrategy = Literal["rag", "closed_book", "retrieved_document", "long_cont
 # Answer contract of the generation lane (typed-rag-answer-envelope): free prose (the default,
 # byte-for-byte the pre-envelope path) or the typed `AnswerEnvelope` parsed at the boundary.
 AnswerFormat = Literal["free_text", "envelope"]
+# Step two of the answer gate (ontology-validated-answer-gate): "off" scores the declared answer
+# exactly as step one left it; "ontology" checks its declared triples against the SIGNED axiom set
+# and the corpus ledger facts the retrieved chunks carried, and ends a contradiction in
+# `ontology_violation` after one bounded semantic repair.
+AnswerValidation = Literal["off", "ontology"]
 # Duplicate-collapse tier (llb.rag.duplicates.tiers): when do two chunk texts count as ONE
 # passage? "exact" (the default) is byte-identical and loss-free; "normalized" and "masked" are
 # coarser and merge texts that genuinely differ, so they are adopted per corpus with evidence.
@@ -304,6 +309,16 @@ class RunConfigFields(BaseModel):
     # answer-side signals then read DECLARED fields instead of regexes over prose. Off by default:
     # the format is adopted per model with evidence, never by construction.
     answer_format: AnswerFormat = "free_text"
+
+    # Semantic validation of the DECLARED answer (ontology-validated-answer-gate). Needs
+    # `answer_format="envelope"` (the gate reads declared triples, not prose) plus a SIGNED axiom
+    # file and the extraction ledger the corpus was built from. Off by default and refused rather
+    # than defaulted when either path is missing or the axiom file carries no signature: an axiom
+    # is a domain claim a named reviewer accepted, and enabling an unreviewed one converts correct
+    # answers into `ontology_violation` silently.
+    answer_validation: AnswerValidation = "off"
+    ontology_axioms: Path | None = None
+    ontology_ledger: Path | None = None
 
     # Paths (resolved against the project / DATA_DIR, never hardcoded)
     data_dir: Path = Path(".data")

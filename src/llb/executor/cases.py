@@ -14,6 +14,7 @@ from llb.eval import common as eval_common
 from llb.eval.answer_envelope import lane as envelope_lane
 from llb.eval.answer_envelope import metrics as envelope_metrics
 from llb.eval.answer_envelope.models import AnswerEnvelope
+from llb.executor import case_columns
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.rag.retrieval_records import retrieved_span
@@ -137,8 +138,8 @@ def score_case(
         row["table_headers_restored"] = int(state["table_headers_restored"])
         row["table_header_chars"] = float(state.get("table_header_chars", 0))
     _attach_guard_columns(row, item.question, answer)
-    envelope = _declared_envelope(state)
-    _attach_envelope_columns(row, state, envelope)
+    envelope = case_columns.declared_envelope(state)
+    case_columns.attach_envelope_columns(row, state, envelope)
     # Answer-side signals read the chunks as the PROMPT carried them, which is what the model was
     # asked to ground its answer in; they differ from `retrieved` only under prompt-side context
     # assembly (`llb.eval.table_headers`).
@@ -159,34 +160,6 @@ def _attach_guard_columns(row: CaseScoreRow, question: str, answer: str) -> None
     row["reasoning_leak_chars"] = leak.leak_chars
     row["answer_language"] = language.answer_language
     row["language_mismatch"] = language.mismatch
-
-
-def _attach_envelope_columns(
-    row: CaseScoreRow, state: RagState, envelope: AnswerEnvelope | None
-) -> None:
-    """Attach the declared-answer columns (typed-rag-answer-envelope) to `row`.
-
-    Present only on an envelope-format run, so every bundle recorded with the envelope off keeps
-    exactly the shape it had. `envelope_status` is the parse verdict, `repaired` says the bounded
-    reprompt was spent (which makes first-attempt conformance readable as `1 - repair_rate`), and
-    `n_claims` / `envelope_abstained` are read straight off the declaration.
-    """
-    if "envelope_status" not in state:
-        return
-    row["envelope_status"] = str(state["envelope_status"])
-    row["repaired"] = bool(state.get("envelope_repaired", False))
-    row["n_claims"] = len(envelope.claims) if envelope is not None else 0
-    row["envelope_abstained"] = bool(envelope.abstained) if envelope is not None else False
-
-
-def _declared_envelope(state: RagState) -> AnswerEnvelope | None:
-    """The validated envelope this case declared, if it produced one.
-
-    The state carries it as a plain dict (the durability journal serializes state to JSON), so it
-    is revalidated here through the same contract that admitted it at the generation boundary.
-    """
-    payload = state.get("envelope")
-    return AnswerEnvelope.model_validate(payload) if payload is not None else None
 
 
 def _score_answer_side(

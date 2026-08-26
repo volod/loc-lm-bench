@@ -75,6 +75,35 @@ def _validate_restoration_policy(config: RunConfigFields) -> None:
             raise ValueError(f"{field} needs the 'typos' step in query_prep")
 
 
+def _validate_answer_validation(config: RunConfigFields) -> None:
+    """The ontology gate reads DECLARED triples, so it needs the envelope and its two inputs.
+
+    Every refusal here is named rather than defaulted. A gate pointed at prose would silently
+    validate nothing; a gate with no axiom file or no ledger has nothing to validate against, and
+    quietly running "off" would report an ungated lane under a gated lane's name.
+    """
+    from llb.eval.answer_validation.constants import GATE_ONTOLOGY
+
+    if config.answer_validation != GATE_ONTOLOGY:
+        if config.ontology_axioms is not None or config.ontology_ledger is not None:
+            raise ValueError(
+                "ontology_axioms / ontology_ledger only apply when answer_validation=ontology"
+            )
+        return
+    if config.answer_format != "envelope":
+        raise ValueError(
+            "answer_validation=ontology needs answer_format=envelope: the gate checks the "
+            "envelope's declared claims[].triple, which free-text prose does not carry"
+        )
+    if config.ontology_axioms is None:
+        raise ValueError("answer_validation=ontology needs ontology_axioms (a SIGNED axiom file)")
+    if config.ontology_ledger is None:
+        raise ValueError(
+            "answer_validation=ontology needs ontology_ledger (the corpus extraction.jsonl, or "
+            "the draft bundle directory holding it)"
+        )
+
+
 class RunConfig(RunConfigFields):
     """Validated behavior and artifact paths for one evaluation run."""
 
@@ -100,6 +129,9 @@ class RunConfig(RunConfigFields):
             values["query_glossary_path"] = resolve_project_path(values["query_glossary_path"])
         if values.get("adapter_path") is not None:
             values["adapter_path"] = resolve_project_path(values["adapter_path"])
+        for key in ("ontology_axioms", "ontology_ledger"):
+            if values.get(key) is not None:
+                values[key] = resolve_project_path(values[key])
         return values
 
     @model_validator(mode="after")
@@ -118,6 +150,7 @@ class RunConfig(RunConfigFields):
         if self.judge_base_url is not None:
             _validate_http_endpoint_url(self.judge_base_url, "judge_base_url")
         _validate_scorer_policy(self)
+        _validate_answer_validation(self)
         if self.backend == "vllm":
             _validate_vllm_host_matches_port(self.vllm_host, self.vllm_port)
         return self

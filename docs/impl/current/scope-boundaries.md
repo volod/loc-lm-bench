@@ -155,6 +155,48 @@ same found-rate, same span coverage) and +0.002 [-0.027, +0.035] on Lapa, while
 The lane stays in the product as the measurement that keeps the boundary honest -- an operator on
 another corpus runs it and gets their own verdict -- not as a recommended configuration.
 
+## The Answer Gate Trust Boundary
+
+An axiom is BUSINESS LOGIC, not a measurement. Whether a relation admits one value or many, whether
+`PERSON` and `ORG` are genuinely disjoint in this domain, and whether a relation's range is closed
+are claims about the world that no corpus statistic can settle, and inducing them from corpus
+frequency would only restate what the extractor happened to emit. So the ontology answer gate
+enables an axiom only when a named reviewer signed and dated it (`dcterms:creator` +
+`dcterms:date`), and refuses an unsigned file with a named error rather than defaulting it on
+([RAG core](rag-core/answer-validation.md#the-refusals)).
+
+The cost of a wrong axiom is asymmetric and silent: at the answer gate it converts correct answers
+into `ontology_violation`. That is why the boundary is a signature rather than a threshold, and why
+nothing in this repository -- no test, no fixture, no agent -- may stand in for the reviewer. The
+committed candidate set at `samples/ontology/axioms_uk_v1.ttl` carries no signature; the fixture
+harness signs its own copy IN MEMORY and writes nothing.
+
+## Per-Axiom-Class Adopt-Or-Reject At The Answer Gate
+
+`answer_validation=ontology` is **off by default and no axiom class ships enabled.** A class is
+adopted only when its measured catch rate clears its measured false-rejection rate on the
+operator's own corpus, under the standard paired verdict; every class that does not is recorded
+here as measured-and-not-adopted rather than quietly dropped.
+
+The `symmetric` class is excluded from the gate by CONSTRUCTION, not by measurement: at the ledger
+it reports the gap a missing counterpart is, and an answer is never asked to state both directions
+of a symmetric relation, so enabling it would refuse correct one-way answers whatever a run
+measured. That exclusion is itself covered by an adversarial fixture case.
+
+The record, from the one heavy run taken so far (MamayLM-Gemma-3-12B over the committed 82-item
+`ua_squad_postedited_v1` final split, against a provisionally-signed candidate set; full reading in
+[RAG core](rag-core/answer-validation.md#measured-the-gate-is-not-worth-its-cost-on-this-corpus-and-no-class-ships-enabled)):
+
+| Axiom class | Verdict | On what |
+| --- | --- | --- |
+| `disjoint_types` | measured, not adopted | refused 1 answer, which was correct: the model's declared type disagreed with the extractor's, which is not a logical impossibility |
+| `max_cardinality` | measured, not adopted | refused 1 answer scored wrong by `contains` and correct on inspection -- a morphology artifact of the proxy, not a catch |
+| `functional`, `inverse_functional`, `domain`, `range`, `asymmetric`, `irreflexive` | not measured | never fired on this corpus; absence of a rejection is absence of evidence, not a pass |
+| `symmetric` | excluded by construction | reports a ledger gap an answer is never asked to fill |
+
+No class is adopted, so the shipped default stays `answer_validation=off`. A class moves out of
+this table only on an operator's own measured run, never on this one.
+
 ## Agentic Framework Scope
 
 The maintained agentic harness axis is `loop`, `langgraph`, and `crewai`. Additional frameworks

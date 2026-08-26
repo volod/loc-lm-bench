@@ -76,5 +76,11 @@ def _emit_answer_side(metrics: RunMetrics | None) -> None:
             f"malformed={metrics.get('envelope_malformed_rate', 0.0):.3f} "
             f"repaired={metrics.get('envelope_repair_rate', 0.0):.3f})"
         )
+    if "ontology_violation_rate" in metrics:
+        parts.append(
+            f"ontology_violations={metrics['ontology_violation_rate']:.3f} "
+            f"(checkable={metrics.get('validation_checked_rate', 0.0):.3f} "
+            f"repaired={metrics.get('validation_repair_rate', 0.0):.3f})"
+        )
     if parts:
         _LOG.info("[run-eval] answer-side: %s", " ".join(parts))

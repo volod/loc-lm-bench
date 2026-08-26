@@ -113,12 +113,33 @@ def _default_runner_fn(
         header_restorer=header_restorer,
         answer_format=config.answer_format,
         suppress_reasoning=config.suppress_reasoning_prompt,
+        validator=build_answer_validator(config),
     )
 
     def run(item: GoldItem) -> RagState:
         return eval_graph.run_case(app, item.question, spans_as_dicts(item))
 
     return run, window
+
+
+def build_answer_validator(config: RunConfig) -> Any:
+    """The step-two gate for this run, or None when it is off (ontology-validated-answer-gate).
+
+    Built ONCE per run: the axiom file is parsed and the extraction ledger indexed here, and the
+    per-case work is only scoping that ledger to the chunks the prompt carried. The refusals -- an
+    unsigned axiom file, a missing ledger -- fire at setup, before any model call, so a run can
+    never spend a GPU hour to discover its gate was never enabled.
+    """
+    from llb.eval.answer_validation.constants import GATE_ONTOLOGY
+
+    if config.answer_validation != GATE_ONTOLOGY:
+        return None
+    from llb.eval.answer_validation.gate import load_gate_from_paths
+
+    assert config.ontology_axioms is not None  # refused by RunConfig
+    assert config.ontology_ledger is not None
+    gate = load_gate_from_paths(config.ontology_axioms, config.ontology_ledger)
+    return gate.check
 
 
 def check_rag_prompt_window(config: RunConfig, window: PromptWindow | None) -> str | None:

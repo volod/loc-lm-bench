@@ -795,6 +795,14 @@
         }
       ]
     },
+    "eval.rag.envelope_ontology_repair": {
+      "kind": "text",
+      "descriptor": "eval/rag/envelope_ontology_repair.prompt.json",
+      "template": {
+        "path": "eval/rag/envelope_ontology_repair.txt",
+        "sha256": "559b4920eea8aba5a866bcf6b457ff1c0b35f5fd3602de4a3f14b990d4aaaf95"
+      }
+    },
     "eval.rag.envelope_repair": {
       "kind": "text",
       "descriptor": "eval/rag/envelope_repair.prompt.json",

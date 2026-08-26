@@ -7,8 +7,9 @@ instead of redefining them. Everything in this module is a pure function or cons
 is unit-testable WITHOUT langgraph installed (only the `build_*_graph` functions import it).
 
 Failure taxonomy (design "distinct typed cases"): each case ends in exactly one status --
-ok / empty / malformed / schema_invalid / refusal / timeout / backend_error / retrieval_miss /
-context_overflow -- recorded separately, never collapsed into a single "reliability failure".
+ok / empty / malformed / schema_invalid / ontology_violation / refusal / timeout / backend_error /
+retrieval_miss / context_overflow -- recorded separately, never collapsed into a single
+"reliability failure".
 """
 
 import re
@@ -25,6 +26,12 @@ MALFORMED = "malformed"
 # (typed-rag-answer-envelope). Distinct from MALFORMED on purpose: "did not emit JSON" and "emitted
 # JSON of the wrong shape" call for different fixes, and one number cannot say which happened.
 SCHEMA_INVALID = "schema_invalid"
+# The completion satisfies the contract but its DECLARED triples break an accepted axiom, or
+# contradict a corpus fact whose evidence is in the retrieved chunks (ontology-validated-answer-gate).
+# It is its own status rather than a wrong answer: groundedness cannot see it (the tokens really do
+# appear in a chunk), and scoring a semantically impossible answer as merely incorrect would hide
+# both what the gate stopped and what it cost.
+ONTOLOGY_VIOLATION = "ontology_violation"
 REFUSAL = "refusal"
 RETRIEVAL_MISS = "retrieval_miss"
 # The context a lane would have laid into the prompt does not fit the model's usable window

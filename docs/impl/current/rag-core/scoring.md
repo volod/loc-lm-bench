@@ -326,12 +326,28 @@ things at different places:
 | --- | --- | --- | --- |
 | Structured-output BENCHMARK (`src/llb/scoring/structured/schema.py`) | inside one benchmark tier | a PER-CASE field schema compiled by `build_model` | `is_conformant` records False; the case is scored not-conformant |
 | RAG ANSWER contract (`src/llb/eval/answer_envelope/`) | the generation boundary of every RAG run | ONE fixed contract, the same for every case | a typed terminal status (`malformed` / `schema_invalid`), after one bounded repair |
+| RAG ANSWER semantics (`src/llb/eval/answer_validation/`) | the same boundary, on an envelope that already parsed | the declared triples against SIGNED axioms and the retrieved corpus ledger | `ontology_violation`, after one bounded semantic repair |
 
 The answer boundary is `llb.eval.answer_envelope.boundary.parse_envelope`: the single place a RAG
 completion becomes an `AnswerEnvelope`. Nothing downstream re-parses model text -- the scorers read
 declared fields -- so the question "is this answer well-formed?" has exactly one answer per case,
 recorded rather than re-derived. The JSON extraction itself is the benchmark lane's own
 `parse_output`, so a fenced or prose-wrapped object is recovered identically on both sides.
+
+### The two steps over one RAG answer
+
+The last two rows are ONE gate in two steps, at one boundary, and the split is what makes each
+readable. Step one asks whether the model emitted the requested SHAPE; step two asks whether the
+shape it emitted is POSSIBLE. Neither answers the other's question, and neither is what groundedness
+measures: groundedness asks whether the answer's tokens appear in a chunk, which a semantically
+impossible answer assembled out of real chunk tokens passes cleanly.
+
+Step two therefore sits beside the groundedness metrics rather than inside them. It is off by
+default, refuses an unsigned axiom file rather than defaulting it on, and ships no axiom class
+enabled -- a class is adopted only when its measured catch rate clears its measured false-rejection
+rate on the operator's corpus. What it checks, what it deliberately does NOT check, the two repair
+budgets, the recorded columns, and the measured catch / false-rejection numbers are in
+[the ontology-validated answer gate](answer-validation.md).
 
 ## Typed RAG answer envelope (typed-rag-answer-envelope)
 
@@ -417,7 +433,8 @@ not JSON either. The envelope is several times longer than a short free-text ans
 
 Modules/tests: `src/llb/eval/answer_envelope/` (`models`, `boundary`, `lane`, `metrics`, `study`),
 the `eval.rag.envelope` / `eval.rag.envelope_repair` templates, `answer_format` on `RunConfig`,
-`ScoreOptions` in `src/llb/executor/cases.py`, `_attach_envelope_metrics` in
+`ScoreOptions` in `src/llb/executor/cases.py`, `attach_envelope_columns` in
+`src/llb/executor/case_columns.py`, `_attach_envelope_metrics` in
 `src/llb/executor/runner_metrics.py`, and the CLI `analyze-answer-envelope`;
 `tests/llb/eval/test_answer_envelope.py` (contract-versus-prompt drift, closed-vocabulary
 normalization, fenced JSON, the malformed/schema_invalid split, every terminal status, the bounded

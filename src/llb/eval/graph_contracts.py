@@ -38,6 +38,16 @@ class RagState(TypedDict, total=False):
     envelope_status: str
     envelope_error: str
     envelope_repaired: bool
+    # Step two of the answer gate (ontology-validated-answer-gate), present only when the ontology
+    # gate ran: how many declared triples it could test, how many accepted axioms they broke, which
+    # axiom CLASSES and ids those were, whether the one bounded semantic reprompt was spent, and
+    # the named detail behind a rejection.
+    validation_checked_triples: int
+    validation_violations: int
+    validation_classes: list[str]
+    validation_axioms: list[str]
+    validation_repaired: bool
+    validation_error: str
     # Prompt-side table-header restoration accounting: how many retrieved chunks were given back
     # their column names, and what that added in characters (0 / 0 when the step is off).
     table_headers_restored: int

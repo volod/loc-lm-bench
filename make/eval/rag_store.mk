@@ -3,6 +3,7 @@
 .PHONY: build-rag-store build-index build-graph resolve-graph-entities refresh-index validate-retrieval \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
+	compare-answer-validation check-answer-gate \
 	venv-encoders-legacy compare-embeddings-legacy compare-rerankers-legacy \
 	compare-embedder-adoption compare-adoption-models compare-adoption-roster \
 	compare-adoption-screen compare-vector-stores run-eval \
