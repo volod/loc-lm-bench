@@ -228,6 +228,13 @@ def run_eval_cmd(
         "through the identity that lane PROPOSED, so an answer naming an entity the graph merged "
         "is not read as a second value",
     ),
+    vllm_suppress_thinking: Optional[bool] = typer.Option(
+        None,
+        "--vllm-suppress-thinking/--no-vllm-suppress-thinking",
+        help="send vLLM's reasoning-output controls (enable_thinking=false, and the request "
+        "fields a probe confirms this server accepts) so a reasoning model served by vLLM is "
+        "scored with its thinking suppressed, the way the Ollama path already is",
+    ),
     suppress_reasoning_prompt: Optional[bool] = typer.Option(
         None,
         "--suppress-reasoning-prompt/--no-suppress-reasoning-prompt",

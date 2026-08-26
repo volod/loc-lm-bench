@@ -48,6 +48,7 @@ _CONFIG_OPTIONS = {
     "ontology_ledger": "ontology_ledger",
     "ontology_overlay": "ontology_overlay",
     "suppress_reasoning_prompt": "suppress_reasoning_prompt",
+    "vllm_suppress_thinking": "vllm_suppress_thinking",
     "telemetry": "measure_telemetry",
 }
 _FALSE_MEANS_UNSET = {

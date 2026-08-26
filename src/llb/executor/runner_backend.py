@@ -77,6 +77,7 @@ def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLau
             quantization=config.quantization,
             adapter_path=config.adapter_path,
             max_lora_rank=adapter_lora_rank(config.adapter_path),
+            suppress_thinking=config.vllm_suppress_thinking,
             log_dir=log_dir,
         )
     if config.backend == "llamacpp":

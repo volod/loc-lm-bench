@@ -278,7 +278,8 @@ It names two delivery failures that the correctness columns score as ordinary co
 
 - **Leaked reasoning.** A hybrid-thinking tag emits its deliberation into the ANSWER BODY even
   though the launcher already sends the backend's native suppression flag on every call (`think:
-  false` in `src/llb/backends/ollama.py`). The deliberation is generated text, so it inflates
+  false` in `src/llb/backends/ollama.py`; on vLLM the opt-in reasoning controls in
+  `src/llb/backends/vllm_reasoning.py`). The deliberation is generated text, so it inflates
   `completion_tokens` -- the number throughput and cost are derived from -- and against a bounded
   `max_tokens` it can consume the whole budget so no answer is emitted at all.
 - **Off-language answer.** The benchmark prompt and the `eval.rag` system prompt are Ukrainian, so

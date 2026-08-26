@@ -16,10 +16,86 @@ Important knobs flow from `RunConfig` and CLI flags:
 - `max_model_len`;
 - `gpu_memory_utilization`;
 - host and port;
-- sampler environment from the vLLM preflight verdict.
+- sampler environment from the vLLM preflight verdict;
+- `vllm_suppress_thinking`, the reasoning-output controls described next.
 
 The launcher preserves startup logs when readiness fails. This is important because vLLM failures
 often happen before a JSON API is available.
+
+### Thinking Suppression On The vLLM Path
+
+The Ollama launcher sends `think: false` on every call. vLLM's OpenAI-compatible endpoint has no
+such flag; what it exposes is `chat_template_kwargs` -- a mapping handed to the model's Jinja chat
+template, where a Qwen-style reasoning template reads `enable_thinking` -- plus two fields of
+vLLM's own request schema, `include_reasoning` and `reasoning_effort`. None of the three is in the
+OpenAI schema, so all three travel in the request's `extra_body`.
+
+`src/llb/backends/vllm_reasoning.py` owns that body and both call sites use it: the eval launcher
+and the ontology drafting endpoint (`--no-think`, see
+[robustness and backends](robustness-ontology-backends.md)). It is gated TWICE, because a server
+that models its request body strictly rejects an unknown field with a 400 and a launcher that
+breaks every vLLM run is worse than one that sends no flag:
+
+1. **An explicit opt-in.** `make run-eval ... VLLM_SUPPRESS_THINKING=1`
+   (`--vllm-suppress-thinking`, `RunConfig.vllm_suppress_thinking`). Unset -- the default -- the
+   launcher passes no `extra_body` at all and the request is byte-identical to the shipped shape.
+2. **A verified-once probe.** With the opt-in set, `start()` sends one 1-token generation carrying
+   the FULL body; if that is rejected it retries with the template kwarg alone, and if THAT is
+   rejected it sends a control request with no extras. The control is what separates "this vLLM
+   refuses these fields" from "this server is broken": when the control fails too the probe is
+   inconclusive, nothing is cached, and the launch proceeds with no extras. The verdict is written
+   to `$DATA_DIR/llb/preflight/vllm_reasoning.json` keyed by the installed vLLM version, so the
+   probe costs one short generation per vLLM version and a version upgrade re-runs it.
+
+`telemetry()` reports the resolved level as `thinking_suppression` (`full` / `template_only` /
+`none`) beside `sampler`, so a `--telemetry` bundle records what was actually sent.
+
+Pieces: the body, the ladder and the verdict `src/llb/backends/vllm_reasoning.py`; the launcher
+gate `src/llb/backends/vllm.py`; the shared request seam `src/llb/backends/openai_client.py`
+(`extra_body`); tests `tests/llb/backends/test_vllm_reasoning.py` and
+`tests/llb/backends/test_vllm.py`.
+
+#### What The Flag Measured
+
+2026-08-26, RTX 4060 Ti 16 GiB, vLLM 0.27.1, `Qwen/Qwen3-8B` (8.2B bf16 weights quantized to fp8
+at load, `--max-model-len` 4096, gpu-memory-utilization 0.85). Two bounded 20-case `run-eval` cells
+over the committed `ua_squad_postedited_v1` final split, `MAX_TOKENS=512`, temperature 0, identical
+retrieval on both (recall@5 = 0.900, MRR 0.787) -- the only difference between them is
+`VLLM_SUPPRESS_THINKING`. Qwen3-8B is deliberately NOT a roster entry: no roster model vLLM serves
+has a reasoning template at all, and the roster's reasoning-capable Qwen checkpoints need 40 GiB,
+so the flag could not be exercised on one here. It is a reasoning-capable checkpoint above the 7B
+floor that vLLM can serve on this card, and the cell is a claim about the serving path, not about
+the model's quality.
+
+| vLLM cell | leak rate | language mismatch | mean leak chars | mean completion tokens | objective |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| flag off (the shipped default) | **1.00** | 0.70 | 912 | 301.4 | 0.026 |
+| flag on (`VLLM_SUPPRESS_THINKING=1`) | **0.00** | 0.00 | 0 | 14.9 | 0.383 |
+
+The probe recorded `full` -- vLLM 0.27.1 accepted `chat_template_kwargs`, `include_reasoning` AND
+`reasoning_effort` in one body, so the ladder's lower rungs were never needed here. That settles
+the compatibility question for THIS version only, which is why the rungs stay: what a server takes
+is a property of the server, and the version-keyed verdict is what a future vLLM invalidates.
+
+The reading: with the flag off, 20 of 20 answers open on a reasoning block (18 `</think>`, 2
+`<think>`) and 14 of 20 are delivered in English rather than Ukrainian -- the model spends 301 of
+its 512 tokens deliberating and the token-F1 objective reads 0.026, which is the "answered badly"
+number for something that never answered. With the flag on, no case leaks, no answer reads as
+English (13 Ukrainian, 4 undecided Cyrillic, 3 too short to decide), mean completion falls to 14.9
+tokens, and the objective rises to 0.383. So the lever works on the vLLM path exactly as
+`think: false` does on the Ollama one.
+
+Two numbers in these cells must NOT be read as quality or speed deltas. Contains-based
+`found` falls 0.45 -> 0.25 with the flag on: a 301-token deliberation trivially contains the gold
+span somewhere, which is the verbosity confound documented for the answer-side signals in
+[scoring](rag-core/scoring.md#scoring), not evidence that suppression loses answers. And `tok/s`
+falls 24.4 -> 14.0 because a 14.9-token completion is dominated by prefill and request overhead --
+a decode rate over text that was never an answer is not a rate an operator can spend.
+
+What would overturn it: a vLLM release that changes which request fields the endpoint models (the
+recorded verdict is version-keyed for exactly this reason), or a chat template that ignores
+`enable_thinking`, which is the `qwen3:30b` failure below reproduced on the vLLM path -- the flag
+is a lever on the template, and a template that does not read it cannot be moved by it.
 
 ## Build Rules
 
@@ -251,14 +327,17 @@ launcher's own path (`/api/chat`, `think: false`, `num_ctx` 4096, temperature 0,
 and the four tags that matter were then measured on a bounded 20-case `run-eval` cell over the
 committed `ua_squad_postedited_v1` final split (`MAX_TOKENS=512`, pinned retrieval: recall@5 =
 0.900, MRR 0.787 for every row) so the guard's rates come from real bundles rather than a probe.
-A verdict is recorded for EVERY tag, including the ones that never leaked.
+A verdict is recorded for EVERY tag, including the ones that never leaked. Every tag below serves
+through Ollama except one, so these verdicts read the NATIVE `think: false` flag; the vLLM
+equivalent and its own measured cell are
+[above](#thinking-suppression-on-the-vllm-path).
 
 | tag | serves via | reasoning template | native flag enough | verdict |
 | --- | --- | --- | --- | --- |
 | `gemma4:e4b` | ollama | no | n/a | flag alone; measured leak rate 0.00 on the eval cell |
 | `gemma4:26b` | ollama | no | n/a | flag alone |
 | `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` | ollama | no | n/a | flag alone |
-| `gemma-4-12b-it-w4a16` | vllm | no | n/a | nothing to suppress; the vLLM launcher sends no thinking flag and does not need one |
+| `gemma-4-12b-it-w4a16` | vllm | no | n/a | nothing to suppress; the vLLM lever exists (see [thinking suppression on the vLLM path](#thinking-suppression-on-the-vllm-path)) but this entry has no reasoning template to aim it at |
 | `qwen3.8:27b` | ollama | YES | YES | flag alone; measured leak rate 0.00 on the eval cell |
 | `qwen3.6:27b` | ollama | yes | YES | flag alone |
 | `batiai/qwen3.6-35b:iq3` | ollama | yes | YES | flag alone |
