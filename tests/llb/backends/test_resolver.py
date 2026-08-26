@@ -1,17 +1,16 @@
 """AvailabilityResolver (backend resolver): backend priority + offload-aware fit, driven by fakes."""
 
-from llb.backends.resolver import (
-    ResolverProbes,
-    _hf_has_gguf,
-    llamacpp_offload_split,
-    resolve,
-)
+from llb.backends.resolver import llamacpp_offload_split, resolve
+from llb.backends.resolver_probes import ResolverProbes, _hf_has_gguf
 from llb.backends.resolver_feasibility import backend_can_run
 from llb.backends.resolver_sources import candidate_sources
 from llb.core.contracts.models import ModelSpec
 
 ALL_AVAILABLE = ResolverProbes(
-    hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True
+    runtime_version=lambda _b: None,
+    hf_repo=lambda _s: True,
+    gguf=lambda _s: True,
+    ollama_tag=lambda _s: True,
 )
 
 # A small model that fits a 16 GB card fully (planner verdict -> gpu).
@@ -172,7 +171,10 @@ BIG_GGUF: ModelSpec = {
     "max_context": 8192,
 }
 GGUF_ONLY = ResolverProbes(
-    hf_repo=lambda _s: False, gguf=lambda _s: True, ollama_tag=lambda _s: False
+    runtime_version=lambda _b: None,
+    hf_repo=lambda _s: False,
+    gguf=lambda _s: True,
+    ollama_tag=lambda _s: False,
 )
 
 

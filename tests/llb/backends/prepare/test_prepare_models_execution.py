@@ -1,6 +1,6 @@
 """Tests for prepare models execution."""
 
-from llb.backends import resolver
+from llb.backends import resolver_probes
 from llb.backends.hardware import Gpu
 from llb.backends.prepare.base import (
     MIN_DOWNLOAD_MB,
@@ -96,7 +96,7 @@ def test_store_dir_for_routes_ollama_vs_hf(tmp_path):
 def test_ollama_present_check_scans_configured_store(tmp_path, monkeypatch):
     # Offline fallback: when the daemon is unreachable the reuse check scans the blob store, which
     # moves with the install (user home vs systemd /usr/share/ollama vs OLLAMA_MODELS).
-    monkeypatch.setattr(resolver, "_make_ollama_probe", lambda _host: lambda _s: False)
+    monkeypatch.setattr(resolver_probes, "_make_ollama_probe", lambda _host: lambda _s: False)
     store = tmp_path / "models"
     manifest = store / "manifests" / "hf.co" / "lmstudio-community" / "Foo-GGUF"
     manifest.mkdir(parents=True)
@@ -116,7 +116,7 @@ def test_ollama_present_check_trusts_running_daemon(tmp_path, monkeypatch):
     # serves counts as cached even if it is not in a store path we scan, so a low-disk re-pull of
     # an already-pulled tag is never wrongly refused.
     monkeypatch.setattr(
-        resolver, "_make_ollama_probe", lambda _host: lambda s: s == "mistral-small3.1:24b"
+        resolver_probes, "_make_ollama_probe", lambda _host: lambda s: s == "mistral-small3.1:24b"
     )
     monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path / "empty"))  # nothing on disk to scan
     assert _default_present_check({"backend": "ollama", "source": "mistral-small3.1:24b"})

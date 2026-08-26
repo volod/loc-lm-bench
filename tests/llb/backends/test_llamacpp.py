@@ -194,7 +194,8 @@ def test_make_launcher_builds_llamacpp_from_config(tmp_path):
 
 
 def test_resolver_routes_gguf_only_model_to_llamacpp():
-    from llb.backends.resolver import ResolverProbes, resolve
+    from llb.backends.resolver import resolve
+    from llb.backends.resolver_probes import ResolverProbes
 
     # A 70B GGUF too big for 16 GB VRAM even at q4 -> only llama.cpp (CPU offload) can serve it.
     spec: ModelSpec = {
@@ -208,7 +209,10 @@ def test_resolver_routes_gguf_only_model_to_llamacpp():
         "max_context": 8192,
     }
     probes = ResolverProbes(
-        hf_repo=lambda _s: False, gguf=lambda _s: True, ollama_tag=lambda _s: False
+        runtime_version=lambda _b: None,
+        hf_repo=lambda _s: False,
+        gguf=lambda _s: True,
+        ollama_tag=lambda _s: False,
     )
     resolved = resolve(spec, vram_mib=16000, ram_mib=128000, probes=probes)
     assert resolved["chosen_backend"] == "llamacpp"

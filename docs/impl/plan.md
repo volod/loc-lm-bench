@@ -74,37 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Host fit and serving -- `host-fit-serving`
-
-#### gemma4-gguf-runner-gap (optional)
-
-The host Ollama cannot serve a `gemma4` GGUF at all: 0.20 answers both the curated `gemma4:12b`
-tag and the first-party QAT `q4_0` GGUF with `unknown model architecture: 'gemma4'`, so the
-`gemma-4-12b-it-w4a16` entry has no Ollama path and only its vLLM checkpoint is measurable here
-(see the full-roster throughput baseline in
-[backend telemetry](current/backend-telemetry.md)).
-Any per-model result that resolves through Ollama therefore silently skips one manifest entry.
-Pin the minimum Ollama version that knows `gemma4` in the host setup path, make the resolver report
-an architecture-unsupported source as a NAMED skip instead of a generic backend error, and re-measure
-the entry on Ollama so the roster is served by one backend end to end.
-
-- Serves: `host-fit-serving` -- [Host fit and serving](../design/spec.md#backend-and-hardware-boundary)
-- Agent status: RUN NEEDED
-- Dependencies: the resolver source-selection behavior in
-  [platform matrix](current/platform-vector-matrix.md#multi-quant-vllm-resolution).
-- User-visible outcome: an unsupported-architecture source fails with a source-specific message
-  naming the runtime and the required version, and the roster has no backend-shaped hole.
-- Scope boundary: in scope -- the version floor, the named skip, and the re-measured entry. Out of
-  scope -- vendoring or building a llama.cpp runner.
-- Execution path: raise the host Ollama, re-run the roster throughput protocol, refresh the
-  baseline table.
-- Acceptance gates: `make ci` green; a source whose architecture the runtime rejects produces the
-  named error in a test with an injected fake; the refreshed table carries a measured Ollama row for
-  every manifest entry or records the entry as backend-unsupported with its reason.
-- Documentation target: the roster baseline in
-  [backend telemetry](current/backend-telemetry.md) and the host setup notes in
-  [host validation](current/host-validation.md).
-
 ### Model roster currency -- `model-roster-currency`
 
 #### upstream-generation-currency-probe

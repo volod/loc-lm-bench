@@ -1,6 +1,6 @@
 """Tests for resolver selection."""
 
-from llb.backends import resolver
+from llb.backends import resolver_probes
 from llb.backends.resolver import (
     resolve,
     resolve_all,
@@ -100,8 +100,8 @@ def test_ollama_probe_matches_bare_and_tagged(monkeypatch):
         def read(self):
             return body.encode()
 
-    monkeypatch.setattr(resolver.urllib.request, "urlopen", lambda *a, **k: FakeResp())
-    probe = resolver._make_ollama_probe("http://localhost:11434")
+    monkeypatch.setattr(resolver_probes.urllib.request, "urlopen", lambda *a, **k: FakeResp())
+    probe = resolver_probes._make_ollama_probe("http://localhost:11434")
     assert probe("llama3.2:3b") is True
     assert probe("llama3.2") is True  # bare name matches :latest-style
     assert probe("mistral") is False

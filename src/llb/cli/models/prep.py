@@ -228,7 +228,7 @@ def resolve_models_cmd(
     """Pick the backend that can actually serve each model (discovery + vLLM>Ollama priority)."""
     from llb.backends.hardware import detect_gpus, detect_ram_mb, max_vram_mb
     from llb.backends.resolver import resolve_all
-    from llb.backends.resolver_report import format_resolution
+    from llb.backends.resolver_report import format_resolution, runtime_floor_skips
 
     models = planning_models(manifest)
     gpus = detect_gpus()
@@ -246,5 +246,7 @@ def resolve_models_cmd(
         ram_reserve=ram_reserve,
     )
     typer.echo(format_resolution(rows))
+    for line in runtime_floor_skips(rows):
+        typer.echo(f"[resolve-models] {line}")
     resolved = sum(1 for r in rows if r["chosen_backend"] is not None)
     typer.echo(f"[resolve-models] resolved {resolved} of {len(rows)} to a runnable backend")

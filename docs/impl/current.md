@@ -51,7 +51,7 @@ closed each one and what would make it worth reopening.
 | [Category suite](current/category-benchmark-suite.md) | Security, tooling, agentic, summarization, structured, text analysis | page |
 | [Knowledge cutoff](current/knowledge-cutoff.md) | Effective real-world knowledge cutoff for local models | page |
 | [Prompt templates](current/prompt-templates.md) | Prompt template registry and review workflow | page |
-| [Host validation](current/host-validation.md) | Host acceptance checklist and repeatable smoke runs | page |
+| [Host validation](current/host-validation.md) | Host acceptance checklist, runtime version floors, and the quality/complexity/shell gates | 7 pages |
 | [Model roster](current/model-roster.md) | Model family/generation register, the generated family tables, and generation upgrades | page |
 | [Product decisions](current/scope-boundaries.md) | Settled scope and decision motivation | page |
 

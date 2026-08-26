@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
+from llb.backends.base import ERR_ARCH_UNSUPPORTED, ERR_BACKEND, ERR_TIMEOUT
 from llb.core.contracts.common import ChatMessage, JsonObject
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
 from llb.eval import common as eval_common
@@ -37,7 +37,7 @@ from llb.scoring.leaderboard import bootstrap_mean_ci
 _LOG = logging.getLogger(__name__)
 
 PROBE_METHOD = "insufficient-context"
-_TRANSPORT_ERRORS = (ERR_TIMEOUT, ERR_BACKEND)
+_TRANSPORT_ERRORS = (ERR_TIMEOUT, ERR_BACKEND, ERR_ARCH_UNSUPPORTED)
 
 # (messages) -> (answer text, transport error or None); production binds a BackendLauncher.
 ProbeChat = Callable[[list[ChatMessage]], tuple[str, str | None]]

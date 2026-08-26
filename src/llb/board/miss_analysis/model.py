@@ -7,7 +7,7 @@ classifier, recommendation, and report modules build on it.
 
 from dataclasses import dataclass, field
 
-from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT
+from llb.backends.base import ERR_ARCH_UNSUPPORTED, ERR_BACKEND, ERR_TIMEOUT
 from llb.core.contracts.common import JsonObject
 from llb.eval import common as eval_common
 from llb.prompts.registry import render_text
@@ -26,7 +26,9 @@ DEFAULT_MISS_THRESHOLD = 0.5
 # generation miss -- the two signals conflict, so a human (or the calibration gate) should look.
 JUDGE_AGREEMENT_MIN = 0.7
 # Terminal statuses that are output/transport artifacts rather than model knowledge failures.
-ARTIFACT_STATUSES = frozenset({eval_common.EMPTY, eval_common.MALFORMED, ERR_TIMEOUT, ERR_BACKEND})
+ARTIFACT_STATUSES = frozenset(
+    {eval_common.EMPTY, eval_common.MALFORMED, ERR_TIMEOUT, ERR_BACKEND, ERR_ARCH_UNSUPPORTED}
+)
 
 # Probe interpretation thresholds: a deeper probe CONFIRMS the retrieval hypothesis when it
 # recovers at least this fraction of the retrieval misses; a shallower probe recommends

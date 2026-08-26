@@ -11,6 +11,7 @@ on the last call; richer per-backend telemetry lands in backend telemetry.
 """
 
 import json
+import logging
 import subprocess
 import time
 import urllib.error
@@ -18,10 +19,25 @@ import urllib.request
 from dataclasses import dataclass
 from typing import cast
 
-from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, BackendLauncher, ChatResult
+from llb.backends.base import (
+    ERR_ARCH_UNSUPPORTED,
+    ERR_BACKEND,
+    ERR_TIMEOUT,
+    BackendLauncher,
+    ChatResult,
+)
+from llb.backends.runtime_floor import (
+    architecture_error,
+    artifact_requirement,
+    floor_reason,
+    runtime_version,
+    unsupported_architecture,
+)
 from llb.core.contracts.hardware import BackendMetadata
 from llb.core.contracts.common import ChatMessage
 
+
+_LOG = logging.getLogger(__name__)
 
 # Ollama reports a resident model's total weight bytes and the share of them held in VRAM;
 # the CPU/GPU percentages its own `ps` prints are derived from that pair, rounded on the CPU side.
@@ -119,8 +135,24 @@ class OllamaLauncher(BackendLauncher):
             )
         if self.pull:
             subprocess.run(["ollama", "pull", self.model], check=True)
+        self._check_runtime_floor()
         self._served_context = self._read_served_context()
         self.meta["served_context"] = self._served_context
+
+    def _check_runtime_floor(self) -> None:
+        """Refuse a model this daemon is too old to implement, naming the version that is not.
+
+        Ollama holds the requirement in the artifact itself (`/api/show` -> `requires`), so the
+        check costs two local reads and turns an "unknown model architecture" refusal -- which
+        every caller sees as an anonymous backend error, mid-run, once per case -- into one
+        message at launch that says which runtime, which architecture, and which version.
+        """
+        requirement = artifact_requirement("ollama", self.model, ollama_host=self.host)
+        if requirement is None:
+            return
+        reason = floor_reason(requirement, runtime_version("ollama", ollama_host=self.host))
+        if reason:
+            raise RuntimeError(reason)
 
     def _read_ps(self) -> str | None:
         """The raw `/api/ps` body, or None when the daemon cannot be reached."""
@@ -194,6 +226,13 @@ class OllamaLauncher(BackendLauncher):
                 text="", latency_s=time.monotonic() - started, error=ERR_TIMEOUT
             )
             return self._last
+        except urllib.error.HTTPError as exc:
+            self._last = ChatResult(
+                text="",
+                latency_s=time.monotonic() - started,
+                error=self._classify_http_error(exc),
+            )
+            return self._last
         except (urllib.error.URLError, OSError, ValueError):
             self._last = ChatResult(
                 text="", latency_s=time.monotonic() - started, error=ERR_BACKEND
@@ -207,6 +246,21 @@ class OllamaLauncher(BackendLauncher):
             latency_s=time.monotonic() - started,
         )
         return self._last
+
+    def _classify_http_error(self, exc: "urllib.error.HTTPError") -> str:
+        """Name an architecture the daemon does not implement; anything else stays generic."""
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except (OSError, ValueError):
+            body = str(exc)
+        arch = unsupported_architecture(body)
+        if arch is None:
+            return ERR_BACKEND
+        _LOG.error(
+            "%s",
+            architecture_error("ollama", self.model, arch, "see `ollama show <tag>` -> requires"),
+        )
+        return ERR_ARCH_UNSUPPORTED
 
     def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)

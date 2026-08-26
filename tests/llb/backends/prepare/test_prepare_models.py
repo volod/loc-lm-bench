@@ -217,3 +217,44 @@ def test_plan_expands_multi_quant_vllm_list():
 
 
 # --- disk preflight (prevent a long download that fails for lack of space) ---------------------
+
+
+def test_plan_skips_a_pull_the_runtime_cannot_serve():
+    """A 7 GiB download the host cannot load is refused up front, naming the version it needs."""
+    models = [
+        {
+            "name": "gemma-4-12b-it-w4a16",
+            "backend": "ollama",
+            "source": "gemma4:12b",
+            "min_vram_gb": 8,
+            "runtime_arch": "gemma4",
+            "min_runtime_version": "0.30.5",
+        }
+    ]
+
+    def floor(backend, source, spec):
+        return f"{backend} 0.20.6 does not implement architecture 'gemma4' -- {source} needs ollama >= 0.30.5"
+
+    rows = plan(
+        models,
+        max_mb=16000,
+        has_gpu=True,
+        backend_filter="all",
+        force=False,
+        runtime_floor=floor,
+    )
+    assert rows[0]["action"] == ACTION_SKIP
+    assert "ollama >= 0.30.5" in rows[0]["reason"]
+
+
+def test_force_caches_an_artifact_the_runtime_cannot_serve_yet():
+    models = [{"name": "g", "backend": "ollama", "source": "gemma4:12b", "min_vram_gb": 8}]
+    rows = plan(
+        models,
+        max_mb=16000,
+        has_gpu=True,
+        backend_filter="all",
+        force=True,
+        runtime_floor=lambda *_a: "too old",
+    )
+    assert rows[0]["action"] == ACTION_PULL

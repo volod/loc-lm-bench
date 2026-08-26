@@ -6,8 +6,8 @@ manager
 starts/verifies the serving process, hands out a chat callable, and reports telemetry.
 
 `ChatResult.error` carries a normalized failure token ("timeout" / "backend_error" /
-None) so the eval graph can classify reliability failures without catching SDK-specific
-exceptions.
+"architecture_unsupported" / None) so the eval graph can classify reliability failures without
+catching SDK-specific exceptions.
 """
 
 from dataclasses import dataclass, field
@@ -19,6 +19,9 @@ from llb.core.contracts.common import ChatMessage
 # Normalized transport-level failure tokens (None == success).
 ERR_TIMEOUT = "timeout"
 ERR_BACKEND = "backend_error"
+# The runtime is too old to implement this artifact's architecture -- a host fact, not a transport
+# failure, so it is named rather than folded into the generic backend error (`runtime_floor`).
+ERR_ARCH_UNSUPPORTED = "architecture_unsupported"
 
 
 @dataclass

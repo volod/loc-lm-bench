@@ -27,7 +27,7 @@ clear functional boundary; a cohesive schema or lookup family may remain whole. 
 `scripts/code_quality.sh` to see file size and complexity findings. The line target stays a
 report; the two complexity thresholds and the shell-lint scans are CI gates
 (`make complexity-gate` / `make shell-lint-gate`, both inside `make ci` -- see
-[host validation](host-validation.md#code-quality-checks)).
+[host validation](host-validation/quality-gate.md#code-quality-checks)).
 
 Callers import symbols from their concrete owner module. Package `__init__.py` files contain only
 the package docstring, except CLI area packages whose imports register Typer commands. Runnable
@@ -600,7 +600,7 @@ A fourth marker, `gpu_env`, selects nothing: it is the escape hatch for the auto
 `tests/conftest.py` that fails an unmarked test which initializes a CUDA context or imports
 `flashinfer`, and that starts an unmarked test's subprocesses with no visible CUDA device, so the
 lightweight tier's no-GPU promise is checked rather than assumed (see
-[host validation](host-validation.md#code-quality-checks)).
+[host validation](host-validation/quality-gate.md#code-quality-checks)).
 
 Tests target durable specifications and business rules. Internal builders, helper splits, and
 deterministic intermediate values do not get dedicated tests when workflow or domain tests already
