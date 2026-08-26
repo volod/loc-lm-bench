@@ -4,7 +4,7 @@
 .PHONY: \
 	build-vllm build-llamacpp download-model prep-models prep-serving-targets list-models \
 	detect-gpu-vram gen-serving-config list-model-families sync-model-family-docs \
-	lint-model-roster
+	lint-model-roster measure-throughput
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
@@ -46,6 +46,14 @@ prep-serving-targets: ## Pull/cache models referenced by generated serving tier.
 list-models: ## List which candidate models can run here (GPU+RAM, KV-cache-aware); CONTEXT= to target a context
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main list-models --manifest "$(MODELS_MANIFEST)" $(if $(CONTEXT),--context $(CONTEXT),)
+
+measure-throughput: ## Measure roster entries under the committed throughput protocol; MODELS=name[,name] (default: all)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main measure-throughput --manifest "$(MODELS_MANIFEST)" \
+		$(if $(MODELS),--models "$(MODELS)",) $(if $(CONTEXT),--context $(CONTEXT),) \
+		$(if $(THROUGHPUT_BACKEND),--backend "$(THROUGHPUT_BACKEND)",) \
+		$(if $(THROUGHPUT_SOURCE),--source "$(THROUGHPUT_SOURCE)",)
 
 list-model-families: ## Print the family register: generations, status, licenses, models carried
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

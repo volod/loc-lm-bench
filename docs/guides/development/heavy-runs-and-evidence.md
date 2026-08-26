@@ -72,6 +72,11 @@ citation alone and route the conversion as a task for the host that holds it.
   the process name, the PID, or a pattern the watcher's own command line does not contain.
 - **Host processes:** no model server, run, or tool this task started may be left holding the GPU or
   a port unless the user asked for it to stay up. Check with `nvidia-smi` after any heavy local run.
+- **Nothing else may touch the backend while a measurement runs.** A throughput or telemetry
+  reading is a claim about a quiet host: Ollama evicts a resident model the moment another client
+  asks for VRAM, so a test suite, an editor plugin, or a second eval running alongside inflates
+  latencies and can leave the placement unreadable. Before quoting a rate, confirm the serving log
+  shows only this run's requests over its window.
 - **Temporary artifacts:** throwaway roots, scratch scripts, half-written fixtures, and debug output
   go to the session scratchpad directory or are deleted -- never left in the repo, `src/`, or
   `samples/`.

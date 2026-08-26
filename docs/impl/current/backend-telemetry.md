@@ -44,7 +44,12 @@ The repository does not vendor vLLM or CUDA build outputs.
 `src/llb/backends/telemetry.py` contains the backend-neutral measurement protocol.
 
 `measure_throughput` runs fixed Ukrainian prompts with warmup iterations and a fixed output budget.
-`VramSampler` polls NVML through an injectable reader. `collect_telemetry` records:
+`VramSampler` polls NVML through an injectable reader. Every sampler in `telemetry_samplers` answers
+the same question -- what was true WHILE the generations ran -- so they share one `BackgroundSampler`
+contract (injected reader, daemon thread for the length of a `with` block, swallowed read errors)
+and differ only in what they keep: the peak (VRAM), every reading (power), or the last reading that
+existed (`LastValueSampler`, for a signal that can vanish before the run ends). `collect_telemetry`
+records:
 
 - steady tokens per second;
 - tokenizer efficiency in tokens per Ukrainian character;
@@ -100,7 +105,7 @@ Note that peak VRAM is truthful for a model that fits (MamayLM ~9.4 GiB) but is 
 for one that offloads (Qwen/Mistral pin ~15.9 GiB), so peak VRAM shows *whether* a model spilled,
 not *how much* it needed.
 
-### Full-Roster Throughput Baseline (2026-08-03, RTX 4060 Ti 16 GiB)
+### Full-Roster Throughput Baseline (RTX 4060 Ti 16 GiB)
 
 Every logical entry in `samples/configs/models_uk.yaml` measured back to back under one protocol:
 `collect_telemetry` with the fixed `telemetry.throughput` Ukrainian prompt set, `max_new_tokens=128`,
@@ -109,23 +114,30 @@ the next so every run starts from the same VRAM state. These are SHORT-prompt de
 lane that prefills retrieved context reads lower for the same model (see the context-ablation rows
 in [RAG core](rag-core/context-ablation-evidence.md)).
 
+Rows carry the date they were taken, because they are not all one sitting: the roster sweep ran on
+2026-08-03 (Ollama 0.20), and a generation that lands later is re-measured under the same protocol
+and joins the table beside the generation it replaces
+([refreshing one row](#refreshing-one-row-after-a-generation-upgrade)). Comparing rows of different
+dates compares a model AND the runtime that served it.
+
 `min/100` is the derived decode-only run-sizing figure from the estimator above: minutes to answer
 100 cases at 256 output tokens each, excluding load time and RAG prefill. `tok/UA-char` is the
 tokenizer-efficiency field from the same telemetry record (LOWER is denser output per token) and
 carries a content confound -- read the caveat below before ranking on it.
 
-| model | served artifact | backend | tok/s | tok/UA-char | min/100 | peak VRAM (MB) | placement |
-| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `gemma-4-e4b-it-w4a16` | `gemma4:e4b` | ollama | 63.45 | 0.323 | 6.7 | 11657 | GPU-resident |
-| `qwen3-30b-a3b` | `qwen3:30b` | ollama | 38.87 | 0.202 | 11.0 | 16096 | offload, ~3.3B active |
-| `qwen3.6-35b-a3b-fp8` | `batiai/qwen3.6-35b:iq3` | ollama | 36.90 | 0.353 | 11.6 | 15908 | GPU-resident, ~3B active |
-| `lapa-v0.1.2-instruct` | Lapa 12B GGUF Q4_K_M | ollama | 31.08 | 0.201 | 13.7 | 9835 | GPU-resident |
-| `mamaylm-v2-12b` | MamayLM 12B GGUF Q4_K_M | ollama | 30.99 | 0.325 | 13.8 | 9837 | GPU-resident |
-| `gemma-4-12b-it-w4a16` | `google/gemma-4-12B-it-qat-w4a16-ct` | vllm | 29.48 | 0.317 | 14.5 | 14827 | GPU-resident |
-| `gemma-4-26b-a4b` | `gemma4:26b` | ollama | 26.94 | 0.318 | 15.8 | 16002 | offload, ~3.8B active |
-| `mistral-small-3.1-24b` | `mistral-small3.1:24b` | ollama | 12.41 | 0.331 | 34.4 | 15878 | offload, dense |
-| `mamaylm-v2-27b-fp8` | MamayLM 27B GGUF Q4_K_M | ollama | 7.82 | 0.306 | 54.6 | 15957 | offload 23%/77% |
-| `qwen3.6-27b` | `qwen3.6:27b` | ollama | 4.59 | 0.350 | 93.0 | 15233 | offload 44%/56% |
+| model | served artifact | backend | tok/s | tok/UA-char | min/100 | peak VRAM (MB) | placement | measured |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `gemma-4-e4b-it-w4a16` | `gemma4:e4b` | ollama | 63.45 | 0.323 | 6.7 | 11657 | GPU-resident | 2026-08-03 |
+| `qwen3-30b-a3b` (Qwen 3, previous) | `qwen3:30b` | ollama | 38.87 | 0.202 | 11.0 | 16096 | offload, ~3.3B active | 2026-08-03 |
+| `qwen3.6-35b-a3b-fp8` (Qwen 3.6, previous) | `batiai/qwen3.6-35b:iq3` | ollama | 36.90 | 0.353 | 11.6 | 15908 | GPU-resident, ~3B active | 2026-08-03 |
+| `lapa-v0.1.2-instruct` | Lapa 12B GGUF Q4_K_M | ollama | 31.08 | 0.201 | 13.7 | 9835 | GPU-resident | 2026-08-03 |
+| `mamaylm-v2-12b` | MamayLM 12B GGUF Q4_K_M | ollama | 30.99 | 0.325 | 13.8 | 9837 | GPU-resident | 2026-08-03 |
+| `gemma-4-12b-it-w4a16` | `google/gemma-4-12B-it-qat-w4a16-ct` | vllm | 29.48 | 0.317 | 14.5 | 14827 | GPU-resident | 2026-08-03 |
+| `gemma-4-26b-a4b` | `gemma4:26b` | ollama | 26.94 | 0.318 | 15.8 | 16002 | offload, ~3.8B active | 2026-08-03 |
+| `mistral-small-3.1-24b` | `mistral-small3.1:24b` | ollama | 12.41 | 0.331 | 34.4 | 15878 | offload, dense | 2026-08-03 |
+| `qwen3.8-27b` (Qwen 3.8, CURRENT) | `qwen3.8:27b` | ollama | 10.38 | 0.351 | 41.1 | 14894 | offload 28%/72% | 2026-08-26 |
+| `mamaylm-v2-27b-fp8` | MamayLM 27B GGUF Q4_K_M | ollama | 7.82 | 0.306 | 54.6 | 15957 | offload 23%/77% | 2026-08-03 |
+| `qwen3.6-27b` (Qwen 3.6, previous) | `qwen3.6:27b` | ollama | 4.59 | 0.350 | 93.0 | 15233 | offload 44%/56% | 2026-08-03 |
 
 Practical reading of `min/100`: an 82-item final split costs about 5 minutes on `gemma-4-e4b` and
 over an hour on `qwen3.6-27b`, so a roster-wide sweep is dominated by its two slowest rows. Add
@@ -168,9 +180,62 @@ What the full roster adds beyond the three-row table above:
   (2026-08-23, same host) `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` loads and answers
   normally. The throughput row above is NOT re-measured -- re-run the protocol before quoting a
   `gemma-4-12b` Ollama rate.
+- **The current Qwen generation more than doubles the one it replaces, and offload is why.**
+  `qwen3.8-27b` (the `qwen3.8:27b` q4_k_m tag, measured 2026-08-26 on the same RTX 4060 Ti under
+  Ollama 0.32.15) decodes at **10.38 tok/s** with **28%/72% CPU/GPU** placement and 14894 MB peak
+  VRAM, over three measured passes reading 10.38-11.04 tok/s (the fastest of the three shared the
+  host with an unrelated request and is not the row). Its record also carries `served_context`
+  4096 -- the pinned window was the window served -- and a 5.58 s load, which is a warm-page-cache
+  load rather than a first read from disk. Against that: `qwen3.6-27b`'s 4.59 tok/s at **44%/56%**
+  on 2026-08-03. Two dense 27B q4 artifacts of nearly equal size, and the faster one is the one
+  that keeps more of itself on the card: 41.1 min/100 instead of 93.0 -- an 82-item final split
+  falls from about 76 minutes of decode to about 34. The reading is bounded by the dates: the rows
+  differ in Ollama major version as well as in generation, so this is "what the Qwen lane costs to
+  run today" and NOT an isolated weights-to-weights delta. Re-measuring `qwen3.6:27b` on the
+  current Ollama would separate the two, and is deliberately not done here -- the previous
+  generation is kept for a QUALITY comparison, and a throughput row carries no quality claim. What
+  would overturn it: another Ollama release that changes the offload split (the split, not the
+  weights, is what moves this number), or a host with more VRAM, where neither model offloads and
+  the ordering may invert.
 
-The per-model JSON for this baseline is a scratch artifact, not a run bundle: re-measure with the
-same protocol rather than citing the numbers after a backend or driver upgrade.
+The 2026-08-03 sweep predates the command below and left only a scratch JSON; rows taken since land
+under `$DATA_DIR/measure-throughput/<run timestamp>/`. Neither is a run bundle and neither is what a
+reader should cite: after a backend or driver upgrade, re-measure under the same protocol rather
+than quoting a number taken against a runtime that no longer exists here.
+
+### Refreshing One Row After A Generation Upgrade
+
+A generation swap invalidates the row it replaces, so the protocol above is a COMMAND rather than a
+one-off script -- a row measured months apart is only comparable if nothing about how it was taken
+drifted:
+
+```bash
+make measure-throughput MODELS=qwen3.8-27b   # one entry; MODELS= omitted measures the whole roster
+```
+
+`llb.backends.roster_throughput` owns the protocol constants (128 new tokens, one warmup pass, ctx
+4096, the fixed prompt set), the per-entry measurement, the `min/100` derivation, and the markdown
+row the table above carries; `llb.cli.models.throughput` is the command. Per model it resolves the
+backend the host would actually serve from (`resolve`, so the measured artifact is the one a run
+would use), evicts every resident Ollama model, warm-loads the model once (timing that load and
+confirming the served window, which Ollama reports only after a request has loaded it), measures,
+then runs the cell under the shared isolation contract so the next model starts from a reclaimed,
+cooled GPU. Records land under `$DATA_DIR/measure-throughput/<run timestamp>/rows.json`, carrying
+the derived reading beside the raw telemetry record it came from.
+
+The pieces: protocol + measurement `src/llb/backends/roster_throughput.py`, command
+`src/llb/cli/models/throughput.py` (`make measure-throughput`, `MODELS=`/`CONTEXT=`), Ollama's
+placement probe `src/llb/backends/ollama.py`, shared sampler contract
+`src/llb/backends/telemetry_samplers.py`; tests in `tests/llb/backends/test_roster_throughput.py`
+and `tests/llb/cli/test_cli_measure_throughput.py`.
+
+**Placement is sampled DURING the generations, not after them.** Ollama reports the GPU/CPU byte
+split of a resident model on `/api/ps`, and that split -- not the planner's estimate -- is what the
+`placement` column states for an Ollama row. The reading has to be taken while the model is serving:
+on this host a 17 GB model is evicted the moment something else asks for VRAM, and the first
+measurement of `qwen3.8-27b` recorded no split at all because an unrelated request arrived as the
+last generation returned. `LastValueSampler` polls the launcher's own probe alongside the peak-VRAM
+sampler and keeps the last reading that existed, so the row states what served the run.
 
 For the model-architecture details behind these factors (MoE routing, attention variants,
 sliding-window attention), see the

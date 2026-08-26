@@ -79,7 +79,10 @@ generation upgrade is therefore a manifest edit, not a code edit --
    with `make list-model-families` (register) and `make list-models` (host fit).
 3. Run `make sync-model-family-docs` to republish the README and reference tables.
 4. Pull the artifacts (`make prep-models`) and re-measure: a generation swap invalidates readings
-   taken against the generation it replaces, and those are re-run rather than carried over.
+   taken against the generation it replaces, and those are re-run rather than carried over. For the
+   throughput row that is `make measure-throughput MODELS=<model>`, which re-takes it under the
+   protocol the committed rows used -- see
+   [refreshing one row](backend-telemetry.md#refreshing-one-row-after-a-generation-upgrade).
 
 ## Where it lives
 

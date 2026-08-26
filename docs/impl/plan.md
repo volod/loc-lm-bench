@@ -76,29 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Host fit and serving -- `host-fit-serving`
 
-#### current-qwen-generation-throughput-row
-
-The roster's Qwen lane now serves its current generation (`qwen3.8-27b`) on this host, but the
-full-roster throughput baseline in [backend telemetry](current/backend-telemetry.md) has a row for
-the generation it replaced and none for the one that runs. A per-model result read off that table
-therefore compares a served model against a number measured on a different generation. Measure the
-current Qwen entry under the same roster throughput protocol and record it beside the outgoing row,
-so the two generations are readable side by side rather than one silently standing in for the other.
-
-- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
-- Agent status: RUN NEEDED
-- Dependencies: the family register that says which generation is current, in
-  [model roster](current/model-roster.md).
-- User-visible outcome: the roster baseline table carries a measured row for the current Qwen
-  generation, with the previous generation's row kept and labelled as such.
-- Scope boundary: in scope -- the throughput, VRAM, and offload-split measurement for the current
-  generation on the documented host, under the protocol the existing rows used. Out of scope --
-  re-measuring the rest of the roster, and any quality claim from a throughput run.
-- Acceptance gates: the refreshed table states what ran on what and when, per the evidence rules in
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md); the offload split and
-  peak VRAM are recorded beside tok/s.
-- Documentation target: the roster baseline in [backend telemetry](current/backend-telemetry.md).
-
 #### vllm-thinking-suppression-flag
 
 The Ollama launcher sends the backend's native thinking-suppression flag (`think: false`) on every

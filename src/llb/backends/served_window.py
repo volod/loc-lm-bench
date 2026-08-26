@@ -59,7 +59,7 @@ def backend_host(backend: str, *, ollama_host: str, vllm_host: str, llamacpp_hos
     return native_root(ollama_host or DEFAULT_OLLAMA_HOST)
 
 
-def _model_aliases(model: str) -> set[str]:
+def model_aliases(model: str) -> set[str]:
     """Name forms Ollama may report for the same loaded model (`tag` vs `tag:latest`)."""
     aliases = {model}
     if ":" in model:
@@ -92,7 +92,7 @@ def _entry_context(entry: dict[str, object]) -> int | None:
     return None
 
 
-def _names_this_model(entry: dict[str, object], aliases: set[str]) -> bool:
+def names_this_model(entry: dict[str, object], aliases: set[str]) -> bool:
     """Whether one resident entry is the model asked about, tag or not."""
     name = str(entry.get("name") or entry.get("model") or "")
     return name in aliases or name.rsplit(":", 1)[0] in aliases
@@ -107,9 +107,9 @@ def parse_ollama_served_context(ps_body: str, model: str) -> int | None:
     models = data.get("models") if isinstance(data, dict) else None
     if not isinstance(models, list):
         return None
-    aliases = _model_aliases(model)
+    aliases = model_aliases(model)
     for entry in models:
-        if isinstance(entry, dict) and _names_this_model(entry, aliases):
+        if isinstance(entry, dict) and names_this_model(entry, aliases):
             context = _entry_context(entry)
             if context is not None:
                 return context
