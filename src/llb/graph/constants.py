@@ -24,6 +24,15 @@ MIN_STEM_LEN = 4
 STEM_MATCH_WEIGHT = 0.5
 # Tiny per-node confidence tie-break folded into the link score (does not outweigh a token match).
 CONFIDENCE_TIE_BOOST = 0.01
+# A mention's SECTION TITLE is weaker evidence about that span than the span's own text -- it says
+# what the surrounding passage is about -- so its question coverage is discounted by this share
+# when the per-span affinity tie-break is scored (`llb.graph.span_affinity`).
+SECTION_TITLE_MATCH_WEIGHT = 0.5
+# Where inside its own relevance level a span's affinity may place it: a candidate scoring the
+# level's relevance keeps it, and one scoring nothing drops by this share of the gap DOWN to the
+# next distinct level. Strictly below 1.0, so the affinity term can only reorder spans the lane
+# scored identically -- it never moves a span across a hop, a link-score, or a community level.
+SPAN_AFFINITY_BAND = 0.5
 
 # local_khop defaults.
 DEFAULT_KHOP_DEPTH = 2  # hops expanded around the entity-linked seed nodes

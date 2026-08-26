@@ -13,7 +13,7 @@ This page is the AREA INDEX: the mechanics and each evidence chain live under
 | Page | What it answers |
 | --- | --- |
 | [Modules, strategies, and CLI](graphrag-backend/modules-and-cli.md) | The store decision, the module map, the retrieval strategies, the CLI, and what extraction reads |
-| [Fusion sweep evidence](graphrag-backend/fusion-sweep-evidence.md) | The graph-weight sweep lane, the accepted-ledger and multi-hop slice readings, the widened review handoff, and the sweep re-read against its measurement floor |
+| [Fusion sweep evidence](graphrag-backend/fusion-sweep-evidence.md) | The graph-weight sweep lane, the accepted-ledger and multi-hop slice readings, the widened review handoff, the sweep re-read against its measurement floor, and what scoring the graph lane below its node-relevance levels is worth |
 | [Span identity and candidate depth evidence](graphrag-backend/span-and-depth-evidence.md) | How deep to take graph candidates, how a graph hit maps to a source span, and what the merge threshold is worth |
 | [Retrieval budget and per-hop evidence](graphrag-backend/retrieval-budget-evidence.md) | The per-hop probe lane, and whether a stuck multi-hop `all-spans@k` is limited by the retrieval budget or by the query |
 | [Entity resolution evidence](graphrag-backend/entity-resolution-evidence.md) | Whether entity-node fragmentation is costing the graph lane recall, and what merging the fragments does to it |

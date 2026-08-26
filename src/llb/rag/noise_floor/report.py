@@ -9,6 +9,7 @@ free of presentation.
 from llb.rag.fusion_evidence.spread import format_band
 from llb.rag.noise_floor.models import (
     FloorMargin,
+    LaneFloor,
     NoiseFloorReport,
 )
 
@@ -28,6 +29,7 @@ def format_noise_floor(report: NoiseFloorReport) -> list[str]:
                 f"    {label.ljust(width)}   recall@k {format_band(lane['recall_at_k'])}"
                 f"   mrr {format_band(lane['mrr'])}"
                 f"   fragile {lane['fragile_items']}/{lane['n']}"
+                f"   {_tie_census(lane)}"
             )
     for label in report["unscored"]:
         lines.append(f"    {label}: no candidate score to perturb -- floor not measured")
@@ -63,6 +65,11 @@ def format_margin(margin: FloorMargin) -> str:
         f"{margin['delta']:.3f} recall@k against a +/-{margin['floor']:.3f} floor "
         f"({distance}) -- {verdict}"
     )
+
+
+def _tie_census(lane: LaneFloor) -> str:
+    """The two tie-census numbers as one ASCII cell."""
+    return f"tied {lane['tie_items']}/{lane['n']} block {lane['cut_block']:.1f}"
 
 
 def _per_lane_jitter_note(report: NoiseFloorReport) -> list[str]:
@@ -101,15 +108,22 @@ def render_noise_floor_markdown(
         f"({scored or 'items'} scored: {n}; `src/llb/rag/noise_floor/measure.py`).",
         "",
         *_per_lane_jitter_note(report),
-        "| row | recall@k band | MRR band | fragile |",
-        "| --- | ---: | ---: | ---: |",
+        "`fragile` counts items whose rank-k and rank-(k+1) scores sit within the jitter; "
+        "`exact-tie cut` is the subset whose two scores are IDENTICAL, and `cut block` is how "
+        "many candidates share the rank-k score over those items. A fragile count that is almost "
+        "all exact ties is a lane that did not score its candidates apart -- no added numeric "
+        "precision narrows that band, only a finer relevance signal does.",
+        "",
+        "| row | recall@k band | MRR band | fragile | exact-tie cut | cut block |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     lanes = report["lanes"]
     for label in sorted(lanes):
         lane = lanes[label]
         lines.append(
             f"| {label} | {format_band(lane['recall_at_k'])} | {format_band(lane['mrr'])} "
-            f"| {lane['fragile_items']}/{lane['n']} |"
+            f"| {lane['fragile_items']}/{lane['n']} | {lane['tie_items']}/{lane['n']} "
+            f"| {lane['cut_block']:.1f} |"
         )
     lines.append("")
     for label in report["unscored"]:

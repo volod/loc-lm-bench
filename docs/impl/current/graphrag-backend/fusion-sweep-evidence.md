@@ -240,3 +240,105 @@ Recorded verdicts re-read:
   magnitude past the +/-0.021 floor, so that ordering is not an artifact of the tie blocks -- even
   though those same tie blocks are what make the graph rows' own recall fragile.
 - **Endpoint and passthrough rows are unaffected.** `fused/*@0.00` reproduces the vector row.
+
+## Scoring the graph lane below its node-relevance levels
+
+The floor re-read above left one question open: the graph lanes' own recall was decided by tie
+order for two thirds of the questions, and nobody had established whether those tie blocks were
+REDUCIBLE or a property of the evidence. They were reducible, and the census says why.
+
+### The tie-block census
+
+Measured 2026-08-26 on an RTX PRO 3000 Blackwell 12 GB CUDA host -- a different host and a
+different bundle from the 2026-07-24 re-read above, so the two are not directly comparable and the
+reading below is the PAIRED before/after on this one. The corpus is the replayed five-document
+Ukrainian goods-PDF draft bundle: 79 gold items (45 single-span, 34 labelled multi-hop by the
+bundle's `item_provenance.jsonl`), a hybrid recursive vector store of 1,139 chunks collapsing to
+1,099 indexed (multilingual E5 base, CUDA), and a graph store of 442 nodes, 238 edges, and 230
+communities built from the same bundle's extraction. Every candidate pool is the 30-candidate pool
+the floor already retrieves at k=10.
+
+Before the change, over all 79 items:
+
+| lane | cut is an exact tie | of those, a tie the 4-decimal published score MANUFACTURED | mean candidates sharing the cut score | distinct scores in a 30-candidate pool |
+| --- | ---: | ---: | ---: | ---: |
+| `graph/local_khop` | 54/79 | 0 | 11.2 | 3.6 |
+| `graph/global_community` | 62/79 | 0 | 9.7 | 7.6 |
+
+The counts are the whole finding. **Every fragile item was an exact tie** -- 54 and 62 match the
+`fragile` counts the same run's floor block reported, so nothing was fragile for being merely
+close. **None of those ties was rounding**: re-scoring the identical pools unrounded reproduces 54
+and 62 exactly, so the published 4-decimal score never merged two relevance values that the lane
+had actually separated. What the blocks are instead is one relevance value shared by many spans:
+`local_khop` scores a node `1/(1 + hop distance)` and has three node values to work with at the
+default depth, `global_community` gives every unmatched community member the same floor, and in
+both lanes every mention of a node inherits the node's score. 74% (`local_khop`) and 81%
+(`global_community`) of an average cut block was the mentions of a SINGLE node.
+
+That also says what a finer NODE signal would have been worth: nothing. Edge weight, hop distance
+as a continuous term, mention count, and community rank all score a node, and most of each tie
+block was already one node. The signal had to be per SPAN, and the census says one exists: inside
+the cut blocks, question-token overlap with the section title varied for 85% (`local_khop`) and 90%
+(`global_community`) of blocks, and overlap with the span's own text varied for 89% and 69%.
+
+### What the refinement changed
+
+The lane now orders spans within a relevance level by their own question affinity, banded so it can
+never cross a level ([retrieval strategies](modules-and-cli.md#retrieval-strategies)). Re-scoring
+the identical stores and the identical 79 items at k=10 over the same 7-point weight grid, seed 13,
+2,000 bootstrap resamples:
+
+| reading | before | after |
+| --- | ---: | ---: |
+| worst-lane fragile, every item (n=79) | 62/79 | 36/79 |
+| floor recall@10, every item | +/-0.025 | +/-0.006 |
+| worst-lane fragile, multi-hop slice (n=34) | 31/34 | 18/34 |
+| floor recall@10, multi-hop slice | +/-0.044 | +/-0.015 |
+| mean candidates sharing the cut score (`local_khop` / `global_community`) | 11.2 / 9.7 | 5.2 / 5.5 |
+
+The graph-only rows themselves, over all 79 items:
+
+| row | recall@10 before | recall@10 after | MRR before | MRR after |
+| --- | ---: | ---: | ---: | ---: |
+| `graph/local_khop` | 0.367 | 0.392 | 0.133 | 0.283 |
+| `graph/global_community` | 0.405 | 0.418 | 0.287 | 0.332 |
+
+What the run establishes:
+
+- **The measurement floor under every graph row shrank by 4.2x overall and 2.9x on the focus
+  slice.** That is the deliverable: a graph-only row quoted to three decimals now earns roughly two
+  of them instead of one. The floor is not zero -- 36 and 24 items still cut inside an exact tie --
+  and it should not be, because those residual blocks are real: 22 of `local_khop`'s 36 and 16 of
+  `global_community`'s 24 are entirely one node's mentions, none of which covers a question token
+  in its text or its section title. The lane has no further evidence to separate them, so the
+  remaining band is a property of the graph, not of the scoring.
+- **Ranking quality moved with it, most on the lane that was worst.** `graph/local_khop` MRR rises
+  from 0.133 to 0.283 overall and from 0.139 to 0.353 on the multi-hop slice -- the tie order was
+  putting a relevant span outside the top ranks about as often as inside. Recall moves far less
+  (+0.025 and +0.013 overall), which is the expected shape: a tie block that straddles the cut
+  costs the metric only when a gold span is inside the block.
+- **One recorded floor verdict changes, and it is the one this task existed to unstick.** Overall,
+  `fused/global_community@0.10` leads `@0.30` by 0.013 recall@10; against the old +/-0.025 floor
+  the report said the two rows were not distinguished, and against the new +/-0.006 floor it says
+  the lead clears the floor at 2.0x. The multi-hop slice still does not choose between its top two
+  rows (a 0.000 lead against +/-0.015), so the weight recommendation is unchanged -- the sweep can
+  now separate two weights overall that it previously could only separate on tie order.
+- **The sweep's headline verdict is unchanged**, which is the stability check: still `inconclusive`
+  on `fused/global_community@0.30/d10` at +0.088 recall and +0.206 all-spans on the multi-hop
+  slice, with the same borderline note. A tie-break refinement that had moved the verdict would
+  have been evidence that the verdict rested on tie order.
+- **The fused rows that read the graph lane's RANK improved too, without any change to fusion.**
+  RRF consumes the graph lane's rank order, so a better-ordered lane feeds it better candidates:
+  `fused/local_khop@0.20` goes from 0.823 to 0.886 recall overall and from 0.794 to 0.882 on the
+  multi-hop slice, moving from below the vector row to above it. `global_community`'s fused rows
+  were already dominated by the vector lane at these weights and barely move.
+- **The binding MRR floor is now somewhere else.** At +/-0.048 overall and +/-0.067 on the slice it
+  is set by `fused/*@0.50`, not by a graph row: at a graph weight of exactly 0.5 the two lanes
+  carry equal RRF weight, so their contributions tie against each other. That is a different tie
+  mechanism in the fusion arithmetic, and this task did not touch it.
+
+What would overturn this: a corpus whose graph mentions carry no lexical relation to its questions
+(the affinity term would score every span in a block identically and the floor would return to the
+pre-change width), or a gold set whose spans sit in nodes with a single mention each (the tie
+blocks the refinement targets would not exist to begin with). The reading is also on ONE bundle of
+79 items on one host; the direction is large relative to the floor, the recall deltas are not.

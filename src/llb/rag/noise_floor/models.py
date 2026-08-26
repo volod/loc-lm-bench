@@ -11,12 +11,21 @@ from llb.rag.fusion_evidence.spread import ValueSpread
 
 
 class LaneFloor(TypedDict):
-    """One lane's metric bands plus the fragility that explains how wide they are."""
+    """One lane's metric bands plus the fragility that explains how wide they are.
+
+    The fragile count says the band is real; the TIE CENSUS says what causes it, and the two
+    causes call for different fixes. An EXACTLY tied cut is one relevance value shared by many
+    candidates -- the lane has not scored them apart at all, and only a finer signal reduces it.
+    The remaining fragile items are separated by a real but sub-jitter difference, which is
+    numeric precision (or a rounded published score), and a wider float would reduce it.
+    """
 
     recall_at_k: ValueSpread
     mrr: ValueSpread
     n: int
     fragile_items: int  # items whose rank-k and rank-(k+1) scores sit within `jitter`
+    tie_items: int  # of those, the ones whose two scores are EXACTLY equal (one relevance value)
+    cut_block: float  # mean candidates sharing the rank-k score over the tied items (1.0 == none)
 
 
 class FloorMargin(TypedDict):

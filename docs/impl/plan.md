@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Graph retrieval and ontology -- `graph-retrieval`
 
-#### graph-lane-score-ties (optional)
-
-The graph lane's own recall is decided by tie order for two thirds of the questions it is scored on:
-its link-relevance scores saturate into long exact-tie blocks, the rank-k cut falls inside one for
-68 of 95 items (33 of 35 on the multi-hop slice), and that is what sets the fusion sweep's whole
-measurement floor at `+/-0.021` recall@10 overall and `+/-0.043` on the focus slice
-([GraphRAG](current/graphrag-backend/fusion-sweep-evidence.md#the-sweep-re-read-against-its-measurement-floor)).
-The ranking is reproducible -- `_rank_dedup` breaks ties on `(doc_id, char_start, char_end)` -- but
-a document id is not a relevance signal, so every graph-only row is quoted to three decimals it has
-not earned. Find out whether the tie blocks are reducible: measure how much of each tie block is one
-relevance value versus rounding, and if a finer signal exists (edge weight, hop distance, mention
-count, community rank as a continuous term rather than a bucket) score the lane with it and
-re-measure the floor.
-
-- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the scoring in `src/llb/graph/linking.py` / `src/llb/graph/retrieval.py`
-  and the floor lane (`compare-graph-fusion --noise-floor`) to read the result.
-- User-visible outcome: either graph-only rows whose recall reflects relevance instead of document
-  order, or a recorded finding that the lane's evidence is inherently tied and its rows must be
-  read at the floor's precision.
-- Scope boundary: in scope -- the tie-block census, one finer relevance signal if the census
-  supports one, and the before/after floor. Out of scope -- changing the graph schema, the fusion
-  mechanics, and the RRF rank basis (fused rows already report a zero band).
-- Data and artifact paths: `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
-- Execution path: `make compare-graph-fusion NOISE_FLOOR=1 SPLIT=` before and after, on the CUDA
-  host; CI covers the scoring change over the committed graph fixtures.
-- Acceptance gates: `make ci` green; the report states the fragile count and floor per graph row
-  before and after, and whether any recorded graph-row verdict changes.
-- Documentation target: the retrieval-strategies section of
-  [GraphRAG](current/graphrag-backend.md) and the floor table in [RAG core](current/rag-core.md).
-
 #### answer-gate-equivalence (optional)
 
 Every false rejection the answer gate has produced so far is an IDENTITY failure, not an axiom
