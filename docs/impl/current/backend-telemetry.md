@@ -16,10 +16,86 @@ Important knobs flow from `RunConfig` and CLI flags:
 - `max_model_len`;
 - `gpu_memory_utilization`;
 - host and port;
-- sampler environment from the vLLM preflight verdict.
+- sampler environment from the vLLM preflight verdict;
+- `vllm_suppress_thinking`, the reasoning-output controls described next.
 
 The launcher preserves startup logs when readiness fails. This is important because vLLM failures
 often happen before a JSON API is available.
+
+### Thinking Suppression On The vLLM Path
+
+The Ollama launcher sends `think: false` on every call. vLLM's OpenAI-compatible endpoint has no
+such flag; what it exposes is `chat_template_kwargs` -- a mapping handed to the model's Jinja chat
+template, where a Qwen-style reasoning template reads `enable_thinking` -- plus two fields of
+vLLM's own request schema, `include_reasoning` and `reasoning_effort`. None of the three is in the
+OpenAI schema, so all three travel in the request's `extra_body`.
+
+`src/llb/backends/vllm_reasoning.py` owns that body and both call sites use it: the eval launcher
+and the ontology drafting endpoint (`--no-think`, see
+[robustness and backends](robustness-ontology-backends.md)). It is gated TWICE, because a server
+that models its request body strictly rejects an unknown field with a 400 and a launcher that
+breaks every vLLM run is worse than one that sends no flag:
+
+1. **An explicit opt-in.** `make run-eval ... VLLM_SUPPRESS_THINKING=1`
+   (`--vllm-suppress-thinking`, `RunConfig.vllm_suppress_thinking`). Unset -- the default -- the
+   launcher passes no `extra_body` at all and the request is byte-identical to the shipped shape.
+2. **A verified-once probe.** With the opt-in set, `start()` sends one 1-token generation carrying
+   the FULL body; if that is rejected it retries with the template kwarg alone, and if THAT is
+   rejected it sends a control request with no extras. The control is what separates "this vLLM
+   refuses these fields" from "this server is broken": when the control fails too the probe is
+   inconclusive, nothing is cached, and the launch proceeds with no extras. The verdict is written
+   to `$DATA_DIR/llb/preflight/vllm_reasoning.json` keyed by the installed vLLM version, so the
+   probe costs one short generation per vLLM version and a version upgrade re-runs it.
+
+`telemetry()` reports the resolved level as `thinking_suppression` (`full` / `template_only` /
+`none`) beside `sampler`, so a `--telemetry` bundle records what was actually sent.
+
+Pieces: the body, the ladder and the verdict `src/llb/backends/vllm_reasoning.py`; the launcher
+gate `src/llb/backends/vllm.py`; the shared request seam `src/llb/backends/openai_client.py`
+(`extra_body`); tests `tests/llb/backends/test_vllm_reasoning.py` and
+`tests/llb/backends/test_vllm.py`.
+
+#### What The Flag Measured
+
+2026-08-26, RTX 4060 Ti 16 GiB, vLLM 0.27.1, `Qwen/Qwen3-8B` (8.2B bf16 weights quantized to fp8
+at load, `--max-model-len` 4096, gpu-memory-utilization 0.85). Two bounded 20-case `run-eval` cells
+over the committed `ua_squad_postedited_v1` final split, `MAX_TOKENS=512`, temperature 0, identical
+retrieval on both (recall@5 = 0.900, MRR 0.787) -- the only difference between them is
+`VLLM_SUPPRESS_THINKING`. Qwen3-8B is deliberately NOT a roster entry: no roster model vLLM serves
+has a reasoning template at all, and the roster's reasoning-capable Qwen checkpoints need 40 GiB,
+so the flag could not be exercised on one here. It is a reasoning-capable checkpoint above the 7B
+floor that vLLM can serve on this card, and the cell is a claim about the serving path, not about
+the model's quality.
+
+| vLLM cell | leak rate | language mismatch | mean leak chars | mean completion tokens | objective |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| flag off (the shipped default) | **1.00** | 0.70 | 912 | 301.4 | 0.026 |
+| flag on (`VLLM_SUPPRESS_THINKING=1`) | **0.00** | 0.00 | 0 | 14.9 | 0.383 |
+
+The probe recorded `full` -- vLLM 0.27.1 accepted `chat_template_kwargs`, `include_reasoning` AND
+`reasoning_effort` in one body, so the ladder's lower rungs were never needed here. That settles
+the compatibility question for THIS version only, which is why the rungs stay: what a server takes
+is a property of the server, and the version-keyed verdict is what a future vLLM invalidates.
+
+The reading: with the flag off, 20 of 20 answers open on a reasoning block (18 `</think>`, 2
+`<think>`) and 14 of 20 are delivered in English rather than Ukrainian -- the model spends 301 of
+its 512 tokens deliberating and the token-F1 objective reads 0.026, which is the "answered badly"
+number for something that never answered. With the flag on, no case leaks, no answer reads as
+English (13 Ukrainian, 4 undecided Cyrillic, 3 too short to decide), mean completion falls to 14.9
+tokens, and the objective rises to 0.383. So the lever works on the vLLM path exactly as
+`think: false` does on the Ollama one.
+
+Two numbers in these cells must NOT be read as quality or speed deltas. Contains-based
+`found` falls 0.45 -> 0.25 with the flag on: a 301-token deliberation trivially contains the gold
+span somewhere, which is the verbosity confound documented for the answer-side signals in
+[scoring](rag-core/scoring.md#scoring), not evidence that suppression loses answers. And `tok/s`
+falls 24.4 -> 14.0 because a 14.9-token completion is dominated by prefill and request overhead --
+a decode rate over text that was never an answer is not a rate an operator can spend.
+
+What would overturn it: a vLLM release that changes which request fields the endpoint models (the
+recorded verdict is version-keyed for exactly this reason), or a chat template that ignores
+`enable_thinking`, which is the `qwen3:30b` failure below reproduced on the vLLM path -- the flag
+is a lever on the template, and a template that does not read it cannot be moved by it.
 
 ## Build Rules
 
@@ -44,7 +120,12 @@ The repository does not vendor vLLM or CUDA build outputs.
 `src/llb/backends/telemetry.py` contains the backend-neutral measurement protocol.
 
 `measure_throughput` runs fixed Ukrainian prompts with warmup iterations and a fixed output budget.
-`VramSampler` polls NVML through an injectable reader. `collect_telemetry` records:
+`VramSampler` polls NVML through an injectable reader. Every sampler in `telemetry_samplers` answers
+the same question -- what was true WHILE the generations ran -- so they share one `BackgroundSampler`
+contract (injected reader, daemon thread for the length of a `with` block, swallowed read errors)
+and differ only in what they keep: the peak (VRAM), every reading (power), or the last reading that
+existed (`LastValueSampler`, for a signal that can vanish before the run ends). `collect_telemetry`
+records:
 
 - steady tokens per second;
 - tokenizer efficiency in tokens per Ukrainian character;
@@ -100,7 +181,7 @@ Note that peak VRAM is truthful for a model that fits (MamayLM ~9.4 GiB) but is 
 for one that offloads (Qwen/Mistral pin ~15.9 GiB), so peak VRAM shows *whether* a model spilled,
 not *how much* it needed.
 
-### Full-Roster Throughput Baseline (2026-08-03, RTX 4060 Ti 16 GiB)
+### Full-Roster Throughput Baseline (RTX 4060 Ti 16 GiB)
 
 Every logical entry in `samples/configs/models_uk.yaml` measured back to back under one protocol:
 `collect_telemetry` with the fixed `telemetry.throughput` Ukrainian prompt set, `max_new_tokens=128`,
@@ -109,23 +190,33 @@ the next so every run starts from the same VRAM state. These are SHORT-prompt de
 lane that prefills retrieved context reads lower for the same model (see the context-ablation rows
 in [RAG core](rag-core/context-ablation-evidence.md)).
 
+One entry carries one row per backend it was measured on -- `gemma-4-12b-it-w4a16` has both, and
+the pair is a backend comparison rather than a duplicate. Rows carry the date they were taken,
+because they are not all one sitting: the roster sweep ran on
+2026-08-03 (Ollama 0.20), and a generation that lands later is re-measured under the same protocol
+and joins the table beside the generation it replaces
+([refreshing one row](#refreshing-one-row-after-a-generation-upgrade)). Comparing rows of different
+dates compares a model AND the runtime that served it.
+
 `min/100` is the derived decode-only run-sizing figure from the estimator above: minutes to answer
 100 cases at 256 output tokens each, excluding load time and RAG prefill. `tok/UA-char` is the
 tokenizer-efficiency field from the same telemetry record (LOWER is denser output per token) and
 carries a content confound -- read the caveat below before ranking on it.
 
-| model | served artifact | backend | tok/s | tok/UA-char | min/100 | peak VRAM (MB) | placement |
-| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `gemma-4-e4b-it-w4a16` | `gemma4:e4b` | ollama | 63.45 | 0.323 | 6.7 | 11657 | GPU-resident |
-| `qwen3-30b-a3b` | `qwen3:30b` | ollama | 38.87 | 0.202 | 11.0 | 16096 | offload, ~3.3B active |
-| `qwen3.6-35b-a3b-fp8` | `batiai/qwen3.6-35b:iq3` | ollama | 36.90 | 0.353 | 11.6 | 15908 | GPU-resident, ~3B active |
-| `lapa-v0.1.2-instruct` | Lapa 12B GGUF Q4_K_M | ollama | 31.08 | 0.201 | 13.7 | 9835 | GPU-resident |
-| `mamaylm-v2-12b` | MamayLM 12B GGUF Q4_K_M | ollama | 30.99 | 0.325 | 13.8 | 9837 | GPU-resident |
-| `gemma-4-12b-it-w4a16` | `google/gemma-4-12B-it-qat-w4a16-ct` | vllm | 29.48 | 0.317 | 14.5 | 14827 | GPU-resident |
-| `gemma-4-26b-a4b` | `gemma4:26b` | ollama | 26.94 | 0.318 | 15.8 | 16002 | offload, ~3.8B active |
-| `mistral-small-3.1-24b` | `mistral-small3.1:24b` | ollama | 12.41 | 0.331 | 34.4 | 15878 | offload, dense |
-| `mamaylm-v2-27b-fp8` | MamayLM 27B GGUF Q4_K_M | ollama | 7.82 | 0.306 | 54.6 | 15957 | offload 23%/77% |
-| `qwen3.6-27b` | `qwen3.6:27b` | ollama | 4.59 | 0.350 | 93.0 | 15233 | offload 44%/56% |
+| model | served artifact | backend | tok/s | tok/UA-char | min/100 | peak VRAM (MB) | placement | measured |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `gemma-4-e4b-it-w4a16` | `gemma4:e4b` | ollama | 63.45 | 0.323 | 6.7 | 11657 | GPU-resident | 2026-08-03 |
+| `qwen3-30b-a3b` (Qwen 3, previous) | `qwen3:30b` | ollama | 38.87 | 0.202 | 11.0 | 16096 | offload, ~3.3B active | 2026-08-03 |
+| `qwen3.6-35b-a3b-fp8` (Qwen 3.6, previous) | `batiai/qwen3.6-35b:iq3` | ollama | 36.90 | 0.353 | 11.6 | 15908 | GPU-resident, ~3B active | 2026-08-03 |
+| `lapa-v0.1.2-instruct` | Lapa 12B GGUF Q4_K_M | ollama | 31.08 | 0.201 | 13.7 | 9835 | GPU-resident | 2026-08-03 |
+| `mamaylm-v2-12b` | MamayLM 12B GGUF Q4_K_M | ollama | 30.99 | 0.325 | 13.8 | 9837 | GPU-resident | 2026-08-03 |
+| `gemma-4-12b-it-w4a16` | `gemma4:12b` | ollama | 29.84 | 0.326 | 14.3 | 9581 | GPU-resident | 2026-08-26 |
+| `gemma-4-12b-it-w4a16` | `google/gemma-4-12B-it-qat-w4a16-ct` | vllm | 29.48 | 0.317 | 14.5 | 14827 | GPU-resident | 2026-08-03 |
+| `gemma-4-26b-a4b` | `gemma4:26b` | ollama | 26.94 | 0.318 | 15.8 | 16002 | offload, ~3.8B active | 2026-08-03 |
+| `mistral-small-3.1-24b` | `mistral-small3.1:24b` | ollama | 12.41 | 0.331 | 34.4 | 15878 | offload, dense | 2026-08-03 |
+| `qwen3.8-27b` (Qwen 3.8, CURRENT) | `qwen3.8:27b` | ollama | 10.38 | 0.351 | 41.1 | 14894 | offload 28%/72% | 2026-08-26 |
+| `mamaylm-v2-27b-fp8` | MamayLM 27B GGUF Q4_K_M | ollama | 7.82 | 0.306 | 54.6 | 15957 | offload 23%/77% | 2026-08-03 |
+| `qwen3.6-27b` (Qwen 3.6, previous) | `qwen3.6:27b` | ollama | 4.59 | 0.350 | 93.0 | 15233 | offload 44%/56% | 2026-08-03 |
 
 Practical reading of `min/100`: an 82-item final split costs about 5 minutes on `gemma-4-e4b` and
 over an hour on `qwen3.6-27b`, so a roster-wide sweep is dominated by its two slowest rows. Add
@@ -160,17 +251,91 @@ What the full roster adds beyond the three-row table above:
   the answer body. Re-checked across the whole roster and resolved in
   [thinking-suppression verdicts](#thinking-suppression-verdicts-per-roster-tag) below: it is this
   ONE tag, no lever fixes it, and the flag is sufficient everywhere else.
-- **`gemma-4-12b` had no Ollama path when this baseline was measured.** Ollama 0.20 rejected the
-  `gemma4` architecture in a raw GGUF (`unknown model architecture: 'gemma4'`), so both the curated
-  `gemma4:12b` tag and the first-party QAT `q4_0` GGUF failed to load and the row above is measured
-  on the manifest-primary vLLM w4a16 checkpoint instead. The curated `gemma4:e4b` / `:26b` tags were
-  unaffected because Ollama's own engine serves them. **This no longer holds:** on Ollama 0.32.15
-  (2026-08-23, same host) `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` loads and answers
-  normally. The throughput row above is NOT re-measured -- re-run the protocol before quoting a
-  `gemma-4-12b` Ollama rate.
+- **`gemma-4-12b` had no Ollama path when this baseline was measured, and now has one.** Ollama
+  0.20 rejected the `gemma4` architecture in a raw GGUF (`unknown model architecture: 'gemma4'`),
+  so both the curated `gemma4:12b` tag and the first-party QAT `q4_0` GGUF failed to load and the
+  2026-08-03 row was measured on the manifest-primary vLLM w4a16 checkpoint instead. The curated
+  `gemma4:e4b` / `:26b` tags were unaffected because Ollama's own engine had served them since the
+  Gemma 4 launch. The floor is a published fact, not a guess: `ollama show gemma4:12b` reports
+  `requires 0.30.5` (the 12B architecture landed in Ollama 0.30.3 and its x86/CUDA/Linux crash was
+  fixed in 0.30.5), which is why an 0.20 host answered the way it did. On Ollama 0.32.15 the tag
+  loads and serves, so the entry now carries a MEASURED Ollama row (2026-08-26, protocol above,
+  `make measure-throughput MODELS=gemma-4-12b-it-w4a16 THROUGHPUT_BACKEND=ollama
+  THROUGHPUT_SOURCE=gemma4:12b`) and the roster has no backend-shaped hole. The floor is
+  now pinned per source in the manifest and enforced as a NAMED skip -- see
+  [runtime version floors](host-validation/runtime-version-floors.md).
+- **The Ollama q4_k_m path matches vLLM w4a16 on rate and takes 5246 MB less VRAM.** The two
+  `gemma-4-12b-it-w4a16` rows are the same logical entry on the two backends that serve it:
+  29.84 tok/s / 9581 MB peak (Ollama q4_k_m, 2026-08-26, over three passes reading 29.69-29.91,
+  load 3.4 s, served window 4096 as pinned) against 29.48 tok/s / 14827 MB (vLLM w4a16,
+  2026-08-03). The rates differ by 1.2%, against a 0.7% spread across the three Ollama passes and
+  23 days plus an Ollama major version between the two readings, so this is NOT a claim that either
+  backend decodes faster -- it is that on this card the two paths cost the same time and very
+  different VRAM, and the headroom is what a RAG lane spends on the embedder, a reranker, and KV.
+  No quality claim travels with either row -- a throughput run generates against fixed prompts with
+  no gold answers. What would overturn it: an Ollama or vLLM release that changes the offload or
+  graph-capture behavior, or a card where the w4a16 weights no longer fit alongside the serving
+  overhead.
+- **The current Qwen generation more than doubles the one it replaces, and offload is why.**
+  `qwen3.8-27b` (the `qwen3.8:27b` q4_k_m tag, measured 2026-08-26 on the same RTX 4060 Ti under
+  Ollama 0.32.15) decodes at **10.38 tok/s** with **28%/72% CPU/GPU** placement and 14894 MB peak
+  VRAM, over three measured passes reading 10.38-11.04 tok/s (the fastest of the three shared the
+  host with an unrelated request and is not the row). Its record also carries `served_context`
+  4096 -- the pinned window was the window served -- and a 5.58 s load, which is a warm-page-cache
+  load rather than a first read from disk. Against that: `qwen3.6-27b`'s 4.59 tok/s at **44%/56%**
+  on 2026-08-03. Two dense 27B q4 artifacts of nearly equal size, and the faster one is the one
+  that keeps more of itself on the card: 41.1 min/100 instead of 93.0 -- an 82-item final split
+  falls from about 76 minutes of decode to about 34. The reading is bounded by the dates: the rows
+  differ in Ollama major version as well as in generation, so this is "what the Qwen lane costs to
+  run today" and NOT an isolated weights-to-weights delta. Re-measuring `qwen3.6:27b` on the
+  current Ollama would separate the two, and is deliberately not done here -- the previous
+  generation is kept for a QUALITY comparison, and a throughput row carries no quality claim. What
+  would overturn it: another Ollama release that changes the offload split (the split, not the
+  weights, is what moves this number), or a host with more VRAM, where neither model offloads and
+  the ordering may invert.
 
-The per-model JSON for this baseline is a scratch artifact, not a run bundle: re-measure with the
-same protocol rather than citing the numbers after a backend or driver upgrade.
+The 2026-08-03 sweep predates the command below and left only a scratch JSON; rows taken since land
+under `$DATA_DIR/measure-throughput/<run timestamp>/`. Neither is a run bundle and neither is what a
+reader should cite: after a backend or driver upgrade, re-measure under the same protocol rather
+than quoting a number taken against a runtime that no longer exists here.
+
+### Refreshing One Row After A Generation Upgrade
+
+A generation swap invalidates the row it replaces, so the protocol above is a COMMAND rather than a
+one-off script -- a row measured months apart is only comparable if nothing about how it was taken
+drifted:
+
+```bash
+make measure-throughput MODELS=qwen3.8-27b   # one entry; MODELS= omitted measures the whole roster
+# force the backend when the resolver's priority is not the path you want to measure: the
+# `gemma-4-12b-it-w4a16` entry resolves to vLLM, so its Ollama row is taken explicitly.
+make measure-throughput MODELS=gemma-4-12b-it-w4a16 \
+  THROUGHPUT_BACKEND=ollama THROUGHPUT_SOURCE=gemma4:12b
+```
+
+`llb.backends.roster_throughput` owns the protocol constants (128 new tokens, one warmup pass, ctx
+4096, the fixed prompt set), the per-entry measurement, the `min/100` derivation, and the markdown
+row the table above carries; `llb.cli.models.throughput` is the command. Per model it resolves the
+backend the host would actually serve from (`resolve`, so the measured artifact is the one a run
+would use), evicts every resident Ollama model, warm-loads the model once (timing that load and
+confirming the served window, which Ollama reports only after a request has loaded it), measures,
+then runs the cell under the shared isolation contract so the next model starts from a reclaimed,
+cooled GPU. Records land under `$DATA_DIR/measure-throughput/<run timestamp>/rows.json`, carrying
+the derived reading beside the raw telemetry record it came from.
+
+The pieces: protocol + measurement `src/llb/backends/roster_throughput.py`, command
+`src/llb/cli/models/throughput.py` (`make measure-throughput`, `MODELS=`/`CONTEXT=`), Ollama's
+placement probe `src/llb/backends/ollama.py`, shared sampler contract
+`src/llb/backends/telemetry_samplers.py`; tests in `tests/llb/backends/test_roster_throughput.py`
+and `tests/llb/cli/test_cli_measure_throughput.py`.
+
+**Placement is sampled DURING the generations, not after them.** Ollama reports the GPU/CPU byte
+split of a resident model on `/api/ps`, and that split -- not the planner's estimate -- is what the
+`placement` column states for an Ollama row. The reading has to be taken while the model is serving:
+on this host a 17 GB model is evicted the moment something else asks for VRAM, and the first
+measurement of `qwen3.8-27b` recorded no split at all because an unrelated request arrived as the
+last generation returned. `LastValueSampler` polls the launcher's own probe alongside the peak-VRAM
+sampler and keeps the last reading that existed, so the row states what served the run.
 
 For the model-architecture details behind these factors (MoE routing, attention variants,
 sliding-window attention), see the
@@ -186,14 +351,18 @@ launcher's own path (`/api/chat`, `think: false`, `num_ctx` 4096, temperature 0,
 and the four tags that matter were then measured on a bounded 20-case `run-eval` cell over the
 committed `ua_squad_postedited_v1` final split (`MAX_TOKENS=512`, pinned retrieval: recall@5 =
 0.900, MRR 0.787 for every row) so the guard's rates come from real bundles rather than a probe.
-A verdict is recorded for EVERY tag, including the ones that never leaked.
+A verdict is recorded for EVERY tag, including the ones that never leaked. Every tag below serves
+through Ollama except one, so these verdicts read the NATIVE `think: false` flag; the vLLM
+equivalent and its own measured cell are
+[above](#thinking-suppression-on-the-vllm-path).
 
 | tag | serves via | reasoning template | native flag enough | verdict |
 | --- | --- | --- | --- | --- |
 | `gemma4:e4b` | ollama | no | n/a | flag alone; measured leak rate 0.00 on the eval cell |
 | `gemma4:26b` | ollama | no | n/a | flag alone |
 | `hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0` | ollama | no | n/a | flag alone |
-| `gemma-4-12b-it-w4a16` | vllm | no | n/a | nothing to suppress; the vLLM launcher sends no thinking flag and does not need one |
+| `gemma4:12b` | ollama | YES | YES | flag alone; probed 2026-08-26 (see below) |
+| `gemma-4-12b-it-w4a16` | vllm | no | n/a | nothing to suppress; the vLLM lever exists (see [thinking suppression on the vLLM path](#thinking-suppression-on-the-vllm-path)) but this entry has no reasoning template to aim it at |
 | `qwen3.8:27b` | ollama | YES | YES | flag alone; measured leak rate 0.00 on the eval cell |
 | `qwen3.6:27b` | ollama | yes | YES | flag alone |
 | `batiai/qwen3.6-35b:iq3` | ollama | yes | YES | flag alone |
@@ -201,6 +370,15 @@ A verdict is recorded for EVERY tag, including the ones that never leaked.
 | `mistral-small3.1:24b` | ollama | no | n/a | flag alone |
 | MamayLM v2.0 12B / 27B GGUF | ollama | no | n/a | flag alone |
 | `lapa-v0.1.2-instruct` GGUF | ollama | no | n/a | flag alone |
+
+**`gemma4:12b` is a thinking tag whose flag works, unlike its sibling tags.** The curated 12B tag
+joined the roster's Ollama path on 2026-08-26 (above), so it was probed the same way: with
+`think: true` Ollama returns a populated `thinking` field (478 characters of English deliberation
+on a Ukrainian RAG-shaped prompt), and with `think: false` -- the launcher's own path, `num_ctx`
+4096, temperature 0 -- it returns 12 tokens of clean Ukrainian prose with `reasoning_leak` reading
+no marker at all. So the native flag is sufficient here, and this tag is scoreable. That is a
+verdict about ONE tag on one Ollama version: it does not transfer to `gemma4:e4b` / `:26b`, whose
+rows above were recorded against a template with nothing to suppress.
 
 **The current Qwen generation fixes it; the superseded one cannot be fixed.** `qwen3.8:27b` is a
 thinking model -- with `think: true` Ollama returns a populated `thinking` field beside the answer

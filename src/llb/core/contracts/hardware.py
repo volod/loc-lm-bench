@@ -17,6 +17,9 @@ class BackendMetadata(TypedDict, total=False):
     load_time_s: float | None
     sampler: str
     flashinfer_version: str | None
+    # vLLM only: which reasoning-control request fields this launch sent (`none` == the
+    # shipped shape, no `extra_body` at all). See llb.backends.vllm_reasoning.
+    thinking_suppression: str
     adapter_path: str | None
     adapter_name: str | None
     max_lora_rank: int | None

@@ -85,6 +85,21 @@ When `DRAFT_BASE_URL` is unset, the draft command starts and stops `vllm serve`;
 the command uses the existing OpenAI-compatible endpoint. `DRAFT_NO_THINK=1` sends vLLM
 `chat_template_kwargs.enable_thinking=false` through the request `extra_body` for reasoning models.
 
+## Suppressing A Reasoning Model's Thinking
+
+vLLM has no `think: false` the way Ollama's native API does, so the same controls travel in the
+request `extra_body` -- and they are OFF unless asked for, because a vLLM that models its request
+body strictly rejects an unknown field:
+
+    make run-eval MODEL=<hf-repo-id> BACKEND=vllm VLLM_SUPPRESS_THINKING=1
+
+With the flag set the launcher probes the live server once (one 1-token generation), keeps only
+the fields it accepted, and caches that verdict per vLLM version under
+`$DATA_DIR/llb/preflight/vllm_reasoning.json`. Leave it unset for a model with no reasoning
+template: the request then carries no `extra_body` at all. Read the result off the run's
+`reasoning_leak_rate`; the measured before/after and the per-tag verdicts are in
+[backend telemetry](../../impl/current/backend-telemetry.md#thinking-suppression-on-the-vllm-path).
+
 ## Gotchas (from the real-model validation run)
 
 - **flashinfer sampler is defaulted off.** vLLM JIT-compiles a flashinfer sampling kernel at

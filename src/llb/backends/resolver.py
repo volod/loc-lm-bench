@@ -7,6 +7,9 @@ budget, and at what context". The resolver adds the two things on top of that:
        - vllm:     the HF repo exists (Hugging Face Hub).
        - ollama:   the tag is pulled locally or resolvable in the Ollama library.
        - llamacpp: the (GGUF) repo exposes at least one `*.gguf` file.
+     Plus the runtime itself: a source whose architecture the installed runtime is too old to
+     implement is present and unservable, and becomes a NAMED skip (`runtime_floor`) rather than
+     an anonymous "source not found".
   2. PRIORITY + FIT -- among the AVAILABLE sources, choose by the fixed backend priority
      vllm > ollama > llamacpp, but only when the chosen backend can actually run at the
      planner's verdict. This is fit-aware because the backends differ on CPU offload:
@@ -20,15 +23,11 @@ carries, or as a `sources: {backend: source}` map for the same logical model acr
 Every probe is injectable, so the decision logic is pure and unit-testable without network.
 """
 
-import json
-import urllib.error
-import urllib.request
-from typing import Callable
-
 from llb.backends.planner.constants import VERDICT_GPU, VERDICT_NO, VERDICT_OFFLOAD
 from llb.backends.planner.plan import plan_model
-from llb.core.config_validation import DEFAULT_OLLAMA_HOST
 from llb.core.contracts.models import BackendCandidate, ModelPlanRow, ModelSpec, ResolvedModel
+from llb.backends.resolver_probes import ResolverProbes, _probe_available
+from llb.backends.runtime_floor import RUNTIME_FLOOR_SKIP, source_floor_reason
 from llb.backends.resolver_sources import _priced_spec, candidate_sources
 from llb.backends.resolver_feasibility import (
     MIN_SERVING_CTX,
@@ -42,36 +41,6 @@ from llb.backends.resolver_feasibility import (
 # A backend is "runnable" only if it can serve at least this many tokens of context. Judging
 # fit at the host's MAX context would reject vLLM for any model that needs even one layer
 # offloaded at the long end (e.g. gemma-4-E4B at 131072) yet serves fine at a normal context.
-
-# Probes: source -> availability signal. Defaults hit HF Hub / Ollama; all injectable.
-HfRepoProbe = Callable[[str], bool]  # repo id -> exists
-GgufProbe = Callable[[str], bool]  # repo id -> has at least one *.gguf file
-OllamaProbe = Callable[[str], bool]  # tag -> pulled locally or in the Ollama library
-
-
-def _probe_available(backend: str, source: str, probes: "ResolverProbes") -> bool:
-    if backend == "vllm":
-        return probes.hf_repo(source)
-    if backend == "ollama":
-        return probes.ollama_tag(source)
-    if backend == "llamacpp":
-        return probes.gguf(source)
-    return False
-
-
-class ResolverProbes:
-    """The three availability probes, defaulting to live HF Hub / Ollama checks."""
-
-    def __init__(
-        self,
-        hf_repo: HfRepoProbe | None = None,
-        gguf: GgufProbe | None = None,
-        ollama_tag: OllamaProbe | None = None,
-        ollama_host: str = DEFAULT_OLLAMA_HOST,
-    ):
-        self.hf_repo = hf_repo or _hf_repo_exists
-        self.gguf = gguf or _hf_has_gguf
-        self.ollama_tag = ollama_tag or _make_ollama_probe(ollama_host)
 
 
 def resolve(
@@ -91,7 +60,16 @@ def resolve(
 
     for backend, overrides in candidate_sources(spec):
         source = overrides["source"]
-        available = _probe_available(backend, source, probes)
+        # A source the runtime is too old to serve is present but unservable; it is a NAMED skip,
+        # never "source not found" and never a generic backend error at launch.
+        floor_skip = source_floor_reason(
+            backend,
+            source,
+            {**spec, **overrides},
+            version_reader=probes.runtime_version,
+            requirement_reader=probes.artifact_requirement,
+        )
+        available = not floor_skip and _probe_available(backend, source, probes)
         backend_plan_kwargs = _plan_kwargs_for_backend(backend, dict(plan_kwargs))
         row = plan_model(
             _priced_spec(spec, backend, overrides),
@@ -111,8 +89,11 @@ def resolve(
             "available": available,
             "verdict": verdict,
             "runnable": runnable,
-            "reason": _reason(available, backend, verdict, fits, row, min_serving_ctx),
+            "reason": floor_skip
+            or _reason(available, backend, verdict, fits, row, min_serving_ctx),
         }
+        if floor_skip:
+            candidate["skip"] = RUNTIME_FLOOR_SKIP
         candidates.append(candidate)
         if runnable and chosen is None:  # first runnable wins (sources are priority-ordered)
             chosen = candidate
@@ -188,46 +169,3 @@ def resolve_all(
         )
         for s in specs
     ]
-
-
-# --- live probes (best-effort; any error -> "not available", never raises) ----------------
-
-
-def _hf_repo_exists(repo_id: str) -> bool:
-    try:
-        from huggingface_hub import HfApi
-
-        return bool(HfApi().repo_exists(repo_id))
-    except Exception:
-        return False
-
-
-def _hf_has_gguf(repo_id: str) -> bool:
-    try:
-        from huggingface_hub import HfApi
-
-        normalized = repo_id
-        for prefix in ("https://huggingface.co/", "huggingface.co/", "hf.co/"):
-            if normalized.startswith(prefix):
-                normalized = normalized[len(prefix) :]
-                break
-        normalized = normalized.split(":", 1)[0]
-        files = HfApi().list_repo_files(normalized)
-        return any(f.lower().endswith(".gguf") for f in files)
-    except Exception:
-        return False
-
-
-def _make_ollama_probe(host: str) -> OllamaProbe:
-    def probe(tag: str) -> bool:
-        try:
-            url = f"{host.rstrip('/')}/api/tags"
-            with urllib.request.urlopen(url, timeout=3.0) as resp:
-                body = json.loads(resp.read().decode("utf-8", "replace"))
-        except (urllib.error.URLError, OSError, ValueError):
-            return False
-        names = {m.get("name", "") for m in body.get("models", [])}
-        # Match `llama3.2:3b` and a bare `llama3.2` (Ollama defaults to :latest).
-        return tag in names or any(n.split(":", 1)[0] == tag.split(":", 1)[0] for n in names)
-
-    return probe

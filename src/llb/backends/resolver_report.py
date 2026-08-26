@@ -1,6 +1,22 @@
 """Focused resolver report implementation."""
 
+from llb.backends.runtime_floor import RUNTIME_FLOOR_SKIP
 from llb.core.contracts.models import ResolvedModel
+
+
+def runtime_floor_skips(rows: list[ResolvedModel]) -> list[str]:
+    """One line per candidate the installed runtime is too old to serve.
+
+    The chosen-backend table cannot show these: a model that falls back to another backend still
+    resolves, so the hole -- an entry whose Ollama path this host cannot serve at all -- would be
+    invisible exactly when it changes which artifact a measurement was taken on.
+    """
+    return [
+        f"skip {row['name']} / {candidate['backend']}: {candidate['reason']}"
+        for row in rows
+        for candidate in row["candidates"]
+        if candidate.get("skip") == RUNTIME_FLOOR_SKIP
+    ]
 
 
 def format_resolution(rows: list[ResolvedModel]) -> str:

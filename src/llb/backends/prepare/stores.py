@@ -104,7 +104,7 @@ def _ollama_present(source: str) -> bool:
     the on-disk locations we guess. Falls back to scanning the candidate blob stores when the daemon
     is unreachable (offline), so the check never blocks a re-pull of an already-cached tag.
     """
-    from llb.backends.resolver import _make_ollama_probe
+    from llb.backends.resolver_probes import _make_ollama_probe
 
     host = os.environ.get(env.OLLAMA_HOST) or DEFAULT_OLLAMA_HOST
     try:

@@ -194,6 +194,15 @@ own prep artifact (`<name>-vllm-<quant>`), so `prep-models` caches every quant t
 resolver would pick on a big card -- not just the parent quant -- while `resolve-models` still
 prints the single chosen backend. Single-source entries are unchanged throughout.
 
+### Availability Includes The Runtime, Not Only The Source
+
+`candidate_sources` also asks whether the installed runtime implements the artifact's architecture
+at all. A source below its declared floor is reported as a named skip carrying the runtime, the
+architecture, and the required version -- never "source not found" and never a generic backend
+error at launch. The floors, where they are read from, and what each entry point prints are in
+[runtime version floors](host-validation/runtime-version-floors.md); the probes live in
+`src/llb/backends/resolver_probes.py`, split out of the resolver so its decision logic stays pure.
+
 ## Model-Prep Disk Preflight
 
 `prep-models` / `prep-serving-targets` reuse any artifact already in its backend store and refuse a

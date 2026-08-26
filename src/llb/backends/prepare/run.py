@@ -27,7 +27,39 @@ from llb.backends.prepare.stores import (
     estimate_download_mb,
     store_dir_for,
 )
+from llb.backends.prepare.planning import RuntimeFloorCheck
 from llb.core.contracts.models import ModelSpec, PreparationReport, PreparedModel
+
+
+def _default_runtime_floor() -> RuntimeFloorCheck:
+    """Ask the installed runtime whether it implements an artifact at all (host-setup gate).
+
+    One version read per backend serves the whole manifest; the per-artifact requirement is a
+    local daemon call that only a held tag answers.
+    """
+    from llb.backends.runtime_floor import (
+        artifact_requirement,
+        runtime_version,
+        source_floor_reason,
+    )
+
+    versions: dict[str, str | None] = {}
+
+    def read_version(backend: str) -> str | None:
+        if backend not in versions:
+            versions[backend] = runtime_version(backend)
+        return versions[backend]
+
+    def check(backend: str, source: str, spec: ModelSpec) -> str | None:
+        return source_floor_reason(
+            backend,
+            source,
+            dict(spec),
+            version_reader=read_version,
+            requirement_reader=artifact_requirement,
+        )
+
+    return check
 
 
 def _disk_status(
@@ -101,11 +133,19 @@ def prepare_models(
     progress: PrepareProgress | None = None,
     disk_free_reader: DiskFreeReader | None = None,
     present_check: PresentCheck | None = None,
+    runtime_floor: RuntimeFloorCheck | None = None,
 ) -> PreparationReport:
     """Execute (or, with dry_run, just plan) model preparation. Returns a report dict."""
     gpus = detect_gpus() if gpus is None else gpus
     max_mb = max_vram_mb(gpus)
-    rows = plan(models, max_mb, bool(gpus), backend_filter, force)
+    rows = plan(
+        models,
+        max_mb,
+        bool(gpus),
+        backend_filter,
+        force,
+        runtime_floor or _default_runtime_floor(),
+    )
     ollama_pull = ollama_pull or _ollama_pull
     hf_cache = hf_cache or _hf_cache
     disk_free_reader = disk_free_reader or hardware.disk_free_mb

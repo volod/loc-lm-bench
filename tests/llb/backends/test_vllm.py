@@ -160,3 +160,100 @@ def test_chat_uses_lora_module_name_for_adapter_requests():
     result = launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
     assert result.text == "ok"
     assert seen["model"] == "adapter"
+
+
+class RecordingClient:
+    """A chat client that records every request kwarg set and answers with one token."""
+
+    def __init__(self, reject: tuple[str, ...] = ()):
+        self.requests: list[dict] = []
+        self._reject = reject
+        outer = self
+
+        class completions:
+            @staticmethod
+            def create(**kwargs):
+                import types
+
+                import openai
+
+                outer.requests.append(kwargs)
+                if any(key in (kwargs.get("extra_body") or {}) for key in outer._reject):
+                    raise openai.APIError("unexpected field", request=None, body=None)
+                msg = types.SimpleNamespace(content="ok")
+                usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1)
+                return types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=msg)], usage=usage
+                )
+
+        class chat:
+            pass
+
+        chat.completions = completions
+        self.chat = chat
+
+
+def make_probed_launcher(client, *, suppress_thinking=True):
+    return VllmLauncher(
+        "org/Model",
+        suppress_thinking=suppress_thinking,
+        popen=lambda cmd, **kw: FakeProc(),
+        http_get=lambda url, timeout=3.0: (200, '{"data": []}'),
+        sleep=lambda _s: None,
+        client_factory=lambda: client,
+    )
+
+
+def test_chat_sends_no_extra_body_unless_thinking_suppression_is_enabled(tmp_path, monkeypatch):
+    """The shipped shape: opting out must leave the request byte-identical to today's."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    client = RecordingClient()
+    launcher = make_probed_launcher(client, suppress_thinking=False)
+    launcher.start()
+    launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
+    assert client.requests == [
+        {
+            "model": "org/Model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "temperature": 0.0,
+            "timeout": 10,
+        }
+    ]
+    assert launcher.meta["thinking_suppression"] == "none"
+
+
+def test_enabling_suppression_probes_once_and_sends_what_the_server_accepted(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    client = RecordingClient()
+    launcher = make_probed_launcher(client)
+    launcher.start()
+    assert len(client.requests) == 1  # the one-token probe
+    launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
+    body = client.requests[-1]["extra_body"]
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert body["include_reasoning"] is False and body["reasoning_effort"] == "none"
+    assert launcher.meta["thinking_suppression"] == "full"
+
+
+def test_a_server_that_rejects_vllms_request_fields_falls_back_to_the_template_kwarg(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    client = RecordingClient(reject=("include_reasoning",))
+    launcher = make_probed_launcher(client)
+    launcher.start()
+    launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
+    assert client.requests[-1]["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert launcher.meta["thinking_suppression"] == "template_only"
+
+
+def test_a_server_that_rejects_every_control_body_is_served_without_extras(tmp_path, monkeypatch):
+    """The failure mode the probe exists to prevent: no flag beats a launcher that 400s."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    client = RecordingClient(reject=("include_reasoning", "chat_template_kwargs"))
+    launcher = make_probed_launcher(client)
+    launcher.start()
+    launcher.chat([{"role": "user", "content": "hi"}], 16, 0.0, 10)
+    assert "extra_body" not in client.requests[-1]
+    assert launcher.meta["thinking_suppression"] == "none"

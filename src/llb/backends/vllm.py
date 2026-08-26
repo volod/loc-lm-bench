@@ -65,6 +65,7 @@ class VllmLauncher(BackendLauncher):
         adapter_path: Path | str | None = None,
         adapter_name: str = "adapter",
         max_lora_rank: int | None = None,
+        suppress_thinking: bool = False,
         extra_args: list[str] | None = None,
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
@@ -72,6 +73,7 @@ class VllmLauncher(BackendLauncher):
         popen: Callable[..., _Process] | None = None,
         http_get: _HttpGetter | None = None,
         sleep: Callable[[float], None] | None = None,
+        client_factory: Callable[[], Any] | None = None,
     ):
         super().__init__(
             model=model,
@@ -99,11 +101,17 @@ class VllmLauncher(BackendLauncher):
         self.adapter_path = str(adapter_path) if adapter_path else None
         self.adapter_name = adapter_name
         self.max_lora_rank = max_lora_rank
+        # OFF by default: vLLM's reasoning-control fields are not in the OpenAI schema, so a
+        # server that models its request body strictly can reject them. With this unset the
+        # request carries no `extra_body` at all and is byte-identical to the shipped shape.
+        self.suppress_thinking = suppress_thinking
+        self._extra_body: dict[str, object] = {}
         self.request_model = adapter_name if adapter_path else model
         self.extra_args = extra_args
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
         self.log_dir = Path(log_dir) if log_dir else None
+        self._client_factory = client_factory
         self._popen = popen or cast(Callable[..., _Process], subprocess.Popen)
         self._http_get = http_get or _http_get
         self._sleep = sleep or time.sleep
@@ -184,13 +192,34 @@ class VllmLauncher(BackendLauncher):
         self.load_time_s = time.monotonic() - start
         self._served_context = parse_served_context(ready_body or "")
         self.meta["served_context"] = self._served_context
-        self._client = make_client(f"{self.host}/v1", api_key="vllm")
+        self._client = self._connect()
+        self._resolve_thinking_suppression()
+
+    def _connect(self) -> Any:
+        """The OpenAI-compatible client for the served endpoint (injectable for tests)."""
+        if self._client_factory is not None:
+            return self._client_factory()
+        return make_client(f"{self.host}/v1", api_key="vllm")
+
+    def _resolve_thinking_suppression(self) -> None:
+        """Settle which reasoning-control fields this server takes, once per vLLM version.
+
+        Probed only when the caller opted in; the verdict is cached under `$DATA_DIR`, so the
+        cost is one 1-token generation on the first launch of a given vLLM and nothing after.
+        """
+        from llb.backends.vllm_reasoning import FIELDS_NONE, resolve_extra_body
+
+        if not self.suppress_thinking:
+            self.meta["thinking_suppression"] = FIELDS_NONE
+            return
+        self._extra_body, level = resolve_extra_body(self._client, self.request_model)
+        self.meta["thinking_suppression"] = level
 
     def chat(
         self, messages: list[ChatMessage], max_tokens: int, temperature: float, timeout: float
     ) -> ChatResult:
         if self._client is None:
-            self._client = make_client(f"{self.host}/v1", api_key="vllm")
+            self._client = self._connect()
         self._last = chat_once(
             self._client,
             self.request_model,
@@ -198,6 +227,7 @@ class VllmLauncher(BackendLauncher):
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=timeout,
+            extra_body=self._extra_body or None,
         )
         return self._last
 

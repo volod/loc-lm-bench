@@ -11,15 +11,92 @@ on the last call; richer per-backend telemetry lands in backend telemetry.
 """
 
 import json
+import logging
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import cast
 
-from llb.backends.base import ERR_BACKEND, ERR_TIMEOUT, BackendLauncher, ChatResult
+from llb.backends.base import (
+    ERR_ARCH_UNSUPPORTED,
+    ERR_BACKEND,
+    ERR_TIMEOUT,
+    BackendLauncher,
+    ChatResult,
+)
+from llb.backends.runtime_floor import (
+    architecture_error,
+    artifact_requirement,
+    floor_reason,
+    runtime_version,
+    unsupported_architecture,
+)
 from llb.core.contracts.hardware import BackendMetadata
 from llb.core.contracts.common import ChatMessage
+
+
+_LOG = logging.getLogger(__name__)
+
+# Ollama reports a resident model's total weight bytes and the share of them held in VRAM;
+# the CPU/GPU percentages its own `ps` prints are derived from that pair, rounded on the CPU side.
+PLACEMENT_GPU = "GPU-resident"
+PLACEMENT_CPU = "CPU-only"
+
+
+@dataclass(frozen=True)
+class OllamaPlacement:
+    """Where a resident model's weights actually sit: total bytes vs the bytes held in VRAM.
+
+    This is MEASURED placement, not the planner's estimate: a q4 GGUF that the memory planner
+    calls `offload` may still land wholly on the GPU at a small context, and the throughput a
+    row records is only readable beside the split that produced it.
+    """
+
+    total_bytes: int
+    vram_bytes: int
+
+    @property
+    def cpu_percent(self) -> int:
+        """Percent of the weights held in system RAM, rounded the way Ollama's own `ps` rounds."""
+        if self.total_bytes <= 0:
+            return 0
+        return int(round((self.total_bytes - self.vram_bytes) / self.total_bytes * 100))
+
+    @property
+    def gpu_percent(self) -> int:
+        return 100 - self.cpu_percent
+
+    @property
+    def label(self) -> str:
+        """The placement as a table cell: fully resident, fully on CPU, or the offload split."""
+        if self.vram_bytes <= 0:
+            return PLACEMENT_CPU
+        if self.vram_bytes >= self.total_bytes:
+            return PLACEMENT_GPU
+        return f"offload {self.cpu_percent}%/{self.gpu_percent}% CPU/GPU"
+
+
+def parse_ollama_placement(ps_body: str, model: str) -> OllamaPlacement | None:
+    """Pull one loaded model's GPU/CPU weight split from an `/api/ps` body (best-effort)."""
+    from llb.backends.served_window import model_aliases, names_this_model
+
+    try:
+        data = json.loads(ps_body)
+    except (ValueError, TypeError):
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    aliases = model_aliases(model)
+    for entry in models:
+        if not isinstance(entry, dict) or not names_this_model(entry, aliases):
+            continue
+        total, vram = entry.get("size"), entry.get("size_vram")
+        if isinstance(total, int) and isinstance(vram, int) and total > 0:
+            return OllamaPlacement(total_bytes=total, vram_bytes=max(0, min(vram, total)))
+    return None
 
 
 class OllamaLauncher(BackendLauncher):
@@ -58,21 +135,46 @@ class OllamaLauncher(BackendLauncher):
             )
         if self.pull:
             subprocess.run(["ollama", "pull", self.model], check=True)
+        self._check_runtime_floor()
         self._served_context = self._read_served_context()
         self.meta["served_context"] = self._served_context
+
+    def _check_runtime_floor(self) -> None:
+        """Refuse a model this daemon is too old to implement, naming the version that is not.
+
+        Ollama holds the requirement in the artifact itself (`/api/show` -> `requires`), so the
+        check costs two local reads and turns an "unknown model architecture" refusal -- which
+        every caller sees as an anonymous backend error, mid-run, once per case -- into one
+        message at launch that says which runtime, which architecture, and which version.
+        """
+        requirement = artifact_requirement("ollama", self.model, ollama_host=self.host)
+        if requirement is None:
+            return
+        reason = floor_reason(requirement, runtime_version("ollama", ollama_host=self.host))
+        if reason:
+            raise RuntimeError(reason)
+
+    def _read_ps(self) -> str | None:
+        """The raw `/api/ps` body, or None when the daemon cannot be reached."""
+        try:
+            with urllib.request.urlopen(f"{self.host}/api/ps", timeout=5) as resp:
+                return str(resp.read().decode("utf-8", "replace"))
+        except (urllib.error.URLError, OSError):
+            return None
 
     def _read_served_context(self) -> int | None:
         from llb.backends.served_window import parse_ollama_served_context
 
-        try:
-            with urllib.request.urlopen(f"{self.host}/api/ps", timeout=5) as resp:
-                body = resp.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, OSError):
-            return None
-        return parse_ollama_served_context(body, self.model)
+        body = self._read_ps()
+        return parse_ollama_served_context(body, self.model) if body is not None else None
 
     def served_context(self) -> int | None:
         return self._served_context
+
+    def placement(self) -> OllamaPlacement | None:
+        """The GPU/CPU weight split Ollama reports for this model right now (None until loaded)."""
+        body = self._read_ps()
+        return parse_ollama_placement(body, self.model) if body is not None else None
 
     def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
         """Warm-load so `/api/ps` reports the window this launcher will serve.
@@ -124,6 +226,13 @@ class OllamaLauncher(BackendLauncher):
                 text="", latency_s=time.monotonic() - started, error=ERR_TIMEOUT
             )
             return self._last
+        except urllib.error.HTTPError as exc:
+            self._last = ChatResult(
+                text="",
+                latency_s=time.monotonic() - started,
+                error=self._classify_http_error(exc),
+            )
+            return self._last
         except (urllib.error.URLError, OSError, ValueError):
             self._last = ChatResult(
                 text="", latency_s=time.monotonic() - started, error=ERR_BACKEND
@@ -137,6 +246,21 @@ class OllamaLauncher(BackendLauncher):
             latency_s=time.monotonic() - started,
         )
         return self._last
+
+    def _classify_http_error(self, exc: "urllib.error.HTTPError") -> str:
+        """Name an architecture the daemon does not implement; anything else stays generic."""
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except (OSError, ValueError):
+            body = str(exc)
+        arch = unsupported_architecture(body)
+        if arch is None:
+            return ERR_BACKEND
+        _LOG.error(
+            "%s",
+            architecture_error("ollama", self.model, arch, "see `ollama show <tag>` -> requires"),
+        )
+        return ERR_ARCH_UNSUPPORTED
 
     def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)

@@ -42,6 +42,8 @@ class _ModelSpecSchema(BaseModel):
     tie_word_embeddings: bool | None = None
     embed_bpw: float | None = None
     hi_precision_params_b: float | None = None
+    runtime_arch: str | None = None
+    min_runtime_version: str | None = None
     sources: dict[str, "str | dict[str, object] | list[str | dict[str, object]]"] | None = None
 
 

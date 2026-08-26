@@ -1,10 +1,12 @@
-"""Pure planning: decide a per-model action from the detected hardware, expand a logical model into
-concrete per-backend / per-quant prep artifacts, and derive the license-acceptance URL.
+"""Pure planning: decide a per-model action from the detected hardware and the installed runtime,
+expand a logical model into concrete per-backend / per-quant prep artifacts, and derive the
+license-acceptance URL.
 
-No side effects -- this is the unit-testable core the `prepare_models` orchestrator drives.
+No side effects -- this is the unit-testable core the `prepare_models` orchestrator drives. The one
+thing it cannot know on its own is what the host runtime is, so that arrives as an injected reader.
 """
 
-from typing import cast
+from typing import Callable, cast
 
 from llb.backends.prepare.base import (
     ACTION_CACHE,
@@ -92,14 +94,26 @@ def _expand_prepare_sources(models: list[ModelSpec]) -> list[ModelSpec]:
     return expanded
 
 
+# (backend, source, spec) -> the named reason this runtime cannot serve the artifact, or None.
+RuntimeFloorCheck = Callable[[str, str, ModelSpec], "str | None"]
+
+
 def plan(
     models: list[ModelSpec],
     max_mb: int,
     has_gpu: bool,
     backend_filter: str,
     force: bool,
+    runtime_floor: RuntimeFloorCheck | None = None,
 ) -> list[PreparedModel]:
-    """Annotate each in-scope model with an action + reason (no side effects)."""
+    """Annotate each in-scope model with an action + reason (no side effects).
+
+    `runtime_floor` is what keeps the host-setup path from spending a multi-GiB download on an
+    artifact this host cannot serve: a source whose architecture the installed runtime does not
+    implement is a NAMED skip carrying the required version, not a pull that later fails to load.
+    `force` overrides it the way it overrides every other refusal here -- caching an artifact for a
+    runtime upgrade that has not happened yet is a deliberate act, not the default.
+    """
     rows: list[PreparedModel] = []
     for m in _expand_prepare_sources(models):
         backend = m["backend"]
@@ -108,6 +122,10 @@ def plan(
         if backend not in SUPPORTED_BACKENDS:
             continue
         need_mb = int(m.get("min_vram_gb", 0)) * 1024
+        blocked = runtime_floor(backend, m["source"], m) if runtime_floor and not force else None
+        if blocked:
+            rows.append({**m, "action": ACTION_SKIP, "reason": blocked})
+            continue
         action, reason = decide(backend, need_mb, max_mb, has_gpu, force)
         rows.append({**m, "action": action, "reason": reason})
     return rows

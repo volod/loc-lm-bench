@@ -33,6 +33,10 @@ class ModelSpec(TypedDict):
     tie_word_embeddings: NotRequired[bool]
     embed_bpw: NotRequired[float]
     hi_precision_params_b: NotRequired[float]
+    # What the SERVING RUNTIME must be for this artifact: the architecture id it has to implement
+    # and the runtime version that first implements it (see `backends.runtime_floor`).
+    runtime_arch: NotRequired[str]
+    min_runtime_version: NotRequired[str]
     sources: NotRequired[dict[str, "str | SourceRecord | list[str | SourceRecord]"]]
 
 
@@ -85,6 +89,8 @@ class SourceRecord(TypedDict):
     min_vram_gb: NotRequired[int | float]
     gated: NotRequired[bool]
     license_url: NotRequired[str]
+    runtime_arch: NotRequired[str]
+    min_runtime_version: NotRequired[str]
 
 
 class BackendCandidate(TypedDict):
@@ -96,6 +102,9 @@ class BackendCandidate(TypedDict):
     verdict: str
     runnable: bool
     reason: str
+    # Set when the candidate was ruled out by a NAMED condition rather than plain absence
+    # (`runtime_floor.RUNTIME_FLOOR_SKIP`), so a report can say which hole it is looking at.
+    skip: NotRequired[str]
 
 
 class ResolvedModel(TypedDict):

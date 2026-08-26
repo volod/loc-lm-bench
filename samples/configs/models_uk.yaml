@@ -43,6 +43,14 @@
 #   vocab_size / hidden_size / tie_word_embeddings  embedding-aware weights (M4.1; partial
 #     quants only).  hi_precision_params_b  override (billions of params kept at 16-bit) for
 #     non-vocab high-precision mass such as Gemma 3n Per-Layer Embeddings.
+#
+# Runtime floor fields (per source record; used by the resolver and `prep-models`):
+#   runtime_arch          the architecture id the serving runtime must implement (`gemma4`)
+#   min_runtime_version   the first runtime version that implements it. Read it from the artifact
+#     itself -- `ollama show <tag>` prints `requires` -- and never guess: a source below the floor
+#     is reported as a NAMED skip naming the runtime and the version, instead of failing at load
+#     with `unknown model architecture`. Ollama also declares the floor per held tag, so this pin
+#     is what covers a tag that is not pulled yet and a raw GGUF, which declares nothing.
 
 # Family register (capability `model-roster-currency`): the sweep carries FAMILIES, not tags.
 # Each family names its generations; exactly one is `current` and a superseded one is kept as
@@ -173,6 +181,8 @@ models:
         source: gemma4:e4b
         quant: q4_k_m
         min_vram_gb: 10
+        runtime_arch: gemma4
+        min_runtime_version: "0.20.0"   # `ollama show` -> requires
       llamacpp:
         source: hf.co/google/gemma-4-E4B-it-qat-q4_0-gguf:Q4_0
         quant: q4_0
@@ -195,15 +205,23 @@ models:
     license: Apache-2.0
     license_url: https://huggingface.co/google/gemma-4-12B-it-qat-w4a16-ct
     notes: Gemma 4 12B int4; 12 GB works only at short vLLM context, 16 GB supports 8192
+    # Runtime floors: `ollama show gemma4:12b` declares `requires 0.30.5` (the 12B architecture
+    # landed in 0.30.3 and its x86/CUDA/Linux crash was fixed in 0.30.5). The first-party QAT GGUF
+    # carries no `requires` field of its own, so it is pinned to the same floor -- Ollama 0.20
+    # rejected it here with `unknown model architecture: 'gemma4'`.
     sources:
       ollama:
         source: gemma4:12b
         quant: q4_k_m
         min_vram_gb: 8
+        runtime_arch: gemma4
+        min_runtime_version: "0.30.5"
       llamacpp:
         source: hf.co/google/gemma-4-12B-it-qat-q4_0-gguf:Q4_0
         quant: q4_0
         min_vram_gb: 8
+        runtime_arch: gemma4
+        min_runtime_version: "0.30.5"
 
   # Gemma 4 26B-A4B is the strongest host-runnable addition backed by a public lang-uk result.
   # vLLM can use bf16 on a large tier or Red Hat's FP8 conversion on 32 GiB; 12/16 GiB uses the
@@ -237,6 +255,8 @@ models:
         source: gemma4:26b
         quant: q4_k_m
         min_vram_gb: 8
+        runtime_arch: gemma4
+        min_runtime_version: "0.20.0"   # `ollama show` -> requires
       llamacpp:
         source: hf.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf:Q4_0
         quant: q4_0
@@ -275,6 +295,8 @@ models:
         source: qwen3.8:27b
         quant: q4_k_m
         min_vram_gb: 8
+        runtime_arch: qwen35
+        min_runtime_version: "0.32.12"  # `ollama show` -> requires
       llamacpp:
         source: hf.co/unsloth/Qwen3.8-27B-GGUF:Q4_K_M
         quant: q4_k_m

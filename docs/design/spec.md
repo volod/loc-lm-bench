@@ -297,6 +297,13 @@ Before serving, the resolver combines model metadata, quantization, context leng
 CPU offload, and backend availability into a host-fit plan. The actual served configuration is
 recorded because a model name alone is not a reproducible runtime identity.
 
+Availability includes the serving RUNTIME, not only the artifact: a runtime too old to implement an
+artifact's architecture makes that source unservable while it is present and fits. Such a source is
+reported as a named skip carrying the runtime, the architecture, and the version required -- at
+resolution, at preparation, and at launch -- so a roster hole is a stated fact rather than a
+per-case backend error. The floor is read from the artifact where the runtime declares one and
+pinned per source otherwise; the product never guesses one.
+
 One heavyweight model runs at a time. Sequential execution avoids VRAM contention, cross-run cache
 effects, and biased telemetry.
 

@@ -108,6 +108,13 @@ class RunConfigFields(BaseModel):
     dtype: str = "auto"
     quantization: str | None = None
     adapter_path: Path | None = None
+    # vLLM's reasoning-output controls (`chat_template_kwargs.enable_thinking=false` and, where
+    # the server takes them, `include_reasoning` / `reasoning_effort`) -- the equivalent of the
+    # `think: false` the Ollama launcher always sends. OFF by default because these fields are
+    # NOT in the OpenAI schema: a server that models its request body strictly rejects them, and
+    # a launcher that breaks every vLLM run is worse than one that sends no flag. When set, the
+    # launcher probes the live server once per vLLM version and sends only what it accepted.
+    vllm_suppress_thinking: bool = False
 
     # llama.cpp serving (used when backend == "llamacpp"). The GGUF runs via `llama-server`,
     # splitting layers GPU<->CPU: n_gpu_layers is the offload split (-1 == all on GPU; set it to
@@ -293,8 +300,8 @@ class RunConfigFields(BaseModel):
     insufficient_context_probes: int = Field(default=0, ge=0)
 
     # Prompt-level thinking suppression (thinking-suppression-and-answer-language-guard), ON TOP
-    # of the backend's native flag (Ollama `think: false`, vLLM `enable_thinking=false`), which
-    # every launcher already sends. Off by default because the flag alone is sufficient on every
+    # of the backend's native flag: Ollama `think: false` on every call, and on vLLM the
+    # `vllm_suppress_thinking` request extras above. Off by default because the flag alone is sufficient on every
     # roster tag but one: a chat template that emits the reasoning block into the answer body
     # ignores the flag, and the instruction is the only lever left. It is a PROMPT change, so it is
     # adopted per model with the guard's leak rate as evidence, never switched on roster-wide --

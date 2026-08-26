@@ -17,6 +17,7 @@ import logging
 from time import monotonic
 
 from llb.backends.openai_client import chat_once, make_client
+from llb.backends.vllm_reasoning import reasoning_extra_body
 from llb.core.contracts.common import ChatMessage
 from llb.prep.frontier.client import litellm_complete
 from llb.prep.frontier.telemetry import (
@@ -71,22 +72,13 @@ def _openai_compatible_complete(
 
 
 def _vllm_extra_body(cfg: EndpointConfig) -> dict[str, object] | None:
-    """vLLM request extras for reasoning-output control.
+    """vLLM request extras for reasoning-output control, or None when `--no-think` is unset.
 
-    vLLM exposes `chat_template_kwargs` through the OpenAI-compatible endpoint. Qwen-style
-    reasoning templates use `enable_thinking`; vLLM's own request schema also accepts
-    `include_reasoning` and `reasoning_effort`, so the response budget is spent on JSON instead
-    of hidden reasoning when `--no-think` maps to `think=False`.
+    The body itself is `llb.backends.vllm_reasoning`, shared with the eval launcher so both call
+    sites ask a reasoning model the same thing. Drafting sends the FULL body unprobed: it is an
+    opt-in flag on a one-off prep command whose failure is visible immediately, not a scored run.
     """
-    if cfg.think is None:
-        return None
-    body: dict[str, object] = {
-        "chat_template_kwargs": {"enable_thinking": cfg.think},
-    }
-    if cfg.think is False:
-        body["include_reasoning"] = False
-        body["reasoning_effort"] = "none"
-    return body
+    return reasoning_extra_body(cfg.think) or None
 
 
 def _local_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMComplete:

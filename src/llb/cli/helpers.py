@@ -73,11 +73,15 @@ def best_effort_gpu_readers() -> tuple[Any, Any]:
 
 def resolver_probes(offline: bool) -> Any:
     """Availability probes for model resolution; offline mode assumes every source exists."""
-    from llb.backends.resolver import ResolverProbes
+    from llb.backends.resolver_probes import ResolverProbes
 
     if offline:
+        # Offline also means "do not judge the runtime": an unread version is never too old.
         return ResolverProbes(
-            hf_repo=lambda _s: True, gguf=lambda _s: True, ollama_tag=lambda _s: True
+            hf_repo=lambda _s: True,
+            gguf=lambda _s: True,
+            ollama_tag=lambda _s: True,
+            runtime_version=lambda _b: None,
         )
     return ResolverProbes()
 
