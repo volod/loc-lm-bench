@@ -1,0 +1,241 @@
+{
+  "version": "uk-v1",
+  "axioms": [
+    {
+      "axiom_id": "func-maie-naselennia",
+      "kind": "functional",
+      "relation": "має населення",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Один населений пункт має одне значення населення.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "func-narodyvsia",
+      "kind": "functional",
+      "relation": "народився",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Особа народжується один раз: одна дата і одне місце народження.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "func-diie",
+      "kind": "functional",
+      "relation": "діє",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Право або документ має один строк дії.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "func-stanovyt",
+      "kind": "functional",
+      "relation": "становить",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Величина становить одне значення.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "inv-func-avtor",
+      "kind": "inverse_functional",
+      "relation": "автор",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Твір має одного автора.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "domain-avtor",
+      "kind": "domain",
+      "relation": "автор",
+      "entity_types": [
+        "PERSON"
+      ],
+      "max_count": null,
+      "gloss": "Автором може бути лише особа.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "domain-napysav",
+      "kind": "domain",
+      "relation": "написав",
+      "entity_types": [
+        "PERSON"
+      ],
+      "max_count": null,
+      "gloss": "Написати твір може лише особа.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "range-maie-naselennia",
+      "kind": "range",
+      "relation": "має населення",
+      "entity_types": [
+        "QUANTITY"
+      ],
+      "max_count": null,
+      "gloss": "Населення виражається вимірюваною величиною, а не назвою.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "range-diie",
+      "kind": "range",
+      "relation": "діє",
+      "entity_types": [
+        "DURATION"
+      ],
+      "max_count": null,
+      "gloss": "Строк дії виражається тривалістю, а не датою.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-person-org",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "PERSON",
+        "ORG"
+      ],
+      "max_count": null,
+      "gloss": "Особа та організація -- різні сутності; одна назва не може бути обома.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-person-loc",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "PERSON",
+        "LOC"
+      ],
+      "max_count": null,
+      "gloss": "Особа та місце -- різні сутності.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-org-loc",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "ORG",
+        "LOC"
+      ],
+      "max_count": null,
+      "gloss": "Організація та місце -- різні сутності, навіть коли держава є і тим, і тим.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-date-duration",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "DATE",
+        "DURATION"
+      ],
+      "max_count": null,
+      "gloss": "Дата (момент часу) і тривалість (період) -- різні сутності.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-work-loc",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "WORK",
+        "LOC"
+      ],
+      "max_count": null,
+      "gloss": "Твір і місце -- різні сутності, навіть коли споруда є пам'яткою.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "disjoint-product-org",
+      "kind": "disjoint_types",
+      "relation": null,
+      "entity_types": [
+        "PRODUCT",
+        "ORG"
+      ],
+      "max_count": null,
+      "gloss": "Продукт і організація, що його випускає, -- різні сутності.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "sym-mezhuie-z",
+      "kind": "symmetric",
+      "relation": "межує з",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Якщо A межує з B, то B межує з A.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "asym-mistyt",
+      "kind": "asymmetric",
+      "relation": "містить",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Якщо A містить B, то B не містить A.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "asym-skladaietsia-z",
+      "kind": "asymmetric",
+      "relation": "складається з",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Якщо A складається з B, то B не складається з A.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "irrefl-ye",
+      "kind": "irreflexive",
+      "relation": "є",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Ніщо не визначається через саме себе.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "irrefl-mistyt",
+      "kind": "irreflexive",
+      "relation": "містить",
+      "entity_types": [],
+      "max_count": null,
+      "gloss": "Ніщо не містить саме себе.",
+      "signed_by": null,
+      "signed_on": null
+    },
+    {
+      "axiom_id": "maxcard-ye",
+      "kind": "max_cardinality",
+      "relation": "є",
+      "entity_types": [],
+      "max_count": 2,
+      "gloss": "Одна сутність визначається щонайбільше двома різними способами.",
+      "signed_by": null,
+      "signed_on": null
+    }
+  ]
+}

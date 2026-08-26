@@ -94,7 +94,26 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
-compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs retrieved-document vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES=closed_book,rag,retrieved_document,long_context RETRIEVED_DOCUMENT_TOP_N= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
+compare-answer-validation: ## Score one item set under off / pydantic / pydantic+ontology and price the answer gate (MODEL= BACKEND= GOLDSET= SPLIT= VALIDATION_LANES=off,pydantic,pydantic+ontology MAX_TOKENS=768 AXIOMS=<signed-ttl> ONTOLOGY_LEDGER=<extraction.jsonl> ANSWER_VALIDATION_LIMIT= INCLUDE_DRAFTED=1 ANSWER_VALIDATION_OUT_DIR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main compare-answer-validation $(if $(CONFIG),--config "$(CONFIG)",) \
+		--model "$(MODEL)" --backend "$(BACKEND)" \
+		--goldset "$(GOLDSET)" --split "$(SPLIT)" \
+		$(if $(VALIDATION_LANES),--lanes "$(VALIDATION_LANES)",) \
+		$(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS),) \
+		$(if $(AXIOMS),--axioms "$(AXIOMS)",) \
+		$(if $(ONTOLOGY_LEDGER),--ledger "$(ONTOLOGY_LEDGER)",) \
+		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
+		$(if $(ANSWER_VALIDATION_LIMIT),--limit $(ANSWER_VALIDATION_LIMIT),) \
+		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
+		$(if $(ANSWER_VALIDATION_OUT_DIR),--out-dir "$(ANSWER_VALIDATION_OUT_DIR)",)
+
+check-answer-gate: ## Catch rate per axiom class + false-rejection rate of the ontology answer gate on the committed adversarial fixture (ANSWER_GATE_FIXTURE=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main check-answer-gate $(if $(ANSWER_GATE_FIXTURE),--fixture "$(ANSWER_GATE_FIXTURE)",)
+
+compare-context-strategies: ## Does RAG pay for itself? Score one item set closed-book vs rag vs retrieved-document vs long-context (MODEL= BACKEND= GOLDSET= CORPUS= SPLIT=a,b CONTEXT_LANES=closed_book,rag,retrieved_document,long_context RETRIEVED_DOCUMENT_TOP_N= CONTEXT_ABLATION_LIMIT= CONTEXT_POWER_REFERENCE= CONTEXT_MDE= CONTEXT_TARGET_POWER= CONTEXT_REPEATS=3 INCLUDE_DRAFTED=1 CONTEXT_ABLATION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-context-strategies $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -108,6 +127,7 @@ compare-context-strategies: ## Does RAG pay for itself? Score one item set close
 		$(if $(CONTEXT_POWER_REFERENCE),--power-reference "$(CONTEXT_POWER_REFERENCE)",) \
 		$(if $(CONTEXT_MDE),--minimum-detectable-delta "$(CONTEXT_MDE)",) \
 		$(if $(CONTEXT_TARGET_POWER),--target-power "$(CONTEXT_TARGET_POWER)",) \
+		$(if $(CONTEXT_REPEATS),--repeats $(CONTEXT_REPEATS),) \
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(CONTEXT_ABLATION_OUT_DIR),--out-dir "$(CONTEXT_ABLATION_OUT_DIR)",)
 

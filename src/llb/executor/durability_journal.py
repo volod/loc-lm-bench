@@ -47,6 +47,15 @@ _JOURNALED_STATE_KEYS = (
     "envelope_status",
     "envelope_error",
     "envelope_repaired",
+    # Step two of the answer gate (`llb.eval.answer_validation`): the verdict columns, so a resumed
+    # gated case re-scores to the same row -- including the `ontology_violation` status, which is
+    # already covered by `status` above but whose evidence columns are not.
+    "validation_checked_triples",
+    "validation_violations",
+    "validation_classes",
+    "validation_axioms",
+    "validation_repaired",
+    "validation_error",
 )
 
 

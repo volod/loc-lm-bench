@@ -50,6 +50,17 @@ class CaseScoreRow(TypedDict):
     repaired: NotRequired[bool]
     n_claims: NotRequired[int]
     envelope_abstained: NotRequired[bool]
+    # Step two of the answer gate (ontology-validated-answer-gate). Present only when the ontology
+    # gate ran, so an ungated envelope bundle keeps the shape it had. `validation_checked_triples`
+    # is the population the verdict rests on (an envelope declaring no triple was UNCHECKED, not
+    # cleared), `validation_classes` / `validation_axioms` name what broke -- which is what the
+    # per-axiom-class adopt-or-reject verdict keys on -- and `validation_repaired` says the one
+    # bounded semantic reprompt was spent on this case.
+    validation_checked_triples: NotRequired[int]
+    validation_violations: NotRequired[int]
+    validation_classes: NotRequired[list[str]]
+    validation_axioms: NotRequired[list[str]]
+    validation_repaired: NotRequired[bool]
     # Answer-side gold-span coverage (`llb.scoring.answer_spans`): whether the ANSWER states each
     # labeled span's fact, and the all-spans gate over them. Every current run writes all three;
     # they are optional only so a bundle recorded before the metric existed still re-reads.

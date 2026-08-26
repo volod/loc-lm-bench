@@ -265,6 +265,26 @@ An ontology layer above the vocabulary may express axioms the corpus is expected
 answer gate may refuse an answer that violates one. Because an axiom encodes a domain claim rather
 than a measurement, an axiom is enabled only from a human-signed set: the checker proposes
 candidates with their supporting and contradicting spans, and a reviewer accepts or rejects each.
+The constraint set is serialized in a standard ontology format so that a reviewer outside this
+codebase can read, diff, and version it.
+
+At answer time the gate is read in BOTH directions or not at all. A validator's obvious failure
+mode is refusing correct work, so what it stops (violations caught) and what it wrongly refuses
+(refused answers the reference scores correct) are reported as separate numbers per axiom class,
+the answered-item count and abstention rate sit beside the objective, and the objective delta is
+read on the items the ungated lane also answered -- otherwise a gate that improves the mean by
+declining the hard items reads as a win. An axiom class is enabled only where its measured catch
+rate clears its measured false-rejection rate; a class that does not is recorded as measured and
+not adopted rather than dropped. The gate's scope is the retrieved context: an answer may be
+refused for contradicting a ledger fact the prompt carried, never for one the model was never
+shown.
+
+Over a corpus, the axiom layer REPORTS. It names every violated axiom with the exact evidence spans
+of every fact the violation rests on, and it never deletes a fact, alters an extraction, or changes
+a graph. A graph build may be refused over a violation only when the operator asks for that refusal
+AND the axiom is signed; an unsigned candidate is reported and nothing more. The shipped checker
+carries no reasoner: an OWL reasoner is a cross-check on the checker in the test suite, never a
+component of the answer path.
 
 ## Backend and Hardware Boundary
 
@@ -528,7 +548,7 @@ Four rules settle it, in order:
 | 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
 | 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
 | 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits | [Model roster](../impl/current/model-roster.md) |
 | 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |

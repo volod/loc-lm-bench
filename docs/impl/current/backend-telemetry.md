@@ -107,7 +107,7 @@ Every logical entry in `samples/configs/models_uk.yaml` measured back to back un
 one discarded warmup pass, `num_ctx`/`max_model_len` pinned to 4096, and each model unloaded before
 the next so every run starts from the same VRAM state. These are SHORT-prompt decode rates; a RAG
 lane that prefills retrieved context reads lower for the same model (see the context-ablation rows
-in [RAG core](rag-core/context-ablation.md#context-ablation-evidence)).
+in [RAG core](rag-core/context-ablation-evidence.md)).
 
 `min/100` is the derived decode-only run-sizing figure from the estimator above: minutes to answer
 100 cases at 256 output tokens each, excluding load time and RAG prefill. `tok/UA-char` is the

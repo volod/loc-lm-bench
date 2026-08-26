@@ -1,0 +1,259 @@
+# loc-lm-bench candidate ontology axioms for Ukrainian benchmark corpora -- version uk-v1.
+#
+# STATUS: CANDIDATE, NOT SIGNED. No axiom in this file is enabled at answer time.
+# An axiom is a DOMAIN CLAIM, not a corpus statistic: every block below is a sentence a domain
+# reviewer must accept or reject one at a time (plan task `ontology-axiom-signoff`). A signed
+# axiom carries dcterms:creator + dcterms:date on its owl:Axiom annotation; none does yet.
+#
+# The checker reads this file directly (`llb validate-ontology-axioms --axioms <this file>`);
+# axioms_uk_v1.json beside it is the same set through the typed models, kept identical by CI.
+@prefix llb: <https://loc-lm-bench.example/ontology/uk#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<https://loc-lm-bench.example/ontology/uk> a owl:Ontology ;
+  owl:versionInfo "uk-v1" .
+
+# --- the closed entity-type vocabulary (entity_types.py) ---
+llb:PERSON a owl:Class ; rdfs:label "PERSON" ; rdfs:comment "особа: людина, автор, виконавець, власник"@uk .
+llb:NORP a owl:Class ; rdfs:label "NORP" ; rdfs:comment "національність, етнічна, релігійна чи політична група"@uk .
+llb:ORG a owl:Class ; rdfs:label "ORG" ; rdfs:comment "організація, установа, орган влади, компанія, суд"@uk .
+llb:LOC a owl:Class ; rdfs:label "LOC" ; rdfs:comment "місце, географічний об'єкт, країна, юрисдикція"@uk .
+llb:LAW a owl:Class ; rdfs:label "LAW" ; rdfs:comment "закон, кодекс, договір, конвенція, угода, нормативний акт"@uk .
+llb:WORK a owl:Class ; rdfs:label "WORK" ; rdfs:comment "твір чи об'єкт інтелектуальної власності: книга, винахід, торговельна марка, зразок, ПЗ"@uk .
+llb:PRODUCT a owl:Class ; rdfs:label "PRODUCT" ; rdfs:comment "продукт, товар, технологія, послуга"@uk .
+llb:EVENT a owl:Class ; rdfs:label "EVENT" ; rdfs:comment "подія, процес або процедура"@uk .
+llb:DATE a owl:Class ; rdfs:label "DATE" ; rdfs:comment "дата або момент часу"@uk .
+llb:DURATION a owl:Class ; rdfs:label "DURATION" ; rdfs:comment "тривалість чи період часу, напр. двадцять років"@uk .
+llb:MONEY a owl:Class ; rdfs:label "MONEY" ; rdfs:comment "грошова сума"@uk .
+llb:QUANTITY a owl:Class ; rdfs:label "QUANTITY" ; rdfs:comment "вимірювана величина з одиницею або відсоток"@uk .
+llb:MISC a owl:Class ; rdfs:label "MISC" ; rdfs:comment "інше: абстрактне поняття, право, термін"@uk .
+
+# --- the relations these axioms constrain ---
+llb:rel_maie_naselennia a owl:ObjectProperty ; rdfs:label "має населення"@uk .
+llb:rel_narodyvsia a owl:ObjectProperty ; rdfs:label "народився"@uk .
+llb:rel_diie a owl:ObjectProperty ; rdfs:label "діє"@uk .
+llb:rel_stanovyt a owl:ObjectProperty ; rdfs:label "становить"@uk .
+llb:rel_avtor a owl:ObjectProperty ; rdfs:label "автор"@uk .
+llb:rel_napysav a owl:ObjectProperty ; rdfs:label "написав"@uk .
+llb:rel_mezhuie_z a owl:ObjectProperty ; rdfs:label "межує з"@uk .
+llb:rel_mistyt a owl:ObjectProperty ; rdfs:label "містить"@uk .
+llb:rel_skladaietsia_z a owl:ObjectProperty ; rdfs:label "складається з"@uk .
+llb:rel_ie a owl:ObjectProperty ; rdfs:label "є"@uk .
+
+# functional: func-maie-naselennia
+llb:rel_maie_naselennia a owl:FunctionalProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_maie_naselennia ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:FunctionalProperty ;
+  rdfs:label "func-maie-naselennia"
+  ; rdfs:comment "Один населений пункт має одне значення населення."@uk
+  .
+
+# functional: func-narodyvsia
+llb:rel_narodyvsia a owl:FunctionalProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_narodyvsia ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:FunctionalProperty ;
+  rdfs:label "func-narodyvsia"
+  ; rdfs:comment "Особа народжується один раз: одна дата і одне місце народження."@uk
+  .
+
+# functional: func-diie
+llb:rel_diie a owl:FunctionalProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_diie ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:FunctionalProperty ;
+  rdfs:label "func-diie"
+  ; rdfs:comment "Право або документ має один строк дії."@uk
+  .
+
+# functional: func-stanovyt
+llb:rel_stanovyt a owl:FunctionalProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_stanovyt ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:FunctionalProperty ;
+  rdfs:label "func-stanovyt"
+  ; rdfs:comment "Величина становить одне значення."@uk
+  .
+
+# inverse_functional: inv-func-avtor
+llb:rel_avtor a owl:InverseFunctionalProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_avtor ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:InverseFunctionalProperty ;
+  rdfs:label "inv-func-avtor"
+  ; rdfs:comment "Твір має одного автора."@uk
+  .
+
+# domain: domain-avtor
+llb:rel_avtor rdfs:domain llb:PERSON .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_avtor ;
+  owl:annotatedProperty rdfs:domain ;
+  owl:annotatedTarget llb:PERSON ;
+  rdfs:label "domain-avtor"
+  ; rdfs:comment "Автором може бути лише особа."@uk
+  .
+
+# domain: domain-napysav
+llb:rel_napysav rdfs:domain llb:PERSON .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_napysav ;
+  owl:annotatedProperty rdfs:domain ;
+  owl:annotatedTarget llb:PERSON ;
+  rdfs:label "domain-napysav"
+  ; rdfs:comment "Написати твір може лише особа."@uk
+  .
+
+# range: range-maie-naselennia
+llb:rel_maie_naselennia rdfs:range llb:QUANTITY .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_maie_naselennia ;
+  owl:annotatedProperty rdfs:range ;
+  owl:annotatedTarget llb:QUANTITY ;
+  rdfs:label "range-maie-naselennia"
+  ; rdfs:comment "Населення виражається вимірюваною величиною, а не назвою."@uk
+  .
+
+# range: range-diie
+llb:rel_diie rdfs:range llb:DURATION .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_diie ;
+  owl:annotatedProperty rdfs:range ;
+  owl:annotatedTarget llb:DURATION ;
+  rdfs:label "range-diie"
+  ; rdfs:comment "Строк дії виражається тривалістю, а не датою."@uk
+  .
+
+# disjoint_types: disjoint-person-org
+llb:PERSON owl:disjointWith llb:ORG .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:PERSON ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:ORG ;
+  rdfs:label "disjoint-person-org"
+  ; rdfs:comment "Особа та організація -- різні сутності; одна назва не може бути обома."@uk
+  .
+
+# disjoint_types: disjoint-person-loc
+llb:PERSON owl:disjointWith llb:LOC .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:PERSON ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:LOC ;
+  rdfs:label "disjoint-person-loc"
+  ; rdfs:comment "Особа та місце -- різні сутності."@uk
+  .
+
+# disjoint_types: disjoint-org-loc
+llb:ORG owl:disjointWith llb:LOC .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:ORG ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:LOC ;
+  rdfs:label "disjoint-org-loc"
+  ; rdfs:comment "Організація та місце -- різні сутності, навіть коли держава є і тим, і тим."@uk
+  .
+
+# disjoint_types: disjoint-date-duration
+llb:DATE owl:disjointWith llb:DURATION .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:DATE ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:DURATION ;
+  rdfs:label "disjoint-date-duration"
+  ; rdfs:comment "Дата (момент часу) і тривалість (період) -- різні сутності."@uk
+  .
+
+# disjoint_types: disjoint-work-loc
+llb:WORK owl:disjointWith llb:LOC .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:WORK ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:LOC ;
+  rdfs:label "disjoint-work-loc"
+  ; rdfs:comment "Твір і місце -- різні сутності, навіть коли споруда є пам'яткою."@uk
+  .
+
+# disjoint_types: disjoint-product-org
+llb:PRODUCT owl:disjointWith llb:ORG .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:PRODUCT ;
+  owl:annotatedProperty owl:disjointWith ;
+  owl:annotatedTarget llb:ORG ;
+  rdfs:label "disjoint-product-org"
+  ; rdfs:comment "Продукт і організація, що його випускає, -- різні сутності."@uk
+  .
+
+# symmetric: sym-mezhuie-z
+llb:rel_mezhuie_z a owl:SymmetricProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_mezhuie_z ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:SymmetricProperty ;
+  rdfs:label "sym-mezhuie-z"
+  ; rdfs:comment "Якщо A межує з B, то B межує з A."@uk
+  .
+
+# asymmetric: asym-mistyt
+llb:rel_mistyt a owl:AsymmetricProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_mistyt ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:AsymmetricProperty ;
+  rdfs:label "asym-mistyt"
+  ; rdfs:comment "Якщо A містить B, то B не містить A."@uk
+  .
+
+# asymmetric: asym-skladaietsia-z
+llb:rel_skladaietsia_z a owl:AsymmetricProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_skladaietsia_z ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:AsymmetricProperty ;
+  rdfs:label "asym-skladaietsia-z"
+  ; rdfs:comment "Якщо A складається з B, то B не складається з A."@uk
+  .
+
+# irreflexive: irrefl-ye
+llb:rel_ie a owl:IrreflexiveProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_ie ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:IrreflexiveProperty ;
+  rdfs:label "irrefl-ye"
+  ; rdfs:comment "Ніщо не визначається через саме себе."@uk
+  .
+
+# irreflexive: irrefl-mistyt
+llb:rel_mistyt a owl:IrreflexiveProperty .
+[] a owl:Axiom ;
+  owl:annotatedSource llb:rel_mistyt ;
+  owl:annotatedProperty rdf:type ;
+  owl:annotatedTarget owl:IrreflexiveProperty ;
+  rdfs:label "irrefl-mistyt"
+  ; rdfs:comment "Ніщо не містить саме себе."@uk
+  .
+
+# max_cardinality: maxcard-ye
+owl:Thing rdfs:subClassOf _:maxcard_ye .
+_:maxcard_ye a owl:Restriction ;
+  owl:onProperty llb:rel_ie ;
+  owl:maxCardinality "2"^^xsd:nonNegativeInteger .
+
+[] a owl:Axiom ;
+  owl:annotatedSource owl:Thing ;
+  owl:annotatedProperty rdfs:subClassOf ;
+  owl:annotatedTarget _:maxcard_ye ;
+  rdfs:label "maxcard-ye"
+  ; rdfs:comment "Одна сутність визначається щонайбільше двома різними способами."@uk
+  .

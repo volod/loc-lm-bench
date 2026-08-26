@@ -8,6 +8,7 @@ from llb.cli.eval import (  # noqa: F401
     adoption_screen,
     answer_envelope,
     answer_quality,
+    answer_validation,
     context_ablation,
     embedder_adoption,
     frontier_judge,

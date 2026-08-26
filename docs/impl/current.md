@@ -46,7 +46,7 @@ closed each one and what would make it worth reopening.
 | [Auto-RAG](current/auto-rag.md) | Autonomous corpus-to-RAG orchestration, resume, verification, recommendation | page |
 | [Review workbench](current/review-workbench.md) | Unified terminal review UI, adapters, keys, ledger compatibility | page |
 | [Backend telemetry](current/backend-telemetry.md) | vLLM launcher, telemetry fields, backend build rules | page |
-| [Robust backends](current/robustness-ontology-backends.md) | VRAM planning, contention guard, llama.cpp, ontology drafting | page |
+| [Robust backends](current/robustness-ontology-backends.md) | VRAM planning, contention guard, llama.cpp, ontology drafting, the axiom layer over the ledger | page |
 | [Platform matrix](current/platform-vector-matrix.md) | Backend matrix, power telemetry, vector-store adapters | page |
 | [Category suite](current/category-benchmark-suite.md) | Security, tooling, agentic, summarization, structured, text analysis | page |
 | [Knowledge cutoff](current/knowledge-cutoff.md) | Effective real-world knowledge cutoff for local models | page |

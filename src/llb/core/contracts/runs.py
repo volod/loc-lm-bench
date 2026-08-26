@@ -46,6 +46,13 @@ class RunMetrics(TypedDict):
     envelope_malformed_rate: NotRequired[float]
     envelope_repair_rate: NotRequired[float]
     mean_claims: NotRequired[float]
+    # Step two of the answer gate (ontology-validated-answer-gate); present only when it ran.
+    # `ontology_violation_rate` is the share of cases the gate refused, `validation_checked_rate`
+    # the share whose envelope declared a triple the gate could test at all, and
+    # `validation_repair_rate` the share that spent the one bounded semantic reprompt.
+    ontology_violation_rate: NotRequired[float]
+    validation_checked_rate: NotRequired[float]
+    validation_repair_rate: NotRequired[float]
 
 
 class RunEnvironment(TypedDict):

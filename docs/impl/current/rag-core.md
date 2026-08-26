@@ -30,6 +30,7 @@ question you have.
 | Deliver | [Two levers against fragmented evidence](rag-core/fragmented-evidence.md) | What a wider `size` cap and assembly-time stitching are each worth when the evidence is found but arrives in pieces, and what each costs in served context |
 | Assemble | [Prompt-side context assembly](rag-core/context-assembly.md) | What the retrieved chunks look like once they are laid into the prompt: restoring a table row block's column names, stitching contiguous chunks back into one block, and why both are off by default |
 | Generate | [Generation graph and scoring](rag-core/scoring.md) | The generation graph, the headline objective's verbosity confound, its decomposition and declared ranking policy, groundedness and citation metrics, answer-side gold-span coverage, the response-integrity guard for leaked reasoning and off-language answers, and the typed answer envelope that replaces the prose heuristics with declared fields |
+| Generate | [Ontology-validated answer gate](rag-core/answer-validation.md) | The second validation step over a declared answer: what the signed axioms and the retrieved corpus ledger refuse, what the gate wrongly refuses, and what the bounded semantic repair costs |
 | Measure | [Retrieval metrics](rag-core/retrieval-metrics.md) | Recall@k / MRR by source span, the evidence-intactness pair beside them, the paired lane verdict, the per-question-type slices, and the measurement floor |
 | Persist | [Backends, persistence, and execution](rag-core/persistence-and-execution.md) | Backend seam, the persisted retrieval record, executor, durability, and the RAG-config sweep grid |
 
@@ -46,6 +47,7 @@ rather than restated per lane:
 | What a withdrawn reading needs before it may be read again | [The re-decision](rag-core/paired-verdicts.md#the-re-decision-what-a-withdrawn-reading-needs) |
 | When a rank-quality gain is worth adopting at all | [The scoped first-hit-rank adoption bar](rag-core/first-hit-rank-adoption.md) |
 | Does RAG pay for itself against closed-book and long-context lanes? | [Context ablation](rag-core/context-ablation.md) |
+| What every context-ablation run measured, and what it licenses | [Context-ablation evidence](rag-core/context-ablation-evidence.md) |
 
 ## Where the evidence sits
 

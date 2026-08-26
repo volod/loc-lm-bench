@@ -7,6 +7,11 @@ lane, which is what makes the per-item pairing in the comparison legitimate.
 
 `run_lane` is injectable, so the whole orchestration runs in CI with fake bundles -- no backend, no
 store, no GPU.
+
+`repeats` scores every lane more than once with the IDENTICAL config on the IDENTICAL items. That
+is not more evidence -- the comparison is still taken over the first repeat -- it is the decode's
+own band, which no bootstrap over the item sample can see
+(`llb.eval.context_ablation.decoding_stability`).
 """
 
 import json
@@ -20,11 +25,13 @@ from llb.core.config import RunConfig
 from llb.eval.answer_quality.models import GROUNDING_DRAFTED, GROUNDING_VERIFIED
 from llb.eval.answer_quality.run import select_items
 from llb.eval.context_ablation.compare import compare_context_strategies
+from llb.eval.context_ablation.decoding_stability import MIN_REPEATS, measure_decoding_stability
 from llb.eval.context_ablation.lanes import default_lanes, lane_config
 from llb.eval.context_ablation.models import (
     LANE_CLOSED_BOOK,
     ContextAblationReport,
     ContextWindowBinding,
+    DecodingStabilityReport,
     LongContextPowerAnalysis,
 )
 from llb.eval.context_ablation.power import (
@@ -140,18 +147,10 @@ def run_context_ablation(
     power_reference: Path | None = None,
     minimum_detectable_delta: float | None = None,
     target_power: float = DEFAULT_TARGET_POWER,
+    repeats: int = 1,
 ) -> ContextAblationRun:
     """Score the selected items under every context lane and persist the comparison."""
-    selection = list(lanes) if lanes else default_lanes()
-    if LANE_CLOSED_BOOK not in selection:
-        raise ValueError(
-            f"the ablation needs the {LANE_CLOSED_BOOK!r} lane: every derived number is stated "
-            "against it"
-        )
-    if len(selection) < 2:
-        raise ValueError("the comparison needs the baseline lane and at least one other lane")
-    if not splits:
-        raise ValueError("name at least one gold split to score")
+    selection = _selection(lanes, splits, repeats)
     items_by_split = select_items(config, splits, limit, verified_only)
     target = Path(out_dir) if out_dir is not None else default_out_dir(config)
     power_plan = _prepare_power_plan(
@@ -163,12 +162,11 @@ def run_context_ablation(
     )
     if power_plan is not None:
         write_power_plan(power_plan, target / "power-plan.json")
-    rows, run_dirs = score_lanes(
-        config,
-        selection,
-        items_by_split,
-        run_lane=run_lane or eval_lane_runner(verified_only=verified_only),
-    )
+    runner = run_lane or eval_lane_runner(verified_only=verified_only)
+    passes = [
+        score_lanes(config, selection, items_by_split, run_lane=runner) for _ in range(repeats)
+    ]
+    rows, run_dirs = passes[0]
     report = compare_context_strategies(
         rows,
         load_question_types(config.goldset_path),
@@ -181,10 +179,44 @@ def run_context_ablation(
     )
     if power_plan is not None:
         report["power_analysis"] = resolve_power_analysis(report, power_plan)
+    if len(passes) >= MIN_REPEATS:
+        report["decoding_stability"] = _stability(passes, selection, report)
     paths = write_artifacts(report, target, metadata=_metadata(config, splits, verified_only))
     if power_plan is not None:
         paths["power_plan"] = str(target / "power-plan.json")
     return ContextAblationRun(report, target, paths)
+
+
+def _selection(lanes: Sequence[str] | None, splits: Sequence[str], repeats: int) -> list[str]:
+    """The lane selection this run will score, or the reason it cannot be compared."""
+    selection = list(lanes) if lanes else default_lanes()
+    if LANE_CLOSED_BOOK not in selection:
+        raise ValueError(
+            f"the ablation needs the {LANE_CLOSED_BOOK!r} lane: every derived number is stated "
+            "against it"
+        )
+    if len(selection) < 2:
+        raise ValueError("the comparison needs the baseline lane and at least one other lane")
+    if not splits:
+        raise ValueError("name at least one gold split to score")
+    if repeats < 1:
+        raise ValueError("a lane is scored at least once")
+    return selection
+
+
+def _stability(
+    passes: Sequence[tuple[dict[str, CaseRows], dict[str, list[str]]]],
+    selection: Sequence[str],
+    report: ContextAblationReport,
+) -> DecodingStabilityReport:
+    """Band every lane's own numbers occupy across the repeated passes of this run."""
+    return measure_decoding_stability(
+        {label: [lane_rows[label] for lane_rows, _ in passes] for label in selection},
+        report["item_ids"],
+        report["derived"],
+        run_dirs={label: [dirs[label] for _, dirs in passes] for label in selection},
+        baseline=LANE_CLOSED_BOOK,
+    )
 
 
 def _prepare_power_plan(

@@ -156,6 +156,47 @@ the optional "graph-vs-FAISS comparison" residual in `plan.md`.
 
 ---
 
+## 6. Axioms over the vocabulary and the induced relations
+
+Sections 1-3 make the schema CLOSED; they do not make it CONSISTENT. Nothing in the type inventory
+can be violated, so a ledger may assert that one patent has two different durations, that one work
+has two exclusive owners, or that one name is both `PERSON` and `ORG`, and every stage accepts it
+(`add_fact` deliberately never drops a grounded fact). An AXIOM is the constraint layer above the
+vocabulary: a claim about the domain that a ledger can break.
+
+The candidate set is committed as OWL/RDFS Turtle at
+[`samples/ontology/axioms_uk_v1.ttl`](../../samples/ontology/axioms_uk_v1.ttl) with a typed JSON
+mirror beside it, over nine classes -- `owl:FunctionalProperty`, `owl:InverseFunctionalProperty`,
+`rdfs:domain`, `rdfs:range`, `owl:disjointWith`, `owl:SymmetricProperty`, `owl:AsymmetricProperty`,
+`owl:IrreflexiveProperty`, and an `owl:maxCardinality` restriction. Every axiom carries an
+`owl:Axiom` annotation block with its id, a Ukrainian gloss, and (once given) `dcterms:creator` +
+`dcterms:date`, so the file reads as ordinary OWL and each entry is one sentence to accept or
+reject.
+
+- Executable form -- the axiom layer:
+  [`src/llb/prep/ontology/axioms/`](../../src/llb/prep/ontology/axioms/) (the dependency-free
+  Turtle reader/writer, the pure-Python checker, the `owlrl` cross-check, and the report).
+- Command: `make validate-ontology-axioms EXTRACTION=<bundle> AXIOMS=<axiom file>`.
+- Behavior, the reading rules, and the measured base rates on the committed corpora:
+  [robustness and ontology](../impl/current/robustness-ontology-backends.md#ontology-axiom-layer).
+
+Two boundaries are part of what this schema asserts:
+
+- **An axiom is business logic, not a corpus statistic.** Whether "has owner" admits one value,
+  whether `PERSON` and `ORG` are genuinely disjoint in this domain, and whether a relation's range
+  is closed are claims no corpus frequency can settle -- inducing them from the ledger would only
+  restate what the extractor emitted. So an axiom is ENABLED only from a human-signed set; the
+  checker proposes candidates with their supporting and contradicting spans and a reviewer decides
+  each one.
+- **The axiom layer reports; it never deletes.** A violation is a contradiction to adjudicate, and
+  the graph build is byte-identical whether or not the check runs. `llb build-graph
+  --refuse-violations` is the opt-in exception, and it refuses only over an axiom someone signed.
+
+**Decision for you at sign-off:** each candidate axiom in the committed file, one at a time. The
+file ships entirely UNSIGNED, so it gates nothing until that pass happens.
+
+---
+
 ## Sign-off (text-analysis sign-off) -- how to approve this schema
 
 This is the human gate. Nothing about it requires running a GPU.
@@ -181,6 +222,10 @@ to extract fresh) and inspect `nodes.jsonl` / `graph_meta.json` under the graph 
      non-negotiable for the span metric; confirm the extractor choice (LLM vs spaCy);
    - the **retrieval scope** (Section 4) -- both strategies, the k-hop depth, and the rule that any
      LLM community summary stays a tagged diagnostic (never span-scored).
+
+   The **axioms** (Section 6) are NOT covered by this sign-off. They arrived after it, they gate
+   nothing while unsigned, and each one is a separate domain decision taken one at a time in its
+   own review pass (`ontology-axiom-signoff` in [`plan.md`](../impl/plan.md)).
 
    The tests assert against the named constants, not hardcoded values, so they follow your change.
 

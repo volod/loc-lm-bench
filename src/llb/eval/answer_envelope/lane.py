@@ -21,6 +21,11 @@ FREE_TEXT = "free_text"
 ENVELOPE = "envelope"
 ANSWER_FORMATS = (FREE_TEXT, ENVELOPE)
 
+# The statuses a violation may override. A refusal or an empty answer asserted nothing, and a
+# transport failure produced nothing -- turning either into `ontology_violation` would credit the
+# gate with a rejection it did not make.
+_GATEABLE_STATUSES = (eval_common.OK,)
+
 
 def merged_usage(results: tuple[ChatResult, ...]) -> UsageRecord:
     """Token + latency accounting across every call one case spent, the repair reprompt included.
@@ -47,6 +52,12 @@ def envelope_state(completion: EnvelopeCompletion) -> RagState:
     A valid envelope is classified on its DECLARED answer text, so a refusal or an empty answer
     reaches the same status it would have from free text; an envelope that never validated keeps
     its typed parse status (`malformed` / `schema_invalid`) and contributes an empty answer.
+
+    Step two of the gate (ontology-validated-answer-gate) is applied LAST and only to an envelope
+    that already parsed: an answer whose declared triples break an accepted axiom ends in
+    `ontology_violation` rather than being scored as a fluent answer. The answer text is still
+    recorded -- the study reads what the gate refused, and a rejection nobody can inspect is not
+    evidence.
     """
     last = completion.results[-1]
     parse = completion.parse
@@ -63,4 +74,26 @@ def envelope_state(completion: EnvelopeCompletion) -> RagState:
         return update
     update["status"] = eval_common.classify_response(parse.envelope.answer, last.error)
     update["envelope"] = parse.envelope.model_dump()
+    return {**update, **_validation_state(completion, update["status"])}
+
+
+def _validation_state(completion: EnvelopeCompletion, status: str) -> RagState:
+    """The step-two columns, and the status override a violation earns.
+
+    A case that already failed in transport keeps its transport status: the gate has an opinion
+    about the ANSWER, and there is no answer to have an opinion about.
+    """
+    verdict = completion.validation
+    if verdict is None:
+        return {}
+    update: RagState = {
+        "validation_checked_triples": verdict.checked_triples,
+        "validation_repaired": completion.validation_repaired,
+        "validation_violations": len(verdict.violations),
+        "validation_classes": verdict.classes,
+        "validation_axioms": verdict.axiom_ids,
+    }
+    if verdict.violations and status in _GATEABLE_STATUSES:
+        update["status"] = eval_common.ONTOLOGY_VIOLATION
+        update["validation_error"] = verdict.detail()
     return update

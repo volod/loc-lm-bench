@@ -12,6 +12,7 @@ Commands by area:
   ingest-corpus / ingest-pdf-corpus                  mixed txt/md/pdf -> canonical .md/.txt corpus
   prepare-goldset / prepare-synthetic-corpus         frontier data-prep (litellm)
   prepare-goldset-draft                              ontology-assisted draft (local/frontier; --resume)
+  validate-ontology-axioms                           check an extraction ledger against the ontology axioms
   draft-compare                                      exact shared-seed local/frontier draft report
   draft-compare-local                                sequential GPU-adaptive Qwen/Gemma comparison
   draft-compare-analyze                              summarize comparison.json statistics

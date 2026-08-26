@@ -108,7 +108,7 @@ Acceptance results:
 The recent paired embedder, context-ablation, and local drafting evidence reruns are recorded in
 [RAG core](rag-core/embedders.md#the-recommendation-re-read-with-paired-uncertainty),
 [RAG core](rag-core/embedders.md#blackwell-encoder-throughput-decomposition),
-[RAG core](rag-core/context-ablation.md#context-ablation-evidence), and
+[RAG core](rag-core/context-ablation-evidence.md), and
 [data prep](data-prep/drafting-lanes.md#sequential-local-qwengemma-draft-comparison).
 
 Encoder throughput on this host (2026-07-29): `EMBED_ENCODER_THROUGHPUT=1` over the 311-chunk UA

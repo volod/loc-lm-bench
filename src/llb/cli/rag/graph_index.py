@@ -48,6 +48,14 @@ def build_graph_cmd(
     summarize_model: Optional[str] = typer.Option(
         None, help="local endpoint model for --summarize (defaults to --extract-model)"
     ),
+    axioms: Optional[Path] = typer.Option(
+        None, help="ontology axiom set to check the extraction against before building"
+    ),
+    refuse_violations: bool = typer.Option(
+        False,
+        "--refuse-violations",
+        help="refuse the build when a SIGNED axiom in --axioms is broken (candidates only warn)",
+    ),
 ) -> None:
     """Build the GraphRAG store from the ontology-assisted drafting extraction (nodes/edges + communities).
 
@@ -55,10 +63,15 @@ def build_graph_cmd(
     --corpus-root via a local endpoint (--extract-model). Writes node/edge JSONL + meta under the
     config's graph dir; select it at eval time with `--retrieval-backend graph`. With --summarize it
     also writes the tagged-diagnostic community summaries (recorded, never returned by retrieval).
+
+    The build is unchanged by --axioms: the axiom layer reports, it never edits a fact. With
+    --refuse-violations it can REFUSE, and only over an axiom a reviewer signed -- an unsigned
+    candidate is printed and the build proceeds, because nobody has accepted it yet.
     """
     from llb.graph.refresh import save_graph_inputs
     from llb.graph.store import GraphStore
 
+    _require_axioms(axioms, refuse_violations)
     cfg = load_config(config, corpus_root=corpus_root, graph_khop_depth=khop_depth)
     think = False if extract_no_think else None
     extractions, docs, ontology = _resolve_graph_inputs(
@@ -70,6 +83,7 @@ def build_graph_cmd(
         max_tokens=extract_max_tokens,
         think=think,
     )
+    _check_axioms(extractions, axioms, refuse_violations)
     store = GraphStore.build(extractions, docs, ontology, khop_depth=cfg.graph_khop_depth)
     summary_note = ""
     if summarize:
@@ -89,6 +103,30 @@ def build_graph_cmd(
         f"[build-graph] {store.meta['n_nodes']} nodes, {store.meta['n_edges']} edges, "
         f"{store.meta['n_communities']} communities{summary_note} -> {cfg.graph_dir()}"
     )
+
+
+def _require_axioms(axioms: Optional[Path], refuse: bool) -> None:
+    """Fail before any extraction work when the refusal flag has nothing to refuse against."""
+    if refuse and axioms is None:
+        typer.echo("[error] --refuse-violations needs --axioms <axiom file>", err=True)
+        raise typer.Exit(code=2)
+
+
+def _check_axioms(extractions: "list[DocExtraction]", axioms: Optional[Path], refuse: bool) -> None:
+    """Report (and optionally refuse over) the ledger's axiom violations before building."""
+    if axioms is None:
+        return
+    from llb.prep.ontology.axioms.run import check_build_inputs
+
+    check = check_build_inputs(extractions, axioms)
+    for line in check.lines():
+        typer.echo(line)
+    if refuse and check.signed_violations:
+        typer.echo(
+            f"[error] refusing the build: {len(check.signed_violations)} signed-axiom violations",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
 
 def _local_complete(

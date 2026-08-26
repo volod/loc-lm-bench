@@ -201,6 +201,26 @@ def run_eval_cmd(
         "the generation boundary, and read the answer-side signals from declared fields "
         "(typed-rag-answer-envelope)",
     ),
+    answer_validation: Optional[str] = typer.Option(
+        None,
+        "--answer-validation",
+        help="off (default) | ontology -- check the declared answer's triples against the SIGNED "
+        "axiom set and the retrieved corpus ledger, ending a contradiction in "
+        "`ontology_violation` after one bounded semantic repair (needs --answer-format envelope, "
+        "--ontology-axioms, and --ontology-ledger)",
+    ),
+    ontology_axioms: Optional[Path] = typer.Option(
+        None,
+        "--ontology-axioms",
+        help="SIGNED axiom file (.ttl or its .json mirror) the answer gate enables; an unsigned "
+        "file is refused rather than silently enabled",
+    ),
+    ontology_ledger: Optional[Path] = typer.Option(
+        None,
+        "--ontology-ledger",
+        help="the corpus extraction.jsonl (or the draft bundle dir holding it) whose facts the "
+        "answer is checked against, scoped per case to the retrieved chunks",
+    ),
     suppress_reasoning_prompt: Optional[bool] = typer.Option(
         None,
         "--suppress-reasoning-prompt/--no-suppress-reasoning-prompt",

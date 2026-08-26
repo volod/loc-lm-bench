@@ -1,0 +1,918 @@
+{
+  "schema_version": 1,
+  "fixture_id": "ontology_violations_uk",
+  "description": "Adversarial fixture for the ontology-validated answer gate. Three case categories: `planted_violation` -- one violating answer per axiom class the gate decides; `adversarial_correct` -- correct answers a naive checker would refuse, the denominator the false-rejection rate is measured on; `scope` -- an answer contradicting a ledger fact the prompt never carried, which the gate must NOT refuse. Every span is exact against `document.text`; the axioms are named by id from samples/ontology/axioms_uk_v1.ttl, which the fixture harness enables for the FIXTURE only -- signing the shipped set is a domain reviewer's decision, not a test's.",
+  "axiom_source": "samples/ontology/axioms_uk_v1.ttl",
+  "axiom_ids": [
+    "func-maie-naselennia",
+    "inv-func-avtor",
+    "maxcard-ye",
+    "domain-avtor",
+    "domain-napysav",
+    "range-maie-naselennia",
+    "disjoint-person-org",
+    "asym-mistyt",
+    "irrefl-mistyt",
+    "sym-mezhuie-z"
+  ],
+  "document": {
+    "doc_id": "ontology_violations_uk.md",
+    "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року.\nКиїв має населення 2.9 мільйона осіб, тобто 2 900 000 осіб.\nЛеся Українка автор твору Лісова пісня.\nЛеся Українка написав твір Лісова пісня та написав твір Бояриня.\nКодекс містить розділ про авторське право.\nАкадемія наук готує звіт про стан науки.\nЛьвівська область межує з Тернопільською областю.\nМашина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель.\n"
+  },
+  "chunks": [
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 0,
+      "char_end": 64,
+      "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 65,
+      "char_end": 124,
+      "text": "Київ має населення 2.9 мільйона осіб, тобто 2 900 000 осіб."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 125,
+      "char_end": 164,
+      "text": "Леся Українка автор твору Лісова пісня."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 165,
+      "char_end": 229,
+      "text": "Леся Українка написав твір Лісова пісня та написав твір Бояриня."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 230,
+      "char_end": 272,
+      "text": "Кодекс містить розділ про авторське право."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 273,
+      "char_end": 313,
+      "text": "Академія наук готує звіт про стан науки."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 314,
+      "char_end": 363,
+      "text": "Львівська область межує з Тернопільською областю."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 364,
+      "char_end": 444,
+      "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+    }
+  ],
+  "ledger": [
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "entities": [
+        {
+          "name": "Львів",
+          "type": "LOC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 0,
+              "char_end": 64,
+              "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року."
+            }
+          ]
+        },
+        {
+          "name": "717 тисяч осіб",
+          "type": "QUANTITY",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 0,
+              "char_end": 64,
+              "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року."
+            }
+          ]
+        },
+        {
+          "name": "Київ",
+          "type": "LOC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 65,
+              "char_end": 124,
+              "text": "Київ має населення 2.9 мільйона осіб, тобто 2 900 000 осіб."
+            }
+          ]
+        },
+        {
+          "name": "2.9 мільйона осіб",
+          "type": "QUANTITY",
+          "aliases": [
+            "2 900 000 осіб"
+          ],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 65,
+              "char_end": 124,
+              "text": "Київ має населення 2.9 мільйона осіб, тобто 2 900 000 осіб."
+            }
+          ]
+        },
+        {
+          "name": "Леся Українка",
+          "type": "PERSON",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 125,
+              "char_end": 164,
+              "text": "Леся Українка автор твору Лісова пісня."
+            }
+          ]
+        },
+        {
+          "name": "Лісова пісня",
+          "type": "WORK",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 125,
+              "char_end": 164,
+              "text": "Леся Українка автор твору Лісова пісня."
+            }
+          ]
+        },
+        {
+          "name": "Бояриня",
+          "type": "WORK",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 165,
+              "char_end": 229,
+              "text": "Леся Українка написав твір Лісова пісня та написав твір Бояриня."
+            }
+          ]
+        },
+        {
+          "name": "Кодекс",
+          "type": "LAW",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 230,
+              "char_end": 272,
+              "text": "Кодекс містить розділ про авторське право."
+            }
+          ]
+        },
+        {
+          "name": "розділ про авторське право",
+          "type": "MISC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 230,
+              "char_end": 272,
+              "text": "Кодекс містить розділ про авторське право."
+            }
+          ]
+        },
+        {
+          "name": "Академія наук",
+          "type": "ORG",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 273,
+              "char_end": 313,
+              "text": "Академія наук готує звіт про стан науки."
+            }
+          ]
+        },
+        {
+          "name": "Львівська область",
+          "type": "LOC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 314,
+              "char_end": 363,
+              "text": "Львівська область межує з Тернопільською областю."
+            }
+          ]
+        },
+        {
+          "name": "Тернопільська область",
+          "type": "LOC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 314,
+              "char_end": 363,
+              "text": "Львівська область межує з Тернопільською областю."
+            }
+          ]
+        },
+        {
+          "name": "Машина Тюрінга",
+          "type": "MISC",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 364,
+              "char_end": 444,
+              "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "claims": [],
+      "facts": [
+        {
+          "subject": "Львів",
+          "relation": "має населення",
+          "object": "717 тисяч осіб",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 0,
+            "char_end": 64,
+            "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року."
+          }
+        },
+        {
+          "subject": "Київ",
+          "relation": "має населення",
+          "object": "2.9 мільйона осіб",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 65,
+            "char_end": 124,
+            "text": "Київ має населення 2.9 мільйона осіб, тобто 2 900 000 осіб."
+          }
+        },
+        {
+          "subject": "Леся Українка",
+          "relation": "автор",
+          "object": "Лісова пісня",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 125,
+            "char_end": 164,
+            "text": "Леся Українка автор твору Лісова пісня."
+          }
+        },
+        {
+          "subject": "Леся Українка",
+          "relation": "написав",
+          "object": "Лісова пісня",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 165,
+            "char_end": 229,
+            "text": "Леся Українка написав твір Лісова пісня та написав твір Бояриня."
+          }
+        },
+        {
+          "subject": "Леся Українка",
+          "relation": "написав",
+          "object": "Бояриня",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 165,
+            "char_end": 229,
+            "text": "Леся Українка написав твір Лісова пісня та написав твір Бояриня."
+          }
+        },
+        {
+          "subject": "Кодекс",
+          "relation": "містить",
+          "object": "розділ про авторське право",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 230,
+            "char_end": 272,
+            "text": "Кодекс містить розділ про авторське право."
+          }
+        },
+        {
+          "subject": "Львівська область",
+          "relation": "межує з",
+          "object": "Тернопільська область",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 314,
+            "char_end": 363,
+            "text": "Львівська область межує з Тернопільською областю."
+          }
+        },
+        {
+          "subject": "Машина Тюрінга",
+          "relation": "є",
+          "object": "математична модель",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 364,
+            "char_end": 444,
+            "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+          }
+        },
+        {
+          "subject": "Машина Тюрінга",
+          "relation": "є",
+          "object": "теоретичний пристрій",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 364,
+            "char_end": 444,
+            "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+          }
+        },
+        {
+          "subject": "Машина Тюрінга",
+          "relation": "є",
+          "object": "поширена модель",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 364,
+            "char_end": 444,
+            "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "ov-functional-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "functional",
+      "axiom_id": "func-maie-naselennia",
+      "why": "The answer gives Львів a second population value; the retrieved chunk already carries one, and 'має населення' is functional.",
+      "chunks": [
+        0
+      ],
+      "envelope": {
+        "answer": "Львів має населення 2 мільйони осіб.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Львів має населення 2 мільйони осіб.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Львів",
+              "relation": "має населення",
+              "object": "2 мільйони осіб",
+              "subject_type": "LOC",
+              "object_type": "QUANTITY"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-inverse-functional-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "inverse_functional",
+      "axiom_id": "inv-func-avtor",
+      "why": "The answer names a second author for a work the retrieved chunk already attributes; 'автор' is inverse-functional.",
+      "chunks": [
+        2
+      ],
+      "envelope": {
+        "answer": "Автором твору Лісова пісня є Іван Франко.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Автором твору Лісова пісня є Іван Франко.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Іван Франко",
+              "relation": "автор",
+              "object": "Лісова пісня",
+              "subject_type": "PERSON",
+              "object_type": "WORK"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-max-cardinality-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "max_cardinality",
+      "axiom_id": "maxcard-ye",
+      "why": "The answer alone asserts three values of 'є' for one subject, above the bound of two -- no corpus fact is needed for the contradiction.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Патент є документ, право і майно.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Патент є документ.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Патент",
+              "relation": "є",
+              "object": "документ",
+              "subject_type": "WORK",
+              "object_type": "MISC"
+            }
+          },
+          {
+            "text": "Патент є право.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Патент",
+              "relation": "є",
+              "object": "право",
+              "subject_type": "WORK",
+              "object_type": "MISC"
+            }
+          },
+          {
+            "text": "Патент є майно.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Патент",
+              "relation": "є",
+              "object": "майно",
+              "subject_type": "WORK",
+              "object_type": "MISC"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-domain-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "domain",
+      "axiom_id": "domain-avtor",
+      "why": "The answer types the author of a work as an ORG, outside the declared PERSON domain of 'автор'.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Автором твору Кобзар є видавництво «Основи».",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Автором твору Кобзар є видавництво «Основи».",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Видавництво «Основи»",
+              "relation": "автор",
+              "object": "Кобзар",
+              "subject_type": "ORG",
+              "object_type": "WORK"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-range-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "range",
+      "axiom_id": "range-maie-naselennia",
+      "why": "The answer gives a DATE as the population of a city; the declared range of 'має населення' is QUANTITY.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Одеса має населення 1990 рік.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Одеса має населення 1990 рік.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Одеса",
+              "relation": "має населення",
+              "object": "1990 рік",
+              "subject_type": "LOC",
+              "object_type": "DATE"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-disjoint-types-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "disjoint_types",
+      "axiom_id": "disjoint-person-org",
+      "why": "The answer types Академія наук as a PERSON while the retrieved chunk types it ORG, and the two are declared disjoint.",
+      "chunks": [
+        5
+      ],
+      "envelope": {
+        "answer": "Академія наук написала звіт про стан науки.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Академія наук написала звіт про стан науки.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Академія наук",
+              "relation": "написав",
+              "object": "звіт про стан науки",
+              "subject_type": "PERSON",
+              "object_type": "MISC"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-asymmetric-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "asymmetric",
+      "axiom_id": "asym-mistyt",
+      "why": "The answer reverses a containment the retrieved chunk asserts, so 'містить' would hold in both directions.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Розділ про авторське право містить Кодекс.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Розділ про авторське право містить Кодекс.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "розділ про авторське право",
+              "relation": "містить",
+              "object": "Кодекс",
+              "subject_type": "MISC",
+              "object_type": "LAW"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-irreflexive-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "irreflexive",
+      "axiom_id": "irrefl-mistyt",
+      "why": "The answer asserts that the Кодекс contains itself.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Кодекс містить Кодекс.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Кодекс містить Кодекс.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Кодекс",
+              "relation": "містить",
+              "object": "Кодекс",
+              "subject_type": "LAW",
+              "object_type": "LAW"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-multi-valued-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "multi-valued relation",
+      "why": "One author wrote two works. 'написав' carries no functional axiom, so two objects for one subject is ordinary -- a checker that assumed one value per subject would refuse a correct answer.",
+      "chunks": [
+        3
+      ],
+      "envelope": {
+        "answer": "Леся Українка написала Лісову пісню та Бояриню.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Леся Українка написала Лісову пісню.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Леся Українка",
+              "relation": "написав",
+              "object": "Лісова пісня",
+              "subject_type": "PERSON",
+              "object_type": "WORK"
+            }
+          },
+          {
+            "text": "Леся Українка написала Бояриню.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Леся Українка",
+              "relation": "написав",
+              "object": "Бояриня",
+              "subject_type": "PERSON",
+              "object_type": "WORK"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-paraphrase-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "paraphrased entity that normalizes to the same node",
+      "why": "The answer states the same population the chunk does, under the alias the corpus itself records. Compared on surfaces alone it looks like a second value of a functional relation.",
+      "chunks": [
+        1
+      ],
+      "envelope": {
+        "answer": "Київ має населення 2 900 000 осіб.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Київ має населення 2 900 000 осіб.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Київ",
+              "relation": "має населення",
+              "object": "2 900 000 осіб",
+              "subject_type": "LOC",
+              "object_type": "QUANTITY"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-misc-fallback-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "entity typed MISC by fallback",
+      "why": "The model could not place the compiler in the closed vocabulary, so the type normalized to MISC. Reading that fallback as a type claim would make it a domain violation of 'автор'.",
+      "chunks": [
+        2
+      ],
+      "envelope": {
+        "answer": "Укладачем збірника законів є невідомий укладач.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Укладачем збірника законів є невідомий укладач.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Невідомий укладач",
+              "relation": "автор",
+              "object": "Збірник законів",
+              "subject_type": "MISC",
+              "object_type": "WORK"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-symmetric-gap-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "one-way assertion of a symmetric relation",
+      "why": "An answer is never asked to state both directions of a symmetric relation. The symmetric class reports a LEDGER GAP, which is why the gate excludes it.",
+      "chunks": [
+        6
+      ],
+      "envelope": {
+        "answer": "Львівська область межує з Волинською областю.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Львівська область межує з Волинською областю.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Львівська область",
+              "relation": "межує з",
+              "object": "Волинська область",
+              "subject_type": "LOC",
+              "object_type": "LOC"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-abstained-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "declared abstention",
+      "why": "An envelope that declares no claim asserts nothing the axioms could contradict; it is UNCHECKED, not cleared, and the gate must not refuse it.",
+      "chunks": [
+        0
+      ],
+      "envelope": {
+        "answer": "Наданий контекст не містить цієї інформації.",
+        "abstained": true,
+        "claims": [],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-inverse-direction-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "inverse-functional read in the wrong direction",
+      "why": "'автор' is inverse-functional -- one subject per OBJECT. The same author having a second work is ordinary; a checker that read the constraint as one object per subject would refuse it.",
+      "chunks": [
+        2
+      ],
+      "envelope": {
+        "answer": "Леся Українка також авторка твору Бояриня.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Леся Українка авторка твору Бояриня.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Леся Українка",
+              "relation": "автор",
+              "object": "Бояриня",
+              "subject_type": "PERSON",
+              "object_type": "WORK"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-unrecorded-paraphrase-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "paraphrase the corpus does not record as an alias",
+      "why": "The answer restates the chunk's own population in a shorter numeric form the extraction ledger never recorded as an alias. Surface folding cannot see the identity, so the gate refuses a correct answer -- this case is what the measured false-rejection rate is made of.",
+      "chunks": [
+        1
+      ],
+      "envelope": {
+        "answer": "Київ має населення 2,9 млн осіб.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Київ має населення 2,9 млн осіб.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Київ",
+              "relation": "має населення",
+              "object": "2,9 млн осіб",
+              "subject_type": "LOC",
+              "object_type": "QUANTITY"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "scope-unretrieved-contradiction-001",
+      "expect": "accept",
+      "category": "scope",
+      "axiom_class": null,
+      "naive_trap": "contradiction of a fact outside the retrieved context",
+      "why": "The answer does contradict a ledger fact, but that fact's evidence was never in the prompt. Refusing here would make the gate a corpus-wide fact checker and would blame the model for a document it was not shown; the declared scope is the retrieved chunks.",
+      "chunks": [
+        4
+      ],
+      "envelope": {
+        "answer": "Львів має населення 2 мільйони осіб.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Львів має населення 2 мільйони осіб.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Львів",
+              "relation": "має населення",
+              "object": "2 мільйони осіб",
+              "subject_type": "LOC",
+              "object_type": "QUANTITY"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-corpus-already-over-budget-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "a bounded group the retrieved corpus already breaks on its own",
+      "why": "The retrieved chunk already asserts three values of a relation bounded at two, so the axiom is broken whatever the answer says. Blaming the model for joining a group the corpus had already over-filled would refuse correct answers for a data problem `validate-ontology-axioms` reports. Measured on a real run before it was fixed.",
+      "chunks": [
+        7
+      ],
+      "envelope": {
+        "answer": "Машина Тюрінга є абстрактний автомат.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Машина Тюрінга є абстрактний автомат.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Машина Тюрінга",
+              "relation": "є",
+              "object": "абстрактний автомат",
+              "subject_type": "MISC",
+              "object_type": "MISC"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    }
+  ]
+}
