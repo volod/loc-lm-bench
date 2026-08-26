@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "fixture_id": "ontology_violations_uk",
-  "description": "Adversarial fixture for the ontology-validated answer gate. Three case categories: `planted_violation` -- one violating answer per axiom class the gate decides; `adversarial_correct` -- correct answers a naive checker would refuse, the denominator the false-rejection rate is measured on; `scope` -- an answer contradicting a ledger fact the prompt never carried, which the gate must NOT refuse. Every span is exact against `document.text`; the axioms are named by id from samples/ontology/axioms_uk_v1.ttl, which the fixture harness enables for the FIXTURE only -- signing the shipped set is a domain reviewer's decision, not a test's.",
+  "description": "Adversarial fixture for the ontology-validated answer gate. Three case categories: `planted_violation` -- one violating answer per axiom class the gate decides, plus a near-value case that guards the value normalizer against folding two DIFFERENT quantities; `adversarial_correct` -- correct answers a naive checker would refuse, the denominator the false-rejection rate is measured on, three of them restating a retrieved QUANTITY, DATE or DURATION in a written form the ledger never recorded as an alias; `scope` -- an answer contradicting a ledger fact the prompt never carried, which the gate must NOT refuse. Every span is exact against `document.text`; the axioms are named by id from samples/ontology/axioms_uk_v1.ttl, which the fixture harness enables for the FIXTURE only -- signing the shipped set is a domain reviewer's decision, not a test's.",
   "axiom_source": "samples/ontology/axioms_uk_v1.ttl",
   "axiom_ids": [
     "func-maie-naselennia",
@@ -13,11 +13,14 @@
     "disjoint-person-org",
     "asym-mistyt",
     "irrefl-mistyt",
-    "sym-mezhuie-z"
+    "sym-mezhuie-z",
+    "func-diie",
+    "func-narodyvsia",
+    "range-diie"
   ],
   "document": {
     "doc_id": "ontology_violations_uk.md",
-    "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року.\nКиїв має населення 2.9 мільйона осіб, тобто 2 900 000 осіб.\nЛеся Українка автор твору Лісова пісня.\nЛеся Українка написав твір Лісова пісня та написав твір Бояриня.\nКодекс містить розділ про авторське право.\nАкадемія наук готує звіт про стан науки.\nЛьвівська область межує з Тернопільською областю.\nМашина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель.\n"
+    "text": "Місто Львів має населення 717 тисяч осіб за переписом 2021 року.\nКиїв має населення 2.9 мільйона осіб, тобто 2 900 000 осіб.\nЛеся Українка автор твору Лісова пісня.\nЛеся Українка написав твір Лісова пісня та написав твір Бояриня.\nКодекс містить розділ про авторське право.\nАкадемія наук готує звіт про стан науки.\nЛьвівська область межує з Тернопільською областю.\nМашина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель.\nПатент діє двадцять років від дати подання.\nІван Франко народився 27 серпня 1856 року.\n"
   },
   "chunks": [
     {
@@ -67,6 +70,18 @@
       "char_start": 364,
       "char_end": 444,
       "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 445,
+      "char_end": 488,
+      "text": "Патент діє двадцять років від дати подання."
+    },
+    {
+      "doc_id": "ontology_violations_uk.md",
+      "char_start": 489,
+      "char_end": 531,
+      "text": "Іван Франко народився 27 серпня 1856 року."
     }
   ],
   "ledger": [
@@ -243,6 +258,58 @@
               "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
             }
           ]
+        },
+        {
+          "name": "Патент",
+          "type": "WORK",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 445,
+              "char_end": 488,
+              "text": "Патент діє двадцять років від дати подання."
+            }
+          ]
+        },
+        {
+          "name": "двадцять років",
+          "type": "DURATION",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 445,
+              "char_end": 488,
+              "text": "Патент діє двадцять років від дати подання."
+            }
+          ]
+        },
+        {
+          "name": "Іван Франко",
+          "type": "PERSON",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 489,
+              "char_end": 531,
+              "text": "Іван Франко народився 27 серпня 1856 року."
+            }
+          ]
+        },
+        {
+          "name": "27 серпня 1856 року",
+          "type": "DATE",
+          "aliases": [],
+          "mentions": [
+            {
+              "doc_id": "ontology_violations_uk.md",
+              "char_start": 489,
+              "char_end": 531,
+              "text": "Іван Франко народився 27 серпня 1856 року."
+            }
+          ]
         }
       ],
       "events": [],
@@ -356,6 +423,28 @@
             "char_start": 364,
             "char_end": 444,
             "text": "Машина Тюрінга є математична модель, є теоретичний пристрій і є поширена модель."
+          }
+        },
+        {
+          "subject": "Патент",
+          "relation": "діє",
+          "object": "двадцять років",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 445,
+            "char_end": 488,
+            "text": "Патент діє двадцять років від дати подання."
+          }
+        },
+        {
+          "subject": "Іван Франко",
+          "relation": "народився",
+          "object": "27 серпня 1856 року",
+          "evidence": {
+            "doc_id": "ontology_violations_uk.md",
+            "char_start": 489,
+            "char_end": 531,
+            "text": "Іван Франко народився 27 серпня 1856 року."
           }
         }
       ]
@@ -908,6 +997,99 @@
               "object": "абстрактний автомат",
               "subject_type": "MISC",
               "object_type": "MISC"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-spelled-duration-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "the same DURATION written as digits where the corpus spelled it out",
+      "why": "The answer restates the retrieved chunk's own term as `20 років` where the ledger recorded `двадцять років`. Compared on surfaces alone it reads as a second value of a functional relation; the two are one duration.",
+      "chunks": [
+        8
+      ],
+      "envelope": {
+        "answer": "Патент діє 20 років.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Патент діє 20 років.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Патент",
+              "relation": "діє",
+              "object": "20 років",
+              "subject_type": "WORK",
+              "object_type": "DURATION"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ok-normalized-date-001",
+      "expect": "accept",
+      "category": "adversarial_correct",
+      "axiom_class": null,
+      "naive_trap": "the same DATE written in numeric form",
+      "why": "The answer gives the chunk's own date as `27.08.1856` where the ledger recorded `27 серпня 1856 року`. No alias links the two written forms, and `народився` is functional.",
+      "chunks": [
+        9
+      ],
+      "envelope": {
+        "answer": "Іван Франко народився 27.08.1856.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Іван Франко народився 27.08.1856.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Іван Франко",
+              "relation": "народився",
+              "object": "27.08.1856",
+              "subject_type": "PERSON",
+              "object_type": "DATE"
+            }
+          }
+        ],
+        "evidence": []
+      }
+    },
+    {
+      "id": "ov-functional-near-value-001",
+      "expect": "reject",
+      "category": "planted_violation",
+      "axiom_class": "functional",
+      "axiom_id": "func-maie-naselennia",
+      "why": "A DIFFERENT population written in the short form the value normalizer also reads: `2,8 млн осіб` against the chunk's `2.9 мільйона осіб`. This is the guard that value equivalence folds equal values and not merely similar-looking ones.",
+      "chunks": [
+        1
+      ],
+      "envelope": {
+        "answer": "Київ має населення 2,8 млн осіб.",
+        "abstained": false,
+        "claims": [
+          {
+            "text": "Київ має населення 2,8 млн осіб.",
+            "citations": [
+              1
+            ],
+            "triple": {
+              "subject": "Київ",
+              "relation": "має населення",
+              "object": "2,8 млн осіб",
+              "subject_type": "LOC",
+              "object_type": "QUANTITY"
             }
           }
         ],

@@ -8,14 +8,19 @@ corpus fact whose evidence is in the retrieved chunks?
 
   - `constants` names the lanes, the axiom classes the gate may refuse an answer with, and the
     artifact layout;
-  - `scope` restricts the corpus ledger to what the prompt carried and folds entity surfaces
-    through the aliases the corpus itself records;
+  - `equivalence` (over the closed Ukrainian tables in `value_lexicon`) decides when two written
+    forms are one VALUE (`QUANTITY` / `DATE` / `DURATION`),
+    and `identity` folds a declared endpoint onto whatever the corpus already treats as one thing:
+    a recorded alias, a node the resolution overlay merged, then that value equivalence;
+  - `scope` restricts the corpus ledger to what the prompt carried;
   - `answer_ledger` renders one envelope as the `DocExtraction` the shipped axiom checker reads;
   - `gate` runs the signed axioms over the merged ledger and keeps only the violations the ANSWER
     is party to;
   - `fixture` measures catch and false rejection on the committed adversarial cases;
+  - `labelling` decides whether a REFUSED answer was correct, from a signal that survives Ukrainian
+    inflection rather than from surface tokens alone;
   - `study` / `verdict` / `report` / `run` are the three-lane comparison and its adopt-or-reject
-    readings.
+    readings, and `rerender` re-reads a finished one from its own run bundles with no model call.
 
 Nothing here enables an axiom. The gate refuses an unsigned axiom file with a named error, because
 an axiom is a domain claim a reviewer accepted and dated -- and a wrong one converts correct

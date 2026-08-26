@@ -228,13 +228,35 @@ def write_overlay(overlay: NodeOverlay, path: Path, graph: KnowledgeGraph) -> No
     atomic_write_text(path, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
 
 
-def read_overlay(path: Path) -> NodeOverlay:
-    """Read back a written overlay (the names in each row are for the reader, not the model)."""
-    rows = [
+def _overlay_rows(path: Path) -> list[JsonObject]:
+    """Every JSONL row of a written overlay, header included, in file order."""
+    return [
         json.loads(line)
         for line in Path(path).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def read_overlay_surfaces(path: Path) -> dict[str, str]:
+    """member entity NAME -> the canonical name its cluster proposes, for a reader with no graph.
+
+    `write_overlay` already records both names on every row, because a reviewer deciding whether a
+    merge is right reads names rather than node ids. Reading them back is what lets a consumer
+    that holds no `KnowledgeGraph` -- the answer gate, which checks a declared answer against an
+    extraction ledger -- fold a surface through the identity THIS lane proposed instead of
+    inventing a second notion of it.
+    """
+    return {
+        str(member): str(row["canonical_name"])
+        for row in _overlay_rows(path)
+        if row.get("kind") == "cluster"
+        for member in row.get("member_names", [])
+    }
+
+
+def read_overlay(path: Path) -> NodeOverlay:
+    """Read back a written overlay (the names in each row are for the reader, not the model)."""
+    rows = _overlay_rows(path)
     header = next((row for row in rows if row.get("kind") == "overlay"), None)
     if header is None:
         raise ValueError(f"no overlay header row in {path}")

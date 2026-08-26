@@ -428,12 +428,30 @@ def test_every_planted_violation_is_caught_by_its_own_axiom_class():
 
 
 def test_the_false_rejection_rate_is_measured_on_adversarial_correct_answers():
-    # NOT asserted to be zero: the fixture carries a paraphrase the corpus never recorded as an
-    # alias, which surface folding cannot see. That case IS the measured rate.
+    # MEASURED, never asserted to be a target: this pins what the fixture reads today so a change
+    # to it has to be seen. Three of the correct answers restate a retrieved QUANTITY, DATE or
+    # DURATION in a form the ledger records no alias for, and value equivalence is what accepts
+    # them (`test_value_equivalence_is_what_removes_the_paraphrase_false_rejections`).
     report = gate_fixture.fixture_report(gate_fixture.run_fixture())
-    assert report.n_correct >= 8
-    assert report.false_rejections == ["ok-unrecorded-paraphrase-001"]
-    assert report.false_rejection_rate == pytest.approx(1 / report.n_correct, abs=1e-6)
+    assert report.n_correct >= 10
+    assert report.false_rejections == []
+    assert report.false_rejection_rate == pytest.approx(0.0, abs=1e-6)
+
+
+def test_value_equivalence_is_what_removes_the_paraphrase_false_rejections(monkeypatch):
+    # The three paraphrase cases are adversarial only while surface folding cannot see them: with
+    # the value fold disabled the gate refuses all three, so the measured 0.000 is the fix rather
+    # than three cases that were never hard.
+    from llb.eval.answer_validation import identity
+
+    monkeypatch.setattr(identity, "value_key", lambda *args, **kwargs: None)
+    report = gate_fixture.fixture_report(gate_fixture.run_fixture())
+    assert report.false_rejections == [
+        "ok-unrecorded-paraphrase-001",
+        "ok-spelled-duration-001",
+        "ok-normalized-date-001",
+    ]
+    assert report.all_caught, report.catch_rate_by_class
 
 
 def test_the_scope_case_is_never_refused():

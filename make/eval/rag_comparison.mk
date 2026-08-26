@@ -94,7 +94,7 @@ compare-answer-quality: ## Score the multi-hop slice end to end under two retrie
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \
 		$(if $(ANSWER_QUALITY_OUT_DIR),--out-dir "$(ANSWER_QUALITY_OUT_DIR)",)
 
-compare-answer-validation: ## Score one item set under off / pydantic / pydantic+ontology and price the answer gate (MODEL= BACKEND= GOLDSET= SPLIT= VALIDATION_LANES=off,pydantic,pydantic+ontology MAX_TOKENS=768 AXIOMS=<signed-ttl> ONTOLOGY_LEDGER=<extraction.jsonl> ANSWER_VALIDATION_LIMIT= INCLUDE_DRAFTED=1 ANSWER_VALIDATION_OUT_DIR=)
+compare-answer-validation: ## Score one item set under off / pydantic / pydantic+ontology and price the answer gate (MODEL= BACKEND= GOLDSET= SPLIT= VALIDATION_LANES=off,pydantic,pydantic+ontology MAX_TOKENS=768 AXIOMS=<signed-ttl> ONTOLOGY_LEDGER=<extraction.jsonl> ONTOLOGY_OVERLAY=<overlay.jsonl> ANSWER_VALIDATION_FROM_BUNDLES=<comparison.json> ANSWER_VALIDATION_LIMIT= INCLUDE_DRAFTED=1 ANSWER_VALIDATION_OUT_DIR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-answer-validation $(if $(CONFIG),--config "$(CONFIG)",) \
@@ -104,6 +104,8 @@ compare-answer-validation: ## Score one item set under off / pydantic / pydantic
 		$(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS),) \
 		$(if $(AXIOMS),--axioms "$(AXIOMS)",) \
 		$(if $(ONTOLOGY_LEDGER),--ledger "$(ONTOLOGY_LEDGER)",) \
+		$(if $(ONTOLOGY_OVERLAY),--overlay "$(ONTOLOGY_OVERLAY)",) \
+		$(if $(ANSWER_VALIDATION_FROM_BUNDLES),--from-bundles "$(ANSWER_VALIDATION_FROM_BUNDLES)",) \
 		$(if $(FUSION_BOOTSTRAP_RESAMPLES),--resamples $(FUSION_BOOTSTRAP_RESAMPLES),) \
 		$(if $(ANSWER_VALIDATION_LIMIT),--limit $(ANSWER_VALIDATION_LIMIT),) \
 		$(if $(INCLUDE_DRAFTED),--include-drafted,) \

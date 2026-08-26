@@ -12,8 +12,11 @@ Two decisions here are what keep the gate from refusing correct work:
     type claim would make every unrecognized surface a `domain`/`range` violation. An endpoint
     typed `MISC` contributes no type assertion, which is exactly how the ledger checker already
     treats an untyped endpoint: unchecked, never failed.
-  - endpoint surfaces fold through the corpus's OWN alias map before they are compared, so a
-    paraphrase the corpus records as one entity does not read as a second value.
+  - endpoint surfaces fold through the corpus's own notion of identity before they are compared
+    (`llb.eval.answer_validation.identity`), so a paraphrase the corpus already treats as one
+    thing does not read as a second value. The fold is given the endpoint's DECLARED type, because
+    two written forms of one QUANTITY are the same value while the same two strings read as a name
+    are not.
 """
 
 from collections.abc import Callable
@@ -24,8 +27,8 @@ from llb.goldset.schema import SourceSpan
 from llb.prep.ontology.extraction.entity_types import DEFAULT_ENTITY_TYPE
 from llb.prep.ontology.models import DocExtraction, Entity, SROFact
 
-# How an endpoint surface is mapped onto the name the corpus records it under.
-Canonicalize = Callable[[str], str]
+# How an endpoint surface and its declared type are mapped onto the surface the corpus records.
+Canonicalize = Callable[[str, str], str]
 
 
 def declared_triples(envelope: AnswerEnvelope) -> list[tuple[EnvelopeClaim, EnvelopeTriple]]:
@@ -42,7 +45,7 @@ def answer_extraction(
     so a violation the gate reports quotes the CLAIM that caused it, the same way a corpus
     violation quotes the sentence it came from.
     """
-    fold: Canonicalize = canonical or (lambda name: name)
+    fold: Canonicalize = canonical or (lambda name, _type: name)
     facts: list[SROFact] = []
     entities: list[Entity] = []
     offset = 0
@@ -55,7 +58,8 @@ def answer_extraction(
             text=text,
         )
         offset = span.char_end + 1  # the joining separator, so no two claims share a span
-        subject, obj = fold(triple.subject), fold(triple.object)
+        subject = fold(triple.subject, triple.subject_type)
+        obj = fold(triple.object, triple.object_type)
         facts.append(SROFact(subject=subject, relation=triple.relation, object=obj, evidence=span))
         entities += _typed(subject, triple.subject_type, span)
         entities += _typed(obj, triple.object_type, span)

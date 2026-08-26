@@ -122,7 +122,11 @@ def _implicates_answer(violation: Violation) -> bool:
     return any(fact.evidence.doc_id == ANSWER_DOC_ID for fact in violation.facts)
 
 
-def load_gate(axioms_path: Path | str, extractions: Sequence[DocExtraction]) -> OntologyGate:
+def load_gate(
+    axioms_path: Path | str,
+    extractions: Sequence[DocExtraction],
+    overlay: Path | str | None = None,
+) -> OntologyGate:
     """Build a gate from a signed axiom file and a loaded extraction ledger.
 
     Both refusals are NAMED: an axiom set nobody signed cannot gate an answer at all, and a signed
@@ -151,12 +155,17 @@ def load_gate(axioms_path: Path | str, extractions: Sequence[DocExtraction]) -> 
         len(axiom_set.axioms) - len(signed),
         sum(len(extraction.facts) for extraction in extractions),
     )
-    return OntologyGate(enabled, CorpusLedger(extractions))
+    return OntologyGate(enabled, CorpusLedger(extractions, overlay=overlay))
 
 
-def load_gate_from_paths(axioms_path: Path | str, ledger_path: Path | str) -> OntologyGate:
-    """The run-time entry point: a signed axiom file plus an `extraction.jsonl` (or bundle dir)."""
+def load_gate_from_paths(
+    axioms_path: Path | str, ledger_path: Path | str, overlay_path: Path | str | None = None
+) -> OntologyGate:
+    """The run-time entry point: a signed axiom file, an `extraction.jsonl` (or bundle dir), and
+    optionally the node overlay the entity-resolution lane proposed for that corpus."""
     from llb.graph.ingest import load_extractions
     from llb.prep.ontology.axioms.run import resolve_ledger_path
 
-    return load_gate(axioms_path, load_extractions(resolve_ledger_path(Path(ledger_path))))
+    return load_gate(
+        axioms_path, load_extractions(resolve_ledger_path(Path(ledger_path))), overlay_path
+    )

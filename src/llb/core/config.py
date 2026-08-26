@@ -85,9 +85,13 @@ def _validate_answer_validation(config: RunConfigFields) -> None:
     from llb.eval.answer_validation.constants import GATE_ONTOLOGY
 
     if config.answer_validation != GATE_ONTOLOGY:
-        if config.ontology_axioms is not None or config.ontology_ledger is not None:
+        if any(
+            path is not None
+            for path in (config.ontology_axioms, config.ontology_ledger, config.ontology_overlay)
+        ):
             raise ValueError(
-                "ontology_axioms / ontology_ledger only apply when answer_validation=ontology"
+                "ontology_axioms / ontology_ledger / ontology_overlay only apply when "
+                "answer_validation=ontology"
             )
         return
     if config.answer_format != "envelope":
@@ -129,7 +133,7 @@ class RunConfig(RunConfigFields):
             values["query_glossary_path"] = resolve_project_path(values["query_glossary_path"])
         if values.get("adapter_path") is not None:
             values["adapter_path"] = resolve_project_path(values["adapter_path"])
-        for key in ("ontology_axioms", "ontology_ledger"):
+        for key in ("ontology_axioms", "ontology_ledger", "ontology_overlay"):
             if values.get(key) is not None:
                 values[key] = resolve_project_path(values[key])
         return values

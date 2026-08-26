@@ -46,6 +46,7 @@ _CONFIG_OPTIONS = {
     "answer_validation": "answer_validation",
     "ontology_axioms": "ontology_axioms",
     "ontology_ledger": "ontology_ledger",
+    "ontology_overlay": "ontology_overlay",
     "suppress_reasoning_prompt": "suppress_reasoning_prompt",
     "telemetry": "measure_telemetry",
 }

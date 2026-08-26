@@ -221,6 +221,13 @@ def run_eval_cmd(
         help="the corpus extraction.jsonl (or the draft bundle dir holding it) whose facts the "
         "answer is checked against, scoped per case to the retrieved chunks",
     ),
+    ontology_overlay: Optional[Path] = typer.Option(
+        None,
+        "--ontology-overlay",
+        help="optional node overlay from `resolve-graph-entities`; a declared endpoint folds "
+        "through the identity that lane PROPOSED, so an answer naming an entity the graph merged "
+        "is not read as a second value",
+    ),
     suppress_reasoning_prompt: Optional[bool] = typer.Option(
         None,
         "--suppress-reasoning-prompt/--no-suppress-reasoning-prompt",

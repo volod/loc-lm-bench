@@ -74,53 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Graph retrieval and ontology -- `graph-retrieval`
-
-#### answer-gate-equivalence (optional)
-
-Every false rejection the answer gate has produced so far is an IDENTITY failure, not an axiom
-failure, and the two ends of the gate fail the same way. On the answer side, a correct answer that
-restates a retrieved chunk's own value in a different written form -- `2,9 млн осіб` against the
-ledger's `2.9 мільйона осіб` -- reads as a second value of a functional relation, because endpoints
-fold only through the aliases the extraction ledger happens to record; every `functional`,
-`inverse_functional`, and `max_cardinality` axiom carries that failure wherever a value has more
-than one written form, which is exactly where a model paraphrases (numbers, dates, durations). On
-the READING side, a refusal is labelled a catch or a false rejection by `contains`, which has no
-morphological normalization, so a correct short answer to a question with an inflected Ukrainian
-reference is labelled a catch -- the one "catch" the heavy run recorded was this. Fix the
-equivalence, then re-measure both numbers; a lower false-rejection rate is the hoped-for outcome,
-not a required one.
-
-- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
-- Agent status: RUN NEEDED
-- Dependencies: the gate, its per-case ledger scoping, its alias folding, the committed adversarial
-  fixture, and the three-lane comparison all ship ([RAG core](current/rag-core/answer-validation.md)).
-  Reuse the node overlay the graph lane already computes (`llb.graph.resolution.overlay`) rather
-  than a second notion of entity identity, and the pinned pymorphy3 lemmatizer the lexical index
-  and the answer-span scorer already use rather than a new one; `--score-semantic` already records
-  a paraphrase signal per case, so the re-labelling needs no new column.
-- User-visible outcome: an operator can tell whether the gate's false rejections are a fixable
-  identity problem or a property of the axioms, instead of reading one number that mixes both.
-- Scope boundary: in scope -- folding declared endpoints through the resolution overlay, a value
-  normalizer for the `QUANTITY` / `DATE` / `DURATION` types, re-labelling a refusal from a signal
-  that survives inflection, and re-measuring the fixture and the lane comparison. Out of scope --
-  inventing an alias or a value equality the corpus does not carry, changing the axiom set or the
-  headline objective, enabling any axiom class, and re-opening the `symmetric` exclusion.
-- Data and artifact paths: the committed fixture at `samples/benchmarks/ontology_violations_uk.json`
-  and `$DATA_DIR/answer-validation/<run>/`.
-- Execution path: `make check-answer-gate` for the fixture, then `make compare-answer-validation
-  VALIDATION_LANES=off,pydantic,pydantic+ontology MODEL=<model> GOLDSET=<accepted>
-  AXIOMS=<signed-ttl> ONTOLOGY_LEDGER=<extraction.jsonl>` on the CUDA host; CI covers the folding
-  and the re-labelling over the fixture and dict rows, no GPU.
-- Acceptance gates: `make ci` green; no planted violation is lost (the per-class catch rate stays
-  1.000 on the fixture) and any change to it is recorded; the fixture's false-rejection rate is
-  re-measured and REPORTED against the current one rather than asserted to improve; the heavy run
-  re-reports catch and false-rejection per axiom class under the new labelling beside the old, so
-  the two readings are comparable; a re-render path lets the comparison be re-read from its
-  recorded bundles without spending the lanes again.
-- Documentation target: [RAG core](current/rag-core/answer-validation.md) and the per-class record
-  in [product decisions](current/scope-boundaries.md).
-
 ### Host fit and serving -- `host-fit-serving`
 
 #### current-qwen-generation-throughput-row
