@@ -529,6 +529,24 @@ JOINT_SEARCH_OFFLINE ?=
 JOINT_SEARCH_CORPUS ?=
 JOINT_SEARCH_LIMIT ?=
 JOINT_SEARCH_NO_ISOLATE ?=
+
+# Research-scale roster confirmation (`joint-search-long-run`). The two POWER_* run bundles supply
+# the paired variance the tuning-screen size is derived from; the incumbent is the default model
+# the adopt-or-retain verdict is measured against.
+LONG_RUN_INCUMBENT ?=
+LONG_RUN_POWER_REFERENCE ?=
+LONG_RUN_POWER_BASELINE ?=
+LONG_RUN_MIN_GAIN ?= 0.05
+LONG_RUN_TARGET_POWER ?= 0.80
+LONG_RUN_CONFIDENCE ?= 0.95
+LONG_RUN_TRIAL_BUDGET ?= 30
+LONG_RUN_TRIAL_BLOCK ?= 5
+LONG_RUN_STABILITY_BLOCKS ?= 2
+LONG_RUN_STABILITY_AGREEMENT ?= 1.0
+LONG_RUN_RUN_ID ?=
+LONG_RUN_PUBLIC_LIMIT ?=
+LONG_RUN_OFFLINE ?=
+LONG_RUN_NO_ISOLATE ?=
 # Autonomous corpus-to-recommendation pipeline. The default drafter is a 12B Ukrainian model that
 # fits the 16 GiB development host; override it for another host tier or installed local tag.
 AUTO_RAG_DRAFT_MODEL ?= hf.co/INSAIT-Institute/MamayLM-Gemma-3-12B-IT-v2.0-GGUF:Q4_K_M

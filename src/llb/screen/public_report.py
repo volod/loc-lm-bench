@@ -65,5 +65,6 @@ def format_screen(reports: list[ScreenReport]) -> str:
     return "\n".join(out)
 
 
-def _safe(name: str) -> str:
+def safe_model_name(name: str) -> str:
+    """Filesystem-safe stem for a model id (an Ollama tag and an HF repo id both carry slashes)."""
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "model"

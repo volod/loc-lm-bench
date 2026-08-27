@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from llb.backends.readiness import local_backend_ready
@@ -30,6 +31,23 @@ from llb.optimize.tuning_space import TUNING_SPLIT
 _LOG = logging.getLogger(__name__)
 
 FinalistTune = Callable[[RunConfig, ResolvedModel, Path], FinalistTuneResult]
+
+
+@dataclass(frozen=True)
+class FinalistStageRequest:
+    """Everything a finalist stage needs; a dataclass so an alternative stage stays keyword-safe."""
+
+    base: RunConfig
+    finalists: tuple[str, ...]
+    by_name: dict[str, ResolvedModel]
+    run_dir: Path
+    tuner: FinalistTune
+
+
+# The whole finalist phase, injectable so a schedule that must INTERLEAVE finalists (the long-run
+# confirmation advances every survivor one trial block at a time) replaces the loop rather than
+# reimplementing the surrounding screen, ledger, and scoreboard glue.
+FinalistStage = Callable[[FinalistStageRequest], list[FinalistTuneResult]]
 
 
 def partition_resolved(
@@ -168,3 +186,14 @@ def tune_finalists(
         entries, recommended = scoreboard_entries(results)
         write_scoreboard(run_dir, run_id=run_dir.name, entries=entries, recommended=recommended)
     return results
+
+
+def default_finalist_stage(request: FinalistStageRequest) -> list[FinalistTuneResult]:
+    """The stock stage: tune each finalist to completion in turn."""
+    return tune_finalists(
+        request.base,
+        request.finalists,
+        request.by_name,
+        run_dir=request.run_dir,
+        tuner=request.tuner,
+    )

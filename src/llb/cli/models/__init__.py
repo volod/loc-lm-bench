@@ -9,6 +9,7 @@ from llb.cli.models import (  # noqa: F401
     families,
     invalidation,
     joint_search,
+    joint_search_long_run,
     prep,
     sweep,
     throughput,

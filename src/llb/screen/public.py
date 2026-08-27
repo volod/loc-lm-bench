@@ -30,7 +30,7 @@ from typing import Any, Callable
 
 from llb.core.contracts.hardware import IsolationOutcome
 from llb.core.contracts.screening import ScreenReport, ScreenTaskResult
-from llb.screen.public_report import _safe
+from llb.screen.public_report import safe_model_name
 
 _LOG = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ def run_screen(
     out = Path(output_dir) if output_dir is not None else Path(".data") / "screen"
     # lm-eval treats --output_path as a DIRECTORY and writes <path>/<model>/results_<ts>.json,
     # so pass a per-model dir (not a .json file) and let the runner locate the results JSON.
-    model_out = out / _safe(model)
+    model_out = out / safe_model_name(model)
     model_out.mkdir(parents=True, exist_ok=True)
     cmd = build_lm_eval_command(model, base_url, tasks, model_out, limit=limit, track=track)
     runner = runner or _default_lm_eval_runner

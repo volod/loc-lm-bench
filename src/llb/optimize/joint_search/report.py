@@ -54,8 +54,14 @@ def write_scoreboard(
     run_id: str,
     entries: Sequence[dict[str, Any]],
     recommended: dict[str, Any] | None = None,
+    note: str | None = None,
 ) -> dict[str, Path]:
-    """Write scoreboard JSON + Markdown; every entry must be final-split only."""
+    """Write scoreboard JSON + Markdown; every entry must be final-split only.
+
+    `recommended` is the POINT-ESTIMATE argmax over the final-split rows. A caller that decides on
+    something stronger passes a `note` saying so, so an operator who opens this file alone is never
+    handed a rank the run itself did not act on.
+    """
     for entry in entries:
         assert_final_split(entry)
     payload: dict[str, Any] = {
@@ -63,6 +69,7 @@ def write_scoreboard(
         "split": FINAL_SPLIT,
         "entries": list(entries),
         "recommended": recommended,
+        "note": note,
     }
     json_path = run_dir / SCOREBOARD_JSON
     md_path = run_dir / SCOREBOARD_MD
@@ -102,5 +109,8 @@ def _render_scoreboard_md(payload: dict[str, Any]) -> str:
                 f"- overrides: `{recommended.get('overrides')}`",
             ]
         )
+    note = payload.get("note")
+    if note:
+        lines.extend(["", f"> {note}"])
     lines.append("")
     return "\n".join(lines)

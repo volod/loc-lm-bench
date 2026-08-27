@@ -76,32 +76,72 @@ Take the first task of the earliest group that still has one; see
 
 ### Run bundles and the board -- `run-bundle-board`
 
-#### ua-model-roster-long-run (optional)
+#### ua-roster-confirmation-run
 
-Confirm the refreshed-roster ranking at research scale: predeclare a minimum detectable objective
-gain and ranking-stability criterion, derive the tuning-screen size from paired power, and run
-multi-objective trials until the stability rule or a declared resource budget stops the search.
-Score the full held-out final split and add the public Ukrainian screen tracks before making a
-default-model adoption decision. Report bootstrap uncertainty and quality/latency Pareto tradeoffs
-so a small-sample rank reversal cannot silently change the recommended model.
+The confirmation LANE is delivered and CI-green -- predeclared effect, power-derived screen size,
+ranking-stability stopping rule, uncapped held-out scoring, public Ukrainian tracks, bootstrap
+uncertainty, quality/latency frontier, and an adopt-or-retain verdict
+([roster confirmation](current/rigor-board-judge/roster-confirmation.md)). What is missing is a run
+carried through to a recorded verdict: no host has yet produced a `long_run.json` whose reading is
+written into the delivered docs, so the default-model question the lane exists to answer is still
+open. Run it on a CUDA host and record what it decided.
 
 - Serves: `run-bundle-board` -- [Run bundles and the board](../design/spec.md#persistence-and-reproducibility)
 - Agent status: RUN NEEDED
-- Dependencies: use the roster/runtime behavior in
-  [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh) and the
-  bounded baseline in [evaluation rigor](current/rigor-board-judge/tuning-and-search.md#joint-model--config-search).
-- User-visible outcome: a stable refreshed-roster recommendation with uncertainty, public-task
-  coverage, and an explicit adopt-or-retain verdict.
-- Scope boundary: in scope -- larger private joint search, public-screen lanes, uncertainty, and
-  the adoption verdict. Out of scope -- model fine-tuning and hosted/API-only candidates.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/`, `$DATA_DIR/screen/`, and the matching
-  current-doc evidence section.
-- Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
-  final split, then run the public screen for both finalists.
-- Acceptance gates: `make ci` green; the search artifact records the effect, power, stability, and
-  stopping assumptions plus the derived screen size and consumed trial budget; no final-split
-  leakage into tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
+- Dependencies: none beyond the delivered lane above; the roster and per-tier serving behavior are
+  in [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh).
+- User-visible outcome: a recorded adopt-or-retain verdict on the default Ukrainian model, with
+  uncertainty, public-task coverage, and the quality-versus-latency frontier behind it.
+- Scope boundary: in scope -- executing the run, reading its artifact, and writing the evidence.
+  Out of scope -- changing the lane's statistics or schedule, model fine-tuning, and hosted/API-only
+  candidates. Reuse `make joint-search-long-run`; do not write a new driver.
+- Data and artifact paths: `$DATA_DIR/joint-search/<run>/{long_run.json,long_run.md,scoreboard.json}`
+  and `$DATA_DIR/screen/<model>.screen.json`, produced by the run; the reading goes into the
+  documentation target below.
+- Execution path, in order:
+  1. **Pick the candidate slice for the host.** Use the strongest `samples/configs/models_uk.yaml`
+     entries that FIT (`make resolve-models MODELS_MANIFEST=<manifest>` prints the choice; a 12/16
+     GiB box fits `mamaylm-v2-12b`, `lapa-v0.1.2-instruct`, and `gemma-4-e4b-it-w4a16` natively,
+     while `gemma-4-26b-a4b` and `qwen3.8-27b` need offload and are far slower). Pass the slice as
+     `JOINT_SEARCH_CANDIDATES=`. `LONG_RUN_INCUMBENT=` must name one of them -- the UA-specialized
+     reference the baselines must beat.
+  2. **Produce the power reference.** The declared screen size is derived from the paired variance of
+     an earlier pair of models. Two `make run-eval MODEL=<a>` / `MODEL=<b>` bundles of two DIFFERENT
+     models over the same gold set and split supply it; pass their run-bundle directories as
+     `LONG_RUN_POWER_REFERENCE=` and `LONG_RUN_POWER_BASELINE=`. Any pair whose gap resembles the one
+     being measured works; a pair with fewer than two shared items is refused.
+  3. **Install `lm_eval` on `PATH`** (`lm-eval[api]>=0.4.9`, in any environment -- it is an external
+     harness, not a project dependency). Without it the run still completes and states its verdict,
+     but every finalist lands in `public_screen.failures` and the verdict is qualified as having no
+     public backing, which does not satisfy this task.
+  4. **Run it**, then read `long_run.md`:
+
+     ```bash
+     make joint-search-long-run \
+       JOINT_SEARCH_CANDIDATES=<slice.yaml> \
+       GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+       JOINT_SEARCH_CORPUS=samples/goldsets/ua_squad_postedited_v1/corpus \
+       LONG_RUN_INCUMBENT=<candidate> \
+       LONG_RUN_POWER_REFERENCE=<run-bundle> LONG_RUN_POWER_BASELINE=<run-bundle> \
+       LONG_RUN_MIN_GAIN=0.10 LONG_RUN_TRIAL_BUDGET=12 LONG_RUN_TRIAL_BLOCK=3 \
+       LONG_RUN_RUN_ID=<id>
+     ```
+
+     Budget two to three hours on a 12 GiB laptop GPU before the held-out split and public screen;
+     see the cost note in the documentation target. Re-running with the same `LONG_RUN_RUN_ID`
+     resumes on the completed screen, pick, and finalist markers, so a kill is cheap. Nothing else
+     may touch the GPU while it runs -- a stray backend call inflates every latency reading.
+- Acceptance gates: `make ci` green; `long_run.json` carries a `predeclaration` (gain, power,
+  derived screen size with its binding floor, stopping rule), a `search` trail naming the rule that
+  stopped it and the trials consumed, a `final` block on the full held-out split with intervals and
+  paired readings, a complete `public_screen` for every finalist, and a `verdict`; the ledger stays
+  `split=tuning` and the scoreboard `split=final`.
+- Documentation target: the **Host evidence** section of
+  [roster confirmation](current/rigor-board-judge/roster-confirmation.md) -- state what ran on what
+  host and date, the derived screen size and what bound it, which rule stopped the search and at
+  what trial count, the held-out deltas with their intervals and win/loss/tie ledgers, the public
+  scores per track, the verdict and its reading, and what would overturn it. Read
+  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md) first.
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 

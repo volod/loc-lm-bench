@@ -25,10 +25,12 @@ from llb.optimize.joint_search.report import (
     write_scoreboard,
 )
 from llb.optimize.joint_search.schedule_steps import (
+    FinalistStage,
+    FinalistStageRequest,
     FinalistTune,
+    default_finalist_stage,
     partition_resolved,
     run_halving_screen,
-    tune_finalists,
 )
 from llb.optimize.joint_search.scoreboard import scoreboard_entries
 from llb.optimize.objectives import parse_objectives
@@ -50,6 +52,9 @@ def run_joint_search(
     probes: Any | None = None,
     screen_evaluate: ScreenEvaluate | None = None,
     tune_finalist: FinalistTune | None = None,
+    finalist_stage: FinalistStage | None = None,
+    manifest_extra: dict[str, Any] | None = None,
+    scoreboard_note: str | None = None,
     isolate: bool = True,
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
@@ -88,12 +93,15 @@ def run_joint_search(
             "scoreboard_split": FINAL_SPLIT,
             "seed": seed,
             "case_limit": case_limit,
+            **(manifest_extra or {}),
         },
     )
     if not runnable:
         empty = finalize_ledger([], eta=eta, min_finalists=min_finalists)
         write_ledger(run_dir, empty)
-        paths = write_scoreboard(run_dir, run_id=run_dir.name, entries=[], recommended=None)
+        paths = write_scoreboard(
+            run_dir, run_id=run_dir.name, entries=[], recommended=None, note=scoreboard_note
+        )
         return JointSearchResult(
             run_id=run_dir.name,
             run_dir=run_dir,
@@ -139,11 +147,24 @@ def run_joint_search(
             case_limit=case_limit,
         )
     )
-    finalist_results = tune_finalists(
-        base_config, ledger.finalists, by_name, run_dir=run_dir, tuner=tuner
+    stage = finalist_stage or default_finalist_stage
+    finalist_results = stage(
+        FinalistStageRequest(
+            base=base_config,
+            finalists=ledger.finalists,
+            by_name=by_name,
+            run_dir=run_dir,
+            tuner=tuner,
+        )
     )
     entries, recommended = scoreboard_entries(finalist_results)
-    paths = write_scoreboard(run_dir, run_id=run_dir.name, entries=entries, recommended=recommended)
+    paths = write_scoreboard(
+        run_dir,
+        run_id=run_dir.name,
+        entries=entries,
+        recommended=recommended,
+        note=scoreboard_note,
+    )
     return JointSearchResult(
         run_id=run_dir.name,
         run_dir=run_dir,

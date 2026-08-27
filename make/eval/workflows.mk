@@ -1,6 +1,6 @@
 ## External scoring, isolated sweeps, and end-to-end evaluation orchestration.
 
-.PHONY: score-external-rag sweep pipeline joint-search auto-rag
+.PHONY: score-external-rag sweep pipeline joint-search joint-search-long-run auto-rag
 
 auto-rag: ## Autonomous corpus -> verified goldset -> joint tune -> RAG recommendation (CORPUS= SCORER_POLICY=auto|human)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -70,3 +70,29 @@ joint-search: ## Successive-halving model+RAG search (JOINT_SEARCH_CANDIDATES= J
 		$(if $(JOINT_SEARCH_CORPUS),--corpus "$(JOINT_SEARCH_CORPUS)",) \
 		$(if $(JOINT_SEARCH_LIMIT),--limit "$(JOINT_SEARCH_LIMIT)",) \
 		$(if $(JOINT_SEARCH_NO_ISOLATE),--no-isolate,)
+
+joint-search-long-run: ## Research-scale roster confirmation + adopt-or-retain verdict (LONG_RUN_INCUMBENT= LONG_RUN_POWER_REFERENCE= LONG_RUN_POWER_BASELINE=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(LONG_RUN_INCUMBENT)" || { echo "ERROR: set LONG_RUN_INCUMBENT=<candidate name>"; exit 1; }
+	@test -d "$(LONG_RUN_POWER_REFERENCE)" || { echo "ERROR: set LONG_RUN_POWER_REFERENCE=<scored run bundle>"; exit 1; }
+	@test -d "$(LONG_RUN_POWER_BASELINE)" || { echo "ERROR: set LONG_RUN_POWER_BASELINE=<scored run bundle>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main joint-search-long-run --candidates "$(JOINT_SEARCH_CANDIDATES)" \
+		--incumbent "$(LONG_RUN_INCUMBENT)" \
+		--power-reference "$(LONG_RUN_POWER_REFERENCE)" \
+		--power-baseline "$(LONG_RUN_POWER_BASELINE)" \
+		--goldset "$(GOLDSET)" \
+		--minimum-detectable-gain "$(LONG_RUN_MIN_GAIN)" \
+		--target-power "$(LONG_RUN_TARGET_POWER)" \
+		--confidence "$(LONG_RUN_CONFIDENCE)" \
+		--trial-budget "$(LONG_RUN_TRIAL_BUDGET)" \
+		--trial-block "$(LONG_RUN_TRIAL_BLOCK)" \
+		--stability-blocks "$(LONG_RUN_STABILITY_BLOCKS)" \
+		--stability-agreement "$(LONG_RUN_STABILITY_AGREEMENT)" \
+		--min-finalists "$(JOINT_SEARCH_MIN_FINALISTS)" \
+		--objectives "$(JOINT_SEARCH_OBJECTIVES)" \
+		$(if $(LONG_RUN_RUN_ID),--run-id "$(LONG_RUN_RUN_ID)",) \
+		$(if $(JOINT_SEARCH_CORPUS),--corpus "$(JOINT_SEARCH_CORPUS)",) \
+		$(if $(LONG_RUN_PUBLIC_LIMIT),--public-limit "$(LONG_RUN_PUBLIC_LIMIT)",) \
+		$(if $(LONG_RUN_OFFLINE),--offline,) \
+		$(if $(LONG_RUN_NO_ISOLATE),--no-isolate,)
