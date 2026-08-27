@@ -35,6 +35,12 @@ class RagStoreMeta(TypedDict):
     overlap: int
     child_size: int
     embedding_model: str
+    # The encoder IDENTITY this store was built by (`llb.rag.encoders.tuned.embedder_fingerprint`).
+    # For a hub id it repeats `embedding_model`; for a locally fine-tuned directory it is the base
+    # model plus the tuned digest, because the directory path alone is not an identity -- training
+    # again into it produces different weights under the same string. Optional so a store written
+    # before the field existed still loads and still re-reads.
+    embedder_fingerprint: NotRequired[str]
     n_indexed: int
     n_parents: int
     dim: int

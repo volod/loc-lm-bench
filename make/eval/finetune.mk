@@ -1,7 +1,7 @@
 ## Fine-tuning datasets, training loops, distillation, and adapter lifecycle.
 
-.PHONY: export-finetune-set finetune-adapter finetune-hparams self-improve finetune-campaign \
-	distill register-adapter list-adapters serve-adapter gc-adapters
+.PHONY: export-finetune-set finetune-adapter finetune-embedder finetune-hparams self-improve \
+	finetune-campaign distill register-adapter list-adapters serve-adapter gc-adapters
 
 export-finetune-set: ## Export tuning-split SFT/DPO records (RUN_DIR=<tuning-run> GOLDSET= OUT_DIR= MISSES=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -16,6 +16,24 @@ finetune-adapter: ## Train a LoRA/QLoRA adapter (DATASET=<export dir> MODEL=<bas
 	@test -n "$(MODEL)" || { echo "ERROR: set MODEL=<base model>"; exit 1; }
 	$(PY) -m llb.main finetune-adapter --dataset "$(DATASET)" --model "$(MODEL)" \
 		$(if $(ADAPTER_OUT),--out "$(ADAPTER_OUT)",) $(if $(TRAINER),--trainer "$(TRAINER)",)
+
+finetune-embedder: ## Fine-tune the pinned embedder on this corpus, tuning split only (GOLDSET= CORPUS= FT_EMBED_BASE= TRAINER=auto|fake FT_EMBED_NEGATIVES= FT_EMBED_EPOCHS= FT_EMBED_BATCH= FT_EMBED_MINI_BATCH= FT_EMBED_LR= FT_EMBED_OUT=; needs ".[rag]" + datasets)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(GOLDSET)" || { echo "ERROR: set GOLDSET=<gold set JSONL>"; exit 1; }
+	@test -n "$(CORPUS)" || { echo "ERROR: set CORPUS=<corpus dir the gold spans index>"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main finetune-embedder $(if $(CONFIG),--config "$(CONFIG)",) \
+		--goldset "$(GOLDSET)" --corpus-root "$(CORPUS)" \
+		$(if $(FT_EMBED_BASE),--base-model "$(FT_EMBED_BASE)",) \
+		$(if $(FT_EMBED_OUT),--out-dir "$(FT_EMBED_OUT)",) \
+		$(if $(FT_EMBED_SEED),--seed "$(FT_EMBED_SEED)",) \
+		$(if $(FT_EMBED_NEGATIVES),--negatives "$(FT_EMBED_NEGATIVES)",) \
+		$(if $(FT_EMBED_MAX_POSITIVES),--max-positives "$(FT_EMBED_MAX_POSITIVES)",) \
+		$(if $(FT_EMBED_EPOCHS),--epochs "$(FT_EMBED_EPOCHS)",) \
+		$(if $(FT_EMBED_BATCH),--batch-size "$(FT_EMBED_BATCH)",) \
+		$(if $(FT_EMBED_LR),--learning-rate "$(FT_EMBED_LR)",) \
+		$(if $(FT_EMBED_MINI_BATCH),--mini-batch-size "$(FT_EMBED_MINI_BATCH)",) \
+		$(if $(TRAINER),--trainer "$(TRAINER)",)
 
 finetune-hparams: ## Budgeted LoRA hparam search on a tuning-split dev slice (MODEL= DATASET= GOLDSET= MAX_TRIALS=8 MAX_HOURS= TRAINER=auto|fake HPARAMS_RESUME= HPARAMS_STRATIFY_RUN=<scored base run> HPARAMS_VRAM_HEADROOM=<MiB>)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

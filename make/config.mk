@@ -261,6 +261,20 @@ EMBED_BASELINE ?= intfloat/multilingual-e5-base
 EMBED_CANDIDATE ?= BAAI/bge-m3
 EMBED_BASELINE_DATA_DIR ?=
 EMBED_CANDIDATE_DATA_DIR ?=
+# Embedder fine-tuning (finetune-embedder): the encoder adapted to the operator's own corpus, and
+# the knobs of that training. FT_EMBED_BASE defaults to EMBED_BASELINE, the shipped RunConfig
+# embedding_model -- the incumbent a tuned row has to beat in the bake-off's paired verdict to be
+# worth adopting at all. FT_EMBED_BATCH is not only a speed knob: the contrastive objective draws
+# its in-batch negatives from the batch, so a smaller value is a weaker objective.
+FT_EMBED_BASE ?= $(EMBED_BASELINE)
+FT_EMBED_OUT ?=
+FT_EMBED_SEED ?=
+FT_EMBED_NEGATIVES ?=
+FT_EMBED_MAX_POSITIVES ?=
+FT_EMBED_EPOCHS ?=
+FT_EMBED_BATCH ?=
+FT_EMBED_MINI_BATCH ?=
+FT_EMBED_LR ?=
 # Encoder throughput decomposition (compare-embeddings --encoder-throughput): cold load vs
 # first-pass compile+encode vs warm steady encode. EMBED_ENCODER_THROUGHPUT=1 enables it;
 # EMBED_ENCODER_COMPARE_CPU=1 also profiles CPU beside CUDA (only the literal 1 enables it;

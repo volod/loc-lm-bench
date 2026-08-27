@@ -177,6 +177,37 @@ the `retain` verdict is a property of the corpus and the encoders, not of the bo
 throughput half is host-conditioned, and this host is ~4x slower per chunk than the 16 GiB one at a
 quarter its power budget. Lookup key: `compare-embeddings` run `blackwell12`.
 
+## A locally fine-tuned encoder as a candidate
+
+An operator can adapt the incumbent encoder to their own corpus and rank the result here beside the
+general roster: [corpus-adapted embedder fine-tuning](../extended-workflows/embedder-finetune.md)
+owns the training lane, and this section owns what the bake-off and the store do with the directory
+it produces. Nothing about the candidate path is special-cased -- a tuned model is named in
+`MODELS=` like any hub id -- but a directory is not a hub id, and two things every encoder lane
+reads off an id cannot be read off a path.
+
+**Which convention it is encoded under** comes from the BASE model recorded in the directory's
+`embedder_manifest.json` (`src/llb/rag/encoders/tuned.py`). Fine-tuning changes the weights, not
+the format the weights expect, so a tuned `multilingual-e5-base` resolves to family `e5` and is
+scored with `"query: "` / `"passage: "` exactly as its base is. `Embedder`, the roster screen, and
+the report row all resolve through the same function, so a tuned candidate cannot be scored under
+one convention and reported under another. A tuned directory whose base nobody registered is
+refused by the screen exactly like any unregistered id -- the tuned wrapper cannot launder an
+unknown convention past the gate.
+
+**Which encoder a store was built with** is the base model plus the manifest's `tuned_digest`, not
+the path. Training again into the same directory produces different weights under the same string,
+and a store built by the first training and queried by the second retrieves against vectors no
+encoder in the process produced -- silently, because every id comparison still matches. So
+`store_meta.json` records an `embedder_fingerprint` beside `embedding_model`
+(`tuned:<base-model>:<digest12>` for a tuned encoder, the id itself for any other), and
+`store_embedder_mismatch` compares identities rather than ids whenever the store carries one. A
+store written before the field existed keeps re-reading on the id comparison alone.
+
+A tuned encoder has no published model card, so the [card-parity gate](stack-and-card-parity.md#the-card-parity-gate)
+records `no_reference_declared` for it rather than claiming a check happened -- which is the honest
+verdict: there is no upstream number to reproduce.
+
 ## Blackwell encoder throughput decomposition
 
 `make compare-embeddings ... EMBED_ENCODER_THROUGHPUT=1 EMBED_ENCODER_COMPARE_CPU=1` on the same

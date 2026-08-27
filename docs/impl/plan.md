@@ -74,45 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Optimization search -- `optimization-search`
-
-#### ua-embedder-domain-finetune
-
-Fine-tune the pinned multilingual E5 embedder on the operator's corpus: export contrastive
-(question, gold-chunk) pairs from tuning-split gold items only (positives are chunks overlapping
-the item's gold spans; hard negatives come from the BM25 lexical index), train with a
-sentence-transformers contrastive objective behind lazy imports, and emit a tuned-embedder
-directory whose manifest records the base model, dataset digest, item ids, and split counts. A
-split guard refuses pairs from calibration or final ids (the `assert_tuning_only` discipline from
-the LoRA hparam search). `compare-embeddings` accepts the tuned directory as a candidate so
-uplift is measured by the standard source-span metric on the held-out final split, and the
-store/query embedder fingerprint guard keeps a tuned-embedder store from being queried by any
-other encoder.
-
-- Serves: `optimization-search` -- [Optimization search](../design/spec.md#optimization-without-leakage)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the embedder conventions and bake-off in
-  [RAG core](current/rag-core/embedders.md#embedder-conventions-and-bake-off), the lexical index for
-  hard negatives, and the split-guard pattern in `src/llb/finetune/hparam_search/`.
-- User-visible outcome: a corpus-adapted Ukrainian retriever the operator can adopt with measured
-  final-split evidence, closing the recall gap on domain terms the general E5 encoder misses.
-- Scope boundary: in scope -- pair export, the trainer, the manifest, bake-off integration, and
-  the split guard. Out of scope -- cross-encoder (reranker) fine-tuning, generation-model
-  fine-tuning (owned by the existing finetune lane), and hosted training.
-- Data and artifact paths: pair datasets and tuned models under
-  `$DATA_DIR/finetune-embedder/<model-slug>/<timestamp>/`; evaluation through the existing
-  `$DATA_DIR/compare-embeddings/` layout.
-- Execution path: `make finetune-embedder GOLDSET=<gs> CORPUS=<dir>` then
-  `make compare-embeddings` with the tuned directory added as a candidate; CI uses a fake trainer
-  plus the hashed-BoW embedder pattern from the curation tests, no GPU.
-- Acceptance gates: `make ci` green; the guard refuses a pair set naming calibration/final ids;
-  a heavy CUDA run trains on the quickstart tuning split and reports tuned-vs-base recall@10 /
-  MRR on the held-out final split, where the adopt-or-keep-base verdict is the bake-off's own
-  paired one -- the tuned row must clear zero against the base encoder, not merely outrank it
-  ([RAG core](current/rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
-- Documentation target: [RAG core](current/rag-core.md) embedder section and
-  [extended workflows](current/extended-workflows.md) for the trainer lane.
-
 ### Run bundles and the board -- `run-bundle-board`
 
 #### ua-model-roster-long-run (optional)

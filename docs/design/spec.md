@@ -425,6 +425,15 @@ not contaminate another run.
 Prompt-system and fine-tuning workflows obey the same split discipline. Registry and provenance
 digests bind tuned artifacts to their source data and configuration.
 
+Fine-tuning covers the RETRIEVER as well as the generator: the pinned encoder may be adapted to an
+operator's own corpus from tuning-split gold alone, because a general multilingual encoder caps
+recall on vocabulary it never saw and no roster choice recovers that. The boundary is that
+adaptation buys nothing until it is measured. A tuned encoder enters the same bake-off as any
+roster candidate and is adopted only on a held-out paired verdict against the encoder it would
+replace; retaining the general encoder is a valid outcome, recorded rather than worked around. A
+tuned artifact's identity is its provenance digest, not the path it happens to sit at, so the store
+it embedded records that identity and refuses a query from any other encoder.
+
 ## Agentic and Context-Policy Workloads
 
 Agentic execution is a benchmark tier with an extra dimension the single-turn tiers do not have: a
@@ -563,7 +572,7 @@ Four rules settle it, in order:
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
 | 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
-| 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
 | 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
 | 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
 | 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
