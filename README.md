@@ -161,7 +161,9 @@ generation: **[model families, tiers, and licenses](docs/reference/model-familie
 The table above is not maintained by hand -- it is generated from the family register in
 [`samples/configs/models_uk.yaml`](samples/configs/models_uk.yaml). Add a family or a generation
 there and run `make sync-model-family-docs`; `make ci` fails while the docs and the register
-disagree. `make list-model-families` prints the same register in the terminal.
+disagree. `make list-model-families` prints the same register in the terminal, and
+`make check-model-currency` reads the Ollama library and the Hugging Face model API to report
+whether each family's carried generation is still the newest one published upstream.
 
 ## Data Licenses
 

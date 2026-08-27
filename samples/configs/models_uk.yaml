@@ -68,6 +68,9 @@ families:
       hf_author: INSAIT-Institute
       hf_prefix: MamayLM
       ollama_namespace: hf.co/INSAIT-Institute
+      # `MamayLM-Gemma-3-27B-IT-v2.0` names the Gemma 3 ARCHITECTURE first and the MamayLM
+      # generation last, so the version is read from the trailing `-v<n>` rather than the prefix.
+      generation_pattern: "-v(\\d+(?:\\.\\d+)*)"
     generations:
       - id: v2.0
         status: current
@@ -84,6 +87,9 @@ families:
       hf_author: lapa-llm
       hf_prefix: lapa
       ollama_namespace: hf.co/lapa-llm
+      # `lapa-v0.1.2-instruct`: the generation follows a `-v`, and sibling repos (`lapa-12b-pt`)
+      # carry a parameter count in the same position the default pattern would read.
+      generation_pattern: "-v(\\d+(?:\\.\\d+)*)"
     generations:
       - id: v0.1.2
         status: current

@@ -3,4 +3,12 @@
 Importing each submodule registers its @app.command handlers on the shared Typer app.
 """
 
-from llb.cli.models import download, families, joint_search, prep, sweep, throughput  # noqa: F401
+from llb.cli.models import (  # noqa: F401
+    currency,
+    download,
+    families,
+    joint_search,
+    prep,
+    sweep,
+    throughput,
+)

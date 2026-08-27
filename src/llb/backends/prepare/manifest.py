@@ -55,6 +55,9 @@ class _UpstreamSchema(BaseModel):
     hf_author: str | None = None
     hf_prefix: str | None = None
     ollama_namespace: str | None = None
+    # Families whose upstream names carry the generation somewhere other than after the namespace
+    # declare it here: one regex, one capture group. See `llb.backends.currency.generations`.
+    generation_pattern: str | None = None
 
 
 class _GenerationSchema(BaseModel):

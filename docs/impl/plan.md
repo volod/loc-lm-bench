@@ -76,35 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Model roster currency -- `model-roster-currency`
 
-#### upstream-generation-currency-probe
-
-The roster names each family's current and previous generation, and the published tables are
-generated from it, but nothing reads UPSTREAM: a family goes stale silently until somebody happens
-to notice a new tag, and the only way to answer "is this still the current Qwen" is to open a
-browser. Add a currency probe that asks, per registered family, what the Ollama library and the
-Hugging Face model API currently offer for that family's namespace, compares the newest upstream
-generation with the carried one, and reports the gap.
-
-- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
-- Agent status: CLEAR
-- Dependencies: the family/generation register and its manifest fields in
-  [model roster](current/model-roster.md).
-- User-visible outcome: one command reports every registered family as `current`, `behind`
-  (naming the upstream generation and where it was read), or `unknown` (naming the registry that
-  did not answer), with the read timestamp beside each row; a family that is already current is a
-  reported row, never silence.
-- Scope boundary: in scope -- reading the two upstream registries, matching a response to a
-  family's generation namespace, the report, and an offline mode that replays recorded responses.
-  Out of scope -- editing the roster, pulling weights, promoting a generation, and any claim about
-  whether the newer generation is better.
-- Execution path: add a probe module beside the register with one adapter per registry, record
-  response fixtures for a behind family and an up-to-date family, and wire the report into a make
-  target.
-- Acceptance gates: `make ci` green; a fixture run reproduces a `behind` verdict and a `current`
-  verdict without network; a registry error degrades that family's row to `unknown` with its reason
-  instead of failing the report; the report names each registry response's read time.
-- Documentation target: [model roster](current/model-roster.md).
-
 #### generation-adoption-invalidation-report (optional)
 
 Adopting a new generation invalidates every measurement taken against the generation it replaces,
@@ -114,8 +85,9 @@ outgoing generation, so an operator sees the re-measurement cost before the swap
 
 - Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
 - Agent status: CLEAR
-- Dependencies: the currency probe above; published-number provenance in
-  [published values](current/extended-workflows/published-values.md).
+- Dependencies: the currency probe's family/generation verdicts in
+  [model roster](current/model-roster.md#is-the-roster-still-current); published-number provenance
+  in [published values](current/extended-workflows/published-values.md).
 - User-visible outcome: one report lists, for a proposed generation swap, every published value and
   committed aggregate whose model field resolves to the outgoing generation, and states plainly when
   nothing is affected.

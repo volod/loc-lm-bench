@@ -52,7 +52,7 @@ closed each one and what would make it worth reopening.
 | [Knowledge cutoff](current/knowledge-cutoff.md) | Effective real-world knowledge cutoff for local models | page |
 | [Prompt templates](current/prompt-templates.md) | Prompt template registry and review workflow | page |
 | [Host validation](current/host-validation.md) | Host acceptance checklist, runtime version floors, and the quality/complexity/shell gates | 7 pages |
-| [Model roster](current/model-roster.md) | Model family/generation register, the generated family tables, and generation upgrades | page |
+| [Model roster](current/model-roster.md) | Model family/generation register, the generated family tables, the upstream currency probe, and generation upgrades | page |
 | [Product decisions](current/scope-boundaries.md) | Settled scope and decision motivation | page |
 
 ## Frequent lookups
