@@ -327,7 +327,12 @@ from the upstream registries a family's artifacts already come from -- the Ollam
 Hugging Face model API -- and reported per family as the newest generation upstream offers beside
 the one the roster carries, with what was read and when. The report never edits the roster, pulls
 weights, or promotes a generation. Adopting one is an operator act, and it is reported together with
-what it invalidates: every measurement taken against the generation being replaced.
+what it invalidates: every measurement taken against the generation being replaced. That list is
+derived, not remembered -- each place the product records a model identity (the committed run
+aggregates, the values published out of them, the baseline tables in the delivered docs) is resolved
+back through the register to the generation it was measured on, so the re-measurement cost of a swap
+is readable before the swap rather than after it. A recorded identity the register cannot place is
+reported as such, because an undercounted cost and a clean one must not read alike.
 
 The boundary: this capability owns family and generation identity, the published metadata derived
 from it, and the currency report. It does NOT own serving decisions -- which artifact serves on
@@ -557,7 +562,7 @@ Four rules settle it, in order:
 | 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
 | 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits | [Model roster](../impl/current/model-roster.md) |
+| 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
 | 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
 | 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
 | 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |

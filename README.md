@@ -163,7 +163,10 @@ The table above is not maintained by hand -- it is generated from the family reg
 there and run `make sync-model-family-docs`; `make ci` fails while the docs and the register
 disagree. `make list-model-families` prints the same register in the terminal, and
 `make check-model-currency` reads the Ollama library and the Hugging Face model API to report
-whether each family's carried generation is still the newest one published upstream.
+whether each family's carried generation is still the newest one published upstream. Before adopting
+one, `make report-generation-invalidation FAMILY=<id> GENERATION=<new>` lists every committed
+aggregate, published value, and baseline row that was measured on the generation it replaces --
+the re-measurement cost, read in advance.
 
 ## Data Licenses
 

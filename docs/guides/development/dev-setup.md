@@ -92,8 +92,9 @@ and installs no apt packages at all.
 (it bundles the real binary), so `.venv/bin/shellcheck` exists wherever `make ci` can run, and the
 gate uses *that* binary only -- there is no `PATH` fallback, because a distro `shellcheck` is
 releases behind the pin and would give the same commit a different verdict per host (see
-[host validation](../../impl/current/host-validation/quality-gate.md#code-quality-checks)). A host whose venv
-lacks the `dev` extra cannot run `make ci` regardless; `make venv EXTRAS=dev` is the fix.
+[host validation](../../impl/current/host-validation/quality-gate.md#code-quality-checks)). A
+host whose venv lacks the `dev` extra cannot run `make ci` regardless; `make venv EXTRAS=dev` is
+the fix.
 
 The installer uses `apt-get install --no-upgrade` so a small dev package does not pull in pending
 kernel or NVIDIA DKMS upgrades. If apt still exits non-zero because of **unrelated** broken

@@ -182,6 +182,11 @@ demote the outgoing one to `previous`, add the logical model entries that carry 
 `make sync-model-family-docs` to republish the tables. A generation no model carries any more is
 removed rather than kept, and `make ci` fails while the register and the docs disagree.
 
+Cost the swap before making it: `make report-generation-invalidation FAMILY=<id> GENERATION=<new>`
+names every committed aggregate, published value, and baseline row measured on the generation being
+replaced, all of which is re-measured rather than carried over -- see
+[what adopting a generation costs](../impl/current/model-roster.md#what-adopting-a-generation-costs).
+
 Whether a family HAS a newer generation upstream is answered by `make check-model-currency`, which
 reads the Ollama library and the Hugging Face model API and reports each family as `current`,
 `behind`, or `unknown` -- see

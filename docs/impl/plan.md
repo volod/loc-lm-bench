@@ -74,30 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Model roster currency -- `model-roster-currency`
-
-#### generation-adoption-invalidation-report (optional)
-
-Adopting a new generation invalidates every measurement taken against the generation it replaces,
-and today that list is reconstructed by hand from the board. Given a family and a target generation,
-report which committed run records, published numbers, and baseline tables were measured on the
-outgoing generation, so an operator sees the re-measurement cost before the swap rather than after.
-
-- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
-- Agent status: CLEAR
-- Dependencies: the currency probe's family/generation verdicts in
-  [model roster](current/model-roster.md#is-the-roster-still-current); published-number provenance
-  in [published values](current/extended-workflows/published-values.md).
-- User-visible outcome: one report lists, for a proposed generation swap, every published value and
-  committed aggregate whose model field resolves to the outgoing generation, and states plainly when
-  nothing is affected.
-- Scope boundary: in scope -- resolving recorded model identities to family generations and listing
-  what a swap invalidates. Out of scope -- re-running anything, editing the board, and deciding
-  whether to adopt.
-- Acceptance gates: `make ci` green; a fixture bundle measured on the outgoing generation is listed
-  and one measured on an unrelated family is not.
-- Documentation target: [model roster](current/model-roster.md).
-
 ### Optimization search -- `optimization-search`
 
 #### ua-embedder-domain-finetune

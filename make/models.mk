@@ -4,7 +4,7 @@
 .PHONY: \
 	build-vllm build-llamacpp download-model prep-models prep-serving-targets list-models \
 	detect-gpu-vram gen-serving-config list-model-families sync-model-family-docs \
-	lint-model-roster check-model-currency measure-throughput
+	lint-model-roster check-model-currency report-generation-invalidation measure-throughput
 
 build-vllm: ## Install prebuilt vLLM via uv; VLLM_SOURCE_DIR= builds/caches one checkout wheel
 	bash "$(PROJECT_ROOT)/scripts/build_vllm.sh"
@@ -70,6 +70,14 @@ check-model-currency: ## Report each family's carried generation against the new
 		$(if $(CURRENCY_REPLAY),--replay "$(CURRENCY_REPLAY)",) \
 		$(if $(CURRENCY_RECORD),--record "$(CURRENCY_RECORD)",) \
 		$(if $(CURRENCY_JSON),--json,) $(if $(CURRENCY_STRICT),--strict,)
+
+report-generation-invalidation: ## List what adopting a generation invalidates; FAMILY= GENERATION= required, INVALIDATION_JSON=/INVALIDATION_STRICT=
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(FAMILY)" || { echo "ERROR: set FAMILY=<family-id>"; exit 1; }
+	@test -n "$(GENERATION)" || { echo "ERROR: set GENERATION=<generation-id>"; exit 1; }
+	$(PY) -m llb.main report-generation-invalidation "$(FAMILY)" "$(GENERATION)" \
+		--manifest "$(MODELS_MANIFEST)" \
+		$(if $(INVALIDATION_JSON),--json,) $(if $(INVALIDATION_STRICT),--strict,)
 
 lint-model-roster: ## Check the generated family tables still match the roster manifest (in ci-checks)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
