@@ -161,6 +161,11 @@ the surface's own (0.5, 14000) and (0.5, 20000) cells are the trigger-7000 and t
 above. An operator therefore does not need a grid for a new window -- only the trigger that lands on
 the intended fold step. The shipped `compact_share` is unchanged.
 
+That rule holds for ONE fold, which is every cap-fitting cell: after the first summary,
+hysteresis raises the trigger to the whole guard, so an episode that folds again pays for the
+guard the first fold ignored. [The trigger rule is a one-fold rule](#the-trigger-rule-is-a-one-fold-rule)
+measures that regime and states the bound.
+
 ## The crossover is a fold step, not a char guard
 
 `make bench-agentic-context-compact-fold-step` restates the crossover on the axis the mechanism
@@ -376,6 +381,116 @@ that produced the residual is what
 [the summarize-input cap](summary-input-elision.md#the-summarize-input-cap-is-step-aligned) then
 replaced; this study's
 design pins `summary_input_cap: "trigger"` so the numbers above reproduce unchanged.
+
+## The trigger rule is a one-fold rule
+
+`make bench-agentic-context-compact-second-fold` bounds the section above. Every cell the collapse
+measured is cap-fitting, and a cap-fitting cell folds EXACTLY once, for a structural reason rather
+than a lack of searching
+([the imperfect-play safety margin](imperfect-play-margin.md#why-a-cap-fitting-cell-folds-exactly-once)):
+trigger hysteresis raises the trigger to the FULL guard after the first summary, and no cap-fitting
+transcript grows back that far. The trigger-only rule was therefore established only where the guard
+has nothing left to do, while the regime compact is most interesting in -- long sessions that fold
+repeatedly -- was unmeasured. The committed design is
+`samples/benchmarks/agentic_compact_second_fold_trigger_design.json`, whose cells are the committed
+repeatedly folding geometry.
+
+The obstacle is that the claim's own metric does not exist in that regime: repeatedly folding cells
+live BELOW the cap peak, where the `observation_cap` arm overflows, so there is no compact-minus-cap
+delta to hold equal. The restatement is therefore compact against COMPACT -- each family names an
+ANCHOR cell, every other member is paired against it item by item on total model-input tokens, and
+the family's spread is read against 2% of what the anchor costs, the collapse's own equivalence
+scale taken on the anchor because its cap baseline is gone. What replaces the cap arm as the sanity
+check is a REPEAT GEOMETRY cell: one cell re-runs the anchor's exact geometry under a second id, so
+every reported spread is read against the measured noise floor of running one geometry twice.
+
+Placement is checked in CI with no GPU, and two rules replace the per-cell cap-fitting gate that by
+construction refuses every cell here: every cell must sit BELOW its depth's cap peak (a guard above
+it is cap-fitting, so declaring one would measure the one-fold claim again under a new name), and
+every cell must fold at least twice under perfect play. Each cell also predeclares its trigger, its
+first fold step, its fold count, its per-fold offered transcript, and its model-free cost, and a
+geometry that has moved under those declarations is refused rather than re-read. The contrast family
+must move the FIRST FOLD STEP rather than merely the trigger, because two triggers inside one step's
+interval produce the identical transcript and would report "no resolving power" about the study
+rather than about the measurement.
+
+Core locations are `src/llb/bench/memory/second_fold/geometry.py` (the probe walk behind every
+declared cell: trigger, first fold step, fold count, per-fold offered transcript, and model-free
+cost), `src/llb/bench/memory/second_fold/design.py` (regime contract, family axes, predeclaration
+drift), `src/llb/bench/memory/second_fold/reading.py` (anchor pairing, band, noise floor, readings),
+`src/llb/bench/memory/second_fold/run.py`,
+`src/llb/bench/memory/second_fold/report.py`, `src/llb/cli/bench/memory/second_fold.py`, and
+`tests/llb/bench/memory/test_agentic_memory_second_fold_collapse.py`, whose fake-model pass over the
+committed cells reproduces every predeclared separation with no GPU.
+
+```bash
+make bench-agentic-context-compact-second-fold
+```
+
+CUDA host evidence (2026-08-28, RTX 4060 Ti 16 GB): `qwen3:14b` on Ollama with `num_ctx=8192`, seven
+depth-10 memory tasks per cell, `pad_chars=1200`, an 800-char observation cap at head share 0.6, the
+shipped `window` summarize-input bound, seed 727, eight cells and 60 episodes at 22.23 tok/s over
+about 21 minutes. The pinned family passed the unchanged token-chain control at 4/4. Every cell
+completed 7/7 with zero overflows and a mean of 11.0 steps -- perfect play -- and every cell folded
+at least twice, so all eight are valid.
+
+| cell | share | guard | trigger | first fold step | measured folds | input tok | d(vs anchor) | separates |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- |
+| `secondfold-d10-s0.8-g7000` | 0.80 | 7000 | 5600 | 4 | 3,2,2,2,2,2,2 | **21961.3** | anchor | - |
+| `secondfold-d10-s0.7-g8000` | 0.70 | 8000 | 5600 | 4 | 2 each | 22548.9 | +587.6 [+362.3, +709.3] | no (p = 0.125) |
+| `secondfold-d10-s0.64-g8750` | 0.64 | 8750 | 5600 | 4 | 2 each | 23866.4 | +1905.1 [+1677.3, +2025.7] | yes |
+| `secondfold-d10-s0.56-g10000` | 0.56 | 10000 | 5600 | 4 | 2 each | 25766.6 | +3805.3 [+3585.1, +3921.6] | yes |
+| `contrast-d10-s0.8-g7000` | 0.80 | 7000 | 5600 | 4 | 2,3,2,2,2,2,2 | **21958.9** | anchor | - |
+| `contrast-d10-s0.6-g7000` | 0.60 | 7000 | 4200 | 3 | 3 each | 23200.6 | +1241.7 [+980.4, +1395.3] | yes |
+| `contrast-d10-s0.9-g7000` | 0.90 | 7000 | 6300 | 5 | 2 each | 21900.1 | -58.7 [-378.6, +146.0] | no (p = 1.0) |
+| `contrast-d10-s0.95-g7000` | 0.95 | 7000 | 6650 | 6 | 2 each | 22648.3 | +689.4 [+428.3, +837.9] | yes |
+
+Verdict: **the trigger rule is a one-fold rule**. The equal-trigger family holds ONE 5600-char
+trigger and one first fold step across a 1.43x range of prompt guards, which in the one-fold regime
+makes its members bit-identical -- and here it spreads **3805.3 tokens, 17.3% of what the anchor
+costs**, against a 439.2-token band. The two widest members separate unanimously across all seven
+paired tasks (two-sided exact sign test p = 0.015625); the 8000-char member's +587.6 clears the band
+but runs 6/7 in one direction, so it does not reach the 97.5% reporting level on its own and is
+counted as not separated. The reading does not rest on it: the family spread alone is 8.7x the band.
+
+The noise floor is what makes that readable: `contrast-d10-s0.8-g7000` re-ran the anchor's exact
+geometry and landed **-2.4 tokens [-331.0, +343.6]** away, 0.01% of the anchor cost, so a 3805-token
+spread is a property of the geometry rather than of the run. The contrast family is the scale beside
+it -- moving the trigger onto a different first fold step at a fixed guard moved the cost by -58.7
+(step 4 to 5, not separated), +689.4 (step 4 to 6) and +1241.7 tokens (step 4 to 3), every member
+landing where the model-free probe predeclared it. In this regime the GUARD moves the cost about
+three times as far as the largest first-fold-step move the contrast could reach.
+
+The mechanism is the hysteresis rule read forward, and the per-fold summarize input shows it
+directly. Every equal-trigger member offers its FIRST fold the identical 2646 chars, because they
+share a trigger; the SECOND fold is the one the guard decides, and its offered transcript grows with
+the guard -- 5501, 6810, 8119 and 9427 chars against oracle predictions of 5327, 6635, 7943 and 9251.
+Both halves of the cost follow it: the summarize calls rise 3412 -> 3614 -> 4027 -> 4443 tokens while
+the later controller prompts rise 18549 -> 18935 -> 19840 -> 21324, so of the +3805 total, +2775 is
+controller prompts folded later and +1031 is a bigger summarize call. Read as a rule: fold k's cost
+is a step function of fold k's OWN trigger, and after the first summary that trigger is the whole
+guard.
+
+Two boundaries of the finding are worth stating, because both are geometry rather than measurement.
+The regime itself ends inside the family's own guard axis: at the same 5600-char trigger the oracle
+walk folds twice up to a **10347-char guard and only once from 10348**, a one-char flip like the
+fold-step boundary above, still far below the 11926-char cap peak. And the run reproduced the
+imperfect-play story on its own: one episode of the anchor cell and one of its repeat folded a THIRD
+time, offering 4229 chars, at 11 steps -- not because the controller wasted a step, but because a
+real model's summary is longer than the probe's fixed constant (every measured fold offered about
+175 chars more than the oracle predicted), which is enough to push the post-fold prompt back over the
+guard.
+
+What this licenses and what it does not: an operator may still convert a measured crossover across
+`compact_share` values for a session that folds ONCE, which is every cap-fitting geometry, and must
+not do so for a session that folds again -- there the guard is the second trigger and a share
+conversion changes what the session pays. What would overturn it: a repeatedly folding family whose
+members agree within the band on a model that plays this world as cleanly (mean 11.0 steps, 7/7
+completion) or a change to compaction hysteresis, which is what makes the guard the later trigger.
+This does not change the shipped `compact_share`, the shipped hysteresis, or any published
+crossover: every published cell is cap-fitting, therefore one-fold, therefore inside the regime the
+collapse established. Lookup key: run `agent-context-policy-second-fold-trigger-collapse`, run id
+`60bf6ffc109c`.
 
 ## Related summary-input evidence
 

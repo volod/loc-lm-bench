@@ -18,6 +18,7 @@
 	bench-agentic-context-compact-trigger-collapse \
 	bench-agentic-context-compact-fold-step \
 	bench-agentic-context-compact-repeated-fold \
+	bench-agentic-context-compact-second-fold \
 	bench-agentic-context-compact-summary-input-cap \
 	bench-agentic-context-compact-window-elision \
 	bench-agentic-context-compact-window-elision-transfer \
@@ -236,6 +237,12 @@ bench-agentic-context-compact-repeated-fold: ## Measure compact-memory completio
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-repeated-fold \
 		--design "$(AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN)"
+
+bench-agentic-context-compact-second-fold: ## Restate the trigger-only routing rule where episodes fold repeatedly: compact against compact at equal triggers, with no cap arm
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-compact-second-fold \
+		--design "$(AGENT_CONTEXT_COMPACT_SECOND_FOLD_DESIGN)"
 
 bench-agentic-context-compact-summary-input-cap: ## Price the compact summarize call's input cap: does pinning it to a step-aligned quantity zero the within-step residual, and what did the elided span cost
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -76,43 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-hysteresis-second-fold (optional)
-
-Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
-out of the cost once the trigger is fixed: after the first summary, trigger hysteresis raises the
-next trigger to the full guard, and no tested transcript grows back that far
-([extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis)).
-The trigger-only rule is therefore established only in the one-fold regime, and the regime where
-compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured.
-
-Do NOT look for that geometry inside the cap-fitting band: a cap-fitting cell cannot fold twice, for
-a structural reason rather than a lack of searching
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#why-a-cap-fitting-cell-folds-exactly-once)),
-so "shrink the guard toward the cap peak" cannot work and pushing depth alone does not either. The
-repeatedly folding cells live BELOW the cap peak, where the `observation_cap` arm overflows and
-there is no compact-minus-cap delta to compare -- which is the real obstacle this task has to solve
-first. Restate the equal-trigger claim on a comparison that survives without a cap arm (compact
-against compact at equal triggers, on total model-input tokens), run one equal-trigger family over
-the committed two-fold geometry, and state whether the deltas separate. The later folds also carry
-the running summary into the summarize input, and the shipped `window` bound sizes that input from
-the budget rather than the trigger, so record the per-fold summarize input beside the deltas -- a
-growing prior summary is the other way the guard could re-enter.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: the committed repeatedly folding geometry and its per-fold summarize inputs are
-  current behavior (`samples/benchmarks/agentic_compact_two_fold_geometry_design.json`); reuse the
-  collapse design's family contract and equivalence band, but not its cap-fitting cell gate, which
-  by construction refuses every cell in this regime.
-- User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
-  explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
-- Scope boundary: in scope -- the cap-arm-free restatement of the equal-trigger comparison, one
-  family over the committed two-fold geometry, and the validity statement. Out of scope -- new task
-  shapes, changing shipped compaction hysteresis, and relaxing the cap-fitting gate on the studies
-  that legitimately use it.
-- Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
-
 #### agent-context-policy-repeated-fold-completion-replication (optional)
 
 The current completion reading covers two deterministic memory cases on one qualified model through

@@ -36,6 +36,7 @@ from llb.cli.bench.memory import (  # noqa: F401
     fold_step,
     repeated_fold,
     replication,
+    second_fold,
     summary_cap,
     transfer,
     trigger_collapse,

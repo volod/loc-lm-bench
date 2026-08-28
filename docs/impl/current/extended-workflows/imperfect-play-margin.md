@@ -149,7 +149,10 @@ So the agreement above is structural. It is also a LIMIT: the published verdicts
 about one-fold transcripts, and a repeatedly folding cell is necessarily outside the cap-fitting
 band, below the cap peak, where the `observation_cap` arm overflows and no cost delta exists to
 publish. CI asserts both halves -- every committed surface cell folds exactly once under both walks,
-and the fixture below is refused if any of its cells clears its own cap peak.
+and the fixture below is refused if any of its cells clears its own cap peak. The same structure
+limits the ROUTING rule as well as the invariance verdict, and
+[the trigger rule is a one-fold rule](crossover-geometry.md#the-trigger-rule-is-a-one-fold-rule)
+measures what the guard costs once an episode folds again.
 
 ## The regime the invariance verdict does NOT cover
 

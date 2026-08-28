@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-second-fold-trigger-collapse",
+  "study_kind": "compact_second_fold_trigger_collapse",
+  "seed": 727,
+  "reporting_confidence": 0.975,
+  "policies": [
+    "compact"
+  ],
+  "source_fixture": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json",
+  "reference": {
+    "study_id": "agent-context-policy-trigger-guard-collapse",
+    "evidence": "docs/impl/current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis",
+    "restated_claim": "share and guard act only through their product, so one trigger axis carries the routing rule",
+    "why_restated": "The collapse was measured on cap-fitting cells, every one of which folds exactly once, so its claim is established only in the one-fold regime. A repeatedly folding cell sits BELOW the cap peak, where the observation_cap arm overflows and no compact-minus-cap delta exists, so the claim has to be restated on a comparison that survives without a cap arm: compact against compact at equal triggers, on total model-input tokens."
+  },
+  "held_fixed": {
+    "model_family": "qwen",
+    "model": "qwen3:14b",
+    "backend": "ollama",
+    "n_tasks": 7,
+    "pad_chars": 1200,
+    "max_model_len": 8192,
+    "max_steps_margin": 4,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "summary_input_cap": "window",
+    "minimum_cell_completion": 0.5,
+    "minimum_measured_folds": 2
+  },
+  "control_recheck": {
+    "n_tasks": 4,
+    "depth": 10,
+    "max_steps": 13,
+    "max_prompt_chars": 8000,
+    "minimum_completion_rate": 0.75
+  },
+  "equivalence": {
+    "rule": "spread_within_anchor_cost_fraction",
+    "metric": "compact_total_model_input_tokens",
+    "anchor_cost_fraction": 0.02,
+    "requires_same_anchor_geometry": true,
+    "contrast_family": "d10-guard-7000"
+  },
+  "families": [
+    {
+      "family_id": "d10-trigger-5600",
+      "kind": "equal_trigger",
+      "depth": 10,
+      "why": "One trigger realized through four prompt guards spanning 7000-10000 chars. In the one-fold regime this family is bit-identical by construction; here every member folds a SECOND time, and hysteresis raises that second trigger to the full guard, so the guard the first fold ignored decides the second one.",
+      "cells": [
+        {
+          "cell_id": "secondfold-d10-s0.8-g7000",
+          "compact_share": 0.8,
+          "max_prompt_chars": 7000,
+          "source": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json#twofold-d10-g7000",
+          "predeclared": {
+            "compaction_trigger_chars": 5600,
+            "first_fold_step": 4,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              2646,
+              5327
+            ],
+            "oracle_model_input_chars": 63922
+          },
+          "expected": {
+            "separates_from_anchor": false
+          }
+        },
+        {
+          "cell_id": "secondfold-d10-s0.7-g8000",
+          "compact_share": 0.7,
+          "max_prompt_chars": 8000,
+          "predeclared": {
+            "compaction_trigger_chars": 5600,
+            "first_fold_step": 4,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              2646,
+              6635
+            ],
+            "oracle_model_input_chars": 66118
+          },
+          "expected": {
+            "separates_from_anchor": true
+          }
+        },
+        {
+          "cell_id": "secondfold-d10-s0.64-g8750",
+          "compact_share": 0.64,
+          "max_prompt_chars": 8750,
+          "predeclared": {
+            "compaction_trigger_chars": 5600,
+            "first_fold_step": 4,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              2646,
+              7943
+            ],
+            "oracle_model_input_chars": 70090
+          },
+          "expected": {
+            "separates_from_anchor": true
+          }
+        },
+        {
+          "cell_id": "secondfold-d10-s0.56-g10000",
+          "compact_share": 0.56,
+          "max_prompt_chars": 10000,
+          "predeclared": {
+            "compaction_trigger_chars": 5600,
+            "first_fold_step": 4,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              2646,
+              9251
+            ],
+            "oracle_model_input_chars": 75838
+          },
+          "expected": {
+            "separates_from_anchor": true
+          }
+        }
+      ]
+    },
+    {
+      "family_id": "d10-guard-7000",
+      "kind": "equal_guard",
+      "depth": 10,
+      "why": "The positive control, and the noise floor. Its first cell repeats the equal-trigger anchor geometry exactly, so a spread the study reports is read against a pair that MUST reproduce. Its other three cells move the trigger onto three different first fold steps, which is the change the measurement has to be able to see before an equal-trigger reading means anything -- and they are predeclared UNEQUALLY: two clear the band and the step-5 one does not, which is what makes the contrast a scale to read the equal-trigger family against rather than a yes/no light.",
+      "cells": [
+        {
+          "cell_id": "contrast-d10-s0.8-g7000",
+          "compact_share": 0.8,
+          "max_prompt_chars": 7000,
+          "repeats_anchor": "secondfold-d10-s0.8-g7000",
+          "predeclared": {
+            "compaction_trigger_chars": 5600,
+            "first_fold_step": 4,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              2646,
+              5327
+            ],
+            "oracle_model_input_chars": 63922
+          },
+          "expected": {
+            "separates_from_anchor": false
+          }
+        },
+        {
+          "cell_id": "contrast-d10-s0.6-g7000",
+          "compact_share": 0.6,
+          "max_prompt_chars": 7000,
+          "predeclared": {
+            "compaction_trigger_chars": 4200,
+            "first_fold_step": 3,
+            "oracle_folds": 3,
+            "oracle_fold_input_chars": [
+              1338,
+              5327,
+              5327
+            ],
+            "oracle_model_input_chars": 67854
+          },
+          "expected": {
+            "separates_from_anchor": true
+          }
+        },
+        {
+          "cell_id": "contrast-d10-s0.9-g7000",
+          "compact_share": 0.9,
+          "max_prompt_chars": 7000,
+          "predeclared": {
+            "compaction_trigger_chars": 6300,
+            "first_fold_step": 5,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              3954,
+              5327
+            ],
+            "oracle_model_input_chars": 64235
+          },
+          "expected": {
+            "separates_from_anchor": false
+          }
+        },
+        {
+          "cell_id": "contrast-d10-s0.95-g7000",
+          "compact_share": 0.95,
+          "max_prompt_chars": 7000,
+          "predeclared": {
+            "compaction_trigger_chars": 6650,
+            "first_fold_step": 6,
+            "oracle_folds": 2,
+            "oracle_fold_input_chars": [
+              5262,
+              5327
+            ],
+            "oracle_model_input_chars": 66324
+          },
+          "expected": {
+            "separates_from_anchor": true
+          }
+        }
+      ]
+    }
+  ],
+  "interpretation": {
+    "trigger_ratio_collapses_through_the_second_fold": "the trigger-only routing rule extends to repeated compaction, so an operator converts a crossover across shares in this regime too",
+    "guard_re_enters_after_the_first_fold": "the trigger-only rule is a ONE-FOLD rule: after the first summary, hysteresis raises the trigger to the full guard, so a session that folds again pays for the guard the first fold ignored",
+    "repeat_geometry_did_not_reproduce": "the identical-geometry pair moved more than the band, so no spread in this run is readable as a geometry effect",
+    "no_resolving_power": "moving the trigger onto another fold step did not move the cost either, so neither an agreement nor a disagreement at equal trigger says anything",
+    "changes_shipped_default": false
+  }
+}

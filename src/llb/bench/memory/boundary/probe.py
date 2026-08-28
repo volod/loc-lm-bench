@@ -150,6 +150,10 @@ def compact_tasks_fold_input_probe(
     return {
         "n_compactions": max(item.n_compactions for item in telemetries),
         "compaction_prompt_chars": max(item.compaction_prompt_chars for item in telemetries),
+        # What the whole episode would send a model under perfect play -- controller prompts plus
+        # summarize calls. It is the cost side of the same deterministic walk the fold fields
+        # describe, so a design can predeclare what a cell costs before any GPU is warmed.
+        "model_input_prompt_chars": max(item.model_input_prompt_chars for item in telemetries),
         "summary_input_chars": max(item.summary_input_chars for item in telemetries),
         "summary_input_elided_chars": max(item.summary_input_elided_chars for item in telemetries),
         "n_trimmed_summary_inputs": max(item.n_trimmed_summary_inputs for item in telemetries),
