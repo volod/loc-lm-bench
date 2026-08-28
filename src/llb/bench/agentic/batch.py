@@ -1,6 +1,7 @@
 """Batch execution and objective scoring for canonical agentic episodes."""
 
 from llb.bench.agentic.context_policy import ContextPolicy
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.backends.context_budget import ContextBudget, prompt_tokens
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
@@ -69,6 +70,7 @@ def _run_episodes(
     max_steps: int,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
 ) -> list[Episode]:
     catalog = tool_catalog()
     return [
@@ -79,6 +81,7 @@ def _run_episodes(
             max_steps=max_steps,
             policy=policy,
             budget=budget,
+            loop_policy=loop_policy,
         )
         for task in tasks
     ]

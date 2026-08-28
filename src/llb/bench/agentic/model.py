@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from llb.bench.agentic.context import ContextTelemetry
 from llb.bench.agentic.context_policy import ContextPolicy
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.backends.context_budget import ContextBudget
 from llb.bench.common import JudgeScorer, LLMComplete, Mirror
 from llb.bench.tool_world import ToolWorld
@@ -91,6 +92,11 @@ class Episode:
     # means the framework owned the transcript (CrewAI) and the comparison must not treat the
     # row as our `full` / `observation_cap` / ... assembly -- see harness comparison docs.
     context_policy_supported: bool = True
+    # Whether this harness APPLIED the requested loop policy (malformed-call handling, repeated-call
+    # handling, repeat feedback) to the decisions it made. False means the framework owned those
+    # decisions, so the run must not be read as evidence for the requested cell -- the same rule
+    # `context_policy_supported` states for the prompt assembly.
+    loop_policy_supported: bool = True
     # Loop-policy diagnostics. Defaults keep episodes built by framework adapters compatible.
     n_model_calls: int = 0
     n_malformed_calls: int = 0
@@ -104,13 +110,15 @@ class Episode:
 class Harness(Protocol):
     """A pluggable agentic harness (agentic harness comparison): drive ONE task to a canonical `Episode`.
 
-    Every harness takes the same `(task, complete, catalog, max_steps, policy, budget)` and returns
-    the same `Episode` (final answer + tool-call transcript + final env-state + prompt telemetry),
+    Every harness takes the same `(task, complete, catalog, max_steps, policy, budget, loop_policy)`
+    and returns the same `Episode` (final answer + tool-call transcript + final env-state + prompt telemetry),
     so `check_success`, the scorer, and the gated judge are UNCHANGED across harnesses -- the
     framework is the only variable. `loop` and `langgraph` apply `policy`/`budget` to every step
     prompt; a harness that cannot (CrewAI owns its own transcript) still accepts the kwargs, runs
     framework-native, and sets `Episode.context_policy_supported=False` so the comparison never
-    silently labels that row as our `full` policy.
+    silently labels that row as our `full` policy. `loop_policy` threads the same way and carries
+    the same honesty flag (`Episode.loop_policy_supported`): only the pure loop implements every
+    cell, so a harness that cannot apply the requested one says so instead of being read as it.
     """
 
     def __call__(
@@ -122,6 +130,7 @@ class Harness(Protocol):
         max_steps: int = DEFAULT_MAX_STEPS,
         policy: ContextPolicy | None = None,
         budget: ContextBudget | None = None,
+        loop_policy: LoopPolicy | None = None,
     ) -> Episode: ...
 
 
@@ -191,4 +200,6 @@ class _AgenticPersistInput:
     budget_provenance: dict[str, object] | None = None
     context_policy: str = "full"
     context_policy_supported: bool = True
+    loop_policy: LoopPolicy = LoopPolicy()
+    loop_policy_supported: bool = True
     mean_max_prompt_tokens: float = 0.0

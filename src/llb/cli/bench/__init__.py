@@ -9,6 +9,7 @@ from llb.cli.bench import misc  # noqa: F401
 from llb.cli.bench.categories import (  # noqa: F401
     agentic,
     agentic_compare,
+    agentic_context,
     analysis,
     structured,
     tasks,

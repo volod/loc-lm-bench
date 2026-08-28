@@ -6,10 +6,12 @@ harness wraps the SAME deterministic `ToolWorld` tools as crew tools and the SAM
 back into the canonical `Episode` -- so `check_success`, the scorer, and the gated judge are
 UNCHANGED and only the framework differs.
 
-CrewAI owns its conversation transcript: the harness ACCEPTS `policy`/`budget` on the shared
-`Harness` protocol so the operator can pass the same knobs as `loop`/`langgraph`, but it does NOT
-apply them. Episodes set `context_policy_supported=False` and still record the prompt sizes the
-framework actually sent, so the harness comparison never labels a CrewAI row as our `full` policy.
+CrewAI owns its conversation transcript AND its controller decisions: the harness ACCEPTS
+`policy`/`budget`/`loop_policy` on the shared `Harness` protocol so the operator can pass the same
+knobs as `loop`/`langgraph`, but it does NOT apply them. Episodes set
+`context_policy_supported=False` and `loop_policy_supported=False` and still record the prompt sizes
+the framework actually sent, so the harness comparison never labels a CrewAI row as our `full`
+policy or as the loop cell that was asked for.
 
 The crew driver is injectable (`crew_runner`): a FAKE crew proves the whole adaptation path with no
 dependency / GPU (the same injectable discipline as the rest of category suite/extended workflow), so CI covers the wiring
@@ -18,6 +20,7 @@ while the real CrewAI path is exercised only on a host that has the extra instal
 
 from llb.bench.agentic.context import ContextTelemetry
 from llb.bench.agentic.context_policy import ContextPolicy
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
@@ -44,8 +47,10 @@ def make_crewai_harness(crew_runner: CrewRunner | None = None) -> Harness:
         max_steps: int = DEFAULT_MAX_STEPS,
         policy: ContextPolicy | None = None,
         budget: ContextBudget | None = None,
+        loop_policy: LoopPolicy | None = None,
     ) -> Episode:
-        del policy, budget  # accepted for protocol parity; CrewAI owns the transcript
+        # accepted for protocol parity; CrewAI owns the transcript and the loop decisions
+        del policy, budget, loop_policy
         world = ToolWorld.from_setup(task.setup)
         telemetry = ContextTelemetry()
         outcome = runner(task, complete, catalog, world, max_steps, telemetry=telemetry)

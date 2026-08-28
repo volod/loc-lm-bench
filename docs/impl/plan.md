@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agentic-loop-policy-flags-on-the-scored-run (optional)
-
-`bench-agentic-loop` recommends a controller cell -- step budget, malformed-call handling,
-repeated-call handling -- but `bench-agentic`, the command that scores one agentic cell, exposes only
-`--max-steps`. The other two knobs are shipped defaults with no flag, so the moment the sweep
-recommends a non-default cell its recommendation cannot be applied to the run it is meant to
-configure; the composed operating profile
-([agent operating profile](current/extended-workflows/agent-operating-profile.md#replay)) has to
-replay those fields as a confirmation sweep rather than as a scored run. Thread a loop policy
-through `run_agentic` and `run_episode` the way the context policy already threads, and expose
-`--malformed-policy` / `--repeated-call-policy` on `bench-agentic` so a recommended cell is
-directly runnable. Optional because the shipped evidence retains the legacy cell on every family
-measured so far, so nothing is currently unreachable.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: CLEAR
-- Dependencies: the policy vocabulary and the constants already exist in
-  `src/llb/bench/agentic/loop_policy.py` and are applied by `src/llb/bench/agentic/episode.py`; the
-  context policy's existing `policy`/`budget` kwargs on `run_agentic` are the seam to follow.
-- User-visible outcome: a recommended loop cell runs as a scored `bench-agentic` cell instead of
-  only as a re-swept grid point.
-- Scope boundary: in scope -- the two flags, the threading, the manifest fields recording them, and
-  the profile's replay switching to `bench-agentic`. Out of scope -- changing any shipped default,
-  and adding loop-policy axes the sweep does not already measure.
-- Data and artifact paths: existing `$DATA_DIR/agentic/<run>/` bundles gain the two config fields.
-- Execution path: `make ci` over the fake-completion seam; no GPU.
-- Acceptance gates: `make ci` green; a `bench-agentic` run at the default cell is byte-identical to
-  today's prompts; the profile's replay block emits the loop fields on `bench-agentic`.
-- Documentation target: the harness section of
-  [extended workflows](current/extended-workflows/agentic-harness.md) and the replay section of the
-  agent operating profile page.
-
 #### agent-context-policy-entry-aware-summary-fold-adoption (optional)
 
 Promote the entry-aware summary-input prototype into an explicit context-policy choice and decide

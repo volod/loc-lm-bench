@@ -108,6 +108,16 @@ class LoopPolicy:
             )
 
 
+def is_default_loop_policy(policy: "LoopPolicy | None") -> bool:
+    """Whether this policy is the shipped cell (an unset policy resolves to it).
+
+    A harness that hard-codes the shipped decisions -- answer on a malformed reply, execute a
+    repeated call -- applies THIS cell faithfully and no other, so it reports support by this
+    predicate rather than by claiming every cell.
+    """
+    return policy is None or policy == LoopPolicy()
+
+
 def repeated_noop_observation(variant: str) -> str:
     """Resolve a validated repeat-feedback variant to its controller observation."""
     try:

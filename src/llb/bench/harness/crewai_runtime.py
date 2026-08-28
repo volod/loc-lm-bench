@@ -107,8 +107,9 @@ def episode_from_outcome(
 ) -> Episode:
     """Adapt a `CrewOutcome` into the canonical `Episode` (success re-checked objectively).
 
-    `context_policy_supported` is always False: CrewAI owns the transcript, so a measured loop
-    policy is never silently reported as applied on this harness.
+    `context_policy_supported` and `loop_policy_supported` are always False: CrewAI owns both the
+    transcript and the controller's decisions, so a measured context policy or loop-policy cell is
+    never silently reported as applied on this harness.
     """
     return Episode(
         success=check_success(task, world, outcome.answer),
@@ -120,6 +121,7 @@ def episode_from_outcome(
         transcript=list(outcome.transcript),
         telemetry=telemetry if telemetry is not None else ContextTelemetry(),
         context_policy_supported=False,
+        loop_policy_supported=False,
     )
 
 

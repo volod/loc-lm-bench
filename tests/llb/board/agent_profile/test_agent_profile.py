@@ -1,6 +1,7 @@
 """Composed agent operating profile: the four field states, the consistency guard, the staleness
 demotion, and the replay commands."""
 
+import inspect
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -303,8 +304,58 @@ def test_measured_values_replay_as_flags_that_reproduce_the_configuration(
     assert "--context-order rank" in run_eval
     bench = next(c for c in commands if c.startswith("llb bench-agentic "))
     assert "--context-policy observation_cap" in bench and "--max-steps 6" in bench
+    assert "--malformed-policy answer" in bench and "--repeated-call-policy allow" in bench
     loop = next(c for c in commands if c.startswith("llb bench-agentic-loop"))
     assert "--agent-max-steps 6" in loop and "--agent-repeated-call-policy allow" in loop
+
+
+def test_a_recommended_loop_cell_replays_as_a_scored_run(tmp_path, recommendation, index_dir):
+    """The whole recommended cell reaches `bench-agentic`, not only the step budget."""
+    write_loop_policy(
+        tmp_path,
+        max_steps=10,
+        malformed_call_policy="repair_once",
+        repeated_call_policy="noop",
+        repeat_feedback_variant="uk",
+    )
+
+    profile = _profile(tmp_path, recommendation, index_dir)
+    bench = next(c for c in replay_commands(profile) if c.startswith("llb bench-agentic "))
+
+    assert "--max-steps 10" in bench
+    assert "--malformed-policy repair_once" in bench
+    assert "--repeated-call-policy noop" in bench
+    assert "--repeat-feedback uk" in bench
+
+
+def test_the_repeat_wording_is_pinned_only_where_it_reaches_a_prompt(
+    tmp_path, recommendation, index_dir
+):
+    """Under `allow` no repeat is ever suppressed, so pinning its wording would state nothing."""
+    write_loop_policy(tmp_path, repeated_call_policy="allow", repeat_feedback_variant="uk")
+
+    profile = _profile(tmp_path, recommendation, index_dir)
+    bench = next(c for c in replay_commands(profile) if c.startswith("llb bench-agentic "))
+
+    assert "--repeat-feedback" not in bench
+
+
+def test_bench_agentic_replay_flags_are_real_command_options(tmp_path, recommendation, index_dir):
+    """The flags are not decoration: `bench-agentic` accepts every one of them."""
+    from llb.board.agent_profile.replay import bench_agentic_flags
+    from llb.cli.app import app
+
+    write_loop_policy(tmp_path, repeated_call_policy="noop")
+    write_context_policy(tmp_path)
+    profile = _profile(tmp_path, recommendation, index_dir)
+
+    command = next(c for c in app.registered_commands if c.name == "bench-agentic")
+    accepted = {
+        f"--{name.replace('_', '-')}" for name in inspect.signature(command.callback).parameters
+    }
+
+    emitted = {flag for flag in bench_agentic_flags(profile) if flag.startswith("--")}
+    assert emitted and emitted <= accepted
 
 
 def test_replay_flags_parse_back_into_the_recommended_run_config(

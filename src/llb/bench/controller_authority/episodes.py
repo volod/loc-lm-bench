@@ -150,8 +150,14 @@ def _run_placement(
         max_steps: int = max_steps,
         policy: ContextPolicy | None = None,
         budget: ContextBudget | None = None,
+        loop_policy: LoopPolicy | None = None,
     ) -> Episode:
-        """Adapter to the harness protocol; the step itself is `_run_placement_episode`."""
+        """Adapter to the harness protocol; the step itself is `_run_placement_episode`.
+
+        The placement's loop policy is the study's own fixed cell, so the threaded one is discarded
+        rather than allowed to vary what the comparison holds constant.
+        """
+        del loop_policy
         return _run_placement_episode(
             task,
             complete,

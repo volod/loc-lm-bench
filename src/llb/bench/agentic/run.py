@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.agentic.context_policy import POLICY_FULL, ContextPolicy
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.backends.context_budget import ContextBudget, prompt_tokens
 from llb.bench.agentic.batch import _resolve_harness, _run_episodes, _score_episodes
 from llb.bench.agentic.model import (
@@ -49,6 +50,7 @@ def run_agentic(
     prompt_system: str | None = None,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
     judge_model: str | None = None,
     judge_rho: float | None = None,
     judge_threshold: float = DEFAULT_THRESHOLD,
@@ -72,7 +74,10 @@ def run_agentic(
     endpoint `complete`) supplies the run's real generation tok/s. `policy`/`budget` transfer the
     agent context-management knobs onto harnesses that support them (`loop`, `langgraph`); a
     harness that cannot apply them still reports the prompt sizes it sent and stamps
-    `context_policy_supported=false` on the bundle.
+    `context_policy_supported=false` on the bundle. `loop_policy` transfers the controller's
+    decision knobs (malformed-call handling, repeated-call handling, repeat feedback) the same way,
+    stamping `loop_policy_supported=false` when the harness owns those decisions itself -- which is
+    what lets a cell the loop-policy sweep recommends be RUN here instead of only re-swept.
     """
     if not tasks:
         raise SystemExit("no agentic tasks provided")
@@ -80,6 +85,7 @@ def run_agentic(
         data_verified=data_verified, verification_ref=verification_ref
     )
     resolved_policy = policy if policy is not None else ContextPolicy()
+    resolved_loop_policy = loop_policy if loop_policy is not None else LoopPolicy()
     episodes = _run_episodes(
         tasks,
         complete,
@@ -87,6 +93,7 @@ def run_agentic(
         max_steps,
         policy=resolved_policy,
         budget=budget,
+        loop_policy=resolved_loop_policy,
     )
     scored = _score_episodes(tasks, episodes)
     judge_config = _JudgeConfig(
@@ -108,6 +115,7 @@ def run_agentic(
     )
     board, table = render_board([result])
     policy_supported = all(episode.context_policy_supported for episode in episodes)
+    loop_supported = all(episode.loop_policy_supported for episode in episodes)
     mean_prompt = mean([float(prompt_tokens(ep.telemetry.max_prompt_chars)) for ep in episodes])
     paths = (
         _persist_agentic_run(
@@ -130,6 +138,8 @@ def run_agentic(
                 budget_provenance=budget_provenance,
                 context_policy=resolved_policy.name,
                 context_policy_supported=policy_supported,
+                loop_policy=resolved_loop_policy,
+                loop_policy_supported=loop_supported,
                 mean_max_prompt_tokens=mean_prompt,
             )
         )

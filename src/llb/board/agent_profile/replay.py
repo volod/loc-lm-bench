@@ -20,15 +20,24 @@ from llb.board.agent_profile.model import (
     STATE_MEASURED,
     AgentProfile,
 )
+from llb.bench.agentic.loop_policy import REPEATED_NOOP
+from llb.bench.loop_policy.report import BASELINE_MAX_STEPS, BASELINE_POLICY
 from llb.board.agent_profile.sources_agent import ADAPTER_NONE
 from llb.core.contracts.common import JsonObject
 from llb.rag.rerank_bakeoff.models import ROW_NO_RERANK
 
 # `llb bench-agentic-loop` validates that the grid contains the mandatory legacy cell, so a pinned
-# replay of a recommended cell has to carry the baseline alongside it.
-BASELINE_MAX_STEPS = 6
-BASELINE_MALFORMED_POLICY = "answer"
-BASELINE_REPEATED_CALL_POLICY = "allow"
+# replay of a recommended cell has to carry the baseline alongside it. Both come from the sweep's
+# own definition of that cell: a second copy here would drift the day the baseline moves.
+BASELINE_MALFORMED_POLICY = BASELINE_POLICY.malformed_call
+BASELINE_REPEATED_CALL_POLICY = BASELINE_POLICY.repeated_call
+
+# The `bench-agentic` option name for each recommended loop-cell field. The step budget is listed
+# apart because it is the one field that also has a meaning without the sweep.
+_BENCH_AGENTIC_LOOP_FLAGS = (
+    ("malformed_call_policy", "--malformed-policy"),
+    ("repeated_call_policy", "--repeated-call-policy"),
+)
 
 # The run-eval option name for each retrieval-side field it accepts.
 _RUN_EVAL_FLAGS = {
@@ -75,7 +84,12 @@ def run_eval_flags(profile: AgentProfile) -> list[str]:
 
 
 def bench_agentic_flags(profile: AgentProfile) -> list[str]:
-    """`llb bench-agentic` flags: the served model plus the context policy and step budget."""
+    """`llb bench-agentic` flags: the served model, the context policy, and the whole loop cell.
+
+    Every field of the recommended cell is a flag here, so the recommendation runs as a SCORED
+    agentic run. Re-sweeping it (`bench_agentic_loop_flags`) confirms the choice; it does not
+    substitute for running under it.
+    """
     if not _replayable(profile):
         return []
     flags: list[str] = []
@@ -87,8 +101,19 @@ def bench_agentic_flags(profile: AgentProfile) -> list[str]:
     if policy is not None:
         flags += ["--context-policy", str(policy)]
     loop = _measured(profile, FIELD_LOOP_POLICY)
-    if isinstance(loop, dict) and loop.get("max_steps") is not None:
+    if not isinstance(loop, dict):
+        return flags
+    if loop.get("max_steps") is not None:
         flags += ["--max-steps", str(loop["max_steps"])]
+    for field, flag in _BENCH_AGENTIC_LOOP_FLAGS:
+        value = loop.get(field)
+        if value is not None:
+            flags += [flag, str(value)]
+    # The suppressed-repeat wording only reaches a prompt under `noop`; on an `allow` cell pinning
+    # it would state a choice the run never makes.
+    feedback = loop.get("repeat_feedback_variant")
+    if feedback is not None and loop.get("repeated_call_policy") == REPEATED_NOOP:
+        flags += ["--repeat-feedback", str(feedback)]
     return flags
 
 

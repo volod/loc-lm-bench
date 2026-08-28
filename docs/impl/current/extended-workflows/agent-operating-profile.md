@@ -104,9 +104,18 @@ hand-translated into flags:
 ```bash
 llb run-eval --model <model> --backend <backend> --top-k <k> --context-budget <tokens> \
   --reranker <cross-encoder> --context-order <order>
-llb bench-agentic --model <model> --backend <backend> --context-policy <policy> --max-steps <n>
+llb bench-agentic --model <model> --backend <backend> --context-policy <policy> \
+  --max-steps <n> --malformed-policy <policy> --repeated-call-policy <policy>
 llb bench-agentic-loop --model <model> --backend <backend> --agent-max-steps <baseline,cell> ...
 ```
+
+The recommended loop cell goes out WHOLE on `bench-agentic`, not just its step budget, so the
+profile's recommendation runs as a SCORED agentic run. `--repeat-feedback` joins it only when the
+recommended `repeated_call_policy` is `noop`: under `allow` no repeat is suppressed, so pinning the
+suppression wording would state a choice the run never makes. The `bench-agentic-loop` line stays
+alongside as the CONFIRMATION sweep -- it re-measures the cell against its mandatory legacy baseline
+-- and is no longer the only way to act on the recommendation
+([the loop cell is a flag on the scored run](agentic-harness.md#the-loop-cell-is-a-flag-on-the-scored-run)).
 
 Only `measured` fields contribute a flag; every other field is listed under `replay.omitted` with
 its state. A field whose measured answer is "nothing here" (`reranker=none`, `adapter=none`)

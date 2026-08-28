@@ -19,6 +19,7 @@ from llb.bench.agentic.context import ContextState
 from llb.bench.agentic.context_policy import ContextPolicy
 from llb.backends.context_budget import ContextBudget, unbounded_budget
 from llb.bench.agentic.episode_prompt import step_prompt
+from llb.bench.agentic.loop_policy import LoopPolicy, is_default_loop_policy
 from llb.bench.agentic.model import (
     DEFAULT_MAX_STEPS,
     STATUS_COMPLETED,
@@ -127,7 +128,9 @@ def route_after_tool(state: AgenticGraphState) -> str:
     return ROUTE_END
 
 
-def episode_from_state(task: AgenticTask, state: AgenticGraphState) -> Episode:
+def episode_from_state(
+    task: AgenticTask, state: AgenticGraphState, *, loop_policy_supported: bool = True
+) -> Episode:
     """Adapt a terminal graph state into the canonical `Episode` (success re-checked objectively)."""
     world = state.get("world") or ToolWorld.from_setup(task.setup)
     context = state.get("context") or ContextState()
@@ -150,6 +153,7 @@ def episode_from_state(task: AgenticTask, state: AgenticGraphState) -> Episode:
         transcript=list(context.executed),
         telemetry=context.telemetry,
         context_policy_supported=True,
+        loop_policy_supported=loop_policy_supported,
     )
 
 
@@ -224,11 +228,19 @@ def langgraph_harness(
     max_steps: int = DEFAULT_MAX_STEPS,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
 ) -> Episode:
-    """The `Harness`: compile the agentic graph and drive one task to a canonical `Episode`."""
+    """The `Harness`: compile the agentic graph and drive one task to a canonical `Episode`.
+
+    The graph's edges hard-code the SHIPPED loop decisions -- a malformed reply is the final prose
+    answer, a repeated call is executed -- so it applies the default cell and reports every other
+    one as unsupported rather than letting the bundle read as evidence for it.
+    """
     app = build_agentic_graph(complete, catalog, policy=policy, budget=budget)
     state = run_agentic_case(app, task, max_steps)
-    return episode_from_state(task, state)
+    return episode_from_state(
+        task, state, loop_policy_supported=is_default_loop_policy(loop_policy)
+    )
 
 
 def step_graph_pure(
@@ -239,6 +251,7 @@ def step_graph_pure(
     max_steps: int = DEFAULT_MAX_STEPS,
     policy: ContextPolicy | None = None,
     budget: ContextBudget | None = None,
+    loop_policy: LoopPolicy | None = None,
 ) -> Episode:
     """Drive the SAME pure node closures + routers WITHOUT langgraph (for CI equivalence tests).
 
@@ -257,4 +270,6 @@ def step_graph_pure(
         state.update(tool(state))
         if route_after_tool(state) == ROUTE_END:
             break
-    return episode_from_state(task, state)
+    return episode_from_state(
+        task, state, loop_policy_supported=is_default_loop_policy(loop_policy)
+    )

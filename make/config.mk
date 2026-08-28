@@ -370,6 +370,11 @@ AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
 AGENTIC_CONTEXT_POLICY ?= full
+# The loop cell the scored run executes. Defaults are the shipped ones, so `make bench-agentic`
+# is unchanged; set them to the cell `bench-agentic-loop` recommended to score it directly.
+AGENTIC_MALFORMED_POLICY ?= answer
+AGENTIC_REPEATED_CALL_POLICY ?= allow
+AGENTIC_REPEAT_FEEDBACK ?= current
 AGENTIC_BASE_URL ?=
 AGENTIC_MAX_MODEL_LEN ?=
 

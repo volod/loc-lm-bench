@@ -146,7 +146,15 @@ def write_probe(
     )
 
 
-def write_loop_policy(tmp_path: Path, *, model: str = MODEL, max_steps: int = 6) -> Path:
+def write_loop_policy(
+    tmp_path: Path,
+    *,
+    model: str = MODEL,
+    max_steps: int = 6,
+    malformed_call_policy: str = "answer",
+    repeated_call_policy: str = "allow",
+    repeat_feedback_variant: str = "current",
+) -> Path:
     return write_bundle(
         tmp_path,
         "agentic-loop-policy",
@@ -154,9 +162,9 @@ def write_loop_policy(tmp_path: Path, *, model: str = MODEL, max_steps: int = 6)
         {
             "model": model,
             "max_steps": max_steps,
-            "malformed_call_policy": "answer",
-            "repeated_call_policy": "allow",
-            "repeat_feedback_variant": "current",
+            "malformed_call_policy": malformed_call_policy,
+            "repeated_call_policy": repeated_call_policy,
+            "repeat_feedback_variant": repeat_feedback_variant,
             "changes_shipped_defaults": False,
             "verdict": "flat",
             "reason": "no candidate has a positive paired completion delta",

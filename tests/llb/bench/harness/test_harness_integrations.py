@@ -1,5 +1,8 @@
 """Tests for harness integrations."""
 
+import json
+from pathlib import Path
+
 import pytest
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import (
@@ -258,3 +261,56 @@ def test_real_langgraph_harness_matches_loop():
     assert graph_ep.world.files == loop_ep.world.files
     assert graph_ep.telemetry.max_prompt_chars == loop_ep.telemetry.max_prompt_chars
     assert graph_ep.context_policy_supported is True
+
+
+# --- loop-policy support across the harnesses ---------------------------------------------------
+
+
+def _noop_policy():
+    from llb.bench.agentic.loop_policy import REPEATED_NOOP, LoopPolicy
+
+    return LoopPolicy(repeated_call=REPEATED_NOOP)
+
+
+def test_langgraph_applies_the_shipped_cell_and_refuses_to_claim_any_other():
+    """The graph's edges hard-code the default decisions, so only that cell is supported."""
+    from llb.bench.agentic.loop_policy import LoopPolicy
+
+    task, script = success_task(), SUCCESS_SCRIPT
+
+    default = lg.step_graph_pure(
+        task, scripted(list(script)), tw.tool_catalog(), loop_policy=LoopPolicy()
+    )
+    non_default = lg.step_graph_pure(
+        task, scripted(list(script)), tw.tool_catalog(), loop_policy=_noop_policy()
+    )
+
+    assert default.loop_policy_supported is True
+    assert non_default.loop_policy_supported is False
+
+
+def test_crewai_never_claims_the_requested_loop_cell():
+    harness = crewai_harness.make_crewai_harness(fake_crew_runner)
+
+    episode = harness(success_task(), scripted([]), tw.tool_catalog(), loop_policy=_noop_policy())
+
+    assert episode.loop_policy_supported is False
+
+
+def test_a_harness_that_cannot_apply_the_cell_stamps_the_bundle_unsupported(tmp_path):
+    run = run_agentic(
+        two_tasks(),
+        model="m",
+        backend="ollama",
+        complete=loop_script(),
+        harness_name=HARNESS_LANGGRAPH,
+        harness=lg.step_graph_pure,
+        loop_policy=_noop_policy(),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+    )
+
+    assert run.paths is not None
+    config = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))["config"]
+    assert config["loop_policy_supported"] is False
+    assert config["repeated_call_policy"] == "noop"
