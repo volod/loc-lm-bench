@@ -40,4 +40,5 @@ to any of it invalidates.
 | [Judge diagnostics](extended-workflows/judge-diagnostics.md) | What a zero judge score means, and the pre-run judge smoke check |
 | [Prompt systems and the self-improvement loop](extended-workflows/prompt-systems.md) | Reviewable prompt-system packages, the sample prompt assets, and the local self-improvement loop |
 | [Fine-tuning search and trainability](extended-workflows/finetuning-search.md) | Hyperparameter search with split discipline, budget and resume, and which compressed checkpoints are trainable |
+| [Corpus-adapted embedder fine-tuning](extended-workflows/embedder-finetune.md) | Contrastive (question, gold-chunk) training of the pinned encoder on the operator's own corpus, its split guard, and how the uplift is measured |
 | [Adapter registry and lifecycle](extended-workflows/adapter-registry.md) | Adapter staleness, the contamination guard, serving, garbage collection, and the committed fixtures |

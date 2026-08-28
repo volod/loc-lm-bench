@@ -74,125 +74,74 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Model roster currency -- `model-roster-currency`
-
-#### upstream-generation-currency-probe
-
-The roster names each family's current and previous generation, and the published tables are
-generated from it, but nothing reads UPSTREAM: a family goes stale silently until somebody happens
-to notice a new tag, and the only way to answer "is this still the current Qwen" is to open a
-browser. Add a currency probe that asks, per registered family, what the Ollama library and the
-Hugging Face model API currently offer for that family's namespace, compares the newest upstream
-generation with the carried one, and reports the gap.
-
-- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
-- Agent status: CLEAR
-- Dependencies: the family/generation register and its manifest fields in
-  [model roster](current/model-roster.md).
-- User-visible outcome: one command reports every registered family as `current`, `behind`
-  (naming the upstream generation and where it was read), or `unknown` (naming the registry that
-  did not answer), with the read timestamp beside each row; a family that is already current is a
-  reported row, never silence.
-- Scope boundary: in scope -- reading the two upstream registries, matching a response to a
-  family's generation namespace, the report, and an offline mode that replays recorded responses.
-  Out of scope -- editing the roster, pulling weights, promoting a generation, and any claim about
-  whether the newer generation is better.
-- Execution path: add a probe module beside the register with one adapter per registry, record
-  response fixtures for a behind family and an up-to-date family, and wire the report into a make
-  target.
-- Acceptance gates: `make ci` green; a fixture run reproduces a `behind` verdict and a `current`
-  verdict without network; a registry error degrades that family's row to `unknown` with its reason
-  instead of failing the report; the report names each registry response's read time.
-- Documentation target: [model roster](current/model-roster.md).
-
-#### generation-adoption-invalidation-report (optional)
-
-Adopting a new generation invalidates every measurement taken against the generation it replaces,
-and today that list is reconstructed by hand from the board. Given a family and a target generation,
-report which committed run records, published numbers, and baseline tables were measured on the
-outgoing generation, so an operator sees the re-measurement cost before the swap rather than after.
-
-- Serves: `model-roster-currency` -- [Model roster and family currency](../design/spec.md#model-roster-and-family-currency)
-- Agent status: CLEAR
-- Dependencies: the currency probe above; published-number provenance in
-  [published values](current/extended-workflows/published-values.md).
-- User-visible outcome: one report lists, for a proposed generation swap, every published value and
-  committed aggregate whose model field resolves to the outgoing generation, and states plainly when
-  nothing is affected.
-- Scope boundary: in scope -- resolving recorded model identities to family generations and listing
-  what a swap invalidates. Out of scope -- re-running anything, editing the board, and deciding
-  whether to adopt.
-- Acceptance gates: `make ci` green; a fixture bundle measured on the outgoing generation is listed
-  and one measured on an unrelated family is not.
-- Documentation target: [model roster](current/model-roster.md).
-
-### Optimization search -- `optimization-search`
-
-#### ua-embedder-domain-finetune
-
-Fine-tune the pinned multilingual E5 embedder on the operator's corpus: export contrastive
-(question, gold-chunk) pairs from tuning-split gold items only (positives are chunks overlapping
-the item's gold spans; hard negatives come from the BM25 lexical index), train with a
-sentence-transformers contrastive objective behind lazy imports, and emit a tuned-embedder
-directory whose manifest records the base model, dataset digest, item ids, and split counts. A
-split guard refuses pairs from calibration or final ids (the `assert_tuning_only` discipline from
-the LoRA hparam search). `compare-embeddings` accepts the tuned directory as a candidate so
-uplift is measured by the standard source-span metric on the held-out final split, and the
-store/query embedder fingerprint guard keeps a tuned-embedder store from being queried by any
-other encoder.
-
-- Serves: `optimization-search` -- [Optimization search](../design/spec.md#optimization-without-leakage)
-- Agent status: RUN NEEDED
-- Dependencies: none. Reuse the embedder conventions and bake-off in
-  [RAG core](current/rag-core/embedders.md#embedder-conventions-and-bake-off), the lexical index for
-  hard negatives, and the split-guard pattern in `src/llb/finetune/hparam_search/`.
-- User-visible outcome: a corpus-adapted Ukrainian retriever the operator can adopt with measured
-  final-split evidence, closing the recall gap on domain terms the general E5 encoder misses.
-- Scope boundary: in scope -- pair export, the trainer, the manifest, bake-off integration, and
-  the split guard. Out of scope -- cross-encoder (reranker) fine-tuning, generation-model
-  fine-tuning (owned by the existing finetune lane), and hosted training.
-- Data and artifact paths: pair datasets and tuned models under
-  `$DATA_DIR/finetune-embedder/<model-slug>/<timestamp>/`; evaluation through the existing
-  `$DATA_DIR/compare-embeddings/` layout.
-- Execution path: `make finetune-embedder GOLDSET=<gs> CORPUS=<dir>` then
-  `make compare-embeddings` with the tuned directory added as a candidate; CI uses a fake trainer
-  plus the hashed-BoW embedder pattern from the curation tests, no GPU.
-- Acceptance gates: `make ci` green; the guard refuses a pair set naming calibration/final ids;
-  a heavy CUDA run trains on the quickstart tuning split and reports tuned-vs-base recall@10 /
-  MRR on the held-out final split, where the adopt-or-keep-base verdict is the bake-off's own
-  paired one -- the tuned row must clear zero against the base encoder, not merely outrank it
-  ([RAG core](current/rag-core/paired-verdicts.md#paired-uncertainty-and-the-adopt-or-retain-verdict)).
-- Documentation target: [RAG core](current/rag-core.md) embedder section and
-  [extended workflows](current/extended-workflows.md) for the trainer lane.
-
 ### Run bundles and the board -- `run-bundle-board`
 
-#### ua-model-roster-long-run (optional)
+#### ua-roster-confirmation-run
 
-Confirm the refreshed-roster ranking at research scale: predeclare a minimum detectable objective
-gain and ranking-stability criterion, derive the tuning-screen size from paired power, and run
-multi-objective trials until the stability rule or a declared resource budget stops the search.
-Score the full held-out final split and add the public Ukrainian screen tracks before making a
-default-model adoption decision. Report bootstrap uncertainty and quality/latency Pareto tradeoffs
-so a small-sample rank reversal cannot silently change the recommended model.
+The confirmation LANE is delivered and CI-green -- predeclared effect, power-derived screen size,
+ranking-stability stopping rule, uncapped held-out scoring, public Ukrainian tracks, bootstrap
+uncertainty, quality/latency frontier, and an adopt-or-retain verdict
+([roster confirmation](current/rigor-board-judge/roster-confirmation.md)). What is missing is a run
+carried through to a recorded verdict: no host has yet produced a `long_run.json` whose reading is
+written into the delivered docs, so the default-model question the lane exists to answer is still
+open. Run it on a CUDA host and record what it decided.
 
 - Serves: `run-bundle-board` -- [Run bundles and the board](../design/spec.md#persistence-and-reproducibility)
 - Agent status: RUN NEEDED
-- Dependencies: use the roster/runtime behavior in
-  [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh) and the
-  bounded baseline in [evaluation rigor](current/rigor-board-judge/tuning-and-search.md#joint-model--config-search).
-- User-visible outcome: a stable refreshed-roster recommendation with uncertainty, public-task
-  coverage, and an explicit adopt-or-retain verdict.
-- Scope boundary: in scope -- larger private joint search, public-screen lanes, uncertainty, and
-  the adoption verdict. Out of scope -- model fine-tuning and hosted/API-only candidates.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/`, `$DATA_DIR/screen/`, and the matching
-  current-doc evidence section.
-- Execution path: run `make joint-search` on a CUDA host with the refreshed candidates and full
-  final split, then run the public screen for both finalists.
-- Acceptance gates: `make ci` green; the search artifact records the effect, power, stability, and
-  stopping assumptions plus the derived screen size and consumed trial budget; no final-split
-  leakage into tuning; confidence-aware ranking; explicit quality-versus-latency recommendation.
-- Documentation target: [evaluation rigor](current/rigor-board-judge.md) host evidence.
+- Dependencies: none beyond the delivered lane above; the roster and per-tier serving behavior are
+  in [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh).
+- User-visible outcome: a recorded adopt-or-retain verdict on the default Ukrainian model, with
+  uncertainty, public-task coverage, and the quality-versus-latency frontier behind it.
+- Scope boundary: in scope -- executing the run, reading its artifact, and writing the evidence.
+  Out of scope -- changing the lane's statistics or schedule, model fine-tuning, and hosted/API-only
+  candidates. Reuse `make joint-search-long-run`; do not write a new driver.
+- Data and artifact paths: `$DATA_DIR/joint-search/<run>/{long_run.json,long_run.md,scoreboard.json}`
+  and `$DATA_DIR/screen/<model>.screen.json`, produced by the run; the reading goes into the
+  documentation target below.
+- Execution path, in order:
+  1. **Pick the candidate slice for the host.** Use the strongest `samples/configs/models_uk.yaml`
+     entries that FIT (`make resolve-models MODELS_MANIFEST=<manifest>` prints the choice; a 12/16
+     GiB box fits `mamaylm-v2-12b`, `lapa-v0.1.2-instruct`, and `gemma-4-e4b-it-w4a16` natively,
+     while `gemma-4-26b-a4b` and `qwen3.8-27b` need offload and are far slower). Pass the slice as
+     `JOINT_SEARCH_CANDIDATES=`. `LONG_RUN_INCUMBENT=` must name one of them -- the UA-specialized
+     reference the baselines must beat.
+  2. **Produce the power reference.** The declared screen size is derived from the paired variance of
+     an earlier pair of models. Two `make run-eval MODEL=<a>` / `MODEL=<b>` bundles of two DIFFERENT
+     models over the same gold set and split supply it; pass their run-bundle directories as
+     `LONG_RUN_POWER_REFERENCE=` and `LONG_RUN_POWER_BASELINE=`. Any pair whose gap resembles the one
+     being measured works; a pair with fewer than two shared items is refused.
+  3. **Install `lm_eval` on `PATH`** (`lm-eval[api]>=0.4.9`, in any environment -- it is an external
+     harness, not a project dependency). Without it the run still completes and states its verdict,
+     but every finalist lands in `public_screen.failures` and the verdict is qualified as having no
+     public backing, which does not satisfy this task.
+  4. **Run it**, then read `long_run.md`:
+
+     ```bash
+     make joint-search-long-run \
+       JOINT_SEARCH_CANDIDATES=<slice.yaml> \
+       GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
+       JOINT_SEARCH_CORPUS=samples/goldsets/ua_squad_postedited_v1/corpus \
+       LONG_RUN_INCUMBENT=<candidate> \
+       LONG_RUN_POWER_REFERENCE=<run-bundle> LONG_RUN_POWER_BASELINE=<run-bundle> \
+       LONG_RUN_MIN_GAIN=0.10 LONG_RUN_TRIAL_BUDGET=12 LONG_RUN_TRIAL_BLOCK=3 \
+       LONG_RUN_RUN_ID=<id>
+     ```
+
+     Budget two to three hours on a 12 GiB laptop GPU before the held-out split and public screen;
+     see the cost note in the documentation target. Re-running with the same `LONG_RUN_RUN_ID`
+     resumes on the completed screen, pick, and finalist markers, so a kill is cheap. Nothing else
+     may touch the GPU while it runs -- a stray backend call inflates every latency reading.
+- Acceptance gates: `make ci` green; `long_run.json` carries a `predeclaration` (gain, power,
+  derived screen size with its binding floor, stopping rule), a `search` trail naming the rule that
+  stopped it and the trials consumed, a `final` block on the full held-out split with intervals and
+  paired readings, a complete `public_screen` for every finalist, and a `verdict`; the ledger stays
+  `split=tuning` and the scoreboard `split=final`.
+- Documentation target: the **Host evidence** section of
+  [roster confirmation](current/rigor-board-judge/roster-confirmation.md) -- state what ran on what
+  host and date, the derived screen size and what bound it, which rule stopped the search and at
+  what trial count, the held-out deltas with their intervals and win/loss/tie ledgers, the public
+  scores per track, the verdict and its reading, and what would overturn it. Read
+  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md) first.
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 

@@ -6,17 +6,32 @@ from llb.core.config_validation import (
 )
 from llb.core.contracts.rag import RagStoreMeta
 from llb.prep.corpus.fingerprints import corpus_fingerprint
+from llb.rag.encoders.tuned import embedder_fingerprint
 
 
 def store_embedder_mismatch(meta: RagStoreMeta, expected_model: str) -> str | None:
-    """Return the store's built embedder id when it differs from `expected_model`, else None.
+    """Return the store's built encoder identity when it differs from `expected_model`, else None.
 
     A store is embedded and queried by the SAME encoder (recorded in `store_meta.json`), so a
     config that names a different `embedding_model` than the store on disk would silently score
     the wrong encoder. Callers refuse the run with this signal (embedding bake-off fingerprint).
+
+    For a locally fine-tuned encoder the id is a DIRECTORY, and a directory is not an identity:
+    retraining into the same path leaves the string equal while the weights change. So when either
+    side carries a recorded fingerprint (`llb.rag.encoders.tuned`), the identities are compared
+    rather than the ids, and a same-path/different-training pair is refused with the fingerprint
+    the store was built under.
     """
     built = str(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
-    return built if built != expected_model else None
+    built_fingerprint = meta.get("embedder_fingerprint")
+    if built != expected_model:
+        return built
+    if not isinstance(built_fingerprint, str) or not built_fingerprint:
+        return None  # a store written before the field existed: the id comparison is all there is
+    expected_fingerprint = embedder_fingerprint(expected_model)
+    if built_fingerprint == expected_fingerprint:
+        return None
+    return f"{built} [{built_fingerprint}]"
 
 
 def stale_store_message(

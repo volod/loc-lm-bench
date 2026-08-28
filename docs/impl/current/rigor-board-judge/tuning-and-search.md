@@ -206,4 +206,7 @@ Qwen3.6 27B slice from `models_uk.yaml`, UA-SQuAD postedited fixture,
   and MRR 1.0. Gemma generated at 15.13 tokens/s versus Qwen at 2.61 tokens/s.
 - Recommended for this bounded acceptance sample: `qwen3.6-27b` + `best_quality`. The four-case
   final cap is enough to validate the roster/runtime path, not enough for a research-grade model
-  adoption decision; a larger confirmation remains optional forward work.
+  adoption decision. The research-scale confirmation that IS enough -- predeclared effect, derived
+  screen size, a ranking-stability stopping rule, the full held-out split, the public tracks, and an
+  adopt-or-retain verdict -- is [roster confirmation and the adoption
+  verdict](roster-confirmation.md).

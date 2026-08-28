@@ -1,7 +1,8 @@
 # Interpreter Reach Coverage
 
-The [tier guard](no-gpu-tier-guard.md) covers a set of process-starting seams. That coverage is a claim about the
-RUNNING interpreter and its installed packages, so it is re-measured rather than asserted --
+The [tier guard](no-gpu-tier-guard.md) covers a set of process-starting seams. That coverage is a
+claim about the RUNNING interpreter and its installed packages, so it is re-measured rather than
+asserted --
 this page is what the audit reads, what it refuses to read, and what each scan costs.
 
 **The coverage claim is re-checked against the running interpreter, not against the one it was

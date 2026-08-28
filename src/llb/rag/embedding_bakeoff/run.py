@@ -40,7 +40,7 @@ from llb.rag.embedding_bakeoff.scoring import (
     best_recall,
     paired_item_ledger,
 )
-from llb.rag.encoders.families import resolve_convention
+from llb.rag.encoders.tuned import resolved_convention
 from llb.rag.embedding_bakeoff.uncertainty import (
     DEFAULT_BARS,
     DEFAULT_BASELINE_MODEL,
@@ -140,7 +140,7 @@ def run_bakeoff(
         parity = card_parity(model) if card_parity is not None else unpublished_result(model)
         if blocks_scoring(parity):
             _LOG.warning("[compare-embeddings] %s failed card parity: %s", model, parity["detail"])
-            declined.append(parity_skip_row(parity, resolve_convention(model).family))
+            declined.append(parity_skip_row(parity, resolved_convention(model).family))
             continue
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
         scored.score(model, build_local(model), parity)

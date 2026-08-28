@@ -9,7 +9,9 @@ WRONG convention silently loses recall -- exactly the failure the embedding bake
 
 An id with no registered convention resolves to `unknown` and is encoded with no instruction, so
 this module WARNS rather than passing silently; the bake-off refuses such a candidate outright
-(`llb.rag.embedding_bakeoff.roster`).
+(`llb.rag.embedding_bakeoff.roster`). A locally fine-tuned directory has no convention readable
+from its path, so it resolves through the BASE model its manifest records
+(`llb.rag.encoders.tuned`) -- fine-tuning changes the weights, not the format they expect.
 
 Heavy imports (`sentence_transformers`, `numpy`) are deferred to first use so the module
 imports fine in the base install; the real embedding path needs the `[rag]` extra.
@@ -34,6 +36,7 @@ from llb.rag.encoders.families import (
     embedding_family,
     resolve_convention,
 )
+from llb.rag.encoders.tuned import convention_id
 
 _LOG = logging.getLogger(__name__)
 
@@ -62,16 +65,19 @@ class Embedder:
         self._trust_remote_code = trust_remote_code
         self._dtype = dtype
         self._model = None
+        # A locally fine-tuned directory carries its base model's convention, not one readable from
+        # its path (`llb.rag.encoders.tuned`). Resolved once here so every encode call is a lookup.
+        self._convention_id = convention_id(model_name)
 
     @property
     def family(self) -> str:
         """The query/passage convention family this model belongs to."""
-        return embedding_family(self.model_name)
+        return embedding_family(self._convention_id)
 
     @property
     def convention(self) -> EmbeddingConvention:
         """The documented query/passage format this model is encoded under."""
-        return resolve_convention(self.model_name)
+        return resolve_convention(self._convention_id)
 
     def _resolve_device(self) -> str | None:
         """Device for the SentenceTransformer: explicit constructor arg wins, else the
@@ -168,7 +174,7 @@ class Embedder:
 
         model = self._load()
         vectors = model.encode(
-            apply_passage_convention(self.model_name, texts),
+            apply_passage_convention(self._convention_id, texts),
             normalize_embeddings=True,
             show_progress_bar=False,
             **self.convention.passage_kwargs,
@@ -181,7 +187,7 @@ class Embedder:
 
         model = self._load()
         vectors = model.encode(
-            apply_query_convention(self.model_name, texts),
+            apply_query_convention(self._convention_id, texts),
             normalize_embeddings=True,
             show_progress_bar=False,
             **self.convention.query_kwargs,
@@ -227,7 +233,7 @@ class Embedder:
         prefix/special tokens are dropped so every returned span indexes into raw `text`.
         """
         model = self._load()
-        prefixed = apply_passage_convention(self.model_name, [text])[0]
+        prefixed = apply_passage_convention(self._convention_id, [text])[0]
         shift = len(prefixed) - len(text)
         token_vectors = model.encode(
             prefixed,

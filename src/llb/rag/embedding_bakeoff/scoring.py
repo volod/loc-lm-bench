@@ -17,7 +17,7 @@ from llb.rag.embedding_bakeoff.models import (
     CandidateResult,
 )
 from llb.rag.embedding_bakeoff.uncertainty import MetricVectors, item_vectors
-from llb.rag.encoders.families import resolve_convention
+from llb.rag.encoders.tuned import resolved_convention
 from llb.rag.encoders.precision import published_dtype
 from llb.rag.retrieval import evaluate_retrieval
 
@@ -44,7 +44,7 @@ def score_pairs(
     """Shape one candidate row from an already-retrieved pass (so the pass is never repeated)."""
     metrics = evaluate_retrieval(pairs, k)
     meta = getattr(built.store, "meta", {}) or {}
-    convention = resolve_convention(model)
+    convention = resolved_convention(model)
     result: CandidateResult = {
         "model": model,
         "kind": built.kind,

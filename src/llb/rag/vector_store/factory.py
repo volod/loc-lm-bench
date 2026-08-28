@@ -12,6 +12,7 @@ from llb.prep.corpus.governance import GOVERNANCE_FIELDS
 from llb.rag.duplicates.tiers import TIER_EXACT
 from llb.rag.duplicates.collapse import collapse_is_lossless
 from llb.rag.encoders.embedder import Embedder
+from llb.rag.encoders.tuned import embedder_fingerprint
 from llb.rag.late_encoding import encode_store_vectors
 from llb.rag.vector_store.lexical import Lemmatizer
 from llb.rag.vector_store.lexical_index import LexicalIndex
@@ -102,6 +103,7 @@ def build_store_parts(
         "overlap": overlap,
         "child_size": child_size,
         "embedding_model": embedding_model,
+        "embedder_fingerprint": embedder_fingerprint(embedding_model),
         "n_indexed": len(indexed),
         "n_parents": len(parents) if parents else 0,
         "dim": int(vectors.shape[1]),

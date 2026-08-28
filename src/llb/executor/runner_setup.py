@@ -39,6 +39,15 @@ def _load_eval_items(
     return items[:limit] if limit is not None else items
 
 
+def eval_item_count(config: RunConfig, split: str, *, verified_only: bool = True) -> int:
+    """How many items a run on `split` would score -- the ceiling any derived case cap is capped by.
+
+    A power calculation that asks for more items than the split holds is not satisfied by rounding
+    the request down silently, so the size is read from the SAME selection the runner uses.
+    """
+    return len(_load_eval_items(config, split, None, verified_only))
+
+
 def _select_eval_items(
     config: RunConfig,
     items: list[GoldItem] | None,

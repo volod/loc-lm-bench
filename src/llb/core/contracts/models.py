@@ -46,6 +46,7 @@ class FamilyUpstream(TypedDict):
     hf_author: NotRequired[str]
     hf_prefix: NotRequired[str]
     ollama_namespace: NotRequired[str]
+    generation_pattern: NotRequired[str]
 
 
 class GenerationSpec(TypedDict):

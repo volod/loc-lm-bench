@@ -19,7 +19,8 @@ Two files are the machine-readable source of truth, and they win over any prose 
 ## The roster
 
 The table below is generated from that register -- run `make sync-model-family-docs` after editing
-it, and `make list-model-families` to print it in the terminal.
+it, and `make list-model-families` to print it in the terminal. Whether a generation below is still
+the newest one upstream publishes is a separate question, answered by `make check-model-currency`.
 
 <!-- generated: model-roster (make sync-model-family-docs) -->
 
@@ -171,7 +172,7 @@ tables are generated from, so a new family or generation reaches the README by e
 | --- | --- |
 | `id`, `label`, `role` | The family key, its published name, and whether it is a UA-specialized entry or a multilingual baseline |
 | `focus` | One line saying what the family is in the sweep to answer |
-| `upstream` | Where a currency check reads the family: `hf_author`, `hf_prefix`, `ollama_namespace` |
+| `upstream` | Where `make check-model-currency` reads the family: `hf_author`, `hf_prefix`, `ollama_namespace`, plus an optional `generation_pattern` for a family whose upstream names carry the version somewhere other than after the namespace |
 | `generations[].id`, `.status` | The generation key and whether it is `current` (exactly one per family) or `previous` |
 | `generations[].label`, `.weights_url` | How the generation is published and where its weights live |
 | `generations[].license`, `.license_url` | The terms that travel with that generation's weights |
@@ -180,6 +181,18 @@ Adding a generation is three steps: add the generation to its family with `statu
 demote the outgoing one to `previous`, add the logical model entries that carry it, then run
 `make sync-model-family-docs` to republish the tables. A generation no model carries any more is
 removed rather than kept, and `make ci` fails while the register and the docs disagree.
+
+Cost the swap before making it: `make report-generation-invalidation FAMILY=<id> GENERATION=<new>`
+names every committed aggregate, published value, and baseline row measured on the generation being
+replaced, all of which is re-measured rather than carried over -- see
+[what adopting a generation costs](../impl/current/model-roster.md#what-adopting-a-generation-costs).
+
+Whether a family HAS a newer generation upstream is answered by `make check-model-currency`, which
+reads the Ollama library and the Hugging Face model API and reports each family as `current`,
+`behind`, or `unknown` -- see
+[is the roster still current?](../impl/current/model-roster.md#is-the-roster-still-current). After
+adding a family, run it for that family alone (`FAMILY=<id>`) to confirm its `upstream` block
+resolves to real artifacts before trusting a later `current` verdict.
 
 Then add the model entry itself under `models:`. The fields that matter:
 

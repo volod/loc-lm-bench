@@ -1,4 +1,11 @@
-"""Contamination guards for adapter-backed evaluation."""
+"""Contamination guards for tuned artifacts: the training data, and the evaluation that reads it.
+
+Two guards, one rule -- optimization sees the TUNING split and nothing else. `assert_tuning_only`
+refuses a training dataset that carries protected ids before the training starts;
+`validate_adapter_for_eval` refuses an already-trained artifact whose provenance says it saw them.
+Both are used by every tuning lane (LoRA hparam search, embedder fine-tuning), so the wording each
+lane shows the operator is a parameter rather than a copy.
+"""
 
 from pathlib import Path
 
@@ -6,11 +13,41 @@ from llb.core.contracts.common import JsonObject
 from llb.finetune.dataset import TUNING_SPLIT
 from llb.finetune.registry.resolve import find_by_digest
 from llb.finetune.adapter_manifest import load_adapter_manifest
-from llb.goldset.schema import GoldItem
+from llb.goldset.schema import GoldItem, load_goldset
 
 PROTECTED_SPLITS = frozenset({"calibration", "final"})
 PROVENANCE_REGISTRY = "registry"
 PROVENANCE_MANIFEST = "manifest"
+
+
+def assert_tuning_only(
+    dataset_manifest: JsonObject,
+    *,
+    goldset_path: Path | str | None = None,
+    command: str,
+) -> None:
+    """Refuse a training dataset that carries anything but tuning-split items.
+
+    The manifest's own `split_counts` is checked first, then -- when a goldset is available -- the
+    item ids are cross-checked against the real calibration/final ids. A dataset manifest is
+    operator-writable, so its split counts alone are not proof. `command` is the lane's own name,
+    which is all that differs between the callers.
+    """
+    counts = dataset_manifest.get("split_counts") or {}
+    leaked = sorted(split for split in counts if split != TUNING_SPLIT)
+    if leaked:
+        raise SystemExit(
+            f"[{command}] training dataset carries non-tuning splits: {', '.join(leaked)}"
+        )
+    if goldset_path is None:
+        return
+    protected = {item.id for item in load_goldset(goldset_path) if item.split in PROTECTED_SPLITS}
+    dataset_ids = {str(item_id) for item_id in dataset_manifest.get("item_ids") or []}
+    overlap = sorted(dataset_ids & protected)
+    if overlap:
+        raise SystemExit(
+            f"[{command}] training dataset holds protected-split item ids: " + ", ".join(overlap)
+        )
 
 
 def validate_adapter_for_eval(

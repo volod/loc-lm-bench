@@ -27,31 +27,21 @@ def _run_screen_with_backend(
     limit: int | None,
 ) -> ScreenReport:
     """Launch or reuse a backend endpoint, run the Tier-1 screen, return the report."""
-    from llb.screen.public import run_screen
+    from llb.screen.backends import UnsupportedScreenBackend, screen_with_backend
 
-    def do_screen(url: str) -> ScreenReport:
-        return run_screen(model, backend, url, extra_tasks=extra_tasks, output_dir=out, limit=limit)
-
-    if base_url:
-        return do_screen(base_url)
-    if backend == "ollama":
-        return do_screen(f"{cfg.ollama_host.rstrip('/')}/v1")
-    if backend == "vllm":
-        from llb.backends.vllm import VllmLauncher
-
-        launcher = VllmLauncher(
+    try:
+        return screen_with_backend(
             model,
-            host=cfg.vllm_host,
-            port=cfg.vllm_port,
-            gpu_memory_utilization=cfg.gpu_memory_utilization,
-            max_model_len=cfg.max_model_len,
-            cpu_offload_gb=cfg.cpu_offload_gb,
-            kv_offloading_size_gb=cfg.kv_offloading_size_gb,
+            backend,
+            cfg,
+            base_url=base_url,
+            extra_tasks=extra_tasks,
+            out_dir=out,
+            limit=limit,
         )
-        with launcher:
-            return do_screen(f"{cfg.vllm_host.rstrip('/')}/v1")
-    typer.echo(f"[error] backend '{backend}' not supported for the screen", err=True)
-    raise typer.Exit(code=2)
+    except UnsupportedScreenBackend as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
 
 @app.command("screen-public")

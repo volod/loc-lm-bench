@@ -73,7 +73,7 @@ def recorded_lane_rows(run_dirs: Sequence[str | Path]) -> CaseRows:
     return rows
 
 
-def rows_by_item(rows: CaseRows) -> dict[str, Mapping[str, Any]]:
+def rows_by_item(rows: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
     """One lane's rows keyed by item id."""
     return {str(row["item_id"]): row for row in rows}
 

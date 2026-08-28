@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.core.contracts.common import JsonObject
-from llb.finetune.dataset import TUNING_SPLIT
-from llb.finetune.guard import PROTECTED_SPLITS
+from llb.finetune.guard import assert_tuning_only as shared_assert_tuning_only
 from llb.finetune.hparam_search.model import (
     ADAPTER_TRAIN_BYTES_PER_PARAM,
     BATCH_GEOMETRY_CHOICES,
@@ -27,7 +26,6 @@ from llb.finetune.hparam_search.model import (
     TARGET_MODULE_PRESETS,
     EstimateFn,
 )
-from llb.goldset.schema import load_goldset
 
 
 def assert_tuning_only(
@@ -35,26 +33,12 @@ def assert_tuning_only(
 ) -> None:
     """Refuse a search dataset that carries anything but tuning-split items.
 
-    The manifest's own `split_counts` is checked first, then -- when a goldset is available -- the
-    item ids are cross-checked against the real calibration/final ids. A dataset manifest is
-    operator-writable, so its split counts alone are not proof.
+    The rule is the same one every tuning lane obeys, so it lives in `llb.finetune.guard`; this
+    wrapper only names the command an operator sees in the refusal.
     """
-    counts = dataset_manifest.get("split_counts") or {}
-    leaked = sorted(split for split in counts if split != TUNING_SPLIT)
-    if leaked:
-        raise SystemExit(
-            f"[finetune-hparams] search dataset carries non-tuning splits: {', '.join(leaked)}"
-        )
-    if goldset_path is None:
-        return
-    protected = {item.id for item in load_goldset(goldset_path) if item.split in PROTECTED_SPLITS}
-    dataset_ids = {str(item_id) for item_id in dataset_manifest.get("item_ids") or []}
-    overlap = sorted(dataset_ids & protected)
-    if overlap:
-        raise SystemExit(
-            "[finetune-hparams] search dataset holds protected-split item ids: "
-            + ", ".join(overlap)
-        )
+    shared_assert_tuning_only(
+        dataset_manifest, goldset_path=goldset_path, command="finetune-hparams"
+    )
 
 
 def adapter_param_estimate(params: JsonObject, *, hidden_size: int, n_layers: int) -> int:
