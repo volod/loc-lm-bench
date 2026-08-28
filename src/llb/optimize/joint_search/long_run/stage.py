@@ -20,6 +20,7 @@ from typing import Any
 
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
+from llb.optimize.joint_search.constants import DEFAULT_SEARCH_MAX_MODEL_LEN
 from llb.optimize.joint_search.hooks import candidate_config, slug
 from llb.optimize.joint_search.long_run.plan import LongRunPlan
 from llb.optimize.joint_search.long_run.sequential import (
@@ -75,7 +76,7 @@ class LongRunStage:
     pid_usage_reader: Callable[[], dict[int, int]] | None = None
     vram_mib: int = 0
     ram_mib: int = 0
-    max_model_len: int = 8192
+    max_model_len: int = DEFAULT_SEARCH_MAX_MODEL_LEN
     # CI seams: the block tuner and the held-out runner, injected so the whole schedule is
     # exercised without an Optuna study or a backend.
     tune_block: Callable[["FinalistCell", int], MultiObjectiveResult] | None = None

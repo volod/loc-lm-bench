@@ -529,6 +529,13 @@ JOINT_SEARCH_OFFLINE ?=
 JOINT_SEARCH_CORPUS ?=
 JOINT_SEARCH_LIMIT ?=
 JOINT_SEARCH_NO_ISOLATE ?=
+# Serving knobs every vLLM candidate cell (and the confirmation run's public screen) is served
+# at. Both searches accept a run config the same way `run-eval` does; the utilization flag is what
+# keeps a vLLM candidate inside a 16 GiB card's budget, because the pre-launch guard derates
+# against OTHER processes and cannot correct a too-high request on a quiet card.
+JOINT_SEARCH_CONFIG ?=
+JOINT_SEARCH_GPU_UTIL ?=
+JOINT_SEARCH_MAX_MODEL_LEN ?=
 
 # Research-scale roster confirmation (`joint-search-long-run`). The two POWER_* run bundles supply
 # the paired variance the tuning-screen size is derived from; the incumbent is the default model

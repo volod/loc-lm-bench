@@ -172,9 +172,12 @@ Gemma 4 multilingual baselines (`gemma4:12b` and `gemma4:e4b`). Every candidate 
 Ollama source, for two reasons worth recording. Both are host facts, not preferences: at the
 `RunConfig` default `gpu_memory_utilization=0.85` a vLLM Gemma 4 E4B engine on this card reaches
 about 14.1 GiB of the 15.5 GiB torch sees and dies in CUDA-graph capture while a desktop session
-holds roughly 1 GiB -- the documented value for this tier is `0.80`, and no joint-search command can
-pass it (that gap is the open task
-[`joint-search-cannot-carry-a-serving-config`](../../plan.md#joint-search-cannot-carry-a-serving-config)).
+holds roughly 1 GiB, and at the time of this run no joint-search command could pass the `0.80` this
+tier is documented for. Both searches take it now (`--config` / `--gpu-memory-utilization` /
+`--max-model-len`, [serving knobs a search
+carries](tuning-and-search.md#serving-knobs-a-search-carries)), so a re-run of this confirmation
+need no longer pin a Gemma candidate to Ollama for that reason -- the reading below was taken
+before that, and its Ollama pinning is what it measured.
 Pinning also puts every finalist on ONE public-screen track, so the two public numbers below are
 comparable rather than fenced apart. The offload-only candidates (`gemma-4-26b-a4b`,
 `qwen3.8-27b`, `mistral-small-3.1-24b`) were left out as far slower on this tier, so this run says

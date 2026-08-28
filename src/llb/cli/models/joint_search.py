@@ -9,9 +9,13 @@ import typer
 from llb.cli.app import app
 from llb.cli.helpers import (
     best_effort_gpu_readers,
-    load_config,
     load_models,
     resolver_probes,
+)
+from llb.cli.models.search_serving import (
+    search_base_config,
+    search_max_model_len,
+    serving_summary,
 )
 from llb.optimize.joint_search.constants import (
     DEFAULT_ETA,
@@ -23,6 +27,9 @@ from llb.optimize.joint_search.constants import (
 
 @app.command("joint-search")
 def joint_search_cmd(
+    config: Optional[Path] = typer.Option(
+        None, help="YAML run config (serving knobs, retrieval defaults) every candidate inherits"
+    ),
     candidates: Path = typer.Option(
         Path("samples/configs/models_uk.yaml"),
         "--candidates",
@@ -51,7 +58,16 @@ def joint_search_cmd(
     isolate: bool = typer.Option(
         True, help="VRAM-reclaim isolation around screen cells and Optuna trials"
     ),
-    max_model_len: int = typer.Option(8192, help="vLLM context cap per cell"),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM context cap per cell (overrides the config; default 8192)"
+    ),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None,
+        help="vLLM GPU memory fraction 0-1 every candidate cell is served at (overrides the "
+        "config). Set it to the value this host class was validated for -- the pre-launch VRAM "
+        "guard derates against OTHER processes and cannot correct a too-high request on a quiet "
+        "card",
+    ),
     seed: int = typer.Option(13, help="Optuna sampler seed"),
     limit: Optional[int] = typer.Option(
         None, help="cap gold cases for screen + finalist tune evals (smoke/evidence)"
@@ -67,10 +83,13 @@ def joint_search_cmd(
     from llb.optimize.joint_search import run_joint_search
 
     models = load_models(candidates)
-    overrides: dict[str, object] = {"goldset_path": goldset}
-    if corpus is not None:
-        overrides["corpus_root"] = corpus
-    cfg = load_config(None, **{k: v for k, v in overrides.items() if v is not None})
+    cfg = search_base_config(
+        config,
+        gpu_memory_utilization=gpu_memory_utilization,
+        goldset_path=goldset,
+        corpus_root=corpus,
+    )
+    served_max_model_len = search_max_model_len(cfg, max_model_len)
     gpus = detect_gpus()
     vram_reader, pid_reader = best_effort_gpu_readers() if isolate else (None, None)
     sid = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -78,6 +97,7 @@ def joint_search_cmd(
         f"[joint-search] run={sid} candidates={len(models)} screen_limit={screen_limit} "
         f"min_finalists={min_finalists} trials={trials} objectives={objectives}"
     )
+    typer.echo(f"[joint-search] serving: {serving_summary(cfg, served_max_model_len)}")
     result = run_joint_search(
         cfg,
         models,
@@ -94,7 +114,7 @@ def joint_search_cmd(
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
         seed=seed,
-        max_model_len=max_model_len,
+        max_model_len=served_max_model_len,
         case_limit=limit,
     )
     for skip in result.skipped:

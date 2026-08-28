@@ -9,9 +9,13 @@ import typer
 from llb.cli.app import app
 from llb.cli.helpers import (
     best_effort_gpu_readers,
-    load_config,
     load_models,
     resolver_probes,
+)
+from llb.cli.models.search_serving import (
+    search_base_config,
+    search_max_model_len,
+    serving_summary,
 )
 from llb.optimize.joint_search.constants import (
     DEFAULT_ETA,
@@ -31,6 +35,9 @@ from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE
 
 @app.command("joint-search-long-run")
 def joint_search_long_run_cmd(
+    config: Optional[Path] = typer.Option(
+        None, help="YAML run config (serving knobs, retrieval defaults) every candidate inherits"
+    ),
     candidates: Path = typer.Option(
         Path("samples/configs/models_uk.yaml"),
         "--candidates",
@@ -77,7 +84,16 @@ def joint_search_long_run_cmd(
     ),
     offline: bool = typer.Option(False, help="resolver: assume declared sources exist"),
     isolate: bool = typer.Option(True, help="VRAM-reclaim isolation around cells and trials"),
-    max_model_len: int = typer.Option(8192, help="vLLM context cap per cell"),
+    max_model_len: Optional[int] = typer.Option(
+        None, help="vLLM context cap per cell and for the public screen (default 8192)"
+    ),
+    gpu_memory_utilization: Optional[float] = typer.Option(
+        None,
+        help="vLLM GPU memory fraction 0-1 every candidate cell and the public screen are served "
+        "at (overrides the config). Set it to the value this host class was validated for -- the "
+        "pre-launch VRAM guard derates against OTHER processes and cannot correct a too-high "
+        "request on a quiet card",
+    ),
     seed: int = typer.Option(13, help="Optuna sampler seed"),
     public_limit: Optional[int] = typer.Option(
         None, help="cap examples per public lm-eval task (smoke runs)"
@@ -102,8 +118,13 @@ def joint_search_long_run_cmd(
     from llb.optimize.tuning_space import TUNING_SPLIT
 
     models = load_models(candidates)
-    overrides = {"goldset_path": goldset, "corpus_root": corpus}
-    cfg = load_config(None, **{k: v for k, v in overrides.items() if v is not None})
+    cfg = search_base_config(
+        config,
+        gpu_memory_utilization=gpu_memory_utilization,
+        goldset_path=goldset,
+        corpus_root=corpus,
+    )
+    served_max_model_len = search_max_model_len(cfg, max_model_len)
     if incumbent not in {model["name"] for model in models}:
         typer.echo(f"[error] incumbent {incumbent!r} is not in {candidates}", err=True)
         raise typer.Exit(code=2)
@@ -139,6 +160,7 @@ def joint_search_long_run_cmd(
         f"screen={plan.screen.applied_n}/{plan.screen.required_n} "
         f"mdg={minimum_detectable_gain:+.3f} budget={trial_budget}x{trial_block}"
     )
+    typer.echo(f"[long-run] serving: {serving_summary(cfg, served_max_model_len)}")
     if not plan.screen.satisfied:
         typer.echo(
             f"[long-run] WARNING: the tuning split holds {plan.screen.available_n} items, below "
@@ -161,7 +183,7 @@ def joint_search_long_run_cmd(
         vram_reader=vram_reader,
         pid_usage_reader=pid_reader,
         seed=seed,
-        max_model_len=max_model_len,
+        max_model_len=served_max_model_len,
         public_limit=public_limit,
         public_evict=public_evict,
     )

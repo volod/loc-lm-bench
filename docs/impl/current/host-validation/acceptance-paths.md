@@ -36,6 +36,27 @@ llb run-eval --backend llamacpp --model <gguf-source> --telemetry \
 Check that each backend records the same manifest shape. For vLLM, inspect contention and sampler
 fields. For llama.cpp, inspect served context and `n_gpu_layers`.
 
+The `0.80` above is the value this card class is validated for, and it is a SEARCH input too, not
+only an eval one. Both `joint-search` and `joint-search-long-run` take `--config`,
+`--gpu-memory-utilization`, and `--max-model-len`, and carry them into every screen cell, every
+finalist tune, and the confirmation run's public screen:
+
+```bash
+llb joint-search --candidates <vllm-candidates-yaml> --config <run-config-yaml> \
+  --gpu-memory-utilization 0.80 --max-model-len 8192 --limit 20
+```
+
+Without them a search served every vLLM candidate at the `RunConfig` default 0.85, and the
+pre-launch guard cannot correct that: it derates against OTHER processes' memory, so on a quiet
+card the request reads as free. See
+[the serving knobs a search carries](../rigor-board-judge/tuning-and-search.md#serving-knobs-a-search-carries).
+
+On this 16 GiB host the embedder is what the guard actually trips over first when it shares the
+process with a vLLM launch: with the embedder resident on the GPU the guard reported 12439 MB free
+against a ~12609 MB need and ABORTED the launch, and the same command with `LLB_EMBED_DEVICE=cpu`
+reported 14565 MB free and passed. Pin embeddings to CPU for any vLLM search cell on a 16 GiB card,
+the same way the 12 GiB probe below does.
+
 On 12 GiB CUDA hosts, pin embeddings to CPU before a vLLM probe so the embedder does not compete
 with the served model for the last few hundred MiB. Use the generated config so the offloaded 12B
 target carries its `cpu_offload_gb` and `kv_offloading_size_gb` settings into `run-eval`:

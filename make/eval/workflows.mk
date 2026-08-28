@@ -57,10 +57,13 @@ pipeline: ## Select public-screen finalists, tune, and print the final board
 		--top-n "$(PIPELINE_TOP_N)" --trials "$(PIPELINE_TRIALS)" \
 		$(if $(PIPELINE_OFFLINE),--offline,)
 
-joint-search: ## Successive-halving model+RAG search (JOINT_SEARCH_CANDIDATES= JOINT_SEARCH_TRIALS= JOINT_SEARCH_SCREEN_LIMIT=)
+joint-search: ## Successive-halving model+RAG search (JOINT_SEARCH_CANDIDATES= JOINT_SEARCH_TRIALS= JOINT_SEARCH_SCREEN_LIMIT= JOINT_SEARCH_GPU_UTIL=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main joint-search --candidates "$(JOINT_SEARCH_CANDIDATES)" \
+		$(if $(JOINT_SEARCH_CONFIG),--config "$(JOINT_SEARCH_CONFIG)",) \
+		$(if $(JOINT_SEARCH_GPU_UTIL),--gpu-memory-utilization "$(JOINT_SEARCH_GPU_UTIL)",) \
+		$(if $(JOINT_SEARCH_MAX_MODEL_LEN),--max-model-len "$(JOINT_SEARCH_MAX_MODEL_LEN)",) \
 		--goldset "$(GOLDSET)" --trials "$(JOINT_SEARCH_TRIALS)" \
 		--screen-limit "$(JOINT_SEARCH_SCREEN_LIMIT)" \
 		--min-finalists "$(JOINT_SEARCH_MIN_FINALISTS)" \
@@ -78,6 +81,9 @@ joint-search-long-run: ## Research-scale roster confirmation + adopt-or-retain v
 	@test -d "$(LONG_RUN_POWER_BASELINE)" || { echo "ERROR: set LONG_RUN_POWER_BASELINE=<scored run bundle>"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main joint-search-long-run --candidates "$(JOINT_SEARCH_CANDIDATES)" \
+		$(if $(JOINT_SEARCH_CONFIG),--config "$(JOINT_SEARCH_CONFIG)",) \
+		$(if $(JOINT_SEARCH_GPU_UTIL),--gpu-memory-utilization "$(JOINT_SEARCH_GPU_UTIL)",) \
+		$(if $(JOINT_SEARCH_MAX_MODEL_LEN),--max-model-len "$(JOINT_SEARCH_MAX_MODEL_LEN)",) \
 		--incumbent "$(LONG_RUN_INCUMBENT)" \
 		--power-reference "$(LONG_RUN_POWER_REFERENCE)" \
 		--power-baseline "$(LONG_RUN_POWER_BASELINE)" \

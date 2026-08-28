@@ -23,6 +23,7 @@ from typing import Any
 
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
+from llb.optimize.joint_search.constants import DEFAULT_SEARCH_MAX_MODEL_LEN
 from llb.optimize.joint_search.long_run.plan import LONG_RUN_METHOD, LongRunPlan
 from llb.optimize.joint_search.long_run.public_tracks import (
     SCREEN_METHOD,
@@ -85,7 +86,7 @@ def run_long_run(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     seed: int = 13,
-    max_model_len: int = 8192,
+    max_model_len: int = DEFAULT_SEARCH_MAX_MODEL_LEN,
     screen_runner: ScreenRunner | None = None,
     screen_evaluate: ScreenEvaluate | None = None,
     stage: LongRunStage | None = None,

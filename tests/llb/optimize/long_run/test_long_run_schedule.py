@@ -146,6 +146,7 @@ def _run(
     screen_runner,
     run_id: str = "ci-long-run",
     max_model_len: int = 8192,
+    base: RunConfig | None = None,
 ):
     screen_limits: list[int] = []
 
@@ -163,7 +164,7 @@ def _run(
         final_runner=_final_runner(tmp_path / "runs"),
     )
     result = run_long_run(
-        RunConfig(data_dir=tmp_path),
+        base or RunConfig(data_dir=tmp_path),
         SPECS,
         plan=plan,
         incumbent="bravo",
@@ -356,18 +357,26 @@ def test_a_capped_smoke_report_is_never_reused_to_back_a_full_screen(tmp_path: P
     assert summary["complete"] == {"alpha": True}
 
 
-def test_the_public_screen_launches_a_finalist_at_the_run_s_context_cap(
+def test_the_public_screen_launches_a_finalist_at_the_run_s_serving_settings(
     tmp_path: Path, fake_resolver: None, monkeypatch: pytest.MonkeyPatch
 ):
-    """A vLLM finalist screened at its NATIVE 128k window OOMs a 16 GiB card before it scores."""
-    seen: list[int | None] = []
+    """A vLLM finalist screened at its NATIVE 128k window, or above the utilization this host was
+    validated for, OOMs a 16 GiB card before it scores -- which reads as a failed public screen
+    rather than as the sizing mistake it is."""
+    seen: list[tuple[int | None, float]] = []
 
     def fake_screen_with_backend(model, backend, cfg, *, out_dir, limit=None, **kwargs):
         del out_dir, limit, kwargs
-        seen.append(cfg.max_model_len)
+        seen.append((cfg.max_model_len, cfg.gpu_memory_utilization))
         return _screen_runner()(model, backend, tmp_path)
 
     monkeypatch.setattr("llb.screen.backends.screen_with_backend", fake_screen_with_backend)
-    result, _ = _run(tmp_path, plan=_plan(tmp_path), screen_runner=None, max_model_len=4096)
-    assert seen == [4096, 4096]
+    result, _ = _run(
+        tmp_path,
+        plan=_plan(tmp_path),
+        screen_runner=None,
+        max_model_len=4096,
+        base=RunConfig(data_dir=tmp_path, gpu_memory_utilization=0.80),
+    )
+    assert seen == [(4096, 0.80), (4096, 0.80)]
     assert result.public["failures"] == []
