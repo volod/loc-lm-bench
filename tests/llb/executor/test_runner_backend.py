@@ -1,6 +1,11 @@
 """Tests for runner backend."""
 
-from llb.backends.base import ChatResult
+from pathlib import Path
+
+import pytest
+
+from llb.backends.base import BackendLauncher, ChatResult
+from llb.backends.launch_log import ServerLog
 from llb.core.config import RunConfig
 from llb.eval import common
 from llb.executor.runner import run_eval
@@ -85,3 +90,84 @@ def test_run_eval_records_telemetry(tmp_path):
     assert telemetry["load_time_s"] is None
     assert result["manifest"].telemetry == telemetry
     assert result["rows"][0]["tokens_per_s"] == 8.0
+
+
+class LoggingLauncher(BackendLauncher, ServerLog):
+    """A subprocess-style launcher that writes a server log, optionally dying during startup like
+    a vLLM engine that cannot allocate the card. `log_dir` is where `_make_launcher` puts it:
+    inside the staging dir a failing run is about to delete."""
+
+    def __init__(self, log_dir, *, says, dies=False):
+        super().__init__(model="fake-uk", meta={"backend": "fake"})
+        self.log_dir = log_dir
+        self._says = says
+        self._dies = dies
+
+    def start(self):
+        self.open_log("fake-8000.log").write(self._says)
+        if self._dies:
+            self.stop()
+            raise self.annotate_launch_failure(RuntimeError("fake backend exited during startup"))
+
+    def stop(self):
+        self.close_log()
+
+    def chat(self, messages, max_tokens, temperature, timeout):
+        raise AssertionError("this launcher never serves a case")
+
+
+def test_failed_launch_log_outlives_the_run_that_deleted_its_staging_dir(tmp_path, monkeypatch):
+    """search-cell-loses-a-failed-launch-log: a cell's launcher logs into the temp run dir, which
+    the failure path removes -- so the traceback must name a path that is still readable."""
+    stamp = "20260101T000000.0Z-abc"
+    monkeypatch.setattr("llb.executor.runner_target._run_timestamp", lambda run_id: stamp)
+    cfg = RunConfig(data_dir=tmp_path, run_name="cell", model="fake-uk")
+    staging = cfg.run_staging_dir(stamp)
+    says = "engine died: no kernel image for device\n"
+    launcher = LoggingLauncher(staging / "vllm", says=says, dies=True)
+    q = "Яка столиця України?"
+
+    with pytest.raises(RuntimeError, match="exited during startup") as excinfo:
+        run_eval(
+            cfg,
+            items=[gold_item("t-1", q, "Київ", "Київ")],
+            store=FakeStore({q: []}),
+            launcher=launcher,
+            runner_fn=lambda item: {},
+            mirror=lambda *a: None,
+            emit=False,
+        )
+
+    assert not staging.exists()  # the temp run dir is gone, as it is for every failed cell
+    kept = Path(str(excinfo.value).split("startup log: ", 1)[1].rstrip(") "))
+    assert kept.parent == tmp_path / "llb" / "logs"
+    assert kept.read_text(encoding="utf-8") == says
+
+
+def test_a_run_that_fails_after_a_healthy_launch_keeps_the_backend_log_too(tmp_path, monkeypatch):
+    """The launcher preserved nothing (it started fine), so the staging teardown is what keeps
+    the log -- and it keeps exactly one copy."""
+    stamp = "20260101T000000.0Z-def"
+    monkeypatch.setattr("llb.executor.runner_target._run_timestamp", lambda run_id: stamp)
+    cfg = RunConfig(data_dir=tmp_path, run_name="cell", model="fake-uk")
+    staging = cfg.run_staging_dir(stamp)
+    launcher = LoggingLauncher(staging / "vllm", says="serving\n")
+    q = "Яка столиця України?"
+
+    def boom(item):
+        raise RuntimeError("case blew up mid-run")
+
+    with pytest.raises(RuntimeError, match="case blew up"):
+        run_eval(
+            cfg,
+            items=[gold_item("t-1", q, "Київ", "Київ")],
+            store=FakeStore({q: []}),
+            launcher=launcher,
+            runner_fn=boom,
+            mirror=lambda *a: None,
+            emit=False,
+            max_case_retries=0,
+        )
+
+    kept = list((tmp_path / "llb" / "logs").iterdir())
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == "serving\n"

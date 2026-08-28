@@ -11,8 +11,10 @@ Part of the [RAG core](../rag-core.md) area of the
 - `VllmLauncher` starts and stops `vllm serve`;
 - `LlamaCppLauncher` starts and stops `llama-server`.
 
-All serve through an OpenAI-compatible base URL. When a launcher owns a subprocess, startup logs are
-preserved on failure.
+All serve through an OpenAI-compatible base URL. When a launcher owns a subprocess, a FAILED
+launch's startup log is copied out of the staging dir it was written in and the raised error names
+the surviving path ([a failed launch names a log that still
+exists](../host-validation/acceptance-paths.md#a-failed-launch-names-a-log-that-still-exists)).
 
 ## Persistence
 

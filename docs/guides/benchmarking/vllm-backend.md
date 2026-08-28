@@ -70,7 +70,8 @@ kills the server. `--telemetry` adds a steady-state pass and records into the ma
 throughput), **peak VRAM** (NVML), **requested vs served context**, and **tokenizer
 efficiency** (tokens per UA char). vLLM logs land under
 `$DATA_DIR/run-eval/<UTC timestamp>-<run id>/vllm/`; if the engine dies during startup the
-log is preserved to `$DATA_DIR/llb/logs/failed-*.log` (the run bundle is discarded).
+log is preserved to `$DATA_DIR/llb/logs/failed-*.log` and the raised error names that path (the run
+bundle is discarded).
 
 Validated (real-model validation, RTX 4060 Ti 16 GB, vLLM 0.23.0): `gemma-4-E4B-it-qat-w4a16-ct`
 scored 0.801 objective at **63.8 tok/s**, peak VRAM **15.7 GB** (gpu-mem-util 0.80),

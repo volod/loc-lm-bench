@@ -219,13 +219,15 @@ bounded `--trials 2 --screen-limit 3 --min-finalists 1 --limit 3`:
 - Two host facts the run cost to learn. With the embedder resident on the GPU the pre-launch guard
   ABORTED the first screen cell (12439 MB free against a ~12609 MB need, "no other GPU process");
   `LLB_EMBED_DEVICE=cpu` freed it and the same cell reported 14565 MB free and launched. And the
-  FIRST tuning trial died with `vLLM exited (code 1) during startup`, whose log lives in the
-  `emit=False` temp run dir and is deleted with it; the identical utilization reproduced clean in a
+  FIRST tuning trial died with `vLLM exited (code 1) during startup`, whose log lived in the
+  `emit=False` temp run dir and was deleted with it; the identical utilization reproduced clean in a
   standalone `run-eval`, and the retried trial completed, so it is not attributable to the serving
   values. **What would overturn this:** a repeat of that startup failure on a quiet card would make
-  it a real defect rather than a flake, and the missing log is what stops anyone saying which
-  (open task
-  [`search-cell-loses-a-failed-launch-log`](../../plan.md#search-cell-loses-a-failed-launch-log)).
+  it a real defect rather than a flake. That repeat is now readable rather than lost -- a failed
+  launch keeps its server log and the raised error names where ([a failed launch names a log that
+  still
+  exists](../host-validation/acceptance-paths.md#a-failed-launch-names-a-log-that-still-exists)) --
+  so the next occurrence says which without re-running the search.
 
 ```bash
 make joint-search JOINT_SEARCH_TRIALS=20 JOINT_SEARCH_SCREEN_LIMIT=8

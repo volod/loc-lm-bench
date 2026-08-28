@@ -74,42 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Host fit and serving -- `host-fit-serving`
-
-#### search-cell-loses-a-failed-launch-log
-
-A screen cell and a tuning trial evaluate through `_run_eval_metrics` -> `run_eval(...,
-emit=False)` (`src/llb/optimize/tuner_runtime.py`), which runs inside a temporary run dir that is
-deleted when the cell returns. The vLLM launcher writes its server log into that dir
-(`log_dir` -> `vllm/vllm-<port>.log`, `src/llb/backends/vllm.py`), so when a launch fails the
-`RuntimeError` names a path that no longer exists by the time anyone reads the traceback, and the
-one artifact that says WHY the engine exited is gone. A search is exactly where this hurts most:
-the failure is one cell inside an hours-long run, it is not reproduced by re-running the same
-command standalone, and Optuna records it as a failed trial with no cause. Keep a failed launch's
-server log -- copy it out of the temp dir (or point `log_dir` outside it) before the dir is
-removed, and name the surviving path in the error -- so a cell that could not launch is
-diagnosable from the run alone.
-
-- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
-- Agent status: CLEAR
-- Dependencies: none. The observation is recorded under the serving-knob evidence in
-  [tuning and search](current/rigor-board-judge/tuning-and-search.md#serving-knobs-a-search-carries).
-- User-visible outcome: a vLLM cell that dies during startup inside a search leaves a readable
-  server log, so the next reader can tell a host flake from a defect instead of re-running hours
-  of search to find out.
-- Scope boundary: in scope -- preserving the launcher's log for a FAILED launch and naming its
-  surviving path in the raised error, for every backend that writes one. Out of scope -- keeping
-  logs for successful cells (that is the temp dir working as intended), parsing the log to classify
-  the failure, and any retry policy.
-- Data and artifact paths: a stable location under the run dir the cell belongs to, so the log
-  outlives the temp dir it was written in.
-- Execution path: fixture tests with an injected launcher whose `start()` raises, asserting the log
-  survives and the error names where.
-- Acceptance gates: `make ci` green; a failed launch's log is readable after the cell returns and
-  the raised error names the path it is readable at.
-- Documentation target: the backend-paths section of
-  [acceptance paths](current/host-validation/acceptance-paths.md).
-
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
 #### agent-operating-profile-recommendation
