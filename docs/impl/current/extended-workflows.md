@@ -32,6 +32,7 @@ to any of it invalidates.
 | [Policy-constant change audit](extended-workflows/policy-constant-audit.md) | Which published agentic numbers a context-policy constant change invalidates, the geometry that tests the compound guarantee, which constant pair separates the two readings, and the CI gate that pins the shipped constants |
 | [Context-policy constant sweeps](extended-workflows/context-policy-constants.md) | The cap / head-share / `keep_last_n` pin-or-expose sweep, and `keep_last_n` on longer transcripts |
 | [Context-policy comparison](extended-workflows/context-policy-comparison.md) | Running one agentic category across context policies and reading the comparison |
+| [Composed agent operating profile](extended-workflows/agent-operating-profile.md) | Every knob of an agent configuration in one artifact, each traceable to the run that measured it |
 
 ## Prompts, judging, and fine-tuning
 

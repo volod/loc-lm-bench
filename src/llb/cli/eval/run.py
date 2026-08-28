@@ -132,6 +132,12 @@ def run_eval_cmd(
         help="how kept chunks are laid into the prompt: rank (best-first, default) | "
         "reverse_rank (best-last)",
     ),
+    top_k: Optional[int] = typer.Option(
+        None, "--top-k", min=1, help="retrieved chunks kept per query (overrides the config)"
+    ),
+    context_budget: Optional[int] = typer.Option(
+        None, min=1, help="per-prompt context budget in tokens (overrides the config)"
+    ),
     restore_table_headers: Optional[bool] = typer.Option(
         None,
         "--restore-table-headers/--no-restore-table-headers",

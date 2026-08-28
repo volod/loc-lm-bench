@@ -451,6 +451,17 @@ A published number therefore carries its provenance back to the run artifact and
 it, and a change to a pinned policy constant must name every published number it invalidates. A
 number nobody can resolve back to a run is not evidence.
 
+Standing an agent up needs several of these answers at once -- a model, a prompt system, an adapter,
+a context policy and order, retrieval knobs, a loop policy -- each measured by a different lane. The
+product therefore COMPOSES them into one operating profile, under the same provenance rule applied
+per field: a field carries the artifact that measured it, that lane's own verdict and uncertainty,
+and its freshness. Composition adds exactly two obligations of its own. A field whose lane never ran
+is reported as absent, never as the value the code would have defaulted to; and fields measured
+against different corpora, stores, or models are refused rather than mixed, because a profile whose
+parts were never measured together describes a configuration nobody ran. The boundary: composition
+runs no lane on the operator's behalf, invents no value for a field nobody measured, decides no
+ranking policy of its own, and ships no runtime that consumes the profile.
+
 ## Autonomous Orchestration
 
 The corpus-to-recommendation path can run end to end without a human at each step: ingest, draft,

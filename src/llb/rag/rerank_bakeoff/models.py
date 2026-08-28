@@ -40,6 +40,10 @@ DEFAULT_BASELINE_RERANKER = "BAAI/bge-reranker-v2-m3"
 # the table rather than a separate run.
 ROW_NO_RERANK = "none"
 
+# The bake-off's artifact root under `$DATA_DIR`, and the report file every run writes there.
+BAKEOFF_METHOD = "compare-rerankers"
+BAKEOFF_REPORT_JSON = "report.json"
+
 KIND_RERANK = "rerank"
 KIND_RETRIEVAL_ORDER = "retrieval_order"
 

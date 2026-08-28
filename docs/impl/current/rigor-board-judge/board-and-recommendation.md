@@ -103,7 +103,14 @@ configuration is demonstrated per model, not assumed, complementing the best-per
 ```bash
 make recommend RECOMMEND_MIN_CASES=50          # detected host tier
 make recommend RECOMMEND_GPU_GB=24             # would a 24 GiB box pick a bigger model?
+make recommend-agent-profile                   # compose the whole agent configuration
 ```
+
+`--agent-profile` (`make recommend-agent-profile`) additionally composes the host pick together with
+the prompt system, adapter, context policy and order, retrieval knobs, and loop policy into ONE
+`agent_profile.json` plus a rationale, where every value names the run that measured it and every
+gap is visible as a gap. The command and its module layout live in
+[the composed agent operating profile](../extended-workflows/agent-operating-profile.md).
 
 Validated on the 16 GiB RTX 4060 Ti committed-goldset sweep (5 families, 82 final cases): MamayLM-27B
 led accuracy (objective 0.546), Lapa was the recommended host pick (0.505, fits with headroom),

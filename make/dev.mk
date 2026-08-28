@@ -2,7 +2,8 @@
 ##@ Development
 
 .PHONY: \
-	demo-eval mlflow board recommend acceptance-gate-audit venv venv-restamp install-extras lock-drift \
+	demo-eval mlflow board recommend recommend-agent-profile acceptance-gate-audit venv venv-restamp \
+	install-extras lock-drift \
 	apt-deps test test-fast format \
 	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan
 
@@ -55,6 +56,14 @@ recommend: ## Summarize a sweep into host-adaptive picks + chart (RECOMMEND_MIN_
 		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),) \
 		$(if $(RECOMMEND_JSON_OUT),--json-out "$(RECOMMEND_JSON_OUT)",) \
 		$(if $(filter 1 true yes,$(RECOMMEND_NO_CHART)),--no-chart,)
+
+recommend-agent-profile: ## Compose ONE agent operating profile from the lanes that have run here
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main recommend --agent-profile --no-chart \
+		--min-cases "$(RECOMMEND_MIN_CASES)" \
+		$(if $(RECOMMEND_GPU_GB),--gpu-gb $(RECOMMEND_GPU_GB),) \
+		$(if $(RECOMMEND_MIN_TOK_S),--min-tokens-per-s $(RECOMMEND_MIN_TOK_S),)
 
 acceptance-gate-audit: ## Classify experiment counts and write $DATA_DIR/acceptance-gate-audit/<run>/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

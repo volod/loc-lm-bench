@@ -1,0 +1,1 @@
+Anchored on model `{{ model }}` over corpus `{{ corpus }}`. A field measured against a different model, corpus, or store fingerprint is refused rather than mixed in.

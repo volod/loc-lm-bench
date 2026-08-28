@@ -18,7 +18,7 @@ from llb.rag.embedding_bakeoff.uncertainty import (
 )
 from llb.rag.rerank_bakeoff.lane import DEFAULT_RERANK_BARS
 from llb.rag.rerank_bakeoff.loader import DEFAULT_BATCH_SIZE, DTYPE_AUTO
-from llb.rag.rerank_bakeoff.models import DEFAULT_BASELINE_RERANKER
+from llb.rag.rerank_bakeoff.models import BAKEOFF_METHOD, DEFAULT_BASELINE_RERANKER
 
 if TYPE_CHECKING:
     from llb.rag.encoders.candidate_screen import SkippedCandidate
@@ -187,7 +187,7 @@ def compare_rerankers_cmd(
     candidates, skipped = _resolve_roster(models, allow_remote_code)
 
     _, run_ts = new_run_timestamp()
-    run_dir = cfg.data_dir / "compare-rerankers" / run_ts
+    run_dir = cfg.data_dir / BAKEOFF_METHOD / run_ts
     report_path = out if out is not None else run_dir / "report.md"
     stores_dir = run_dir / "stores"
     stores_dir.mkdir(parents=True, exist_ok=True)

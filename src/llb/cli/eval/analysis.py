@@ -16,6 +16,9 @@ def probe_context_position_cmd(
     model: Optional[str] = typer.Option(None, help="model name (Ollama tag or HF repo id)"),
     backend: Optional[str] = typer.Option(None, help="ollama | vllm | llamacpp"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    corpus_root: Optional[Path] = typer.Option(
+        None, help="corpus directory whose persisted index should be queried"
+    ),
     k: int = typer.Option(5, min=3, help="fixed context size (gold at head/middle/tail)"),
     split: str = typer.Option("final", help="gold split to probe"),
     limit: Optional[int] = typer.Option(None, help="cap the number of probed items"),
@@ -36,12 +39,18 @@ def probe_context_position_cmd(
     from llb.core.contracts.common import ChatMessage
     from llb.eval.position_probe import DEFAULT_CANDIDATE_DEPTH, run_probe
     from llb.eval.position_probe_report import render_report, write_probe
+    from llb.finetune.registry.staleness import retrieval_fingerprint_for
     from llb.executor.runner_backend import _make_launcher
     from llb.executor.runner_retrieval import _load_store
     from llb.goldset.schema import load_goldset
 
     cfg = load_config(
-        config, model=model, backend=backend, goldset_path=goldset, max_model_len=max_model_len
+        config,
+        model=model,
+        backend=backend,
+        goldset_path=goldset,
+        corpus_root=corpus_root,
+        max_model_len=max_model_len,
     )
     items = [it for it in load_goldset(cfg.goldset_path) if it.verified and it.split == split]
     items.sort(key=lambda it: it.id)
@@ -71,6 +80,7 @@ def probe_context_position_cmd(
             backend=cfg.backend,
             k=k,
             candidate_depth=candidate_depth or DEFAULT_CANDIDATE_DEPTH,
+            retrieval_fingerprint=retrieval_fingerprint_for(cfg.index_dir()),
         )
     _, run_ts = new_run_timestamp()
     out = out_dir or (cfg.data_dir / "context-position" / run_ts)

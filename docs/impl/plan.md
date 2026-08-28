@@ -76,58 +76,37 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-operating-profile-recommendation
+#### agentic-loop-policy-flags-on-the-scored-run (optional)
 
-Every ingredient of an agent configuration is measured somewhere in this repo and nowhere together:
-`llb recommend` renders host-adaptive model picks plus separate miss-analysis, self-improvement,
-fine-tune-campaign, and context-policy sections (`src/llb/board/recommend/sections.py`), the
-context-order recommendation comes out of the position probe, the retrieval knobs out of the
-comparison lanes, the prompt-system id out of `prompt-system-compare`, and the adapter out of the
-registry. An operator wanting to stand up an agent must read five sections and hand-assemble, and
-nothing checks that the pieces were measured on the same corpus, store, or model. Compose them:
-`llb recommend --agent-profile` emits ONE `agent_profile.json` plus a markdown rationale naming
-model and backend, prompt-system id, adapter (or none), context policy, context order, `top_k` /
-reranker / context budget, and the loop policy. Each field carries its value, the artifact path the
-value came from, that lane's own verdict and uncertainty, and its freshness -- and a field whose
-lane never ran is emitted as `unmeasured`, never as a default dressed up as a recommendation, which
-is the whole failure mode a composed profile invites.
+`bench-agentic-loop` recommends a controller cell -- step budget, malformed-call handling,
+repeated-call handling -- but `bench-agentic`, the command that scores one agentic cell, exposes only
+`--max-steps`. The other two knobs are shipped defaults with no flag, so the moment the sweep
+recommends a non-default cell its recommendation cannot be applied to the run it is meant to
+configure; the composed operating profile
+([agent operating profile](current/extended-workflows/agent-operating-profile.md#replay)) has to
+replay those fields as a confirmation sweep rather than as a scored run. Thread a loop policy
+through `run_agentic` and `run_episode` the way the context policy already threads, and expose
+`--malformed-policy` / `--repeated-call-policy` on `bench-agentic` so a recommended cell is
+directly runnable. Optional because the shipped evidence retains the legacy cell on every family
+measured so far, so nothing is currently unreachable.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: the
-  [agent loop-policy
-  recommendation](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
-  supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
-  ([extended
-  workflows](current/extended-workflows/agent-context-policies.md#agent-context-management-policies)),
-  and for memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary
-  surface ([extended
-  workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface)); the
-  rest are current behavior. Reuse `src/llb/board/recommend/` (sections, build, render), the adapter
-  registry's `staleness()` and its retrieval-fingerprint axis ([extended
-  workflows](current/extended-workflows/adapter-registry.md#staleness)), and the shared borderline
-  vocabulary in `src/llb/rag/fusion_evidence/stability.py` so a field resting on a knife-edge row is
-  marked the same way every lane marks it.
-- User-visible outcome: one artifact an operator (or a runtime) can act on, where every recommended
-  value is traceable to the run that measured it and every gap is visible as a gap.
-- Scope boundary: in scope -- the composition, the per-field evidence/verdict/freshness record, the
-  `unmeasured` state, the consistency guard (fields measured against a different corpus, store
-  fingerprint, or model are refused rather than mixed), the JSON schema, and the markdown rationale.
-  Out of scope -- running any lane on the operator's behalf, inventing a value for an unmeasured
-  field, ranking policy changes, and shipping a runtime that consumes the profile.
-- Data and artifact paths: `$DATA_DIR/agent-profile/<run>/{agent_profile.json,profile.md}`, composed
-  from the existing per-lane roots; no new evidence root.
-- Execution path: `make recommend-agent-profile` after the component lanes have run on the CUDA
-  host; CI covers composition, the `unmeasured` state, the consistency guard, and the staleness
-  demotion over fixture bundles -- no GPU.
-- Acceptance gates: `make ci` green; a profile built with no bundles at all is entirely `unmeasured`
-  and still a valid artifact; every populated field's evidence path resolves and its verdict matches
-  the lane artifact it cites; a stale adapter or a store whose retrieval fingerprint changed demotes
-  every field that depends on it, with the changed knob named; the recommended values replay as
-  `run-eval` / `bench-agentic` flags that reproduce the recommended configuration.
-- Documentation target: a recommendation-composition section in
-  [extended workflows](current/extended-workflows.md) and the recommendation entry in
-  [overview](current/overview.md).
+- Agent status: CLEAR
+- Dependencies: the policy vocabulary and the constants already exist in
+  `src/llb/bench/agentic/loop_policy.py` and are applied by `src/llb/bench/agentic/episode.py`; the
+  context policy's existing `policy`/`budget` kwargs on `run_agentic` are the seam to follow.
+- User-visible outcome: a recommended loop cell runs as a scored `bench-agentic` cell instead of
+  only as a re-swept grid point.
+- Scope boundary: in scope -- the two flags, the threading, the manifest fields recording them, and
+  the profile's replay switching to `bench-agentic`. Out of scope -- changing any shipped default,
+  and adding loop-policy axes the sweep does not already measure.
+- Data and artifact paths: existing `$DATA_DIR/agentic/<run>/` bundles gain the two config fields.
+- Execution path: `make ci` over the fake-completion seam; no GPU.
+- Acceptance gates: `make ci` green; a `bench-agentic` run at the default cell is byte-identical to
+  today's prompts; the profile's replay block emits the loop fields on `bench-agentic`.
+- Documentation target: the harness section of
+  [extended workflows](current/extended-workflows/agentic-harness.md) and the replay section of the
+  agent operating profile page.
 
 #### agent-context-policy-entry-aware-summary-fold-adoption (optional)
 

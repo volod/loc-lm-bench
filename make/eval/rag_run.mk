@@ -82,11 +82,11 @@ sweep-restoration-constraints: ## Sweep the typo step's restoration constants: r
 		$(if $(QUERY_ROBUSTNESS_CLASSES),--variant-classes "$(QUERY_ROBUSTNESS_CLASSES)",) \
 		$(if $(QUERY_ROBUSTNESS_LIMIT),--limit $(QUERY_ROBUSTNESS_LIMIT),)
 
-probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= PROBE_K= SPLIT= LIMIT=)
+probe-context-position: ## Lost-in-the-middle probe: gold chunk at head/middle/tail at fixed k -> per-model context-order recommendation (MODEL= BACKEND= GOLDSET= CORPUS_ROOT= PROBE_K= SPLIT= LIMIT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main probe-context-position --model "$(MODEL)" --backend "$(BACKEND)" \
-		--goldset "$(GOLDSET)" --split "$(SPLIT)" --k $(PROBE_K) \
+		--goldset "$(GOLDSET)" --corpus-root "$(CORPUS_ROOT)" --split "$(SPLIT)" --k $(PROBE_K) \
 		$(if $(LIMIT),--limit $(LIMIT),)
 
 analyze-misses: ## Miss analysis: classify + cluster one run's misses (RUN_DIR=<bundle>; PROBE_TOP_K=3,8 re-runs the miss subset; MISS_THRESHOLD= ANALYZE_GOLDSET=)

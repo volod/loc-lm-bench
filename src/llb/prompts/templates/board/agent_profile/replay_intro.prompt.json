@@ -1,0 +1,5 @@
+{
+  "id": "board.agent_profile.replay_intro",
+  "kind": "text",
+  "template": "replay_intro.txt"
+}

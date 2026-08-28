@@ -315,6 +315,78 @@
         "sha256": "5c55b6a83297585d1ea091109df5335f829431a7f70725efd8ebe4fa1f1516af"
       }
     },
+    "board.agent_profile.adapter_drift": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/adapter_drift.prompt.json",
+      "template": {
+        "path": "board/agent_profile/adapter_drift.txt",
+        "sha256": "58a7746371d20dc43daa2dd3f55e3ccf94ebe71a1fc2cb6b936853f9ec4215b1"
+      }
+    },
+    "board.agent_profile.all_unmeasured": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/all_unmeasured.prompt.json",
+      "template": {
+        "path": "board/agent_profile/all_unmeasured.txt",
+        "sha256": "873316c665d3941fbd3625e617b3fdcf6c16660754f7665f812b0e7bb609ca2b"
+      }
+    },
+    "board.agent_profile.anchor": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/anchor.prompt.json",
+      "template": {
+        "path": "board/agent_profile/anchor.txt",
+        "sha256": "bbb35acc983cb12196683191cfbe3f0843ee668fa470027545bf0c643372fbf7"
+      }
+    },
+    "board.agent_profile.fields_intro": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/fields_intro.prompt.json",
+      "template": {
+        "path": "board/agent_profile/fields_intro.txt",
+        "sha256": "65cca45bbfdbe2cd82961e671e2ab9b3efdce269f0676ce01f039882a9a80c03"
+      }
+    },
+    "board.agent_profile.gaps_intro": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/gaps_intro.prompt.json",
+      "template": {
+        "path": "board/agent_profile/gaps_intro.txt",
+        "sha256": "81faf0ee97680643a98d6eac0afef4dcb40e016c167f9dbc82718687fa4ee887"
+      }
+    },
+    "board.agent_profile.intro": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/intro.prompt.json",
+      "template": {
+        "path": "board/agent_profile/intro.txt",
+        "sha256": "36c35e32881730414ee27a75fb6482a7a146b0589acd95ba6cdeb101d4da7cbe"
+      }
+    },
+    "board.agent_profile.no_anchor": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/no_anchor.prompt.json",
+      "template": {
+        "path": "board/agent_profile/no_anchor.txt",
+        "sha256": "02b7b49bf43c41c19070ab7893d2d581948e659dc4eb3fdfc66581137a36e1f2"
+      }
+    },
+    "board.agent_profile.replay_intro": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/replay_intro.prompt.json",
+      "template": {
+        "path": "board/agent_profile/replay_intro.txt",
+        "sha256": "167dd12e2be27960c54b0aa05dc0662bf35a20d6dd640fbf9b8f2f81f46a54a9"
+      }
+    },
+    "board.agent_profile.store_drift": {
+      "kind": "text",
+      "descriptor": "board/agent_profile/store_drift.prompt.json",
+      "template": {
+        "path": "board/agent_profile/store_drift.txt",
+        "sha256": "1b93d02c39ffe6d64f874ed5256b52c14993b12d51f3c624d1ec5b54b76a70f9"
+      }
+    },
     "board.miss.header_line": {
       "kind": "text",
       "descriptor": "board/miss/header_line.prompt.json",

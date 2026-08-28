@@ -1,0 +1,5 @@
+{
+  "id": "board.agent_profile.store_drift",
+  "kind": "text",
+  "template": "store_drift.txt"
+}

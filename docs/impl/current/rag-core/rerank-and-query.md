@@ -34,7 +34,15 @@ Modules:
   `stage_latency` object (mean retrieve / rerank / generate seconds per case), so the
   reranker's precision gain is always weighed against its measured latency cost.
 - `src/llb/eval/position_probe.py` -- `llb probe-context-position` (see
-  [evaluation rigor](../rigor-board-judge.md) for the probe contract and artifacts).
+  [evaluation rigor](../rigor-board-judge.md) for the probe contract and artifacts). Beside
+  `report.md` and `cases.jsonl` it writes `probe.json`: the model, the per-position means and CIs,
+  the recommendation, a `separated`/`flat` reading of the head-versus-tail comparison, and the
+  retrieval fingerprint of the store the probe queried. A consumer -- the [composed agent operating
+  profile](../extended-workflows/agent-operating-profile.md) reads it -- therefore takes the
+  decision from a field rather than by parsing the report's prose, and can tell a recommendation
+  taken against a re-chunked store apart from one taken against its own. `--corpus-root`
+  (`CORPUS_ROOT=`) points the probe at the corpus whose persisted index it should query, matching
+  `run-eval`.
 
 Ordering is one of two things this stage does to the kept chunks; the other is what each chunk's
 TEXT looks like in the prompt, which is
@@ -50,7 +58,7 @@ Commands:
 ```bash
 make run-eval MODEL=<m> RERANKER=BAAI/bge-reranker-v2-m3 RERANK_CANDIDATES=30 CONTEXT_ORDER=rank
 make compare-retrieval RERANKER=BAAI/bge-reranker-v2-m3 GOLDSET=<goldset.jsonl> [HYBRID=1]
-make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5
+make probe-context-position MODEL=<m> BACKEND=<b> PROBE_K=5 CORPUS_ROOT=<corpus-dir>
 make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"    # 0 == reranker-off cell
 llb tune --reranker BAAI/bge-reranker-v2-m3 ...       # adds on/off + candidate-depth axes
 ```
