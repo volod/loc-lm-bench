@@ -133,12 +133,20 @@ def _screen_runner(complete: bool = True):
             "covered": ["global_piqa_prompted_ukr_cyrl"] if complete else [],
             "missing": [] if complete else ["global_piqa_prompted_ukr_cyrl"],
             "complete": complete,
+            "limit": None,
         }
 
     return run
 
 
-def _run(tmp_path: Path, *, plan, screen_runner, run_id: str = "ci-long-run"):
+def _run(
+    tmp_path: Path,
+    *,
+    plan,
+    screen_runner,
+    run_id: str = "ci-long-run",
+    max_model_len: int = 8192,
+):
     screen_limits: list[int] = []
 
     def screen_evaluate(config: RunConfig, limit: int | None) -> TrialMetrics:
@@ -165,6 +173,7 @@ def _run(tmp_path: Path, *, plan, screen_runner, run_id: str = "ci-long-run"):
         screen_evaluate=screen_evaluate,
         stage=stage,
         screen_runner=screen_runner,
+        max_model_len=max_model_len,
     )
     return result, screen_limits
 
@@ -284,7 +293,81 @@ def test_a_resumed_finalist_is_reloaded_rather_than_retuned(tmp_path: Path, fake
     first, _ = _run(tmp_path, plan=_plan(tmp_path), screen_runner=_screen_runner())
     assert first.trail["blocks"]
     second, _ = _run(tmp_path, plan=_plan(tmp_path), screen_runner=_screen_runner())
-    assert second.trail["blocks"] == []
-    assert second.trail["consumed_total"] == 0
     assert {f.name for f in second.search.finalists} == {"alpha", "bravo"}
     assert second.verdict.decision == "adopt"
+    # The block trail lives in no other artifact, so a re-entry that retunes nothing must still
+    # carry the rule that stopped the ORIGINAL search into the record it rewrites.
+    assert second.trail == first.trail
+    payload = json.loads(second.paths["json"].read_text(encoding="utf-8"))
+    assert payload["search"]["stopped_by"] == "ranking-stability"
+    assert payload["search"]["consumed_total"] == 30
+
+
+def test_a_retain_says_whether_a_challenger_lost_or_could_not_be_told_apart(tmp_path: Path):
+    """ "Nothing separated" is two different results, and an operator acts on them differently."""
+    from llb.optimize.joint_search.long_run.uncertainty import BoardRow, read_uncertainty
+    from llb.optimize.joint_search.long_run.verdict import decide
+
+    def board(challenger: list[float]) -> object:
+        rows = [
+            BoardRow("base", "p", "ollama", [0.6] * 40, [1.0] * 40),
+            BoardRow("chal", "p", "ollama", challenger, [1.0] * 40),
+        ]
+        return read_uncertainty(rows, incumbent="base", resamples=400)
+
+    lost = decide(board([0.1] * 40), incumbent="base", public={})
+    assert lost.decision == "retain"
+    assert lost.regressed == ["chal::p"]
+    assert "measurably WORSE" in lost.reason and "measured evidence" in lost.reason
+
+    flat = decide(board([0.6] * 40), incumbent="base", public={})
+    assert flat.decision == "retain" and flat.regressed == []
+    assert "not supported by this item set" in flat.reason
+
+
+def test_a_capped_smoke_report_is_never_reused_to_back_a_full_screen(tmp_path: Path):
+    """A two-example screen and a full-track screen are different measurements, not a cache hit."""
+    from llb.optimize.joint_search.long_run.public_tracks import (
+        read_report,
+        screen_finalists,
+        write_report,
+    )
+
+    out_dir = tmp_path / "screen"
+    smoke = _screen_runner()("alpha:tag", "ollama", out_dir)
+    smoke["limit"] = 2
+    write_report(out_dir, smoke)
+    assert read_report(out_dir, "alpha:tag", limit=2) is not None
+    assert read_report(out_dir, "alpha:tag", limit=None) is None
+
+    calls: list[str] = []
+
+    def runner(source: str, backend: str, screen_dir: Path) -> ScreenReport:
+        calls.append(source)
+        return _screen_runner()(source, backend, screen_dir)
+
+    summary = screen_finalists(
+        [{"name": "alpha", "backend": "ollama", "source": "alpha:tag"}],
+        out_dir=out_dir,
+        runner=runner,
+        limit=None,
+    )
+    assert calls == ["alpha:tag"]
+    assert summary["complete"] == {"alpha": True}
+
+
+def test_the_public_screen_launches_a_finalist_at_the_run_s_context_cap(
+    tmp_path: Path, fake_resolver: None, monkeypatch: pytest.MonkeyPatch
+):
+    """A vLLM finalist screened at its NATIVE 128k window OOMs a 16 GiB card before it scores."""
+    seen: list[int | None] = []
+
+    def fake_screen_with_backend(model, backend, cfg, *, out_dir, limit=None, **kwargs):
+        del out_dir, limit, kwargs
+        seen.append(cfg.max_model_len)
+        return _screen_runner()(model, backend, tmp_path)
+
+    monkeypatch.setattr("llb.screen.backends.screen_with_backend", fake_screen_with_backend)
+    result, _ = _run(tmp_path, plan=_plan(tmp_path), screen_runner=None, max_model_len=4096)
+    assert seen == [4096, 4096]
+    assert result.public["failures"] == []

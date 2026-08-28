@@ -135,7 +135,10 @@ Schedule (`src/llb/optimize/joint_search/`):
 2. **Cheap screen** -- each runnable candidate is scored on the **tuning** split only with a small
    case cap (`--screen-limit`, growing by `--eta` each round). Screen cells reuse
    `isolate_cell` for VRAM-owning backends. Each completed cell writes
-   `screen/<slug>-r<round>.json` so a resume skips re-evaluation.
+   `screen/<slug>-r<round>.json` so a resume skips re-evaluation. A caller whose screen size was
+   DERIVED rather than chosen passes `screen_case_cap=` as a ceiling over every round, so the
+   growth cannot spend more items than the derivation priced; only the
+   [roster confirmation](roster-confirmation.md) passes one, and the run manifest records it.
 3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
    quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
    never enter the ledger). The ledger is rewritten after every round.

@@ -14,6 +14,13 @@ Two things ADD to that decision without ever loosening it:
 - the quality/latency tradeoff: the run's objectives were multi-objective, so a verdict that named
   only the argmax would throw away the half of the answer an operator on a fixed GPU actually acts
   on. The frontier is reported, and a leader that is NOT the fastest row says so explicitly.
+
+A retain has two very different readings and the sentence must not blur them. "Nothing separated"
+can mean the board could not tell the models apart, or it can mean a challenger separated in the
+WRONG direction -- and the second is a decided result, not an undecided one. The loss half is the
+same `regresses` reading every other paired lane reports beside `separates`, with the same
+minimum-evidence gate, so a retain that rests on a measured regression says which row lost and by
+how much.
 """
 
 from collections.abc import Mapping, Sequence
@@ -22,7 +29,7 @@ from typing import Any
 
 from llb.optimize.joint_search.long_run.public_tracks import public_note
 from llb.optimize.joint_search.long_run.uncertainty import BoardUncertainty
-from llb.rag.fusion_evidence.paired import separates
+from llb.rag.fusion_evidence.paired import discordant_pairs, regresses, separates
 from llb.rag.fusion_evidence.stability import borderline_note
 
 DECISION_ADOPT = "adopt"
@@ -40,6 +47,7 @@ class AdoptionVerdict:
     incumbent: str | None
     reason: str
     separated: list[str]
+    regressed: list[str]
     borderline: list[str]
     quality_leader: str | None
     latency_leader: str | None
@@ -53,6 +61,7 @@ class AdoptionVerdict:
             "incumbent": self.incumbent,
             "reason": self.reason,
             "separated": list(self.separated),
+            "regressed": list(self.regressed),
             "borderline": list(self.borderline),
             "quality_leader": self.quality_leader,
             "latency_leader": self.latency_leader,
@@ -107,6 +116,7 @@ def decide(
         incumbent=incumbent,
         reason=reading.reason,
         separated=reading.separated,
+        regressed=reading.regressed,
         borderline=reading.borderline,
         quality_leader=quality_leader,
         latency_leader=latency_leader,
@@ -123,6 +133,7 @@ class _Reading:
     row: str | None
     reason: str
     separated: list[str]
+    regressed: list[str]
     borderline: list[str]
 
 
@@ -142,11 +153,15 @@ def _read_board(
                 "so no paired delta against it is defined"
             ),
             separated=[],
+            regressed=[],
             borderline=[],
         )
     confidence = uncertainty.confidence
     separated = sorted(
         row for row, comparison in uncertainty.paired.items() if separates(comparison, confidence)
+    )
+    regressed = sorted(
+        row for row, comparison in uncertainty.paired.items() if regresses(comparison, confidence)
     )
     borderline = sorted(
         row
@@ -160,12 +175,13 @@ def _read_board(
             row=uncertainty.baseline,
             reason=(
                 f"no candidate separates from `{incumbent}` on the {uncertainty.n_items}-item "
-                f"held-out split at {confidence:.0%}, so the point-estimate ranking is not "
-                "supported by this item set"
+                f"held-out split at {confidence:.0%}, "
+                + _retain_ground(uncertainty, regressed)
                 + _borderline_clause(uncertainty, borderline)
                 + public_note(public, incumbent)
             ),
             separated=[],
+            regressed=regressed,
             borderline=borderline,
         )
     winner = max(separated, key=lambda row: (uncertainty.paired[row]["delta"]["mean"], row))
@@ -182,7 +198,32 @@ def _read_board(
             + public_note(public, _row_model(winner))
         ),
         separated=separated,
+        regressed=regressed,
         borderline=borderline,
+    )
+
+
+def _retain_ground(uncertainty: BoardUncertainty, regressed: Sequence[str]) -> str:
+    """Why the incumbent is kept: nothing could be told apart, or a challenger measurably lost.
+
+    Both end in a retain, and an operator acts on them differently -- the first says the board ran
+    out of resolution, the second says the challenger was tried and was worse.
+    """
+    if not regressed:
+        return "so the point-estimate ranking is not supported by this item set"
+    worst = min(regressed, key=lambda row: uncertainty.paired[row]["delta"]["mean"])
+    delta = uncertainty.paired[worst]["delta"]
+    trailing = len(regressed) - 1
+    others = (
+        f" (with {trailing} further row{'s' if trailing > 1 else ''} below the incumbent too)"
+        if trailing
+        else ""
+    )
+    return (
+        f"and `{worst}` is measurably WORSE by {delta['mean']:+.3f} "
+        f"[{delta['lo']:+.3f}, {delta['hi']:+.3f}] on "
+        f"{discordant_pairs(uncertainty.paired[worst])} differing items{others}, so the default is "
+        "retained on measured evidence rather than on an undecided board"
     )
 
 

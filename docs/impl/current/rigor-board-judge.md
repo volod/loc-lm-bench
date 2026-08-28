@@ -10,7 +10,7 @@ This page is the AREA INDEX: each stage of that discipline lives in its own page
 | Page | What it answers |
 | --- | --- |
 | [Backend resolution, sweeps, and search](rigor-board-judge/tuning-and-search.md) | Which backend serves a model on this host, why sweeps run isolated, two-stage and multi-objective tuning, and the joint model + config search |
-| [Roster confirmation and the adoption verdict](rigor-board-judge/roster-confirmation.md) | What a research-scale confirmation run predeclares, when its search stops, and what an adopt-or-retain verdict on the default model is allowed to say |
+| [Roster confirmation and the adoption verdict](rigor-board-judge/roster-confirmation.md) | What a research-scale confirmation run predeclares, when its search stops, what an adopt-or-retain verdict on the default model is allowed to say, and the confirmed Ukrainian default (retain MamayLM v2.0 12B) |
 | [Screen, board, and recommendation](rigor-board-judge/board-and-recommendation.md) | The public screen, how the board ranks, and what the recommendation summary is allowed to claim |
 | [Miss analysis and context probes](rigor-board-judge/diagnostics.md) | Why a run missed, where in the context an answer has to sit to be found, and whether a model abstains when the context cannot support an answer |
 | [Ukrainian robustness and security adaptation](rigor-board-judge/robustness-benchmarks.md) | Query-robustness benchmarking under Ukrainian perturbations, and the security-lane adaptation |

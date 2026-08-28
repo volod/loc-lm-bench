@@ -545,6 +545,10 @@ LONG_RUN_STABILITY_BLOCKS ?= 2
 LONG_RUN_STABILITY_AGREEMENT ?= 1.0
 LONG_RUN_RUN_ID ?=
 LONG_RUN_PUBLIC_LIMIT ?=
+# Unload Ollama's resident models before a vLLM finalist's public screen launches. On by default:
+# the confirmation run owns the host for hours, the resident models are the ones IT loaded, and a
+# vLLM engine refuses to start on the VRAM an Ollama keep-alive still holds. Set empty to opt out.
+LONG_RUN_PUBLIC_EVICT ?= 1
 LONG_RUN_OFFLINE ?=
 LONG_RUN_NO_ISOLATE ?=
 # Autonomous corpus-to-recommendation pipeline. The default drafter is a 12B Ukrainian model that

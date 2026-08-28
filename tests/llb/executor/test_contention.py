@@ -167,15 +167,15 @@ def test_runner_guard_applies_derate_and_aborts(monkeypatch):
 
     derate = plan_guard(TOTAL, 13000, 0.85, E4B_FLOOR)
     monkeypatch.setattr(contention, "apply_contention_guard", lambda **_kw: derate)
-    report = runner_backend._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
+    report = runner_backend.guard_vllm_contention(cfg, launcher, evict=False, wait=False)
     assert report is not None and report["derated"]
     assert launcher.gpu_memory_utilization == derate["safe_util"]  # launcher actually adjusted
     assert launcher.meta["gpu_memory_utilization"] == derate["safe_util"]
 
     abort = plan_guard(TOTAL, 3000, 0.85, E4B_FLOOR)
     monkeypatch.setattr(contention, "apply_contention_guard", lambda **_kw: abort)
-    with pytest.raises(SystemExit):
-        runner_backend._guard_vllm_contention(cfg, launcher, evict=False, wait=False)
+    with pytest.raises(runner_backend.VramContentionAbort):
+        runner_backend.guard_vllm_contention(cfg, launcher, evict=False, wait=False)
 
 
 # --- VRAM contention guard multi-GPU read + arch-derived KV headroom ----------------------------------------

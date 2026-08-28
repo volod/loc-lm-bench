@@ -74,74 +74,43 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Run bundles and the board -- `run-bundle-board`
+### Host fit and serving -- `host-fit-serving`
 
-#### ua-roster-confirmation-run
+#### joint-search-cannot-carry-a-serving-config
 
-The confirmation LANE is delivered and CI-green -- predeclared effect, power-derived screen size,
-ranking-stability stopping rule, uncapped held-out scoring, public Ukrainian tracks, bootstrap
-uncertainty, quality/latency frontier, and an adopt-or-retain verdict
-([roster confirmation](current/rigor-board-judge/roster-confirmation.md)). What is missing is a run
-carried through to a recorded verdict: no host has yet produced a `long_run.json` whose reading is
-written into the delivered docs, so the default-model question the lane exists to answer is still
-open. Run it on a CUDA host and record what it decided.
+`joint-search` and `joint-search-long-run` both build their base config with `load_config(None,
+...)` (`src/llb/cli/models/`), so neither accepts a `--config` file and neither exposes the vLLM
+serving knobs `run-eval` does. Every vLLM candidate in a search therefore launches at the
+`RunConfig` default `gpu_memory_utilization=0.85` (`src/llb/core/config_fields.py`), and the one
+value the host-validation path documents for this class of card is `0.80`
+([acceptance paths](current/host-validation/acceptance-paths.md#backend-paths)) -- the guard cannot
+correct it either, because it derates against OTHER processes' memory and 0.85 of a quiet card
+already reads as free. The consequence is not a slower run but a lost candidate: on a 16 GiB card
+the vLLM engine exceeds its own budget during graph capture and the candidate drops out of the
+search. Give both commands the serving knobs the eval path has -- at minimum `--config` and
+`--gpu-memory-utilization`, threaded into the per-candidate `candidate_config` beside
+`max_model_len` -- so a vLLM candidate can be searched on the tier it actually serves on.
 
-- Serves: `run-bundle-board` -- [Run bundles and the board](../design/spec.md#persistence-and-reproducibility)
+- Serves: `host-fit-serving` -- [Backend and hardware boundary](../design/spec.md#backend-and-hardware-boundary)
 - Agent status: RUN NEEDED
-- Dependencies: none beyond the delivered lane above; the roster and per-tier serving behavior are
-  in [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh).
-- User-visible outcome: a recorded adopt-or-retain verdict on the default Ukrainian model, with
-  uncertainty, public-task coverage, and the quality-versus-latency frontier behind it.
-- Scope boundary: in scope -- executing the run, reading its artifact, and writing the evidence.
-  Out of scope -- changing the lane's statistics or schedule, model fine-tuning, and hosted/API-only
-  candidates. Reuse `make joint-search-long-run`; do not write a new driver.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/{long_run.json,long_run.md,scoreboard.json}`
-  and `$DATA_DIR/screen/<model>.screen.json`, produced by the run; the reading goes into the
-  documentation target below.
-- Execution path, in order:
-  1. **Pick the candidate slice for the host.** Use the strongest `samples/configs/models_uk.yaml`
-     entries that FIT (`make resolve-models MODELS_MANIFEST=<manifest>` prints the choice; a 12/16
-     GiB box fits `mamaylm-v2-12b`, `lapa-v0.1.2-instruct`, and `gemma-4-e4b-it-w4a16` natively,
-     while `gemma-4-26b-a4b` and `qwen3.8-27b` need offload and are far slower). Pass the slice as
-     `JOINT_SEARCH_CANDIDATES=`. `LONG_RUN_INCUMBENT=` must name one of them -- the UA-specialized
-     reference the baselines must beat.
-  2. **Produce the power reference.** The declared screen size is derived from the paired variance of
-     an earlier pair of models. Two `make run-eval MODEL=<a>` / `MODEL=<b>` bundles of two DIFFERENT
-     models over the same gold set and split supply it; pass their run-bundle directories as
-     `LONG_RUN_POWER_REFERENCE=` and `LONG_RUN_POWER_BASELINE=`. Any pair whose gap resembles the one
-     being measured works; a pair with fewer than two shared items is refused.
-  3. **Install `lm_eval` on `PATH`** (`lm-eval[api]>=0.4.9`, in any environment -- it is an external
-     harness, not a project dependency). Without it the run still completes and states its verdict,
-     but every finalist lands in `public_screen.failures` and the verdict is qualified as having no
-     public backing, which does not satisfy this task.
-  4. **Run it**, then read `long_run.md`:
-
-     ```bash
-     make joint-search-long-run \
-       JOINT_SEARCH_CANDIDATES=<slice.yaml> \
-       GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-       JOINT_SEARCH_CORPUS=samples/goldsets/ua_squad_postedited_v1/corpus \
-       LONG_RUN_INCUMBENT=<candidate> \
-       LONG_RUN_POWER_REFERENCE=<run-bundle> LONG_RUN_POWER_BASELINE=<run-bundle> \
-       LONG_RUN_MIN_GAIN=0.10 LONG_RUN_TRIAL_BUDGET=12 LONG_RUN_TRIAL_BLOCK=3 \
-       LONG_RUN_RUN_ID=<id>
-     ```
-
-     Budget two to three hours on a 12 GiB laptop GPU before the held-out split and public screen;
-     see the cost note in the documentation target. Re-running with the same `LONG_RUN_RUN_ID`
-     resumes on the completed screen, pick, and finalist markers, so a kill is cheap. Nothing else
-     may touch the GPU while it runs -- a stray backend call inflates every latency reading.
-- Acceptance gates: `make ci` green; `long_run.json` carries a `predeclaration` (gain, power,
-  derived screen size with its binding floor, stopping rule), a `search` trail naming the rule that
-  stopped it and the trials consumed, a `final` block on the full held-out split with intervals and
-  paired readings, a complete `public_screen` for every finalist, and a `verdict`; the ledger stays
-  `split=tuning` and the scoreboard `split=final`.
-- Documentation target: the **Host evidence** section of
-  [roster confirmation](current/rigor-board-judge/roster-confirmation.md) -- state what ran on what
-  host and date, the derived screen size and what bound it, which rule stopped the search and at
-  what trial count, the held-out deltas with their intervals and win/loss/tie ledgers, the public
-  scores per track, the verdict and its reading, and what would overturn it. Read
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md) first.
+- Dependencies: none. `candidate_config` in `src/llb/optimize/joint_search/hooks.py` is where
+  `max_model_len` already reaches a vLLM candidate, and `guard_vllm_contention` in
+  `src/llb/executor/runner_backend.py` is the pre-launch guard both paths already share.
+- User-visible outcome: a vLLM candidate can take part in a joint search or a roster confirmation
+  on a 16 GiB host instead of being dropped by an out-of-memory launch nobody asked for.
+- Scope boundary: in scope -- carrying the existing serving fields from a config file or a flag
+  into every candidate cell and into the public screen. Out of scope -- changing the default
+  utilization for `run-eval`, auto-tuning the value per model, and any change to the search
+  schedule or its statistics.
+- Data and artifact paths: the joint-search run dir manifest, which must record the served
+  utilization it actually used.
+- Execution path: plumb the fields with fixture tests, then confirm on this host with one bounded
+  `joint-search` over a slice holding one vLLM candidate at `--gpu-memory-utilization 0.80`.
+- Acceptance gates: `make ci` green; a vLLM candidate screens without an out-of-memory launch on
+  the 16 GiB host at the chosen utilization, and the run manifest records the value used.
+- Documentation target: the backend-paths section of
+  [acceptance paths](current/host-validation/acceptance-paths.md) plus the search knobs listed in
+  [tuning and search](current/rigor-board-judge/tuning-and-search.md).
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 

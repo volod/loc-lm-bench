@@ -185,6 +185,79 @@ def test_halving_two_rounds_increases_budget(tmp_path: Path, monkeypatch: pytest
     assert set(result.ledger.finalists) == {"m6", "m7"}
 
 
+def test_screen_case_cap_bounds_every_halving_round(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A derived screen size is a ceiling: round 1 may not grow past what the power priced."""
+    specs: list[ModelSpec] = [
+        {"name": f"m{i}", "backend": "ollama", "source": f"m{i}:tag"} for i in range(8)
+    ]
+    qualities = {f"m{i}": i / 10.0 for i in range(8)}
+    limits: list[int] = []
+
+    def fake_resolve_all(candidates, vram_mib, ram_mib, *, probes=None, **kwargs):
+        del vram_mib, ram_mib, probes, kwargs
+        return [
+            ResolvedModel(
+                name=c["name"],
+                chosen_backend="ollama",
+                chosen_source=c["source"],
+                verdict="gpu",
+                candidates=[],
+                note="ok",
+            )
+            for c in candidates
+        ]
+
+    monkeypatch.setattr("llb.backends.resolver.resolve_all", fake_resolve_all)
+
+    def screen_evaluate(config: RunConfig, limit: int | None) -> TrialMetrics:
+        assert limit is not None
+        limits.append(limit)
+        return TrialMetrics(quality=qualities[_name_from_source(config.model)], latency_s=1.0)
+
+    def tune_finalist(base: RunConfig, resolution: ResolvedModel, cell_dir: Path):
+        del base, cell_dir
+        name = resolution["name"]
+        return FinalistTuneResult(
+            name=name,
+            backend="ollama",
+            source=resolution["chosen_source"] or name,
+            study_name=f"j-{name}",
+            overrides_by_pick={"best_quality": {}},
+            finals={
+                "best_quality": {
+                    "rows": [{"model": name, "quality": 0.5}],
+                    "metrics": {"objective_score": 0.5},
+                    "manifest": {"split": FINAL_SPLIT},
+                    "table": "ok",
+                    "retrieval": {},
+                    "paths": {},
+                    "telemetry": None,
+                    "run_timestamp": "t",
+                }
+            },
+        )
+
+    result = run_joint_search(
+        RunConfig(data_dir=tmp_path),
+        specs,
+        n_trials=3,
+        run_id="capped-rounds",
+        screen_limit=5,
+        min_finalists=2,
+        eta=2,
+        screen_evaluate=screen_evaluate,
+        tune_finalist=tune_finalist,
+        isolate=False,
+        screen_case_cap=5,
+    )
+    assert [round_.case_limit for round_ in result.ledger.rounds] == [5, 5]
+    assert set(limits) == {5}
+    manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["screen_case_cap"] == 5
+
+
 def test_finalize_ledger_empty():
     ledger = finalize_ledger([])
     assert ledger.finalists == ()

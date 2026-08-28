@@ -12,9 +12,12 @@ llb screen-public --model <model> --backend vllm --isolated
 llb pipeline --top-n 2 --trials 20
 ```
 
-`screen-public` writes coverage-aware reports under `$DATA_DIR/screen/`. `pipeline` reads those
-reports, selects per-track finalists, tunes them on the private RAG split discipline, and prints
-the final board.
+`screen-public` writes coverage-aware reports under `$DATA_DIR/screen/`, each recording the example
+cap (`--limit`) it was taken at so a smoke report is never mistaken for a full one. `--evict` and
+`--wait` are the same two pre-launch VRAM-guard opt-ins `run-eval` has: a vLLM screen shares the
+card with whatever ran before it, and the guard derates, waits, or unloads Ollama's residents rather
+than dying inside the engine. `pipeline` reads those reports, selects per-track finalists, tunes
+them on the private RAG split discipline, and prints the final board.
 
 ## Board Ranking
 

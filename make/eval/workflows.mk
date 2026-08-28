@@ -94,5 +94,6 @@ joint-search-long-run: ## Research-scale roster confirmation + adopt-or-retain v
 		$(if $(LONG_RUN_RUN_ID),--run-id "$(LONG_RUN_RUN_ID)",) \
 		$(if $(JOINT_SEARCH_CORPUS),--corpus "$(JOINT_SEARCH_CORPUS)",) \
 		$(if $(LONG_RUN_PUBLIC_LIMIT),--public-limit "$(LONG_RUN_PUBLIC_LIMIT)",) \
+		$(if $(LONG_RUN_PUBLIC_EVICT),--public-evict,--no-public-evict) \
 		$(if $(LONG_RUN_OFFLINE),--offline,) \
 		$(if $(LONG_RUN_NO_ISOLATE),--no-isolate,)

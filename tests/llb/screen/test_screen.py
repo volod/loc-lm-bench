@@ -205,3 +205,81 @@ def test_format_screen_is_ascii_with_coverage():
     )
     table = format_screen([rep])
     assert table.isascii() and "coverage" in table and "PARTIAL" in table
+
+
+def test_a_vllm_screen_is_guarded_and_logged_before_it_launches(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    """The screen shares the card: it takes the same pre-launch VRAM guard `run-eval` takes."""
+    from llb.core.config import RunConfig
+    from llb.screen import backends
+
+    guarded: list[tuple[str, object]] = []
+
+    class FakeLauncher:
+        def __init__(self, model, **kwargs):
+            self.model = model
+            self.kwargs = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr("llb.backends.vllm.VllmLauncher", FakeLauncher)
+    monkeypatch.setattr(
+        "llb.executor.runner_backend.guard_vllm_contention",
+        lambda cfg, launcher, **kw: guarded.append((kw.get("label", ""), launcher, kw)),
+    )
+    monkeypatch.setattr(
+        "llb.screen.public.run_screen",
+        lambda model, backend, url, **kw: parse_results(
+            FAKE_RESULTS, ["belebele_ukr_Cyrl"], model=model, backend=backend, track=TRACK_LOGPROB
+        ),
+    )
+    report = backends.screen_with_backend(
+        "google/gemma-4-E4B-it-qat-w4a16-ct",
+        "vllm",
+        RunConfig(backend="vllm", max_model_len=8192),
+        out_dir=tmp_path,
+    )
+    assert report["track"] == TRACK_LOGPROB
+    assert [row[0] for row in guarded] == ["screen-public"]
+    launcher = guarded[0][1]
+    assert launcher.kwargs["max_model_len"] == 8192
+    assert launcher.kwargs["log_dir"].parent.parent == tmp_path
+    # The guard never frees another process's memory unless the caller asked it to.
+    assert guarded[0][2]["evict"] is False and guarded[0][2]["wait"] is False
+
+
+def test_the_confirmation_run_s_screen_asks_the_guard_to_unload_ollama(tmp_path):
+    """An Ollama finalist's keep-alive holds VRAM the next finalist's vLLM engine needs."""
+    from llb.core.config import RunConfig
+    from llb.optimize.joint_search.long_run.public_tracks import default_screen_runner
+
+    seen: dict[str, object] = {}
+
+    def fake_screen_with_backend(model, backend, cfg, *, out_dir, limit=None, evict=False, **kw):
+        del out_dir, limit, kw
+        seen.update({"evict": evict, "max_model_len": cfg.max_model_len, "model": model})
+        return parse_results(
+            FAKE_RESULTS, ["belebele_ukr_Cyrl"], model=model, backend=backend, track=TRACK_LOGPROB
+        )
+
+    import llb.screen.backends as backends_mod
+
+    original = backends_mod.screen_with_backend
+    backends_mod.screen_with_backend = fake_screen_with_backend
+    try:
+        runner = default_screen_runner(
+            RunConfig(max_model_len=8192), limit=None, isolate=False, evict=True
+        )
+        runner("google/gemma-4-E4B-it-qat-w4a16-ct", "vllm", tmp_path)
+    finally:
+        backends_mod.screen_with_backend = original
+    assert seen == {
+        "evict": True,
+        "max_model_len": 8192,
+        "model": "google/gemma-4-E4B-it-qat-w4a16-ct",
+    }

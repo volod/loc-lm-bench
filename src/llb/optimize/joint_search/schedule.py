@@ -61,6 +61,7 @@ def run_joint_search(
     seed: int = 13,
     max_model_len: int = 8192,
     case_limit: int | None = None,
+    screen_case_cap: int | None = None,
 ) -> JointSearchResult:
     """Resolve -> cheap tuning-split screen with successive-halving -> deep-tune survivors.
 
@@ -85,6 +86,7 @@ def run_joint_search(
             "runnable": [r["name"] for r in runnable],
             "skipped": skipped,
             "screen_limit": screen_limit,
+            "screen_case_cap": screen_case_cap,
             "min_finalists": min_finalists,
             "eta": eta,
             "n_trials": n_trials,
@@ -127,6 +129,7 @@ def run_joint_search(
         min_finalists=min_finalists,
         eta=eta,
         max_model_len=max_model_len,
+        case_cap=screen_case_cap,
     )
     write_ledger(run_dir, ledger)
     by_name = {r["name"]: r for r in runnable}

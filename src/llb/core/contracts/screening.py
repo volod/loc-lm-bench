@@ -1,6 +1,6 @@
 """Public screening task and report contracts."""
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 
 class ScreenTaskResult(TypedDict):
@@ -18,3 +18,7 @@ class ScreenReport(TypedDict):
     covered: list[str]
     missing: list[str]
     complete: bool
+    # Examples per task the screen was run with (`--limit`), or None for the full task. A capped
+    # smoke report is a different measurement from a full one, so the cache reader compares it
+    # rather than handing a two-example screen to a decision that asked for the whole track.
+    limit: NotRequired[int | None]

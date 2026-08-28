@@ -115,8 +115,22 @@ def _pid_usage_reader() -> Callable[[], dict[int, int]] | None:
         return None
 
 
-def _guard_vllm_contention(
-    config: RunConfig, launcher: BackendLauncher, *, evict: bool, wait: bool
+class VramContentionAbort(RuntimeError):
+    """Even the derated gpu-memory-utilization cannot hold this model on the free VRAM.
+
+    A RuntimeError rather than a `SystemExit` so a caller that runs many launches -- the public
+    screen behind a confirmation run screens one finalist after another -- can record the failure
+    and keep going. `run-eval`, which owns the process, still turns it into an exit.
+    """
+
+
+def guard_vllm_contention(
+    config: RunConfig,
+    launcher: BackendLauncher,
+    *,
+    evict: bool = False,
+    wait: bool = False,
+    label: str = "run-eval",
 ) -> "ContentionReport | None":
     """Pre-launch VRAM-contention guard for vLLM (VRAM contention guard): derate gpu-memory-utilization to the
     actually-free VRAM, or abort if even that cannot hold the model. No-op without a GPU."""
@@ -141,13 +155,13 @@ def _guard_vllm_contention(
     if report is None:
         return None
     if report["action"] == ACTION_ABORT:
-        raise SystemExit(f"[run-eval] pre-launch VRAM guard: {report['note']}")
+        raise VramContentionAbort(f"[{label}] pre-launch VRAM guard: {report['note']}")
     if report["derated"] and isinstance(launcher, VllmLauncher):
-        _LOG.warning("[run-eval] %s", report["note"])
+        _LOG.warning("[%s] %s", label, report["note"])
         launcher.gpu_memory_utilization = report["safe_util"]
         launcher.meta["gpu_memory_utilization"] = report["safe_util"]
     else:
-        _LOG.info("[run-eval] pre-launch VRAM guard: %s", report["note"])
+        _LOG.info("[%s] pre-launch VRAM guard: %s", label, report["note"])
     return report
 
 
@@ -182,7 +196,10 @@ def _resolve_eval_runner(
     if launcher is None:
         launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
         if config.backend == "vllm":
-            contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
+            try:
+                contention = guard_vllm_contention(config, launcher, evict=evict, wait=wait)
+            except VramContentionAbort as exc:
+                raise SystemExit(str(exc)) from exc
     if runner_fn is None:
         if store is None:
             store = _load_store(config)

@@ -82,6 +82,10 @@ def joint_search_long_run_cmd(
     public_limit: Optional[int] = typer.Option(
         None, help="cap examples per public lm-eval task (smoke runs)"
     ),
+    public_evict: bool = typer.Option(
+        True,
+        help="unload Ollama's resident models before a vLLM finalist's public screen launches",
+    ),
 ) -> None:
     """Confirm the roster ranking at research scale and state an adopt-or-retain verdict.
 
@@ -159,6 +163,7 @@ def joint_search_long_run_cmd(
         seed=seed,
         max_model_len=max_model_len,
         public_limit=public_limit,
+        public_evict=public_evict,
     )
     _echo_result(result)
 
