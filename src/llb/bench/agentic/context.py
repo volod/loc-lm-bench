@@ -109,9 +109,6 @@ class ContextState:
     # Evidence-only episode ablation, deliberately not a ContextPolicy field: the shipped compact
     # policy always preserves markers, while a focused study can test the model summary unaided.
     preserve_memory_markers: bool = True
-    # Evidence-only summary-input prototype. The shipped path remains whole-transcript head/tail;
-    # focused studies can compare an entry-aware cap without expanding ContextPolicy vocabulary.
-    summary_trim_strategy: str = "head_tail"
 
     def record(
         self,

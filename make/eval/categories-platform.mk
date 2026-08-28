@@ -21,6 +21,7 @@
 	bench-agentic-context-compact-summary-input-cap \
 	bench-agentic-context-compact-window-elision \
 	bench-agentic-context-compact-window-elision-transfer \
+	bench-agentic-context-summary-trim-adoption \
 	bench-agentic-context-compact-crossover-restatement \
 	bench-agentic-published-provenance \
 	bench-agentic-policy-change-audit \
@@ -253,6 +254,13 @@ bench-agentic-context-compact-window-elision-transfer: ## Transfer unavoidable e
 	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main bench-agentic-context-compact-window-elision-transfer \
 		--design "$(AGENT_CONTEXT_COMPACT_WINDOW_ELISION_TRANSFER_DESIGN)"
+
+bench-agentic-context-summary-trim-adoption: ## Compare both summary-fold trim strategies across the typed-memory, aggregate-search, repeated-fold, crossover and middle-critical workloads on two model families, and route the default decision through the policy-change audit (AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY=1 for the model-free half)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main bench-agentic-context-summary-trim-adoption \
+		--design "$(AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_DESIGN)" \
+		$(if $(filter 1 true yes,$(AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY)),--audit-only,)
 
 bench-agentic-context-compact-crossover-restatement: ## Restate every published compact crossover under the shipped summarize-input cap, re-measuring only the cells the model-free audit calls bound-sensitive
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

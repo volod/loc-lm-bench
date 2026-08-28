@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "study_id": "agent-context-policy-entry-aware-summary-fold-adoption",
+  "study_kind": "summary_trim_strategy_adoption",
+  "seed": 727,
+  "policies": ["compact"],
+  "arms": ["head_tail", "per_entry_head"],
+  "required_qualified_families": 2,
+  "candidate_roster": [
+    {
+      "model_family": "qwen",
+      "model": "qwen3:14b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "gemma4",
+      "model": "gemma4:e4b",
+      "backend": "ollama"
+    },
+    {
+      "model_family": "mistral",
+      "model": "mistral-small3.1:24b",
+      "backend": "ollama"
+    }
+  ],
+  "held_fixed": {
+    "max_model_len": 8192,
+    "observation_cap_chars": 800,
+    "observation_head_share": 0.6,
+    "summary_input_cap": "window",
+    "preserve_memory_markers": true,
+    "minimum_control_completion": 1.0,
+    "qualifying_workload": "crossover"
+  },
+  "workloads": [
+    {
+      "workload": "typed_memory",
+      "task_builder": "memory_chain",
+      "n_tasks": 4,
+      "max_prompt_chars": 14000,
+      "compact_share": 0.8,
+      "max_steps": 14,
+      "task_shape": {"depth": 10, "pad_chars": 1600},
+      "why": "one fold whose folded transcript does not fit the window bound; the typed memory marker is machine-preserved, so this prices the free-text loss alone",
+      "expected": {
+        "n_compactions": 1,
+        "offered_chars": 15402,
+        "elided_chars": 2134,
+        "summary_prompt_chars": {"head_tail": 13992, "per_entry_head": 13992}
+      }
+    },
+    {
+      "workload": "aggregate_search",
+      "task_builder": "aggregate_search",
+      "n_tasks": 3,
+      "max_prompt_chars": 8000,
+      "compact_share": 0.8,
+      "max_steps": 8,
+      "task_shape": {"n_queries": 5, "n_docs": 14, "doc_chars": 900},
+      "why": "fat search observations reach the summarizer untrimmed, so the fold overflows the bound; the scored hit count sits in the MIDDLE search, the position a head-and-tail cut drops first",
+      "expected": {
+        "n_compactions": 1,
+        "offered_chars": 8732,
+        "elided_chars": 1464,
+        "summary_prompt_chars": {"head_tail": 7992, "per_entry_head": 7992}
+      }
+    },
+    {
+      "workload": "repeated_fold",
+      "task_builder": "memory_chain",
+      "n_tasks": 2,
+      "max_prompt_chars": 7000,
+      "compact_share": 0.8,
+      "max_steps": 14,
+      "task_shape": {"depth": 10, "pad_chars": 1600},
+      "why": "the committed repeatedly folding geometry, where the running summary re-enters the summarize input and the two trims can spend different byte totals",
+      "expected": {
+        "n_compactions": 2,
+        "offered_chars": 10373,
+        "elided_chars": 659,
+        "summary_prompt_chars": {"head_tail": 11131, "per_entry_head": 9967}
+      }
+    },
+    {
+      "workload": "crossover",
+      "task_builder": "memory_chain",
+      "n_tasks": 2,
+      "max_prompt_chars": 20240,
+      "compact_share": 0.5,
+      "max_steps": 14,
+      "task_shape": {"depth": 10, "pad_chars": 1200},
+      "why": "the published fold-step crossover cell fold-d10-step10-lo, at its own guard, share, depth and padding: a cap-fitting cell whose fold fits the window bound, so both trims must render byte-identical prompts",
+      "expected": {
+        "n_compactions": 1,
+        "offered_chars": 10494,
+        "elided_chars": 0,
+        "summary_prompt_chars": {"head_tail": 11188, "per_entry_head": 11188}
+      }
+    },
+    {
+      "workload": "middle_critical",
+      "task_builder": "evidence_strata",
+      "n_tasks": 4,
+      "max_prompt_chars": 14000,
+      "compact_share": 0.8,
+      "max_steps": 14,
+      "task_shape": {
+        "depth": 10,
+        "pad_chars": 1600,
+        "fact_stages": {"head": 4, "middle": 5, "tail": 7}
+      },
+      "why": "n_tasks is PER STRATUM for this builder (4 x head/middle/tail = 12 tasks); two per stratum could not absorb a single episode that leaves the folding regime, which is a power problem independent of the direction of the result. The stratum set the entry-aware recovery was first measured on, carried here so adoption re-measures the recovery under the promoted policy field instead of citing it",
+      "expected": {
+        "n_compactions": 1,
+        "offered_chars": 15776,
+        "elided_chars": 2508,
+        "summary_prompt_chars": {"head_tail": 13992, "per_entry_head": 13992}
+      }
+    }
+  ],
+  "adoption_rule": {
+    "no_regression": "no workload may lose paired completion under per_entry_head against head_tail",
+    "recovery": "the middle stratum must recover under per_entry_head in every qualified family",
+    "cost": "total model-input chars and summary prompt chars must not rise",
+    "default_change": "recommend a default change only when the policy-change audit reports the shipped published cells invariant under the move",
+    "changes_shipped_default": false
+  }
+}

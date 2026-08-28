@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from typing import cast
 
 from llb.backends.context_budget import fixed_budget
-from llb.bench.agentic.context_policy import POLICY_COMPACT, ContextPolicy
+from llb.bench.agentic.context_policy import (
+    DEFAULT_SUMMARY_TRIM_STRATEGY,
+    POLICY_COMPACT,
+    ContextPolicy,
+)
 from llb.bench.agentic.model import AgenticTask, STATUS_CONTEXT_OVERFLOW
 from llb.bench.context_policy.run import run_policy, task_set_digest
 from llb.bench.context_policy.report import PolicyReport
@@ -66,7 +70,7 @@ def run_window_elision_tasks(
     complete: LLMComplete,
     case_metadata: dict[str, dict[str, object]] | None = None,
     cell_probes: dict[str, dict[str, object]] | None = None,
-    summary_trim_strategy: str = "head_tail",
+    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
 ) -> WindowElisionRun:
     """Run any prevalidated task set through the shared fitting/elided cell pair."""
     held = cast(dict[str, object], design["held_fixed"])
@@ -136,7 +140,7 @@ def run_window_elision_cell(
     probe: dict[str, object],
     task_digest: str,
     case_metadata: dict[str, dict[str, object]] | None = None,
-    summary_trim_strategy: str = "head_tail",
+    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
 ) -> tuple[PolicyReport, dict[str, object]]:
     """Run one prevalidated geometry cell through the common compact-policy contract."""
     geometry = cell_geometry(cell, held)
@@ -148,6 +152,7 @@ def run_window_elision_cell(
             observation_head_share=float(cast(float, geometry["observation_head_share"])),
             compact_share=float(cast(float, geometry["compact_share"])),
             summary_input_cap=str(cast(str, geometry["summary_input_cap"])),
+            summary_trim_strategy=summary_trim_strategy,
         ),
         model=model,
         backend=backend,
@@ -155,7 +160,6 @@ def run_window_elision_cell(
         max_steps=int(cast(int, geometry["depth"])) + int(cast(int, geometry["max_steps_margin"])),
         budget=fixed_budget(int(cast(int, geometry["max_prompt_chars"]))),
         preserve_memory_markers=bool(held["preserve_memory_markers"]),
-        summary_trim_strategy=summary_trim_strategy,
     )
     return report, _cell_row(
         cell,

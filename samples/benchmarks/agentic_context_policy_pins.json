@@ -9,7 +9,8 @@
     "docs/impl/current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap",
     "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates",
     "docs/impl/current/extended-workflows/context-policy-constants.md#agent-context-policy-constants",
-    "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts"
+    "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts",
+    "docs/impl/current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice"
   ],
   "pins": {
     "observation_cap_chars": {
@@ -41,6 +42,11 @@
       "value": "window",
       "designs": "restated",
       "note": "The three designs record `trigger`, the retired bound they were measured under. The crossover restatement audited all 22 cells under both bounds, found 18 bit-identical, re-measured the one bound-sensitive cell that was still outstanding, and restated the published crossovers under `window` -- so `window` is the value the published numbers now stand under."
+    },
+    "summary_trim_strategy": {
+      "value": "head_tail",
+      "designs": "unstated",
+      "note": "How the summarize-input cap spends its bytes once the folded transcript does not fit. Every published cell was measured under the shipped whole-transcript head-and-tail trim, and no design states the field, so it is unstated rather than agreed. The entry-aware alternative only reaches a prompt where a fold actually elides, which is why the audit reports this field invariant across the cap-fitting registry: those cells fold a transcript their window bound still fits."
     }
   }
 }

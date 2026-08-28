@@ -23,6 +23,7 @@ from collections.abc import Callable
 from llb.bench.agentic.context_policy import (
     DEFAULT_OBSERVATION_CAP_CHARS,
     DEFAULT_SUMMARY_INPUT_CAP,
+    DEFAULT_SUMMARY_TRIM_STRATEGY,
     OBSERVATION_HEAD_SHARE,
     POLICY_COMPACT,
     POLICY_OBSERVATION_CAP,
@@ -75,6 +76,7 @@ def compact_fold_input_probe(
     max_prompt_chars: int,
     compact_share: float,
     summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
+    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
     pad_chars: int = DEFAULT_MEMORY_PAD_CHARS,
     max_steps_margin: int = 4,
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
@@ -106,6 +108,7 @@ def compact_fold_input_probe(
         max_prompt_chars=max_prompt_chars,
         compact_share=compact_share,
         summary_input_cap=summary_input_cap,
+        summary_trim_strategy=summary_trim_strategy,
         observation_cap_chars=observation_cap_chars,
         observation_head_share=observation_head_share,
         controller=controller,
@@ -119,6 +122,7 @@ def compact_tasks_fold_input_probe(
     max_prompt_chars: int,
     compact_share: float,
     summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP,
+    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
     observation_cap_chars: int = DEFAULT_OBSERVATION_CAP_CHARS,
     observation_head_share: float = OBSERVATION_HEAD_SHARE,
     controller: Callable[[str], str] = oracle_compacting_controller,
@@ -130,6 +134,7 @@ def compact_tasks_fold_input_probe(
         observation_head_share=observation_head_share,
         compact_share=compact_share,
         summary_input_cap=summary_input_cap,
+        summary_trim_strategy=summary_trim_strategy,
     )
     telemetries = [
         run_episode(
@@ -144,6 +149,7 @@ def compact_tasks_fold_input_probe(
     fold_inputs = _max_fold_inputs([item.summary_fold_input_chars for item in telemetries])
     return {
         "n_compactions": max(item.n_compactions for item in telemetries),
+        "compaction_prompt_chars": max(item.compaction_prompt_chars for item in telemetries),
         "summary_input_chars": max(item.summary_input_chars for item in telemetries),
         "summary_input_elided_chars": max(item.summary_input_elided_chars for item in telemetries),
         "n_trimmed_summary_inputs": max(item.n_trimmed_summary_inputs for item in telemetries),

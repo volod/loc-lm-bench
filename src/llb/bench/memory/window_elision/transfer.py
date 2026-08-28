@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import cast
 
-from llb.bench.agentic.context_summary import SUMMARY_TRIM_PER_ENTRY_HEAD
+from llb.bench.agentic.context_policy import SUMMARY_TRIM_PER_ENTRY_HEAD
 from llb.bench.context_policy.run import task_set_digest
 from llb.bench.context_policy.report import PolicyReport
 from llb.bench.memory.window_elision.run import (

@@ -120,8 +120,12 @@ def test_every_screen_cell_is_served_at_the_declared_utilization_and_the_manifes
         ]
 
     monkeypatch.setattr("llb.backends.resolver.resolve_all", fake_resolve_all)
+    # Patched where it is LOOKED UP, not where it is defined: `schedule_steps` binds the name at
+    # import, so patching `llb.backends.readiness` leaves the screen asking the real host whether
+    # vLLM is installed -- which passes on a CUDA box and skips every candidate on a CI runner.
     monkeypatch.setattr(
-        "llb.backends.readiness.local_backend_ready", lambda backend, data_dir: (True, "")
+        "llb.optimize.joint_search.schedule_steps.local_backend_ready",
+        lambda backend, data_dir: (True, ""),
     )
 
     def screen_evaluate(config: RunConfig, limit: int | None) -> TrialMetrics:

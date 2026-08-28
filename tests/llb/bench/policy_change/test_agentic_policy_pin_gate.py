@@ -68,7 +68,7 @@ def test_every_shipped_constant_still_matches_the_value_its_evidence_was_measure
     check = check_policy_pins(_pins(), load_audited_designs())
     if not check.ok:  # `fail` prints the re-run scope; `assert` would bury it under a PinCheck repr
         pytest.fail(format_pin_gate_report(check))
-    assert "all 6 shipped context-policy constants match" in format_pin_gate_report(check)
+    assert "all 7 shipped context-policy constants match" in format_pin_gate_report(check)
 
 
 def test_a_new_shipped_constant_cannot_be_added_without_a_pin():

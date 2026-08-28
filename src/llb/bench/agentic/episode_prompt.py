@@ -87,7 +87,7 @@ def step_prompt(
             summary_input_cap_chars(policy, budget),
             prior_summary=state.summary,
             telemetry=state.telemetry,
-            trim_strategy=state.summary_trim_strategy,
+            trim_strategy=policy.summary_trim_strategy,
         )
 
     if not compact_state(policy, state, summarize):

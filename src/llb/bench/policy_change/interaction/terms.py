@@ -35,6 +35,7 @@ FIELD_KEEP_LAST = "keep_last_n"
 FIELD_SHARE = "compact_share"
 FIELD_KEEP_RECENT = "compact_keep_recent"
 FIELD_BOUND = "summary_input_cap"
+FIELD_TRIM = "summary_trim_strategy"
 
 # The only bound direction that can separate: a baseline that elides nothing, and a candidate whose
 # cap rides the moved share down onto the folded transcript.
@@ -42,7 +43,7 @@ SEPARATING_BOUNDS = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
 # The fields the two audited policies (`observation_cap`, `compact`) are parameterized by. A field
 # outside this set cannot move a prompt in either arm whatever it is set to.
 AUDITED_POLICY_FIELDS = frozenset(
-    {FIELD_CAP, FIELD_HEAD, FIELD_SHARE, FIELD_KEEP_RECENT, FIELD_BOUND}
+    {FIELD_CAP, FIELD_HEAD, FIELD_SHARE, FIELD_KEEP_RECENT, FIELD_BOUND, FIELD_TRIM}
 )
 
 

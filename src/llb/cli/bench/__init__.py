@@ -19,6 +19,7 @@ from llb.cli.bench.context import (  # noqa: F401
     compact_vs_cap,
     context_sweep,
     policy_change_audit,
+    summary_trim_adoption,
 )
 from llb.cli.bench.knowledge_cutoff import run, ua  # noqa: F401
 from llb.cli.bench.loop import (  # noqa: F401

@@ -76,28 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-entry-aware-summary-fold-adoption (optional)
-
-Promote the entry-aware summary-input prototype into an explicit context-policy choice and decide
-whether it should replace the shipped whole-transcript head-and-tail trim. Run it across the typed
-memory, aggregate-search, repeated-fold, and crossover workloads on two host-fit families; compare
-completion, total model-input cost, summary prompt bytes, and fold count against `head_tail`; and
-route the new strategy through policy-change audit and published-value provenance before any default
-change. Require no head/tail or aggregate regression and preserve the middle-critical recovery.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the gated recovery and fixed-byte comparison in
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype),
-  plus the [policy-constant audit](current/extended-workflows/policy-constant-audit.md).
-- User-visible outcome: an operator gets a supported summary-fold strategy for sessions where
-  critical evidence can occupy any entry, rather than an evidence-only prototype.
-- Scope boundary: in scope -- public policy configuration, cross-workload regression, audit and
-  provenance integration, and a default decision. Out of scope -- increasing the resolved window
-  or changing compaction trigger/hysteresis.
-- Documentation target:
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype).
-
 #### agent-context-policy-hysteresis-second-fold (optional)
 
 Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
@@ -164,6 +142,31 @@ fold count. This separates a robust fold-count rule from a ceiling result on two
   rule across families or names the first family/fold where it fails.
 - Documentation target:
   [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
+
+#### agent-context-policy-two-arm-order-confound (optional)
+
+Every two-arm agentic study on this host runs its arms in a FIXED order against one stateful serving
+endpoint -- all of arm A's episodes, then all of arm B's -- so "second arm" is perfectly confounded
+with "the arm under test". That is not a hypothetical: the summary-fold adoption run measures its
+own noise floor on an elision-free control whose two arms build byte-identical prompts and still
+move the model-input cost, and it loses middle-critical cases in the second arm alone
+([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice)).
+Remove the confound rather than bound it: run both arms of each TASK adjacently and alternate which
+arm goes first by task index, so order is balanced across the set instead of aligned with the
+treatment. Then restate the adoption reading on a fully powered middle stratum and say whether the
+default decision moves.
+
+- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
+- Agent status: RUN NEEDED
+- Dependencies: reuse the committed adoption design, its workloads, and its per-case pairing; the
+  change is to the ORDER episodes execute in, not to what is measured.
+- User-visible outcome: an operator learns whether the shipped-default recommendation for the
+  entry-aware fold changes once arm order can no longer explain a dropout.
+- Scope boundary: in scope -- per-task arm interleaving with balanced order, a restated adoption
+  verdict, and the same reading applied to any other two-arm agentic lane that inherits the seam.
+  Out of scope -- new workloads, a third strategy, and changing the shipped summarize bound.
+- Documentation target:
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice).
 
 #### agent-loop-budget-warms-an-unpinned-ollama (optional)
 

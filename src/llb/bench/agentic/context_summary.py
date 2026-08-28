@@ -24,9 +24,6 @@ SUMMARY_PROMPT_PREFIX_CHARS = 40
 ELISION = "[...обрізано {dropped} символів...]"
 ELISION_DROPPED_DIGITS = 12
 MEMORY_MARKER = re.compile(r"\[memory: [^\]\n]+\]")
-SUMMARY_TRIM_HEAD_TAIL = "head_tail"
-SUMMARY_TRIM_PER_ENTRY_HEAD = "per_entry_head"
-SUMMARY_TRIM_STRATEGIES = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
 ENTRY_ELISION = "[...entry elided...]"
 
 Summarize = Callable[[list[TranscriptEntry]], str]
@@ -39,7 +36,7 @@ def summarize_entries(
     *,
     prior_summary: str = "",
     telemetry: ContextTelemetry | None = None,
-    trim_strategy: str = SUMMARY_TRIM_HEAD_TAIL,
+    trim_strategy: str = context_policy.DEFAULT_SUMMARY_TRIM_STRATEGY,
 ) -> str:
     """Ask the model for a bounded running summary of older steps."""
     offered = format_summary_transcript(entries, prior_summary=prior_summary)
@@ -89,11 +86,18 @@ def _bounded_summary_transcript(
     prior_summary: str,
     trim_strategy: str,
 ) -> tuple[str, bool]:
-    """Apply the shipped whole-transcript trim or the evidence-only entry-aware prototype."""
-    if trim_strategy == SUMMARY_TRIM_HEAD_TAIL:
+    """Apply the configured whole-transcript trim or the entry-aware one.
+
+    Both spend the SAME byte budget; they differ only in which bytes of the folded transcript
+    survive it (`llb.bench.agentic.context_policy.SUMMARY_TRIM_STRATEGIES`).
+    """
+    if trim_strategy == context_policy.SUMMARY_TRIM_HEAD_TAIL:
         return trim_observation(offered, transcript_cap_chars, aggregate_safe=False)
-    if trim_strategy != SUMMARY_TRIM_PER_ENTRY_HEAD:
-        raise ValueError(f"unknown summary trim strategy: {trim_strategy!r}")
+    if trim_strategy != context_policy.SUMMARY_TRIM_PER_ENTRY_HEAD:
+        raise ValueError(
+            f"unknown summary trim strategy: {trim_strategy!r}; "
+            f"choose from {context_policy.SUMMARY_TRIM_STRATEGIES}"
+        )
     if transcript_cap_chars <= 0 or len(offered) <= transcript_cap_chars:
         return offered, False
     parts = _summary_transcript_parts(entries, prior_summary=prior_summary)

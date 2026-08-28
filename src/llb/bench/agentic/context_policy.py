@@ -26,6 +26,16 @@ SUMMARY_INPUT_CAP_TRIGGER = "trigger"
 SUMMARY_INPUT_CAPS: tuple[str, ...] = (SUMMARY_INPUT_CAP_WINDOW, SUMMARY_INPUT_CAP_TRIGGER)
 DEFAULT_SUMMARY_INPUT_CAP = SUMMARY_INPUT_CAP_WINDOW
 
+# HOW that input cap spends its bytes once the folded transcript does not fit it. `head_tail` cuts
+# the rendered transcript once, head and tail around one elision marker, so a fact in the middle
+# ENTRIES is gone; `per_entry_head` shares the same byte budget across the entries and keeps each
+# one's leading facts, so evidence that can occupy any entry survives at the same prompt size.
+# The cap decides HOW MANY bytes reach the summarizer and this decides WHICH ones.
+SUMMARY_TRIM_HEAD_TAIL = "head_tail"
+SUMMARY_TRIM_PER_ENTRY_HEAD = "per_entry_head"
+SUMMARY_TRIM_STRATEGIES: tuple[str, ...] = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
+DEFAULT_SUMMARY_TRIM_STRATEGY = SUMMARY_TRIM_HEAD_TAIL
+
 TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
 
 
@@ -40,6 +50,7 @@ class ContextPolicy:
     compact_share: float = DEFAULT_COMPACT_SHARE
     compact_keep_recent: int = DEFAULT_COMPACT_KEEP_RECENT
     summary_input_cap: str = DEFAULT_SUMMARY_INPUT_CAP
+    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY
 
     def __post_init__(self) -> None:
         if self.name not in CONTEXT_POLICIES:
@@ -54,4 +65,9 @@ class ContextPolicy:
             raise ValueError(
                 f"unknown summary input cap: {self.summary_input_cap!r}; "
                 f"choose from {SUMMARY_INPUT_CAPS}"
+            )
+        if self.summary_trim_strategy not in SUMMARY_TRIM_STRATEGIES:
+            raise ValueError(
+                f"unknown summary trim strategy: {self.summary_trim_strategy!r}; "
+                f"choose from {SUMMARY_TRIM_STRATEGIES}"
             )
