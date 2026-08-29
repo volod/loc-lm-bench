@@ -76,37 +76,41 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-fold-length-probe-predicts-a-guard-it-cannot-count (optional)
+#### agent-context-policy-fold-length-is-replayed-from-a-fold-of-the-wrong-span (optional)
 
-The per-family two-fold guard fit ranks candidate guards with a model-free walk replayed at each
-family's measured fold length, and the run it drives confirms the guard it picks -- but its
-ABSOLUTE per-guard count is not calibrated, and it disagrees with a measured run by a whole fold at
-the declared guard
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#what-the-fit-is-worth-and-where-it-is-not-calibrated)).
-The walk models the post-fold prompt but answers every non-summary step with the oracle's own short
-output, so a family whose steps run long grows its transcript at a rate the probe never sees. Feed
-the replay that family's measured STEP output length beside its measured fold length, so a fitted
-cell's predicted rung is a number an operator can read on its own rather than one only a confirming
-run makes safe.
+The guard fit's replay now carries the family's measured STEP growth as well as its measured fold
+length, and the step half came back exactly at the oracle's own walk on both families, so the
+remaining calibration error is entirely in the fold length -- which is measured on the CONTROL's
+single fold, covering the whole ten-entry transcript, and replayed at a cell that folds three- and
+four-entry spans. A summarizer offered less writes less, so the replayed length is wrong by a
+guard-dependent amount (-14 chars at the fitted 7900 guard, enough to flip the count at the
+declared 7000 one)
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#how-far-a-fitted-guards-count-can-be-read-on-its-own)).
+The ladder already runs a second never-fitted cell at a fixed 6500 guard whose folds cover much
+shorter spans; run it before the fitted cell and the fit gets a SECOND measured (offered span,
+written length) point, which is what it needs to replay the length the fitted cell's own span
+implies rather than the control's.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
 - Agent status: RUN NEEDED
-- Dependencies: reuse the committed replication design, its guard-fit block, its predeclared band,
-  and its control-first measurement; what changes is what the replayed walk writes at a non-summary
-  step.
-- User-visible outcome: an operator reading a fitted guard's predicted case count sees a number
-  that matches what the family then measures, across the band rather than only at the chosen guard.
-- Scope boundary: in scope -- a step-length measurement on the control arm, its use in the fold
-  probe, and the fit's prediction error reported per family. Out of scope -- folds deeper than
-  three, a third family, and any change to the shipped marker-preservation default.
-- Execution path: carry the per-step output length the control already produces into the probe's
-  replay, then re-read the fit against a run on the CUDA host; CI covers the calibrated probe and
-  its refusal with fakes.
-- Acceptance gates: `make ci` green; the fitted cell's predicted case count matches the measured
-  count on every qualified family, or the report names the family and guard where the probe's
-  prediction and the measurement diverge.
+- Dependencies: none beyond the committed replication design. `summary_fold_input_chars` is already
+  the offered span per fold and `summary_output_chars` the length written against it, so both
+  points are on disk after the two unfitted cells run; the control-first eligibility gate must stay
+  first, so only the order of the two unfitted cells moves.
+- User-visible outcome: an operator reading a predicted case count at a guard the fit did NOT pick
+  gets a number the run then measures, not only at the guard whose margin happened to be wide.
+- Scope boundary: in scope -- the cell order, the second calibration point, the span-aware replayed
+  fold length, the per-guard margin re-read against it, and whatever the reordering costs the
+  cell-position seam the two-arm order note already names. Out of scope -- folds deeper than three,
+  a third family, a fitted control, and any change to the shipped marker-preservation default.
+- Execution path: reorder the unfitted cells, interpolate the replayed fold length from the two
+  measured spans, then re-read the fit against a run on the CUDA host; CI covers the interpolation
+  and its refusal when only one span was measured, with fakes.
+- Acceptance gates: `make ci` green; the span-aware replay's predicted count at the declared 7000
+  guard matches the 11 of 12 two-fold cases the shared-guard run measured, or the report names the
+  guard where it still diverges and by how many characters.
 - Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md#what-the-fit-is-worth-and-where-it-is-not-calibrated).
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md#how-far-a-fitted-guards-count-can-be-read-on-its-own).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 

@@ -25,6 +25,8 @@ def format_replication_table(analysis: dict[str, object]) -> str:
             f"task-set digest: {analysis['task_set_digest']}",
             f"family digest: {analysis['family_digest']} (roster {analysis['roster_digest']})",
             f"qualified families: {analysis['qualified_models']}",
+            f"fit prediction: [{analysis['fit_prediction_reading']}] "
+            f"{analysis['fit_prediction_reason']}",
             f"ladder fully powered: {str(analysis['ladder_fully_powered']).lower()} -- "
             f"{analysis['ladder_coverage_reason']}",
             f"shared powered fold limit: {analysis['shared_powered_fold_limit']}",
@@ -70,14 +72,32 @@ def _family_block(family: dict[str, object]) -> list[str]:
 
 def _guard_fit_lines(family: dict[str, object]) -> list[str]:
     """What each fitted rung cost this family: the guard it moved to and why it moved there."""
-    return [
-        f"  guard fit {fit['cell_id']}: declared={fit['declared_max_prompt_chars']} "
-        f"fitted={fit['fitted_max_prompt_chars']} "
-        f"median-fold-length={fit['median_fold_length_chars']} "
-        f"predicted={fit['predicted_target_cases']} measured={fit['measured_target_cases']} "
-        f"[{fit['fit_reading']}] {fit['fit_reason']}"
-        for fit in cast(list[dict[str, object]], family.get("guard_fits", []))
-    ]
+    lines: list[str] = []
+    for fit in cast(list[dict[str, object]], family.get("guard_fits", [])):
+        lines.append(
+            f"  guard fit {fit['cell_id']}: declared={fit['declared_max_prompt_chars']} "
+            f"fitted={fit['fitted_max_prompt_chars']} "
+            f"median-fold-length={fit['median_fold_length_chars']} "
+            f"median-step-entry={fit['median_step_entry_chars']} "
+            f"(oracle {fit['oracle_step_entry_chars']}) "
+            f"predicted={fit['predicted_target_cases']} measured={fit['measured_target_cases']} "
+            f"[{fit['fit_reading']}] {fit['fit_reason']}"
+        )
+        lines.append(
+            f"    calibration: step-length [{fit['step_length_reading']}] "
+            f"prediction-error={fit['prediction_error_cases']:+d} cases; "
+            f"fold length replayed at {fit['median_fold_length_chars']} from "
+            f"{fit['fold_length_source']}, this cell measured "
+            f"{fit['median_fitted_cell_fold_length_chars']} "
+            f"({fit['fold_length_replay_error_chars']:+d})"
+        )
+        lines.append(
+            f"    countable: fold-length margin {fit['fold_count_margin_chars']} chars at the "
+            f"fitted guard against {fit['declared_fold_count_margin_chars']} at the declared "
+            f"{fit['declared_max_prompt_chars']}; replay error inside the margin: "
+            f"{str(fit['prediction_within_fold_length_margin']).lower()}"
+        )
+    return lines
 
 
 def persist_replication_run(

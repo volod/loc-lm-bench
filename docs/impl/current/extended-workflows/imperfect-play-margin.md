@@ -344,13 +344,76 @@ Two things the run says that the fitted numbers alone would hide:
   rung as "this family writes longer summaries" is not what the measurement shows; what the shared
   7000 guard sat on was a boundary where a case's fold count flips on a few dozen characters, and
   the wider-spread family was the one it flipped.
-- **The probe ranks guards; it does not predict fold counts in absolute terms.** At the DECLARED
-  7000 guard the probe predicts 0 of `qwen3:14b`'s 12 cases on the two-fold rung, where the real
-  shared-guard run measured 11. The oracle walk models the post-fold prompt but not a family's step
-  verbosity, so its per-guard count can be wrong by a whole fold. What it did correctly here was
-  order the candidates and pick 7900, and the run then measured 12 of 12 on both families --
-  `prediction_held` is the field that keeps that checkable, and a fit whose prediction fails is
-  visible as a number rather than as a surprise in the fold table.
+- **The probe ranks guards; its absolute per-guard count is only as good as its slack.** At the
+  DECLARED 7000 guard the probe predicts 0 of `qwen3:14b`'s 12 cases on the two-fold rung, where
+  the real shared-guard run measured 11. What it did correctly was order the candidates and pick
+  7900, and the run then measured 12 of 12 on both families. The next two sections are what turns
+  that from luck into a number: the replay's step model is measured rather than assumed, and the
+  distance between a guard's prediction and the point where it flips is reported per guard.
+
+### The step half of the replayed walk, measured rather than assumed
+
+A fold count is decided by two things: how much of the guard the running summary already spends,
+and how fast the rest of it is spent as the transcript grows. The fit measures the first (the fold
+length) and used to ASSUME the second, by answering every non-summary step with the oracle's own
+minimal call. A family whose steps appended more than that would grow its context at a rate the
+probe never saw, and its per-guard count would be wrong for a reason no field recorded.
+
+`ContextTelemetry.step_entry_chars` closes that. It records what each step appended to every later
+prompt -- the rendered `- advance({...}) ->` span plus its trailing separator, observation
+excluded, because the observation is the WORLD's contribution and the deterministic walk reproduces
+it exactly. `fold_length_controller` takes the measured length beside the measured fold length and
+pads its replayed call to it (never below it: the oracle's call is the shortest one that plays this
+world), so the transcript the probe walks grows at the family's own measured rate. The padding
+rides on an argument the workflow tool ignores, so the padded walk plays the identical world.
+
+**The measurement came back at the oracle's own length, on both families.** Every one of the 120
+control steps `qwen3:14b` and `gemma4:e4b` each walked rendered at exactly 36 characters, which is
+what the oracle walk renders at over this geometry (`oracle_step_entry_chars`), so
+`step_length_reading` is `the_family_steps_render_at_the_oracle_walk_length` and the fit padded
+nothing. The mechanism this was built to catch is structurally absent here rather than merely
+small: only the tool NAME and ARGUMENTS survive into a transcript entry, so a model's raw output
+length -- its reasoning, its preamble, whatever it wrote around the call -- never reaches a later
+prompt at all. A family can only grow the transcript faster than the oracle by calling a tool with
+bigger arguments, and on this task the only useful call carries one workflow token.
+
+That is a negative result, and it is worth the field it cost: the replayed growth rate is now
+something the run measured on the family that ran, so a future family that DOES call wider is
+priced automatically instead of silently mis-predicted, and the residual calibration error below
+cannot be attributed to this half of the walk.
+
+### How far a fitted guard's count can be read on its own
+
+What the replay still takes on faith is WHICH FOLD its fold length came from. The control folds
+once, at the last step, over the whole ten-entry transcript; the fitted cell folds two shorter
+spans, and a summarizer offered less transcript writes less. So the length handed to the probe is
+always a little wrong, and `fold_length_replay_error_chars` is the run measuring how wrong:
+
+| family | replayed from the control | the fitted cell's own | error | fitted-guard margin | declared-guard margin |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `qwen3:14b` | 274 | 260 | -14 | >=200 | 30 |
+| `gemma4:e4b` | 255 | 253 | -2 | >=200 | 10 |
+
+The last two columns are `fold_count_margin_chars`, and they are what makes a predicted count
+readable. The fit scans the replayed fold length either side of its measurement and reports how far
+it can move before that guard's predicted fold count changes. At the fitted 7900 guard the count
+stays at two folds across the whole 200-character scan either side of the replayed length, so the
+-14 the replay was actually wrong by is nowhere near enough to move it. At the declared 7000 guard
+the count flips between 240 and 245 characters, which is 30 below `qwen3:14b`'s replayed length and
+10 below `gemma4:e4b`'s -- and that is the whole story of the published divergence: the guard was
+never countable, and the guard the fit picked is.
+
+The error is itself guard-dependent, which is why 30 characters of slack is not enough at 7000: a
+tighter guard folds sooner, over fewer entries, so its folds are shorter still and the replay error
+there is larger than the -14 measured at 7900. A margin is therefore a statement about ONE guard,
+not a constant of the study.
+
+Both families' fits came out exact -- `prediction_error_cases` is `+0` on each, with the replay
+error inside the margin -- and the run states it as one cross-family verdict,
+`fit_prediction_reading`: `every_fitted_guard_predicted_the_case_count_its_family_measured`. A fit
+whose prediction misses names its family, cell, guard, both counts and the replay error behind
+them, rather than passing quietly. Lookup key: run
+`agent-context-policy-repeated-fold-completion-replication`, run id `839a67386356`.
 
 ### The mechanism reading, and where the two families disagree
 
@@ -415,7 +478,9 @@ reading.
 | Per-fold paired uncertainty, evidence floor, and the cross-family reading | `src/llb/bench/memory/repeated_fold/replication_reading.py` |
 | Two-family runner, aggregate, and roster driving | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py`, `src/llb/cli/bench/memory/repeated_fold_replication.py` |
 | Measured fold length telemetry and the fold-length probe | `src/llb/bench/agentic/context.py`, `src/llb/bench/agentic/context_summary.py`, `src/llb/bench/memory/boundary/probe.py` |
+| Measured per-step transcript growth (`step_entry_chars`) and the padded replay | `src/llb/bench/agentic/context.py`, `src/llb/bench/memory/boundary/probe.py` |
 | Per-family two-fold guard fit, its predeclared band, and the runner's guard seam | `src/llb/bench/memory/repeated_fold/guard_fit.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
+| The fit's prediction error and the cross-family calibration verdict | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py` |
 | Whether every rung of every family's ladder carries evidence | `src/llb/bench/memory/repeated_fold/ladder_coverage.py` |
 | Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_guard_fit.py` |
 

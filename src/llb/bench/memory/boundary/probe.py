@@ -29,6 +29,7 @@ from llb.bench.agentic.context_policy import (
     POLICY_OBSERVATION_CAP,
     ContextPolicy,
 )
+from llb.bench.agentic.context import format_entry
 from llb.bench.agentic.context_summary import is_summary_prompt
 from llb.backends.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
@@ -49,6 +50,11 @@ ORACLE_SUMMARY = "[стислий підсумок попередніх крок
 # What a fitted fold length is padded with, so a probed summary of a measured length is
 # ordinary prose rather than one repeated character.
 ORACLE_SUMMARY_FILLER = "стислий підсумок попередніх кроків; "
+# The argument a replayed step is padded with when a family's steps render longer than the
+# oracle's own call. It rides on the workflow tool, which ignores arguments it does not name, so
+# the padded walk plays the identical world and only its transcript grows.
+STEP_PAD_ARG = "нотатка"
+STEP_PAD_FILLER = "крок виконано; "
 
 
 def oracle_controller(prompt: str) -> str:
@@ -72,8 +78,10 @@ def oracle_compacting_controller(prompt: str) -> str:
     return ORACLE_SUMMARY if is_summary_prompt(prompt) else oracle_controller(prompt)
 
 
-def fold_length_controller(summary_chars: int) -> Callable[[str], str]:
-    """The oracle walk with a summarizer that writes EXACTLY `summary_chars` characters.
+def fold_length_controller(
+    summary_chars: int, *, step_entry_chars: int = 0
+) -> Callable[[str], str]:
+    """The oracle walk at a measured fold length, and at a measured per-step transcript growth.
 
     `oracle_compacting_controller` answers every summarize call with one short constant, which
     makes the walk deterministic and makes the fold count a property of the geometry alone. That
@@ -81,16 +89,60 @@ def fold_length_controller(summary_chars: int) -> Callable[[str], str]:
     a PARTICULAR model folds: a longer running summary spends more of the guard in every later
     prompt, so the post-fold prompt re-crosses the trigger sooner. Handing the probe a measured
     fold length turns the same model-free walk into a per-family one.
+
+    `step_entry_chars` is the SECOND thing the replay would otherwise assume. The walk answers
+    every non-summary step with the oracle's own minimal call, so a family whose steps append more
+    than that to the transcript grows its prompt at a rate the probe never sees. Handing it the
+    family's measured entry length pads each replayed call to that length -- never below it, since
+    the oracle's call is the shortest one that plays this world -- so the transcript the probe
+    walks grows at the rate the family measured rather than at the one the probe assumed.
     """
     if summary_chars < 0:
         raise ValueError(f"a fold length is a character count, got {summary_chars}")
+    if step_entry_chars < 0:
+        raise ValueError(f"a step entry length is a character count, got {step_entry_chars}")
     repeats = summary_chars // len(ORACLE_SUMMARY_FILLER) + 1
     body = (ORACLE_SUMMARY_FILLER * repeats)[:summary_chars]
 
     def controller(prompt: str) -> str:
-        return body if is_summary_prompt(prompt) else oracle_controller(prompt)
+        if is_summary_prompt(prompt):
+            return body
+        return _grown_to_measured_step(oracle_controller(prompt), step_entry_chars)
 
     return controller
+
+
+def _grown_to_measured_step(reply: str, step_entry_chars: int) -> str:
+    """Pad one replayed call so its transcript entry renders at the measured length.
+
+    Padding rides on an argument the workflow tool ignores, so the world walks identically. A
+    target the oracle's own call already meets leaves the call untouched, and so does a target
+    within one padding key's overhead of it -- below that the probe cannot resolve a difference,
+    and inventing one would be a number the walk did not measure.
+    """
+    if step_entry_chars <= 0:
+        return reply
+    call = json.loads(reply)
+    if call["name"] != ADVANCE:
+        return reply
+    arguments = dict(call["arguments"])
+    short = step_entry_chars - len(format_entry((ADVANCE, arguments, "")))
+    if short < _STEP_PAD_OVERHEAD:
+        return reply
+    filler = short - _STEP_PAD_OVERHEAD
+    repeats = filler // len(STEP_PAD_FILLER) + 1
+    arguments[STEP_PAD_ARG] = (STEP_PAD_FILLER * repeats)[:filler]
+    return json.dumps({"name": ADVANCE, "arguments": arguments}, ensure_ascii=False)
+
+
+def _step_pad_overhead() -> int:
+    """Characters the padding argument itself costs, key and JSON punctuation included."""
+    bare = format_entry((ADVANCE, {"token": ""}, ""))
+    padded = format_entry((ADVANCE, {"token": "", STEP_PAD_ARG: ""}, ""))
+    return len(padded) - len(bare)
+
+
+_STEP_PAD_OVERHEAD = _step_pad_overhead()
 
 
 def compact_fold_input_probe(
@@ -170,8 +222,9 @@ def compact_tasks_fold_input_probe(
         ).telemetry
         for task in tasks
     ]
-    fold_inputs = _max_by_fold_ordinal([item.summary_fold_input_chars for item in telemetries])
-    fold_steps = _max_by_fold_ordinal([item.summary_fold_steps for item in telemetries])
+    fold_inputs = _max_by_ordinal([item.summary_fold_input_chars for item in telemetries])
+    fold_steps = _max_by_ordinal([item.summary_fold_steps for item in telemetries])
+    step_entries = _max_by_ordinal([item.step_entry_chars for item in telemetries])
     return {
         "n_compactions": max(item.n_compactions for item in telemetries),
         "compaction_prompt_chars": max(item.compaction_prompt_chars for item in telemetries),
@@ -187,15 +240,19 @@ def compact_tasks_fold_input_probe(
         # step never enters the folding regime at all, so this is what a per-family guard fit
         # measures a family's walk length against.
         "summary_fold_steps": fold_steps,
+        # What each replayed STEP appended to the transcript. It answers the calibration question
+        # a fold count alone cannot: whether the walk this probe counted grows at the rate the
+        # family it is standing in for actually measured.
+        "step_entry_chars": step_entries,
     }
 
 
-def _max_by_fold_ordinal(per_task: list[list[int]]) -> list[int]:
-    """One value per fold ordinal, taking the max across tasks at each ordinal.
+def _max_by_ordinal(per_task: list[list[int]]) -> list[int]:
+    """One value per ordinal, taking the max across tasks at each position.
 
     The probe's other fields already take a max across tasks so a single worst-case episode names
-    the geometry; the per-fold lists do the same ordinal-wise so a multi-fold answer stays about
-    one fold at a time rather than a mix of tasks.
+    the geometry; the per-fold and per-step lists do the same ordinal-wise so a multi-fold answer
+    stays about one fold at a time rather than a mix of tasks.
     """
     if not per_task:
         return []

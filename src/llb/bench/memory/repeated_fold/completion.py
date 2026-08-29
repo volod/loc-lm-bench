@@ -164,6 +164,9 @@ def _cell_row(
             # One entry per fold, so the control's rows carry the fold length a later cell's
             # guard is fitted against without a second run.
             "summary_output_chars": list(episode.telemetry.summary_output_chars),
+            # One entry per step, for the other half of the same fit: how fast this family's own
+            # calls grow the transcript the fold count is counted on.
+            "step_entry_chars": list(episode.telemetry.step_entry_chars),
         }
         for row, episode in zip(report.rows, report.episodes, strict=True)
     ]

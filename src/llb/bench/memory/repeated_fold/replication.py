@@ -14,7 +14,7 @@ from llb.bench.memory.repeated_fold.completion import (
     RepeatedFoldRun,
     run_repeated_fold_completion,
 )
-from llb.bench.memory.repeated_fold.guard_fit import guard_resolver
+from llb.bench.memory.repeated_fold.guard_fit import guard_resolver, measured_fold_lengths
 from llb.bench.memory.repeated_fold.replication_design import (
     minimum_paired_cases,
     replication_roster,
@@ -27,6 +27,15 @@ from llb.bench.memory.repeated_fold.replication_reading import (
     replication_reading,
 )
 from llb.bench.common import LLMComplete
+from llb.bench.context_policy.guard_band import median_int
+
+# What the fitted guard's PREDICTED case count turned out to be worth, across every family that
+# ran one. The fit's job is to rank candidate guards; whether its absolute per-guard count is a
+# number an operator can read on its own is a separate question, and this is where the run answers
+# it rather than leaving it to the next reader of the fold table.
+PREDICTION_CALIBRATED = "every_fitted_guard_predicted_the_case_count_its_family_measured"
+PREDICTION_DIVERGED = "a_fitted_guard_predicted_a_case_count_its_family_did_not_measure"
+PREDICTION_UNREAD = "no_qualified_family_ran_a_fitted_guard"
 
 
 @dataclass(slots=True)
@@ -92,7 +101,7 @@ def family_fold_analysis(
         "control_reason": analysis["control_reason"],
         "evidence_floor": floor,
         "guard_fits": [
-            _fit_against_measurement(fit, rows)
+            _fit_against_measurement(fit, rows, cast(list[dict[str, object]], analysis["cells"]))
             for fit in cast(list[dict[str, object]], analysis["guard_fits"])
         ],
         "fold_groups": rows,
@@ -109,26 +118,78 @@ def family_fold_analysis(
 
 
 def _fit_against_measurement(
-    fit: dict[str, object], rows: list[dict[str, object]]
+    fit: dict[str, object], rows: list[dict[str, object]], cells: list[dict[str, object]]
 ) -> dict[str, object]:
-    """State the fitted guard's PREDICTION beside what the family then measured.
+    """State the fitted guard's PREDICTION beside what the family then measured, and the error.
 
-    The fit is a model-free probe replayed at a measured fold length, so it can be wrong: a family
-    whose later folds write longer summaries than its first one lands somewhere else. Recording
-    both makes that visible as a number rather than as a surprise in the fold table.
+    The fit is a model-free probe replayed at measurements taken on ANOTHER cell -- the one-fold
+    control -- so it can be wrong even with the family's own step length carried across: the
+    control folds one long span once, while the fitted cell folds several short ones, and a
+    summarizer handed less transcript writes less. `fold_length_replay_error_chars` is that gap,
+    measured after the fact, and it is what a per-guard count that misses is explained by.
     """
     target = int(cast(int, fit["target_folds"]))
+    predicted = int(cast(int, fit["predicted_target_cases"]))
     measured = [
         int(cast(int, row["n_evidence"]))
         for row in rows
         if int(cast(int, row["measured_folds"])) == target
     ]
+    measured_cases = measured[0] if measured else 0
+    cell_folds = measured_fold_lengths(cells, cast(str, fit["cell_id"]))
+    replayed = int(cast(int, fit["median_fold_length_chars"]))
+    error = median_int(cell_folds) - replayed if cell_folds else 0
     return {
         **fit,
-        "measured_target_cases": measured[0] if measured else 0,
-        "prediction_held": bool(measured)
-        and measured[0] >= int(cast(int, fit["predicted_target_cases"])),
+        "measured_target_cases": measured_cases,
+        "prediction_held": bool(measured) and measured_cases >= predicted,
+        "prediction_error_cases": measured_cases - predicted,
+        "prediction_exact": bool(measured) and measured_cases == predicted,
+        "fitted_cell_fold_lengths": cell_folds,
+        "median_fitted_cell_fold_length_chars": median_int(cell_folds),
+        "fold_length_replay_error_chars": error,
+        # WHY the prediction held or missed, rather than only that it did: the fit's slack against
+        # the error the replay actually made. A prediction inside the margin is one the operator
+        # can read on its own; one outside it happened to be right.
+        "prediction_within_fold_length_margin": bool(cell_folds)
+        and abs(error) <= int(cast(int, fit.get("fold_count_margin_chars", 0))),
     }
+
+
+def fit_prediction_reading(families: list[dict[str, object]]) -> tuple[str, str]:
+    """Whether every fitted guard's predicted case count is one the run then measured.
+
+    A divergence is named -- family, cell, guard, both counts and the replay error behind them --
+    rather than folded into a pass, because the whole point of calibrating the probe is that an
+    operator can read a predicted rung without a confirming run standing behind it.
+    """
+    fits = [
+        (cast(str, family["model_family"]), fit)
+        for family in families
+        if bool(family["control_eligible"])
+        for fit in cast(list[dict[str, object]], family.get("guard_fits", []))
+    ]
+    if not fits:
+        return PREDICTION_UNREAD, "no qualified family resolved a fitted guard"
+    missed = [
+        f"{name}/{fit['cell_id']} at guard {fit['fitted_max_prompt_chars']}: predicted "
+        f"{fit['predicted_target_cases']} of {fit['target_folds']}-fold cases, measured "
+        f"{fit['measured_target_cases']} (fold length replayed at "
+        f"{fit['median_fold_length_chars']}, cell measured "
+        f"{fit['median_fitted_cell_fold_length_chars']})"
+        for name, fit in fits
+        if not bool(fit["prediction_exact"])
+    ]
+    if missed:
+        return PREDICTION_DIVERGED, "; ".join(missed)
+    return (
+        PREDICTION_CALIBRATED,
+        "; ".join(
+            f"{name}/{fit['cell_id']} at guard {fit['fitted_max_prompt_chars']}: predicted and "
+            f"measured {fit['measured_target_cases']} of {fit['target_folds']}-fold cases"
+            for name, fit in fits
+        ),
+    )
 
 
 def _paired_losses(rows: list[dict[str, object]], *, powered: bool) -> list[int]:
@@ -171,6 +232,7 @@ def analyze_replication_runs(
         "evidence_floor": minimum_paired_cases(design),
         "families": families,
         "qualified_models": [row["model"] for row in qualified],
+        **_fit_prediction(families),
         **ladder_coverage(qualified),
         "replication_reading": reading,
         "replication_reason": reason,
@@ -180,3 +242,9 @@ def analyze_replication_runs(
         },
         "changes_shipped_default": False,
     }
+
+
+def _fit_prediction(families: list[dict[str, object]]) -> dict[str, object]:
+    """The cross-family calibration verdict, as the two fields the report and CI read."""
+    reading, reason = fit_prediction_reading(families)
+    return {"fit_prediction_reading": reading, "fit_prediction_reason": reason}

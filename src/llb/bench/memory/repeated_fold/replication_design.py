@@ -19,7 +19,11 @@ from llb.bench.memory.repeated_fold.design import (
     validate_repeated_fold_design,
 )
 from llb.bench.context_policy.guard_band import search_band
-from llb.bench.memory.repeated_fold.guard_fit import GUARD_FIT_FIELD, guard_fit_spec
+from llb.bench.memory.repeated_fold.guard_fit import (
+    GUARD_FIT_FIELD,
+    guard_fit_spec,
+    step_length_source,
+)
 from llb.bench.policy_change.geometry import load_audited_design
 
 DESIGN_PATH = "samples/benchmarks/agentic_compact_repeated_fold_replication_design.json"
@@ -122,10 +126,18 @@ def _validate_guard_fit(design: dict[str, object], cells: list[dict[str, object]
     if target < 2:
         raise ValueError("a one-fold rung is the control's job; fit a repeatedly folding cell")
     _validate_band(spec, cell, cells, as_mapping(design, "held_fixed"))
+    controls = {str(row["cell_id"]) for row in cells if row.get("cap_fitting_control")}
     source = as_str(spec, "fold_length_source")
-    if source not in {str(row["cell_id"]) for row in cells if row.get("cap_fitting_control")}:
+    if source not in controls:
         raise ValueError(
             f"the fold length must be measured on a cap-fitting control cell, got {source!r}"
+        )
+    # The replay needs BOTH halves off a cell the family runs before the fitted one, or the fit
+    # would be predicting a fold count on a transcript growing at a rate nobody measured.
+    steps = step_length_source(spec)
+    if steps not in controls:
+        raise ValueError(
+            f"the step length must be measured on a cap-fitting control cell, got {steps!r}"
         )
 
 
