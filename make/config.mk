@@ -466,6 +466,7 @@ AGENT_CONTEXT_COMPACT_MEMORY_BOUNDARY_SURFACE_DESIGN ?= $(PROJECT_ROOT)/samples/
 AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json
 AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_fold_step_crossover_design.json
 AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_repeated_fold_completion_design.json
+AGENT_CONTEXT_COMPACT_REPEATED_FOLD_REPLICATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_repeated_fold_replication_design.json
 AGENT_CONTEXT_COMPACT_SECOND_FOLD_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_second_fold_trigger_design.json
 AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_summary_input_cap_design.json
 AGENT_CONTEXT_COMPACT_WINDOW_ELISION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_window_elision_design.json

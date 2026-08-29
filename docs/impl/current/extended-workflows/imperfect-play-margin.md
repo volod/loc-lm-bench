@@ -232,9 +232,88 @@ cell that measures four or more folds, or a model that qualifies on the control 
 case at two or three folds; neither exists in this run, which is why the claim stops at three.
 Lookup key: run `agent-context-policy-repeated-fold-completion-cost`, run id `9ce2d99c7a89`.
 
+Both limits that reading names -- one model family, two cases -- are lifted by the replication in
+the next section, which is where the operator-facing fold-count rule now comes from.
+
 ```bash
 make bench-agentic-context-compact-repeated-fold
 ```
+
+## The fold-count rule, replicated on a second family
+
+Two cases on one model is the shape of evidence that cannot separate "three folds are safe" from
+"these two codes are easy", so the rule above was a ceiling result until something moved both
+limits at once. `samples/benchmarks/agentic_compact_repeated_fold_replication_design.json` is that
+design. It holds the three cells, the seed, the marker ablation, and the one-fold eligibility gate
+EXACTLY as the completion design declares them -- the shared cell contract is checked by that
+design's own validator, so a geometry drift fails in one place rather than two -- and changes only
+what the claim rests on: twelve predeclared memory cases instead of two, a candidate roster the
+gate qualifies families from, and a predeclared floor of four paired cases per measured fold group.
+
+Two properties make it a replication rather than a second run:
+
+- **Identical cases, one digest.** Every fold cell and both marker arms inside a family walk the
+  same task set at the same seed, and both families reproduced the same `task_set_digest`. A fold
+  group therefore differs from the one-fold control in FOLD COUNT and in nothing else.
+- **Paired, not marginal.** Every higher-fold case is paired against the SAME task's one-fold
+  outcome, so the reading is a per-task win/loss ledger carrying an interval, not two fractions
+  that happen to be equal. Equal marginal rates are what the first run had; they say nothing about
+  whether the same tasks were the ones that survived.
+
+CUDA host evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 24.31 tok/s and `gemma4:e4b` at
+57.67 tok/s, Ollama `num_ctx=8192`, 144 episodes in about 35 minutes. Both families passed the
+one-fold control 12/12 with exactly one measured fold on every case, so both are qualified and the
+gate consumed neither of the roster's fallbacks. Grouped by the fold count each REAL episode
+measured, under the shipped marker-preserving policy:
+
+| family | measured folds | completed | 95% interval | pairs vs one fold | one-fold wins |
+| --- | ---: | ---: | --- | ---: | ---: |
+| `qwen3:14b` | 1 | 12/12 | [0.758, 1.000] | reference | - |
+| `qwen3:14b` | 2 | 11/11 | [0.741, 1.000] | 11 | 0 |
+| `qwen3:14b` | 3 | 13/13 | [0.772, 1.000] | 13 | 0 |
+| `gemma4:e4b` | 1 | 12/12 | [0.758, 1.000] | reference | - |
+| `gemma4:e4b` | 2 | 1/1 | [0.207, 1.000] | 1 | 0 |
+| `gemma4:e4b` | 3 | 23/23 | [0.857, 1.000] | 23 | 0 |
+
+Verdict: **the three-fold rule extends across both qualified families**. Not one of the 48 paired
+higher-fold cases completes at one fold and fails at two or three, on either family, so the
+operator-facing fold-count limit stays at three for a reason stronger than a matching rate -- the
+same tasks survive the extra fold. The intervals are what the claim is worth: 13/13 is
+`[0.772, 1.000]`, so this bounds a completion floor around 0.77 at three folds on `qwen3:14b` and
+around 0.86 on `gemma4:e4b`, not a proof of perfection. Nothing here authorizes a fourth fold.
+
+**The ladder has a hole, and it is reported rather than smoothed.** `gemma4:e4b` landed only ONE
+case on two measured folds: its summaries run longer than `qwen3:14b`'s, so the `twofold-d10-g7000`
+guard folds a third time on 11 of its 12 cases. That group is below the four-case floor, and an
+under-floor group is not allowed to cut the verdict in either direction -- it can neither extend a
+rule nor break one, and `[0.207, 1.000]` is why. The powered limit of 3 on that family therefore
+rests on its one-fold and three-fold groups, and the run says so in words rather than presenting a
+continuous ladder it does not have. A loss inside an under-floor group would still be NAMED
+(`underpowered_paired_losses`); there were none.
+
+**The mechanism reading is where the two families disagree, and it favors the shipped default.**
+The first run's marker ablation found the typed `[memory: ...]` record was not load-bearing, which
+was a statement about one model. It does not transfer. On `qwen3:14b` it holds --
+`model_written_summary_sufficient`, zero marker wins over all 36 paired cases. On `gemma4:e4b` it
+fails: `typed_memory_marker_required`, with marker preservation winning 2 of 23 paired three-fold
+cases and losing none, one in each repeatedly folding cell. So the shipped default is not merely
+cheap-to-keep as the single-family reading concluded -- on a second qualified family it is the
+difference between completing and losing the code, and dropping it would have cost real completion
+that one model family could not have shown.
+
+What would overturn this: a cell that measures four or more folds; a third qualified family that
+loses a paired case at two or three folds; or a `gemma4:e4b` geometry that actually populates the
+two-fold group and loses there. What would strengthen it without moving the bound: a guard that
+lands both families on a floor-clearing two-fold group. Lookup key: run
+`agent-context-policy-repeated-fold-completion-replication`, run id `9fb11af29f9b`.
+
+```bash
+make bench-agentic-context-compact-repeated-fold-replication
+```
+
+The command is the same CLI entry point as the single-family study -- it dispatches on the design's
+`study_kind` -- so there is one code path to keep correct and two committed designs that select the
+reading.
 
 ## Implementation map
 
@@ -253,7 +332,10 @@ make bench-agentic-context-compact-repeated-fold
 | Two-fold audit rows, margin scaling, and the validity reading | `src/llb/bench/memory/two_fold/reading.py` |
 | Repeated-fold completion design and compact-only runner | `src/llb/bench/memory/repeated_fold/design.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
 | Completion/mechanism readings, report, and command | `src/llb/bench/memory/repeated_fold/reading.py`, `src/llb/bench/memory/repeated_fold/report.py`, `src/llb/cli/bench/memory/repeated_fold.py` |
-| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py` |
+| Replication design contract and roster | `src/llb/bench/memory/repeated_fold/replication_design.py`, `samples/benchmarks/agentic_compact_repeated_fold_replication_design.json` |
+| Per-fold paired uncertainty, evidence floor, and the cross-family reading | `src/llb/bench/memory/repeated_fold/replication_reading.py` |
+| Two-family runner, aggregate, and roster driving | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py`, `src/llb/cli/bench/memory/repeated_fold_replication.py` |
+| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py` |
 
 The geometry, readings, gate, persistence, and marker ablation use deterministic fakes in `make ci`;
 the completion values above come from the named CUDA run.

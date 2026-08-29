@@ -41,16 +41,21 @@ def format_repeated_fold_table(analysis: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def persist_repeated_fold_run(
+def persist_repeated_fold_cells(
     design: dict[str, object],
     run: RepeatedFoldRun,
     *,
     data_dir: Path | str,
-    table: str,
     tokens_per_s: float,
     mirror: Mirror | None = None,
-) -> RunPaths:
-    """Persist each compact arm and one aggregate under the established method root."""
+    run_prefix: str = "repeated-fold",
+) -> list[dict[str, object]]:
+    """Persist one bundle per (cell, marker arm) and stamp each row with its manifest path.
+
+    `run_prefix` is what keeps a replication's per-family bundles addressable: the same cells run
+    once per model family, so the family has to be in the run name or the second family's bundles
+    are indistinguishable from the first's.
+    """
     rows = cast(list[dict[str, object]], run.analysis["cells"])
     for row in rows:
         key = (cast(str, row["cell_id"]), cast(str, row["arm"]))
@@ -58,7 +63,7 @@ def persist_repeated_fold_run(
         paths = persist_category_run(
             method=METHOD,
             data_dir=data_dir,
-            run_name=f"repeated-fold-{key[0]}-{key[1]}",
+            run_name=f"{run_prefix}-{key[0]}-{key[1]}",
             config={
                 "category": METHOD,
                 "study_id": design["study_id"],
@@ -78,8 +83,28 @@ def persist_repeated_fold_run(
             mirror=mirror,
         )
         row["manifest"] = str(paths["manifest"])
+    return rows
+
+
+def mean_shipped_completion(rows: list[dict[str, object]]) -> float:
+    """Mean completion over the shipped typed-marker arm: the aggregate's objective score."""
     typed = [row for row in rows if row["arm"] == "typed_marker"]
-    mean_completion = sum(cast(float, row["completion"]) for row in typed) / len(typed)
+    return sum(cast(float, row["completion"]) for row in typed) / len(typed)
+
+
+def persist_repeated_fold_run(
+    design: dict[str, object],
+    run: RepeatedFoldRun,
+    *,
+    data_dir: Path | str,
+    table: str,
+    tokens_per_s: float,
+    mirror: Mirror | None = None,
+) -> RunPaths:
+    """Persist each compact arm and one aggregate under the established method root."""
+    rows = persist_repeated_fold_cells(
+        design, run, data_dir=data_dir, tokens_per_s=tokens_per_s, mirror=mirror
+    )
     return persist_category_run(
         method=METHOD,
         data_dir=data_dir,
@@ -92,7 +117,7 @@ def persist_repeated_fold_run(
             "analysis": run.analysis,
         },
         metrics={
-            "objective_score": mean_completion,
+            "objective_score": mean_shipped_completion(rows),
             "reliability": 1.0,
             "tokens_per_s": tokens_per_s,
         },

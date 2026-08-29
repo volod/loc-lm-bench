@@ -76,35 +76,34 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-repeated-fold-completion-replication (optional)
+#### agent-context-policy-two-fold-group-is-underpowered-on-one-family (optional)
 
-The current completion reading covers two deterministic memory cases on one qualified model through
-three measured folds
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds)).
-Strengthen the routing claim with a predeclared larger case set and a second model family: require
-both families to pass the one-fold eligibility gate, preserve identical cases and seed across fold
-cells and marker arms within each family, and report paired completion uncertainty at each measured
-fold count. This separates a robust fold-count rule from a ceiling result on two easy codes.
+The repeated-fold replication states its three-fold rule on two qualified families, but the
+`twofold-d10-g7000` guard does not put `gemma4:e4b` on two folds: its longer summaries fold that
+cell a third time on 11 of 12 cases, leaving ONE case in the two-fold group against a predeclared
+floor of four
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#the-fold-count-rule-replicated-on-a-second-family)).
+The rule survives on the one-fold and three-fold groups, and the hole is reported rather than
+smoothed -- but no family pair has yet read two folds with power. Fit a per-family two-fold guard
+from each family's own measured summary length instead of one shared char guard, so the middle rung
+of the ladder carries evidence on both families.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
 - Agent status: RUN NEEDED
-- Dependencies: reuse the compact-only runner, eligibility gate, measured-fold grouping, and marker
-  ablation documented in the linked current page; pick the second family by the local-model host-fit
-  rules rather than weakening the task for a smaller model.
-- User-visible outcome: an operator learns whether the three-fold completion result transfers beyond
-  one model and two cases before treating it as a general session-routing bound.
-- Scope boundary: in scope -- a larger predeclared task set, one additional qualified family, paired
-  uncertainty, and a cross-family reading. Out of scope -- folds deeper than three, a new compaction
-  algorithm, and changing the shipped marker-preservation default.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout, with family
-  and task-set digests in every aggregate.
-- Execution path: extend `make bench-agentic-context-compact-repeated-fold` with a replication design
-  on the CUDA host; CI covers the multi-family aggregation and refusal paths with fakes.
-- Acceptance gates: `make ci` green; each family passes its control before repeated cells run; every
-  fold group reaches the predeclared paired-evidence floor; the report either extends the three-fold
-  rule across families or names the first family/fold where it fails.
+- Dependencies: reuse the committed replication design, its cases, seed, gate, and paired reading;
+  what changes is how the two-fold cell's guard is chosen, not what is measured.
+- User-visible outcome: an operator reading the fold-count limit sees every rung of the ladder
+  carry evidence, rather than a limit resting on the rungs either side of an unpowered one.
+- Scope boundary: in scope -- a per-family guard fit for the two-fold cell and a restated ladder.
+  Out of scope -- folds deeper than three, a third family, and any change to the shipped
+  marker-preservation default.
+- Execution path: extend the replication design with a per-family two-fold guard resolved from a
+  model-free probe of that family's measured fold length; CI covers the fit and its refusal with
+  fakes.
+- Acceptance gates: `make ci` green; every measured fold group on every qualified family reaches
+  the predeclared paired-evidence floor, or the report names the family and guard that could not.
 - Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md#the-fold-count-rule-replicated-on-a-second-family).
 
 #### agent-context-policy-two-arm-order-confound (optional)
 
