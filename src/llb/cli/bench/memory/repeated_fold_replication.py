@@ -61,7 +61,10 @@ def run_replication(design_path: Path) -> None:
                 f"cell={fit['cell_id']} declared={fit['declared_max_prompt_chars']} "
                 f"fitted={fit['fitted_max_prompt_chars']} "
                 f"median-fold-length={fit['median_fold_length_chars']} "
-                f"predicted-{fit['target_folds']}-fold-cases={fit['predicted_target_cases']}"
+                f"fold-length-spread={fit['fold_length_spread_chars']} "
+                f"predicted-{fit['target_folds']}-fold-cases={fit['predicted_target_cases']} "
+                f"interval={fit['predicted_target_cases_interval']} "
+                f"[{fit['count_reading']}]"
             )
         if sum(bool(item.analysis["control_eligible"]) for item in runs) >= required:
             break
@@ -81,7 +84,8 @@ def run_replication(design_path: Path) -> None:
 def _echo_cells(design: dict[str, object]) -> None:
     """Announce the cells in the order they will RUN, which is not the order they are declared."""
     from llb.bench.memory.repeated_fold.design import probe_completion_cell
-    from llb.bench.memory.repeated_fold.guard_fit import fitted_cell_order, guard_fit_spec
+    from llb.bench.memory.repeated_fold.fit_seam import fitted_cell_order
+    from llb.bench.memory.repeated_fold.guard_fit import guard_fit_spec
 
     held = cast(dict[str, object], design["held_fixed"])
     spec = guard_fit_spec(design)

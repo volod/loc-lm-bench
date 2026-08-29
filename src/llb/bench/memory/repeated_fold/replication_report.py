@@ -28,6 +28,8 @@ def format_replication_table(analysis: dict[str, object]) -> str:
             f"fit prediction: [{analysis['fit_prediction_reading']}] "
             f"{analysis['fit_prediction_reason']}",
             f"span correction: [{analysis['span_slope_reading']}] {analysis['span_slope_reason']}",
+            f"level transfer: [{analysis['level_transfer_reading']}] "
+            f"{analysis['level_transfer_reason']}",
             f"ladder fully powered: {str(analysis['ladder_fully_powered']).lower()} -- "
             f"{analysis['ladder_coverage_reason']}",
             f"shared powered fold limit: {analysis['shared_powered_fold_limit']}",
@@ -109,7 +111,27 @@ def _guard_fit_lines(family: dict[str, object]) -> list[str]:
             f"{fit['declared_max_prompt_chars']}; replay error inside the margin: "
             f"{str(fit['prediction_within_fold_length_margin']).lower()}"
         )
+        lines.append(
+            f"    count interval: fitted {_interval(fit['predicted_target_cases_interval'])} "
+            f"[{fit['count_reading']}], declared {fit['declared_max_prompt_chars']} "
+            f"{_interval(fit['declared_target_cases_interval'])} "
+            f"[{fit['declared_count_reading']}]; measured {fit['measured_target_cases']} inside "
+            f"the fitted interval: {str(fit['measured_within_predicted_interval']).lower()}; "
+            f"{fit['count_reason']}"
+        )
+        lines.append(
+            f"    level: [{fit['level_transfer_reading']}] a case's control fold length against "
+            f"its own first fold here correlates {fit['level_transfer_correlation']:+.2f} over "
+            f"{fit['level_transfer_pairs']} paired cases; case-to-case spread "
+            f"{fit['fold_length_spread_chars']} chars over {fit['fold_length_range_chars']}"
+        )
     return lines
+
+
+def _interval(interval: object) -> str:
+    """A count interval as the table prints it, or the refusal when nothing was measured."""
+    bounds = cast(list[int], interval or [])
+    return f"{bounds[0]}-{bounds[1]} cases" if bounds else "unmeasured"
 
 
 def persist_replication_run(

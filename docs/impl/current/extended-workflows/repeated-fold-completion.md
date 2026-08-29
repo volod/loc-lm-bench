@@ -185,7 +185,8 @@ Two things the run says that the fitted numbers alone would hide:
   luck into a number, and what says how far the number reaches: the replay's step model is
   measured rather than assumed, its fold length is replayed at the span the fold actually offered,
   and the distance between a guard's prediction and the point where it flips is reported per
-  guard.
+  guard -- which is also what says when a per-guard count must be stated as an interval rather
+  than a number.
 
 ### The step half of the replayed walk, measured rather than assumed
 
@@ -285,30 +286,73 @@ per-family bookkeeping and an unrun family inherits nothing from either.
 the count. The correction changes what can be read at guards the fit did NOT pick; it does not
 change the guard it picks.
 
-### Why the declared guard stays hard to count
+### Why the declared guard stays hard to count, and what a count is stated as instead
 
-The residual is not a missing third calibration point. Two things the run's own rows show:
+The residual is not a missing third calibration point. Two things the run's own rows show, and both
+are re-read from the persisted per-case fields rather than measured again:
 
 - **The flip window at 7000 is narrower than the family's case-to-case spread.** `qwen3:14b`'s
   control fold lengths run 263-304 -- a 41-character spread -- while the predicted count at 7000
-  flips within 10 characters. No per-family constant, level or slope or both, resolves a 10-character
-  window out of 41 characters of case-to-case variation.
+  flips within 10 characters. `gemma4:e4b` is wider on both: a 237-369 spread against a
+  30-character flip window. No per-family constant, level or slope or both, resolves a window that
+  narrow out of that much case-to-case variation.
 - **A case's verbosity does not transfer between cells.** Pair each case's control fold length
-  against its own first fold at the fitted cell and the correlation is -0.03 on `qwen3:14b` and
-  -0.03 on `gemma4:e4b`. The fit carries a per-case LEVEL that turns out not to be a property of
-  the case; what transfers between the two cells is the family's central tendency, which is the
-  thing the slope corrects and the thing the two families disagree about.
+  against its own first fold at the fitted cell and the correlation is **-0.03 on both families**
+  over 12 paired cases each. The level the fit carries across is not a property of the case.
 
-So the honest boundary is the one the margin already draws: a guard whose `fold_count_margin_chars`
-is the full scan is countable, and a guard whose margin is a few tens of characters is one the fit
-can RANK but not count -- and no measurement taken on another cell of the same run changes that,
-because the flip window there is inside the noise of the quantity being measured. Lookup key: run
-`agent-context-policy-repeated-fold-completion-replication`, run id `b4f5f00462f6`.
+The second reading is what decides the level rule, and it decides it against the per-case reading:
+summing "how many of these twelve lengths land on the rung" is not twelve per-case predictions, it
+is the family's own SPREAD sampled twelve times, read as a rate and multiplied back to a count. So
+the level is a family constant plus an irreducible width, and the count is reported as an interval
+-- the Wilson interval on that rate scaled back to cases and rounded outward. The point value does
+not move, which is why the guard the fit picks does not move either.
+
+| family | control spread | guard | flip window | point count | interval | shared-guard run measured |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| `qwen3:14b` | 41 chars (263-304) | 7000 declared | 10 | 10 of 12 | **6-12** | 11 |
+| `qwen3:14b` | 41 chars (263-304) | 7900 fitted | 200 | 12 of 12 | **9-12** | 12 |
+| `gemma4:e4b` | 132 chars (237-369) | 7000 declared | 30 | 0 of 12 | **0-3** | 1 |
+| `gemma4:e4b` | 132 chars (237-369) | 7900 fitted | 200 | 12 of 12 | **9-12** | 12 |
+
+**The interval covers what the point estimate missed, on both families.** The earlier shared-guard
+run measured 11 of `qwen3:14b`'s 12 cases and 1 of `gemma4:e4b`'s on the two-fold rung at the
+declared 7000 guard. The point counts there are 10 and 0 -- wrong on both -- and 11 and 1 both sit
+inside the intervals. At the fitted 7900 guard the interval is 9-12 on both families and both
+measured 12, so the published ladder reads exactly as it did before.
+
+**A guard is refused as a count when its flip window is inside the spread.** That comparison is a
+named reading on every fit record rather than a caveat a reader has to make:
+`the_flip_window_is_narrower_than_the_case_to_case_fold_length_spread` at the declared 7000 guard on
+both families, and `the_flip_window_is_wider_than_the_case_to_case_fold_length_spread` at the fitted
+7900. A refused guard is still RANKED -- that is what the fit exists to do and it is unaffected --
+it just cannot be handed to an operator as a number. A family that writes one length on every case
+has no measured spread to width a count with, and gets
+`no_fold_length_spread_was_measured_to_widen_a_count_with` instead of a zero-width interval
+pretending to be certainty.
+
+The cross-family verdict is `level_transfer_reading`:
+`no_qualified_family_carries_a_per_case_fold_length_level`, with both correlations named. One family
+that DID carry a per-case level would make the level worth keeping per case and the interval
+conservative; neither does.
+
+Every number in this section is emitted by the shipped command rather than derived by hand. CUDA
+host evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 21.99 tok/s and `gemma4:e4b` at
+53.26 tok/s, Ollama `num_ctx=8192`, seed 727, the same 144 episodes in the same control ->
+three-fold -> fitted order. It reproduced the run above field for field -- both families qualified
+12/12, both fitted to 7900, both predicted and measured 12, the same `+0.00814` and `-0.00384`
+slopes, `ladder_fully_powered` true, `model_written_summary_sufficient` on `qwen3:14b` and
+`typed_memory_marker_required` on `gemma4:e4b` -- so nothing the ladder publishes moves and the
+interval, the countability refusal and the level correlation are additions to what a run reports,
+not changes to what it measures. Lookup key: run
+`agent-context-policy-repeated-fold-completion-replication`, run ids `b4f5f00462f6` (the fold
+groups and the span slopes above) and `1502561eda1a` (the intervals, the refusals, and the level
+correlations).
 
 What would overturn this reading: a third qualified family whose slope agrees in sign with one of
 these two, which would turn a disagreement into a majority; a task set whose fold lengths vary less
-between cases than the flip window at the guard being read; or a per-case span correction that
-recovers the transfer the -0.03 correlation says is absent.
+between cases than the flip window at the guard being read, which would make a point count readable
+where it is not now; a family whose paired levels correlate, which would put the per-case level back
+in; or a per-case span correction that recovers the transfer the -0.03 correlation says is absent.
 
 ### The mechanism reading, and where the two families disagree
 
@@ -372,13 +416,14 @@ reading.
 | Two-family runner, aggregate, and roster driving | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py`, `src/llb/cli/bench/memory/repeated_fold_replication.py` |
 | Measured fold length telemetry and the fold-length probe | `src/llb/bench/agentic/context.py`, `src/llb/bench/agentic/context_summary.py`, `src/llb/bench/memory/boundary/probe.py` |
 | Measured per-step transcript growth (`step_entry_chars`) and the padded replay | `src/llb/bench/agentic/context.py`, `src/llb/bench/memory/boundary/probe.py` |
-| Per-family two-fold guard fit, its predeclared band, and the runner's guard seam | `src/llb/bench/memory/repeated_fold/guard_fit.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
-| The run order the fit needs: control first, fitted cell last | `src/llb/bench/memory/repeated_fold/guard_fit.py` (`fitted_cell_order`), `src/llb/bench/memory/repeated_fold/completion.py` |
+| Per-family two-fold guard fit and its predeclared band | `src/llb/bench/memory/repeated_fold/guard_fit.py` |
+| The run order the fit needs, and the runner's guard seam | `src/llb/bench/memory/repeated_fold/fit_seam.py` (`fitted_cell_order`, `guard_resolver`), `src/llb/bench/memory/repeated_fold/completion.py` |
 | Span-aware replayed fold length, its two calibration points, and its refusals | `src/llb/bench/memory/repeated_fold/fold_span.py`, `src/llb/bench/agentic/context_summary.py` (`summary_offered_chars`), `src/llb/bench/memory/boundary/probe.py` |
 | The model-free replay a candidate guard is scored on, and its per-guard margin | `src/llb/bench/memory/repeated_fold/guard_replay.py` |
-| The fit's prediction error and the cross-family calibration verdict | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py` |
+| The fit's prediction error and the cross-family calibration verdicts | `src/llb/bench/memory/repeated_fold/fit_calibration.py`, `src/llb/bench/memory/repeated_fold/replication_report.py` |
+| Whether the per-case fold-length level transfers, the count interval, and the not-countable refusal | `src/llb/bench/memory/repeated_fold/level_transfer.py` |
 | Whether every rung of every family's ladder carries evidence | `src/llb/bench/memory/repeated_fold/ladder_coverage.py` |
-| Tests | `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_guard_fit.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_fold_span.py` |
+| Tests | `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_guard_fit.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_fold_span.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_level_transfer.py` |
 
 The geometry, readings, gate, persistence, guard fit, and marker ablation use deterministic fakes in
 `make ci`; every completion value above comes from the named CUDA run.

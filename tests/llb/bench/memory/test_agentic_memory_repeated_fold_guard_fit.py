@@ -31,11 +31,13 @@ from llb.bench.memory.repeated_fold.guard_replay import (
     oracle_step_entry_chars,
 )
 from llb.bench.memory.repeated_fold.ladder_coverage import ladder_coverage
-from llb.bench.memory.repeated_fold.replication import (
+from llb.bench.memory.repeated_fold.fit_calibration import (
     PREDICTION_CALIBRATED,
     PREDICTION_DIVERGED,
-    analyze_replication_runs,
     fit_prediction_reading,
+)
+from llb.bench.memory.repeated_fold.replication import (
+    analyze_replication_runs,
     run_replication_family,
 )
 from llb.bench.memory.repeated_fold.replication_design import (

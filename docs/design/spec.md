@@ -449,7 +449,10 @@ Context-policy results are published as numbers an operator can act on -- where 
 repaying its summary call, which fold step a trigger selects, what a policy constant is pinned at.
 A published number therefore carries its provenance back to the run artifact and field that produced
 it, and a change to a pinned policy constant must name every published number it invalidates. A
-number nobody can resolve back to a run is not evidence.
+number nobody can resolve back to a run is not evidence. A published number also carries the width
+it is uncertain by whenever the run can measure one: a point estimate whose error is inside the
+spread of the quantity it was estimated from is published as an interval, or refused as a count and
+left as a ranking, never as a number an operator would read as exact.
 
 Standing an agent up needs several of these answers at once -- a model, a prompt system, an adapter,
 a context policy and order, retrieval knobs, a loop policy -- each measured by a different lane. The

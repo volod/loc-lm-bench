@@ -27,23 +27,34 @@ whole transcript, while the fitted cell folds several shorter spans. A second ne
 run before the fitted one, supplies the second (offered span, written length) point that turns the
 control's single length into the length the fitted cell's own span implies -- see
 `llb.bench.memory.repeated_fold.fold_span`.
+
+What the fit does NOT have is a per-case prediction. The level it replays per case is that case's
+control fold length, and the run's own rows say that level does not transfer between cells, so
+summing the rung hits over twelve measured lengths is the family's SPREAD read as a rate and
+multiplied back to a count. The count is therefore reported as an interval, and a guard whose flip
+window is narrower than that spread is refused as a count and left as a ranking --
+`llb.bench.memory.repeated_fold.level_transfer` is where both are priced.
 """
 
 from typing import Callable, cast
 
 from llb.bench.agentic.design_fields import as_int, as_mapping, as_str
 from llb.bench.context_policy.guard_band import guard_grid, median_int, select_guard
-from llb.bench.memory.repeated_fold.design import completion_cells
 from llb.bench.memory.repeated_fold.fold_span import (
     FoldLengthModel,
     fold_length_span_model,
-    measured_fold_points,
     shipped_arm_cases,
 )
 from llb.bench.memory.repeated_fold.guard_replay import (
     fold_count_margin_chars,
     fold_count_predictor,
     oracle_step_entry_chars,
+)
+from llb.bench.memory.repeated_fold.level_transfer import (
+    COUNT_UNMEASURED,
+    count_interval,
+    count_reading,
+    fold_length_spread_chars,
 )
 
 GUARD_FIT_FIELD = "two_fold_guard_fit"
@@ -120,6 +131,7 @@ def fit_fold_guard(
     steps = list(step_entry_chars or [])
     replayed_step = median_int(steps)
     oracle_step = oracle_step_entry_chars(cell, held)
+    spread = fold_length_spread_chars(fold_lengths)
     record: dict[str, object] = {
         "cell_id": cell["cell_id"],
         "target_folds": target,
@@ -135,19 +147,26 @@ def fit_fold_guard(
         "step_length_reading": _step_length_reading(replayed_step, oracle_step),
         "span_length_source": span_length_source(spec),
         **spans.as_record(),
+        "fold_length_range_chars": [min(fold_lengths), max(fold_lengths)] if fold_lengths else [],
+        "fold_length_spread_chars": spread,
         "evidence_floor": evidence_floor,
     }
     if not fold_lengths:
         return {
             **record,
             "predicted_target_cases": 0,
+            "predicted_target_cases_interval": [],
             "declared_target_cases": 0,
+            "declared_target_cases_interval": [],
+            "count_reading": COUNT_UNMEASURED,
+            "declared_count_reading": COUNT_UNMEASURED,
             "meets_evidence_floor": False,
             "fit_reading": FIT_UNMEASURED,
             "fit_reason": (
                 f"cell {record['fold_length_source']!r} measured no summarizer output, so the "
                 f"declared guard {declared} stands unfitted"
             ),
+            "count_reason": ("no measured fold length, so neither guard carries a count to width"),
         }
     predict = fold_count_predictor(cell, held, replayed_step, spans)
     counts = {
@@ -156,13 +175,21 @@ def fit_fold_guard(
     fitted = select_guard(counts, declared)
     best = counts[fitted]
     median_fold = median_int(fold_lengths)
+    fitted_margin = fold_count_margin_chars(predict, fitted, median_fold)
+    declared_margin = fold_count_margin_chars(predict, declared, median_fold)
     return {
         **record,
         "fitted_max_prompt_chars": fitted,
         "predicted_target_cases": best,
+        "predicted_target_cases_interval": count_interval(best, len(fold_lengths)),
         "declared_target_cases": counts.get(declared, 0),
-        "fold_count_margin_chars": fold_count_margin_chars(predict, fitted, median_fold),
-        "declared_fold_count_margin_chars": fold_count_margin_chars(predict, declared, median_fold),
+        "declared_target_cases_interval": count_interval(
+            counts.get(declared, 0), len(fold_lengths)
+        ),
+        "fold_count_margin_chars": fitted_margin,
+        "declared_fold_count_margin_chars": declared_margin,
+        "count_reading": count_reading(fitted_margin, spread),
+        "declared_count_reading": count_reading(declared_margin, spread),
         "meets_evidence_floor": best >= evidence_floor,
         "fit_reading": _fit_reading(fitted, declared, best, evidence_floor),
         "fit_reason": (
@@ -172,80 +199,20 @@ def fit_fold_guard(
             f"{spans.chars_per_offered_char:+.3f} written chars per offered char; "
             f"floor {evidence_floor}"
         ),
+        "count_reason": (
+            f"{best} of {len(fold_lengths)} is a rate estimated from {len(fold_lengths)} measured "
+            f"fold lengths spanning {spread} chars, so the count at guard {fitted} is "
+            f"{_interval_text(count_interval(best, len(fold_lengths)))} "
+            f"[{count_reading(fitted_margin, spread)}] and at the declared {declared} it is "
+            f"{_interval_text(count_interval(counts.get(declared, 0), len(fold_lengths)))} "
+            f"[{count_reading(declared_margin, spread)}]"
+        ),
     }
 
 
 def apply_fitted_guard(cell: dict[str, object], record: dict[str, object]) -> dict[str, object]:
     """The cell as it will actually run: declared in every field except the fitted guard."""
     return {**cell, "max_prompt_chars": int(cast(int, record["fitted_max_prompt_chars"]))}
-
-
-def guard_resolver(
-    design: dict[str, object], *, evidence_floor: int
-) -> (
-    Callable[
-        [dict[str, object], list[dict[str, object]]],
-        tuple[dict[str, object], dict[str, object] | None],
-    ]
-    | None
-):
-    """The completion runner's guard seam, or `None` when the design declares no fit.
-
-    Every cell but the fitted one is handed back exactly as declared, so a design that adds a fit
-    changes the geometry of ONE rung and leaves the control and the deeper cell untouched.
-    """
-    spec = guard_fit_spec(design)
-    if not spec:
-        return None
-    held = as_mapping(design, "held_fixed")
-    fitted_cell_id = as_str(spec, "cell_id")
-    source = as_str(spec, "fold_length_source")
-    step_source = step_length_source(spec)
-    span_source = span_length_source(spec)
-
-    def resolve(
-        cell: dict[str, object], rows: list[dict[str, object]]
-    ) -> tuple[dict[str, object], dict[str, object] | None]:
-        if cell.get("cell_id") != fitted_cell_id:
-            return cell, None
-        lengths = measured_fold_lengths(rows, source)
-        record = fit_fold_guard(
-            design,
-            cell,
-            held,
-            lengths,
-            evidence_floor=evidence_floor,
-            step_entry_chars=measured_step_entry_chars(rows, step_source),
-            span_model=fold_length_span_model(
-                measured_fold_points(rows, source),
-                measured_fold_points(rows, span_source) if span_source else [],
-            ),
-        )
-        return apply_fitted_guard(cell, record), record
-
-    return resolve
-
-
-def fitted_cell_order(design: dict[str, object]) -> list[dict[str, object]]:
-    """The cells in the order a fitted study must RUN them, not the order it declares them.
-
-    The declaration is a ladder, ordered by fold count so a reader can see the rungs. The run has
-    one further constraint the declaration cannot express: every cell a fit measures against has
-    to have run already. So the cap-fitting control stays first -- it is the eligibility gate, and
-    a family that cannot fold once anchors nothing -- and the fitted cell moves LAST, behind the
-    never-fitted cells whose folds give the replay its second measured span.
-
-    The reordering is not free and its cost is named where the marker ablation is read: cell
-    POSITION in the run no longer increases with fold count, so a drift in the stateful endpoint
-    over the run is no longer aligned with the rung being measured.
-    """
-    cells = completion_cells(design)
-    fitted = guard_fit_spec(design).get("cell_id")
-    if not fitted:
-        return cells
-    return [cell for cell in cells if cell.get("cell_id") != fitted] + [
-        cell for cell in cells if cell.get("cell_id") == fitted
-    ]
 
 
 def step_length_source(spec: dict[str, object]) -> str:
@@ -272,6 +239,11 @@ def _step_length_reading(measured: int, oracle: int) -> str:
     if measured <= 0:
         return STEP_LENGTH_UNMEASURED
     return STEP_LENGTH_ABOVE_ORACLE if measured > oracle else STEP_LENGTH_AT_ORACLE
+
+
+def _interval_text(interval: list[int]) -> str:
+    """A count interval as an operator reads it, or the refusal when nothing was measured."""
+    return f"{interval[0]}-{interval[1]} cases" if interval else "unmeasured"
 
 
 def _fit_reading(fitted: int, declared: int, best: int, floor: int) -> str:

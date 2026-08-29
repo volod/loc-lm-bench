@@ -19,9 +19,9 @@ from llb.bench.memory.repeated_fold.design import (
     validate_repeated_fold_design,
 )
 from llb.bench.context_policy.guard_band import search_band
+from llb.bench.memory.repeated_fold.fit_seam import fitted_cell_order
 from llb.bench.memory.repeated_fold.guard_fit import (
     GUARD_FIT_FIELD,
-    fitted_cell_order,
     guard_fit_spec,
     span_length_source,
     step_length_source,

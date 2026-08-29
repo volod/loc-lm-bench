@@ -74,45 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Agentic and context-policy workloads -- `agentic-workloads`
-
-#### agent-context-policy-fold-length-does-not-transfer-between-cells-per-case (optional)
-
-The guard fit now replays its fold length at the span the fold offered, interpolated from two
-measured cells, and that closed most of the calibration error on one family and reversed it on the
-other -- the two families slope in OPPOSITE directions
-(`the_qualified_families_disagree_on_the_sign_of_the_span_correction`), so what each measured is a
-habit rather than a rate
-([completion through repeated compact folds](current/extended-workflows/repeated-fold-completion.md#why-the-declared-guard-stays-hard-to-count)).
-The run's own rows say why a third calibration point would not help: pair each case's control fold
-length against its own first fold at the fitted cell and the correlation is -0.03 on both families,
-so the per-case LEVEL the fit carries across is not a property of the case. Either the level should
-be a family constant with the per-case spread reported as the irreducible width of a per-guard
-count, or the transfer should be recovered from something the case actually carries -- and the run
-already holds the rows to decide which without a GPU.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: CLEAR
-- Dependencies: none. Every input is already persisted per case -- `summary_fold_input_chars`,
-  `summary_output_chars` and `step_entry_chars` on each cell row of the committed replication
-  bundle -- and the reading layer that consumes them is pure, so this is re-read rather than re-run.
-- User-visible outcome: an operator told a predicted case count at an unfitted guard is also told
-  the width that count is uncertain by, instead of a point estimate whose error is inside the
-  family's own case-to-case spread.
-- Scope boundary: in scope -- whether the per-case level is kept, replaced by a family constant, or
-  reported with its spread; the per-guard count stated as an interval rather than a number; and the
-  refusal when the flip window is narrower than the measured spread. Out of scope -- a third
-  family, folds deeper than three, any change to which guard the fit picks, and any change to the
-  shipped marker-preservation default.
-- Execution path: read the persisted per-case rows for the level-transfer correlation, decide the
-  level rule from it, then restate `declared_target_cases` and `predicted_target_cases` as counts
-  with a spread; CI covers the interval and its refusal with fakes.
-- Acceptance gates: `make ci` green; the reported interval at the declared 7000 guard contains the
-  11 of 12 two-fold cases the shared-guard run measured on `qwen3:14b` and the 1 of 12 it measured
-  on `gemma4:e4b`, or the report names which guard it still fails to cover and by how many cases.
-- Documentation target:
-  [completion through repeated compact folds](current/extended-workflows/repeated-fold-completion.md#why-the-declared-guard-stays-hard-to-count).
-
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
