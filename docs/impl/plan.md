@@ -76,35 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-two-fold-group-is-underpowered-on-one-family (optional)
-
-The repeated-fold replication states its three-fold rule on two qualified families, but the
-`twofold-d10-g7000` guard does not put `gemma4:e4b` on two folds: its longer summaries fold that
-cell a third time on 11 of 12 cases, leaving ONE case in the two-fold group against a predeclared
-floor of four
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#the-fold-count-rule-replicated-on-a-second-family)).
-The rule survives on the one-fold and three-fold groups, and the hole is reported rather than
-smoothed -- but no family pair has yet read two folds with power. Fit a per-family two-fold guard
-from each family's own measured summary length instead of one shared char guard, so the middle rung
-of the ladder carries evidence on both families.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the committed replication design, its cases, seed, gate, and paired reading;
-  what changes is how the two-fold cell's guard is chosen, not what is measured.
-- User-visible outcome: an operator reading the fold-count limit sees every rung of the ladder
-  carry evidence, rather than a limit resting on the rungs either side of an unpowered one.
-- Scope boundary: in scope -- a per-family guard fit for the two-fold cell and a restated ladder.
-  Out of scope -- folds deeper than three, a third family, and any change to the shipped
-  marker-preservation default.
-- Execution path: extend the replication design with a per-family two-fold guard resolved from a
-  model-free probe of that family's measured fold length; CI covers the fit and its refusal with
-  fakes.
-- Acceptance gates: `make ci` green; every measured fold group on every qualified family reaches
-  the predeclared paired-evidence floor, or the report names the family and guard that could not.
-- Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md#the-fold-count-rule-replicated-on-a-second-family).
-
 #### agent-context-policy-two-arm-order-confound (optional)
 
 Every two-arm agentic study on this host runs its arms in a FIXED order against one stateful serving
@@ -160,6 +131,38 @@ decide deliberately what an unreachable backend should do there: today a pinned 
   declares resolves `budget_source=served` with no `--max-model-len` passed.
 - Documentation target: the prompt-guard paragraph of
   [agent context policies](current/extended-workflows/agent-context-policies.md).
+
+#### agent-context-policy-fold-length-probe-predicts-a-guard-it-cannot-count (optional)
+
+The per-family two-fold guard fit ranks candidate guards with a model-free walk replayed at each
+family's measured fold length, and the run it drives confirms the guard it picks -- but its
+ABSOLUTE per-guard count is not calibrated, and it disagrees with a measured run by a whole fold at
+the declared guard
+([extended workflows](current/extended-workflows/imperfect-play-margin.md#what-the-fit-is-worth-and-where-it-is-not-calibrated)).
+The walk models the post-fold prompt but answers every non-summary step with the oracle's own short
+output, so a family whose steps run long grows its transcript at a rate the probe never sees. Feed
+the replay that family's measured STEP output length beside its measured fold length, so a fitted
+cell's predicted rung is a number an operator can read on its own rather than one only a confirming
+run makes safe.
+
+- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
+- Agent status: RUN NEEDED
+- Dependencies: reuse the committed replication design, its guard-fit block, its predeclared band,
+  and its control-first measurement; what changes is what the replayed walk writes at a non-summary
+  step.
+- User-visible outcome: an operator reading a fitted guard's predicted case count sees a number
+  that matches what the family then measures, across the band rather than only at the chosen guard.
+- Scope boundary: in scope -- a step-length measurement on the control arm, its use in the fold
+  probe, and the fit's prediction error reported per family. Out of scope -- folds deeper than
+  three, a third family, and any change to the shipped marker-preservation default.
+- Execution path: carry the per-step output length the control already produces into the probe's
+  replay, then re-read the fit against a run on the CUDA host; CI covers the calibrated probe and
+  its refusal with fakes.
+- Acceptance gates: `make ci` green; the fitted cell's predicted case count matches the measured
+  count on every qualified family, or the report names the family and guard where the probe's
+  prediction and the measurement diverge.
+- Documentation target:
+  [extended workflows](current/extended-workflows/imperfect-play-margin.md#what-the-fit-is-worth-and-where-it-is-not-calibrated).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 

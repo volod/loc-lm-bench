@@ -1,7 +1,7 @@
 """Compact-only completion evidence across one, two, and three measured folds."""
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Callable, cast
 
 from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.context_policy import POLICY_COMPACT, ContextPolicy
@@ -24,6 +24,15 @@ from llb.bench.memory.transcript import build_memory_dependent_tasks
 from llb.bench.common import LLMComplete
 
 
+# Given one declared cell and the rows measured before it, the cell as it will actually run plus
+# the record explaining any guard the run moved. A study that holds every guard as declared passes
+# no resolver at all; the two-family replication passes one that fits the middle rung per family.
+GuardResolver = Callable[
+    [dict[str, object], list[dict[str, object]]],
+    tuple[dict[str, object], dict[str, object] | None],
+]
+
+
 @dataclass(slots=True)
 class RepeatedFoldRun:
     """Analysis plus the reports needed to persist each compact-only arm."""
@@ -38,8 +47,14 @@ def run_repeated_fold_completion(
     model: str,
     backend: str,
     complete: LLMComplete,
+    resolve_guard: GuardResolver | None = None,
 ) -> RepeatedFoldRun:
-    """Run every cell under typed-marker and model-summary-only compact arms."""
+    """Run every cell under typed-marker and model-summary-only compact arms.
+
+    `resolve_guard` is the seam a per-family guard fit enters through. It is consulted ONCE per
+    cell, before the cell's first arm runs, so both mechanism arms of a cell share one geometry and
+    the marker ablation stays a comparison of the marker alone.
+    """
     held = cast(dict[str, object], design["held_fixed"])
     tasks = [
         AgenticTask.from_record(row)
@@ -55,9 +70,14 @@ def run_repeated_fold_completion(
     control_eligible = False
     control_reason = "the one-fold control was not run"
     work = [(cell, arm) for cell in completion_cells(design) for arm in MECHANISM_ARMS]
+    resolved: dict[str, tuple[dict[str, object], dict[str, object] | None]] = {}
     for index, (cell, arm) in enumerate(work):
-        geometry = cell_geometry(cell, held)
-        probe = probe_completion_cell(cell, held)
+        cell_id = cast(str, cell["cell_id"])
+        if cell_id not in resolved:
+            resolved[cell_id] = resolve_guard(cell, rows) if resolve_guard else (cell, None)
+        effective, guard_fit = resolved[cell_id]
+        geometry = cell_geometry(effective, held)
+        probe = probe_completion_cell(effective, held)
         report = run_policy(
             tasks,
             ContextPolicy(
@@ -75,9 +95,8 @@ def run_repeated_fold_completion(
             budget=fixed_budget(int(cast(int, geometry["max_prompt_chars"]))),
             preserve_memory_markers=arm == "typed_marker",
         )
-        cell_id = cast(str, cell["cell_id"])
         reports[(cell_id, arm)] = report
-        rows.append(_cell_row(cell, arm, report, probe, digest))
+        rows.append(_cell_row(cell, effective, arm, report, probe, digest, guard_fit))
         if index == 0:
             control_eligible, control_reason = _control_eligibility(rows[0], held)
             if not control_eligible:
@@ -98,6 +117,7 @@ def run_repeated_fold_completion(
             "held_fixed": held,
             "control_eligible": control_eligible,
             "control_reason": control_reason,
+            "guard_fits": [fit for _cell, fit in resolved.values() if fit is not None],
             "cells": rows,
             "completion_by_measured_fold_count": measured,
             "completion_reading": reading,
@@ -127,10 +147,12 @@ def _control_eligibility(row: dict[str, object], held: dict[str, object]) -> tup
 
 def _cell_row(
     cell: dict[str, object],
+    effective: dict[str, object],
     arm: str,
     report: PolicyReport,
     probe: dict[str, object],
     digest: str,
+    guard_fit: dict[str, object] | None,
 ) -> dict[str, object]:
     cases = [
         {
@@ -139,6 +161,9 @@ def _cell_row(
             "status": episode.status,
             "measured_folds": episode.telemetry.n_compactions,
             "n_steps": episode.n_steps,
+            # One entry per fold, so the control's rows carry the fold length a later cell's
+            # guard is fitted against without a second run.
+            "summary_output_chars": list(episode.telemetry.summary_output_chars),
         }
         for row, episode in zip(report.rows, report.episodes, strict=True)
     ]
@@ -147,7 +172,9 @@ def _cell_row(
         "arm": arm,
         "preserve_memory_markers": arm == "typed_marker",
         "depth": cell["depth"],
-        "max_prompt_chars": cell["max_prompt_chars"],
+        "max_prompt_chars": effective["max_prompt_chars"],
+        "declared_max_prompt_chars": cell["max_prompt_chars"],
+        "guard_fit": guard_fit,
         "cap_fitting_control": cell["cap_fitting_control"],
         "expected_oracle_folds": cell["expected_oracle_folds"],
         **probe,

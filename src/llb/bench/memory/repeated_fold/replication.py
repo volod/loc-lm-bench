@@ -14,11 +14,13 @@ from llb.bench.memory.repeated_fold.completion import (
     RepeatedFoldRun,
     run_repeated_fold_completion,
 )
+from llb.bench.memory.repeated_fold.guard_fit import guard_resolver
 from llb.bench.memory.repeated_fold.replication_design import (
     minimum_paired_cases,
     replication_roster,
     roster_digest,
 )
+from llb.bench.memory.repeated_fold.ladder_coverage import ladder_coverage
 from llb.bench.memory.repeated_fold.replication_reading import (
     fold_group_rows,
     powered_fold_limit,
@@ -45,10 +47,21 @@ def run_replication_family(
     *,
     complete: LLMComplete,
 ) -> ReplicationFamilyRun:
-    """Run one candidate control-first, then read its measured fold groups."""
+    """Run one candidate control-first, then read its measured fold groups.
+
+    Control-first is what makes the per-family guard fit possible at all: the control's own
+    telemetry carries the fold length the later cells' guard is resolved from, so the fit costs
+    no extra episode and reads the family that is actually about to run.
+    """
     model = cast(str, candidate["model"])
     backend = cast(str, candidate["backend"])
-    base = run_repeated_fold_completion(design, model=model, backend=backend, complete=complete)
+    base = run_repeated_fold_completion(
+        design,
+        model=model,
+        backend=backend,
+        complete=complete,
+        resolve_guard=guard_resolver(design, evidence_floor=minimum_paired_cases(design)),
+    )
     return ReplicationFamilyRun(
         model_family=cast(str, candidate["model_family"]),
         model=model,
@@ -78,6 +91,10 @@ def family_fold_analysis(
         "control_eligible": eligible,
         "control_reason": analysis["control_reason"],
         "evidence_floor": floor,
+        "guard_fits": [
+            _fit_against_measurement(fit, rows)
+            for fit in cast(list[dict[str, object]], analysis["guard_fits"])
+        ],
         "fold_groups": rows,
         "powered_fold_limit": limit,
         "powered_fold_reason": reason,
@@ -88,6 +105,29 @@ def family_fold_analysis(
         "mechanism_reading": analysis["mechanism_reading"],
         "mechanism_reason": analysis["mechanism_reason"],
         "cells": analysis["cells"],
+    }
+
+
+def _fit_against_measurement(
+    fit: dict[str, object], rows: list[dict[str, object]]
+) -> dict[str, object]:
+    """State the fitted guard's PREDICTION beside what the family then measured.
+
+    The fit is a model-free probe replayed at a measured fold length, so it can be wrong: a family
+    whose later folds write longer summaries than its first one lands somewhere else. Recording
+    both makes that visible as a number rather than as a surprise in the fold table.
+    """
+    target = int(cast(int, fit["target_folds"]))
+    measured = [
+        int(cast(int, row["n_evidence"]))
+        for row in rows
+        if int(cast(int, row["measured_folds"])) == target
+    ]
+    return {
+        **fit,
+        "measured_target_cases": measured[0] if measured else 0,
+        "prediction_held": bool(measured)
+        and measured[0] >= int(cast(int, fit["predicted_target_cases"])),
     }
 
 
@@ -131,6 +171,7 @@ def analyze_replication_runs(
         "evidence_floor": minimum_paired_cases(design),
         "families": families,
         "qualified_models": [row["model"] for row in qualified],
+        **ladder_coverage(qualified),
         "replication_reading": reading,
         "replication_reason": reason,
         "shared_powered_fold_limit": min(limits) if limits else None,

@@ -80,6 +80,11 @@ class ContextTelemetry:
     summary_input_elided_chars: int = 0
     n_trimmed_summary_inputs: int = 0
     summary_fold_input_chars: list[int] = field(default_factory=list)
+    # What the summarizer WROTE at each fold, before typed facts are prepended to it. The offered
+    # span above is chosen by the geometry; this one is chosen by the model, and it is what decides
+    # how much of the guard the post-fold prompt already spends -- so a family whose summaries run
+    # long re-crosses the trigger sooner and folds again on a geometry another family folds once on.
+    summary_output_chars: list[int] = field(default_factory=list)
 
     @property
     def max_prompt_chars(self) -> int:

@@ -25,6 +25,8 @@ def format_replication_table(analysis: dict[str, object]) -> str:
             f"task-set digest: {analysis['task_set_digest']}",
             f"family digest: {analysis['family_digest']} (roster {analysis['roster_digest']})",
             f"qualified families: {analysis['qualified_models']}",
+            f"ladder fully powered: {str(analysis['ladder_fully_powered']).lower()} -- "
+            f"{analysis['ladder_coverage_reason']}",
             f"shared powered fold limit: {analysis['shared_powered_fold_limit']}",
             f"replication reading: [{analysis['replication_reading']}] "
             f"{analysis['replication_reason']}",
@@ -60,9 +62,22 @@ def _family_block(family: dict[str, object]) -> list[str]:
             f"{cast(int, paired['n_pairs']):>5d} {cast(int, paired['control_wins']):>6d} "
             f"{cast(int, paired['group_wins']):>5d} {ablation['marker_wins']:>8d}{floor}"
         )
+    lines.extend(_guard_fit_lines(family))
     lines.append(f"  powered-fold reason: {family['powered_fold_reason']}")
     lines.append(f"  mechanism: [{family['mechanism_reading']}] {family['mechanism_reason']}")
     return lines
+
+
+def _guard_fit_lines(family: dict[str, object]) -> list[str]:
+    """What each fitted rung cost this family: the guard it moved to and why it moved there."""
+    return [
+        f"  guard fit {fit['cell_id']}: declared={fit['declared_max_prompt_chars']} "
+        f"fitted={fit['fitted_max_prompt_chars']} "
+        f"median-fold-length={fit['median_fold_length_chars']} "
+        f"predicted={fit['predicted_target_cases']} measured={fit['measured_target_cases']} "
+        f"[{fit['fit_reading']}] {fit['fit_reason']}"
+        for fit in cast(list[dict[str, object]], family.get("guard_fits", []))
+    ]
 
 
 def persist_replication_run(

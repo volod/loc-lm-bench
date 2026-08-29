@@ -46,6 +46,9 @@ _MEMORY_FACT = re.compile(r"\[memory: final_code=([^\]]+)\]")
 _WORKFLOW_DONE = OBS_WORKFLOW_COMPLETE.split("]", 1)[0] + "]"
 # The constant a probe answers the summarize call with, so a compact walk has no model in it.
 ORACLE_SUMMARY = "[стислий підсумок попередніх кроків]"
+# What a fitted fold length is padded with, so a probed summary of a measured length is
+# ordinary prose rather than one repeated character.
+ORACLE_SUMMARY_FILLER = "стислий підсумок попередніх кроків; "
 
 
 def oracle_controller(prompt: str) -> str:
@@ -67,6 +70,27 @@ def oracle_compacting_controller(prompt: str) -> str:
     which is what the probe measures around.
     """
     return ORACLE_SUMMARY if is_summary_prompt(prompt) else oracle_controller(prompt)
+
+
+def fold_length_controller(summary_chars: int) -> Callable[[str], str]:
+    """The oracle walk with a summarizer that writes EXACTLY `summary_chars` characters.
+
+    `oracle_compacting_controller` answers every summarize call with one short constant, which
+    makes the walk deterministic and makes the fold count a property of the geometry alone. That
+    is the right probe for placing a cap-fitting band and the wrong one for asking how many times
+    a PARTICULAR model folds: a longer running summary spends more of the guard in every later
+    prompt, so the post-fold prompt re-crosses the trigger sooner. Handing the probe a measured
+    fold length turns the same model-free walk into a per-family one.
+    """
+    if summary_chars < 0:
+        raise ValueError(f"a fold length is a character count, got {summary_chars}")
+    repeats = summary_chars // len(ORACLE_SUMMARY_FILLER) + 1
+    body = (ORACLE_SUMMARY_FILLER * repeats)[:summary_chars]
+
+    def controller(prompt: str) -> str:
+        return body if is_summary_prompt(prompt) else oracle_controller(prompt)
+
+    return controller
 
 
 def compact_fold_input_probe(

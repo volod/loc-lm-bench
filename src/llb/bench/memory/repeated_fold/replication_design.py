@@ -12,8 +12,13 @@ import hashlib
 from pathlib import Path
 from typing import cast
 
-from llb.bench.agentic.design_fields import as_mapping, as_rows
-from llb.bench.memory.repeated_fold.design import validate_repeated_fold_design
+from llb.bench.agentic.design_fields import as_int, as_mapping, as_rows, as_str
+from llb.bench.memory.repeated_fold.design import (
+    completion_cells,
+    probe_completion_cell,
+    validate_repeated_fold_design,
+)
+from llb.bench.memory.repeated_fold.guard_fit import GUARD_FIT_FIELD, guard_fit_spec, search_band
 from llb.bench.policy_change.geometry import load_audited_design
 
 DESIGN_PATH = "samples/benchmarks/agentic_compact_repeated_fold_replication_design.json"
@@ -51,10 +56,16 @@ def minimum_paired_cases(design: dict[str, object]) -> int:
 
 
 def validate_replication_design(design: dict[str, object]) -> None:
-    """Require the completion cell contract, a larger case set, a roster, and an evidence floor."""
+    """Require the cell contract, a larger case set, a roster, a floor, and a per-family fit."""
     validate_repeated_fold_design(design, study_kind=STUDY_KIND)
     _validate_case_set(design)
     _validate_roster(design)
+    if not guard_fit_spec(design):
+        raise ValueError(
+            f"a repeated-fold replication must declare a {GUARD_FIT_FIELD!r} block: one shared "
+            "char guard puts a family whose summaries run long on the wrong rung of the ladder"
+        )
+    _validate_guard_fit(design, completion_cells(design))
 
 
 def _validate_case_set(design: dict[str, object]) -> None:
@@ -85,3 +96,74 @@ def _validate_roster(design: dict[str, object]) -> None:
         raise ValueError("every replication candidate must name a distinct model")
     if any(row.get("backend") != "ollama" for row in roster):
         raise ValueError("the repeated-fold replication roster must use local Ollama models")
+
+
+def _validate_guard_fit(design: dict[str, object], cells: list[dict[str, object]]) -> None:
+    """Refuse a fit that could move the cell out of the regime the ladder reads it in.
+
+    The band is predeclared for the same reason the cells are: a guard search free to run to the
+    cap peak could hand a family a CAP-FITTING guard, where the fold-count rung is unreachable by
+    construction, and a search free to run below the deeper cell's guard could hand it that cell's
+    regime instead. Both bounds are checked here rather than discovered in the run.
+    """
+    spec = guard_fit_spec(design)
+    if not spec:
+        return
+    cell = _fitted_cell(spec, cells)
+    target = as_int(spec, "target_folds")
+    if bool(cell.get("cap_fitting_control")):
+        raise ValueError("the one-fold cap-fitting control anchors the ladder and is never fitted")
+    if target != as_int(cell, "expected_oracle_folds"):
+        raise ValueError(
+            f"the fitted cell {cell['cell_id']!r} declares "
+            f"{cell['expected_oracle_folds']} oracle folds, not the fitted target {target}"
+        )
+    if target < 2:
+        raise ValueError("a one-fold rung is the control's job; fit a repeatedly folding cell")
+    _validate_band(spec, cell, cells, as_mapping(design, "held_fixed"))
+    source = as_str(spec, "fold_length_source")
+    if source not in {str(row["cell_id"]) for row in cells if row.get("cap_fitting_control")}:
+        raise ValueError(
+            f"the fold length must be measured on a cap-fitting control cell, got {source!r}"
+        )
+
+
+def _validate_band(
+    spec: dict[str, object],
+    cell: dict[str, object],
+    cells: list[dict[str, object]],
+    held: dict[str, object],
+) -> None:
+    low, high, step = search_band(spec)
+    if step < 1 or low >= high:
+        raise ValueError("the guard search band must be a non-empty ascending range with a step")
+    declared = as_int(cell, "max_prompt_chars")
+    if not low <= declared <= high:
+        raise ValueError(
+            f"the guard search band [{low}, {high}] must contain the declared guard {declared}, "
+            "or the fit cannot reproduce the shared geometry when a family's summaries are short"
+        )
+    deeper = [
+        as_int(row, "max_prompt_chars")
+        for row in cells
+        if as_int(row, "expected_oracle_folds") > as_int(cell, "expected_oracle_folds")
+    ]
+    if deeper and low <= max(deeper):
+        raise ValueError(
+            f"the guard search band starts at {low}, at or below the deeper cell's guard "
+            f"{max(deeper)}, so the fit could hand one cell the other's regime"
+        )
+    peak = int(cast(int, probe_completion_cell(cell, held)["cap_peak_prompt_chars"]))
+    if high >= peak:
+        raise ValueError(
+            f"the guard search band ends at {high}, at or above the {peak}-char cap peak, where "
+            "the cell is cap-fitting and folds once by construction"
+        )
+
+
+def _fitted_cell(spec: dict[str, object], cells: list[dict[str, object]]) -> dict[str, object]:
+    cell_id = as_str(spec, "cell_id")
+    matched = [row for row in cells if row.get("cell_id") == cell_id]
+    if not matched:
+        raise ValueError(f"the guard fit names cell {cell_id!r}, which the design does not declare")
+    return matched[0]

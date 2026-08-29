@@ -248,9 +248,10 @@ design. It holds the three cells, the seed, the marker ablation, and the one-fol
 EXACTLY as the completion design declares them -- the shared cell contract is checked by that
 design's own validator, so a geometry drift fails in one place rather than two -- and changes only
 what the claim rests on: twelve predeclared memory cases instead of two, a candidate roster the
-gate qualifies families from, and a predeclared floor of four paired cases per measured fold group.
+gate qualifies families from, a predeclared floor of four paired cases per measured fold group, and
+a per-family guard fit on the middle rung.
 
-Two properties make it a replication rather than a second run:
+Three properties make it a replication rather than a second run:
 
 - **Identical cases, one digest.** Every fold cell and both marker arms inside a family walk the
   same task set at the same seed, and both families reproduced the same `task_set_digest`. A fold
@@ -259,53 +260,118 @@ Two properties make it a replication rather than a second run:
   outcome, so the reading is a per-task win/loss ledger carrying an interval, not two fractions
   that happen to be equal. Equal marginal rates are what the first run had; they say nothing about
   whether the same tasks were the ones that survived.
+- **The rung is held equal, not the guard.** A ladder that fixes one character guard for every
+  family reads whatever fold count each family happens to land on, and a family that lands
+  elsewhere leaves a rung empty. What has to be equal across families is the MEASURED FOLD COUNT;
+  the guard is only what each family needs in order to stand on it.
 
-CUDA host evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 24.31 tok/s and `gemma4:e4b` at
-57.67 tok/s, Ollama `num_ctx=8192`, 144 episodes in about 35 minutes. Both families passed the
-one-fold control 12/12 with exactly one measured fold on every case, so both are qualified and the
-gate consumed neither of the roster's fallbacks. Grouped by the fold count each REAL episode
-measured, under the shipped marker-preserving policy:
+### Why the middle rung is fitted per family
+
+Holding one guard fixed left a hole. Under the shared `twofold-d10-g7000` guard, `qwen3:14b` put 11
+of 12 cases on two folds and `gemma4:e4b` put ONE, against a predeclared floor of four -- so the
+middle rung of the ladder carried evidence on one family only, and the rule stood on the rungs
+either side of an unpowered one.
+
+The fix is to fit that one cell's guard to the family about to run it, from a measurement the run
+already makes:
+
+- **The measurement is free and it is the model's own.** `ContextTelemetry.summary_output_chars`
+  records what the summarizer WROTE at each fold, taken before the typed facts are prepended, so it
+  is the span the model chose rather than the span the geometry offered. The one-fold control folds
+  exactly once per case, so its arm alone carries one fold length per case before any later cell
+  runs. Running the control first is what makes the fit cost no extra episode.
+- **The fit itself has no model in it.** `fold_length_controller` replays the same deterministic
+  oracle walk the geometry probes use, with a summarizer that writes exactly the measured number of
+  characters, over a predeclared band of candidate guards. What changes per family is the walk's
+  input, not its determinism.
+- **The band is predeclared and refused three ways.** It must contain the declared guard (so a
+  family the shared constant suits reproduces the published geometry), stay above the deeper cell's
+  6500 guard (so the fit cannot hand one cell the other's regime), and stay below the 11,926-char
+  cap peak (where the cell is cap-fitting and folds once by construction). The committed band is
+  6600 to 11500 in steps of 100.
+- **Ties go to the declared guard, then to the middle of the widest run.** A family the shared
+  constant already suits keeps the published geometry and only the family it does not suit moves --
+  a fit that shuffled every guard would invalidate the comparison it exists to enable. Among the
+  rest the centre of the widest contiguous run of equally good guards wins, which is the guard
+  furthest from the length at which one more case folds again.
+
+Only the middle cell is fitted. The cap-fitting one-fold control anchors the ladder and is never
+fitted; the three-fold cell runs at its declared 6500.
+
+### What ran, and what it measured
+
+CUDA host evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 22.45 tok/s and `gemma4:e4b` at
+53.98 tok/s, Ollama `num_ctx=8192`, seed 727, 144 episodes in about 36 minutes. Both families
+passed the one-fold control 12/12 with exactly one measured fold on every case, so both are
+qualified and the gate consumed neither of the roster's fallbacks.
+
+The fit moved both families to the same guard, and both measured what it predicted:
+
+| family | measured fold length (median, range) | declared guard | fitted guard | predicted 2-fold cases | measured |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `qwen3:14b` | 274 (263-304) | 7000 | 7900 | 12 | 12 |
+| `gemma4:e4b` | 255 (237-369) | 7000 | 7900 | 12 | 12 |
+
+Grouped by the fold count each REAL episode measured, under the shipped marker-preserving policy:
 
 | family | measured folds | completed | 95% interval | pairs vs one fold | one-fold wins |
 | --- | ---: | ---: | --- | ---: | ---: |
 | `qwen3:14b` | 1 | 12/12 | [0.758, 1.000] | reference | - |
-| `qwen3:14b` | 2 | 11/11 | [0.741, 1.000] | 11 | 0 |
-| `qwen3:14b` | 3 | 13/13 | [0.772, 1.000] | 13 | 0 |
+| `qwen3:14b` | 2 | 12/12 | [0.758, 1.000] | 12 | 0 |
+| `qwen3:14b` | 3 | 12/12 | [0.758, 1.000] | 12 | 0 |
 | `gemma4:e4b` | 1 | 12/12 | [0.758, 1.000] | reference | - |
-| `gemma4:e4b` | 2 | 1/1 | [0.207, 1.000] | 1 | 0 |
-| `gemma4:e4b` | 3 | 23/23 | [0.857, 1.000] | 23 | 0 |
+| `gemma4:e4b` | 2 | 12/12 | [0.758, 1.000] | 12 | 0 |
+| `gemma4:e4b` | 3 | 12/12 | [0.758, 1.000] | 12 | 0 |
 
-Verdict: **the three-fold rule extends across both qualified families**. Not one of the 48 paired
-higher-fold cases completes at one fold and fails at two or three, on either family, so the
-operator-facing fold-count limit stays at three for a reason stronger than a matching rate -- the
-same tasks survive the extra fold. The intervals are what the claim is worth: 13/13 is
-`[0.772, 1.000]`, so this bounds a completion floor around 0.77 at three folds on `qwen3:14b` and
-around 0.86 on `gemma4:e4b`, not a proof of perfection. Nothing here authorizes a fourth fold.
+Every cell landed all twelve of its cases on ONE fold count, on both families and in both marker
+arms, so each rung is a clean group of twelve rather than a spread across two.
 
-**The ladder has a hole, and it is reported rather than smoothed.** `gemma4:e4b` landed only ONE
-case on two measured folds: its summaries run longer than `qwen3:14b`'s, so the `twofold-d10-g7000`
-guard folds a third time on 11 of its 12 cases. That group is below the four-case floor, and an
-under-floor group is not allowed to cut the verdict in either direction -- it can neither extend a
-rule nor break one, and `[0.207, 1.000]` is why. The powered limit of 3 on that family therefore
-rests on its one-fold and three-fold groups, and the run says so in words rather than presenting a
-continuous ladder it does not have. A loss inside an under-floor group would still be NAMED
-(`underpowered_paired_losses`); there were none.
+Verdict: **the three-fold rule extends across both qualified families, and every rung of the ladder
+now carries it.** Not one of the 48 paired higher-fold cases completes at one fold and fails at two
+or three. `ladder_fully_powered` is true and `underpowered_ladder_rungs` is empty: no fold count on
+either family sits below the four-case floor, so the limit of three no longer rests on the rungs
+either side of an unpowered one. The intervals are what the claim is worth: 12/12 is
+`[0.758, 1.000]`, so this bounds a completion floor around 0.76 at three folds on both families,
+not a proof of perfection. Nothing here authorizes a fourth fold.
 
-**The mechanism reading is where the two families disagree, and it favors the shipped default.**
-The first run's marker ablation found the typed `[memory: ...]` record was not load-bearing, which
-was a statement about one model. It does not transfer. On `qwen3:14b` it holds --
-`model_written_summary_sufficient`, zero marker wins over all 36 paired cases. On `gemma4:e4b` it
-fails: `typed_memory_marker_required`, with marker preservation winning 2 of 23 paired three-fold
-cases and losing none, one in each repeatedly folding cell. So the shipped default is not merely
-cheap-to-keep as the single-family reading concluded -- on a second qualified family it is the
-difference between completing and losing the code, and dropping it would have cost real completion
-that one model family could not have shown.
+### What the fit is worth, and where it is not calibrated
+
+Two things the run says that the fitted numbers alone would hide:
+
+- **The families are not far apart in summary length, so verbosity was not the whole story.**
+  `gemma4:e4b`'s median fold length is 255 characters against `qwen3:14b`'s 274 -- shorter, not
+  longer -- though its spread is wider (237-369 against 263-304). The earlier reading of the empty
+  rung as "this family writes longer summaries" is not what the measurement shows; what the shared
+  7000 guard sat on was a boundary where a case's fold count flips on a few dozen characters, and
+  the wider-spread family was the one it flipped.
+- **The probe ranks guards; it does not predict fold counts in absolute terms.** At the DECLARED
+  7000 guard the probe predicts 0 of `qwen3:14b`'s 12 cases on the two-fold rung, where the real
+  shared-guard run measured 11. The oracle walk models the post-fold prompt but not a family's step
+  verbosity, so its per-guard count can be wrong by a whole fold. What it did correctly here was
+  order the candidates and pick 7900, and the run then measured 12 of 12 on both families --
+  `prediction_held` is the field that keeps that checkable, and a fit whose prediction fails is
+  visible as a number rather than as a surprise in the fold table.
+
+### The mechanism reading, and where the two families disagree
+
+The first single-family run's marker ablation found the typed `[memory: ...]` record was not
+load-bearing, which was a statement about one model. It does not transfer. On `qwen3:14b` it holds
+-- `model_written_summary_sufficient`, zero marker wins over all 36 paired cases. On `gemma4:e4b`
+it fails: `typed_memory_marker_required`, with marker preservation winning 1 of the 12 paired
+three-fold cases and losing none. That single discordant case is not a powered claim on its own,
+but the direction has now repeated: the earlier shared-guard run on the same family measured 2
+marker wins of 23 three-fold cases, also with zero losses, for 3 one-sided discordant cases across
+two runs. So the shipped default is not merely cheap-to-keep as the single-family reading
+concluded -- on a second qualified family it is the difference between completing and losing the
+code at three folds, and dropping it would have cost real completion that one model family could
+not have shown.
 
 What would overturn this: a cell that measures four or more folds; a third qualified family that
-loses a paired case at two or three folds; or a `gemma4:e4b` geometry that actually populates the
-two-fold group and loses there. What would strengthen it without moving the bound: a guard that
-lands both families on a floor-clearing two-fold group. Lookup key: run
-`agent-context-policy-repeated-fold-completion-replication`, run id `9fb11af29f9b`.
+loses a paired case at two or three folds; a family whose fitted guard cannot reach the target rung
+inside the declared band, which the run names
+(`no_guard_in_the_declared_band_reaches_the_evidence_floor`) rather than smoothing; or a marker win
+in the other direction on either family. Lookup key: run
+`agent-context-policy-repeated-fold-completion-replication`, run id `8006514fb3f2`.
 
 ```bash
 make bench-agentic-context-compact-repeated-fold-replication
@@ -335,7 +401,10 @@ reading.
 | Replication design contract and roster | `src/llb/bench/memory/repeated_fold/replication_design.py`, `samples/benchmarks/agentic_compact_repeated_fold_replication_design.json` |
 | Per-fold paired uncertainty, evidence floor, and the cross-family reading | `src/llb/bench/memory/repeated_fold/replication_reading.py` |
 | Two-family runner, aggregate, and roster driving | `src/llb/bench/memory/repeated_fold/replication.py`, `src/llb/bench/memory/repeated_fold/replication_report.py`, `src/llb/cli/bench/memory/repeated_fold_replication.py` |
-| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py` |
+| Measured fold length telemetry and the fold-length probe | `src/llb/bench/agentic/context.py`, `src/llb/bench/agentic/context_summary.py`, `src/llb/bench/memory/boundary/probe.py` |
+| Per-family two-fold guard fit, its predeclared band, and the runner's guard seam | `src/llb/bench/memory/repeated_fold/guard_fit.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
+| Whether every rung of every family's ladder carries evidence | `src/llb/bench/memory/repeated_fold/ladder_coverage.py` |
+| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_replication.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_guard_fit.py` |
 
 The geometry, readings, gate, persistence, and marker ablation use deterministic fakes in `make ci`;
 the completion values above come from the named CUDA run.

@@ -181,6 +181,9 @@ def compact_state(
     if not older:
         return False
     summary = (summarize(older) or "").strip()
+    # Measured BEFORE the typed facts below are prepended: the fold-length probe replays a
+    # summarizer, so what it needs is the span the model itself wrote.
+    model_summary_chars = len(summary)
     facts = " | ".join(
         fact
         for fact in (
@@ -197,6 +200,7 @@ def compact_state(
         summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:
         return False
+    state.telemetry.summary_output_chars.append(model_summary_chars)
     state.summary = summary
     state.entries = state.entries[len(older) :]
     state.n_dropped += len(older)

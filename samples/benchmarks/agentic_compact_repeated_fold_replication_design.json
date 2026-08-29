@@ -62,11 +62,21 @@
       "source": "samples/benchmarks/agentic_compact_two_fold_geometry_design.json#twofold-d10-g6500"
     }
   ],
+  "two_fold_guard_fit": {
+    "cell_id": "twofold-d10-g7000",
+    "target_folds": 2,
+    "fold_length_source": "onefold-d10-g14000",
+    "search_min_chars": 6600,
+    "search_max_chars": 11500,
+    "step_chars": 100
+  },
   "reading": {
     "completion_decay": "any measured higher-fold completion rate below the measured one-fold rate",
     "fold_count_limit": "recommend the highest powered fold count whose completion matches the one-fold control",
     "paired_uncertainty": "pair every higher-fold case against the same task's one-fold control outcome and report the interval at each measured fold count",
     "evidence_floor": "a measured fold group below minimum_paired_cases_per_fold is reported but never cuts the fold-count verdict",
+    "guard_fit": "resolve the fitted cell's guard per family from that family's own measured fold length, so the rung held equal across families is the measured fold count and not one shared char guard",
+    "ladder_coverage": "state whether every measured fold group on every qualified family reaches the evidence floor, and name the family, fold count and guard of each one that does not",
     "replication": "extend the fold-count rule only through a fold count every qualified family reaches powered, or name the first family and fold that fails",
     "mechanism": "pair typed-marker preservation against a model-summary-only ablation on every identical case",
     "changes_shipped_default": false

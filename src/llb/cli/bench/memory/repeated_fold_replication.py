@@ -55,6 +55,14 @@ def run_replication(design_path: Path) -> None:
             f"powered-fold-limit={run.analysis['powered_fold_limit']} "
             f"throughput={run.tokens_per_s:.2f}"
         )
+        for fit in cast(list[dict[str, Any]], run.analysis["guard_fits"]):
+            typer.echo(
+                f"[repeated-fold-replication] guard-fit family={run.model_family} "
+                f"cell={fit['cell_id']} declared={fit['declared_max_prompt_chars']} "
+                f"fitted={fit['fitted_max_prompt_chars']} "
+                f"median-fold-length={fit['median_fold_length_chars']} "
+                f"predicted-{fit['target_folds']}-fold-cases={fit['predicted_target_cases']}"
+            )
         if sum(bool(item.analysis["control_eligible"]) for item in runs) >= required:
             break
     if data_dir is None:
@@ -72,14 +80,17 @@ def run_replication(design_path: Path) -> None:
 
 def _echo_cells(design: dict[str, object]) -> None:
     from llb.bench.memory.repeated_fold.design import completion_cells, probe_completion_cell
+    from llb.bench.memory.repeated_fold.guard_fit import guard_fit_spec
 
     held = cast(dict[str, object], design["held_fixed"])
+    fitted = guard_fit_spec(design).get("cell_id")
     for cell in completion_cells(design):
         probe = probe_completion_cell(cell, held)
         typer.echo(
             f"[repeated-fold-replication] cell={cell['cell_id']} "
             f"guard={cell['max_prompt_chars']} oracle-folds={probe['oracle_folds']} "
-            f"cap-fitting={str(probe['cap_fitting']).lower()}"
+            f"cap-fitting={str(probe['cap_fitting']).lower()} "
+            f"guard-fitted-per-family={str(cell['cell_id'] == fitted).lower()}"
         )
 
 
