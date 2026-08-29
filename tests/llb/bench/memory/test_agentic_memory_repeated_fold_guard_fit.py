@@ -8,6 +8,7 @@ from llb.bench.agentic.context_policy import POLICY_COMPACT, ContextPolicy
 from llb.bench.agentic.context_summary import compact_state
 from llb.bench.memory.boundary.probe import compact_fold_input_probe, fold_length_controller
 from llb.bench.memory.repeated_fold.design import completion_cells
+from llb.bench.context_policy.guard_band import search_band
 from llb.bench.memory.repeated_fold.guard_fit import (
     FIT_APPLIED,
     FIT_DECLARED,
@@ -16,7 +17,6 @@ from llb.bench.memory.repeated_fold.guard_fit import (
     fit_fold_guard,
     guard_fit_spec,
     measured_fold_lengths,
-    search_band,
 )
 from llb.bench.memory.repeated_fold.ladder_coverage import ladder_coverage
 from llb.bench.memory.repeated_fold.replication import (

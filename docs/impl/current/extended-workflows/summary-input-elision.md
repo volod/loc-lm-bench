@@ -144,9 +144,11 @@ here is: ship it as a supported option, keep `head_tail` as the default.** It co
 loses nothing on any workload, it recovers every middle-critical case the shipped trim could not
 finish, and a default change would retire no published cell -- but one of the two families cannot
 put its whole declared middle stratum into the folding regime, so the recovery rests on 6 of 8
-declared middle cases rather than on all of them. That last gap is now a POWER limit and nothing
-else: the arms run task-adjacent in a balanced order, so it can no longer be read as an artifact of
-which arm went second.
+declared middle cases rather than on all of them. That last gap is a POWER limit and nothing else,
+and it has now been chased to the end: the arms run task-adjacent in a balanced order, so it is not
+an artifact of which arm went second, and the guard is
+[fitted per family over a declared band](#the-guard-is-fitted-per-family-and-the-band-runs-out-before-the-walk-does)
+that runs out before the family's walk does.
 
 `ContextPolicy.summary_trim_strategy` is now a validated choice like `summary_input_cap`
 (`head_tail`, the shipped default, and `per_entry_head`), pinned in
@@ -297,12 +299,85 @@ enter the regime, which is enough to OFFER the strategy and not enough to move a
 later run inherits.
 
 What would overturn this, and what would settle it: a family that loses a paired case under
-`per_entry_head` overturns the safety claim; a fully powered middle stratum on both families --
-which now needs Gemma4 to walk `m-001` and `m-002` far enough to fold, not a schedule change -- is
-what a default change is waiting on. Lookup key: run
+`per_entry_head` overturns the safety claim; a fully powered middle stratum on both families is
+what a default change is waiting on, and [the guard fit below](#the-guard-is-fitted-per-family-and-the-band-runs-out-before-the-walk-does)
+is what established that no guard can buy it. Lookup key: run
 `agent-context-policy-entry-aware-summary-fold-adoption`, two consecutive balanced-order runs on
 this host reproduced every table entry above exactly, including which cases dropped out and in
 which position.
+
+### The guard is fitted per family, and the band runs out before the walk does
+
+One shared character guard is not one shared regime. The middle stratum is readable only where an
+episode REACHES its fold -- both arms build byte-identical prompts up to the transcript the fold
+offers -- so a family whose walk ends before the trigger is crossed ran no trim at all, and the
+constant was silently measuring per-family walk length. The middle-critical workload's guard is
+therefore fitted per family from that family's own measured walk, the way the repeated-fold ladder
+fits its guard from the family's measured fold length; the band arithmetic both fits use (declared
+guard wins any tie, centre of the widest run otherwise) is now one module.
+
+The measurement is a WALK CONTROL: the same twelve tasks at a guard the model-free probe never
+folds at (20000 chars), which makes its prompts byte-identical to what every candidate guard builds
+before its own fold. It runs first, per family, and is not an arm of anything -- nothing pairs
+against it.
+
+**The band is filtered by the declared REGIME before it is scored.** A lower guard folds earlier,
+but the summarize-input bound is the same window, so it also folds a shorter transcript against a
+smaller cap and moves the span the cap elides. Each of the 29 candidates in the declared band
+(9000-16000 chars, step 250) is walked with an oracle and either usable or refused by name:
+
+| candidate guards | fold step | offered | elided | usable |
+| --- | ---: | ---: | ---: | --- |
+| 9000-10250 | 6-7 | 7011-8764 | 0 | no -- the fold fits the bound and elides nothing |
+| 10500-11000 | 8 | 10517 | 249-749 | no -- the answer fact leaves its declared stratum |
+| 11250-11500 | 8 | 10517 | 0 | no -- the fold fits the bound and elides nothing |
+| 11750-12500 | 9 | 12270 | 502-1252 | no -- the answer fact leaves its declared stratum |
+| **12750-13500** | **10** | **14023** | **1255-2005** | **yes** |
+| **13750-14750** | **11** | **15776** | **1758-2758** | **yes** (14000 is the declared guard) |
+| 15000-16000 | -- | 0 | 0 | no -- the trigger is never crossed, so nothing folds |
+
+Nine of 29 candidates survive, and they fold at step 10 or 11 -- never earlier. TWO different
+properties refuse the early ones, and the table shows where each bites. Below step 8 nothing is
+elided at all: observations are capped at 800 chars while the folded transcript grows 1753 chars a
+step, so an early fold offers a transcript that has not yet outgrown the window bound and there is
+no elision to be critical about. At steps 8 and 9 something is elided but the answer fact is no
+longer inside it -- the middle fact sits at stage 5 of a depth-10 workflow, so a fold that early
+folds a transcript whose LAST entry is that fact, and it lands in the retained tail. Neither is an
+edge of the band: it was drawn wide enough to contain every guard that folds at all, from step 6 to
+no fold, precisely so this is measured rather than assumed.
+
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 22.08-22.61 tok/s and `gemma4:e4b` at
+54.01-54.81 tok/s, Ollama `num_ctx=8192`, 12 walk-control episodes plus 46 paired episodes per
+family, run twice. The two runs agree on every entry below, on which nine guards the band can use,
+and on which two cases walk short.
+
+| family | walk control | measured walk | fitted guard | fold step | cases reaching the fold |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Qwen | 12/12 | 11 on every case | 14000 (unchanged) | 11 | 12/12 |
+| Gemma4 | 10/12 | 11 on ten, **7 on `m-001` and `m-002`** | 14000 (unchanged) | 11 | 10/12 |
+
+Verdict: **the fit moves no guard, and that is the answer.** Every guard that folds at step 10
+reaches exactly the same 10 of 12 Gemma4 cases that step 11 does, so the declared guard wins the tie
+and the published geometry stands; the closest the band can come is 12750 at step 10, and the
+candidate below it is refused because the answer fact leaves its declared stratum. Gemma4's two
+cases end at step 7, and no usable guard folds before step 10.
+
+The measured comparison itself is unchanged by the fit, which is the point: both families ran the
+same guard they ran before it, so every number in [the measured comparison](#the-measured-comparison)
+above stands, and the middle stratum reads 4/4 on Qwen and 2 of 4 declared on Gemma4 exactly as it
+did.
+
+What the walk control adds is the attribution, and it is stronger than the balanced schedule's.
+**Gemma4 ends `m-001` and `m-002` at step 7 in an episode with NO fold in it at all** -- it calls
+`finish` early, having seen the answer code at stage 5, and fails the workflow-complete assertion.
+That is measured before compaction exists in the episode, so the shortfall cannot be about the trim,
+about which arm ran second, or about where the fold landed. It is how this family walks these two
+tasks. Qwen's control completes 12 of 12 on the same bytes.
+
+What would settle it: a middle stratum whose fact stage survives an EARLIER fold -- a lower middle
+stage against a shorter folded transcript, which is a task-shape change rather than a guard -- or a
+family that walks `m-001` and `m-002` to the end. What would overturn the fit itself: a usable guard
+below step 10, which would mean the placement check had let a fact out of its stratum.
 
 ### What a default change would cost
 
@@ -338,6 +413,11 @@ make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOP
 | Two-family runner and conditional prototype | `src/llb/bench/memory/window_elision/transfer.py` |
 | Per-stratum, transfer, and prototype readings | `src/llb/bench/memory/window_elision/transfer_reading.py` |
 | Persistence and command | `src/llb/bench/memory/window_elision/transfer_report.py`, `src/llb/cli/bench/memory/window_elision_transfer.py` |
+| Balanced arm schedule shared by every paired agentic study | `src/llb/bench/context_policy/interleave.py` |
+| Guard-band arithmetic shared by every per-family guard fit | `src/llb/bench/context_policy/guard_band.py` |
+| Which guards still measure the middle-critical regime, and why the rest do not | `src/llb/bench/summary_trim/guard_regime.py` |
+| The per-family fit, its walk control, and the design gate on the band | `src/llb/bench/summary_trim/guard_fit.py` |
+| The step each fold lands on, carried from the episode to the probe | `src/llb/bench/agentic/context.py`, `src/llb/bench/memory/boundary/probe.py` |
 | Adoption workloads, their oracles, and the aggregate-search task family | `src/llb/bench/summary_trim/workloads.py`, `src/llb/bench/summary_trim/tasks.py` |
 | Balanced arm schedule shared by any multi-arm policy lane | `src/llb/bench/context_policy/interleave.py` |
 | Adoption design gate, run, readings, verdict, and persistence | `src/llb/bench/summary_trim/design.py`, `run.py`, `reading.py`, `adoption.py`, `analysis.py`, `report.py` |

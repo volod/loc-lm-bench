@@ -201,6 +201,9 @@ def compact_state(
     if not summary:
         return False
     state.telemetry.summary_output_chars.append(model_summary_chars)
+    # The step this fold lands on: every completed step has appended its prompt size already, and
+    # the fold happens while the NEXT one is being built.
+    state.telemetry.summary_fold_steps.append(len(state.telemetry.prompt_chars) + 1)
     state.summary = summary
     state.entries = state.entries[len(older) :]
     state.n_dropped += len(older)

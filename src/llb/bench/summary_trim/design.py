@@ -73,34 +73,47 @@ def workload_geometry(workload: dict[str, object], held: dict[str, object]) -> d
     }
 
 
+def probe_workload_task(
+    workload: dict[str, object], held: dict[str, object], arm: str, index: int
+) -> dict[str, object]:
+    """Walk ONE task of a workload under one trim strategy, with an oracle and no model.
+
+    Per task rather than per set, because two of the readings built on this are per task: the
+    answer fact's placement against the trim boundaries, and the step the fold lands on.
+    """
+    if arm not in SUMMARY_TRIM_STRATEGIES:
+        raise ValueError(f"unknown trim strategy {arm!r}; choose from {SUMMARY_TRIM_STRATEGIES}")
+    geometry = workload_geometry(workload, held)
+    record = build_workload_tasks(workload)[index]
+    task = workload_tasks(workload)[index]
+    return compact_tasks_fold_input_probe(
+        [task],
+        max_steps=int(cast(int, geometry["max_steps"])),
+        max_prompt_chars=int(cast(int, geometry["max_prompt_chars"])),
+        compact_share=float(cast(float, geometry["compact_share"])),
+        summary_input_cap=str(cast(str, geometry["summary_input_cap"])),
+        summary_trim_strategy=arm,
+        observation_cap_chars=int(cast(int, geometry["observation_cap_chars"])),
+        observation_head_share=float(cast(float, geometry["observation_head_share"])),
+        controller=workload_oracle(workload, record),
+    )
+
+
 def probe_workload_arm(
     workload: dict[str, object], held: dict[str, object], arm: str
 ) -> dict[str, object]:
     """Walk every task of one workload under one trim strategy, with an oracle and no model."""
-    if arm not in SUMMARY_TRIM_STRATEGIES:
-        raise ValueError(f"unknown trim strategy {arm!r}; choose from {SUMMARY_TRIM_STRATEGIES}")
     geometry = workload_geometry(workload, held)
-    records = build_workload_tasks(workload)
-    tasks = workload_tasks(workload)
     guard = int(cast(int, geometry["max_prompt_chars"]))
     share = float(cast(float, geometry["compact_share"]))
     probes = [
-        compact_tasks_fold_input_probe(
-            [task],
-            max_steps=int(cast(int, geometry["max_steps"])),
-            max_prompt_chars=guard,
-            compact_share=share,
-            summary_input_cap=str(cast(str, geometry["summary_input_cap"])),
-            summary_trim_strategy=arm,
-            observation_cap_chars=int(cast(int, geometry["observation_cap_chars"])),
-            observation_head_share=float(cast(float, geometry["observation_head_share"])),
-            controller=workload_oracle(workload, record),
-        )
-        for record, task in zip(records, tasks, strict=True)
+        probe_workload_task(workload, held, arm, index)
+        for index in range(len(workload_tasks(workload)))
     ]
     return {
         **{field: max(int(cast(int, row[field])) for row in probes) for field in DECLARED_FIELDS},
         "summary_fold_input_chars": cast(list[int], probes[0]["summary_fold_input_chars"]),
+        "summary_fold_steps": cast(list[int], probes[0]["summary_fold_steps"]),
         "compaction_trigger_chars": compaction_trigger_chars(guard, share),
     }
 
@@ -112,11 +125,16 @@ def probe_workload(workload: dict[str, object], held: dict[str, object]) -> dict
 
 def validate_summary_trim_design(design: dict[str, object]) -> None:
     """Refuse a design that cannot answer the adoption question it declares."""
+    from llb.bench.summary_trim.guard_fit import validate_guard_fit
+
     held = _validate_header(design)
     declared = workloads(design)
     _validate_workload_contract(declared)
     for workload in declared:
         _validate_workload(workload, held)
+    # The fitted workload runs at a guard the FAMILY decides, so the gate above is not enough on
+    # its own: the band the fit may choose from has to hold the same regime the declaration does.
+    validate_guard_fit(design, declared)
 
 
 def _validate_header(design: dict[str, object]) -> dict[str, object]:

@@ -20,6 +20,7 @@ the guard is what each family needs to stand on it.
 from typing import Callable, cast
 
 from llb.bench.agentic.design_fields import as_int, as_mapping, as_str
+from llb.bench.context_policy.guard_band import guard_grid, median_int, select_guard
 from llb.bench.memory.boundary.probe import compact_fold_input_probe, fold_length_controller
 from llb.bench.memory.repeated_fold.design import cell_geometry
 
@@ -35,15 +36,6 @@ FIT_UNMEASURED = "the_control_measured_no_fold_length_to_fit_against"
 def guard_fit_spec(design: dict[str, object]) -> dict[str, object]:
     """The predeclared fit: which cell, which fold count, and which band of guards to search."""
     return as_mapping(design, GUARD_FIT_FIELD)
-
-
-def search_band(spec: dict[str, object]) -> tuple[int, int, int]:
-    """The predeclared candidate guards, as an inclusive ascending range with a step."""
-    return (
-        as_int(spec, "search_min_chars"),
-        as_int(spec, "search_max_chars"),
-        as_int(spec, "step_chars"),
-    )
 
 
 def measured_fold_lengths(rows: list[dict[str, object]], source_cell_id: str) -> list[int]:
@@ -80,7 +72,7 @@ def fit_fold_guard(
         "fitted_max_prompt_chars": declared,
         "fold_length_source": as_str(spec, "fold_length_source"),
         "fold_lengths": fold_lengths,
-        "median_fold_length_chars": _median(fold_lengths),
+        "median_fold_length_chars": median_int(fold_lengths),
         "evidence_floor": evidence_floor,
     }
     if not fold_lengths:
@@ -96,8 +88,10 @@ def fit_fold_guard(
             ),
         }
     predict = _fold_count_predictor(cell, held)
-    counts = {guard: _target_cases(predict, guard, fold_lengths, target) for guard in _grid(spec)}
-    fitted = _best_guard(counts, declared)
+    counts = {
+        guard: _target_cases(predict, guard, fold_lengths, target) for guard in guard_grid(spec)
+    }
+    fitted = select_guard(counts, declared)
     best = counts[fitted]
     return {
         **record,
@@ -158,11 +152,6 @@ def _fit_reading(fitted: int, declared: int, best: int, floor: int) -> str:
     return FIT_DECLARED if fitted == declared else FIT_APPLIED
 
 
-def _grid(spec: dict[str, object]) -> list[int]:
-    low, high, step = search_band(spec)
-    return list(range(low, high + 1, step))
-
-
 def _fold_count_predictor(
     cell: dict[str, object], held: dict[str, object]
 ) -> Callable[[int, int], int]:
@@ -192,37 +181,3 @@ def _target_cases(
     predict: Callable[[int, int], int], guard: int, fold_lengths: list[int], target: int
 ) -> int:
     return sum(predict(guard, length) == target for length in fold_lengths)
-
-
-def _best_guard(counts: dict[int, int], declared: int) -> int:
-    """The centre of the WIDEST run of guards that lands the most cases on the target rung.
-
-    Two tie-breaks, in order. The DECLARED guard wins any tie, so a family the shared constant
-    already suits keeps the published geometry and only the family it does not suit moves -- a fit
-    that shuffled every guard would invalidate the comparison it exists to enable. Among the rest,
-    the middle of the widest contiguous run wins: that is the guard furthest from the length at
-    which one more case folds again, so a family whose next run writes slightly different summaries
-    still lands on the same rung.
-    """
-    best = max(counts.values())
-    if counts.get(declared) == best:
-        return declared
-    guards = sorted(counts)
-    runs: list[list[int]] = []
-    for index, guard in enumerate(guards):
-        if counts[guard] != best:
-            continue
-        contiguous = index > 0 and counts[guards[index - 1]] == best
-        if contiguous and runs:
-            runs[-1].append(guard)
-        else:
-            runs.append([guard])
-    widest = max(runs, key=len)
-    return widest[len(widest) // 2]
-
-
-def _median(values: list[int]) -> int:
-    if not values:
-        return 0
-    ordered = sorted(values)
-    return ordered[len(ordered) // 2]

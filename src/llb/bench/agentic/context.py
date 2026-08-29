@@ -85,6 +85,11 @@ class ContextTelemetry:
     # how much of the guard the post-fold prompt already spends -- so a family whose summaries run
     # long re-crosses the trigger sooner and folds again on a geometry another family folds once on.
     summary_output_chars: list[int] = field(default_factory=list)
+    # Which STEP each fold happened on, 1-based. The offered span says what a fold saw; this says
+    # when it happened, which is the only thing that decides whether an episode reaches the fold
+    # at all -- a walk that ends before the trigger is crossed never enters the folding regime,
+    # however the trim would have behaved.
+    summary_fold_steps: list[int] = field(default_factory=list)
 
     @property
     def max_prompt_chars(self) -> int:

@@ -137,6 +137,24 @@ def test_an_under_powered_middle_stratum_withholds_the_default_not_the_option():
     assert verdict == ADOPT_AS_OPTION and "only 1 of 2 declared middle cases" in reason
 
 
+def test_an_under_powered_stratum_quotes_the_guard_fit_that_tried():
+    """A thin stratum reads differently depending on whether a guard fit had already exhausted."""
+    thin = {**_WHOLE_MIDDLE, "n_pairs": 1, "entry_aware_wins": 1, "entry_aware_completed": 1}
+    short = _stub_family("two", middle=thin, workload_rows=[_row("a", WORKLOAD_RECOVERS)])
+    short["guard_fit"] = {"fit_reason": "guard 14000 folds at step 11, which 10 of 12 reach"}
+    families = [
+        _stub_family(
+            "one", middle=dict(_WHOLE_MIDDLE), workload_rows=[_row("a", WORKLOAD_RECOVERS)]
+        ),
+        short,
+    ]
+    verdict, reason = adoption_reading(
+        families, required_families=2, audit_invariant=True, required_middle_pairs=2
+    )
+    assert verdict == ADOPT_AS_OPTION
+    assert "the guard fit reports: guard 14000 folds at step 11" in reason
+
+
 def test_a_middle_stratum_with_no_usable_pair_is_unreadable():
     """Nothing entered the regime under test, so the run says nothing in either direction."""
     empty = {**_WHOLE_MIDDLE, "n_pairs": 0, "entry_aware_wins": 0, "entry_aware_completed": 0}

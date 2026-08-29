@@ -21,6 +21,7 @@ def format_summary_trim_table(analysis: dict[str, object]) -> str:
             *_workload_lines(analysis),
             "",
             *_stratum_lines(analysis),
+            *_guard_fit_lines(analysis),
             *_order_lines(analysis),
             *_audit_lines(analysis),
             "",
@@ -93,6 +94,42 @@ def _stratum_lines(analysis: dict[str, object]) -> list[str]:
                 f"{row['n_declared']} declared "
                 f"(ea wins {row['entry_aware_wins']}, ht wins {row['head_tail_wins']}{note})"
             )
+    return lines
+
+
+def _guard_fit_lines(analysis: dict[str, object]) -> list[str]:
+    """Which guard each family ran the fitted workload at, and the walk it was fitted to."""
+    band = cast(dict[str, object], analysis["guard_band"])
+    usable = cast(dict[str, int], band["usable_guards"])
+    steps = sorted(usable.values())
+    lines = [
+        "",
+        "middle-critical guard fit (per family, from its own measured walk)",
+        f"- band: {len(usable)} of {band['n_candidates']} candidate guard(s) still hold the "
+        f"{band['workload']} regime, folding at step "
+        f"{steps[0] if steps else 0}-{steps[-1] if steps else 0}; the earliest is "
+        f"{band['band_floor_guard']} at step {band['band_floor_fold_step']}, and the candidate "
+        f"below it is refused because {band['band_floor_reason']}",
+    ]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        fit = cast(dict[str, object], family.get("guard_fit") or {})
+        if not fit:
+            lines.append(f"- {family['model_family']}: no guard fit ran")
+            continue
+        lines.append(
+            f"- {family['model_family']} {fit['workload']}: guard "
+            f"{fit['declared_max_prompt_chars']} -> {fit['fitted_max_prompt_chars']} "
+            f"(fold step {fit['fitted_fold_step']}, median walk {fit['median_walk_length']}, "
+            f"{fit['predicted_folding_cases']}/{fit['evidence_floor']} case(s) reach it, "
+            f"{fit['n_usable_guards']} usable guard(s) in the band) [{fit['fit_reading']}]"
+        )
+        lines.append(f"  {fit['fit_reason']}")
+        lines.extend(
+            f"  walk control: guard {row['max_prompt_chars']}, "
+            f"completion {float(cast(float, row['completion'])):.3f} over "
+            f"{row['n_tasks']} task(s), {row['n_folded_cases']} folded"
+            for row in cast(list[dict[str, object]], family.get("walk_control") or [])
+        )
     return lines
 
 
@@ -203,7 +240,7 @@ def _persist_family_cells(
     mirror: Mirror | None,
 ) -> list[dict[str, object]]:
     persisted: list[dict[str, object]] = []
-    for row in run.rows:
+    for row in [*run.walk_control, *run.rows]:
         key = (cast(str, row["workload"]), cast(str, row["arm"]))
         report = run.reports[key]
         out = {**row, "model_family": run.model_family, "model": run.model}

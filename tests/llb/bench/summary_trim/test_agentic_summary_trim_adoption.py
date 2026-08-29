@@ -25,7 +25,6 @@ from llb.bench.summary_trim.analysis import (
 )
 from llb.bench.summary_trim.design import (
     ARMS,
-    load_summary_trim_design,
     probe_workload,
     validate_summary_trim_design,
     workloads,
@@ -34,56 +33,12 @@ from llb.bench.summary_trim.adoption import ADOPT_INELIGIBLE
 from llb.bench.context_policy.interleave import ORDER_ALTERNATING, ORDER_FIXED
 from llb.bench.summary_trim.reading import WORKLOAD_UNCHANGED
 from llb.bench.summary_trim.report import format_summary_trim_table
-from llb.bench.summary_trim.run import run_summary_trim_family
-from llb.bench.summary_trim.workloads import (
-    build_workload_tasks,
-    workload_oracle,
-    workload_tasks,
-)
+from llb.bench.summary_trim.workloads import workload_tasks
 
 
 @pytest.fixture(scope="module")
-def design() -> dict[str, object]:
-    return load_summary_trim_design()
-
-
-# The step prompt carries this header only once the episode has a history to render, so a prompt
-# WITHOUT it is the first step of a fresh episode.
-_HISTORY_HEADER = "Виконані кроки:"
-
-
-def _oracle_complete(design: dict[str, object]):
-    """One fake `complete` that plays whichever declared task the loop is currently walking.
-
-    An oracle is per EPISODE -- the aggregate-search one counts the queries it has issued -- and
-    the runner walks each task twice back to back, once per arm, so a fresh oracle is taken when
-    the prompt shows no history rather than when the task changes.
-    """
-    oracles = {
-        record["prompt"][:60]: (workload, record)
-        for workload in workloads(design)
-        for record in build_workload_tasks(workload)
-    }
-    state: dict[str, object] = {"oracle": None}
-
-    def complete(prompt: str) -> str:
-        key = next((candidate for candidate in oracles if candidate in prompt), None)
-        if key is not None and _HISTORY_HEADER not in prompt:
-            state["oracle"] = workload_oracle(*oracles[key])
-        oracle = state["oracle"]
-        if oracle is None:
-            return '{"name": "finish", "arguments": {"answer": ""}}'
-        return oracle(prompt)  # type: ignore[operator]
-
-    return complete
-
-
-def _family(design: dict[str, object], name: str):
-    return run_summary_trim_family(
-        design,
-        {"model_family": name, "model": name, "backend": "ollama"},
-        complete=_oracle_complete(design),
-    )
+def design(adoption_design: dict[str, object]) -> dict[str, object]:
+    return adoption_design
 
 
 def test_the_trim_strategy_is_a_validated_context_policy_choice():
@@ -147,9 +102,9 @@ def test_the_arms_offer_the_summarizer_the_identical_transcript(design: dict[str
         )
 
 
-def test_a_run_over_the_declared_oracles_pairs_every_workload(design: dict[str, object]):
+def test_a_run_over_the_declared_oracles_pairs_every_workload(design, oracle_family):
     """End to end over injected oracles: rows, pairing, eligibility, and a rendered table."""
-    run = _family(design, "fixture")
+    run = oracle_family("fixture")
     assert len(run.rows) == len(workloads(design)) * len(ARMS)
     eligible, reason = family_eligibility(design, run)
     assert eligible, reason
@@ -162,10 +117,10 @@ def test_a_run_over_the_declared_oracles_pairs_every_workload(design: dict[str, 
 
 
 def test_the_repeatedly_folding_workload_is_where_the_strategies_cost_differently(
-    design: dict[str, object],
+    design, oracle_family
 ):
     """The only workload whose two arms spend different bytes, and it spends FEWER."""
-    run = _family(design, "fixture")
+    run = oracle_family("fixture")
     analysis = analyze_summary_trim_runs(design, [run], audit=audit_default_change())
     deltas = {
         row["workload"]: row["d_summary_prompt_chars"]
@@ -191,9 +146,9 @@ def test_the_design_declares_the_execution_order_rather_than_inheriting_it(
         )
 
 
-def test_a_run_balances_the_arm_order_across_every_workload(design: dict[str, object]):
+def test_a_run_balances_the_arm_order_across_every_workload(design, oracle_family):
     """Both arms of a task run adjacently, and neither arm holds the first position twice over."""
-    run = _family(design, "fixture")
+    run = oracle_family("fixture")
     n_tasks = sum(len(workload_tasks(workload)) for workload in workloads(design))
     assert len(run.schedule) == n_tasks * len(ARMS)
     firsts = [row for row in run.schedule if row["position"] == 1]
@@ -205,9 +160,9 @@ def test_a_run_balances_the_arm_order_across_every_workload(design: dict[str, ob
     assert all(one["arm"] != two["arm"] for one, two in pairs)
 
 
-def test_the_measured_reading_states_the_order_it_ran_under(design: dict[str, object]):
+def test_the_measured_reading_states_the_order_it_ran_under(design, oracle_family):
     """The order is carried into the reading, so a verdict can gate on it instead of assuming."""
-    run = _family(design, "fixture")
+    run = oracle_family("fixture")
     analysis = analyze_summary_trim_runs(design, [run], audit=audit_default_change())
     order = analysis["families"][0]["arm_order"]  # type: ignore[index]
     assert order["n_first_head_tail"] + order["n_first_per_entry_head"] == order["n_first"]

@@ -18,7 +18,8 @@ from llb.bench.memory.repeated_fold.design import (
     probe_completion_cell,
     validate_repeated_fold_design,
 )
-from llb.bench.memory.repeated_fold.guard_fit import GUARD_FIT_FIELD, guard_fit_spec, search_band
+from llb.bench.context_policy.guard_band import search_band
+from llb.bench.memory.repeated_fold.guard_fit import GUARD_FIT_FIELD, guard_fit_spec
 from llb.bench.policy_change.geometry import load_audited_design
 
 DESIGN_PATH = "samples/benchmarks/agentic_compact_repeated_fold_replication_design.json"

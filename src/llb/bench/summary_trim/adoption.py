@@ -162,16 +162,25 @@ def _confounded_order(families: list[dict[str, object]]) -> str | None:
 
 
 def _under_powered(families: list[dict[str, object]], required_pairs: int) -> str | None:
-    """A family whose middle stratum read fewer usable pairs than the design declared."""
+    """A family whose middle stratum read fewer usable pairs than the design declared.
+
+    The guard fit travels with the shortfall, because the two readings a thin stratum can have are
+    not the same finding: a guard that was never fitted to this family leaves the shortfall open,
+    while a fit that exhausted its declared band says the walk itself is what the stratum is short
+    of -- and names the guard that came closest.
+    """
     for family in families:
         strata = cast(dict[str, dict[str, int]], family["strata"])
         middle = strata.get(STRATUM_MIDDLE, {})
         usable = int(middle.get("n_pairs", 0))
         if usable < required_pairs:
+            fit = cast(dict[str, object], family.get("guard_fit") or {})
+            note = f"; the guard fit reports: {fit['fit_reason']}" if fit else ""
             return (
                 f"the middle stratum is under-powered: {family['model_family']} put only {usable} "
                 f"of {required_pairs} declared middle cases into the folding regime, so the "
-                "recovery is established on what ran rather than on the whole declared stratum"
+                f"recovery is established on what ran rather than on the whole declared stratum"
+                f"{note}"
             )
     return None
 

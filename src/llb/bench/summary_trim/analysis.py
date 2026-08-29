@@ -15,6 +15,7 @@ from llb.bench.agentic.context_policy import (
     SUMMARY_TRIM_PER_ENTRY_HEAD,
 )
 from llb.bench.summary_trim.design import probe_workload, workloads
+from llb.bench.summary_trim.guard_fit import fitted_workload_name, guard_band_reading
 from llb.bench.summary_trim.workloads import BUILDER_EVIDENCE_STRATA
 from llb.bench.summary_trim.adoption import adoption_reading
 from llb.bench.summary_trim.reading import family_reading
@@ -72,6 +73,11 @@ def analyze_summary_trim_runs(
             "eligible": eligible,
             "eligibility_reason": reason,
             "tokens_per_s": run.tokens_per_s,
+            # The guard this family ran the fitted workload at, the walk it was fitted to, and
+            # what the fit could not reach. A stratum smaller than declared is only readable
+            # beside this: it says whether the band was exhausted or never consulted.
+            "guard_fit": run.guard_fit,
+            "walk_control": [_control_summary(row) for row in run.walk_control],
             **reading,
         }
         families.append(run.analysis)
@@ -93,6 +99,9 @@ def analyze_summary_trim_runs(
             {"workload": workload["workload"], **probe_workload(workload, held)}
             for workload in workloads(design)
         ],
+        # The band every family's guard fit chooses inside, decided with no model at all. It is
+        # the bound on what a fit can do, so it is reported whether or not a family ran.
+        "guard_band": guard_band_reading(design, _fitted_workload(design)),
         "families": families,
         "qualified_models": [row["model"] for row in qualified],
         "policy_change_audit": audit,
@@ -100,6 +109,28 @@ def analyze_summary_trim_runs(
         "adoption_reason": reason,
         "changes_shipped_default": False,
     }
+
+
+def _fitted_workload(design: dict[str, object]) -> dict[str, object]:
+    """The one workload whose guard is fitted per family."""
+    name = fitted_workload_name(design)
+    return next(row for row in workloads(design) if row["workload"] == name)
+
+
+def _control_summary(row: dict[str, object]) -> dict[str, object]:
+    """The walk control as the aggregate carries it: what it ran, not every case again.
+
+    Its per-case outcomes are persisted as their own cell and its per-case walk lengths are the
+    fit's own `walk_lengths`, so repeating them here would be a third copy of one measurement.
+    """
+    return {
+        field: row[field]
+        for field in ("workload", "arm", "max_prompt_chars", "n_tasks", "completion")
+    } | {"n_folded_cases": sum(bool(case["measured_folds"]) for case in _cases(row))}
+
+
+def _cases(row: dict[str, object]) -> list[dict[str, object]]:
+    return cast(list[dict[str, object]], row["cases"])
 
 
 def _declared_stratum_size(design: dict[str, object]) -> int:

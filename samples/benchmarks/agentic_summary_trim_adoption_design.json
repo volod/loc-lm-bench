@@ -3,8 +3,13 @@
   "study_id": "agent-context-policy-entry-aware-summary-fold-adoption",
   "study_kind": "summary_trim_strategy_adoption",
   "seed": 727,
-  "policies": ["compact"],
-  "arms": ["head_tail", "per_entry_head"],
+  "policies": [
+    "compact"
+  ],
+  "arms": [
+    "head_tail",
+    "per_entry_head"
+  ],
   "arm_order": {
     "policy": "alternating_by_task_index",
     "phase_by_family": true,
@@ -37,6 +42,18 @@
     "minimum_control_completion": 1.0,
     "qualifying_workload": "crossover"
   },
+  "middle_critical_guard_fit": {
+    "workload": "middle_critical",
+    "walk_control": {
+      "max_prompt_chars": 20000,
+      "arm": "walk_control",
+      "why": "a guard the model-free probe never folds at, so the control measures how far a family walks the task before any fold could have changed the transcript; its prompts are byte-identical to every candidate guard's pre-fold prompts"
+    },
+    "search_min_chars": 9000,
+    "search_max_chars": 16000,
+    "step_chars": 250,
+    "why": "the middle stratum is only readable where an episode REACHES its fold, so one shared character guard measures a per-family walk length rather than the trim; the band is filtered by the declared regime first -- a guard whose fold elides nothing, folds a different number of times, or moves an answer fact out of its planted stratum is refused with a reason instead of chosen"
+  },
   "workloads": [
     {
       "workload": "typed_memory",
@@ -45,13 +62,19 @@
       "max_prompt_chars": 14000,
       "compact_share": 0.8,
       "max_steps": 14,
-      "task_shape": {"depth": 10, "pad_chars": 1600},
+      "task_shape": {
+        "depth": 10,
+        "pad_chars": 1600
+      },
       "why": "one fold whose folded transcript does not fit the window bound; the typed memory marker is machine-preserved, so this prices the free-text loss alone",
       "expected": {
         "n_compactions": 1,
         "offered_chars": 15402,
         "elided_chars": 2134,
-        "summary_prompt_chars": {"head_tail": 13992, "per_entry_head": 13992}
+        "summary_prompt_chars": {
+          "head_tail": 13992,
+          "per_entry_head": 13992
+        }
       }
     },
     {
@@ -61,13 +84,20 @@
       "max_prompt_chars": 8000,
       "compact_share": 0.8,
       "max_steps": 8,
-      "task_shape": {"n_queries": 5, "n_docs": 14, "doc_chars": 900},
+      "task_shape": {
+        "n_queries": 5,
+        "n_docs": 14,
+        "doc_chars": 900
+      },
       "why": "fat search observations reach the summarizer untrimmed, so the fold overflows the bound; the scored hit count sits in the MIDDLE search, the position a head-and-tail cut drops first",
       "expected": {
         "n_compactions": 1,
         "offered_chars": 8732,
         "elided_chars": 1464,
-        "summary_prompt_chars": {"head_tail": 7992, "per_entry_head": 7992}
+        "summary_prompt_chars": {
+          "head_tail": 7992,
+          "per_entry_head": 7992
+        }
       }
     },
     {
@@ -77,13 +107,19 @@
       "max_prompt_chars": 7000,
       "compact_share": 0.8,
       "max_steps": 14,
-      "task_shape": {"depth": 10, "pad_chars": 1600},
+      "task_shape": {
+        "depth": 10,
+        "pad_chars": 1600
+      },
       "why": "the committed repeatedly folding geometry, where the running summary re-enters the summarize input and the two trims can spend different byte totals",
       "expected": {
         "n_compactions": 2,
         "offered_chars": 10373,
         "elided_chars": 659,
-        "summary_prompt_chars": {"head_tail": 11131, "per_entry_head": 9967}
+        "summary_prompt_chars": {
+          "head_tail": 11131,
+          "per_entry_head": 9967
+        }
       }
     },
     {
@@ -93,13 +129,19 @@
       "max_prompt_chars": 20240,
       "compact_share": 0.5,
       "max_steps": 14,
-      "task_shape": {"depth": 10, "pad_chars": 1200},
+      "task_shape": {
+        "depth": 10,
+        "pad_chars": 1200
+      },
       "why": "the published fold-step crossover cell fold-d10-step10-lo, at its own guard, share, depth and padding: a cap-fitting cell whose fold fits the window bound, so both trims must render byte-identical prompts",
       "expected": {
         "n_compactions": 1,
         "offered_chars": 10494,
         "elided_chars": 0,
-        "summary_prompt_chars": {"head_tail": 11188, "per_entry_head": 11188}
+        "summary_prompt_chars": {
+          "head_tail": 11188,
+          "per_entry_head": 11188
+        }
       }
     },
     {
@@ -112,14 +154,21 @@
       "task_shape": {
         "depth": 10,
         "pad_chars": 1600,
-        "fact_stages": {"head": 4, "middle": 5, "tail": 7}
+        "fact_stages": {
+          "head": 4,
+          "middle": 5,
+          "tail": 7
+        }
       },
       "why": "n_tasks is PER STRATUM for this builder (4 x head/middle/tail = 12 tasks); two per stratum could not absorb a single episode that leaves the folding regime, which is a power problem independent of the direction of the result. The stratum set the entry-aware recovery was first measured on, carried here so adoption re-measures the recovery under the promoted policy field instead of citing it",
       "expected": {
         "n_compactions": 1,
         "offered_chars": 15776,
         "elided_chars": 2508,
-        "summary_prompt_chars": {"head_tail": 13992, "per_entry_head": 13992}
+        "summary_prompt_chars": {
+          "head_tail": 13992,
+          "per_entry_head": 13992
+        }
       }
     }
   ],

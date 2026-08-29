@@ -170,7 +170,8 @@ def compact_tasks_fold_input_probe(
         ).telemetry
         for task in tasks
     ]
-    fold_inputs = _max_fold_inputs([item.summary_fold_input_chars for item in telemetries])
+    fold_inputs = _max_by_fold_ordinal([item.summary_fold_input_chars for item in telemetries])
+    fold_steps = _max_by_fold_ordinal([item.summary_fold_steps for item in telemetries])
     return {
         "n_compactions": max(item.n_compactions for item in telemetries),
         "compaction_prompt_chars": max(item.compaction_prompt_chars for item in telemetries),
@@ -182,15 +183,19 @@ def compact_tasks_fold_input_probe(
         "summary_input_elided_chars": max(item.summary_input_elided_chars for item in telemetries),
         "n_trimmed_summary_inputs": max(item.n_trimmed_summary_inputs for item in telemetries),
         "summary_fold_input_chars": fold_inputs,
+        # WHEN each fold lands, beside what it offered. A walk that ends before its first fold
+        # step never enters the folding regime at all, so this is what a per-family guard fit
+        # measures a family's walk length against.
+        "summary_fold_steps": fold_steps,
     }
 
 
-def _max_fold_inputs(per_task: list[list[int]]) -> list[int]:
-    """Per-fold offered spans, taking the max length at each fold ordinal across tasks.
+def _max_by_fold_ordinal(per_task: list[list[int]]) -> list[int]:
+    """One value per fold ordinal, taking the max across tasks at each ordinal.
 
     The probe's other fields already take a max across tasks so a single worst-case episode names
-    the geometry; the per-fold list does the same ordinal-wise so a multi-fold answer stays about
-    one offered transcript per fold rather than a mix of tasks.
+    the geometry; the per-fold lists do the same ordinal-wise so a multi-fold answer stays about
+    one fold at a time rather than a mix of tasks.
     """
     if not per_task:
         return []
