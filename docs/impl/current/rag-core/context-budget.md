@@ -39,8 +39,11 @@ the RAG parameters a trial samples, while the declared side does -- `--context-b
 tightens it per trial, so a trial is always bound at least as tightly as the study-level reading.
 Resolution warm-loads Ollama first (`probe_served_window`, `src/llb/backends/served_window.py`),
 because `/api/ps` reports nothing until a request has loaded the model, and "unknown" is exactly the
-answer that would leave the declared window bounding a run it cannot bound. `probe=False` (or an
-explicit `served_max_model_len`) is the injected seam CI runs on.
+answer that would leave the declared window bounding a run it cannot bound. The warm is sent even
+when `/api/ps` already names a window, because Ollama keeps a previously loaded context until a
+request asks for a different one -- a resident entry left by an earlier run answers for that run,
+not for this study's `num_ctx`. `probe=False` (or an explicit `served_max_model_len`) is the
+injected seam CI runs on.
 
 Which window bound the study is recorded, never inferred: `declared_max_model_len`,
 `served_max_model_len`, and `budget_source` go into `TuneResult.context_window`, into the

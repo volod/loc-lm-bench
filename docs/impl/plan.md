@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-loop-budget-warms-an-unpinned-ollama (optional)
-
-The agent-loop prompt guard takes the minimum of the declared and the probed window, but it only
-gets a probe worth having when a run pins one: `resolve_agent_context_budget`
-(`src/llb/cli/bench/_agent_context.py`) warm-loads Ollama only under `if cfg.backend == "ollama"
-and ollama_num_ctx`, and without a warm request `/api/ps` reports nothing at all, so an UNPINNED
-run resolves its guard from the declared window alone -- on a host where declared and served differ
-by 32x ([context
-ablation](current/rag-core/context-ablation-evidence.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
-Warm unconditionally for Ollama, the way `launcher_served_window` does for the document lanes, and
-decide deliberately what an unreachable backend should do there: today a pinned run raises out of
-`warm.start()`, while the budget probe it feeds is documented as best-effort.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: CLEAR
-- Dependencies: none. `probe_served_window` (`src/llb/backends/served_window.py`) already does
-  exactly this warm-then-probe for the Optuna study, so the CLI glue's bespoke copy of it collapses
-  into one call; what remains is the condition and the unreachable-backend decision.
-- User-visible outcome: an agent run's `budget_source` says `served` on an unpinned Ollama host
-  instead of `declared`, so a `context_overflow` termination (or its absence) means the same thing
-  the document lanes' skips do.
-- Scope boundary: in scope -- the warm condition, the unreachable-backend behavior, and a fixture
-  test per binding direction on the CLI wrapper. Out of scope -- changing `ContextBudget`
-  arithmetic, the compaction trigger share, and any policy default.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout; no new artifact.
-- Execution path: `make ci` with an injected launcher; no GPU run is needed to accept it.
-- Acceptance gates: `make ci` green; a fixture where the backend serves less than the config
-  declares resolves `budget_source=served` with no `--max-model-len` passed.
-- Documentation target: the prompt-guard paragraph of
-  [agent context policies](current/extended-workflows/agent-context-policies.md).
-
 #### agent-context-policy-fold-length-probe-predicts-a-guard-it-cannot-count (optional)
 
 The per-family two-fold guard fit ranks candidate guards with a model-free walk replayed at each
