@@ -76,45 +76,37 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-middle-stratum-needs-a-faster-growing-transcript (optional)
+#### agent-context-policy-entry-aware-fold-becomes-the-shipped-default
 
-The per-family guard fit has exhausted its band and named what is left. Nine of 29 candidate guards
-still measure the middle-critical regime and every one of them folds at step 10 or 11, while Gemma4
-ends `m-001` and `m-002` at step 7 -- in a walk-control episode with NO fold in it at all
-([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#the-guard-is-fitted-per-family-and-the-band-runs-out-before-the-walk-does)).
-The obstacle is the transcript's growth RATE, not the guard: observations are capped at 800 chars
-while the folded transcript grows 1753 chars a step, so the untrimmed transcript cannot outgrow the
-window bound before step 8, and no earlier fold elides anything to be critical about. A workload
-whose padding grows the transcript faster does not have that floor -- at `pad_chars` 3200 with fact
-stages 1/2/4 the band holds four usable guards folding at step 7, the earliest offering 16764 chars
-and eliding 7996. Re-shape the middle-critical workload that way, refit, and restate whether the
-shipped default moves.
+The adoption study's verdict is now `adopt_entry_aware_as_the_shipped_default`, and the
+policy-change audit clears the move
+([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice)).
+The shipped `DEFAULT_SUMMARY_TRIM_STRATEGY` is `head_tail`, so a compact episode whose fold elides
+still drops the middle of its transcript unless an operator sets the field for that session. Move
+the default through the pin gate and the published-value scope, and say in the same change what a
+reader of a number measured under `head_tail` should now assume about it.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the committed per-family fit, its walk control, and its regime filter
-  (`src/llb/bench/summary_trim/guard_regime.py`), which already refuses a guard whose fold moves an
-  answer fact out of its declared stratum. What changes is the middle-critical task shape, so its
-  task-set digest moves and no earlier cell of that workload carries over.
-- User-visible outcome: an operator learns whether `per_entry_head` becomes the shipped default,
-  from a middle stratum both families read whole instead of the 6 of 8 cases that fold.
-- Scope boundary: in scope -- a re-shaped middle-critical workload (padding and fact stages), its
-  redeclared geometry, the refit, a run, and a restated adoption verdict. Out of scope -- new
-  workloads, a third trim strategy, changing the shipped summarize bound, and the other four
-  workloads. The re-shaped stratum elides a far larger share of its fold than the shipped one
-  (about 48% against 16%), so that is a DECLARED move to a different point in the elision regime
-  and the recovery it measures is not the same number as the current one.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-summary-trim-adoption/<run>/` layout and
-  `samples/benchmarks/agentic_summary_trim_adoption_design.json`; no new artifact kind.
-- Execution path: `make ci`, then `make bench-agentic-context-summary-trim-adoption` on the CUDA
-  host (about 35 minutes for both families including the walk controls).
-- Acceptance gates: `make ci` green; the design gate measures the declared regime at the new shape,
-  with every answer fact in its declared stratum under the fitted guard; both families read all four
-  declared middle pairs, or the run names the shape that came closest and what refused the rest of
-  the band; the adoption verdict is restated either way and the policy-change audit is re-read
-  beside it.
+- Agent status: CLEAR
+- Dependencies: none. Everything the move needs is model-free from here, so what remains is the
+  default constant in `src/llb/bench/agentic/context_policy.py`, its pin in
+  `samples/benchmarks/agentic_context_policy_pins.json`, and the audit re-read from the new shipped
+  side of the move.
+- User-visible outcome: an operator whose compact episode elides keeps the middle of its transcript
+  without opting in, and a published number measured under the old default says which side it was
+  measured on.
+- Scope boundary: in scope -- the shipped default, its pin, the coupling and published-value scope
+  entries that name the field, and the re-read audit. Out of scope -- a third trim strategy, the
+  shipped summarize-input bound, re-running the adoption study, and re-measuring any published cell
+  the audit reports prompt-invariant.
+- Data and artifact paths: none; the change is model-free.
+- Execution path: `make ci`, then
+  `make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY=1`.
+- Acceptance gates: `make ci` green; the pin gate accepts the move and names whatever it retires;
+  the audit re-read in the reverse direction reports the same invariance, so the move is checked
+  from both sides rather than only from the one it started on.
 - Documentation target:
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice).
+  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#what-a-default-change-would-cost).
 
 #### agent-loop-budget-warms-an-unpinned-ollama (optional)
 

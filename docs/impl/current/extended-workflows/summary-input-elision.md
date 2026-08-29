@@ -140,15 +140,23 @@ make bench-agentic-context-compact-window-elision-transfer
 
 `make bench-agentic-context-summary-trim-adoption` promotes the prototype above into a public
 context-policy field and decides whether it should replace the shipped fold. **The answer measured
-here is: ship it as a supported option, keep `head_tail` as the default.** It costs nothing and
-loses nothing on any workload, it recovers every middle-critical case the shipped trim could not
-finish, and a default change would retire no published cell -- but one of the two families cannot
-put its whole declared middle stratum into the folding regime, so the recovery rests on 6 of 8
-declared middle cases rather than on all of them. That last gap is a POWER limit and nothing else,
-and it has now been chased to the end: the arms run task-adjacent in a balanced order, so it is not
-an artifact of which arm went second, and the guard is
-[fitted per family over a declared band](#the-guard-is-fitted-per-family-and-the-band-runs-out-before-the-walk-does)
-that runs out before the family's walk does.
+here is: the evidence now carries a default change.** It costs nothing and loses nothing on any
+workload, it recovers every middle-critical case the shipped trim could not finish, a default
+change would retire no published cell, and the power limit that used to hold the verdict at
+"option" is gone -- both families now read all four of their declared middle cases, not 6 of 8, and
+every one of them recovers. The study's verdict is `adopt_entry_aware_as_the_shipped_default`.
+
+It does not itself move the default. `changes_shipped_default` stays false and
+`ContextPolicy.summary_trim_strategy` still ships `head_tail`, because moving a policy default is a
+product change that runs through the pin gate and the published-value scope, not something a
+measurement run performs on its own authority.
+
+What closed the power gap was the WORKLOAD, not the guard.
+[The per-family fit](#the-guard-is-fitted-per-family-and-the-fold-lands-inside-the-walk) had
+already established that no guard could reach the two cases Gemma4 walked short of, because the
+middle-critical set grew its transcript too slowly for any usable guard to fold before step 10. The
+set now pads three times as fast, folds at step 7, and every declared case of both families reaches
+it.
 
 `ContextPolicy.summary_trim_strategy` is now a validated choice like `summary_input_cap`
 (`head_tail`, the shipped default, and `per_entry_head`), pinned in
@@ -174,7 +182,7 @@ model, so a workload that stops producing its regime fails the design gate rathe
 | aggregate search | 3 | 8000 | 0.8 | 1 | 8732 | 1464 | 7992 | 7992 |
 | repeated fold | 2 | 7000 | 0.8 | 2 | 10373 | 659 | 11131 | **9967** |
 | crossover control | 2 | 20240 | 0.5 | 1 | 10494 | 0 | 11188 | 11188 |
-| middle-critical | 12 | 14000 | 0.8 | 1 | 15776 | 2508 | 13992 | 13992 |
+| middle-critical | 12 | 9500 | 0.8 | 1 | 16764 | **7996** | 9492 | 9492 |
 
 The crossover row is the published fold-step cell `fold-d10-step10-lo` at its own guard, share,
 depth and padding; its offered 10494 chars is the same number the step-aligned cap table above
@@ -184,6 +192,13 @@ and the entry-aware trim spends 1164 FEWER chars per episode: it hands each entr
 the budget and does not redistribute what a short entry leaves over, so it can undershoot the cap
 that `head_tail` fills exactly. Adoption therefore never costs summary bytes on any measured
 geometry.
+
+The middle-critical row cuts nearly half of what it folds: 7996 of 16764 offered chars, 48% of the
+transcript, against 6-17% on the other three eliding workloads. That is
+a DECLARED position in the elision regime rather than a drift -- the padding was raised to 3200
+chars precisely so the transcript outgrows the window bound after five entries -- so the recovery
+this workload measures is a recovery from a much deeper cut than the typed-memory or
+aggregate-search rows measure, and the numbers are not interchangeable with theirs.
 
 Pairing is exact and per case. The two arms are byte-identical up to and including the transcript
 the first fold offers the summarizer, so a case pairs when both arms fold the same offered bytes;
@@ -235,10 +250,10 @@ block carries the same ambiguity this study just removed from its own.
 
 ### The measured comparison
 
-CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB, balanced arm order): `qwen3:14b` at 19.46-20.77
-tok/s and `gemma4:e4b` at 48.69-52.34 tok/s, Ollama `num_ctx=8192`, 23 tasks per arm per family, 92
-episodes, run twice. Both families qualified by completing the elision-free crossover control 2/2
-with zero overflows.
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB, balanced arm order): `qwen3:14b` at 23.42-23.49
+tok/s and `gemma4:e4b` at 55.67-55.72 tok/s, Ollama `num_ctx=8192`, 23 tasks per arm per family, 92
+paired episodes plus 12 walk-control episodes per family, run twice. Both families qualified by
+completing the elision-free crossover control 2/2 with zero overflows.
 
 | family | workload | pairs | skipped | ea wins | ht wins | d(model-input chars) | d(summary chars) | d(folds) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -246,67 +261,67 @@ with zero overflows.
 | Qwen | aggregate search | 3 | 0 | 0 | 0 | -2 | 0 | 0 |
 | Qwen | repeated fold | 2 | 0 | 0 | 0 | -2653 | **-2029** | 0 |
 | Qwen | crossover control | 2 | 0 | 0 | 0 | **0** | 0 | 0 |
-| Qwen | middle-critical | 12 | 0 | **5** | 0 | +634 | 0 | 0 |
+| Qwen | middle-critical | 12 | 0 | **4** | 0 | +5615 | 0 | 0 |
 | Gemma4 | typed memory | 4 | 0 | 0 | 0 | -183 | 0 | 0 |
 | Gemma4 | aggregate search | 3 | 0 | 0 | 0 | -13221 | 0 | 0 |
 | Gemma4 | repeated fold | 2 | 0 | 0 | 0 | -1754 | **-1828** | 0 |
 | Gemma4 | crossover control | 2 | 0 | 0 | 0 | +78 | 0 | 0 |
-| Gemma4 | middle-critical | 12 | 0 | **2** | 0 | -63 | 0 | 0 |
+| Gemma4 | middle-critical | 12 | 0 | **4** | 0 | -6590 | 0 | 0 |
 
-Verdict: **the entry-aware fold costs nothing and recovers middle-critical completion, but the
-evidence does not carry a default change.** `head_tail` wins ZERO paired cases anywhere -- across
-two families, five workloads and 46 paired cases -- so there is no regression to trade against. The
-recovery reproduces per stratum:
+Verdict: **the entry-aware fold costs nothing, recovers every declared middle-critical case, and
+the evidence now carries a default change.** `head_tail` wins ZERO paired cases anywhere -- across
+two families, five workloads and 46 paired cases -- so there is no regression to trade against, and
+nothing is skipped: all 46 cases pair in both families. The recovery reproduces per stratum, and
+this time on the full declared set:
 
 | family | head | middle | tail |
 | --- | --- | --- | --- |
-| Qwen | 4/4 -> 4/4 | **0/4 -> 4/4** | 3/4 -> 4/4 |
-| Gemma4 | 4/4 -> 4/4 | **0/2 -> 2/2** (2 of 4 declared never fold) | 4/4 -> 4/4 |
+| Qwen | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
+| Gemma4 | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
 
-Read the numbers in operator terms. Every middle case the shipped trim could not finish, the
-entry-aware trim finished -- 4 of 4 on Qwen, 2 of 2 usable on Gemma4 -- while head and tail never
-moved except upward (Qwen's tail gained one case). Summary prompt bytes are EXACTLY equal on every
-single-fold workload and 1828-2029 chars cheaper on the repeatedly folding one, so the recovery is
-bought with entry placement rather than with window.
+Read the numbers in operator terms. The shipped trim finished NONE of the eight declared
+middle-critical cases across the two families; the entry-aware trim finished all eight, while head
+and tail stayed at 4/4 in both. Summary prompt bytes are EXACTLY equal on every single-fold
+workload and 1828-2029 chars cheaper on the repeatedly folding one, so the recovery is bought with
+entry placement rather than with window.
 
-**The order is balanced and the dropout stayed.** Both families opened their tasks with each arm
-within one task of evenly (12/11 and 11/12 of 23), and the pre-divergence channel is flat in both:
-Qwen reached the fold in 23 of 23 first-position and 23 of 23 second-position episodes, Gemma4 in
-21 of 23 either way. Position moves nothing about entering the regime under test, and Qwen's 5
-paired losses are all `head_tail` losses spread across BOTH slots -- it loses two of them running
-first and three running second -- so the recovery is a property of the arm, not of the schedule.
+**Why the middle-critical byte column is large, and why that is not a cost.** The crossover control
+is what makes the column readable: it elides nothing, so both arms render byte-identical summarize
+prompts there, and it moved 0 chars on Qwen and +78 on Gemma4 -- what a served endpoint returns for
+identical prompts under slightly different request histories. That is the run's noise floor, and
+the typed-memory and Qwen aggregate-search rows sit inside it. Three rows do not, for three
+different reasons. The repeated-fold row's -1754 and -2653 travel with its real summary-byte saving
+below. Gemma4's aggregate-search -13221 is one episode taking a shorter walk, on the one workload
+whose walk is not forced by a token chain. And the middle-critical row's +5615 and -6590 are the
+recovery itself showing up in the byte column: on four cases per family the two arms now END
+DIFFERENTLY, so their continuations after the fold are genuinely different episodes. The sign is a per-family
+property of what a failing episode does -- Qwen's `head_tail` failures give up sooner than the
+recovered episode runs, Gemma4's run longer -- which is exactly why model-input chars are reported
+beside the cost gate and not inside it. Gating on them would price a recovered case as a cost.
+Summary prompt chars, which the gate does read, are unchanged at 0 on every eliding single-fold
+workload.
 
-The crossover control is what makes the `d(model-input chars)` column readable: it elides nothing,
-so both arms render byte-identical summarize prompts there. Under fixed arm blocks it still moved
-+76 and +298 chars; running the two arms back to back on the same task shrinks that to **0 on Qwen
-and +78 on Gemma4**, because the pair now sees nearly the same request history. That is the run's
-noise floor -- a served endpoint returns different continuations for identical prompts depending on
-the requests before them -- and every non-repeated-fold row in the table sits inside or near it,
-with only the repeated-fold savings an order of magnitude clear. Gemma4's aggregate-search -13221
-is not a trim effect either: it is one episode taking a shorter walk.
+**The order is balanced and nothing dropped out.** Both families opened their tasks with each arm
+within one task of evenly (12/11 and 11/12 of 23), and the pre-divergence channel is flat and FULL
+in both: Qwen and Gemma4 each reached the fold in 23 of 23 first-position and 23 of 23
+second-position episodes. Under the slower-growing shape Gemma4 managed only 21 of 23 either way;
+the two episodes it used to lose were the ones that ended before any fold, and at a fold on step 7
+they no longer do. Completion is 21 of 23 in each position for both families -- the two
+non-completions per slot are `head_tail`'s middle-critical failures, split evenly across the slots,
+so the recovery is a property of the arm and not of the schedule.
 
-**Why this is an option and not a default.** Gemma4 still puts only 2 of its 4 declared middle
-cases into the folding regime -- and under the balanced schedule the shortfall is no longer
-attributable to the arms. Both dead cases now end the token chain at step 7 in BOTH arms and in
-BOTH positions: `window-elision-m-001-d10` fails with `per_entry_head` opening it and `head_tail`
-second, `window-elision-m-002-d10` fails with `head_tail` opening it and `per_entry_head` second.
-Under the fixed order, one of those two dropped in the entry-aware arm alone, which is exactly the
-reading the confound made unusable; with order balanced, it drops in both. Widening the stratum
-from two to four cases per stratum did not fix it either -- the shortfall scaled with the set -- so
-what remains is a per-family property of how far Gemma4 walks these two tasks, not an artifact of
-which arm ran when. The recovery is therefore established on the 6 of 8 declared middle cases that
-enter the regime, which is enough to OFFER the strategy and not enough to move a default every
-later run inherits.
+What would overturn this: a family that loses a paired case under `per_entry_head` overturns the
+safety claim; a middle stratum whose answer span survives the cut by accident would overturn the
+recovery, and validation refuses boundary overlap precisely so that cannot happen silently. What
+this does NOT establish is the shape-independence of the recovery -- it is measured at one point in
+the elision regime (48% of the folded transcript cut) on one fact-stage triple, and the shallower
+typed-memory and aggregate-search cuts are where it is measured to cost nothing, not where it is
+measured to recover. Lookup key: run
+`agent-context-policy-entry-aware-summary-fold-adoption`, run ids `72d6e04094ce` and
+`568179767d8f`; two consecutive balanced-order runs on this host reproduced every table entry above
+exactly -- every delta, every stratum count, and both guard fits.
 
-What would overturn this, and what would settle it: a family that loses a paired case under
-`per_entry_head` overturns the safety claim; a fully powered middle stratum on both families is
-what a default change is waiting on, and [the guard fit below](#the-guard-is-fitted-per-family-and-the-band-runs-out-before-the-walk-does)
-is what established that no guard can buy it. Lookup key: run
-`agent-context-policy-entry-aware-summary-fold-adoption`, two consecutive balanced-order runs on
-this host reproduced every table entry above exactly, including which cases dropped out and in
-which position.
-
-### The guard is fitted per family, and the band runs out before the walk does
+### The guard is fitted per family, and the fold lands inside the walk
 
 One shared character guard is not one shared regime. The middle stratum is readable only where an
 episode REACHES its fold -- both arms build byte-identical prompts up to the transcript the fold
@@ -314,7 +329,7 @@ offers -- so a family whose walk ends before the trigger is crossed ran no trim 
 constant was silently measuring per-family walk length. The middle-critical workload's guard is
 therefore fitted per family from that family's own measured walk, the way the repeated-fold ladder
 fits its guard from the family's measured fold length; the band arithmetic both fits use (declared
-guard wins any tie, centre of the widest run otherwise) is now one module.
+guard wins any tie, centre of the widest run otherwise) is one module.
 
 The measurement is a WALK CONTROL: the same twelve tasks at a guard the model-free probe never
 folds at (20000 chars), which makes its prompts byte-identical to what every candidate guard builds
@@ -323,61 +338,82 @@ against it.
 
 **The band is filtered by the declared REGIME before it is scored.** A lower guard folds earlier,
 but the summarize-input bound is the same window, so it also folds a shorter transcript against a
-smaller cap and moves the span the cap elides. Each of the 29 candidates in the declared band
-(9000-16000 chars, step 250) is walked with an oracle and either usable or refused by name:
+smaller cap and moves the span the cap elides. Each of the 45 candidates in the declared band
+(4000-15000 chars, step 250) is walked with an oracle and either usable or refused by name:
 
-| candidate guards | fold step | offered | elided | usable |
-| --- | ---: | ---: | ---: | --- |
-| 9000-10250 | 6-7 | 7011-8764 | 0 | no -- the fold fits the bound and elides nothing |
-| 10500-11000 | 8 | 10517 | 249-749 | no -- the answer fact leaves its declared stratum |
-| 11250-11500 | 8 | 10517 | 0 | no -- the fold fits the bound and elides nothing |
-| 11750-12500 | 9 | 12270 | 502-1252 | no -- the answer fact leaves its declared stratum |
-| **12750-13500** | **10** | **14023** | **1255-2005** | **yes** |
-| **13750-14750** | **11** | **15776** | **1758-2758** | **yes** (14000 is the declared guard) |
-| 15000-16000 | -- | 0 | 0 | no -- the trigger is never crossed, so nothing folds |
+| candidate guards | folds | fold step | offered | elided | usable |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 4000 | 2 | 2 | 4557 | 84 | no -- it folds more than once |
+| 4250-4750 | 1 | 2 | 3352 | 0 | no -- the fold fits the bound and elides nothing |
+| 5000-8250 | 2-5 | 3-6 | 20178-30420 | 7642-15201 | no -- it folds more than once |
+| 8500-9250 | 1 | 6 | 13411 | 4893-5643 | no -- the fold stops before the tail fact's stage |
+| **9500-10250** | **1** | **7** | **16764** | **7246-7996** | **yes** (9500 is the declared guard) |
+| 10500-14750 | 1 | 8-11 | 20117-30176 | 9349-16908 | no -- an answer fact leaves its declared stratum |
+| 15000 | 0 | -- | 0 | 0 | no -- the trigger is never crossed, so nothing folds |
 
-Nine of 29 candidates survive, and they fold at step 10 or 11 -- never earlier. TWO different
-properties refuse the early ones, and the table shows where each bites. Below step 8 nothing is
-elided at all: observations are capped at 800 chars while the folded transcript grows 1753 chars a
-step, so an early fold offers a transcript that has not yet outgrown the window bound and there is
-no elision to be critical about. At steps 8 and 9 something is elided but the answer fact is no
-longer inside it -- the middle fact sits at stage 5 of a depth-10 workflow, so a fold that early
-folds a transcript whose LAST entry is that fact, and it lands in the retained tail. Neither is an
-edge of the band: it was drawn wide enough to contain every guard that folds at all, from step 6 to
-no fold, precisely so this is measured rather than assumed.
+Four of 45 candidates survive, and they all fold at step 7. FOUR different properties refuse the
+rest, and the table shows where each bites. At the bottom the guard is small enough that the
+episode folds repeatedly, or small enough that the one fold it does fits the bound and cuts
+nothing. Just below the usable run the fold is a single fold that does elide -- but it stops after
+four entries, and the tail fact sits at stage 4, so the fold happens before the fact exists to be
+placed at all. Above the usable run the fold contains every fact and the trim boundaries move under
+them instead: the retained tail is 0.4 of a cap that grows with the guard, so at six folded entries
+the tail fact is no longer in the tail. The band was drawn wide enough to contain every guard that
+folds at all -- from one that folds twice to the first that never crosses the trigger -- precisely
+so all four are measured rather than assumed outside it.
 
-CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 22.08-22.61 tok/s and `gemma4:e4b` at
-54.01-54.81 tok/s, Ollama `num_ctx=8192`, 12 walk-control episodes plus 46 paired episodes per
-family, run twice. The two runs agree on every entry below, on which nine guards the band can use,
-and on which two cases walk short.
+**The two placement refusals are now reported apart, and at this shape it matters.** They were one
+reason before, because on a slower-growing transcript only the boundary-movement one ever bounded
+the band -- so the floor was always named "an answer fact leaves its declared stratum" and nobody
+had to ask which way. Here the floor is set by the other one:
+`an_answer_fact_is_not_inside_the_folded_transcript_yet` says the fold stops before the stage that
+plants the fact, so nothing was placed anywhere, while
+`an_answer_fact_leaves_its_declared_elision_stratum` says the fold does contain the fact and the
+trim boundaries moved out from under it. Both are facts about the shape rather than the family, but
+they point at different repairs -- more stages before the fold against a different stage inside it
+-- and a floor that cannot say which is a floor nobody can act on.
+
+**The band offers one fold step, so the fit cannot trade.** Every usable guard folds at step 7, so
+`select_guard`'s tie rule returns the declared guard for any family and the fit can only confirm it
+or report that the walk did not reach it. That is a property of the workload's padding rather than
+of the fit: the retained tail is about one entry wide at this fold (0.4 of an 8768-char cap against
+3353-char entries), so a guard one step later has already pushed the tail fact out of it. The
+reading states the reach (`band_fold_steps`) rather than leaving it to be inferred from the guard
+list, because a one-step band is what makes a shortfall unfixable by any guard.
+
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 23.42-23.49 tok/s and `gemma4:e4b` at
+55.67-55.72 tok/s, Ollama `num_ctx=8192`, 12 walk-control episodes plus 46 paired episodes per
+family, run twice. The two runs agree on every entry below and on which four guards the band can
+use.
 
 | family | walk control | measured walk | fitted guard | fold step | cases reaching the fold |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Qwen | 12/12 | 11 on every case | 14000 (unchanged) | 11 | 12/12 |
-| Gemma4 | 10/12 | 11 on ten, **7 on `m-001` and `m-002`** | 14000 (unchanged) | 11 | 10/12 |
+| Qwen | 12/12 | 11 on every case | 9500 (unchanged) | 7 | 12/12 |
+| Gemma4 | 12/12 | 11 on every case | 9500 (unchanged) | 7 | 12/12 |
 
-Verdict: **the fit moves no guard, and that is the answer.** Every guard that folds at step 10
-reaches exactly the same 10 of 12 Gemma4 cases that step 11 does, so the declared guard wins the tie
-and the published geometry stands; the closest the band can come is 12750 at step 10, and the
-candidate below it is refused because the answer fact leaves its declared stratum. Gemma4's two
-cases end at step 7, and no usable guard folds before step 10.
+Verdict: **the fit moves no guard, and this time that is because the declared one already reaches
+every case.** Both families complete the walk control 12 of 12 with zero folds and walk all 12
+tasks to the full 11 steps, in both runs; every declared case of both families therefore crosses a
+trigger that now sits at step 7 instead of step 11. The short walks are gone TWICE OVER, and the
+two reasons are worth keeping apart because only the second is guaranteed by construction. Gemma4's
+early finish did not reproduce at the re-staged tasks -- these are different tasks with different
+codes and stages, and the walk control measures that it walks them whole rather than explaining
+why. What the shape does guarantee is the other half: a walk that ended at step 7, as those two
+cases did, now reaches a fold that happens AT step 7, so the same behavior would no longer cost the
+stratum a case.
 
-The measured comparison itself is unchanged by the fit, which is the point: both families ran the
-same guard they ran before it, so every number in [the measured comparison](#the-measured-comparison)
-above stands, and the middle stratum reads 4/4 on Qwen and 2 of 4 declared on Gemma4 exactly as it
-did.
+That is the same fit reporting a different answer because the WORKLOAD moved under it, which is
+what the fit was built to make visible. Held at the slower-growing shape the fit had exhausted its
+band and said so: no usable guard folded before step 10, Gemma4 ended two cases at step 7, and the
+recovery rested on 6 of 8 declared middle cases. The obstacle was never the guard -- observations
+are capped at 800 chars while that shape's folded transcript grew 1753 chars a step, so the
+transcript could not outgrow the window bound before step 8 and nothing earlier elided anything to
+be critical about. Padding to 3200 chars a step moves the whole ladder: the transcript outgrows the
+bound after five entries, and the fold lands inside a walk every family was already taking.
 
-What the walk control adds is the attribution, and it is stronger than the balanced schedule's.
-**Gemma4 ends `m-001` and `m-002` at step 7 in an episode with NO fold in it at all** -- it calls
-`finish` early, having seen the answer code at stage 5, and fails the workflow-complete assertion.
-That is measured before compaction exists in the episode, so the shortfall cannot be about the trim,
-about which arm ran second, or about where the fold landed. It is how this family walks these two
-tasks. Qwen's control completes 12 of 12 on the same bytes.
-
-What would settle it: a middle stratum whose fact stage survives an EARLIER fold -- a lower middle
-stage against a shorter folded transcript, which is a task-shape change rather than a guard -- or a
-family that walks `m-001` and `m-002` to the end. What would overturn the fit itself: a usable guard
-below step 10, which would mean the placement check had let a fact out of its stratum.
+What would overturn the fit itself: a usable guard below step 7, which would mean the placement
+check had let a fact out of its stratum, or a family whose walk control does not complete -- which
+would put the shortfall back and, with a one-step band, put it beyond any guard's reach.
 
 ### What a default change would cost
 
@@ -392,6 +428,15 @@ The same audit read against the designs' own `held_fixed` -- which still records
 `fold-d10-step11-lo`, `fold-d10-step11-hi`). Those are exactly the cells whose trigger-bound cap
 elided (374, 794 and 282 chars in the step-aligned table above), which is the same mechanism read
 from a direction that owes it nothing: the field bites where, and only where, something is cut.
+
+**The gate is now open, and the default has not moved through it.** Every condition the ladder
+asks for is met -- no regression, a whole middle stratum in both families, no extra summary bytes,
+a balanced order, and an audit that retires nothing -- so the study returns
+`adopt_entry_aware_as_the_shipped_default`. What it does NOT do is perform the change:
+`changes_shipped_default` is false in the design and in the persisted analysis, and
+`ContextPolicy.summary_trim_strategy` still ships `head_tail`. A measurement lane recommending a
+product default is not the same act as moving it, which runs through the pin gate and the
+published-value scope; until that lands, an operator gets the recovery by setting the field.
 
 ```bash
 make bench-agentic-context-summary-trim-adoption

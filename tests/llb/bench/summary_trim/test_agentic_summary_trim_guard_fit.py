@@ -33,14 +33,26 @@ from llb.bench.summary_trim.guard_regime import (
     REFUSED_FOLD_COUNT,
     REFUSED_NO_ELISION,
     REFUSED_PLACEMENT,
+    REFUSED_UNFOLDED_FACT,
     scan_guard_band,
     usable_guards,
 )
 from llb.bench.summary_trim.workloads import build_workload_tasks
 
-# The two cases the measured host cannot walk to its fold, named here so a fixture can inject the
-# same shape CI has no GPU to reproduce.
+# The two cases the measured host has walked short before, named here so a fixture can inject the
+# same shape CI has no GPU to reproduce. How short is derived from the band rather than pinned:
+# the point is a walk that ends before the fitted fold, whatever step that fold lands on.
 _SHORT_WALK_CASES = ("window-elision-m-001-d10", "window-elision-m-002-d10")
+# A transcript that grows SLOWER than the committed one: the retired middle-critical shape, whose
+# padding lets the band span two fold steps. It is what still exercises a fit that MOVES a guard,
+# a trade the committed shape's one-step band cannot offer.
+_SLOWER_GROWING_SHAPE = {
+    "depth": 10,
+    "pad_chars": 1600,
+    "fact_stages": {"head": 4, "middle": 5, "tail": 7},
+}
+_SLOWER_GROWING_BAND = {"search_min_chars": 9000, "search_max_chars": 16000, "step_chars": 250}
+_SLOWER_GROWING_GUARD = 14000
 # The verdict gates on the policy-change audit, which is a whole separate model-free study;
 # what is under test here is the fit, so the audit enters as a stub.
 _NO_AUDIT: dict[str, object] = {
@@ -70,6 +82,19 @@ def scan(design: dict[str, object], fitted: dict[str, object]) -> list[dict[str,
     return scan_guard_band(fitted, design["held_fixed"], guard_fit_spec(design))  # type: ignore[arg-type]
 
 
+def _slower_growing(
+    design: dict[str, object], fitted: dict[str, object]
+) -> tuple[dict[str, object], dict[str, object]]:
+    """The same study over a slower-growing transcript, whose band spans more than one fold step."""
+    workload = {
+        **fitted,
+        "max_prompt_chars": _SLOWER_GROWING_GUARD,
+        "task_shape": _SLOWER_GROWING_SHAPE,
+    }
+    spec = {**guard_fit_spec(design), **_SLOWER_GROWING_BAND}
+    return {**design, GUARD_FIT_FIELD: spec}, workload
+
+
 def _walks(fitted: dict[str, object], short: dict[str, int] | None = None) -> dict[str, int]:
     """Every case walking the full workflow, except the ones a caller names as ending early."""
     short = short or {}
@@ -94,7 +119,12 @@ def test_the_band_brackets_every_way_a_guard_stops_measuring_the_stratum(
 ):
     """A band that only held usable guards would not show where the fit runs out of room."""
     refusals = {row["refusal"] for row in scan}
-    assert {REFUSED_NO_ELISION, REFUSED_PLACEMENT, REFUSED_FOLD_COUNT} <= refusals
+    assert {
+        REFUSED_NO_ELISION,
+        REFUSED_UNFOLDED_FACT,
+        REFUSED_PLACEMENT,
+        REFUSED_FOLD_COUNT,
+    } <= refusals
 
 
 def test_folding_earlier_costs_the_stratum_the_fact_it_was_built_around(
@@ -103,14 +133,22 @@ def test_folding_earlier_costs_the_stratum_the_fact_it_was_built_around(
     """Why the band bottoms out: below its floor the fold is early enough to move the fact out.
 
     The elided span is the middle of a transcript whose length the guard sets, so a guard low
-    enough to fold before the walk's end folds a transcript whose last entry is the middle fact --
-    which lands in the RETAINED tail, and stops being middle-critical at all.
+    enough to fold before the walk's end folds a transcript that has not reached every fact its
+    tasks plant, and stops being the experiment at all. Which of the two placement properties bites
+    at the floor is a property of the SHAPE: a fast-growing transcript runs out of stages first, a
+    slow-growing one moves the boundaries under a fact it does contain.
     """
     usable = usable_guards(scan)
     floor = min(usable, key=lambda guard: (usable[guard], guard))
     below = [row for row in scan if int(row["max_prompt_chars"]) < floor]  # type: ignore[arg-type]
-    assert below and below[-1]["refusal"] == REFUSED_PLACEMENT
-    assert min(usable.values()) < max(usable.values()), "the band must offer more than one step"
+    assert below and below[-1]["refusal"] == REFUSED_UNFOLDED_FACT
+    # Above the usable run the fold does contain every fact, and the trim boundaries move instead.
+    above = [row for row in scan if int(row["max_prompt_chars"]) > max(usable)]  # type: ignore[arg-type]
+    assert above and above[0]["refusal"] == REFUSED_PLACEMENT
+    # The usable guards are one contiguous run: the refusals bracket them rather than interleave.
+    guards = sorted(usable)
+    assert guards == [row["max_prompt_chars"] for row in scan if row["refusal"] is None]
+    assert [row for row in scan if int(row["max_prompt_chars"]) > max(guards)]  # type: ignore[arg-type]
 
 
 def test_the_band_is_readable_with_no_family_at_all(
@@ -118,10 +156,11 @@ def test_the_band_is_readable_with_no_family_at_all(
 ):
     """What bounds every family's fit is model-free, so an audit-only run still reports it."""
     band = guard_band_reading(design, fitted)
-    assert band["search_band"] == {"min_chars": 9000, "max_chars": 16000, "step_chars": 250}
+    assert band["search_band"] == {"min_chars": 4000, "max_chars": 15000, "step_chars": 250}
     assert band["n_candidates"] == len(band["usable_guards"]) + len(band["refused_guards"])  # type: ignore[arg-type]
     assert band["declared_max_prompt_chars"] in band["usable_guards"]  # type: ignore[operator]
-    assert band["band_floor_reason"] == REFUSED_PLACEMENT
+    assert band["band_floor_reason"] == REFUSED_UNFOLDED_FACT
+    assert band["band_fold_steps"] == sorted(set(band["usable_guards"].values()))  # type: ignore[union-attr]
 
 
 def test_a_family_that_walks_every_case_keeps_the_declared_guard(
@@ -138,31 +177,63 @@ def test_a_family_that_walks_every_case_keeps_the_declared_guard(
 def test_a_walk_a_lower_guard_can_reach_moves_the_guard(
     design: dict[str, object], fitted: dict[str, object]
 ):
-    """The fit exists for this case: a family that stops one step short gets an earlier fold."""
-    walks = {item: 10 for item in _walks(fitted)}
-    record = fit_middle_guard(design, fitted, design["held_fixed"], walks)  # type: ignore[arg-type]
+    """The fit exists for this case: a family that stops short of the declared fold gets an earlier one.
+
+    Read on a slower-growing transcript, because moving a guard is only possible where the band
+    spans two fold steps -- which is a property of the workload's padding, not of the fit.
+    """
+    slower_design, slower = _slower_growing(design, fitted)
+    band = guard_band_reading(slower_design, slower)
+    steps = cast(list[int], band["band_fold_steps"])
+    assert len(steps) > 1, steps
+    walks = {item: steps[0] for item in _walks(slower)}
+    record = fit_middle_guard(slower_design, slower, design["held_fixed"], walks)  # type: ignore[arg-type]
     assert record["fit_reading"] == FIT_APPLIED
-    assert int(record["fitted_fold_step"]) <= 10  # type: ignore[arg-type]
-    assert record["fitted_max_prompt_chars"] != fitted["max_prompt_chars"]
+    assert int(record["fitted_fold_step"]) == steps[0]  # type: ignore[arg-type]
+    assert record["fitted_max_prompt_chars"] != slower["max_prompt_chars"]
     assert record["meets_evidence_floor"] is True
 
 
+def test_a_band_of_one_fold_step_can_only_confirm_the_declared_guard_or_refuse_the_walk(
+    design: dict[str, object], fitted: dict[str, object], scan: list[dict[str, object]]
+):
+    """The committed shape's own limit, stated rather than left to be derived from the guard list.
+
+    Its padding grows the transcript fast enough that the fold lands inside a short walk, and the
+    same speed leaves the elided middle one entry wide -- so every guard that still holds the
+    regime folds at the SAME step, and no fit can trade fold position against walk length.
+    """
+    steps = sorted(set(usable_guards(scan).values()))
+    assert steps == [7], steps
+    reached = fit_middle_guard(design, fitted, design["held_fixed"], _walks(fitted))  # type: ignore[arg-type]
+    missed = fit_middle_guard(  # type: ignore[arg-type]
+        design, fitted, design["held_fixed"], {item: steps[0] - 1 for item in _walks(fitted)}
+    )
+    assert reached["fit_reading"] == FIT_DECLARED
+    assert missed["fit_reading"] == FIT_UNDERPOWERED
+    assert {reached["fitted_max_prompt_chars"], missed["fitted_max_prompt_chars"]} == {
+        fitted["max_prompt_chars"]
+    }
+    assert "no candidate folds earlier" in str(missed["fit_reason"])
+
+
 def test_a_walk_no_guard_in_the_band_reaches_is_reported_rather_than_widened(
-    design: dict[str, object], fitted: dict[str, object]
+    design: dict[str, object], fitted: dict[str, object], scan: list[dict[str, object]]
 ):
     """The declared negative outcome: name the closest guard and what refused the one below it."""
-    walks = _walks(fitted, {case: 7 for case in _SHORT_WALK_CASES})
+    earliest = min(usable_guards(scan).values())
+    walks = _walks(fitted, {case: earliest - 1 for case in _SHORT_WALK_CASES})
     record = fit_middle_guard(design, fitted, design["held_fixed"], walks)  # type: ignore[arg-type]
     assert record["fit_reading"] == FIT_UNDERPOWERED
     assert record["meets_evidence_floor"] is False
     assert record["short_walk_cases"] == sorted(_SHORT_WALK_CASES)
     assert record["predicted_folding_cases"] == len(walks) - len(_SHORT_WALK_CASES)
-    # The band is exhausted, not unexplored: the reason names the guard that came closest and why
-    # the candidate below it is not one.
+    # The band is exhausted, not unexplored: the reason names what the band had left and why the
+    # candidate below it is not one.
     reason = str(record["fit_reason"])
-    assert str(record["band_floor_guard"]) in reason
+    assert "The band is exhausted, not unexplored" in reason
     assert str(record["band_floor_reason"]) in reason
-    assert record["band_floor_reason"] == REFUSED_PLACEMENT
+    assert record["band_floor_reason"] == REFUSED_UNFOLDED_FACT
 
 
 def test_a_run_with_no_measured_walk_leaves_the_declared_guard_alone(
@@ -183,7 +254,7 @@ def test_the_walk_control_must_not_fold(design: dict[str, object]):
 
 def test_the_declared_guard_must_be_a_candidate_in_its_own_band(design: dict[str, object]):
     """A band that excludes the declared guard cannot report 'the declared one already fits'."""
-    spec = {**guard_fit_spec(design), "search_max_chars": 13500}
+    spec = {**guard_fit_spec(design), "search_min_chars": 9750}
     with pytest.raises(ValueError, match="not a candidate in its own band"):
         validate_guard_fit({**design, GUARD_FIT_FIELD: spec}, workloads(design))
 

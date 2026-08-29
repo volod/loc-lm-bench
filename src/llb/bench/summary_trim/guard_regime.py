@@ -4,9 +4,10 @@ A per-family guard fit is only allowed to choose from guards that keep the workl
 REGIME, and for the middle-critical set that is four properties at once, none of which the guard
 leaves alone. Lower the guard and the fold lands earlier -- but the summarize-input bound is the
 same window, so the fold offers a shorter transcript against a smaller cap, and the span the cap
-elides moves with both. Far enough down, the fold either elides nothing at all or elides a span
-that no longer contains the fact its task planted in that stratum, and the workload has quietly
-stopped being the experiment it is named after.
+elides moves with both. Far enough down, the fold either elides nothing at all, or elides a span
+that no longer contains the fact its task planted in that stratum, or lands before that fact has
+entered the transcript at all -- and the workload has quietly stopped being the experiment it is
+named after.
 
 So every candidate is walked with an oracle first, and one refused with a NAMED reason rather than
 silently skipped: a fit that runs out of usable guards has to be able to say which property ran out
@@ -20,7 +21,7 @@ from llb.bench.agentic.context_policy import SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRI
 from llb.bench.agentic.context_summary import summary_prompt_overhead_chars
 from llb.bench.agentic.design_fields import as_int, as_mapping
 from llb.bench.context_policy.guard_band import guard_grid
-from llb.bench.memory.window_elision.tasks import answer_fact_placement
+from llb.bench.memory.window_elision.tasks import FactNotOffered, answer_fact_placement
 from llb.bench.summary_trim.design import probe_workload_task
 from llb.bench.summary_trim.workloads import build_workload_tasks
 
@@ -28,6 +29,7 @@ from llb.bench.summary_trim.workloads import build_workload_tasks
 # fold, and stop measuring what the workload was built to measure.
 REFUSED_FOLD_COUNT = "fold_count_leaves_the_declared_regime"
 REFUSED_NO_ELISION = "the_fold_fits_the_summarize_input_bound_and_elides_nothing"
+REFUSED_UNFOLDED_FACT = "an_answer_fact_is_not_inside_the_folded_transcript_yet"
 REFUSED_PLACEMENT = "an_answer_fact_leaves_its_declared_elision_stratum"
 REFUSED_UNPAIRED = "the_two_arms_do_not_offer_the_summarizer_the_same_transcript"
 
@@ -99,8 +101,9 @@ def _refusal(
         return REFUSED_FOLD_COUNT
     if min(int(cast(int, row["summary_input_elided_chars"])) for row in baseline) <= 0:
         return REFUSED_NO_ELISION
-    if _misplaced_fact(candidate, baseline):
-        return REFUSED_PLACEMENT
+    misplaced = _misplaced_fact(candidate, baseline)
+    if misplaced is not None:
+        return misplaced
     # The pairing property itself. It holds by construction on today's geometry -- both trims read
     # the same offered transcript and differ only in what the cap lets through -- and it is checked
     # anyway, because it is the assumption every paired case in this study rests on.
@@ -112,8 +115,16 @@ def _refusal(
     return None
 
 
-def _misplaced_fact(candidate: dict[str, object], baseline: list[dict[str, object]]) -> bool:
-    """Whether any answer fact stopped occupying the stratum its task planted it in."""
+def _misplaced_fact(candidate: dict[str, object], baseline: list[dict[str, object]]) -> str | None:
+    """Why an answer fact no longer occupies the stratum its task planted it in, or `None`.
+
+    The two ways it can fail are different facts about the guard and the band reports them apart,
+    because at a fast-growing transcript it is the FIRST one that bounds the band. A guard low
+    enough folds a transcript the fact has not entered yet -- its stage is simply past the last
+    folded entry -- which says the fold is too early for the workload's stages, not that the trim
+    boundaries moved. A guard high enough folds a transcript that does contain the fact and puts it
+    in the wrong stratum, which says the boundaries moved under it.
+    """
     cap = as_int(candidate, "max_prompt_chars") - summary_prompt_overhead_chars()
     for record, probe in zip(build_workload_tasks(candidate), baseline, strict=True):
         try:
@@ -122,14 +133,16 @@ def _misplaced_fact(candidate: dict[str, object], baseline: list[dict[str, objec
                 offered_chars=int(cast(int, probe["summary_input_chars"])),
                 transcript_cap_chars=cap,
             )
+        except FactNotOffered:
+            return REFUSED_UNFOLDED_FACT
         except ValueError:
-            # The offered span does not match any prefix of this task's transcript, so the fact
-            # cannot be located against the trim boundaries at all -- which is a refusal, not a
-            # placement to argue about.
-            return True
+            # The offered span matches no prefix of this task's transcript, so the fact cannot be
+            # located against the trim boundaries at all -- a refusal, not a placement to argue
+            # about.
+            return REFUSED_PLACEMENT
         if placement["declared_stratum"] != placement["measured_stratum"]:
-            return True
-    return False
+            return REFUSED_PLACEMENT
+    return None
 
 
 def _first_fold_step(probe: dict[str, object]) -> int:

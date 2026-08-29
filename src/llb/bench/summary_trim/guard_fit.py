@@ -176,12 +176,25 @@ def _validate_walk_control(
 
 
 def _band_floor(scan: list[dict[str, object]], usable: dict[int, int]) -> dict[str, object]:
-    """The earliest-folding usable guard, and what refused the candidate just below it."""
+    """The earliest-folding usable guard, what refused the one below it, and the band's REACH.
+
+    The reach -- how many distinct fold steps the usable guards span -- is what decides whether a
+    fit can trade at all. A band offering one step can only confirm the declared guard or report
+    that no guard reaches the walk; only a band offering two or more can move a guard, and which
+    one it is depends on the workload's geometry rather than on the family.
+    """
+    steps = sorted(set(usable.values()))
     if not usable:
-        return {"band_floor_guard": 0, "band_floor_fold_step": 0, "band_floor_reason": None}
+        return {
+            "band_fold_steps": steps,
+            "band_floor_guard": 0,
+            "band_floor_fold_step": 0,
+            "band_floor_reason": None,
+        }
     floor_guard = min(usable, key=lambda guard: (usable[guard], guard))
     below = [row for row in scan if int(cast(int, row["max_prompt_chars"])) < floor_guard]
     return {
+        "band_fold_steps": steps,
         "band_floor_guard": floor_guard,
         "band_floor_fold_step": usable[floor_guard],
         "band_floor_reason": below[-1]["refusal"] if below else None,
@@ -228,8 +241,16 @@ def _fit_reason(
     )
     if not short:
         return reason
+    steps = cast(list[int], record["band_fold_steps"])
+    exhausted = (
+        "every usable guard in the band folds at that same step, so no candidate folds earlier"
+        if len(steps) < 2
+        else (
+            f"the earliest-folding guard the band can still use is {record['band_floor_guard']} "
+            f"at step {record['band_floor_fold_step']}"
+        )
+    )
     return (
-        f"{reason}; short-walk case(s) {short}. The earliest-folding guard the band can still use "
-        f"is {record['band_floor_guard']} at step {record['band_floor_fold_step']}, and the "
-        f"candidate below it is refused because {record['band_floor_reason']}"
+        f"{reason}; short-walk case(s) {short}. The band is exhausted, not unexplored: "
+        f"{exhausted}, and the candidate below it is refused because {record['band_floor_reason']}"
     )

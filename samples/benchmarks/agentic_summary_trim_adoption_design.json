@@ -49,10 +49,10 @@
       "arm": "walk_control",
       "why": "a guard the model-free probe never folds at, so the control measures how far a family walks the task before any fold could have changed the transcript; its prompts are byte-identical to every candidate guard's pre-fold prompts"
     },
-    "search_min_chars": 9000,
-    "search_max_chars": 16000,
+    "search_min_chars": 4000,
+    "search_max_chars": 15000,
     "step_chars": 250,
-    "why": "the middle stratum is only readable where an episode REACHES its fold, so one shared character guard measures a per-family walk length rather than the trim; the band is filtered by the declared regime first -- a guard whose fold elides nothing, folds a different number of times, or moves an answer fact out of its planted stratum is refused with a reason instead of chosen"
+    "why": "the middle stratum is only readable where an episode REACHES its fold, so one shared character guard measures a per-family walk length rather than the trim; the band is filtered by the declared regime first -- a guard whose fold elides nothing, folds a different number of times, or moves an answer fact out of its planted stratum is refused with a reason instead of chosen. It spans every guard that folds at all, from one that folds twice before the walk ends up to the first that never crosses the trigger, so both refusal properties are measured at their own boundary rather than assumed outside the band"
   },
   "workloads": [
     {
@@ -148,26 +148,26 @@
       "workload": "middle_critical",
       "task_builder": "evidence_strata",
       "n_tasks": 4,
-      "max_prompt_chars": 14000,
+      "max_prompt_chars": 9500,
       "compact_share": 0.8,
       "max_steps": 14,
       "task_shape": {
         "depth": 10,
-        "pad_chars": 1600,
+        "pad_chars": 3200,
         "fact_stages": {
-          "head": 4,
-          "middle": 5,
-          "tail": 7
+          "head": 1,
+          "middle": 2,
+          "tail": 4
         }
       },
-      "why": "n_tasks is PER STRATUM for this builder (4 x head/middle/tail = 12 tasks); two per stratum could not absorb a single episode that leaves the folding regime, which is a power problem independent of the direction of the result. The stratum set the entry-aware recovery was first measured on, carried here so adoption re-measures the recovery under the promoted policy field instead of citing it",
+      "why": "n_tasks is PER STRATUM for this builder (4 x head/middle/tail = 12 tasks); two per stratum could not absorb a single episode that leaves the folding regime, which is a power problem independent of the direction of the result. The padding is what puts the fold INSIDE a short walk: each observation reaches the summarizer raw at 3353 chars while the live prompt sees it capped at 800, so the transcript outgrows the window bound after five entries and the fold lands at step 7 instead of step 11. The fact stages ride that down with it -- the fold retains about 1.6 entries of head and one of tail, so the middle fact sits at stage 2 and the tail fact at the last folded stage",
       "expected": {
         "n_compactions": 1,
-        "offered_chars": 15776,
-        "elided_chars": 2508,
+        "offered_chars": 16764,
+        "elided_chars": 7996,
         "summary_prompt_chars": {
-          "head_tail": 13992,
-          "per_entry_head": 13992
+          "head_tail": 9492,
+          "per_entry_head": 9492
         }
       }
     }
@@ -175,7 +175,7 @@
   "adoption_rule": {
     "no_regression": "no workload may lose paired completion under per_entry_head against head_tail",
     "recovery": "the middle stratum must recover under per_entry_head in every qualified family",
-    "cost": "total model-input chars and summary prompt chars must not rise",
+    "cost": "summary prompt chars must not rise on any workload; model-input chars are REPORTED beside them but not gated, because an arm that recovers a case continues an episode the other arm ended, so gating on them would price the recovery itself as a cost",
     "default_change": "recommend a default change only when the policy-change audit reports the shipped published cells invariant under the move",
     "changes_shipped_default": false
   }

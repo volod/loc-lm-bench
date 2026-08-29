@@ -101,13 +101,19 @@ def _guard_fit_lines(analysis: dict[str, object]) -> list[str]:
     """Which guard each family ran the fitted workload at, and the walk it was fitted to."""
     band = cast(dict[str, object], analysis["guard_band"])
     usable = cast(dict[str, int], band["usable_guards"])
-    steps = sorted(usable.values())
+    steps = cast(list[int], band["band_fold_steps"])
+    # How many distinct fold steps the usable guards span is what decides whether the fit can
+    # trade at all: one step leaves it able only to confirm the declared guard or refuse the walk.
+    reach = (
+        f"{len(steps)} fold step(s) ({'-'.join(str(step) for step in steps) or '0'})"
+        if len(steps) != 1
+        else f"a single fold step ({steps[0]}), so no guard in it folds earlier than another"
+    )
     lines = [
         "",
         "middle-critical guard fit (per family, from its own measured walk)",
         f"- band: {len(usable)} of {band['n_candidates']} candidate guard(s) still hold the "
-        f"{band['workload']} regime, folding at step "
-        f"{steps[0] if steps else 0}-{steps[-1] if steps else 0}; the earliest is "
+        f"{band['workload']} regime across {reach}; the earliest is "
         f"{band['band_floor_guard']} at step {band['band_floor_fold_step']}, and the candidate "
         f"below it is refused because {band['band_floor_reason']}",
     ]
