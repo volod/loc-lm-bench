@@ -48,12 +48,19 @@ def run_repeated_fold_completion(
     backend: str,
     complete: LLMComplete,
     resolve_guard: GuardResolver | None = None,
+    cell_order: list[dict[str, object]] | None = None,
 ) -> RepeatedFoldRun:
     """Run every cell under typed-marker and model-summary-only compact arms.
 
     `resolve_guard` is the seam a per-family guard fit enters through. It is consulted ONCE per
     cell, before the cell's first arm runs, so both mechanism arms of a cell share one geometry and
     the marker ablation stays a comparison of the marker alone.
+
+    `cell_order` is the other half of that seam: a fit can only measure against cells that have
+    already run, so a study whose fit needs two of them hands the RUN order here while the design
+    keeps declaring the ladder in fold-count order. A cap-fitting control must still come first --
+    it is the eligibility gate, and nothing downstream of a family that cannot fold once is worth
+    running.
     """
     held = cast(dict[str, object], design["held_fixed"])
     tasks = [
@@ -69,7 +76,7 @@ def run_repeated_fold_completion(
     rows: list[dict[str, object]] = []
     control_eligible = False
     control_reason = "the one-fold control was not run"
-    work = [(cell, arm) for cell in completion_cells(design) for arm in MECHANISM_ARMS]
+    work = [(cell, arm) for cell in _run_order(design, cell_order) for arm in MECHANISM_ARMS]
     resolved: dict[str, tuple[dict[str, object], dict[str, object] | None]] = {}
     for index, (cell, arm) in enumerate(work):
         cell_id = cast(str, cell["cell_id"])
@@ -131,6 +138,22 @@ def run_repeated_fold_completion(
     )
 
 
+def _run_order(
+    design: dict[str, object], cell_order: list[dict[str, object]] | None
+) -> list[dict[str, object]]:
+    """The declared cells, or a caller's run order -- refused unless the control still leads."""
+    cells = cell_order if cell_order is not None else completion_cells(design)
+    declared = {str(cell["cell_id"]) for cell in completion_cells(design)}
+    if {str(cell["cell_id"]) for cell in cells} != declared:
+        raise ValueError("a repeated-fold run order must cover exactly the declared cells")
+    if not cells[0].get("cap_fitting_control"):
+        raise ValueError(
+            "the cap-fitting control gates the ladder, so it must run first; "
+            f"got {cells[0]['cell_id']!r}"
+        )
+    return cells
+
+
 def _control_eligibility(row: dict[str, object], held: dict[str, object]) -> tuple[bool, str]:
     """Require the cap-fitting control to complete and actually enter its declared regime."""
     completion = float(cast(float, row["completion"]))
@@ -164,6 +187,10 @@ def _cell_row(
             # One entry per fold, so the control's rows carry the fold length a later cell's
             # guard is fitted against without a second run.
             "summary_output_chars": list(episode.telemetry.summary_output_chars),
+            # The span each of those folds was OFFERED, paired ordinal-wise with the length
+            # written against it. One cell's folds cover one kind of span, so a second cell's
+            # rows are what let a fit replay a length at a span its own folds actually reach.
+            "summary_fold_input_chars": list(episode.telemetry.summary_fold_input_chars),
             # One entry per step, for the other half of the same fit: how fast this family's own
             # calls grow the transcript the fold count is counted on.
             "step_entry_chars": list(episode.telemetry.step_entry_chars),

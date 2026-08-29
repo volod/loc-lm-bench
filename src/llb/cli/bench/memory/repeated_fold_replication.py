@@ -79,18 +79,22 @@ def run_replication(design_path: Path) -> None:
 
 
 def _echo_cells(design: dict[str, object]) -> None:
-    from llb.bench.memory.repeated_fold.design import completion_cells, probe_completion_cell
-    from llb.bench.memory.repeated_fold.guard_fit import guard_fit_spec
+    """Announce the cells in the order they will RUN, which is not the order they are declared."""
+    from llb.bench.memory.repeated_fold.design import probe_completion_cell
+    from llb.bench.memory.repeated_fold.guard_fit import fitted_cell_order, guard_fit_spec
 
     held = cast(dict[str, object], design["held_fixed"])
-    fitted = guard_fit_spec(design).get("cell_id")
-    for cell in completion_cells(design):
+    spec = guard_fit_spec(design)
+    fitted = spec.get("cell_id")
+    span_source = spec.get("span_length_source")
+    for position, cell in enumerate(fitted_cell_order(design), start=1):
         probe = probe_completion_cell(cell, held)
         typer.echo(
-            f"[repeated-fold-replication] cell={cell['cell_id']} "
+            f"[repeated-fold-replication] run-position={position} cell={cell['cell_id']} "
             f"guard={cell['max_prompt_chars']} oracle-folds={probe['oracle_folds']} "
             f"cap-fitting={str(probe['cap_fitting']).lower()} "
-            f"guard-fitted-per-family={str(cell['cell_id'] == fitted).lower()}"
+            f"guard-fitted-per-family={str(cell['cell_id'] == fitted).lower()} "
+            f"fold-span-source={str(cell['cell_id'] == span_source).lower()}"
         )
 
 

@@ -131,6 +131,21 @@ def is_summary_prompt(prompt: str) -> bool:
     return prompt.startswith(_empty_summary_prompt()[:SUMMARY_PROMPT_PREFIX_CHARS])
 
 
+def summary_offered_chars(prompt: str) -> int:
+    """How much transcript one summarize prompt is offering, template overhead removed.
+
+    The counterpart of `ContextTelemetry.summary_fold_input_chars` read from the OTHER side: the
+    telemetry field records the offered span as the policy folds it, and this recovers the same
+    span from the prompt a summarizer is handed. A replayed summarizer needs it because how much
+    it writes depends on how much it was shown -- the control's single fold covers the whole
+    transcript and a deeper cell's folds cover a few entries each, so a fold length replayed
+    without the span it was measured at is a length measured against the wrong offer. The two
+    agree exactly whenever the summary-input cap elides nothing, and below it when it does, which
+    is the direction that matters: the span the summarizer SAW is what its output length answers.
+    """
+    return max(0, len(prompt) - len(_empty_summary_prompt()))
+
+
 def summary_prompt_overhead_chars() -> int:
     """Characters the summary prompt spends outside its transcript."""
     return len(_empty_summary_prompt()) + len(

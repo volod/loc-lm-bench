@@ -21,7 +21,9 @@ from llb.bench.memory.repeated_fold.design import (
 from llb.bench.context_policy.guard_band import search_band
 from llb.bench.memory.repeated_fold.guard_fit import (
     GUARD_FIT_FIELD,
+    fitted_cell_order,
     guard_fit_spec,
+    span_length_source,
     step_length_source,
 )
 from llb.bench.policy_change.geometry import load_audited_design
@@ -139,6 +141,42 @@ def _validate_guard_fit(design: dict[str, object], cells: list[dict[str, object]
         raise ValueError(
             f"the step length must be measured on a cap-fitting control cell, got {steps!r}"
         )
+    _validate_span_source(spec, cell, cells)
+
+
+def _validate_span_source(
+    spec: dict[str, object], cell: dict[str, object], cells: list[dict[str, object]]
+) -> None:
+    """Refuse a second calibration point that cannot say anything the control has not already.
+
+    The point of a second source is that its folds cover a DIFFERENT span, so the run measures a
+    slope rather than one length twice. A source that folds as often as the fitted cell covers the
+    same spans; the fitted cell itself would be reading the answer the fit predicts; and a source
+    the run reaches after the fitted cell has nothing on disk when the fit is resolved.
+    """
+    source = span_length_source(spec)
+    if not source:
+        raise ValueError(
+            "a repeated-fold replication must name a 'span_length_source': a fold length replayed "
+            "from one cell's folds alone is replayed at a span the fitted cell never offers"
+        )
+    matched = [row for row in cells if row.get("cell_id") == source]
+    if not matched:
+        raise ValueError(
+            f"the span source names cell {source!r}, which the design does not declare"
+        )
+    if source == cell["cell_id"]:
+        raise ValueError("a fit cannot take its second fold span from the cell it is fitting")
+    if as_int(matched[0], "expected_oracle_folds") <= as_int(cell, "expected_oracle_folds"):
+        raise ValueError(
+            f"the span source {source!r} folds no more often than the fitted cell, so its folds "
+            "cover the same spans and the replay learns no slope from it"
+        )
+    order = [
+        str(row["cell_id"]) for row in fitted_cell_order({"cells": cells, GUARD_FIT_FIELD: spec})
+    ]
+    if order.index(source) > order.index(str(cell["cell_id"])):
+        raise ValueError(f"the span source {source!r} must run before the cell it calibrates")
 
 
 def _validate_band(

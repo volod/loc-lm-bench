@@ -21,17 +21,32 @@ the guard a post-fold prompt already spends; the per-step entry length says how 
 is spent, and a replay that assumed the oracle's own minimal call there was counting folds on a
 transcript that grows at nobody's measured rate. Both are free and both are the family's own, which
 is what a per-guard count has to stand on before an operator can read it without a confirming run.
+
+What the control cannot say on its own is WHICH FOLD its length came from: it folds once over the
+whole transcript, while the fitted cell folds several shorter spans. A second never-fitted cell,
+run before the fitted one, supplies the second (offered span, written length) point that turns the
+control's single length into the length the fitted cell's own span implies -- see
+`llb.bench.memory.repeated_fold.fold_span`.
 """
 
 from typing import Callable, cast
 
 from llb.bench.agentic.design_fields import as_int, as_mapping, as_str
 from llb.bench.context_policy.guard_band import guard_grid, median_int, select_guard
-from llb.bench.memory.boundary.probe import compact_fold_input_probe, fold_length_controller
-from llb.bench.memory.repeated_fold.design import cell_geometry
+from llb.bench.memory.repeated_fold.design import completion_cells
+from llb.bench.memory.repeated_fold.fold_span import (
+    FoldLengthModel,
+    fold_length_span_model,
+    measured_fold_points,
+    shipped_arm_cases,
+)
+from llb.bench.memory.repeated_fold.guard_replay import (
+    fold_count_margin_chars,
+    fold_count_predictor,
+    oracle_step_entry_chars,
+)
 
 GUARD_FIT_FIELD = "two_fold_guard_fit"
-ARM_TYPED_MARKER = "typed_marker"
 
 FIT_APPLIED = "guard_fitted_to_the_measured_fold_length"
 FIT_DECLARED = "declared_guard_already_fits_the_measured_fold_length"
@@ -45,16 +60,6 @@ FIT_UNMEASURED = "the_control_measured_no_fold_length_to_fit_against"
 STEP_LENGTH_AT_ORACLE = "the_family_steps_render_at_the_oracle_walk_length"
 STEP_LENGTH_ABOVE_ORACLE = "the_family_steps_render_longer_than_the_oracle_walk"
 STEP_LENGTH_UNMEASURED = "the_control_measured_no_step_length_to_replay"
-
-# How far the replayed fold length is scanned, either side, for the point where a guard's predicted
-# fold count changes. That distance is the SLACK a per-guard count has: the replay takes its fold
-# length off the control's fold, which covers a different span of transcript than the fitted cell's
-# folds do, so the length handed to the probe is always a little wrong. A guard whose count survives
-# this much error in it is one an operator can read without a confirming run; a guard whose count
-# flips within it is one the fit can rank but not count. The scan is coarse on purpose -- the answer
-# wanted is which side of the replay error the flip sits on, not the flip point to the character.
-FOLD_COUNT_MARGIN_SCAN_CHARS = 200
-FOLD_COUNT_MARGIN_STEP_CHARS = 10
 
 
 def guard_fit_spec(design: dict[str, object]) -> dict[str, object]:
@@ -70,9 +75,7 @@ def measured_fold_lengths(rows: list[dict[str, object]], source_cell_id: str) ->
     """
     return [
         int(chars)
-        for row in rows
-        if row["cell_id"] == source_cell_id and row["arm"] == ARM_TYPED_MARKER
-        for case in cast(list[dict[str, object]], row["cases"])
+        for case in shipped_arm_cases(rows, source_cell_id)
         for chars in cast(list[int], case.get("summary_output_chars", []))
     ]
 
@@ -85,9 +88,7 @@ def measured_step_entry_chars(rows: list[dict[str, object]], source_cell_id: str
     """
     return [
         int(chars)
-        for row in rows
-        if row["cell_id"] == source_cell_id and row["arm"] == ARM_TYPED_MARKER
-        for case in cast(list[dict[str, object]], row["cases"])
+        for case in shipped_arm_cases(rows, source_cell_id)
         for chars in cast(list[int], case.get("step_entry_chars", []))
     ]
 
@@ -100,16 +101,20 @@ def fit_fold_guard(
     *,
     evidence_floor: int,
     step_entry_chars: list[int] | None = None,
+    span_model: FoldLengthModel | None = None,
 ) -> dict[str, object]:
     """Choose this family's guard for one fold-count cell, or say why the declared one stands.
 
-    Both inputs come off the control arm the family has already run: the fold length its
-    summarizer wrote, and the per-step entry its calls appended. The first decides how much of the
-    guard a post-fold prompt starts out spending; the second decides how fast the rest of it is
-    spent. A replay given only the first counts folds on a transcript that grows at the ORACLE's
-    rate, which is why its absolute per-guard count needed a confirming run to be safe.
+    Every input comes off cells the family has already run: the fold length its summarizer wrote,
+    the per-step entry its calls appended, and the slope between the spans two of those cells
+    offered. The first decides how much of the guard a post-fold prompt starts out spending; the
+    second decides how fast the rest of it is spent; the third corrects the first for the fact
+    that the cell it was measured on folds a longer span than the cell it is replayed at. A replay
+    given only the first counts folds on a transcript that grows at the ORACLE's rate, out of a
+    summary written against a span this cell never offers.
     """
     spec = guard_fit_spec(design)
+    spans = span_model or fold_length_span_model([], [])
     declared = as_int(cell, "max_prompt_chars")
     target = as_int(spec, "target_folds")
     steps = list(step_entry_chars or [])
@@ -128,6 +133,8 @@ def fit_fold_guard(
         "step_entry_chars_range": [min(steps), max(steps)] if steps else [],
         "oracle_step_entry_chars": oracle_step,
         "step_length_reading": _step_length_reading(replayed_step, oracle_step),
+        "span_length_source": span_length_source(spec),
+        **spans.as_record(),
         "evidence_floor": evidence_floor,
     }
     if not fold_lengths:
@@ -142,7 +149,7 @@ def fit_fold_guard(
                 f"declared guard {declared} stands unfitted"
             ),
         }
-    predict = _fold_count_predictor(cell, held, replayed_step)
+    predict = fold_count_predictor(cell, held, replayed_step, spans)
     counts = {
         guard: _target_cases(predict, guard, fold_lengths, target) for guard in guard_grid(spec)
     }
@@ -161,7 +168,9 @@ def fit_fold_guard(
         "fit_reason": (
             f"guard {fitted} puts {best} of {len(fold_lengths)} measured fold lengths on "
             f"{target} folds (declared guard {declared} puts {counts.get(declared, 0)}); "
-            f"replayed at {replayed_step}-char steps; floor {evidence_floor}"
+            f"replayed at {replayed_step}-char steps and "
+            f"{spans.chars_per_offered_char:+.3f} written chars per offered char; "
+            f"floor {evidence_floor}"
         ),
     }
 
@@ -192,6 +201,7 @@ def guard_resolver(
     fitted_cell_id = as_str(spec, "cell_id")
     source = as_str(spec, "fold_length_source")
     step_source = step_length_source(spec)
+    span_source = span_length_source(spec)
 
     def resolve(
         cell: dict[str, object], rows: list[dict[str, object]]
@@ -206,10 +216,36 @@ def guard_resolver(
             lengths,
             evidence_floor=evidence_floor,
             step_entry_chars=measured_step_entry_chars(rows, step_source),
+            span_model=fold_length_span_model(
+                measured_fold_points(rows, source),
+                measured_fold_points(rows, span_source) if span_source else [],
+            ),
         )
         return apply_fitted_guard(cell, record), record
 
     return resolve
+
+
+def fitted_cell_order(design: dict[str, object]) -> list[dict[str, object]]:
+    """The cells in the order a fitted study must RUN them, not the order it declares them.
+
+    The declaration is a ladder, ordered by fold count so a reader can see the rungs. The run has
+    one further constraint the declaration cannot express: every cell a fit measures against has
+    to have run already. So the cap-fitting control stays first -- it is the eligibility gate, and
+    a family that cannot fold once anchors nothing -- and the fitted cell moves LAST, behind the
+    never-fitted cells whose folds give the replay its second measured span.
+
+    The reordering is not free and its cost is named where the marker ablation is read: cell
+    POSITION in the run no longer increases with fold count, so a drift in the stateful endpoint
+    over the run is no longer aligned with the rung being measured.
+    """
+    cells = completion_cells(design)
+    fitted = guard_fit_spec(design).get("cell_id")
+    if not fitted:
+        return cells
+    return [cell for cell in cells if cell.get("cell_id") != fitted] + [
+        cell for cell in cells if cell.get("cell_id") == fitted
+    ]
 
 
 def step_length_source(spec: dict[str, object]) -> str:
@@ -221,45 +257,14 @@ def step_length_source(spec: dict[str, object]) -> str:
     return str(spec.get("step_length_source") or spec.get("fold_length_source") or "")
 
 
-def oracle_step_entry_chars(cell: dict[str, object], held: dict[str, object]) -> int:
-    """What one step of the UNPADDED oracle walk appends to this cell's transcript.
+def span_length_source(spec: dict[str, object]) -> str:
+    """Which cell supplies the SECOND (offered span, written length) point, if any.
 
-    Measured over the geometry rather than assumed, because the world decides most of it: the
-    workflow token the tool hands out is what the call carries, so the length is a property of the
-    task set and the depth. It is the baseline a family's measured step length is read against --
-    a family at this number grows its context exactly as fast as the walk the probe counts on.
+    Optional by design: a study that declares none keeps the flat replay, named as such, rather
+    than getting a slope invented for it. What a design may not do is name the fitted cell here --
+    a fit that measured its own cell would be reading the answer it is predicting.
     """
-    return median_int(
-        cast(
-            list[int],
-            compact_fold_input_probe(**cell_geometry(cell, held))["step_entry_chars"],  # type: ignore[arg-type]
-        )
-    )
-
-
-def fold_count_margin_chars(
-    predict: Callable[[int, int], int], guard: int, fold_length: int
-) -> int:
-    """How far the replayed fold length can be wrong before this guard's fold count changes.
-
-    Scanned both ways rather than assumed monotone: a longer running summary usually crosses the
-    trigger sooner, but it also folds sooner, and what a fold leaves behind is not monotone in what
-    it replaced. The answer is the largest offset at which the count still holds, capped by the
-    scan -- a guard that survives the whole scan is not what an inexact replay can break.
-    """
-    if fold_length <= 0:
-        return 0
-    base = predict(guard, fold_length)
-    for offset in range(
-        FOLD_COUNT_MARGIN_STEP_CHARS,
-        FOLD_COUNT_MARGIN_SCAN_CHARS + 1,
-        FOLD_COUNT_MARGIN_STEP_CHARS,
-    ):
-        below = predict(guard, max(0, fold_length - offset))
-        above = predict(guard, fold_length + offset)
-        if below != base or above != base:
-            return offset - FOLD_COUNT_MARGIN_STEP_CHARS
-    return FOLD_COUNT_MARGIN_SCAN_CHARS
+    return str(spec.get("span_length_source") or "")
 
 
 def _step_length_reading(measured: int, oracle: int) -> str:
@@ -273,32 +278,6 @@ def _fit_reading(fitted: int, declared: int, best: int, floor: int) -> str:
     if best < floor:
         return FIT_UNDERPOWERED
     return FIT_DECLARED if fitted == declared else FIT_APPLIED
-
-
-def _fold_count_predictor(
-    cell: dict[str, object], held: dict[str, object], step_entry_chars: int
-) -> Callable[[int, int], int]:
-    """Fold count as a pure function of (guard, fold length), memoized over the search.
-
-    The walk is deterministic and every task in the set produces the same fold count for a given
-    pair, so one probe answers for the whole case set and the grid costs one probe per distinct
-    pair rather than one per case. The measured step length is fixed for the whole fit -- it is
-    one family's walk, not one case's -- so it stays out of the cache key.
-    """
-    cache: dict[tuple[int, int], int] = {}
-
-    def predict(guard: int, fold_length: int) -> int:
-        key = (guard, fold_length)
-        if key not in cache:
-            geometry = cell_geometry({**cell, "max_prompt_chars": guard}, held)
-            probe = compact_fold_input_probe(
-                controller=fold_length_controller(fold_length, step_entry_chars=step_entry_chars),
-                **geometry,  # type: ignore[arg-type]
-            )
-            cache[key] = int(cast(int, probe["n_compactions"]))
-        return cache[key]
-
-    return predict
 
 
 def _target_cases(

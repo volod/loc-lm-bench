@@ -9,10 +9,9 @@ from llb.bench.agentic.context_summary import compact_state
 from llb.bench.memory.boundary.probe import compact_fold_input_probe, fold_length_controller
 from llb.bench.memory.repeated_fold.design import completion_cells
 from llb.bench.context_policy.guard_band import search_band
+from llb.bench.memory.repeated_fold.fold_span import fold_length_span_model
 from llb.bench.memory.repeated_fold.guard_fit import (
     FIT_APPLIED,
-    FOLD_COUNT_MARGIN_SCAN_CHARS,
-    FOLD_COUNT_MARGIN_STEP_CHARS,
     FIT_DECLARED,
     FIT_UNDERPOWERED,
     FIT_UNMEASURED,
@@ -23,11 +22,13 @@ from llb.bench.memory.repeated_fold.guard_fit import (
     guard_fit_spec,
     measured_fold_lengths,
     measured_step_entry_chars,
-    oracle_step_entry_chars,
 )
-from llb.bench.memory.repeated_fold.guard_fit import (
-    _fold_count_predictor,
+from llb.bench.memory.repeated_fold.guard_replay import (
+    FOLD_COUNT_MARGIN_SCAN_CHARS,
+    FOLD_COUNT_MARGIN_STEP_CHARS,
     fold_count_margin_chars,
+    fold_count_predictor,
+    oracle_step_entry_chars,
 )
 from llb.bench.memory.repeated_fold.ladder_coverage import ladder_coverage
 from llb.bench.memory.repeated_fold.replication import (
@@ -43,6 +44,8 @@ from llb.bench.memory.repeated_fold.replication_design import (
     validate_replication_design,
 )
 from llb.bench.memory.repeated_fold.replication_report import format_replication_table
+
+_FLAT = fold_length_span_model([], [])
 
 GEOMETRY = {
     "depth": 10,
@@ -506,7 +509,7 @@ def test_a_guard_whose_fold_count_flips_nearby_reports_a_narrow_margin():
     """A margin is a scan, not a constant: the flip point decides it."""
     design = load_repeated_fold_replication_design()
     cell = _fitted_cell(design)
-    predict = _fold_count_predictor(cell, design["held_fixed"], 36)
+    predict = fold_count_predictor(cell, design["held_fixed"], 36, _FLAT)
     wide = fold_count_margin_chars(predict, 7900, 274)
     narrow = fold_count_margin_chars(predict, 7000, 274)
     assert wide > narrow
@@ -517,5 +520,5 @@ def test_a_guard_whose_fold_count_flips_nearby_reports_a_narrow_margin():
 def test_an_unmeasured_fold_length_has_no_margin_to_state():
     design = load_repeated_fold_replication_design()
     cell = _fitted_cell(design)
-    predict = _fold_count_predictor(cell, design["held_fixed"], 0)
+    predict = fold_count_predictor(cell, design["held_fixed"], 0, _FLAT)
     assert fold_count_margin_chars(predict, 7900, 0) == 0

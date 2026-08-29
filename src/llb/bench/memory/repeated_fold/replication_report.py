@@ -27,6 +27,7 @@ def format_replication_table(analysis: dict[str, object]) -> str:
             f"qualified families: {analysis['qualified_models']}",
             f"fit prediction: [{analysis['fit_prediction_reading']}] "
             f"{analysis['fit_prediction_reason']}",
+            f"span correction: [{analysis['span_slope_reading']}] {analysis['span_slope_reason']}",
             f"ladder fully powered: {str(analysis['ladder_fully_powered']).lower()} -- "
             f"{analysis['ladder_coverage_reason']}",
             f"shared powered fold limit: {analysis['shared_powered_fold_limit']}",
@@ -90,6 +91,17 @@ def _guard_fit_lines(family: dict[str, object]) -> list[str]:
             f"{fit['fold_length_source']}, this cell measured "
             f"{fit['median_fitted_cell_fold_length_chars']} "
             f"({fit['fold_length_replay_error_chars']:+d})"
+        )
+        lines.append(
+            f"    span: [{fit['fold_span_reading']}] replayed across "
+            f"{fit['anchor_fold_span_chars']}-char folds writing "
+            f"{fit['anchor_fold_length_chars']} and {fit['second_fold_span_chars']}-char folds "
+            f"writing {fit['second_fold_length_chars']} "
+            f"({fit['chars_written_per_offered_char']:+.5f} written per offered char); this cell "
+            f"folded {fit['fitted_cell_fold_span_range']}-char spans and wrote a median "
+            f"{fit['median_fitted_cell_fold_length_chars']}, which the span-aware replay missed "
+            f"per fold by {fit['span_replay_error_chars']:+d} against the flat replay's "
+            f"{fit['fold_length_replay_error_chars']:+d}"
         )
         lines.append(
             f"    countable: fold-length margin {fit['fold_count_margin_chars']} chars at the "

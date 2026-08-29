@@ -76,41 +76,42 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-fold-length-is-replayed-from-a-fold-of-the-wrong-span (optional)
+#### agent-context-policy-fold-length-does-not-transfer-between-cells-per-case (optional)
 
-The guard fit's replay now carries the family's measured STEP growth as well as its measured fold
-length, and the step half came back exactly at the oracle's own walk on both families, so the
-remaining calibration error is entirely in the fold length -- which is measured on the CONTROL's
-single fold, covering the whole ten-entry transcript, and replayed at a cell that folds three- and
-four-entry spans. A summarizer offered less writes less, so the replayed length is wrong by a
-guard-dependent amount (-14 chars at the fitted 7900 guard, enough to flip the count at the
-declared 7000 one)
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#how-far-a-fitted-guards-count-can-be-read-on-its-own)).
-The ladder already runs a second never-fitted cell at a fixed 6500 guard whose folds cover much
-shorter spans; run it before the fitted cell and the fit gets a SECOND measured (offered span,
-written length) point, which is what it needs to replay the length the fitted cell's own span
-implies rather than the control's.
+The guard fit now replays its fold length at the span the fold offered, interpolated from two
+measured cells, and that closed most of the calibration error on one family and reversed it on the
+other -- the two families slope in OPPOSITE directions
+(`the_qualified_families_disagree_on_the_sign_of_the_span_correction`), so what each measured is a
+habit rather than a rate
+([completion through repeated compact folds](current/extended-workflows/repeated-fold-completion.md#why-the-declared-guard-stays-hard-to-count)).
+The run's own rows say why a third calibration point would not help: pair each case's control fold
+length against its own first fold at the fitted cell and the correlation is -0.03 on both families,
+so the per-case LEVEL the fit carries across is not a property of the case. Either the level should
+be a family constant with the per-case spread reported as the irreducible width of a per-guard
+count, or the transfer should be recovered from something the case actually carries -- and the run
+already holds the rows to decide which without a GPU.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: none beyond the committed replication design. `summary_fold_input_chars` is already
-  the offered span per fold and `summary_output_chars` the length written against it, so both
-  points are on disk after the two unfitted cells run; the control-first eligibility gate must stay
-  first, so only the order of the two unfitted cells moves.
-- User-visible outcome: an operator reading a predicted case count at a guard the fit did NOT pick
-  gets a number the run then measures, not only at the guard whose margin happened to be wide.
-- Scope boundary: in scope -- the cell order, the second calibration point, the span-aware replayed
-  fold length, the per-guard margin re-read against it, and whatever the reordering costs the
-  cell-position seam the two-arm order note already names. Out of scope -- folds deeper than three,
-  a third family, a fitted control, and any change to the shipped marker-preservation default.
-- Execution path: reorder the unfitted cells, interpolate the replayed fold length from the two
-  measured spans, then re-read the fit against a run on the CUDA host; CI covers the interpolation
-  and its refusal when only one span was measured, with fakes.
-- Acceptance gates: `make ci` green; the span-aware replay's predicted count at the declared 7000
-  guard matches the 11 of 12 two-fold cases the shared-guard run measured, or the report names the
-  guard where it still diverges and by how many characters.
+- Agent status: CLEAR
+- Dependencies: none. Every input is already persisted per case -- `summary_fold_input_chars`,
+  `summary_output_chars` and `step_entry_chars` on each cell row of the committed replication
+  bundle -- and the reading layer that consumes them is pure, so this is re-read rather than re-run.
+- User-visible outcome: an operator told a predicted case count at an unfitted guard is also told
+  the width that count is uncertain by, instead of a point estimate whose error is inside the
+  family's own case-to-case spread.
+- Scope boundary: in scope -- whether the per-case level is kept, replaced by a family constant, or
+  reported with its spread; the per-guard count stated as an interval rather than a number; and the
+  refusal when the flip window is narrower than the measured spread. Out of scope -- a third
+  family, folds deeper than three, any change to which guard the fit picks, and any change to the
+  shipped marker-preservation default.
+- Execution path: read the persisted per-case rows for the level-transfer correlation, decide the
+  level rule from it, then restate `declared_target_cases` and `predicted_target_cases` as counts
+  with a spread; CI covers the interval and its refusal with fakes.
+- Acceptance gates: `make ci` green; the reported interval at the declared 7000 guard contains the
+  11 of 12 two-fold cases the shared-guard run measured on `qwen3:14b` and the 1 of 12 it measured
+  on `gemma4:e4b`, or the report names which guard it still fails to cover and by how many cases.
 - Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md#how-far-a-fitted-guards-count-can-be-read-on-its-own).
+  [completion through repeated compact folds](current/extended-workflows/repeated-fold-completion.md#why-the-declared-guard-stays-hard-to-count).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 

@@ -30,7 +30,7 @@ from llb.bench.agentic.context_policy import (
     ContextPolicy,
 )
 from llb.bench.agentic.context import format_entry
-from llb.bench.agentic.context_summary import is_summary_prompt
+from llb.bench.agentic.context_summary import is_summary_prompt, summary_offered_chars
 from llb.backends.context_budget import fixed_budget, unbounded_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.model import AgenticTask
@@ -79,7 +79,7 @@ def oracle_compacting_controller(prompt: str) -> str:
 
 
 def fold_length_controller(
-    summary_chars: int, *, step_entry_chars: int = 0
+    summary_chars: int | Callable[[int], int], *, step_entry_chars: int = 0
 ) -> Callable[[str], str]:
     """The oracle walk at a measured fold length, and at a measured per-step transcript growth.
 
@@ -90,6 +90,13 @@ def fold_length_controller(
     prompt, so the post-fold prompt re-crosses the trigger sooner. Handing the probe a measured
     fold length turns the same model-free walk into a per-family one.
 
+    `summary_chars` is a constant OR a function of the span the fold offered. A constant replays
+    one measured length at every fold, which is right only while every fold covers a comparable
+    span: the cell a fold length is measured on folds once over a whole transcript, and the cell
+    it is replayed at folds several shorter spans, so a summarizer offered less writes less than
+    the constant claims. A callable is handed the offered span (`summary_offered_chars`) and
+    answers with the length that family writes against it.
+
     `step_entry_chars` is the SECOND thing the replay would otherwise assume. The walk answers
     every non-summary step with the oracle's own minimal call, so a family whose steps append more
     than that to the transcript grows its prompt at a rate the probe never sees. Handing it the
@@ -97,19 +104,31 @@ def fold_length_controller(
     the oracle's call is the shortest one that plays this world -- so the transcript the probe
     walks grows at the rate the family measured rather than at the one the probe assumed.
     """
-    if summary_chars < 0:
-        raise ValueError(f"a fold length is a character count, got {summary_chars}")
     if step_entry_chars < 0:
         raise ValueError(f"a step entry length is a character count, got {step_entry_chars}")
-    repeats = summary_chars // len(ORACLE_SUMMARY_FILLER) + 1
-    body = (ORACLE_SUMMARY_FILLER * repeats)[:summary_chars]
+    length_at = summary_chars if callable(summary_chars) else _fixed_fold_length(summary_chars)
 
     def controller(prompt: str) -> str:
         if is_summary_prompt(prompt):
-            return body
+            return summary_of_length(length_at(summary_offered_chars(prompt)))
         return _grown_to_measured_step(oracle_controller(prompt), step_entry_chars)
 
     return controller
+
+
+def summary_of_length(summary_chars: int) -> str:
+    """Ordinary summary prose of exactly the requested length."""
+    if summary_chars < 0:
+        raise ValueError(f"a fold length is a character count, got {summary_chars}")
+    repeats = summary_chars // len(ORACLE_SUMMARY_FILLER) + 1
+    return (ORACLE_SUMMARY_FILLER * repeats)[:summary_chars]
+
+
+def _fixed_fold_length(summary_chars: int) -> Callable[[int], int]:
+    """One measured length at every fold, whatever span that fold offered."""
+    if summary_chars < 0:
+        raise ValueError(f"a fold length is a character count, got {summary_chars}")
+    return lambda _offered: summary_chars
 
 
 def _grown_to_measured_step(reply: str, step_entry_chars: int) -> str:
