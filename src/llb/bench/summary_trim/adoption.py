@@ -192,7 +192,7 @@ def _middle_recovery(families: list[dict[str, object]]) -> tuple[str | None, str
     does. Three outcomes, and they are deliberately not one: a stratum that did not reach its
     declared size in usable pairs is INCONCLUSIVE rather than refused -- the run simply did not put
     those episodes into the regime under test -- while a middle case the entry-aware trim leaves
-    unfinished, or one it loses that the shipped trim completed, is a refusal.
+    unfinished, or one it loses that the `head_tail` reference completed, is a refusal.
 
     The whole-stratum condition is stated as an OUTCOME rather than as a win count, because the two
     shapes an accepting run can take are both fine: `head_tail` loses middle cases and the
@@ -208,7 +208,7 @@ def _middle_recovery(families: list[dict[str, object]]) -> tuple[str | None, str
         if middle["head_tail_wins"]:
             return ADOPT_REFUSE, (
                 f"{family['model_family']} loses {middle['head_tail_wins']} middle case(s) under "
-                "the entry-aware trim that the shipped trim completed"
+                "the entry-aware trim that the `head_tail` reference completed"
             )
         if middle["entry_aware_completed"] != middle["n_pairs"]:
             return ADOPT_REFUSE, (
@@ -219,10 +219,11 @@ def _middle_recovery(families: list[dict[str, object]]) -> tuple[str | None, str
         recovered += middle["entry_aware_wins"]
     if recovered:
         return None, (
-            f"the entry-aware trim recovers {recovered} middle case(s) the shipped trim lost and "
+            f"the entry-aware trim recovers {recovered} middle case(s) `head_tail` lost and "
             "leaves the middle stratum whole in every qualified family"
         )
     return None, (
-        "the shipped trim lost no middle case on this task set, so there was nothing to recover "
+        "the `head_tail` reference lost no middle case on this task set, so there was nothing "
+        "to recover "
         "and the entry-aware trim leaves the middle stratum whole"
     )

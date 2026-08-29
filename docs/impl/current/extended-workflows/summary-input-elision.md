@@ -123,8 +123,16 @@ summary-input budget across entries and retains the leading facts in each one. A
 elided guard, task bytes, and task ids, it recovers middle completion from 0/2 to 2/2 on both
 families without changing any head/tail outcome. Both strategies send exactly 13992 summarizer
 prompt chars per case, so the recovery is entry placement rather than extra context. The prototype
-did not change the shipped `head_tail` default; what it became, and what the audit says a default
-change would cost, is [the policy choice below](#entry-aware-summary-folding-as-a-policy-choice).
+did not itself change the shipped default; what it became, and how the entry-aware fold went on to
+become that default, is [the policy choice below](#entry-aware-summary-folding-as-a-policy-choice).
+
+Both arms of this study pin their trim explicitly: the base arm is `head_tail` and the prototype
+arm `per_entry_head`. The base arm used to inherit the shipped default, which is the same value it
+now names -- but this study exists to price what the whole-transcript trim loses in the middle, so
+once `per_entry_head` shipped as the default the inherited arm would have become the prototype's
+own trim, and the study would have reported no loss because it had stopped running the arm the loss
+belongs to. The numbers above are unaffected: they were measured under `head_tail`, and that is now
+what the runner asks for by name.
 
 What would overturn the verdict: a family that keeps middle completion under `head_tail`, or a
 middle stratum whose answer span survives the cut by accident -- validation refuses boundary
@@ -139,17 +147,20 @@ make bench-agentic-context-compact-window-elision-transfer
 ## Entry-aware summary folding as a policy choice
 
 `make bench-agentic-context-summary-trim-adoption` promotes the prototype above into a public
-context-policy field and decides whether it should replace the shipped fold. **The answer measured
+context-policy field and decides whether it should replace the then-shipped `head_tail` fold.
+**The answer measured
 here is: the evidence now carries a default change.** It costs nothing and loses nothing on any
-workload, it recovers every middle-critical case the shipped trim could not finish, a default
+workload, it recovers every middle-critical case `head_tail` could not finish, a default
 change would retire no published cell, and the power limit that used to hold the verdict at
 "option" is gone -- both families now read all four of their declared middle cases, not 6 of 8, and
 every one of them recovers. The study's verdict is `adopt_entry_aware_as_the_shipped_default`.
 
-It does not itself move the default. `changes_shipped_default` stays false and
-`ContextPolicy.summary_trim_strategy` still ships `head_tail`, because moving a policy default is a
-product change that runs through the pin gate and the published-value scope, not something a
-measurement run performs on its own authority.
+It does not itself move the default. `changes_shipped_default` stays false in the design and in
+every persisted analysis, because moving a policy default is a product change that runs through the
+pin gate and the published-value scope, not something a measurement run performs on its own
+authority. That change has since landed:
+`ContextPolicy.summary_trim_strategy` now ships `per_entry_head`, and what the move cost is
+[below](#the-entry-aware-fold-is-the-shipped-default).
 
 What closed the power gap was the WORKLOAD, not the guard.
 [The per-family fit](#the-guard-is-fitted-per-family-and-the-fold-lands-inside-the-walk) had
@@ -158,8 +169,8 @@ middle-critical set grew its transcript too slowly for any usable guard to fold 
 set now pads three times as fast, folds at step 7, and every declared case of both families reaches
 it.
 
-`ContextPolicy.summary_trim_strategy` is now a validated choice like `summary_input_cap`
-(`head_tail`, the shipped default, and `per_entry_head`), pinned in
+`ContextPolicy.summary_trim_strategy` is a validated choice like `summary_input_cap`
+(`head_tail`, the retired default, and `per_entry_head`, the shipped one), pinned in
 `samples/benchmarks/agentic_context_policy_pins.json`, audited by the policy-change replay, and
 enumerated in the coupling table -- so the field can no longer move without the pin gate naming
 what it retires.
@@ -279,7 +290,7 @@ this time on the full declared set:
 | Qwen | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
 | Gemma4 | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
 
-Read the numbers in operator terms. The shipped trim finished NONE of the eight declared
+Read the numbers in operator terms. The `head_tail` trim finished NONE of the eight declared
 middle-critical cases across the two families; the entry-aware trim finished all eight, while head
 and tail stayed at 4/4 in both. Summary prompt bytes are EXACTLY equal on every single-fold
 workload and 1828-2029 chars cheaper on the repeatedly folding one, so the recovery is bought with
@@ -415,13 +426,39 @@ What would overturn the fit itself: a usable guard below step 7, which would mea
 check had let a fact out of its stratum, or a family whose walk control does not complete -- which
 would put the shortfall back and, with a one-step band, put it beyond any guard's reach.
 
-### What a default change would cost
+### The entry-aware fold is the shipped default
 
-The study is not allowed to recommend a default change on its own measurements, so it runs the
-model-free policy-change audit under the PINNED policy and takes the answer as a gate. Under the
-shipped `window` bound, moving `summary_trim_strategy` from `head_tail` to `per_entry_head` is
-prompt-invariant on all 27 published cells and retires nothing; no registered published value
-declares the field either.
+`ContextPolicy.summary_trim_strategy` ships `per_entry_head`
+(`DEFAULT_SUMMARY_TRIM_STRATEGY` in `src/llb/bench/agentic/context_policy.py`). A compact episode
+whose fold elides now keeps each entry's leading facts by default; `head_tail` stays selectable for
+a run reproducing the retired behavior. The move is the product act the study above is not allowed
+to perform: the study recommends, the pin gate and the published-value scope decide, and
+`changes_shipped_default` stays false in the design and in every persisted analysis, because a
+measurement lane recommending a default is not the same act as moving it.
+
+**What a reader of a number measured under `head_tail` should assume: nothing changed.** The field
+is readable only where a fold ELIDES -- both strategies return the offered transcript untouched
+while it fits the summarize-input cap -- and under the pinned `window` bound no published cell
+elides at all. So the model-free policy-change audit, replayed under the pinned policy, reports all
+27 applicable published cells bit-identical under either trim, retires nothing, and finds no
+registered published value whose arithmetic declares the field. Every published agentic number
+stands unrestated under the shipped `per_entry_head`, and the CI pin gate says so in the same
+words when the constant and its pin are read apart:
+
+```text
+- summary_trim_strategy: pinned 'head_tail' -> shipped 'per_entry_head'
+  no published cell is invalidated (27 applicable): the shipped value sends bit-identical prompts,
+  so restating the pin is free.
+```
+
+**The audit is now read from the shipped side, and reports the same thing.** `audit_default_change`
+takes its baseline from `DEFAULT_SUMMARY_TRIM_STRATEGY` rather than from a hard-coded value, so the
+question it asks moved with the default: it read `head_tail -> per_entry_head` (what adopting would
+cost) and now reads `per_entry_head -> head_tail` (what going back would cost). Both are one replay
+of two byte sequences and are symmetric by construction, so the reverse read returning the same
+27/27 invariance is a check that the invariance is a property of the field rather than of the side
+the move started from -- the gate the study's ladder consumes as `audit_invariant` is answered from
+the side the product is actually on.
 
 The same audit read against the designs' own `held_fixed` -- which still records the retired
 `trigger` bound -- invalidates 4 cells (`surface-d10-g23000`, `fold-d10-step10-lo`,
@@ -429,14 +466,21 @@ The same audit read against the designs' own `held_fixed` -- which still records
 elided (374, 794 and 282 chars in the step-aligned table above), which is the same mechanism read
 from a direction that owes it nothing: the field bites where, and only where, something is cut.
 
-**The gate is now open, and the default has not moved through it.** Every condition the ladder
-asks for is met -- no regression, a whole middle stratum in both families, no extra summary bytes,
-a balanced order, and an audit that retires nothing -- so the study returns
-`adopt_entry_aware_as_the_shipped_default`. What it does NOT do is perform the change:
-`changes_shipped_default` is false in the design and in the persisted analysis, and
-`ContextPolicy.summary_trim_strategy` still ships `head_tail`. A measurement lane recommending a
-product default is not the same act as moving it, which runs through the pin gate and the
-published-value scope; until that lands, an operator gets the recovery by setting the field.
+**Two places had been reading the default as if it meant `head_tail`, and both are now explicit.**
+The window-elision runner (`src/llb/bench/memory/window_elision/run.py`) took the base arm's trim
+from the shipped default while its conditional prototype arm pinned `per_entry_head`; inheriting
+the new default would have made both arms one trim and the study would have reported no
+middle-critical loss because it had stopped running the arm the loss belongs to. It now pins
+`head_tail` -- the trim that study exists to price. The interaction couplings
+(`src/llb/bench/policy_change/interaction/couplings.py`) state one move per field as
+`(shipped, neighbour)`, and the scan refuses a per-field arm that would replay a policy the change
+does not name, so the trim's move is now `per_entry_head -> head_tail`.
+
+The pin (`samples/benchmarks/agentic_context_policy_pins.json`) records the move, names `head_tail`
+as what it retires, and stays `unstated` against the committed designs -- none of the six audited
+designs states the field in its `held_fixed`. The study's own arm order is unchanged: `head_tail`
+remains the reference arm every delta above is measured against, because moving it would restate
+every published delta for no reading.
 
 ```bash
 make bench-agentic-context-summary-trim-adoption
@@ -449,7 +493,9 @@ make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOP
 | What | Where |
 | --- | --- |
 | Shipped bound, exact transcript renderer, and both trim strategies | `src/llb/bench/agentic/context_summary.py` |
-| The trim strategy as a validated policy field | `src/llb/bench/agentic/context_policy.py`, `samples/benchmarks/agentic_context_policy_pins.json` |
+| The trim strategy as a validated policy field, and the shipped default | `src/llb/bench/agentic/context_policy.py`, `samples/benchmarks/agentic_context_policy_pins.json` |
+| The gate that refuses a silent default move, and what it names | `src/llb/bench/policy_change/pin_gate.py`, `tests/llb/bench/policy_change/test_agentic_policy_pin_gate.py` |
+| The audited move per field, stated shipped-value first | `src/llb/bench/policy_change/interaction/couplings.py` |
 | Why no partner constant can separate the compound audit reading on it | `src/llb/bench/policy_change/interaction/trim.py` |
 | Generic deterministic task probe | `src/llb/bench/memory/boundary/probe.py` |
 | Trigger-matched base runner and live byte eligibility | `src/llb/bench/memory/window_elision/run.py` |

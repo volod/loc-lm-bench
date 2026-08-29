@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
+from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_TRIM_STRATEGY
 from llb.bench.memory.window_elision.tasks import STRATA
 from llb.bench.summary_trim.run import FamilyRun
 from llb.bench.common import Mirror, persist_category_run
@@ -26,7 +27,9 @@ def format_summary_trim_table(analysis: dict[str, object]) -> str:
             *_audit_lines(analysis),
             "",
             f"adoption: [{analysis['adoption_reading']}] {analysis['adoption_reason']}",
-            "shipped default changed: false",
+            # What ships, and that this run did not move it: the default is a product decision
+            # made in the code and the pin, never by a measurement lane.
+            f"shipped default: {DEFAULT_SUMMARY_TRIM_STRATEGY} (not changed by this run)",
         ]
     )
 

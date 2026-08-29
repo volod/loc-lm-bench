@@ -31,10 +31,15 @@ DEFAULT_SUMMARY_INPUT_CAP = SUMMARY_INPUT_CAP_WINDOW
 # ENTRIES is gone; `per_entry_head` shares the same byte budget across the entries and keeps each
 # one's leading facts, so evidence that can occupy any entry survives at the same prompt size.
 # The cap decides HOW MANY bytes reach the summarizer and this decides WHICH ones.
+# `per_entry_head` ships as the default: the adoption study measured it losing no paired case on
+# any workload, recovering every middle-critical case `head_tail` could not finish, and spending no
+# extra summary bytes, and the policy-change audit replays every published cell bit-identically
+# under both trims in either direction -- so a number measured under `head_tail` stands unrestated.
+# `head_tail` remains selectable for a run that wants to reproduce the retired behavior.
 SUMMARY_TRIM_HEAD_TAIL = "head_tail"
 SUMMARY_TRIM_PER_ENTRY_HEAD = "per_entry_head"
 SUMMARY_TRIM_STRATEGIES: tuple[str, ...] = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
-DEFAULT_SUMMARY_TRIM_STRATEGY = SUMMARY_TRIM_HEAD_TAIL
+DEFAULT_SUMMARY_TRIM_STRATEGY = SUMMARY_TRIM_PER_ENTRY_HEAD
 
 TRIMMING_POLICIES = frozenset({POLICY_OBSERVATION_CAP, POLICY_COMPACT})
 

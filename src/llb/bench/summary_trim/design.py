@@ -36,8 +36,11 @@ from llb.bench.summary_trim.workloads import (
 
 DESIGN_PATH = "samples/benchmarks/agentic_summary_trim_adoption_design.json"
 STUDY_KIND = "summary_trim_strategy_adoption"
-# The comparison's two arms, in the order a READING pairs them: shipped default first. It is not
-# the order they execute in -- `run_summary_trim_family` runs both arms of each task adjacently and
+# The comparison's two arms, in the order a READING pairs them: the reference arm first. That is
+# `head_tail`, the trim every delta in the study is measured against and the one the published
+# evidence was taken under -- it stays the reference now that `per_entry_head` ships as the
+# default, because moving it would restate every delta this study published. It is not the order
+# they execute in -- `run_summary_trim_family` runs both arms of each task adjacently and
 # alternates which goes first, so no arm can be read as "the second arm".
 ARMS: tuple[str, ...] = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
 # Fields every workload predeclares per arm, measured with no model.

@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-entry-aware-fold-becomes-the-shipped-default
-
-The adoption study's verdict is now `adopt_entry_aware_as_the_shipped_default`, and the
-policy-change audit clears the move
-([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice)).
-The shipped `DEFAULT_SUMMARY_TRIM_STRATEGY` is `head_tail`, so a compact episode whose fold elides
-still drops the middle of its transcript unless an operator sets the field for that session. Move
-the default through the pin gate and the published-value scope, and say in the same change what a
-reader of a number measured under `head_tail` should now assume about it.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: CLEAR
-- Dependencies: none. Everything the move needs is model-free from here, so what remains is the
-  default constant in `src/llb/bench/agentic/context_policy.py`, its pin in
-  `samples/benchmarks/agentic_context_policy_pins.json`, and the audit re-read from the new shipped
-  side of the move.
-- User-visible outcome: an operator whose compact episode elides keeps the middle of its transcript
-  without opting in, and a published number measured under the old default says which side it was
-  measured on.
-- Scope boundary: in scope -- the shipped default, its pin, the coupling and published-value scope
-  entries that name the field, and the re-read audit. Out of scope -- a third trim strategy, the
-  shipped summarize-input bound, re-running the adoption study, and re-measuring any published cell
-  the audit reports prompt-invariant.
-- Data and artifact paths: none; the change is model-free.
-- Execution path: `make ci`, then
-  `make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY=1`.
-- Acceptance gates: `make ci` green; the pin gate accepts the move and names whatever it retires;
-  the audit re-read in the reverse direction reports the same invariance, so the move is checked
-  from both sides rather than only from the one it started on.
-- Documentation target:
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#what-a-default-change-would-cost).
-
 #### agent-loop-budget-warms-an-unpinned-ollama (optional)
 
 The agent-loop prompt guard takes the minimum of the declared and the probed window, but it only
@@ -801,6 +769,34 @@ fragments, so only paths change and `make lint-doc-links` proves the move.
   text changes.
 - Documentation target: [entity resolution](current/entity-resolution.md) and the pages the split
   produces.
+
+#### summary-input-elision-page-is-past-the-split-threshold (optional)
+
+[summary-input bounds and elision](current/extended-workflows/summary-input-elision.md) is ~520
+lines and its headings describe two subjects: what the summarize-input BOUND is (the step-aligned
+cap, and what eliding under it costs on a typed-memory shape) and what the entry-aware TRIM is (the
+middle-critical transfer, the adoption ladder with its arm-order and guard-fit subsections, and the
+shipped default). That is past the ~500-line split rule in [AGENTS.md](../../AGENTS.md), and the
+trim subject is the one that grows: it arrived as a prototype, became a policy field, and has now
+taken a default move, each time landing on the same page. The seam is already a heading boundary
+and the code is split along it too (`llb.bench.memory.window_elision` against
+`llb.bench.summary_trim`), so move the trim sections to their own topic page, add its row to the
+area page, and repoint the inbound links. Anchors keep their fragments, so only paths change and
+`make lint-doc-links` proves the move.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `extended-workflows.md` and `samples/benchmarks/agentic_context_policy_pins.json`,
+  whose `published_in` anchors the pin gate checks by path.
+- User-visible outcome: a reader who wants the shipped trim default stops scrolling past the whole
+  bound story and two study ladders to reach it.
+- Scope boundary: in scope -- the split, the area-page row, the `published_in` repointing, and the
+  link repointing. Out of scope -- rewriting the moved text and changing any measured result.
+- Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
+  no anchor text changes; the pin gate's doc-anchor test still passes.
+- Documentation target: [extended workflows](current/extended-workflows.md) and the two pages the
+  split produces.
 
 ## Human-Assisted Tasks
 

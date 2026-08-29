@@ -6,13 +6,20 @@ model-free policy-change audit runs HERE, under the pinned policy the published 
 under, and its answer is an input to the verdict beside the completion and cost readings. The
 registered published values whose arithmetic declares the field are listed the same way, so the
 recommendation names what a default change would cost rather than leaving it to be discovered.
+
+The audit is read FROM whatever the code ships rather than from a hard-coded side. While the study
+recommended a move, that read what adopting would cost; now that the move has landed, the same read
+says what going back would cost. Both are the one replay -- it compares two byte sequences and is
+symmetric by construction -- so following the shipped default is what keeps the invariance checked
+from the side the product is actually on instead of the side the question started on.
 """
 
 from typing import cast
 
 from llb.bench.agentic.context_policy import (
+    DEFAULT_SUMMARY_TRIM_STRATEGY,
     SUMMARY_TRIM_HEAD_TAIL,
-    SUMMARY_TRIM_PER_ENTRY_HEAD,
+    SUMMARY_TRIM_STRATEGIES,
 )
 from llb.bench.summary_trim.design import probe_workload, workloads
 from llb.bench.summary_trim.guard_fit import fitted_workload_name, guard_band_reading
@@ -22,6 +29,10 @@ from llb.bench.summary_trim.reading import family_reading
 from llb.bench.summary_trim.run import FamilyRun
 
 POLICY_FIELD = "summary_trim_strategy"
+# The trim the shipped default is NOT, so the audited change always runs off the shipped side.
+RETIRED_SUMMARY_TRIM_STRATEGY = next(
+    strategy for strategy in SUMMARY_TRIM_STRATEGIES if strategy != DEFAULT_SUMMARY_TRIM_STRATEGY
+)
 
 
 def audit_default_change() -> dict[str, object]:
@@ -35,13 +46,16 @@ def audit_default_change() -> dict[str, object]:
 
     pins = load_policy_pins(PROJECT_ROOT / PINS_PATH)
     pinned = {field: pin.value for field, pin in pins.pins.items()}
-    change = PolicyChange.of(POLICY_FIELD, SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
+    change = PolicyChange.of(
+        POLICY_FIELD, DEFAULT_SUMMARY_TRIM_STRATEGY, RETIRED_SUMMARY_TRIM_STRATEGY
+    )
     summary = policy_change_summary(
         audit_policy_change(load_audited_designs(), change, pinned=pinned), change
     )
     affected = policy_affected_published_values(PROJECT_ROOT, change.fields)
     return {
         "change": change.label,
+        "shipped_default": DEFAULT_SUMMARY_TRIM_STRATEGY,
         "pinned_policy": pinned,
         "n_cells": summary["n_cells"],
         "n_prompt_invariant": summary["n_prompt_invariant"],
@@ -150,11 +164,12 @@ def _declared_stratum_size(design: dict[str, object]) -> int:
 
 
 def family_eligibility(design: dict[str, object], run: FamilyRun) -> tuple[bool, str]:
-    """A family qualifies by completing the elision-free control under the SHIPPED trim.
+    """A family qualifies by completing the elision-free control under the REFERENCE trim.
 
     The control is the workload whose fold fits the summarize-input bound: both arms render the
-    identical prompt there, so a family that cannot complete it cannot attribute any later
-    difference to the trim strategy rather than to the walk.
+    identical prompt there, so which arm it is read on cannot matter, and a family that cannot
+    complete it cannot attribute any later difference to the trim strategy rather than to the walk.
+    It is read on `head_tail` because that is the arm every delta in the study is measured against.
     """
     held = cast(dict[str, object], design["held_fixed"])
     name = str(held["qualifying_workload"])

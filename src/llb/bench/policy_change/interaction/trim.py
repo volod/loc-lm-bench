@@ -10,7 +10,7 @@ decides every pair it is in, and it decides them all the same way:
     different summarize prompt, so the per-field union reports it and there is nothing to separate;
   - if it does not, the compound can only read the trim when the partner field OPENS the elision --
     and a partner that turns an un-elided fold into an elided one has changed the summarize prompt
-    by itself, under the held `head_tail` trim, so the union reports the partner instead.
+    by itself, under whichever trim is held, so the union reports the partner instead.
 
 Both branches are measured rather than asserted: the probe walks the fold at the guard the step
 selects, once under the whole baseline policy and once under the whole candidate policy, and the
@@ -99,8 +99,8 @@ def _partner_opens_the_elision(
         (
             f"the elision the trim needs is opened by the partner field itself ({baseline['elided']}"
             f" -> {candidate['elided']} elided chars at guard {guard}), and cutting a folded "
-            "transcript that previously fit already moves the summarize prompt under the held "
-            "`head_tail` trim -- so the per-field union reports the partner"
+            "transcript that previously fit already moves the summarize prompt under whichever "
+            "trim is held -- so the per-field union reports the partner"
         ),
     )
 

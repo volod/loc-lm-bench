@@ -41,19 +41,46 @@ def design(adoption_design: dict[str, object]) -> dict[str, object]:
     return adoption_design
 
 
+def test_the_entry_aware_trim_is_the_shipped_default():
+    """The adoption the study licensed, read off the dataclass an episode actually builds."""
+    assert DEFAULT_SUMMARY_TRIM_STRATEGY == SUMMARY_TRIM_PER_ENTRY_HEAD
+    assert ContextPolicy().summary_trim_strategy == SUMMARY_TRIM_PER_ENTRY_HEAD
+    assert ContextPolicy(name=POLICY_COMPACT).summary_trim_strategy == SUMMARY_TRIM_PER_ENTRY_HEAD
+
+
 def test_the_trim_strategy_is_a_validated_context_policy_choice():
     """Promoted, not a study parameter: it has a default, a vocabulary, and a refusal."""
-    assert DEFAULT_SUMMARY_TRIM_STRATEGY == SUMMARY_TRIM_HEAD_TAIL
+    assert DEFAULT_SUMMARY_TRIM_STRATEGY in SUMMARY_TRIM_STRATEGIES
     assert set(SUMMARY_TRIM_STRATEGIES) == {SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD}
-    assert ContextPolicy().summary_trim_strategy == SUMMARY_TRIM_HEAD_TAIL
     assert (
         ContextPolicy(
-            name=POLICY_COMPACT, summary_trim_strategy=SUMMARY_TRIM_PER_ENTRY_HEAD
+            name=POLICY_COMPACT, summary_trim_strategy=SUMMARY_TRIM_HEAD_TAIL
         ).summary_trim_strategy
-        == SUMMARY_TRIM_PER_ENTRY_HEAD
+        == SUMMARY_TRIM_HEAD_TAIL
     )
     with pytest.raises(ValueError, match="unknown summary trim strategy"):
         ContextPolicy(name=POLICY_COMPACT, summary_trim_strategy="per_entry")
+
+
+def test_the_audit_the_verdict_reads_runs_off_the_shipped_default():
+    """The move is checked from the side the product is on, not the side the study started on."""
+    from llb.bench.summary_trim.analysis import (
+        RETIRED_SUMMARY_TRIM_STRATEGY,
+        audit_default_change,
+    )
+
+    assert RETIRED_SUMMARY_TRIM_STRATEGY == SUMMARY_TRIM_HEAD_TAIL
+    audit = audit_default_change()
+    assert audit["shipped_default"] == DEFAULT_SUMMARY_TRIM_STRATEGY
+    assert audit["change"].startswith(  # type: ignore[union-attr]
+        f"summary_trim_strategy {DEFAULT_SUMMARY_TRIM_STRATEGY!r} -> "
+    )
+    # The pinned policy the replay runs under is the shipped one, and the reverse read reports the
+    # same invariance the forward read did: every applicable cell, and no published arithmetic.
+    assert audit["pinned_policy"]["summary_trim_strategy"] == DEFAULT_SUMMARY_TRIM_STRATEGY  # type: ignore[index]
+    assert audit["invariant"] is True
+    assert audit["n_invalidated"] == 0 and audit["n_prompt_invariant"] == audit["n_cells"]
+    assert audit["affected_published_values"] == []
 
 
 def test_the_promoted_field_is_audited_and_pinned_like_every_other_constant():

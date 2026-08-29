@@ -51,7 +51,7 @@ CONTROL_REASON = "the fold fits the summarize-input bound, so both arms render t
 def workload_reading(
     baseline_row: dict[str, object], candidate_row: dict[str, object]
 ) -> dict[str, object]:
-    """One workload's paired comparison between the shipped trim and the entry-aware one."""
+    """One workload's paired comparison between the `head_tail` reference and the entry-aware trim."""
     baseline = _by_id(baseline_row)
     candidate = _by_id(candidate_row)
     shared = sorted(baseline.keys() & candidate.keys())

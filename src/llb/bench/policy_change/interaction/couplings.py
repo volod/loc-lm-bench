@@ -60,7 +60,7 @@ FIELD_MOVES: dict[str, tuple[Any, Any]] = {
     FIELD_SHARE: (0.5, 0.48),
     FIELD_KEEP_RECENT: (1, 2),
     FIELD_BOUND: ("window", "trigger"),
-    FIELD_TRIM: ("head_tail", "per_entry_head"),
+    FIELD_TRIM: ("per_entry_head", "head_tail"),
 }
 
 # Candidates the value sweep asks about, per field. The first entry IS the FIELD_MOVES neighbour so
@@ -75,7 +75,7 @@ FIELD_CANDIDATE_GRID: dict[str, tuple[Any, ...]] = {
     FIELD_SHARE: (0.48, 0.55),
     FIELD_KEEP_RECENT: (2, 3),
     FIELD_BOUND: ("trigger",),
-    FIELD_TRIM: ("per_entry_head",),
+    FIELD_TRIM: ("head_tail",),
 }
 
 _MECHANISM_SHARE_BOUND = (

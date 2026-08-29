@@ -1,12 +1,19 @@
-"""Run the transcript-fitting control and unavoidable window-elision arm."""
+"""Run the transcript-fitting control and unavoidable window-elision arm.
+
+The trim strategy is pinned to `head_tail` here rather than taken from the shipped default. This
+study PRICES what the whole-transcript trim loses in the middle of a folded transcript, and its
+conditional prototype arm is the entry-aware trim measured against it; inheriting the default would
+make the two arms the same trim the moment `per_entry_head` shipped as the default, and the study
+would report no loss because it had stopped running the arm the loss belongs to.
+"""
 
 from dataclasses import dataclass
 from typing import cast
 
 from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.context_policy import (
-    DEFAULT_SUMMARY_TRIM_STRATEGY,
     POLICY_COMPACT,
+    SUMMARY_TRIM_HEAD_TAIL,
     ContextPolicy,
 )
 from llb.bench.agentic.model import AgenticTask, STATUS_CONTEXT_OVERFLOW
@@ -70,7 +77,7 @@ def run_window_elision_tasks(
     complete: LLMComplete,
     case_metadata: dict[str, dict[str, object]] | None = None,
     cell_probes: dict[str, dict[str, object]] | None = None,
-    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
+    summary_trim_strategy: str = SUMMARY_TRIM_HEAD_TAIL,
 ) -> WindowElisionRun:
     """Run any prevalidated task set through the shared fitting/elided cell pair."""
     held = cast(dict[str, object], design["held_fixed"])
@@ -140,7 +147,7 @@ def run_window_elision_cell(
     probe: dict[str, object],
     task_digest: str,
     case_metadata: dict[str, dict[str, object]] | None = None,
-    summary_trim_strategy: str = DEFAULT_SUMMARY_TRIM_STRATEGY,
+    summary_trim_strategy: str = SUMMARY_TRIM_HEAD_TAIL,
 ) -> tuple[PolicyReport, dict[str, object]]:
     """Run one prevalidated geometry cell through the common compact-policy contract."""
     geometry = cell_geometry(cell, held)
