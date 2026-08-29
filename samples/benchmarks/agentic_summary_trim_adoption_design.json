@@ -5,6 +5,11 @@
   "seed": 727,
   "policies": ["compact"],
   "arms": ["head_tail", "per_entry_head"],
+  "arm_order": {
+    "policy": "alternating_by_task_index",
+    "phase_by_family": true,
+    "why": "both arms of one task run adjacently and the first position alternates with the task index, so arm order is balanced across the set instead of aligned with the treatment; the phase flips per family so the odd task count's one leftover first position cancels over the run"
+  },
   "required_qualified_families": 2,
   "candidate_roster": [
     {

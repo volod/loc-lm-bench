@@ -104,6 +104,10 @@ def _run_roster(
             vram_reader=vram_reader,
             pid_reader=pid_reader,
             max_model_len=max_model_len,
+            # Flip the alternation's phase per family, so the one leftover first position an odd
+            # task count leaves over cancels across the run instead of always falling to the
+            # shipped default.
+            order_offset=len(runs),
         )
         runs.append(run)
         data_dir = cfg_data_dir
@@ -125,6 +129,7 @@ def _drive_candidate(
     vram_reader: Any,
     pid_reader: Any,
     max_model_len: int,
+    order_offset: int,
 ) -> tuple[Any, Path]:
     from llb.bench.summary_trim.run import run_summary_trim_family
     from llb.bench.common import LLMComplete
@@ -142,7 +147,9 @@ def _drive_candidate(
     meter = ThroughputMeter()
 
     def execute(complete: LLMComplete) -> Any:
-        return run_summary_trim_family(design, candidate, complete=complete)
+        return run_summary_trim_family(
+            design, candidate, complete=complete, order_offset=order_offset
+        )
 
     run = drive_with_backend(
         cfg, execute, vram_reader=vram_reader, pid_usage_reader=pid_reader, meter=meter

@@ -13,19 +13,42 @@ from llb.bench.summary_trim.adoption import (
     adoption_reading,
 )
 from llb.bench.summary_trim.reading import (
+    ORDER_NO_POSITION_EFFECT,
+    ORDER_UNBALANCED,
     WORKLOAD_RECOVERS,
     WORKLOAD_UNCHANGED,
     WORKLOAD_UNPAIRED,
+    position_reading,
     workload_reading,
 )
 
+_BALANCED_ORDER: dict[str, object] = {
+    "n_episodes": 4,
+    "n_first_head_tail": 1,
+    "n_first_per_entry_head": 1,
+    "n_first": 2,
+    "n_second": 2,
+    "first_folded": 2,
+    "second_folded": 2,
+    "first_completed": 2,
+    "second_completed": 2,
+    "reading": ORDER_NO_POSITION_EFFECT,
+}
 
-def _stub_family(name: str, *, middle: dict[str, int], workload_rows: list[dict[str, object]]):
+
+def _stub_family(
+    name: str,
+    *,
+    middle: dict[str, int],
+    workload_rows: list[dict[str, object]],
+    arm_order: dict[str, object] | None = None,
+):
     return {
         "model_family": name,
         "model": name,
         "workloads": workload_rows,
         "strata": {"head": {}, "middle": middle, "tail": {}},
+        "arm_order": dict(_BALANCED_ORDER) if arm_order is None else arm_order,
     }
 
 
@@ -215,3 +238,83 @@ def test_an_unpaired_case_is_named_rather_than_averaged():
     assert reading["n_pairs"] == 1 and reading["n_unpaired"] == 1
     assert reading["n_unpaired_divergent_fold"] == 1
     assert reading["reading"] == WORKLOAD_UNPAIRED
+
+
+def test_a_fixed_arm_order_cannot_recommend_a_default_however_clean_it_reads():
+    """The confound this study started with, stated as a gate rather than as a caveat.
+
+    Under fixed arm blocks the second arm and the arm under test are one column, so even a run
+    that regresses nothing, recovers the whole middle stratum and clears the audit is an OPTION.
+    """
+    families = [
+        _stub_family(
+            name,
+            middle=dict(_WHOLE_MIDDLE),
+            workload_rows=[_row("a", WORKLOAD_RECOVERS)],
+            arm_order={},
+        )
+        for name in ("one", "two")
+    ]
+    verdict, reason = adoption_reading(
+        families, required_families=2, audit_invariant=True, required_middle_pairs=2
+    )
+    assert verdict == ADOPT_AS_OPTION and "fixed blocks" in reason
+
+
+def test_an_unbalanced_schedule_is_refused_the_default_the_same_way():
+    """Interleaving that still hands one arm the first position is not a balanced order."""
+    lopsided = {**_BALANCED_ORDER, "n_first_head_tail": 4, "n_first_per_entry_head": 0}
+    families = [
+        _stub_family(
+            name,
+            middle=dict(_WHOLE_MIDDLE),
+            workload_rows=[_row("a", WORKLOAD_RECOVERS)],
+            arm_order={**lopsided, "reading": ORDER_UNBALANCED},
+        )
+        for name in ("one", "two")
+    ]
+    verdict, reason = adoption_reading(
+        families, required_families=2, audit_invariant=True, required_middle_pairs=2
+    )
+    assert verdict == ADOPT_AS_OPTION and "balanced arm order" in reason
+
+
+def test_the_position_reading_counts_the_same_episodes_by_where_they_ran():
+    """The nuisance-factor check: identical data, read by position instead of by arm."""
+
+    # `first_arm` is a property of the TASK, so both of a task's rows carry the same one: "a" ran
+    # head_tail first, "b" ran per_entry_head first.
+    first_arm = {"a": "head_tail", "b": "per_entry_head"}
+
+    def case(item: str, *, position: int, folds: int, success: bool):
+        return {
+            "item_id": item,
+            "success": success,
+            "status": "ok",
+            "measured_folds": folds,
+            "order_position": position,
+            "first_arm": first_arm[item],
+        }
+
+    rows = [
+        {
+            "arm": "head_tail",
+            "cases": [
+                case("a", position=1, folds=1, success=True),
+                case("b", position=2, folds=0, success=False),
+            ],
+        },
+        {
+            "arm": "per_entry_head",
+            "cases": [
+                case("a", position=2, folds=1, success=True),
+                case("b", position=1, folds=1, success=True),
+            ],
+        },
+    ]
+    reading = position_reading(rows)
+    # Both arms held the first position exactly once, and the only episode that never reached the
+    # fold sat in the SECOND position -- which is a statement about the endpoint, not the trim.
+    assert reading["n_first_head_tail"] == 1 and reading["n_first_per_entry_head"] == 1
+    assert reading["first_folded"] == 2 and reading["second_folded"] == 1
+    assert reading["reading"] != ORDER_NO_POSITION_EFFECT

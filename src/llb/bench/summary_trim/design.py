@@ -23,6 +23,7 @@ from llb.bench.agentic.context_policy import (
     SUMMARY_TRIM_STRATEGIES,
 )
 from llb.bench.agentic.design_fields import as_mapping, as_rows
+from llb.bench.context_policy.interleave import ORDER_ALTERNATING
 from llb.bench.memory.boundary.probe import compact_tasks_fold_input_probe
 from llb.bench.memory.fold_step.ladder import compaction_trigger_chars
 from llb.bench.policy_change.geometry import load_audited_design
@@ -35,7 +36,9 @@ from llb.bench.summary_trim.workloads import (
 
 DESIGN_PATH = "samples/benchmarks/agentic_summary_trim_adoption_design.json"
 STUDY_KIND = "summary_trim_strategy_adoption"
-# The comparison's two arms, in the order a reading pairs them: shipped default first.
+# The comparison's two arms, in the order a READING pairs them: shipped default first. It is not
+# the order they execute in -- `run_summary_trim_family` runs both arms of each task adjacently and
+# alternates which goes first, so no arm can be read as "the second arm".
 ARMS: tuple[str, ...] = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
 # Fields every workload predeclares per arm, measured with no model.
 DECLARED_FIELDS = (
@@ -125,6 +128,7 @@ def _validate_header(design: dict[str, object]) -> dict[str, object]:
         raise ValueError("the adoption study must run the compact policy alone")
     if tuple(cast(list[str], design.get("arms", []))) != ARMS:
         raise ValueError(f"the adoption arms must be exactly {ARMS!r}, shipped default first")
+    _validate_arm_order(design)
     held = as_mapping(design, "held_fixed")
     if held.get("summary_input_cap") != SUMMARY_INPUT_CAP_WINDOW:
         raise ValueError("the adoption study must hold the shipped window summary-input bound")
@@ -132,6 +136,21 @@ def _validate_header(design: dict[str, object]) -> dict[str, object]:
         raise ValueError("the adoption study must measure shipped typed-marker preservation")
     _validate_roster(design)
     return held
+
+
+def _validate_arm_order(design: dict[str, object]) -> None:
+    """The execution schedule is DECLARED, because a fixed one is not readable as evidence.
+
+    Under fixed arm blocks on one stateful endpoint, "ran second" and "ran under the candidate
+    trim" are the same column, so an episode that leaves the folding regime in the second arm
+    alone cannot be attributed. The design states the balanced schedule up front rather than
+    leaving it to whatever order the runner happens to walk.
+    """
+    order = as_mapping(design, "arm_order")
+    if order.get("policy") != ORDER_ALTERNATING:
+        raise ValueError(f"the adoption study must execute its arms {ORDER_ALTERNATING!r}")
+    if order.get("phase_by_family") is not True:
+        raise ValueError("the adoption study must flip the order phase per family")
 
 
 def _validate_roster(design: dict[str, object]) -> None:

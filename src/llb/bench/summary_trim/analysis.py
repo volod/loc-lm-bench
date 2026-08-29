@@ -87,6 +87,7 @@ def analyze_summary_trim_runs(
         "study_kind": design["study_kind"],
         "seed": design["seed"],
         "arms": design["arms"],
+        "arm_order": design.get("arm_order"),
         "required_qualified_families": required,
         "declared_geometry": [
             {"workload": workload["workload"], **probe_workload(workload, held)}

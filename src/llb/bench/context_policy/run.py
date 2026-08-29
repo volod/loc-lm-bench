@@ -97,16 +97,29 @@ def run_policy(
                 preserve_memory_markers=preserve_memory_markers,
             )
         )
+    return score_policy_episodes(tasks, episodes, policy=policy.name, backend=backend)
+
+
+def score_policy_episodes(
+    tasks: list[AgenticTask], episodes: list[Episode], *, policy: str, backend: str
+) -> PolicyReport:
+    """Score one policy's episodes, in TASK order, into the report every reading pairs on.
+
+    Separate from `run_policy` because the order episodes EXECUTE in is a study's own choice --
+    `llb.bench.context_policy.interleave` runs two arms task-adjacent so arm order cannot stand in
+    for the treatment -- while the order they are SCORED in must stay the task set's, or the rows a
+    reading zips against the tasks would silently shift.
+    """
     scored = _score_episodes(tasks, episodes)
     result = category_result(
-        model=policy.name,  # the policy IS the ranked row label (the model is fixed)
+        model=policy,  # the policy IS the ranked row label (the model is fixed)
         backend=backend,
         tier=TIER_AGENTIC,
         case_objectives=scored.case_success,
         reliability=scored.reliability,
     )
     return PolicyReport(
-        policy=policy.name,
+        policy=policy,
         result=result,
         rows=scored.rows,
         episodes=episodes,

@@ -144,7 +144,9 @@ here is: ship it as a supported option, keep `head_tail` as the default.** It co
 loses nothing on any workload, it recovers every middle-critical case the shipped trim could not
 finish, and a default change would retire no published cell -- but one of the two families cannot
 put its whole declared middle stratum into the folding regime, so the recovery rests on 6 of 8
-declared middle cases rather than on all of them.
+declared middle cases rather than on all of them. That last gap is now a POWER limit and nothing
+else: the arms run task-adjacent in a balanced order, so it can no longer be read as an artifact of
+which arm went second.
 
 `ContextPolicy.summary_trim_strategy` is now a validated choice like `summary_input_cap`
 (`head_tail`, the shipped default, and `per_entry_head`), pinned in
@@ -198,24 +200,56 @@ separable from the treatment, and refuses the whole workload reading. Excluding 
 the evidence something, so a run whose middle stratum drops below its declared size in usable pairs
 is reported as UNDER-POWERED rather than as a result in either direction.
 
+### Arm order is balanced, not fixed
+
+Both arms of ONE task run back to back, and which arm opens a task alternates with the task index;
+the rotation carries across workloads and its phase flips per family, so the single leftover first
+position an odd task count leaves over cancels over the run. Under the fixed arm blocks this study
+first ran -- every episode of `head_tail`, then every episode of `per_entry_head` -- "ran second"
+and "ran under the candidate trim" were the same column, and an episode that left the folding
+regime in the second arm alone could not be attributed to either. The schedule is declared in the
+design (`arm_order`) and validated, and the executed order is persisted per episode, so the balance
+is auditable rather than asserted.
+
+The check the schedule buys is read on the FOLDING channel, not on completion. Whether an episode
+reaches its first fold is decided before the arms can diverge -- they build byte-identical prompts
+up to and including the transcript that fold offers -- so a gap there cannot be the treatment and
+is the serving stack by elimination. Completion is the opposite: it is the treatment's own outcome,
+and it moves with position whenever an arm's wins fall unevenly across the two slots, so reading a
+position effect off it would report the recovery itself as a scheduling artifact.
+
+**Which other lanes inherit the seam.** The schedule lives in
+`llb.bench.context_policy.interleave`, not in this study, because every paired agentic comparison
+on this host drives one stateful endpoint. Three lanes still run fixed arm blocks, and they are not
+equally exposed. `compact_vs_cap` walks the observation-cap policy and then the compact policy over
+one task set and pairs them per case with nothing gating the second arm, so it is the one that can
+adopt the balanced schedule as-is. The repeated-fold completion lane runs its two mechanism arms as
+blocks WITHIN each cell, which is interleavable, but its cell ladder is ordered by a control gate
+that stops the run when the one-fold control fails. The window-elision base runner is the same
+shape one level up: its elided arm runs only if the transcript-fitting control passed. For those
+two, arm order is a sequencing DECISION rather than an unexamined default, so removing it needs a
+design that keeps the gate, not this helper -- and until one exists, a dropout in their second
+block carries the same ambiguity this study just removed from its own.
+
 ### The measured comparison
 
-CUDA evidence (2026-08-28, RTX 4060 Ti 16 GB): `qwen3:14b` at 20.33 tok/s and `gemma4:e4b` at
-51.37 tok/s, Ollama `num_ctx=8192`, 23 tasks per arm per family, 92 episodes. Both families
-qualified by completing the elision-free crossover control 2/2 with zero overflows.
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB, balanced arm order): `qwen3:14b` at 19.46-20.77
+tok/s and `gemma4:e4b` at 48.69-52.34 tok/s, Ollama `num_ctx=8192`, 23 tasks per arm per family, 92
+episodes, run twice. Both families qualified by completing the elision-free crossover control 2/2
+with zero overflows.
 
 | family | workload | pairs | skipped | ea wins | ht wins | d(model-input chars) | d(summary chars) | d(folds) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Qwen | typed memory | 4 | 0 | 0 | 0 | +225 | 0 | 0 |
 | Qwen | aggregate search | 3 | 0 | 0 | 0 | -2 | 0 | 0 |
-| Qwen | repeated fold | 2 | 0 | 0 | 0 | -2473 | **-2029** | 0 |
-| Qwen | crossover control | 2 | 0 | 0 | 0 | +76 | 0 | 0 |
+| Qwen | repeated fold | 2 | 0 | 0 | 0 | -2653 | **-2029** | 0 |
+| Qwen | crossover control | 2 | 0 | 0 | 0 | **0** | 0 | 0 |
 | Qwen | middle-critical | 12 | 0 | **5** | 0 | +634 | 0 | 0 |
 | Gemma4 | typed memory | 4 | 0 | 0 | 0 | -183 | 0 | 0 |
 | Gemma4 | aggregate search | 3 | 0 | 0 | 0 | -13221 | 0 | 0 |
-| Gemma4 | repeated fold | 2 | 0 | 0 | 0 | -1645 | **-1805** | 0 |
-| Gemma4 | crossover control | 2 | 0 | 0 | 0 | +298 | 0 | 0 |
-| Gemma4 | middle-critical | 11 | 1 | **2** | 0 | -63 | 0 | 0 |
+| Gemma4 | repeated fold | 2 | 0 | 0 | 0 | -1754 | **-1828** | 0 |
+| Gemma4 | crossover control | 2 | 0 | 0 | 0 | +78 | 0 | 0 |
+| Gemma4 | middle-critical | 12 | 0 | **2** | 0 | -63 | 0 | 0 |
 
 Verdict: **the entry-aware fold costs nothing and recovers middle-critical completion, but the
 evidence does not carry a default change.** `head_tail` wins ZERO paired cases anywhere -- across
@@ -225,36 +259,50 @@ recovery reproduces per stratum:
 | family | head | middle | tail |
 | --- | --- | --- | --- |
 | Qwen | 4/4 -> 4/4 | **0/4 -> 4/4** | 3/4 -> 4/4 |
-| Gemma4 | 4/4 -> 4/4 | **0/2 -> 2/2** (2 of 4 declared unusable) | 4/4 -> 4/4 |
+| Gemma4 | 4/4 -> 4/4 | **0/2 -> 2/2** (2 of 4 declared never fold) | 4/4 -> 4/4 |
 
 Read the numbers in operator terms. Every middle case the shipped trim could not finish, the
 entry-aware trim finished -- 4 of 4 on Qwen, 2 of 2 usable on Gemma4 -- while head and tail never
 moved except upward (Qwen's tail gained one case). Summary prompt bytes are EXACTLY equal on every
-single-fold workload and 1805-2029 chars cheaper on the repeatedly folding one, so the recovery is
+single-fold workload and 1828-2029 chars cheaper on the repeatedly folding one, so the recovery is
 bought with entry placement rather than with window.
 
-The crossover control is what makes the `d(model-input chars)` column readable: it elides nothing,
-so both arms render byte-identical summarize prompts there, and it still moves +76 and +298 chars.
-That is the run's noise floor -- a served endpoint returns different continuations for identical
-prompts depending on the requests before them -- and every non-repeated-fold row in the table sits
-inside or near it. Only the repeated-fold savings are an order of magnitude clear of it. Gemma4's
-aggregate-search -13221 is not a trim effect either: it is one episode taking a shorter walk.
+**The order is balanced and the dropout stayed.** Both families opened their tasks with each arm
+within one task of evenly (12/11 and 11/12 of 23), and the pre-divergence channel is flat in both:
+Qwen reached the fold in 23 of 23 first-position and 23 of 23 second-position episodes, Gemma4 in
+21 of 23 either way. Position moves nothing about entering the regime under test, and Qwen's 5
+paired losses are all `head_tail` losses spread across BOTH slots -- it loses two of them running
+first and three running second -- so the recovery is a property of the arm, not of the schedule.
 
-**Why this is an option and not a default.** Gemma4 put only 2 of its 4 declared middle cases into
-the folding regime: one episode ends the token chain at step 7 under BOTH arms (a task-level
-property), and one under the entry-aware arm alone. A replay confirms the two arms build
-byte-identical prompts through model call 10 and first differ at call 11, after the fold, so no trim
-ran before either divergence -- but arm order is fixed (`head_tail` first), so the study cannot
-separate "second arm" from "entry-aware arm" on the case that split. Widening the stratum from two
-to four cases per stratum did not fix it: the shortfall scaled with the set. So the recovery is
-established on the 6 of 8 declared middle cases that ran, which is enough to OFFER the strategy and
-not enough to move a default every later run inherits.
+The crossover control is what makes the `d(model-input chars)` column readable: it elides nothing,
+so both arms render byte-identical summarize prompts there. Under fixed arm blocks it still moved
++76 and +298 chars; running the two arms back to back on the same task shrinks that to **0 on Qwen
+and +78 on Gemma4**, because the pair now sees nearly the same request history. That is the run's
+noise floor -- a served endpoint returns different continuations for identical prompts depending on
+the requests before them -- and every non-repeated-fold row in the table sits inside or near it,
+with only the repeated-fold savings an order of magnitude clear. Gemma4's aggregate-search -13221
+is not a trim effect either: it is one episode taking a shorter walk.
+
+**Why this is an option and not a default.** Gemma4 still puts only 2 of its 4 declared middle
+cases into the folding regime -- and under the balanced schedule the shortfall is no longer
+attributable to the arms. Both dead cases now end the token chain at step 7 in BOTH arms and in
+BOTH positions: `window-elision-m-001-d10` fails with `per_entry_head` opening it and `head_tail`
+second, `window-elision-m-002-d10` fails with `head_tail` opening it and `per_entry_head` second.
+Under the fixed order, one of those two dropped in the entry-aware arm alone, which is exactly the
+reading the confound made unusable; with order balanced, it drops in both. Widening the stratum
+from two to four cases per stratum did not fix it either -- the shortfall scaled with the set -- so
+what remains is a per-family property of how far Gemma4 walks these two tasks, not an artifact of
+which arm ran when. The recovery is therefore established on the 6 of 8 declared middle cases that
+enter the regime, which is enough to OFFER the strategy and not enough to move a default every
+later run inherits.
 
 What would overturn this, and what would settle it: a family that loses a paired case under
 `per_entry_head` overturns the safety claim; a fully powered middle stratum on both families --
-which needs the arm-order confound removed, not more cases -- is what a default change is waiting
-on. Lookup key: run `agent-context-policy-entry-aware-summary-fold-adoption`, three consecutive
-runs on this host reproduced every table entry above exactly, including which cases dropped out.
+which now needs Gemma4 to walk `m-001` and `m-002` far enough to fold, not a schedule change -- is
+what a default change is waiting on. Lookup key: run
+`agent-context-policy-entry-aware-summary-fold-adoption`, two consecutive balanced-order runs on
+this host reproduced every table entry above exactly, including which cases dropped out and in
+which position.
 
 ### What a default change would cost
 
@@ -291,6 +339,7 @@ make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOP
 | Per-stratum, transfer, and prototype readings | `src/llb/bench/memory/window_elision/transfer_reading.py` |
 | Persistence and command | `src/llb/bench/memory/window_elision/transfer_report.py`, `src/llb/cli/bench/memory/window_elision_transfer.py` |
 | Adoption workloads, their oracles, and the aggregate-search task family | `src/llb/bench/summary_trim/workloads.py`, `src/llb/bench/summary_trim/tasks.py` |
+| Balanced arm schedule shared by any multi-arm policy lane | `src/llb/bench/context_policy/interleave.py` |
 | Adoption design gate, run, readings, verdict, and persistence | `src/llb/bench/summary_trim/design.py`, `run.py`, `reading.py`, `adoption.py`, `analysis.py`, `report.py` |
 | Adoption command | `src/llb/cli/bench/context/summary_trim_adoption.py` |
-| Deterministic contracts | `tests/llb/bench/memory/test_agentic_memory_window_elision.py`, `tests/llb/bench/memory/test_agentic_memory_window_elision_transfer.py`, `tests/llb/bench/summary_trim/test_agentic_summary_trim_adoption.py` |
+| Deterministic contracts | `tests/llb/bench/memory/test_agentic_memory_window_elision.py`, `tests/llb/bench/memory/test_agentic_memory_window_elision_transfer.py`, `tests/llb/bench/summary_trim/test_agentic_summary_trim_adoption.py`, `tests/llb/bench/context_policy/test_agentic_arm_interleave.py` |

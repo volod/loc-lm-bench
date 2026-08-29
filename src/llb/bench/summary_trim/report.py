@@ -21,6 +21,7 @@ def format_summary_trim_table(analysis: dict[str, object]) -> str:
             *_workload_lines(analysis),
             "",
             *_stratum_lines(analysis),
+            *_order_lines(analysis),
             *_audit_lines(analysis),
             "",
             f"adoption: [{analysis['adoption_reading']}] {analysis['adoption_reason']}",
@@ -95,6 +96,27 @@ def _stratum_lines(analysis: dict[str, object]) -> list[str]:
     return lines
 
 
+def _order_lines(analysis: dict[str, object]) -> list[str]:
+    """The schedule, and the same episodes read by POSITION instead of by arm."""
+    lines = ["", "arm order (both arms of a task adjacent, first position alternating)"]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        order = cast(dict[str, object], family.get("arm_order") or {})
+        if not order:
+            lines.append(f"- {family['model_family']}: fixed arm blocks (no order reading)")
+            continue
+        lines.append(
+            f"- {family['model_family']}: {order['n_first_head_tail']} head_tail-first / "
+            f"{order['n_first_per_entry_head']} per_entry_head-first of "
+            f"{order['n_episodes']} episode(s); folded "
+            f"{order['first_folded']}/{order['n_first']} first vs "
+            f"{order['second_folded']}/{order['n_second']} second (the pre-divergence channel), "
+            f"completed "
+            f"{order['first_completed']}/{order['n_first']} first vs "
+            f"{order['second_completed']}/{order['n_second']} second [{order['reading']}]"
+        )
+    return lines
+
+
 def _audit_lines(analysis: dict[str, object]) -> list[str]:
     audit = cast(dict[str, object], analysis["policy_change_audit"])
     lines = [
@@ -152,6 +174,19 @@ def persist_summary_trim_adoption(
             "summary-trim-adoption-design.json": json.dumps(design, indent=2, sort_keys=True)
             + "\n",
             "summary-trim-adoption-analysis.json": json.dumps(analysis, indent=2, sort_keys=True)
+            + "\n",
+            "summary-trim-adoption-schedule.json": json.dumps(
+                [
+                    {
+                        "model_family": run.model_family,
+                        "order_offset": run.order_offset,
+                        "episodes": run.schedule,
+                    }
+                    for run in runs
+                ],
+                indent=2,
+                sort_keys=True,
+            )
             + "\n",
             "summary-trim-adoption.md": "# Entry-aware summary-fold adoption\n\n```text\n"
             + table

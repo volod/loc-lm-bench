@@ -36,6 +36,13 @@ WORKLOAD_REGRESSES = "entry_aware_loses_paired_completion"
 WORKLOAD_MIXED = "entry_aware_paired_outcomes_conflict"
 WORKLOAD_UNPAIRED = "workload_arms_are_not_exactly_paired"
 
+# What the balanced schedule buys: with each task's two arms adjacent and the first position
+# alternating, "ran second" is its own column, so a run can say whether the DROPOUT tracks position
+# or the treatment instead of having to assume it does not.
+ORDER_NO_POSITION_EFFECT = "reaching_the_fold_does_not_track_arm_order"
+ORDER_POSITION_EFFECT = "reaching_the_fold_tracks_arm_order"
+ORDER_UNBALANCED = "arm_order_is_not_balanced_across_the_task_set"
+
 # A workload whose fold elides nothing cannot say anything about the strategies, so it is a
 # CONTROL: it must stay byte-identical, and it never contributes evidence for adoption.
 CONTROL_REASON = "the fold fits the summarize-input bound, so both arms render the same prompt"
@@ -97,7 +104,11 @@ def family_reading(run_rows: list[dict[str, object]]) -> dict[str, object]:
         if (name, SUMMARY_TRIM_HEAD_TAIL) in by_key
         and (name, SUMMARY_TRIM_PER_ENTRY_HEAD) in by_key
     ]
-    return {"workloads": readings, "strata": _stratum_outcomes(by_key, names)}
+    return {
+        "workloads": readings,
+        "strata": _stratum_outcomes(by_key, names),
+        "arm_order": position_reading(run_rows),
+    }
 
 
 def _stratum_outcomes(
@@ -200,3 +211,72 @@ def _rate(row: dict[str, object]) -> float:
 
 def _total(cases: dict[str, dict[str, object]], items: list[str], field: str) -> int:
     return sum(int(cast(int, cases[item][field])) for item in items)
+
+
+def position_reading(run_rows: list[dict[str, object]]) -> dict[str, object]:
+    """Whether the endpoint's request history, not the trim, moved this family's outcomes.
+
+    Every task ran both arms back to back, so each task contributes exactly one first-position and
+    one second-position episode. Reading the SAME episodes by position rather than by arm is
+    therefore a clean nuisance-factor check on the identical data: if the second position loses
+    folds or completions, the serving stack is doing it, because position and treatment are now
+    orthogonal by construction.
+
+    The verdict reads the FOLDING channel, not completion, and the asymmetry is deliberate.
+    Whether an episode reaches its first fold at all is decided before the arms can diverge -- they
+    build byte-identical prompts up to and including the transcript that fold offers -- so a
+    position gap there cannot be the treatment and is the serving stack by elimination. It is also
+    the dropout that costs this study its power, because a case that never folds leaves the paired
+    comparison entirely. Completion is the opposite: it is the treatment's OWN outcome, so it moves
+    with position whenever an arm's wins happen to fall unevenly across the two slots, and reading
+    a position effect off it would report the recovery itself as a scheduling artifact. Both counts
+    are reported; only the one that can be attributed decides the reading.
+    """
+    cases = _ordered_cases(run_rows)
+    if not cases:
+        return {}
+    first = [case for case in cases if int(cast(int, case["order_position"])) == 1]
+    second = [case for case in cases if int(cast(int, case["order_position"])) != 1]
+    counts = {
+        "n_episodes": len(cases),
+        **_first_position_by_arm(first),
+        "n_first": len(first),
+        "n_second": len(second),
+        "first_folded": sum(_folded(case) for case in first),
+        "second_folded": sum(_folded(case) for case in second),
+        "first_completed": sum(bool(case["success"]) for case in first),
+        "second_completed": sum(bool(case["success"]) for case in second),
+    }
+    return {**counts, "reading": _order_reading(counts)}
+
+
+def _ordered_cases(run_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Every case row that carries its execution position; empty under a fixed-order run."""
+    return [
+        case
+        for row in run_rows
+        for case in cast(list[dict[str, object]], row["cases"])
+        if "order_position" in case
+    ]
+
+
+def _first_position_by_arm(first: list[dict[str, object]]) -> dict[str, int]:
+    """How many tasks each arm opened -- the schedule's balance, counted from the episodes."""
+    return {
+        f"n_first_{arm}": sum(1 for case in first if case["first_arm"] == arm)
+        for arm in (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
+    }
+
+
+def _order_reading(counts: dict[str, int]) -> str:
+    """Balanced within one task (the remainder of an odd set), and flat on the pre-fold channel."""
+    if abs(counts["n_first_head_tail"] - counts["n_first_per_entry_head"]) > 1:
+        return ORDER_UNBALANCED
+    if counts["first_folded"] != counts["second_folded"]:
+        return ORDER_POSITION_EFFECT
+    return ORDER_NO_POSITION_EFFECT
+
+
+def _folded(case: dict[str, object]) -> bool:
+    """The episode reached the regime under test at all -- the dropout this study keeps meeting."""
+    return bool(int(cast(int, case["measured_folds"])))

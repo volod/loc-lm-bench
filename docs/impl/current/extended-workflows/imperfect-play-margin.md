@@ -366,6 +366,19 @@ concluded -- on a second qualified family it is the difference between completin
 code at three folds, and dropping it would have cost real completion that one model family could
 not have shown.
 
+**What bounds it: the two mechanism arms run as blocks, marker arm first.** Every cell walks all
+of `typed_marker` and then all of `model_summary_only` against one stateful endpoint, so "won the
+case" and "ran first" are the same column for the arm that wins here -- and all 3 discordant cases
+across the two runs sit in that first arm. The summary-fold adoption study measured this seam
+directly rather than assuming it away, and found that reaching the fold does NOT track position
+while paired completion tracks the ARM
+([summary-input bounds and elision](summary-input-elision.md#arm-order-is-balanced-not-fixed)), so
+the effect here most likely is the marker. But this lane cannot yet say so from its own evidence,
+and it reads in the conservative direction anyway: the caveat could only weaken a case for KEEPING
+the shipped default, never manufacture one. Removing the confound here is not the same one-line
+change the adoption study made -- the cell ladder is ordered by a one-fold control gate that stops
+the run when the control fails, so a balanced schedule has to keep that gate.
+
 What would overturn this: a cell that measures four or more folds; a third qualified family that
 loses a paired case at two or three folds; a family whose fitted guard cannot reach the target rung
 inside the declared band, which the run names

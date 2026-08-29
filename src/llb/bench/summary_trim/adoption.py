@@ -3,8 +3,9 @@
 The study answers TWO questions with different evidence bars, and collapsing them would misreport
 both. "Is the entry-aware trim safe to offer an operator?" needs no workload to regress and the
 recovery to hold on every middle pair the run could read. "Should it replace the shipped default?"
-needs all of that PLUS a fully powered middle stratum, no extra window bytes on any workload, and a
-policy-change audit that retires no published cell -- because a default change is a product decision
+needs all of that PLUS an execution order that cannot stand in for the treatment, a fully powered
+middle stratum, no extra window bytes on any workload, and a policy-change audit that retires no
+published cell -- because a default change is a product decision
 every future run inherits, while an option is one an operator opts into for a session they can see.
 
 So the gates form a ladder rather than a single pass/fail. A regression or an unreadable comparison
@@ -18,6 +19,8 @@ from typing import cast
 
 from llb.bench.memory.window_elision.tasks import STRATUM_MIDDLE
 from llb.bench.summary_trim.reading import (
+    ORDER_NO_POSITION_EFFECT,
+    ORDER_POSITION_EFFECT,
     WORKLOAD_MIXED,
     WORKLOAD_REGRESSES,
     WORKLOAD_UNPAIRED,
@@ -70,8 +73,9 @@ def adoption_reading(
     note = f" ({excluded} case(s) excluded for never folding in one arm)" if excluded else ""
     return (
         ADOPT_AS_DEFAULT,
-        f"no workload regresses{note}, {recovery_note}, no workload spends more summary prompt "
-        "bytes, and the audit retires no published cell",
+        f"no workload regresses{note}, {recovery_note}, arm order is balanced across every task "
+        "set, no workload spends more summary prompt bytes, and the audit retires no published "
+        "cell",
     )
 
 
@@ -105,11 +109,15 @@ def _downgrade(
 ) -> tuple[str, str] | None:
     """What makes it shippable as an OPTION but not as the default.
 
-    Three things do, and each is reported by name: a workload that spends more window bytes, an
-    audit that retires a published cell, and a middle stratum that read cleanly but on fewer cases
-    than the design declared. The last one is a statement about POWER, not about direction -- every
-    pair it did read recovered -- so it withholds the default without withholding the option.
+    Four things do, and each is reported by name: an execution order that leaves "ran second"
+    aligned with an arm, a workload that spends more window bytes, an audit that retires a
+    published cell, and a middle stratum that read cleanly but on fewer cases than the design
+    declared. The last one is a statement about POWER, not about direction -- every pair it did
+    read recovered -- so it withholds the default without withholding the option.
     """
+    confounded = _confounded_order(families)
+    if confounded is not None:
+        return ADOPT_AS_OPTION, confounded
     thin = _under_powered(families, required_middle_pairs)
     if thin is not None:
         return ADOPT_AS_OPTION, thin
@@ -123,6 +131,33 @@ def _downgrade(
             "moving the shipped default is not cleared: the policy-change audit does not report "
             "the published cells invariant under this field",
         )
+    return None
+
+
+def _confounded_order(families: list[dict[str, object]]) -> str | None:
+    """A family whose arms did not run in a balanced order, so position could carry the result.
+
+    A run with no order reading at all is the FIXED-order shape this study started in: its arms ran
+    as whole blocks, so "the second arm" and "the arm under test" are one column and no amount of
+    clean completion evidence separates them. It is offered as an option on what it read and stops
+    there, which is the same conclusion the first reading of this study reached by hand.
+    """
+    for family in families:
+        order = cast(dict[str, object], family.get("arm_order") or {})
+        reading = order.get("reading")
+        if reading is None:
+            return (
+                f"{family['model_family']} ran its arms in fixed blocks, so 'ran second' and 'ran "
+                "under the entry-aware trim' are the same column and no dropout in it is "
+                "attributable"
+            )
+        if reading not in (ORDER_NO_POSITION_EFFECT, ORDER_POSITION_EFFECT):
+            return (
+                f"{family['model_family']} did not execute a balanced arm order "
+                f"({int(cast(int, order['n_first_head_tail']))} vs "
+                f"{int(cast(int, order['n_first_per_entry_head']))} first positions), so order is "
+                "not separable from the trim"
+            )
     return None
 
 

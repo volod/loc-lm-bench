@@ -76,28 +76,42 @@ Take the first task of the earliest group that still has one; see
 
 ### Agentic and context-policy workloads -- `agentic-workloads`
 
-#### agent-context-policy-two-arm-order-confound (optional)
+#### agent-context-policy-adoption-middle-stratum-folds-too-late-for-one-family (optional)
 
-Every two-arm agentic study on this host runs its arms in a FIXED order against one stateful serving
-endpoint -- all of arm A's episodes, then all of arm B's -- so "second arm" is perfectly confounded
-with "the arm under test". That is not a hypothetical: the summary-fold adoption run measures its
-own noise floor on an elision-free control whose two arms build byte-identical prompts and still
-move the model-input cost, and it loses middle-critical cases in the second arm alone
-([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice)).
-Remove the confound rather than bound it: run both arms of each TASK adjacently and alternate which
-arm goes first by task index, so order is balanced across the set instead of aligned with the
-treatment. Then restate the adoption reading on a fully powered middle stratum and say whether the
-default decision moves.
+With arm order balanced, the entry-aware adoption verdict is held back by ONE thing and it is no
+longer a confound: Gemma4 ends two of its four declared middle-critical tasks at step 7, before the
+prompt ever crosses the compact trigger, so those cases never enter the regime under test and the
+recovery rests on 6 of 8 declared middle cases
+([summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#the-measured-comparison)).
+Both dead cases now fail in BOTH arms and BOTH positions across two runs, so what is left is a
+per-family walk length measured against one shared character guard -- the same shape the repeated-
+fold ladder met and fixed by fitting the guard per family from that family's own measured fold
+length instead of holding one constant (`src/llb/bench/memory/repeated_fold/guard_fit.py`, which
+moved both families to 12 of 12 on the rung). Fit the middle-critical workload's guard the same
+way, so the fold lands before the step each family's walk actually reaches, then restate whether
+the shipped default moves.
 
 - Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
 - Agent status: RUN NEEDED
-- Dependencies: reuse the committed adoption design, its workloads, and its per-case pairing; the
-  change is to the ORDER episodes execute in, not to what is measured.
-- User-visible outcome: an operator learns whether the shipped-default recommendation for the
-  entry-aware fold changes once arm order can no longer explain a dropout.
-- Scope boundary: in scope -- per-task arm interleaving with balanced order, a restated adoption
-  verdict, and the same reading applied to any other two-arm agentic lane that inherits the seam.
-  Out of scope -- new workloads, a third strategy, and changing the shipped summarize bound.
+- Dependencies: reuse the committed adoption design, its pairing, its balanced arm schedule
+  (`src/llb/bench/context_policy/interleave.py`), and the model-free guard fit already built for
+  the repeated-fold ladder. What changes is the middle-critical workload's guard per family, not
+  what is measured or how cases pair.
+- User-visible outcome: an operator learns whether `per_entry_head` becomes the shipped default,
+  from a middle stratum that is whole on both families rather than on the 6 of 8 cases that fold.
+- Scope boundary: in scope -- a predeclared guard band for the middle-critical workload, the
+  per-family fit, a run, and a restated adoption verdict; a fit that still cannot reach the
+  declared stratum size must say so rather than widen the band after the fact. Out of scope -- new
+  workloads, a third trim strategy, changing the shipped summarize bound, and refitting the other
+  four workloads, whose declared regimes both families already reach.
+- Data and artifact paths: the existing `$DATA_DIR/agentic-summary-trim-adoption/<run>/` layout and
+  `samples/benchmarks/agentic_summary_trim_adoption_design.json`; no new artifact kind.
+- Execution path: `make ci`, then `make bench-agentic-context-summary-trim-adoption` on the CUDA
+  host (about 25 minutes for both families at the committed roster).
+- Acceptance gates: `make ci` green; the design gate still measures every workload's declared
+  regime under the fitted guard; both families read all four declared middle pairs, or the run
+  names which guard in the declared band came closest and why the stratum stays under-powered; the
+  adoption verdict is restated either way and the policy-change audit is re-read beside it.
 - Documentation target:
   [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice).
 
