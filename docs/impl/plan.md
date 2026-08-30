@@ -74,44 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Robotics RAG and hardware operation -- `robotics-rag-operation`
-
-#### robotics-rag-operation-benchmark
-
-Compose the verified HFlow evidence bridge, existing RAG store, composed local agent profile, typed
-proposal parser, external gate, and device emulator into a separate robotics benchmark tier. Freeze
-a held-out task ledger with normal workflows and every mandatory fault class, predeclare the minimum
-detectable completion or appropriate-refusal gain and evidence floor, then compare the same model
-with retrieval enabled and withheld beside a deterministic reference controller where one exists.
-
-- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
-- Agent status: RUN NEEDED
-- Dependencies: the [HFlow evidence bridge](current/robotics-rag/evidence-bridge.md) and the
-  [action gate and emulator](current/robotics-rag/action-gate-and-emulator.md); consume only
-  `measured` fields from the composed agent operating profile and refuse corpus, store, model,
-  adapter, driver, or policy fingerprint mixing.
-- User-visible outcome: a reproducible decision on whether robotics RAG improves safe task
-  completion for a local model, with a retained no-retrieval/read-only baseline as a valid answer.
-- Scope boundary: in scope -- a robotics tier, paired retrieval ablation, objective task and safety
-  metrics, proposal/decision/receipt transcripts, recovery cases, latency/token/power telemetry, and
-  a run-bundle verdict. Out of scope -- a blended leaderboard row, automatic live deployment,
-  learning from final-split episodes, changing a safety gate to rescue a weak model, and describing
-  emulator success as physical certification.
-- Data and artifact paths: prospective design and held-out tasks under
-  `samples/robotics/benchmark/`; runs under `$DATA_DIR/robotics-rag/<run>/`, with large MCAP media
-  referenced by digest rather than copied.
-- Execution path: add `make bench-robotics-rag`; run fixture/fake cells in CI, then read
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md), select the strongest
-  fitting 12-16 GiB roster model, and execute the paired real-model cells on the CUDA host.
-- Acceptance gates: `make ci`, `make lint-md`, and the prospective-design validator green; zero
-  executed out-of-policy actions; every mandatory planted violation blocked before forbidden
-  invocation; per-class counts and denominators present; RAG is adopted only if the paired interval
-  clears the declared operational gain without an unsafe-proposal regression; otherwise the bundle
-  records the negative result and retains the baseline; the robotics row cannot enter any text tier.
-- Documentation target: `docs/impl/current/robotics-rag/benchmark.md` and
-  `docs/guides/benchmarking/robotics-rag.md`, with every measured result documented under the heavy
-  evidence rules.
-
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
@@ -1400,10 +1362,11 @@ returns the capability to shadow mode; the canary never turns on unattended oper
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: HUMAN-GATED
-- Dependencies: `robotics-rag-operation-benchmark` and `robotics-mhs-preview-conformance`. Human step
-  that gates completion: the hardware owner supplies the isolated device, approves the risk and
-  rollback worksheet, verifies interlocks and an operator-controlled emergency stop, observes the
-  entire run, grants the proposal-bound write approval, and signs the canary verdict.
+- Dependencies: the [held-out emulator benchmark](current/robotics-rag/benchmark.md) and
+  `robotics-mhs-preview-conformance`. Human step that gates completion: the hardware owner supplies
+  the isolated device, approves the risk and rollback worksheet, verifies interlocks and an
+  operator-controlled emergency stop, observes the entire run, grants the proposal-bound write
+  approval, and signs the canary verdict.
 - User-visible outcome: a bounded real-device reading that names where emulator behavior transfers
   and where it does not, without silently promoting a benchmark result into deployment authority.
 - Scope boundary: in scope -- read-only and shadow phases, one low-risk bounded write, pre/post-state

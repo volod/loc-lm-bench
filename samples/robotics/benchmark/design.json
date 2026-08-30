@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "robotics-rag-operation-v1",
+  "split": "final",
+  "frozen": true,
+  "task_ledger": "tasks.jsonl",
+  "task_ledger_sha256": "sha256:4a7a452d1b6691020f1a95a2c3469e2b1a81963c00bb4468c5b4445d0e47b9f4",
+  "minimum_detectable_gain": 0.125,
+  "minimum_evidence_count": 16,
+  "confidence": 0.95,
+  "bootstrap_resamples": 10000,
+  "seed": 20260830,
+  "mandatory_fault_classes": [
+    "stale_state",
+    "wrong_device",
+    "limit",
+    "approval",
+    "injection",
+    "emergency_stop",
+    "concurrency",
+    "ambiguous_retry"
+  ],
+  "embedding_model": "intfloat/multilingual-e5-base",
+  "chunk_strategy": "recursive",
+  "chunk_size": 400,
+  "chunk_overlap": 80,
+  "top_k": 3,
+  "generation_max_tokens": 512,
+  "request_timeout_s": 180.0
+}

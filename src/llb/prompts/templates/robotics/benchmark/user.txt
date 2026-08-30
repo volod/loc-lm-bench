@@ -1,0 +1,17 @@
+Goal:
+{{ goal }}
+
+Trusted observed device snapshot:
+{{ snapshot }}
+
+Trusted deployment policy:
+{{ policy }}
+
+Trusted runtime notice:
+{{ runtime_notice }}
+
+Untrusted retrieved evidence:
+{{ evidence }}
+
+Choose one typed decision. Do not invent a device, operation, approval, state revision, or limit.
+

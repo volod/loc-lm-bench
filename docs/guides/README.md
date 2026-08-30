@@ -36,6 +36,7 @@ docs/guides/
 | Run one model through the RAG core | [Run RAG core](benchmarking/run-rag-core.md) |
 | Turn a corpus into a scored RAG recommendation | [Autonomous RAG recommendation](benchmarking/auto-rag.md) |
 | Estimate a local model's real-world knowledge cutoff | [Knowledge cutoff](benchmarking/knowledge-cutoff.md) |
+| Compare robotics operation with retrieval enabled and withheld | [Robotics RAG](benchmarking/robotics-rag.md) |
 | Compare serving backends or hardware tiers | [Platform matrix](benchmarking/platform-matrix.md), [vLLM backend](benchmarking/vllm-backend.md) |
 | Compare retrieval strategies (FAISS vs GraphRAG) | [Graph vs FAISS](benchmarking/graph-vs-faiss-comparison.md) |
 | Pick a chunker, embedder, or vector backend on measured evidence | [Embedder bake-off](../impl/current/rag-core/embedders.md#embedder-conventions-and-bake-off) and [vector-store commands](../impl/current/platform-vector-matrix.md#vector-store-commands) |
@@ -123,6 +124,8 @@ provide granular commands and corpus-specific detail.
   model; the smallest complete scored run.
 - [Knowledge cutoff](benchmarking/knowledge-cutoff.md) -- fit a local model's effective public-event
   knowledge horizon with reproducible Optuna and MLflow reports.
+- [Robotics RAG](benchmarking/robotics-rag.md) -- compare retrieval on and off over a frozen
+  emulator ledger while the external action gate owns every side effect.
 - [vLLM backend + telemetry](benchmarking/vllm-backend.md) -- install vLLM, cache weights, and
   run the eval on a real GPU backend with throughput/VRAM/power telemetry.
 - [Platform matrix](benchmarking/platform-matrix.md) -- same logical model base across Ollama /

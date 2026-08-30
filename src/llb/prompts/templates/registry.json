@@ -1141,6 +1141,26 @@
         "sha256": "3e20fe761be86b6befaa1a134336d3d2d55dd4fe6bfe5afe1f72fe993a924033"
       }
     },
+    "robotics.benchmark.decision": {
+      "kind": "chat",
+      "descriptor": "robotics/benchmark/decision.prompt.json",
+      "messages": [
+        {
+          "role": "system",
+          "template": {
+            "path": "robotics/benchmark/system.txt",
+            "sha256": "0502840363cb872791ad6264825dc2fb87491aad09eb40f455057007bf936193"
+          }
+        },
+        {
+          "role": "user",
+          "template": {
+            "path": "robotics/benchmark/user.txt",
+            "sha256": "b289b2e5ea97881739c852e9258dc63150bda89e960604ca5472f470a39a3f47"
+          }
+        }
+      ]
+    },
     "scoring.judge.bias_note": {
       "kind": "text",
       "descriptor": "scoring/judge/bias_note.prompt.json",
