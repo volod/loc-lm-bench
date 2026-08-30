@@ -44,6 +44,7 @@ closed each one and what would make it worth reopening.
 | [Extended workflows](current/extended-workflows.md) | Agentic harnesses, agent context policies, prompt systems, fine-tuning | 14 pages |
 | [Evaluation rigor](current/rigor-board-judge.md) | Model resolution, sweeps, tuning, joint search, board, judge, miss analysis | 5 pages |
 | [Auto-RAG](current/auto-rag.md) | Autonomous corpus-to-RAG orchestration, resume, verification, recommendation | page |
+| [Robotics RAG](current/robotics-rag.md) | Offline episode evidence, live device contracts, action proposals, and side-effect boundaries | 1 page |
 | [Review workbench](current/review-workbench.md) | Unified terminal review UI, adapters, keys, ledger compatibility | page |
 | [Backend telemetry](current/backend-telemetry.md) | vLLM launcher, telemetry fields, backend build rules | page |
 | [Robust backends](current/robustness-ontology-backends.md) | VRAM planning, contention guard, llama.cpp, ontology drafting, the axiom layer over the ledger | page |

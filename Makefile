@@ -15,6 +15,7 @@ include $(PROJECT_ROOT)/make/dev.mk
 include $(PROJECT_ROOT)/make/data-prep.mk
 include $(PROJECT_ROOT)/make/eval.mk
 include $(PROJECT_ROOT)/make/models.mk
+include $(PROJECT_ROOT)/make/robotics.mk
 
 ##@ General
 .PHONY: help

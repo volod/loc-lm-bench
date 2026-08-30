@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "contract_schema_digest": "sha256:cd81cbcc36997ef07a1ab24c7d7bcd43b5bad523fd35cb88710333a81725187a",
+  "files": [
+    {
+      "path": "boundary-records.json",
+      "sha256": "sha256:3e865c66435c546b2c4b156733ca6fd0cd405e635dff673d5d002a80cc82fb45"
+    },
+    {
+      "path": "fake-exercise.json",
+      "sha256": "sha256:513e779bf23454ff77b5f264fbaa16a90080e89dfe7a56eec9f6d692202ead62"
+    },
+    {
+      "path": "mhs-public-semantics.json",
+      "sha256": "sha256:8653418579cb2827567ca872878ba4753eeeee0cdc7e463442981d6b2d85db3f"
+    },
+    {
+      "path": "upstreams.json",
+      "sha256": "sha256:3ee311816ebd9cebc02c32c0cf0d39fecae75c57b08611f2f2a13821cd6c3b21"
+    }
+  ],
+  "upstream_pins": [
+    {
+      "id": "hflow",
+      "pin_digest": "sha256:5a3470367f0a90afe283eba216909818e9ec56c05609948cb32f679431ac6656"
+    },
+    {
+      "id": "mhs",
+      "pin_digest": "sha256:b51a3da26cb50a504b54fdd0eb12c30bc8e55ff05ecaec274552b16932eca11f"
+    }
+  ]
+}

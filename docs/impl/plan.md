@@ -76,41 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Robotics RAG and hardware operation -- `robotics-rag-operation`
 
-#### robotics-boundary-contract-and-upstream-pins
-
-Freeze the exchange contract before either upstream can leak into core code. Define typed robotics
-evidence, device snapshot, action proposal, gate decision, and action receipt records; pin the exact
-HFlow release or revision used for fixture production; and record what inspectable MHS contract,
-license, and transport surface are available. Build a protocol-neutral fake around only the public
-discover/read/write/reference/limit semantics. If MHS still exposes no normative schema, close the
-research question honestly: retain the fake seam and forbid the `MHS-compatible` label until a
-later conformance task has a contract to test.
-
-- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
-- Agent status: CLEAR, RESEARCH
-- Dependencies: none. Reuse the existing agentic task/tool vocabulary and run provenance contracts;
-  keep the robotics records in a focused `src/llb/robotics/` package and shared immutable contracts
-  in `src/llb/core/contracts/` rather than adding HFlow or preview imports to agentic core.
-- User-visible outcome: one inspectable compatibility boundary that says exactly which upstream
-  surfaces the project consumes and whether MHS compatibility is testable or still withheld.
-- Scope boundary: in scope -- typed records, schema/version digests, a fake driver, dependency and
-  license review, and an upstream compatibility report. Out of scope -- a real device adapter,
-  hardware access, vendoring upstream code, inferring a private MHS schema from announcement prose,
-  and making either package a base-install dependency.
-- Data and artifact paths: committed protocol fixtures under `samples/robotics/contracts/` and
-  research output under `$DATA_DIR/robotics-contract/<run>/`; no credentials or preview package
-  bytes enter either location.
-- Execution path: add a `make robotics-contract-check` target that validates the committed fixtures
-  and writes the compatibility report; keep upstream network discovery outside quick CI and replay
-  CI from the pinned response/fixture.
-- Acceptance gates: `make ci` green; every record round-trips with unknown fields refused rather
-  than discarded; changed upstream schema, release, or reference digests make the fixture stale;
-  the report can reproduce both `protocol-neutral` and contract-inspectable outcomes; no code or
-  documentation claims MHS compatibility without a named conformance input.
-- Documentation target: a new Robotics RAG area and boundary topic under
-  `docs/impl/current/robotics-rag/`, indexed from `docs/impl/current/robotics-rag.md` and
-  `docs/impl/current.md`.
-
 #### hflow-robotics-evidence-bridge
 
 Add the offline bridge from a version-pinned HFlow curated manifest to the existing text-corpus
@@ -122,9 +87,9 @@ it.
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: CLEAR
-- Dependencies: `robotics-boundary-contract-and-upstream-pins`; its HFlow pin and evidence record
-  are the import contract. Reuse corpus ingestion, source-span validation, accepted-ledger handling,
-  and store fingerprints instead of creating a robotics-only retriever.
+- Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) supply
+  the HFlow pin and evidence record. Reuse corpus ingestion, source-span validation,
+  accepted-ledger handling, and store fingerprints instead of creating a robotics-only retriever.
 - User-visible outcome: an operator can retrieve approved text from prior robot episodes and trace
   every cited character span back to the exact MCAP observation and HFlow generation that supports
   it.
@@ -158,9 +123,10 @@ write into `outcome_unknown` rather than a retry.
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: CLEAR
-- Dependencies: `robotics-boundary-contract-and-upstream-pins`; use its fake driver and typed
-  snapshot/proposal/decision/receipt records. Reuse the agentic harness only above this boundary;
-  the gate itself must be a deterministic function with injected state and policy.
+- Dependencies: use the fake driver and typed records from the
+  [robotics boundary contracts](current/robotics-rag/boundary-contracts.md). Reuse the agentic
+  harness only above this boundary; the gate itself must be a deterministic function with injected
+  state and policy.
 - User-visible outcome: a model can be evaluated against realistic physical side-effect semantics
   while all forbidden actions remain impossible to invoke, even when the model or retrieved text
   requests them.
@@ -1468,7 +1434,7 @@ result and must leave the project labelled protocol-neutral.
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: HUMAN-GATED, RESEARCH
-- Dependencies: `robotics-boundary-contract-and-upstream-pins` and
+- Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) and
   `robotics-action-gate-and-device-emulator`. Human step that gates completion: an authorized MHS
   preview participant accepts the applicable terms, identifies the exact contract/package version,
   and grants time-bounded access to a simulator or read-only test device without placing credentials

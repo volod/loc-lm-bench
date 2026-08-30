@@ -15,6 +15,26 @@ Rules for this file:
 - Evidence lives in the delivered docs under [`current/`](current.md); this file links to it and does
   not restate the measurements.
 
+## robotics-boundary-contract-and-upstream-pins -- whether MHS has a public conformance contract
+
+**Question.** Does the public Model Hardware Standard research preview expose a normative schema,
+versioned conformance input, and applicable license that loc-lm-bench can inspect and test without
+preview credentials?
+
+**Answer: no.** The source and contract review is recorded with the delivered
+[robotics boundary](current/robotics-rag/boundary-contracts.md#pinned-upstream-boundary). The public
+material supports a protocol-neutral fake for its stated semantics, but it does not license an
+`MHS-compatible` claim.
+
+**Reopening condition.** Reopen only when an authorized preview contract or public release makes a
+normative schema revision and its applicable license inspectable, and supplies a named, digestable
+conformance input that can run without committing credentials or preview package bytes. The
+human-gated `robotics-mhs-preview-conformance` task in [plan.md](plan.md) owns that path.
+
+**Do not re-run these.** Do not infer a schema from announcement prose, scrape unstable rendered
+pages into an imitation SDK, reconstruct a private contract from transport examples, or treat MCP,
+CLI, or code-API availability as evidence of semantic conformance.
+
 ## conflict-null-model-research -- a per-pair semantic false-positive rate
 
 **Question.** The semantic conflict tier ranks chunk pairs by cosine. Nothing in the corpus says what

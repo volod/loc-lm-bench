@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "evidence": {
+    "schema_version": 1,
+    "evidence_id": "evidence:episode-demo:position-window",
+    "episode_id": "episode-demo",
+    "mcap_uri": "episodes/episode-demo/canonical.mcap",
+    "mcap_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "channels": [
+      "/arm/state",
+      "/arm/command"
+    ],
+    "start_ns": 1000000000,
+    "end_ns": 2000000000,
+    "producer_versions": [
+      {
+        "producer": "hflow",
+        "version": "v0.2.3@d2e0f3700f2267cfeb0db1957743bb9f5f41256b"
+      },
+      {
+        "producer": "fixture-projection",
+        "version": "1"
+      }
+    ],
+    "quality_state": "accepted",
+    "projection_uri": "projections/episode-demo.md",
+    "projection_start": 18,
+    "projection_end": 92
+  },
+  "device_reference": {
+    "schema_version": 1,
+    "driver_id": "fake.linear-axis",
+    "driver_version": "1",
+    "device_id": "arm-demo",
+    "reference_digest": "sha256:cf97fff858c294096b53d3a56a08a704eb6368c682615c8e9c157dfabf3bf79b",
+    "operations": [
+      {
+        "name": "read_position",
+        "access": "read",
+        "description": "Read the current axis position and homing state.",
+        "parameters": []
+      },
+      {
+        "name": "move_absolute",
+        "access": "write",
+        "description": "Move the axis to an absolute position within its hard travel limit.",
+        "parameters": [
+          {
+            "name": "position_mm",
+            "value_type": "number",
+            "required": true,
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "unit": "mm"
+          }
+        ]
+      }
+    ]
+  },
+  "device_snapshot": {
+    "schema_version": 1,
+    "snapshot_id": "arm-demo:state:7",
+    "device_id": "arm-demo",
+    "driver_id": "fake.linear-axis",
+    "driver_version": "1",
+    "state_revision": 7,
+    "observed_at": "2026-08-27T12:00:00Z",
+    "reference_digest": "sha256:cf97fff858c294096b53d3a56a08a704eb6368c682615c8e9c157dfabf3bf79b",
+    "operations": [
+      {
+        "name": "read_position",
+        "access": "read",
+        "description": "Read the current axis position and homing state.",
+        "parameters": []
+      },
+      {
+        "name": "move_absolute",
+        "access": "write",
+        "description": "Move the axis to an absolute position within its hard travel limit.",
+        "parameters": [
+          {
+            "name": "position_mm",
+            "value_type": "number",
+            "required": true,
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "unit": "mm"
+          }
+        ]
+      }
+    ],
+    "state": [
+      {
+        "name": "position_mm",
+        "value": 10.0
+      },
+      {
+        "name": "homed",
+        "value": true
+      }
+    ]
+  },
+  "action_proposal": {
+    "schema_version": 1,
+    "proposal_id": "proposal-move-42",
+    "proposal_digest": "sha256:14daa7824911062a3a2746ddad27d5f60b0e0f09344efb69c4335178063328fa",
+    "device_id": "arm-demo",
+    "operation": "move_absolute",
+    "arguments": [
+      {
+        "name": "position_mm",
+        "value": 42.0
+      }
+    ],
+    "expected_state_revision": 7,
+    "evidence_ids": [
+      "evidence:episode-demo:position-window"
+    ],
+    "preconditions": [
+      "axis is homed"
+    ],
+    "postconditions": [
+      "position_mm equals 42.0"
+    ],
+    "risk_class": "low",
+    "idempotency": "idempotent"
+  },
+  "gate_decision": {
+    "schema_version": 1,
+    "decision_id": "decision-proposal-move-42",
+    "proposal_id": "proposal-move-42",
+    "proposal_digest": "sha256:14daa7824911062a3a2746ddad27d5f60b0e0f09344efb69c4335178063328fa",
+    "snapshot_id": "arm-demo:state:7",
+    "policy_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "decision": "approve",
+    "reasons": [
+      "fixture proposal is inside the planted hard limit"
+    ],
+    "approval_id": null,
+    "approval_digest": null
+  },
+  "action_receipt": {
+    "schema_version": 1,
+    "receipt_id": "receipt:proposal-move-42:8",
+    "proposal_id": "proposal-move-42",
+    "proposal_digest": "sha256:14daa7824911062a3a2746ddad27d5f60b0e0f09344efb69c4335178063328fa",
+    "device_id": "arm-demo",
+    "operation": "move_absolute",
+    "status": "succeeded",
+    "state_revision_before": 7,
+    "state_revision_after": 8,
+    "result": [
+      {
+        "name": "position_mm",
+        "value": 42.0
+      }
+    ],
+    "error": null
+  }
+}

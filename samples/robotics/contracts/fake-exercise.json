@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "read_operation": "read_position",
+  "write_proposal_id": "proposal-move-42",
+  "limit_operation": "move_absolute",
+  "limit_arguments": [
+    {
+      "name": "position_mm",
+      "value": 101.0
+    }
+  ]
+}
