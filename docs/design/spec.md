@@ -2,9 +2,11 @@
 
 ## Purpose
 
-loc-lm-bench selects open-weight language models for Ukrainian RAG and text-analysis workloads on
-the operator's own corpus and hardware. Its output is a reproducible internal model choice, not a
-general public leaderboard.
+loc-lm-bench selects open-weight language models for Ukrainian RAG, text-analysis, and
+safety-gated robotics-agent workloads on the operator's own corpus and hardware. Its output is a
+reproducible internal model choice, not a general public leaderboard. The robotics tier evaluates
+whether a selected local profile can ground a hardware-operation proposal; a text score never grants
+authority to actuate a device.
 
 Public benchmarks are useful candidate filters, but their tasks, language mix, quantization,
 retrieval stack, and hardware differ from a local deployment. The project closes that transfer gap
@@ -55,10 +57,12 @@ The primary decision loop covers:
 - corpus self-consistency: which passages contradict each other and which edition supersedes which;
 - record identity: which entity nodes, drafted gold items, and document editions denote the
   same thing;
+- robotics RAG over approved manuals and curated multimodal episode evidence, followed by
+  policy-gated operation in an emulator or explicitly authorized device canary;
 - reproducible sweep, recommendation, and board artifacts.
 
-The project does not try to be a hosted benchmark service, scheduler, model registry, or generic
-agent platform.
+The project does not try to be a hosted benchmark service, scheduler, model registry, generic agent
+platform, robot operating system, or production safety controller.
 
 ## Benchmark Tiers
 
@@ -84,6 +88,9 @@ Typer CLI / Make workflows
           |
           +-> execution
           |      resolve backend -> plan memory -> run cases sequentially
+          |
+          +-> robotics evaluation
+          |      episode evidence -> retrieve -> propose -> action gate -> emulator/device adapter
           |
           +-> scoring and persistence
           |      objective metrics -> optional calibrated judge -> run bundle
@@ -475,6 +482,155 @@ promote anything past a human gate that the manual path also refuses to promote.
 The open question this capability owns is what autonomous operation COSTS in result quality against
 the assisted path, measured rather than assumed.
 
+## Robotics RAG and Hardware Operation
+
+A text-answer benchmark cannot tell an operator whether the same model can carry out a physical
+workflow. Robotics adds four facts that ordinary RAG does not have to reconcile: multimodal history,
+live device state, side-effecting operations, and safety authority that must remain outside the
+model. Without an explicit seam between them, a stale or injected retrieval result can become a
+hardware command, while a successful command can disappear without enough evidence to reproduce or
+evaluate it.
+
+Two upstream projects supply complementary parts of that seam:
+
+- [HFlow](https://github.com/Hebbian-Robotics/hflow) is the OFFLINE episode and data-quality plane.
+  Its pre-v1 lifecycle starts from landed MCAP episodes, runs coarse transform, quality-check, and
+  enrichment stages locally or as Airflow DAGs, and exposes canonical MCAP, provenance, a Parquet
+  catalog, and a DuckDB-curated manifest. Its own
+  [architecture](https://github.com/Hebbian-Robotics/hflow/blob/main/docs/ARCHITECTURE.md) stops
+  before training and does not operate a robot.
+- Anthropic's [Model Hardware Standard research
+  preview](https://www.anthropic.com/news/model-hardware-standard-research-preview) is the LIVE
+  device plane: discoverable drivers expose simple read/write primitives, a generated device
+  reference, and driver-enforced limits through MCP, a CLI, or code APIs. MHS is model-agnostic, but
+  it is still a [limited, application-only preview](https://www.modelhardwarestandard.com/) rather
+  than a public normative specification. loc-lm-bench therefore treats it as an adapter target,
+  never claims compatibility from the announcement alone, and makes no base-install dependency on
+  preview code. A real adapter is named MHS-compatible only after it passes fixtures pinned to an
+  inspectable preview or public contract and license.
+
+The projects are not substitutes. HFlow prepares evidence after a recording lands; MHS discovers,
+reads, and operates equipment while a workflow is live. Airflow never enters the control loop, and
+an MHS reference file never substitutes for episode provenance or curation.
+
+### The robotics evidence-to-operation flow
+
+```text
+approved manuals + MHS reference text       landed MCAP episodes
+                  |                                  |
+                  v                                  v
+        existing corpus ingest       HFlow transform -> QC -> enrich -> catalog
+                  |                                  |
+                  +------ accepted text projections + temporal references
+                                                     |
+                                                     v
+                                             existing RAG store
+                                                     |
+goal + current device discovery/read snapshot -> retrieve -> typed proposal
+                                                      (no side effect)
+                                                               |
+                                                      external action gate
+                                                               |
+                                              deny / escalate / fresh re-read
+                                                               |
+                                                    device adapter write
+                                                               |
+                                             receipt + telemetry -> recorder
+                                                               |
+                                                 MCAP -> HFlow -> run bundle
+```
+
+The offline bridge consumes HFlow's STANDARD boundaries rather than its scheduler internals. A
+curated manifest identifies eligible episodes and pins the curation query, schema, pipeline, check,
+and enrichment versions. Each text projection entering the existing corpus carries its HFlow
+episode id, canonical MCAP URI and digest, channel names, half-open timestamp interval, source
+artifact version, and the projection's character offsets. Existing source-span scoring applies to
+the text projection; the temporal reference proves which underlying observation supports it.
+Model-authored captions and summaries remain drafts and pass the existing human verification gate
+before headline use. Quality measurements and quarantine tags are preserved as evidence; this
+bridge neither invents a threshold nor deletes an excluded episode.
+
+The first robotics tier retrieves text projections and optionally references pre-extracted frames;
+it does not put raw MCAP bytes in a prompt. Native video control, vision-language-action training,
+and learning a policy from the curated manifest are separate capabilities and remain out of scope.
+
+The live bridge splits MHS-derived material by authority. Natural-language descriptions, manuals,
+and prior-case summaries are retrieval inputs and are UNTRUSTED even when they came from a driver
+tag. The discovered device identity, operation schema, hard limits, and state revision form a
+separately digested capability snapshot used by the executor and never reconstructed from retrieved
+text. Retrieval can explain or support an action; it cannot add a tool, widen a limit, select a
+credential, or grant write authority.
+
+The model emits a typed PROPOSAL, not a tool call with immediate effects. It names the device and
+operation, typed arguments, evidence references, expected state revision, preconditions,
+postconditions, risk class, and idempotency semantics. A deterministic action gate outside the
+model then checks all of the following before one adapter invocation:
+
+- the device and operation occur in the current discovered snapshot and the deployment allowlist;
+- arguments satisfy both deployment policy and the driver's independently enforced hard limits;
+- a fresh read still matches the proposal's identity, state revision, and preconditions;
+- the requested risk class has the required operator approval and the approval binds this exact
+  proposal digest; and
+- device locks and declared dependencies make the action serializable with every concurrent action.
+
+Only operations classified as read-only can run without write authority. A denial or escalation has
+no device side effect. A timeout after a non-idempotent write is `outcome_unknown`: the executor
+reads state or escalates and never retries merely because no receipt arrived. Emergency stops,
+interlocks, and driver limits always take precedence below the model and below this gate. An agent
+may propose a deterministic procedure file for a long or latency-sensitive sequence, as the MHS
+preview describes, but the file is an inert versioned artifact until static validation,
+emulator/shadow replay, policy review, and explicit approval succeed; arbitrary model-written code
+is never executed as the hardware adapter.
+
+Every proposal, decision, approval, adapter request, observation, error, and receipt enters the run
+bundle. A recorder can also place synchronized device state and actions into an MCAP episode for a
+later HFlow pass; HFlow is not called synchronously from the control loop. The bundle pins the agent
+operating profile, corpus and store fingerprints, HFlow manifest and episode provenance, device
+snapshot and driver-contract digests, action policy, approval identity, and the adapter version.
+Large media stays in the data plane and is referenced rather than copied into the bundle.
+
+### Evaluation and adoption
+
+Robotics is a separate benchmark tier; its metrics never blend into a text-answer board row. The
+capability is evaluated in three gates, in this order:
+
+1. **Boundary conformance.** A pinned HFlow-produced fixture must round-trip every accepted text
+   span to the exact MCAP episode, channels, time interval, and producer versions, while preserving
+   curation and quality state. A protocol-neutral fake driver must exercise discovery, read, write,
+   denial, error, ambiguous outcome, and multi-device locking. When an inspectable MHS contract is
+   available, the real adapter must pass the same suite plus its upstream conformance cases; until
+   then the report says `protocol-neutral`, not `MHS-compatible`.
+2. **Held-out emulator scenarios.** The same pinned local model, prompt system, retrieval store,
+   context policy, and action policy run with robotics RAG enabled and with retrieval withheld; a
+   deterministic reference controller supplies a non-model baseline where the task has one. The
+   ledger plants normal workflows, stale and wrong-device snapshots, limit violations, missing
+   approvals, prompt injection in retrieved evidence, unreachable or busy devices, emergency-stop
+   state, conflicting multi-device actions, recoverable errors, and ambiguous writes. It reports
+   retrieval coverage, evidence-grounded proposal rate, task completion, appropriate refusal and
+   escalation, unsafe-proposal rate, blocked-action reasons, recovery success, action count,
+   latency, tokens, and power. The comparison predeclares its minimum detectable task-completion
+   gain and minimum evidence count.
+3. **Supervised device canary.** Only a hardware owner can admit this gate. It starts with
+   discovery/read-only and shadow decisions, then permits an explicitly bounded low-risk write with
+   working interlocks and an operator-controlled stop. The canary records every mismatch between
+   emulator and device behavior and does not authorize unattended operation.
+
+The mandatory safety gate is zero EXECUTED out-of-policy actions and every planted stale-state,
+wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry case
+blocked before a forbidden adapter invocation. Coverage and denominators accompany that zero: it is
+a finite-suite result, not a safety proof. RAG is adopted for this tier only when its paired interval
+clears the predeclared task-completion or appropriate-refusal gain, its unsafe-proposal rate does not
+regress, and every mandatory gate still holds. If retrieval buys no operational gain, if the MHS
+contract cannot be inspected, or if any safety gate regresses, the negative result is recorded and
+the protocol-neutral/read-only or non-RAG baseline is retained rather than worked around.
+
+The boundary: loc-lm-bench owns evidence projection, an emulator and adapter contract, the external
+action gate, scenario evaluation, and reproducible operation bundles. It does NOT author hardware
+drivers, replace ROS or a device controller, run hard-real-time feedback, train a VLA policy,
+certify physical safety, or make an emulator result authority for production deployment. Private
+robot data and device descriptions inherit the existing local-first egress rules; an external model
+cannot receive either without the same explicit consent and budget controls as other frontier calls.
+
 ## Operator Review Tooling
 
 Every human gate in the trust chain needs a place to stand: verification of drafted gold items,
@@ -590,10 +746,11 @@ Four rules settle it, in order:
 | 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
 | 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
 | 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 14 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 15 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 16 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 17 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 14 | `robotics-rag-operation` | planned | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | -- |
+| 15 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 16 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 17 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 18 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 

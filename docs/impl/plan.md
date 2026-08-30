@@ -74,6 +74,149 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
+### Robotics RAG and hardware operation -- `robotics-rag-operation`
+
+#### robotics-boundary-contract-and-upstream-pins
+
+Freeze the exchange contract before either upstream can leak into core code. Define typed robotics
+evidence, device snapshot, action proposal, gate decision, and action receipt records; pin the exact
+HFlow release or revision used for fixture production; and record what inspectable MHS contract,
+license, and transport surface are available. Build a protocol-neutral fake around only the public
+discover/read/write/reference/limit semantics. If MHS still exposes no normative schema, close the
+research question honestly: retain the fake seam and forbid the `MHS-compatible` label until a
+later conformance task has a contract to test.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: CLEAR, RESEARCH
+- Dependencies: none. Reuse the existing agentic task/tool vocabulary and run provenance contracts;
+  keep the robotics records in a focused `src/llb/robotics/` package and shared immutable contracts
+  in `src/llb/core/contracts/` rather than adding HFlow or preview imports to agentic core.
+- User-visible outcome: one inspectable compatibility boundary that says exactly which upstream
+  surfaces the project consumes and whether MHS compatibility is testable or still withheld.
+- Scope boundary: in scope -- typed records, schema/version digests, a fake driver, dependency and
+  license review, and an upstream compatibility report. Out of scope -- a real device adapter,
+  hardware access, vendoring upstream code, inferring a private MHS schema from announcement prose,
+  and making either package a base-install dependency.
+- Data and artifact paths: committed protocol fixtures under `samples/robotics/contracts/` and
+  research output under `$DATA_DIR/robotics-contract/<run>/`; no credentials or preview package
+  bytes enter either location.
+- Execution path: add a `make robotics-contract-check` target that validates the committed fixtures
+  and writes the compatibility report; keep upstream network discovery outside quick CI and replay
+  CI from the pinned response/fixture.
+- Acceptance gates: `make ci` green; every record round-trips with unknown fields refused rather
+  than discarded; changed upstream schema, release, or reference digests make the fixture stale;
+  the report can reproduce both `protocol-neutral` and contract-inspectable outcomes; no code or
+  documentation claims MHS compatibility without a named conformance input.
+- Documentation target: a new Robotics RAG area and boundary topic under
+  `docs/impl/current/robotics-rag/`, indexed from `docs/impl/current/robotics-rag.md` and
+  `docs/impl/current.md`.
+
+#### hflow-robotics-evidence-bridge
+
+Add the offline bridge from a version-pinned HFlow curated manifest to the existing text-corpus
+ingestion contract. Project each accepted caption, label, procedure summary, or other text artifact
+with its episode id, canonical MCAP URI and digest, channels, half-open timestamp interval, producer
+versions, quality state, and projection character offsets. Treat model-authored projection text as
+a draft so it cannot enter a headline robotics ledger before the existing verification gate accepts
+it.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: CLEAR
+- Dependencies: `robotics-boundary-contract-and-upstream-pins`; its HFlow pin and evidence record
+  are the import contract. Reuse corpus ingestion, source-span validation, accepted-ledger handling,
+  and store fingerprints instead of creating a robotics-only retriever.
+- User-visible outcome: an operator can retrieve approved text from prior robot episodes and trace
+  every cited character span back to the exact MCAP observation and HFlow generation that supports
+  it.
+- Scope boundary: in scope -- standard MCAP/Parquet manifest consumption, temporal evidence refs,
+  quality and quarantine preservation, draft verification, and a pinned HFlow integration fixture.
+  Out of scope -- importing Airflow DAG internals, opening raw video in the language-model prompt,
+  choosing HFlow quality thresholds, deleting excluded episodes, VLA training, and a training-data
+  loader.
+- Data and artifact paths: a small synthetic HFlow fixture under `samples/robotics/hflow/`; bridge
+  runs under `$DATA_DIR/robotics-evidence/<run>/`; source media remains under the configured HFlow
+  data root and the bridge artifact carries references only.
+- Execution path: add a `make robotics-evidence-fixture` target for the pinned HFlow `app.test()`
+  integration and a network-free fixture replay in quick CI; feed verified projections through the
+  existing corpus ingest and retrieval-validation paths.
+- Acceptance gates: `make ci` and `make lint-md` green; every accepted source span resolves to one
+  existing episode digest and an in-range channel/time interval; curation query, pipeline, check,
+  enrichment, and schema versions survive round-trip; missing or mixed generations are refused;
+  quarantined and unverified inputs cannot silently become headline evidence; the fixture opens
+  with a standard MCAP reader.
+- Documentation target: `docs/impl/current/robotics-rag/evidence-bridge.md` plus a focused operator
+  guide under `docs/guides/data-prep/`.
+
+#### robotics-action-gate-and-device-emulator
+
+Build the side-effect boundary independently of any model. The emulator exposes discover/read/write,
+driver limits, state revisions, locks, inter-device dependencies, emergency-stop state, injected
+faults, and idempotent versus non-idempotent operations. The deterministic gate accepts a typed
+proposal and returns approve, deny, or escalate before the adapter can run. It must re-read state at
+the time of use, bind approval to the proposal digest, and turn an unacknowledged non-idempotent
+write into `outcome_unknown` rather than a retry.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: CLEAR
+- Dependencies: `robotics-boundary-contract-and-upstream-pins`; use its fake driver and typed
+  snapshot/proposal/decision/receipt records. Reuse the agentic harness only above this boundary;
+  the gate itself must be a deterministic function with injected state and policy.
+- User-visible outcome: a model can be evaluated against realistic physical side-effect semantics
+  while all forbidden actions remain impossible to invoke, even when the model or retrieved text
+  requests them.
+- Scope boundary: in scope -- allowlists, typed argument and limit checks, state freshness,
+  preconditions, risk/approval policy, device locks, ambiguous outcomes, and command receipts. Out
+  of scope -- a vendor driver, hard-real-time control, claiming the emulator matches one physical
+  workcell, executing arbitrary generated code, and treating the project gate as a replacement for
+  hardware interlocks or driver-enforced limits.
+- Data and artifact paths: committed device, policy, and fault fixtures under
+  `samples/robotics/emulator/`; deterministic test runs under `$DATA_DIR/robotics-emulator/<run>/`.
+- Execution path: add `make test-robotics-emulator`; exercise the gate with an oracle controller and
+  injected fake adapter before connecting it to model inference. Keep the full scenario matrix in
+  ordinary CPU CI.
+- Acceptance gates: `make ci` green; every denial and escalation invokes the adapter zero times;
+  planted wrong-device, stale-state, out-of-limit, missing-approval, injection-derived,
+  emergency-stop, conflicting-lock, and ambiguous-retry attempts are blocked at the specified
+  boundary; one approved proposal produces at most one write receipt; unknown outcomes require a
+  read or escalation before another proposal; hard limits cannot be widened by corpus text, prompt
+  roles, model output, or deployment policy.
+- Documentation target: `docs/impl/current/robotics-rag/action-gate-and-emulator.md`.
+
+#### robotics-rag-operation-benchmark
+
+Compose the verified HFlow evidence bridge, existing RAG store, composed local agent profile, typed
+proposal parser, external gate, and device emulator into a separate robotics benchmark tier. Freeze
+a held-out task ledger with normal workflows and every mandatory fault class, predeclare the minimum
+detectable completion or appropriate-refusal gain and evidence floor, then compare the same model
+with retrieval enabled and withheld beside a deterministic reference controller where one exists.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: RUN NEEDED
+- Dependencies: `hflow-robotics-evidence-bridge` and
+  `robotics-action-gate-and-device-emulator`; consume only `measured` fields from the composed agent
+  operating profile and refuse corpus, store, model, adapter, driver, or policy fingerprint mixing.
+- User-visible outcome: a reproducible decision on whether robotics RAG improves safe task
+  completion for a local model, with a retained no-retrieval/read-only baseline as a valid answer.
+- Scope boundary: in scope -- a robotics tier, paired retrieval ablation, objective task and safety
+  metrics, proposal/decision/receipt transcripts, recovery cases, latency/token/power telemetry, and
+  a run-bundle verdict. Out of scope -- a blended leaderboard row, automatic live deployment,
+  learning from final-split episodes, changing a safety gate to rescue a weak model, and describing
+  emulator success as physical certification.
+- Data and artifact paths: prospective design and held-out tasks under
+  `samples/robotics/benchmark/`; runs under `$DATA_DIR/robotics-rag/<run>/`, with large MCAP media
+  referenced by digest rather than copied.
+- Execution path: add `make bench-robotics-rag`; run fixture/fake cells in CI, then read
+  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md), select the strongest
+  fitting 12-16 GiB roster model, and execute the paired real-model cells on the CUDA host.
+- Acceptance gates: `make ci`, `make lint-md`, and the prospective-design validator green; zero
+  executed out-of-policy actions; every mandatory planted violation blocked before forbidden
+  invocation; per-class counts and denominators present; RAG is adopted only if the paired interval
+  clears the declared operational gain without an unsafe-proposal regression; otherwise the bundle
+  records the negative result and retains the baseline; the robotics row cannot enter any text tier.
+- Documentation target: `docs/impl/current/robotics-rag/benchmark.md` and
+  `docs/guides/benchmarking/robotics-rag.md`, with every measured result documented under the heavy
+  evidence rules.
+
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
@@ -1312,6 +1455,81 @@ the human judge both the reviewer experience and the recommendation quality.
 - Documentation target: `current/auto-rag.md` acceptance evidence and
   [human evaluation guide](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
+### Robotics RAG and hardware operation -- `robotics-rag-operation`
+
+#### robotics-mhs-preview-conformance
+
+Replace the protocol-neutral fake with a real adapter only when an authorized preview participant
+can provide an inspectable, versioned MHS contract and a non-production test endpoint. Map discovery,
+reference generation, read, write, enforced limits, errors, and receipts onto the project records,
+then run the same conformance suite as the emulator. A missing schema, incompatible license,
+unstable identity/state semantics, or transport that bypasses the external gate is a valid negative
+result and must leave the project labelled protocol-neutral.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: HUMAN-GATED, RESEARCH
+- Dependencies: `robotics-boundary-contract-and-upstream-pins` and
+  `robotics-action-gate-and-device-emulator`. Human step that gates completion: an authorized MHS
+  preview participant accepts the applicable terms, identifies the exact contract/package version,
+  and grants time-bounded access to a simulator or read-only test device without placing credentials
+  in the repository or run artifacts.
+- User-visible outcome: either a version-scoped MHS adapter with reproducible conformance evidence,
+  or a precise incompatibility/insufficient-contract decision that prevents an unsupported
+  compatibility claim.
+- Scope boundary: in scope -- one optional adapter, contract and license pinning, discovery/read
+  against a non-production endpoint, fake write conformance with no physical effect, and deviations
+  from the project contract. Out of scope -- applying for access without the operator, accepting
+  terms on their behalf, live hardware writes, bypassing the project gate, storing credentials, and
+  declaring compatibility across untested MHS versions.
+- Data and artifact paths: sanitized contract metadata and conformance output under
+  `$DATA_DIR/robotics-mhs-conformance/<run>/`; committed tests use redacted recorded responses or an
+  injected fake under `samples/robotics/mhs/`, never preview package bytes whose terms forbid it.
+- Execution path: add `make robotics-mhs-conformance` behind a `robotics-mhs` optional dependency
+  group and explicit endpoint configuration; keep preview access outside quick CI and replay the
+  adapter against contract-safe fixtures in `make ci`.
+- Acceptance gates: the human records the exact contract and allowed artifact handling; discovery,
+  read, limit refusal, error, and receipt cases map without loss; every write attempt still traverses
+  the project gate; changed MHS identity or schema makes the adapter fixture stale; the report says
+  `MHS-compatible` only for the tested version; a negative result removes this task to future
+  research with its reopening condition instead of weakening the adapter contract.
+- Documentation target: `docs/impl/current/robotics-rag/mhs-adapter.md` and the dependency/security
+  boundary in `docs/impl/current/robotics-rag.md`.
+
+#### robotics-supervised-device-canary
+
+Run the admitted MHS adapter on one isolated workcell under its hardware owner's supervision. Start
+with discovery/read-only calls and shadow proposals, reconcile every observed identity, unit, limit,
+state transition, and receipt against the emulator, and only then authorize one predeclared low-risk
+write whose physical envelope, rollback, interlocks, and stop procedure the owner signs. Any drift
+returns the capability to shadow mode; the canary never turns on unattended operation.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: HUMAN-GATED
+- Dependencies: `robotics-rag-operation-benchmark` and `robotics-mhs-preview-conformance`. Human step
+  that gates completion: the hardware owner supplies the isolated device, approves the risk and
+  rollback worksheet, verifies interlocks and an operator-controlled emergency stop, observes the
+  entire run, grants the proposal-bound write approval, and signs the canary verdict.
+- User-visible outcome: a bounded real-device reading that names where emulator behavior transfers
+  and where it does not, without silently promoting a benchmark result into deployment authority.
+- Scope boundary: in scope -- read-only and shadow phases, one low-risk bounded write, pre/post-state
+  capture, stop and rollback drills, emulator/device mismatch logging, and a human verdict. Out of
+  scope -- safety certification, people or uncontained hazards in the work envelope, high-risk
+  tools, generated procedure files, model-driven emergency actions, parallel live writes,
+  unattended running, and generalizing from one workcell to another.
+- Data and artifact paths: run bundle under `$DATA_DIR/robotics-canary/<run>/`; raw telemetry and MCAP
+  remain in the authorized HFlow data root and are referenced by digest; the signed risk worksheet,
+  approvals, redacted device snapshot, and verdict live in the run bundle with no secrets.
+- Execution path: add `make bench-robotics-canary MODE=read,shadow,bounded-write`; require a fresh
+  preflight before each phase, and require a new explicit approval digest before the write phase.
+  The operator, not the model, advances phases.
+- Acceptance gates: the owner signs the worksheet and final verdict; the physical stop prevents
+  motion independently of the model and adapter; zero out-of-policy invocations occur; every action
+  has matching pre-state, decision, request, receipt, and post-state evidence; an ambiguous result
+  triggers read/escalation with no retry; every emulator/device mismatch is reported; any mandatory
+  gate failure retains shadow/read-only mode and records the negative result.
+- Documentation target: `docs/impl/current/robotics-rag/device-canary.md` and a canary procedure under
+  `docs/guides/human-tooling/`.
+
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### conflict-adjudicator-label-slice
@@ -1483,7 +1701,7 @@ Each task entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a task surfaces new future work, route it by the three kinds above: a chore gets done or
+When a task surfaces new future work, route it by the three kinds above: handle a chore inline or
 dropped, a self-audit gets dropped, and a genuine capability goes through the spec lifecycle before
 it becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
 what is not normal is a task quietly appearing under a capability nobody amended the spec for. Put
