@@ -1,0 +1,1 @@
+A draft caption describes smooth robot motion.

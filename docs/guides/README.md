@@ -88,6 +88,8 @@ provide granular commands and corpus-specific detail.
   indexing, ontology drafting, or GraphRAG.
 - [Data prep](data-prep/data-prep.md) -- the create-stage commands in brief: gold set modes,
   chunking, and judge calibration entry points.
+- [HFlow robotics evidence](data-prep/robotics-hflow-evidence.md) -- validate a pinned HFlow
+  projection manifest and admit approved episode text to the existing corpus.
 - [Create a gold set (end-to-end)](data-prep/goldset-from-scratch.md) -- the spine:
   create -> validate -> cross-check -> human verification gate -> ledger flip -> calibrate ->
   score, with authoring and review rules.

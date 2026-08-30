@@ -34,7 +34,7 @@ class RoboticsEvidence(RoboticsContract):
     start_ns: int = Field(ge=0)
     end_ns: int = Field(gt=0)
     producer_versions: tuple[ProducerVersion, ...] = Field(min_length=1)
-    quality_state: Literal["accepted", "quarantined"]
+    quality_state: Literal["accepted", "quarantined", "unverified"]
     projection_uri: str = Field(min_length=1)
     projection_start: int = Field(ge=0)
     projection_end: int = Field(gt=0)

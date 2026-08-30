@@ -10,7 +10,8 @@ prose into a compatibility claim. HFlow and MHS are not base-install dependencie
 [`src/llb/core/contracts/robotics.py`](../../../../src/llb/core/contracts/robotics.py) defines frozen
 Pydantic records with unknown fields forbidden:
 
-- `RoboticsEvidence` binds an accepted or quarantined text projection to a canonical MCAP digest,
+- `RoboticsEvidence` binds an accepted, quarantined, or unsettled text projection to a canonical
+  MCAP digest,
   episode, channels, half-open nanosecond interval, producer versions, and character offsets.
 - `DeviceSnapshot` binds live state and its revision to the independently digested device reference
   and discovered operation set.
@@ -92,9 +93,9 @@ GB CUDA host. This was deliberately a CPU-only, network-free contract run: it lo
 device, HFlow package, or MHS package. All six records round-tripped under strict validation, and
 discovery, reference, read, write, and the planted hard-limit refusal all passed. The result was
 `protocol-neutral`, because the MHS source had no normative schema revision, public license, or
-named conformance input. The contract-schema digest was
-`cd81cbcc36997ef07a1ab24c7d7bcd43b5bad523fd35cb88710333a81725187a`; the fixture-manifest digest
-was `0262b9bb1802fc3a986dc05e59003e4cd6d0eece7d66daf8d2d6a80af096f1e7`.
+named conformance input. The contract-schema digest is
+`477171dd8a41ca04bb0a13134e4b000755a3b16383f9632b0112c383a67dff0f`; the fixture-manifest digest
+is `b325df09902e95d2de725fd1803e4533eab30566a090a5bbb714ee80f3b719cd`.
 
 The reading is overturned by any schema or pinned-byte drift, or by an inspectable MHS contract and
 license that can be exercised through a named conformance input. It says only that this boundary is

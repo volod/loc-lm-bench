@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_schema_digest": "sha256:cd81cbcc36997ef07a1ab24c7d7bcd43b5bad523fd35cb88710333a81725187a",
+  "contract_schema_digest": "sha256:477171dd8a41ca04bb0a13134e4b000755a3b16383f9632b0112c383a67dff0f",
   "files": [
     {
       "path": "boundary-records.json",

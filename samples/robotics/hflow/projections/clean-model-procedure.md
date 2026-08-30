@@ -1,0 +1,1 @@
+The robot follows a smooth joint-state trajectory.

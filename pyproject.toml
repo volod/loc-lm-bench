@@ -64,6 +64,9 @@ rag-chroma = ["chromadb==1.5.9"]
 rag-qdrant = ["qdrant-client==1.18.0"]
 rag-lancedb = ["lancedb==0.33.0"]
 graph = ["duckdb>=1.0"]  # GraphRAG backend: persisted graph + recursive-CTE k-hop engine
+# HFlow stays an opt-in integration input rather than a project dependency. The bridge itself reads
+# its standard Parquet/MCAP boundaries with these format-native readers.
+robotics = ["duckdb>=1.5.5", "mcap>=1.4.0"]
 # Probabilistic record linkage (the identity seam under entity resolution). Splink supplies the
 # Fellegi-Sunter engine on the DuckDB backend the graph store already requires, so this extra adds
 # an engine, not a database. Upper bound: Splink 4 renamed the whole API surface this adapter is
@@ -132,6 +135,10 @@ dev = [
   "shellcheck-py==0.11.0.1",
   "pymarkdownlnt>=0.9.32",
   "optuna>=3.6",
+  # Network-free robotics CI opens the committed Parquet and canonical MCAP fixture with standard
+  # readers. HFlow itself is installed only by the explicit pinned integration Make target.
+  "duckdb>=1.5.5",
+  "mcap>=1.4.0",
 ]
 
 [tool.uv]

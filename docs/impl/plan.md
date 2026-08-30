@@ -76,42 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Robotics RAG and hardware operation -- `robotics-rag-operation`
 
-#### hflow-robotics-evidence-bridge
-
-Add the offline bridge from a version-pinned HFlow curated manifest to the existing text-corpus
-ingestion contract. Project each accepted caption, label, procedure summary, or other text artifact
-with its episode id, canonical MCAP URI and digest, channels, half-open timestamp interval, producer
-versions, quality state, and projection character offsets. Treat model-authored projection text as
-a draft so it cannot enter a headline robotics ledger before the existing verification gate accepts
-it.
-
-- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
-- Agent status: CLEAR
-- Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) supply
-  the HFlow pin and evidence record. Reuse corpus ingestion, source-span validation,
-  accepted-ledger handling, and store fingerprints instead of creating a robotics-only retriever.
-- User-visible outcome: an operator can retrieve approved text from prior robot episodes and trace
-  every cited character span back to the exact MCAP observation and HFlow generation that supports
-  it.
-- Scope boundary: in scope -- standard MCAP/Parquet manifest consumption, temporal evidence refs,
-  quality and quarantine preservation, draft verification, and a pinned HFlow integration fixture.
-  Out of scope -- importing Airflow DAG internals, opening raw video in the language-model prompt,
-  choosing HFlow quality thresholds, deleting excluded episodes, VLA training, and a training-data
-  loader.
-- Data and artifact paths: a small synthetic HFlow fixture under `samples/robotics/hflow/`; bridge
-  runs under `$DATA_DIR/robotics-evidence/<run>/`; source media remains under the configured HFlow
-  data root and the bridge artifact carries references only.
-- Execution path: add a `make robotics-evidence-fixture` target for the pinned HFlow `app.test()`
-  integration and a network-free fixture replay in quick CI; feed verified projections through the
-  existing corpus ingest and retrieval-validation paths.
-- Acceptance gates: `make ci` and `make lint-md` green; every accepted source span resolves to one
-  existing episode digest and an in-range channel/time interval; curation query, pipeline, check,
-  enrichment, and schema versions survive round-trip; missing or mixed generations are refused;
-  quarantined and unverified inputs cannot silently become headline evidence; the fixture opens
-  with a standard MCAP reader.
-- Documentation target: `docs/impl/current/robotics-rag/evidence-bridge.md` plus a focused operator
-  guide under `docs/guides/data-prep/`.
-
 #### robotics-action-gate-and-device-emulator
 
 Build the side-effect boundary independently of any model. The emulator exposes discover/read/write,
@@ -158,7 +122,7 @@ with retrieval enabled and withheld beside a deterministic reference controller 
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: RUN NEEDED
-- Dependencies: `hflow-robotics-evidence-bridge` and
+- Dependencies: the [HFlow evidence bridge](current/robotics-rag/evidence-bridge.md) and
   `robotics-action-gate-and-device-emulator`; consume only `measured` fields from the composed agent
   operating profile and refuse corpus, store, model, adapter, driver, or policy fingerprint mixing.
 - User-visible outcome: a reproducible decision on whether robotics RAG improves safe task

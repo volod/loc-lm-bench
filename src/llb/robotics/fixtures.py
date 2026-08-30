@@ -23,6 +23,7 @@ from llb.robotics.models import (
     UpstreamPin,
     UpstreamPins,
 )
+from llb.robotics.upstreams import HFLOW_RELEASE, HFLOW_REVISION
 
 MANIFEST_NAME = "fixture-manifest.json"
 REQUIRED_FILES = frozenset(
@@ -118,7 +119,8 @@ def _validate_upstreams(loaded: LoadedFixture) -> None:
     hflow = _source(loaded.upstreams, "hflow")
     if (
         hflow.contract_status != "contract-inspectable"
-        or hflow.revision is None
+        or hflow.release != HFLOW_RELEASE
+        or hflow.revision != HFLOW_REVISION
         or hflow.license is None
         or hflow.normative_reference is None
     ):
