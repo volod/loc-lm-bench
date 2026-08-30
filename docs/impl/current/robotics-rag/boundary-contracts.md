@@ -70,8 +70,9 @@ The stopped public-schema question and its reopening condition are in
 in-memory fake over exactly discovery, device reference, read, write, and driver-side limit
 validation. It rejects unknown devices, operations, arguments, types, stale revisions, and values
 outside the discovered hard range. Its direct `write` method is an adapter-conformance surface, not
-an action gate; policy, approval, fresh-read, concurrency, and ambiguous-write handling remain
-separate forward work and no production caller is authorized by this fake.
+an action gate; the delivered [action gate and device emulator](action-gate-and-emulator.md) own
+policy, approval, fresh-read, concurrency, and ambiguous-write handling. No production caller is
+authorized by this fake.
 
 Committed inputs live under [`samples/robotics/contracts/`](../../../../samples/robotics/contracts/).
 `fixture-manifest.json` binds every fixture byte, the generated Pydantic schema set, and independent

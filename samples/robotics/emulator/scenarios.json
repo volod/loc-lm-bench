@@ -1,0 +1,1077 @@
+{
+  "approvals": [
+    {
+      "approval_digest": "sha256:205fbffc3c3dc178b8725c377ea3e7e7d7b82d580525daaeb6b9adac5a797a02",
+      "approval_id": "approval:approved",
+      "proposal_digest": "sha256:491c0ba0b343fe27b8de443e283ddd83dd262e559293516ce1873167547888d0",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:912776a2c3c4c20226225aa84a31c29c0d79cd0f213f8215545dc60e97f64770",
+      "approval_id": "approval:stale",
+      "proposal_digest": "sha256:d17b83fd4f9cfdb82095d0d4a4c1e7d5d18e39f7d5c3f3c4a40489009b83e508",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:0579dc3a5d6dd83bebc4d88dd0676e9c63e4f91a8de76227894edfefab083739",
+      "approval_id": "approval:hard-limit",
+      "proposal_digest": "sha256:5c1bd2ffbdcc9796df0f8a22318217b743ea318b788c65c7a20421b200e7b780",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:a82710096a3db4adb156b95ec3fe7c06499d0ff5e6fc79c53d2f187c2be0f560",
+      "approval_id": "approval:policy-limit",
+      "proposal_digest": "sha256:a07bf0d1644c46074d94bbc5965e877913b189b0687effdf1b2f15c33cc3bca1",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:7cddcdc70cb998842100533acf0c3b06856cd7a914a3175c15deceb2aa08681a",
+      "approval_id": "approval:tainted",
+      "proposal_digest": "sha256:f28d9945af1b933c72f2497c9c27feb95b8fa234387d90d214f29be9ef62037a",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:86b2f5128c6869f4309db7749e9fb62ee47b426b02a2df5b3b3ad1cdb54910f1",
+      "approval_id": "approval:emergency-stop",
+      "proposal_digest": "sha256:8de4ce32da28b80a368926bc69068c0a300d7db836bb35f73cbc45dba80036f5",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:abca423ae5e5b959774e16207c98d8de5055dae105bec8d021cea1282eb3afed",
+      "approval_id": "approval:dependency-lock",
+      "proposal_digest": "sha256:5574d871d4f9819dce37079c1272d91af16181703b14910a91b6b29f429ed4a2",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:da4245c176eec0ddd7365e6907a14d46de89f033a2980b8db41be801ddb02ed5",
+      "approval_id": "approval:precondition-failed",
+      "proposal_digest": "sha256:64babc453eaea638f7ddaf2cf327392a495a5e3c62b6faadee402021983ffdc8",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:1a7c78c57d59697728c0c5e69dcf8df51d49836ed4fb8b265e1717b35b8956e2",
+      "approval_id": "approval:unreachable",
+      "proposal_digest": "sha256:81b0e1aa85d426bca19613181f9247d28afa5085fe9dd21b884b05e7f2576911",
+      "risk_class": "low",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:3752afd8416ba686d2e212f176971a5e0e997dacc0b41fe4967a9a2979f4c625",
+      "approval_id": "approval:ambiguous-jog",
+      "proposal_digest": "sha256:85228b86962972c86a01ef2f4e0dd118a53fa8363c90653dc9a22d0832fcc2ea",
+      "risk_class": "medium",
+      "schema_version": 1
+    },
+    {
+      "approval_digest": "sha256:dd1c180d643552131b7752b3981aab94c8ceda2d7aa92388ae05eb0bfa302a36",
+      "approval_id": "approval:write-failed",
+      "proposal_digest": "sha256:1ccba0d4ec26ee27ccb6175ebc9e28fd04bbb7eccfa3ee731b32ab410ba50e18",
+      "risk_class": "low",
+      "schema_version": 1
+    }
+  ],
+  "devices": [
+    {
+      "effects": [
+        {
+          "argument_name": "position_mm",
+          "mode": "assign",
+          "operation": "move_absolute",
+          "state_name": "position_mm"
+        },
+        {
+          "argument_name": "delta_mm",
+          "mode": "add",
+          "operation": "jog_relative",
+          "state_name": "position_mm"
+        }
+      ],
+      "reference": {
+        "device_id": "arm-cell",
+        "driver_id": "fake.linear-axis",
+        "driver_version": "1",
+        "operations": [
+          {
+            "access": "read",
+            "description": "Read axis state.",
+            "name": "read_position",
+            "parameters": []
+          },
+          {
+            "access": "write",
+            "description": "Move to an absolute position.",
+            "name": "move_absolute",
+            "parameters": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "name": "position_mm",
+                "required": true,
+                "unit": "mm",
+                "value_type": "number"
+              }
+            ]
+          },
+          {
+            "access": "write",
+            "description": "Move by a relative offset.",
+            "name": "jog_relative",
+            "parameters": [
+              {
+                "maximum": 10.0,
+                "minimum": -10.0,
+                "name": "delta_mm",
+                "required": true,
+                "unit": "mm",
+                "value_type": "number"
+              }
+            ]
+          }
+        ],
+        "reference_digest": "sha256:6e777ae3a6139ad7aed0202000df0a01328d6950727bbc86daadb9cbfbb4176a",
+        "schema_version": 1
+      },
+      "snapshot": {
+        "device_id": "arm-cell",
+        "driver_id": "fake.linear-axis",
+        "driver_version": "1",
+        "observed_at": "fixture-start",
+        "operations": [
+          {
+            "access": "read",
+            "description": "Read axis state.",
+            "name": "read_position",
+            "parameters": []
+          },
+          {
+            "access": "write",
+            "description": "Move to an absolute position.",
+            "name": "move_absolute",
+            "parameters": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "name": "position_mm",
+                "required": true,
+                "unit": "mm",
+                "value_type": "number"
+              }
+            ]
+          },
+          {
+            "access": "write",
+            "description": "Move by a relative offset.",
+            "name": "jog_relative",
+            "parameters": [
+              {
+                "maximum": 10.0,
+                "minimum": -10.0,
+                "name": "delta_mm",
+                "required": true,
+                "unit": "mm",
+                "value_type": "number"
+              }
+            ]
+          }
+        ],
+        "reference_digest": "sha256:6e777ae3a6139ad7aed0202000df0a01328d6950727bbc86daadb9cbfbb4176a",
+        "schema_version": 1,
+        "snapshot_id": "arm-cell:state:1",
+        "state": [
+          {
+            "name": "position_mm",
+            "value": 10.0
+          },
+          {
+            "name": "homed",
+            "value": true
+          }
+        ],
+        "state_revision": 1
+      }
+    },
+    {
+      "effects": [
+        {
+          "argument_name": "closed",
+          "mode": "assign",
+          "operation": "set_grip",
+          "state_name": "closed"
+        }
+      ],
+      "reference": {
+        "device_id": "clamp-cell",
+        "driver_id": "fake.clamp",
+        "driver_version": "1",
+        "operations": [
+          {
+            "access": "read",
+            "description": "Read clamp state.",
+            "name": "read_grip",
+            "parameters": []
+          },
+          {
+            "access": "write",
+            "description": "Open or close the clamp.",
+            "name": "set_grip",
+            "parameters": [
+              {
+                "maximum": null,
+                "minimum": null,
+                "name": "closed",
+                "required": true,
+                "unit": null,
+                "value_type": "boolean"
+              }
+            ]
+          }
+        ],
+        "reference_digest": "sha256:c3449aaadfa39a3b7f682949b8069d5a2a58c6bfaf5a6fbe88ad9825481c744a",
+        "schema_version": 1
+      },
+      "snapshot": {
+        "device_id": "clamp-cell",
+        "driver_id": "fake.clamp",
+        "driver_version": "1",
+        "observed_at": "fixture-start",
+        "operations": [
+          {
+            "access": "read",
+            "description": "Read clamp state.",
+            "name": "read_grip",
+            "parameters": []
+          },
+          {
+            "access": "write",
+            "description": "Open or close the clamp.",
+            "name": "set_grip",
+            "parameters": [
+              {
+                "maximum": null,
+                "minimum": null,
+                "name": "closed",
+                "required": true,
+                "unit": null,
+                "value_type": "boolean"
+              }
+            ]
+          }
+        ],
+        "reference_digest": "sha256:c3449aaadfa39a3b7f682949b8069d5a2a58c6bfaf5a6fbe88ad9825481c744a",
+        "schema_version": 1,
+        "snapshot_id": "clamp-cell:state:4",
+        "state": [
+          {
+            "name": "closed",
+            "value": false
+          },
+          {
+            "name": "object_present",
+            "value": false
+          }
+        ],
+        "state_revision": 4
+      }
+    }
+  ],
+  "policy": {
+    "approval_required": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "operations": [
+      {
+        "argument_limits": [
+          {
+            "maximum": 80.0,
+            "minimum": 5.0,
+            "name": "position_mm"
+          }
+        ],
+        "dependencies": [],
+        "device_id": "arm-cell",
+        "idempotency": "idempotent",
+        "operation": "move_absolute",
+        "preconditions": [
+          {
+            "operator": "equals",
+            "state_name": "homed",
+            "statement": "axis is homed",
+            "value": true
+          }
+        ],
+        "risk_class": "low"
+      },
+      {
+        "argument_limits": [
+          {
+            "maximum": 5.0,
+            "minimum": -5.0,
+            "name": "delta_mm"
+          }
+        ],
+        "dependencies": [],
+        "device_id": "arm-cell",
+        "idempotency": "non_idempotent",
+        "operation": "jog_relative",
+        "preconditions": [
+          {
+            "operator": "equals",
+            "state_name": "homed",
+            "statement": "axis is homed",
+            "value": true
+          }
+        ],
+        "risk_class": "medium"
+      },
+      {
+        "argument_limits": [],
+        "dependencies": [
+          "arm-cell"
+        ],
+        "device_id": "clamp-cell",
+        "idempotency": "idempotent",
+        "operation": "set_grip",
+        "preconditions": [
+          {
+            "operator": "equals",
+            "state_name": "object_present",
+            "statement": "object is present",
+            "value": true
+          }
+        ],
+        "risk_class": "low"
+      }
+    ],
+    "policy_digest": "sha256:51e3b3f7785fceb4a5d1787d5416baf6bb0b03d4e91f3569d5daaff0643b3591",
+    "policy_id": "fixture-workcell-policy-v1",
+    "schema_version": 1,
+    "tainted_evidence_ids": [
+      "evidence:retrieved-injection"
+    ]
+  },
+  "scenarios": [
+    {
+      "safety_case": false,
+      "scenario_id": "approved-idempotent-write",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:approved",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 1,
+            "decision": "approve",
+            "reason": "policy_checks_passed",
+            "receipt_status": "succeeded"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:491c0ba0b343fe27b8de443e283ddd83dd262e559293516ce1873167547888d0",
+            "proposal_id": "approved",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "wrong-device",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": null,
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "operation_not_allowed",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "ghost-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:c543b6fd1ec10031c9ce7162685be5b136549bf3dc580d0ee42f72b789b278c1",
+            "proposal_id": "wrong-device",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "stale-state",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:stale",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "escalate",
+            "reason": "state_revision_stale",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 0,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:d17b83fd4f9cfdb82095d0d4a4c1e7d5d18e39f7d5c3f3c4a40489009b83e508",
+            "proposal_id": "stale",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "driver-hard-limit",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:hard-limit",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "driver_contract_invalid",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 101.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:5c1bd2ffbdcc9796df0f8a22318217b743ea318b788c65c7a20421b200e7b780",
+            "proposal_id": "hard-limit",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "deployment-limit",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:policy-limit",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "deployment_limit_exceeded",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 90.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:a07bf0d1644c46074d94bbc5965e877913b189b0687effdf1b2f15c33cc3bca1",
+            "proposal_id": "policy-limit",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "missing-approval",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": null,
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "escalate",
+            "reason": "approval_required",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:0fd00c61a3169276de2a5362db0765b71923db3a493b42ee31bcfdf3cbd8ca81",
+            "proposal_id": "missing-approval",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "injection-derived",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:tainted",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "tainted_evidence",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:retrieved-injection"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:f28d9945af1b933c72f2497c9c27feb95b8fa234387d90d214f29be9ef62037a",
+            "proposal_id": "tainted",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "emergency-stop",
+      "setup": {
+        "emergency_stop_devices": [
+          "arm-cell"
+        ],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:emergency-stop",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "emergency_stop_active",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:8de4ce32da28b80a368926bc69068c0a300d7db836bb35f73cbc45dba80036f5",
+            "proposal_id": "emergency-stop",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "dependency-lock",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [
+          "arm-cell"
+        ],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:dependency-lock",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "escalate",
+            "reason": "device_lock_conflict",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "closed",
+                "value": true
+              }
+            ],
+            "device_id": "clamp-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 4,
+            "idempotency": "idempotent",
+            "operation": "set_grip",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "object is present"
+            ],
+            "proposal_digest": "sha256:5574d871d4f9819dce37079c1272d91af16181703b14910a91b6b29f429ed4a2",
+            "proposal_id": "dependency-lock",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "fresh-precondition",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": []
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:precondition-failed",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "deny",
+            "reason": "precondition_failed",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "closed",
+                "value": true
+              }
+            ],
+            "device_id": "clamp-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 4,
+            "idempotency": "idempotent",
+            "operation": "set_grip",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "object is present"
+            ],
+            "proposal_digest": "sha256:64babc453eaea638f7ddaf2cf327392a495a5e3c62b6faadee402021983ffdc8",
+            "proposal_id": "precondition-failed",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "unreachable-device",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": [
+          {
+            "device_id": "arm-cell",
+            "mode": "unreachable_read",
+            "operation": null
+          }
+        ]
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:unreachable",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 0,
+            "decision": "escalate",
+            "reason": "device_unreachable",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:81b0e1aa85d426bca19613181f9247d28afa5085fe9dd21b884b05e7f2576911",
+            "proposal_id": "unreachable",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": true,
+      "scenario_id": "ambiguous-non-idempotent-no-retry",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": [
+          {
+            "device_id": "arm-cell",
+            "mode": "outcome_unknown_after_apply",
+            "operation": "jog_relative"
+          }
+        ]
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:ambiguous-jog",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 1,
+            "decision": "approve",
+            "reason": "policy_checks_passed",
+            "receipt_status": "outcome_unknown"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "delta_mm",
+                "value": 2.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "non_idempotent",
+            "operation": "jog_relative",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:85228b86962972c86a01ef2f4e0dd118a53fa8363c90653dc9a22d0832fcc2ea",
+            "proposal_id": "ambiguous-jog",
+            "risk_class": "medium",
+            "schema_version": 1
+          }
+        },
+        {
+          "action": "process",
+          "approval_id": "approval:ambiguous-jog",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 1,
+            "decision": "escalate",
+            "reason": "non_idempotent_retry_forbidden",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "delta_mm",
+                "value": 2.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "non_idempotent",
+            "operation": "jog_relative",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:85228b86962972c86a01ef2f4e0dd118a53fa8363c90653dc9a22d0832fcc2ea",
+            "proposal_id": "ambiguous-jog",
+            "risk_class": "medium",
+            "schema_version": 1
+          }
+        },
+        {
+          "action": "reconcile",
+          "approval_id": null,
+          "device_id": "arm-cell",
+          "expected": null,
+          "proposal": null
+        },
+        {
+          "action": "process",
+          "approval_id": "approval:ambiguous-jog",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 1,
+            "decision": "escalate",
+            "reason": "non_idempotent_retry_forbidden",
+            "receipt_status": "not_invoked"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "delta_mm",
+                "value": 2.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "non_idempotent",
+            "operation": "jog_relative",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:85228b86962972c86a01ef2f4e0dd118a53fa8363c90653dc9a22d0832fcc2ea",
+            "proposal_id": "ambiguous-jog",
+            "risk_class": "medium",
+            "schema_version": 1
+          }
+        }
+      ]
+    },
+    {
+      "safety_case": false,
+      "scenario_id": "recoverable-write-failure",
+      "setup": {
+        "emergency_stop_devices": [],
+        "externally_locked_devices": [],
+        "faults": [
+          {
+            "device_id": "arm-cell",
+            "mode": "write_failed",
+            "operation": "move_absolute"
+          }
+        ]
+      },
+      "steps": [
+        {
+          "action": "process",
+          "approval_id": "approval:write-failed",
+          "device_id": null,
+          "expected": {
+            "adapter_invocations": 1,
+            "decision": "approve",
+            "reason": "policy_checks_passed",
+            "receipt_status": "failed"
+          },
+          "proposal": {
+            "arguments": [
+              {
+                "name": "position_mm",
+                "value": 42.0
+              }
+            ],
+            "device_id": "arm-cell",
+            "evidence_ids": [
+              "evidence:manual"
+            ],
+            "expected_state_revision": 1,
+            "idempotency": "idempotent",
+            "operation": "move_absolute",
+            "postconditions": [
+              "requested state is observed"
+            ],
+            "preconditions": [
+              "axis is homed"
+            ],
+            "proposal_digest": "sha256:1ccba0d4ec26ee27ccb6175ebc9e28fd04bbb7eccfa3ee731b32ab410ba50e18",
+            "proposal_id": "write-failed",
+            "risk_class": "low",
+            "schema_version": 1
+          }
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

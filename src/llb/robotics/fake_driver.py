@@ -1,5 +1,7 @@
 """Protocol-neutral fake for public discover/read/write/reference/limit semantics."""
 
+from collections.abc import Mapping
+
 from llb.core.contracts.robotics import (
     ActionProposal,
     ActionReceipt,
@@ -17,7 +19,7 @@ class DriverContractError(ValueError):
     """The caller requested an operation outside the discovered device contract."""
 
 
-def _operation(reference: DeviceReference, name: str) -> DeviceOperation:
+def operation_for(reference: DeviceReference, name: str) -> DeviceOperation:
     matches = [operation for operation in reference.operations if operation.name == name]
     if len(matches) != 1:
         raise DriverContractError(f"unknown operation: {name}")
@@ -70,10 +72,29 @@ def _validate_arguments(
     return values
 
 
+def validate_operation_arguments(
+    reference: DeviceReference,
+    operation_name: str,
+    arguments: tuple[NamedValue, ...],
+    *,
+    access: str | None = None,
+) -> dict[str, ScalarValue]:
+    """Validate arguments against the independently discovered driver contract."""
+    operation = operation_for(reference, operation_name)
+    if access is not None and operation.access != access:
+        raise DriverContractError(f"operation is not {access}able: {operation_name}")
+    return _validate_arguments(operation, arguments)
+
+
 class ProtocolNeutralFakeDriver:
     """In-memory driver with no HFlow, MHS, transport, or credential dependency."""
 
-    def __init__(self, reference: DeviceReference, snapshot: DeviceSnapshot) -> None:
+    def __init__(
+        self,
+        reference: DeviceReference,
+        snapshot: DeviceSnapshot,
+        effects: Mapping[str, Mapping[str, tuple[str, str]]] | None = None,
+    ) -> None:
         if reference.device_id != snapshot.device_id:
             raise DriverContractError("reference and snapshot device ids differ")
         if reference.reference_digest != snapshot.reference_digest:
@@ -87,6 +108,7 @@ class ProtocolNeutralFakeDriver:
             raise DriverContractError("device reference digest does not match its contract")
         self._reference = reference
         self._snapshot = snapshot
+        self._effects = effects or {}
 
     def discover(self) -> DeviceSnapshot:
         return self._snapshot
@@ -97,10 +119,7 @@ class ProtocolNeutralFakeDriver:
     def read(
         self, operation_name: str, arguments: tuple[NamedValue, ...] = ()
     ) -> tuple[NamedValue, ...]:
-        operation = _operation(self._reference, operation_name)
-        if operation.access != "read":
-            raise DriverContractError(f"operation is not readable: {operation_name}")
-        _validate_arguments(operation, arguments)
+        validate_operation_arguments(self._reference, operation_name, arguments, access="read")
         return self._snapshot.state
 
     def write(self, proposal: ActionProposal) -> ActionReceipt:
@@ -113,12 +132,15 @@ class ProtocolNeutralFakeDriver:
             raise DriverContractError("proposal targets a different device")
         if proposal.expected_state_revision != self._snapshot.state_revision:
             raise DriverContractError("proposal state revision is stale")
-        operation = _operation(self._reference, proposal.operation)
-        if operation.access != "write":
-            raise DriverContractError(f"operation is not writable: {proposal.operation}")
-        values = _validate_arguments(operation, proposal.arguments)
+        values = validate_operation_arguments(
+            self._reference, proposal.operation, proposal.arguments, access="write"
+        )
         current = {item.name: item.value for item in self._snapshot.state}
-        current.update(values)
+        effects = self._effects.get(proposal.operation)
+        if effects is None:
+            current.update(values)
+        else:
+            self._apply_effects(current, values, effects)
         next_revision = self._snapshot.state_revision + 1
         state = tuple(NamedValue(name=name, value=value) for name, value in current.items())
         self._snapshot = self._snapshot.model_copy(
@@ -143,6 +165,27 @@ class ProtocolNeutralFakeDriver:
             error=None,
         )
 
+    @staticmethod
+    def _apply_effects(
+        current: dict[str, ScalarValue],
+        values: dict[str, ScalarValue],
+        effects: Mapping[str, tuple[str, str]],
+    ) -> None:
+        if set(values) != set(effects):
+            raise DriverContractError("operation effect does not cover every argument")
+        for argument_name, value in values.items():
+            state_name, mode = effects[argument_name]
+            if state_name not in current:
+                raise DriverContractError(f"operation effect names unknown state: {state_name}")
+            if mode == "assign":
+                current[state_name] = value
+                continue
+            prior = current[state_name]
+            if not isinstance(prior, (int, float)) or isinstance(prior, bool):
+                raise DriverContractError("add effect requires numeric state and argument")
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise DriverContractError("add effect requires numeric state and argument")
+            current[state_name] = prior + value
+
     def validate_limit_probe(self, operation_name: str, arguments: tuple[NamedValue, ...]) -> None:
-        operation = _operation(self._reference, operation_name)
-        _validate_arguments(operation, arguments)
+        validate_operation_arguments(self._reference, operation_name, arguments)

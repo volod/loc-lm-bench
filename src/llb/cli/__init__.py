@@ -19,6 +19,7 @@ import llb.cli.recommend  # noqa: F401
 import llb.cli.review  # noqa: F401
 import llb.cli.robotics  # noqa: F401
 import llb.cli.robotics_evidence  # noqa: F401
+import llb.cli.robotics_emulator  # noqa: F401
 import llb.cli.ui  # noqa: F401
 
 __all__ = ["app"]

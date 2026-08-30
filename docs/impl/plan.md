@@ -76,42 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Robotics RAG and hardware operation -- `robotics-rag-operation`
 
-#### robotics-action-gate-and-device-emulator
-
-Build the side-effect boundary independently of any model. The emulator exposes discover/read/write,
-driver limits, state revisions, locks, inter-device dependencies, emergency-stop state, injected
-faults, and idempotent versus non-idempotent operations. The deterministic gate accepts a typed
-proposal and returns approve, deny, or escalate before the adapter can run. It must re-read state at
-the time of use, bind approval to the proposal digest, and turn an unacknowledged non-idempotent
-write into `outcome_unknown` rather than a retry.
-
-- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
-- Agent status: CLEAR
-- Dependencies: use the fake driver and typed records from the
-  [robotics boundary contracts](current/robotics-rag/boundary-contracts.md). Reuse the agentic
-  harness only above this boundary; the gate itself must be a deterministic function with injected
-  state and policy.
-- User-visible outcome: a model can be evaluated against realistic physical side-effect semantics
-  while all forbidden actions remain impossible to invoke, even when the model or retrieved text
-  requests them.
-- Scope boundary: in scope -- allowlists, typed argument and limit checks, state freshness,
-  preconditions, risk/approval policy, device locks, ambiguous outcomes, and command receipts. Out
-  of scope -- a vendor driver, hard-real-time control, claiming the emulator matches one physical
-  workcell, executing arbitrary generated code, and treating the project gate as a replacement for
-  hardware interlocks or driver-enforced limits.
-- Data and artifact paths: committed device, policy, and fault fixtures under
-  `samples/robotics/emulator/`; deterministic test runs under `$DATA_DIR/robotics-emulator/<run>/`.
-- Execution path: add `make test-robotics-emulator`; exercise the gate with an oracle controller and
-  injected fake adapter before connecting it to model inference. Keep the full scenario matrix in
-  ordinary CPU CI.
-- Acceptance gates: `make ci` green; every denial and escalation invokes the adapter zero times;
-  planted wrong-device, stale-state, out-of-limit, missing-approval, injection-derived,
-  emergency-stop, conflicting-lock, and ambiguous-retry attempts are blocked at the specified
-  boundary; one approved proposal produces at most one write receipt; unknown outcomes require a
-  read or escalation before another proposal; hard limits cannot be widened by corpus text, prompt
-  roles, model output, or deployment policy.
-- Documentation target: `docs/impl/current/robotics-rag/action-gate-and-emulator.md`.
-
 #### robotics-rag-operation-benchmark
 
 Compose the verified HFlow evidence bridge, existing RAG store, composed local agent profile, typed
@@ -122,9 +86,10 @@ with retrieval enabled and withheld beside a deterministic reference controller 
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: RUN NEEDED
-- Dependencies: the [HFlow evidence bridge](current/robotics-rag/evidence-bridge.md) and
-  `robotics-action-gate-and-device-emulator`; consume only `measured` fields from the composed agent
-  operating profile and refuse corpus, store, model, adapter, driver, or policy fingerprint mixing.
+- Dependencies: the [HFlow evidence bridge](current/robotics-rag/evidence-bridge.md) and the
+  [action gate and emulator](current/robotics-rag/action-gate-and-emulator.md); consume only
+  `measured` fields from the composed agent operating profile and refuse corpus, store, model,
+  adapter, driver, or policy fingerprint mixing.
 - User-visible outcome: a reproducible decision on whether robotics RAG improves safe task
   completion for a local model, with a retained no-retrieval/read-only baseline as a valid answer.
 - Scope boundary: in scope -- a robotics tier, paired retrieval ablation, objective task and safety
@@ -1399,10 +1364,10 @@ result and must leave the project labelled protocol-neutral.
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: HUMAN-GATED, RESEARCH
 - Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) and
-  `robotics-action-gate-and-device-emulator`. Human step that gates completion: an authorized MHS
-  preview participant accepts the applicable terms, identifies the exact contract/package version,
-  and grants time-bounded access to a simulator or read-only test device without placing credentials
-  in the repository or run artifacts.
+  the [action gate and emulator](current/robotics-rag/action-gate-and-emulator.md). Human step
+  that gates completion: an authorized MHS preview participant accepts the applicable terms,
+  identifies the exact contract/package version, and grants time-bounded access to a simulator or
+  read-only test device without placing credentials in the repository or run artifacts.
 - User-visible outcome: either a version-scoped MHS adapter with reproducible conformance evidence,
   or a precise incompatibility/insufficient-contract decision that prevents an unsupported
   compatibility claim.
