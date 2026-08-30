@@ -25,6 +25,8 @@ def _run_screen_with_backend(
     extra_tasks: list[str],
     out: Path,
     limit: int | None,
+    evict: bool = False,
+    wait: bool = False,
 ) -> ScreenReport:
     """Launch or reuse a backend endpoint, run the Tier-1 screen, return the report."""
     from llb.screen.backends import UnsupportedScreenBackend, screen_with_backend
@@ -38,6 +40,8 @@ def _run_screen_with_backend(
             extra_tasks=extra_tasks,
             out_dir=out,
             limit=limit,
+            evict=evict,
+            wait=wait,
         )
     except UnsupportedScreenBackend as exc:
         typer.echo(f"[error] {exc}", err=True)
@@ -60,6 +64,12 @@ def screen_public_cmd(
     isolated: bool = typer.Option(
         False, help="run under the Tier-2 VRAM-reclaim + thermal-cooldown isolation contract"
     ),
+    evict: bool = typer.Option(
+        False, help="vLLM contention guard: unload Ollama's resident models before launching"
+    ),
+    wait: bool = typer.Option(
+        False, help="vLLM contention guard: wait for VRAM to free instead of derating immediately"
+    ),
 ) -> None:
     """Tier-1 public screen via lm-eval-harness-uk (logprob vs generation track; never mixed)."""
     from llb.screen.public import run_screen_isolated
@@ -69,7 +79,9 @@ def screen_public_cmd(
     out = out_dir or (cfg.data_dir / "screen")
 
     def screen_fn() -> ScreenReport:
-        return _run_screen_with_backend(model, backend, base_url, cfg, extra, out, limit)
+        return _run_screen_with_backend(
+            model, backend, base_url, cfg, extra, out, limit, evict=evict, wait=wait
+        )
 
     if isolated:
         vram_reader, pid_reader = best_effort_gpu_readers()

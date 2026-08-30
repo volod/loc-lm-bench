@@ -17,6 +17,17 @@ STRATUM_TAIL = "tail"
 STRATA = (STRATUM_HEAD, STRATUM_MIDDLE, STRATUM_TAIL)
 
 _STRATUM_CODE = {STRATUM_HEAD: "H", STRATUM_MIDDLE: "M", STRATUM_TAIL: "T"}
+
+
+class FactNotOffered(ValueError):
+    """The fold offered a transcript that stops before the stage planting this task's fact.
+
+    Distinct from every other placement failure: nothing moved under the trim boundaries, the fold
+    simply happened too early for the task's stage, so a caller scanning guards can name that as
+    its own reason instead of calling it a misplacement.
+    """
+
+
 _PAD_UNIT = "operational checkpoint notes for the municipal archive "
 _SLOT_LINE_CHARS = 64
 
@@ -93,7 +104,12 @@ def answer_fact_placement(
     """Locate the answer fact against the exact head/middle/tail trim boundaries."""
     offered, n_entries = _offered_with_length(record, offered_chars)
     code = str(record["answer_code"])
-    start = offered.index(code)
+    start = offered.find(code)
+    if start < 0:
+        raise FactNotOffered(
+            f"task {record['id']!r} plants its fact at stage {record['fact_stage']}, which the "
+            f"{offered_chars}-char fold does not reach"
+        )
     end = start + len(code)
     head_end = int(transcript_cap_chars * 0.6)
     tail_start = len(offered) - (transcript_cap_chars - head_end)

@@ -63,7 +63,7 @@ Current focused package boundaries:
 | Draft request construction | `cli/prep/draft_request.py`, `draft_resume.py`, `draft_endpoints.py`, and `draft_execution.py` |
 | Host feasibility | `backends/planner/` for architecture, weights, KV sizing, plans, and formatting |
 | Evaluation execution | `executor/runner.py` plus `runner_backend.py`, `runner_judge.py`, `runner_metrics.py`, `runner_retrieval.py`, `runner_setup.py`, and `runner_target.py` |
-| Board analysis | `board/miss_analysis/` and `board/recommend/` |
+| Board analysis | `board/miss_analysis/`, `board/recommend/`, and `board/agent_profile/` |
 | Fine-tuning workflows | `finetune/campaign/`, `distill/`, `hparam_search/`, `registry/`, and `serving/` |
 | Fine-tuning execution | `finetune/trainer.py` for backend orchestration and `training_runtime.py` for PEFT/TRL runtime helpers |
 | Gold verification | `goldset/verify_acceptance*.py`, `verify_card*.py`, `verify_commands.py`, `verify_ref*.py`, `verify_sampling/`, `verify_multi/agreement_metrics.py`, `verify_multi/agreement_report.py`, `verify_multi/consensus.py`, and `verify_session/` |

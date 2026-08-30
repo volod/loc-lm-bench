@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import cast
 
+from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_TRIM_STRATEGY
 from llb.bench.memory.window_elision.transfer import TransferFamilyRun
 from llb.bench.memory.window_elision.tasks import STRATA
 from llb.bench.common import Mirror, persist_category_run
@@ -122,7 +123,7 @@ def _persist_family_cells(
         reports = {**reports, "entry-aware-prototype": run.prototype_report}
     persisted: list[dict[str, object]] = []
     for row in rows:
-        strategy = cast(str, row.get("summary_trim_strategy", "head_tail"))
+        strategy = cast(str, row.get("summary_trim_strategy", DEFAULT_SUMMARY_TRIM_STRATEGY))
         report_key = (
             "entry-aware-prototype" if strategy != "head_tail" else cast(str, row["cell_id"])
         )

@@ -1,0 +1,1 @@
+Adapter `{{ adapter }}` is stale ({{ named }}), so every field measured with it is demoted.

@@ -9,7 +9,8 @@
     "docs/impl/current/extended-workflows/published-values.md#published-crossovers-under-the-shipped-cap",
     "docs/impl/current/extended-workflows/policy-constant-audit.md#what-a-policy-constant-change-invalidates",
     "docs/impl/current/extended-workflows/context-policy-constants.md#agent-context-policy-constants",
-    "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts"
+    "docs/impl/current/extended-workflows/context-policy-constants.md#keeplastn-on-longer-transcripts",
+    "docs/impl/current/extended-workflows/summary-input-elision.md#entry-aware-summary-folding-as-a-policy-choice"
   ],
   "pins": {
     "observation_cap_chars": {
@@ -41,6 +42,11 @@
       "value": "window",
       "designs": "restated",
       "note": "The three designs record `trigger`, the retired bound they were measured under. The crossover restatement audited all 22 cells under both bounds, found 18 bit-identical, re-measured the one bound-sensitive cell that was still outstanding, and restated the published crossovers under `window` -- so `window` is the value the published numbers now stand under."
+    },
+    "summary_trim_strategy": {
+      "value": "per_entry_head",
+      "designs": "unstated",
+      "note": "How the summarize-input cap spends its bytes once the folded transcript does not fit. Shipped as the entry-aware trim since the adoption study returned `adopt_entry_aware_as_the_shipped_default`; the retired value is `head_tail`, the whole-transcript head-and-tail trim every published cell was measured under. The move retires nothing: the field is readable only where a fold ELIDES, no published cap-fitting cell elides at its own bound, and the policy-change audit replays all 27 applicable cells bit-identically under both trims -- read in both directions, so the invariance is not an artifact of the side the move started on. A number measured under `head_tail` therefore stands unrestated under the shipped `per_entry_head`. No design states the field, so it is unstated rather than agreed."
     }
   }
 }

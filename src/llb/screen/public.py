@@ -128,6 +128,7 @@ def parse_results(
     model: str,
     backend: str,
     track: str,
+    limit: int | None = None,
 ) -> ScreenReport:
     """Turn an lm-eval results dict into per-task scores + explicit coverage."""
     results_block = results_json.get("results", {})
@@ -152,6 +153,7 @@ def parse_results(
         "covered": covered,
         "missing": missing,
         "complete": not missing,
+        "limit": limit,
     }
 
 
@@ -176,7 +178,9 @@ def run_screen(
     runner = runner or _default_lm_eval_runner
     _LOG.info("[screen-public] %s track=%s tasks=%s", model, track, ",".join(tasks))
     results_json = runner(cmd)
-    report = parse_results(results_json, tasks, model=model, backend=backend, track=track)
+    report = parse_results(
+        results_json, tasks, model=model, backend=backend, track=track, limit=limit
+    )
     if report["missing"]:
         _LOG.warning("[screen-public] PARTIAL: %s missing tasks %s", model, report["missing"])
     return report

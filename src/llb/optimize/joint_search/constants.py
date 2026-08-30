@@ -13,6 +13,11 @@ DEFAULT_SCREEN_LIMIT = 8
 
 DEFAULT_OBJECTIVES = "quality,latency"
 
+# vLLM context cap every candidate cell is served at when neither a flag nor a `--config` file
+# names one. A search must always name one: a roster model's native window is 128k+, whose KV
+# cache no 16 GiB card can hold.
+DEFAULT_SEARCH_MAX_MODEL_LEN = 8192
+
 # Artifact file names under ``$DATA_DIR/joint-search/<run>/``.
 MANIFEST_FILE = "manifest.json"
 LEDGER_FILE = "ledger.json"

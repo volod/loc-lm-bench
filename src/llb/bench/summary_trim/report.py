@@ -1,0 +1,280 @@
+"""Rendering and persistence for the entry-aware summary-fold adoption study."""
+
+import json
+from pathlib import Path
+from typing import cast
+
+from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_TRIM_STRATEGY
+from llb.bench.memory.window_elision.tasks import STRATA
+from llb.bench.summary_trim.run import FamilyRun
+from llb.bench.common import Mirror, persist_category_run
+from llb.core.contracts.runs import RunPaths
+
+METHOD = "agentic-summary-trim-adoption"
+
+
+def format_summary_trim_table(analysis: dict[str, object]) -> str:
+    """Render the declared geometry, the per-workload deltas, and the adoption verdict."""
+    return "\n".join(
+        [
+            *_geometry_lines(analysis),
+            "",
+            *_workload_lines(analysis),
+            "",
+            *_stratum_lines(analysis),
+            *_guard_fit_lines(analysis),
+            *_order_lines(analysis),
+            *_audit_lines(analysis),
+            "",
+            f"adoption: [{analysis['adoption_reading']}] {analysis['adoption_reason']}",
+            # What ships, and that this run did not move it: the default is a product decision
+            # made in the code and the pin, never by a measurement lane.
+            f"shipped default: {DEFAULT_SUMMARY_TRIM_STRATEGY} (not changed by this run)",
+        ]
+    )
+
+
+def _geometry_lines(analysis: dict[str, object]) -> list[str]:
+    header = (
+        f"{'workload':<17} {'folds':>5} {'offered':>8} {'elided':>7} "
+        f"{'summary chars head_tail':>24} {'per_entry_head':>15}"
+    )
+    lines = ["declared geometry (oracle play, no model)", header, "-" * len(header)]
+    for row in cast(list[dict[str, object]], analysis["declared_geometry"]):
+        head_tail = cast(dict[str, object], row["head_tail"])
+        entry = cast(dict[str, object], row["per_entry_head"])
+        lines.append(
+            f"{cast(str, row['workload']):<17} "
+            f"{cast(int, head_tail['n_compactions']):>5d} "
+            f"{cast(int, head_tail['summary_input_chars']):>8d} "
+            f"{cast(int, head_tail['summary_input_elided_chars']):>7d} "
+            f"{cast(int, head_tail['compaction_prompt_chars']):>24d} "
+            f"{cast(int, entry['compaction_prompt_chars']):>15d}"
+        )
+    return lines
+
+
+def _workload_lines(analysis: dict[str, object]) -> list[str]:
+    header = (
+        f"{'family':<10} {'workload':<17} {'pairs':>5} {'skip':>4} {'ea wins':>7} {'ht wins':>7} "
+        f"{'d(input chars)':>14} {'d(summary chars)':>16} {'d(folds)':>8} reading"
+    )
+    lines = ["measured deltas (entry_aware minus head_tail)", header, "-" * len(header)]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        for row in cast(list[dict[str, object]], family["workloads"]):
+            lines.append(
+                f"{cast(str, family['model_family']):<10} "
+                f"{cast(str, row['workload']):<17} "
+                f"{cast(int, row['n_pairs']):>5d} "
+                f"{cast(int, row['n_unpaired']):>4d} "
+                f"{cast(int, row['entry_aware_wins']):>7d} "
+                f"{cast(int, row['head_tail_wins']):>7d} "
+                f"{cast(int, row['d_model_input_prompt_chars']):>+14d} "
+                f"{cast(int, row['d_summary_prompt_chars']):>+16d} "
+                f"{cast(int, row['d_measured_folds']):>+8d} {row['reading']}"
+            )
+        lines.append(
+            f"{'':<10} eligible={str(family['eligible']).lower()} "
+            f"({family['eligibility_reason']}) throughput={family['tokens_per_s']:.2f} tok/s"
+        )
+    return lines
+
+
+def _stratum_lines(analysis: dict[str, object]) -> list[str]:
+    lines = ["middle-critical recovery (evidence strata)"]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        strata = cast(dict[str, dict[str, int]], family.get("strata", {}))
+        for stratum in STRATA:
+            row = strata.get(stratum)
+            if row is None:
+                continue
+            skipped = int(row["n_declared"]) - int(row["n_pairs"])
+            note = f"; {skipped} case(s) never folded in one arm" if skipped else ""
+            lines.append(
+                f"- {family['model_family']} {stratum}: head_tail "
+                f"{row['head_tail_completed']}/{row['n_pairs']} -> entry_aware "
+                f"{row['entry_aware_completed']}/{row['n_pairs']} usable pair(s) of "
+                f"{row['n_declared']} declared "
+                f"(ea wins {row['entry_aware_wins']}, ht wins {row['head_tail_wins']}{note})"
+            )
+    return lines
+
+
+def _guard_fit_lines(analysis: dict[str, object]) -> list[str]:
+    """Which guard each family ran the fitted workload at, and the walk it was fitted to."""
+    band = cast(dict[str, object], analysis["guard_band"])
+    usable = cast(dict[str, int], band["usable_guards"])
+    steps = cast(list[int], band["band_fold_steps"])
+    # How many distinct fold steps the usable guards span is what decides whether the fit can
+    # trade at all: one step leaves it able only to confirm the declared guard or refuse the walk.
+    reach = (
+        f"{len(steps)} fold step(s) ({'-'.join(str(step) for step in steps) or '0'})"
+        if len(steps) != 1
+        else f"a single fold step ({steps[0]}), so no guard in it folds earlier than another"
+    )
+    lines = [
+        "",
+        "middle-critical guard fit (per family, from its own measured walk)",
+        f"- band: {len(usable)} of {band['n_candidates']} candidate guard(s) still hold the "
+        f"{band['workload']} regime across {reach}; the earliest is "
+        f"{band['band_floor_guard']} at step {band['band_floor_fold_step']}, and the candidate "
+        f"below it is refused because {band['band_floor_reason']}",
+    ]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        fit = cast(dict[str, object], family.get("guard_fit") or {})
+        if not fit:
+            lines.append(f"- {family['model_family']}: no guard fit ran")
+            continue
+        lines.append(
+            f"- {family['model_family']} {fit['workload']}: guard "
+            f"{fit['declared_max_prompt_chars']} -> {fit['fitted_max_prompt_chars']} "
+            f"(fold step {fit['fitted_fold_step']}, median walk {fit['median_walk_length']}, "
+            f"{fit['predicted_folding_cases']}/{fit['evidence_floor']} case(s) reach it, "
+            f"{fit['n_usable_guards']} usable guard(s) in the band) [{fit['fit_reading']}]"
+        )
+        lines.append(f"  {fit['fit_reason']}")
+        lines.extend(
+            f"  walk control: guard {row['max_prompt_chars']}, "
+            f"completion {float(cast(float, row['completion'])):.3f} over "
+            f"{row['n_tasks']} task(s), {row['n_folded_cases']} folded"
+            for row in cast(list[dict[str, object]], family.get("walk_control") or [])
+        )
+    return lines
+
+
+def _order_lines(analysis: dict[str, object]) -> list[str]:
+    """The schedule, and the same episodes read by POSITION instead of by arm."""
+    lines = ["", "arm order (both arms of a task adjacent, first position alternating)"]
+    for family in cast(list[dict[str, object]], analysis["families"]):
+        order = cast(dict[str, object], family.get("arm_order") or {})
+        if not order:
+            lines.append(f"- {family['model_family']}: fixed arm blocks (no order reading)")
+            continue
+        lines.append(
+            f"- {family['model_family']}: {order['n_first_head_tail']} head_tail-first / "
+            f"{order['n_first_per_entry_head']} per_entry_head-first of "
+            f"{order['n_episodes']} episode(s); folded "
+            f"{order['first_folded']}/{order['n_first']} first vs "
+            f"{order['second_folded']}/{order['n_second']} second (the pre-divergence channel), "
+            f"completed "
+            f"{order['first_completed']}/{order['n_first']} first vs "
+            f"{order['second_completed']}/{order['n_second']} second [{order['reading']}]"
+        )
+    return lines
+
+
+def _audit_lines(analysis: dict[str, object]) -> list[str]:
+    audit = cast(dict[str, object], analysis["policy_change_audit"])
+    lines = [
+        "",
+        f"policy-change audit ({audit['change']}, pinned policy): "
+        f"{audit['n_prompt_invariant']}/{audit['n_cells']} published cells prompt-invariant, "
+        f"{audit['n_invalidated']} invalidated",
+    ]
+    lines.extend(f"- retires {cell}" for cell in cast(list[str], audit["invalidated_cells"]))
+    lines.extend(
+        f"- published value affected: {row}"
+        for row in cast(list[str], audit["affected_published_values"])
+    )
+    return lines
+
+
+def persist_summary_trim_adoption(
+    design: dict[str, object],
+    runs: list[FamilyRun],
+    analysis: dict[str, object],
+    *,
+    data_dir: Path | str,
+    table: str,
+    mirror: Mirror | None = None,
+) -> RunPaths:
+    """Persist every family/workload/arm cell and one cross-family aggregate."""
+    persisted: list[dict[str, object]] = []
+    for run in runs:
+        persisted.extend(_persist_family_cells(run, design, data_dir=data_dir, mirror=mirror))
+    objective = (
+        sum(float(cast(float, row["completion"])) for row in persisted) / len(persisted)
+        if persisted
+        else 0.0
+    )
+    throughputs = [run.tokens_per_s for run in runs if run.tokens_per_s > 0.0]
+    return persist_category_run(
+        method=METHOD,
+        data_dir=data_dir,
+        run_name=cast(str, design["study_id"]),
+        config={
+            "category": METHOD,
+            "study_id": design["study_id"],
+            "study_kind": design["study_kind"],
+            "design": design,
+            "analysis": analysis,
+        },
+        metrics={
+            "objective_score": objective,
+            "reliability": 1.0,
+            "tokens_per_s": sum(throughputs) / len(throughputs) if throughputs else 0.0,
+        },
+        case_rows=persisted,
+        mirror=mirror,
+        artifacts={
+            "summary-trim-adoption-design.json": json.dumps(design, indent=2, sort_keys=True)
+            + "\n",
+            "summary-trim-adoption-analysis.json": json.dumps(analysis, indent=2, sort_keys=True)
+            + "\n",
+            "summary-trim-adoption-schedule.json": json.dumps(
+                [
+                    {
+                        "model_family": run.model_family,
+                        "order_offset": run.order_offset,
+                        "episodes": run.schedule,
+                    }
+                    for run in runs
+                ],
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            "summary-trim-adoption.md": "# Entry-aware summary-fold adoption\n\n```text\n"
+            + table
+            + "\n```\n",
+        },
+    )
+
+
+def _persist_family_cells(
+    run: FamilyRun,
+    design: dict[str, object],
+    *,
+    data_dir: Path | str,
+    mirror: Mirror | None,
+) -> list[dict[str, object]]:
+    persisted: list[dict[str, object]] = []
+    for row in [*run.walk_control, *run.rows]:
+        key = (cast(str, row["workload"]), cast(str, row["arm"]))
+        report = run.reports[key]
+        out = {**row, "model_family": run.model_family, "model": run.model}
+        paths = persist_category_run(
+            method=METHOD,
+            data_dir=data_dir,
+            run_name=f"{run.model_family}-{key[0]}-{key[1]}",
+            config={
+                "category": METHOD,
+                "study_id": design["study_id"],
+                "study_kind": design["study_kind"],
+                "model_family": run.model_family,
+                "model": run.model,
+                "backend": run.backend,
+                "seed": design["seed"],
+                "cell": out,
+            },
+            metrics={
+                "objective_score": report.result.objective_score,
+                "reliability": report.reliability,
+                "tokens_per_s": run.tokens_per_s,
+            },
+            case_rows=cast(list[dict[str, object]], row["cases"]),
+            mirror=mirror,
+        )
+        out["manifest"] = str(paths["manifest"])
+        persisted.append(out)
+    return persisted

@@ -12,9 +12,12 @@ llb screen-public --model <model> --backend vllm --isolated
 llb pipeline --top-n 2 --trials 20
 ```
 
-`screen-public` writes coverage-aware reports under `$DATA_DIR/screen/`. `pipeline` reads those
-reports, selects per-track finalists, tunes them on the private RAG split discipline, and prints
-the final board.
+`screen-public` writes coverage-aware reports under `$DATA_DIR/screen/`, each recording the example
+cap (`--limit`) it was taken at so a smoke report is never mistaken for a full one. `--evict` and
+`--wait` are the same two pre-launch VRAM-guard opt-ins `run-eval` has: a vLLM screen shares the
+card with whatever ran before it, and the guard derates, waits, or unloads Ollama's residents rather
+than dying inside the engine. `pipeline` reads those reports, selects per-track finalists, tunes
+them on the private RAG split discipline, and prints the final board.
 
 ## Board Ranking
 
@@ -100,7 +103,14 @@ configuration is demonstrated per model, not assumed, complementing the best-per
 ```bash
 make recommend RECOMMEND_MIN_CASES=50          # detected host tier
 make recommend RECOMMEND_GPU_GB=24             # would a 24 GiB box pick a bigger model?
+make recommend-agent-profile                   # compose the whole agent configuration
 ```
+
+`--agent-profile` (`make recommend-agent-profile`) additionally composes the host pick together with
+the prompt system, adapter, context policy and order, retrieval knobs, and loop policy into ONE
+`agent_profile.json` plus a rationale, where every value names the run that measured it and every
+gap is visible as a gap. The command and its module layout live in
+[the composed agent operating profile](../extended-workflows/agent-operating-profile.md).
 
 Validated on the 16 GiB RTX 4060 Ti committed-goldset sweep (5 families, 82 final cases): MamayLM-27B
 led accuracy (objective 0.546), Lapa was the recommended host pick (0.505, fits with headroom),

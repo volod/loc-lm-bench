@@ -14,9 +14,10 @@ import subprocess
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, TextIO, cast
+from typing import Any, Callable, cast
 
 from llb.backends.base import BackendLauncher, ChatResult
+from llb.backends.launch_log import ServerLog
 from llb.backends.openai_client import chat_once, make_client
 from llb.core.contracts.hardware import BackendMetadata
 from llb.core.contracts.common import ChatMessage
@@ -47,7 +48,7 @@ from llb.backends.vllm_command import (
 # does not need it). An explicit VLLM_USE_FLASHINFER_SAMPLER in the environment always wins.
 
 
-class VllmLauncher(BackendLauncher):
+class VllmLauncher(BackendLauncher, ServerLog):
     """Serve one HF model via a `vllm serve` subprocess behind OpenAI-compatible HTTP."""
 
     def __init__(
@@ -70,6 +71,7 @@ class VllmLauncher(BackendLauncher):
         startup_timeout: float = 600.0,
         poll_interval: float = 2.0,
         log_dir: Path | str | None = None,
+        failed_log_dir: Path | str | None = None,
         popen: Callable[..., _Process] | None = None,
         http_get: _HttpGetter | None = None,
         sleep: Callable[[float], None] | None = None,
@@ -111,6 +113,7 @@ class VllmLauncher(BackendLauncher):
         self.startup_timeout = startup_timeout
         self.poll_interval = poll_interval
         self.log_dir = Path(log_dir) if log_dir else None
+        self.failed_log_dir = Path(failed_log_dir) if failed_log_dir else None
         self._client_factory = client_factory
         self._popen = popen or cast(Callable[..., _Process], subprocess.Popen)
         self._http_get = http_get or _http_get
@@ -119,8 +122,6 @@ class VllmLauncher(BackendLauncher):
         self._client: Any = None
         self._served_context: int | None = None
         self._last: ChatResult | None = None
-        self._log_handle: TextIO | None = None
-        self.log_path: Path | None = None
 
     def command(self) -> list[str]:
         return build_vllm_command(
@@ -152,18 +153,10 @@ class VllmLauncher(BackendLauncher):
         verdict = load_verdict()
         self.meta["flashinfer_version"] = verdict["flashinfer_version"] if verdict else None
 
-    def _open_log(self) -> int | TextIO:
-        if self.log_dir is None:
-            return subprocess.DEVNULL
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.log_path = self.log_dir / f"vllm-{self.port}.log"
-        self._log_handle = self.log_path.open("w", encoding="utf-8")
-        return self._log_handle
-
     def start(self) -> None:
         if self._proc is not None:
             raise RuntimeError("vLLM launcher is already started")
-        log = self._open_log()
+        log = self.open_log(f"vllm-{self.port}.log")
         start = time.monotonic()
         run_env = launch_env()
         self._record_sampler(run_env)
@@ -171,24 +164,23 @@ class VllmLauncher(BackendLauncher):
             self._proc = self._popen(
                 self.command(), stdout=log, stderr=subprocess.STDOUT, env=run_env
             )
-            where = f" (see {self.log_path})" if self.log_path else ""
             polls = max(1, int(self.startup_timeout / self.poll_interval))
             ready_body = None
             for _ in range(polls):
                 if self._proc.poll() is not None:
-                    raise RuntimeError(
-                        f"vLLM exited (code {self._proc.returncode}) during startup{where}"
-                    )
+                    raise RuntimeError(f"vLLM exited (code {self._proc.returncode}) during startup")
                 got = self._http_get(f"{self.host}/v1/models")
                 if got and got[0] == 200:
                     ready_body = got[1]
                     break
                 self._sleep(self.poll_interval)
             else:
-                raise RuntimeError(f"vLLM not ready within {self.startup_timeout:.0f}s{where}")
-        except BaseException:
+                raise RuntimeError(f"vLLM not ready within {self.startup_timeout:.0f}s")
+        except BaseException as exc:
+            # stop() first (it closes the log handle), so the preserved copy is complete; the
+            # error then names where the log is readable, not the staging path about to vanish.
             self.stop()
-            raise
+            raise self.annotate_launch_failure(exc)
         self.load_time_s = time.monotonic() - start
         self._served_context = parse_served_context(ready_body or "")
         self.meta["served_context"] = self._served_context
@@ -246,9 +238,7 @@ class VllmLauncher(BackendLauncher):
         finally:
             self._proc = None
             self._client = None
-            if self._log_handle is not None:
-                self._log_handle.close()
-                self._log_handle = None
+            self.close_log()
 
     def telemetry(self) -> BackendMetadata:
         out = dict(self.meta)

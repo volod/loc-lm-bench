@@ -28,8 +28,15 @@ def screen_with_backend(
     extra_tasks: Sequence[str] = (),
     out_dir: Path,
     limit: int | None = None,
+    evict: bool = False,
+    wait: bool = False,
 ) -> ScreenReport:
-    """Launch or reuse a backend endpoint, run the Tier-1 screen, return the report."""
+    """Launch or reuse a backend endpoint, run the Tier-1 screen, return the report.
+
+    `evict` / `wait` are the guard's two non-default ways out of a contended card, and they carry
+    the same meaning as on `run-eval`: unload Ollama's resident models, or poll until the VRAM
+    frees. Both stay opt-in -- the guard never frees another process's memory on its own.
+    """
     from llb.screen.public import run_screen
 
     def do_screen(url: str) -> ScreenReport:
@@ -43,7 +50,12 @@ def screen_with_backend(
         return do_screen(f"{cfg.ollama_host.rstrip('/')}/v1")
     if backend == "vllm":
         from llb.backends.vllm import VllmLauncher
+        from llb.screen.public_report import safe_model_name
 
+        # A screen that cannot launch its endpoint is recorded as a failure and QUALIFIES a verdict,
+        # so it owes the operator a reason. Without a log directory vLLM's stdout goes to DEVNULL
+        # and all that survives is "vLLM exited (code 1)" -- which never says whether the weights
+        # were missing, the context did not fit, or another process still held the card.
         launcher = VllmLauncher(
             model,
             host=cfg.vllm_host,
@@ -52,7 +64,18 @@ def screen_with_backend(
             max_model_len=cfg.max_model_len,
             cpu_offload_gb=cfg.cpu_offload_gb,
             kv_offloading_size_gb=cfg.kv_offloading_size_gb,
+            dtype=cfg.dtype,
+            quantization=cfg.quantization,
+            suppress_thinking=cfg.vllm_suppress_thinking,
+            log_dir=out_dir / safe_model_name(model) / "backend",
         )
+        # The screen shares the card with whatever ran before it. vLLM refuses to start unless
+        # `gpu-memory-utilization x total` is actually FREE, and an Ollama finalist screened one
+        # step earlier is still resident by design (keep-alive), so without the same pre-launch
+        # guard `run-eval` uses, a mixed-backend screen dies on the second finalist.
+        from llb.executor.runner_backend import guard_vllm_contention
+
+        guard_vllm_contention(cfg, launcher, evict=evict, wait=wait, label="screen-public")
         with launcher:
             return do_screen(f"{cfg.vllm_host.rstrip('/')}/v1")
     raise UnsupportedScreenBackend(f"backend {backend!r} is not supported for the public screen")

@@ -1,0 +1,1 @@
+One row per field. `state` is what an operator may act on: only `measured` is a recommendation.

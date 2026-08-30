@@ -73,7 +73,6 @@ def run_policy(
     max_steps: int = DEFAULT_MAX_STEPS,
     budget: ContextBudget | None = None,
     preserve_memory_markers: bool = True,
-    summary_trim_strategy: str = "head_tail",
 ) -> PolicyReport:
     """Run one fresh episode per task under one context policy and score the batch."""
     budget = budget if budget is not None else unbounded_budget()
@@ -96,19 +95,31 @@ def run_policy(
                 policy=policy,
                 budget=budget,
                 preserve_memory_markers=preserve_memory_markers,
-                summary_trim_strategy=summary_trim_strategy,
             )
         )
+    return score_policy_episodes(tasks, episodes, policy=policy.name, backend=backend)
+
+
+def score_policy_episodes(
+    tasks: list[AgenticTask], episodes: list[Episode], *, policy: str, backend: str
+) -> PolicyReport:
+    """Score one policy's episodes, in TASK order, into the report every reading pairs on.
+
+    Separate from `run_policy` because the order episodes EXECUTE in is a study's own choice --
+    `llb.bench.context_policy.interleave` runs two arms task-adjacent so arm order cannot stand in
+    for the treatment -- while the order they are SCORED in must stay the task set's, or the rows a
+    reading zips against the tasks would silently shift.
+    """
     scored = _score_episodes(tasks, episodes)
     result = category_result(
-        model=policy.name,  # the policy IS the ranked row label (the model is fixed)
+        model=policy,  # the policy IS the ranked row label (the model is fixed)
         backend=backend,
         tier=TIER_AGENTIC,
         case_objectives=scored.case_success,
         reliability=scored.reliability,
     )
     return PolicyReport(
-        policy=policy.name,
+        policy=policy,
         result=result,
         rows=scored.rows,
         episodes=episodes,

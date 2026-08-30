@@ -102,6 +102,7 @@ POLICY_FIELD_TYPES: dict[str, type] = {
     "compact_share": float,
     "compact_keep_recent": int,
     "summary_input_cap": str,
+    "summary_trim_strategy": str,
 }
 AUDITABLE_FIELDS: tuple[str, ...] = tuple(POLICY_FIELD_TYPES)
 

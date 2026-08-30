@@ -49,6 +49,7 @@ def make_multi_objective(
             embedders=embedders,
             tune_context_budget=tune_context_budget,
             retrieval_backend=base_config.retrieval_backend,
+            gpu_memory_utilization_ceiling=base_config.gpu_memory_utilization,
         )
         try:
             config = base_config.with_overrides(**overrides)

@@ -9,11 +9,11 @@ resolution, and failure-time staging/log preservation.
 import logging
 import shutil
 from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from llb.backends.base import BackendLauncher
+from llb.backends.launch_log import ServerLog, failed_log_dir
 from llb.backends.prompt_window import PromptWindow
 from llb.core.config import RunConfig
 from llb.executor.runner_retrieval import _load_store
@@ -28,23 +28,18 @@ from llb.eval.graph_contracts import RagState
 _LOG = logging.getLogger(__name__)
 
 
-def _preserve_backend_log(launcher: BackendLauncher, config: RunConfig) -> None:
-    """Copy a failed backend's startup log out of the staging dir (which is about to be
-    removed) into the persistent logs dir, so a launch failure stays diagnosable instead of
-    vanishing with the staging bundle (e.g. a vLLM engine that dies during startup)."""
-    log_path = getattr(launcher, "log_path", None)
-    src = Path(log_path) if log_path else None
-    if src is None or not src.exists():
+def _preserve_backend_log(launcher: BackendLauncher) -> None:
+    """Keep the backend's server log out of the staging dir, which is about to be removed.
+
+    Idempotent with the launcher's own failed-launch preservation (`ServerLog`): a launch that
+    already copied its log on the way out of `start()` keeps that one copy, and this call covers
+    the other failures -- a run that dies with the backend already serving.
+    """
+    if not isinstance(launcher, ServerLog):
         return
-    dest_dir = config.data_dir / "llb" / "logs"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    dest = dest_dir / f"failed-{src.stem}-{stamp}.log"
-    try:
-        shutil.copyfile(src, dest)
-    except OSError:
-        return
-    _LOG.error("[run-eval] backend failed to start; startup log preserved -> %s", dest)
+    kept = launcher.preserve_failed_log()
+    if kept is not None:
+        _LOG.error("[run-eval] backend startup log kept at %s", kept)
 
 
 def _make_launcher(config: RunConfig, log_dir: Path | None = None) -> BackendLauncher:
@@ -115,8 +110,22 @@ def _pid_usage_reader() -> Callable[[], dict[int, int]] | None:
         return None
 
 
-def _guard_vllm_contention(
-    config: RunConfig, launcher: BackendLauncher, *, evict: bool, wait: bool
+class VramContentionAbort(RuntimeError):
+    """Even the derated gpu-memory-utilization cannot hold this model on the free VRAM.
+
+    A RuntimeError rather than a `SystemExit` so a caller that runs many launches -- the public
+    screen behind a confirmation run screens one finalist after another -- can record the failure
+    and keep going. `run-eval`, which owns the process, still turns it into an exit.
+    """
+
+
+def guard_vllm_contention(
+    config: RunConfig,
+    launcher: BackendLauncher,
+    *,
+    evict: bool = False,
+    wait: bool = False,
+    label: str = "run-eval",
 ) -> "ContentionReport | None":
     """Pre-launch VRAM-contention guard for vLLM (VRAM contention guard): derate gpu-memory-utilization to the
     actually-free VRAM, or abort if even that cannot hold the model. No-op without a GPU."""
@@ -141,13 +150,13 @@ def _guard_vllm_contention(
     if report is None:
         return None
     if report["action"] == ACTION_ABORT:
-        raise SystemExit(f"[run-eval] pre-launch VRAM guard: {report['note']}")
+        raise VramContentionAbort(f"[{label}] pre-launch VRAM guard: {report['note']}")
     if report["derated"] and isinstance(launcher, VllmLauncher):
-        _LOG.warning("[run-eval] %s", report["note"])
+        _LOG.warning("[%s] %s", label, report["note"])
         launcher.gpu_memory_utilization = report["safe_util"]
         launcher.meta["gpu_memory_utilization"] = report["safe_util"]
     else:
-        _LOG.info("[run-eval] pre-launch VRAM guard: %s", report["note"])
+        _LOG.info("[%s] pre-launch VRAM guard: %s", label, report["note"])
     return report
 
 
@@ -182,7 +191,14 @@ def _resolve_eval_runner(
     if launcher is None:
         launcher = _make_launcher(config, log_dir=staging_dir / "vllm")
         if config.backend == "vllm":
-            contention = _guard_vllm_contention(config, launcher, evict=evict, wait=wait)
+            try:
+                contention = guard_vllm_contention(config, launcher, evict=evict, wait=wait)
+            except VramContentionAbort as exc:
+                raise SystemExit(str(exc)) from exc
+    # The launcher writes its log inside the staging dir this run is about to delete on failure;
+    # point its failed-launch copy at this config's data root before anything starts it.
+    if isinstance(launcher, ServerLog) and launcher.failed_log_dir is None:
+        launcher.failed_log_dir = failed_log_dir(config.data_dir)
     if runner_fn is None:
         if store is None:
             store = _load_store(config)
@@ -192,7 +208,6 @@ def _resolve_eval_runner(
 
 def _preserve_failed_staging(
     active_launcher: BackendLauncher | None,
-    config: RunConfig,
     resume: Path | str | None,
     run_dir: Path,
     staging_dir: Path,
@@ -201,7 +216,7 @@ def _preserve_failed_staging(
 ) -> None:
     """On failure: keep the backend log; keep staging only when it can seed a --resume."""
     if active_launcher is not None:
-        _preserve_backend_log(active_launcher, config)
+        _preserve_backend_log(active_launcher)
     if interrupted:
         _LOG.warning(
             "[run-eval] interrupted; staging preserved -- resume with --resume %s", run_dir

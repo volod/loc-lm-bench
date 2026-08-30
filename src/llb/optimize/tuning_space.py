@@ -9,6 +9,7 @@ about what fits. What is here is the RETRIEVED shape of it: `top_k x chunk_size`
 quantity, and pricing it is the prune.
 """
 
+import math
 from typing import Any, Callable, Sequence
 
 from llb.backends.context_fit import estimate_context_tokens, fits_context_chars
@@ -83,6 +84,43 @@ _OOM_MARKERS = ("out of memory", "outofmemory", "cuda error", "no available memo
 
 SERVING_MAX_MODEL_LEN = [4096, 8192, 16384]
 
+# vLLM serving-utilization search range. The upper bound is a HOST question, not a search
+# question: a trial served above the utilization the run declared is a launch the operator never
+# authorized, and on a card whose validated value is 0.80 it is an out-of-memory graph capture
+# rather than a slow trial. So the declared `RunConfig.gpu_memory_utilization` is carried in as a
+# CEILING (`gpu_memory_utilization_ceiling`) and the range is clamped under it.
+GPU_MEMORY_UTILIZATION_RANGE = (0.70, 0.90)
+
+GPU_MEMORY_UTILIZATION_STEP = 0.05
+
+
+def suggest_gpu_memory_utilization(trial: Any, ceiling: float | None = None) -> float:
+    """Sample the vLLM memory fraction, never above the run's declared serving ceiling.
+
+    A ceiling at or below the range floor pins the value instead of sampling: there is no
+    authorized band left to search, and pinning keeps the trial runnable rather than pruning it.
+    """
+    low, high = GPU_MEMORY_UTILIZATION_RANGE
+    if ceiling is not None:
+        high = min(high, ceiling)
+    if high <= low:
+        return high
+    # Snap the top of the band down onto the step grid so the sampled value is always a grid
+    # point AND never above the ceiling. The rounding is binary-float hygiene: 0.05 has no exact
+    # representation, so the raw quotient of an exact grid width lands just under the integer.
+    steps = math.floor(round((high - low) / GPU_MEMORY_UTILIZATION_STEP, 6))
+    if steps < 1:
+        return low
+    sampled = trial.suggest_float(
+        "gpu_memory_utilization",
+        low,
+        round(low + steps * GPU_MEMORY_UTILIZATION_STEP, 6),
+        step=GPU_MEMORY_UTILIZATION_STEP,
+    )
+    # Optuna returns the grid point with its own float noise (0.7999999999999999 for 0.80). That
+    # value reaches a `vllm serve` argv and a run manifest, so round it back onto the grid.
+    return round(float(sampled), 4)
+
 
 def suggest_overrides(
     trial: Any,
@@ -92,6 +130,7 @@ def suggest_overrides(
     embedders: Sequence[str] | None = None,
     tune_context_budget: bool = False,
     retrieval_backend: str = "faiss",
+    gpu_memory_utilization_ceiling: float | None = None,
 ) -> dict[str, Any]:
     """Sample one config from an Optuna trial.
 
@@ -103,7 +142,9 @@ def suggest_overrides(
     `tune_context_budget` samples a token budget that couples `top_k` / `chunk_size` /
     `max_model_len`. BACKEND-AWARE serving knobs are sampled only when the resolved backend
     actually exposes them: `gpu_memory_utilization` / `max_model_len` are vLLM concepts, so
-    sampling them for Ollama would tune dead parameters.
+    sampling them for Ollama would tune dead parameters, and `gpu_memory_utilization` is
+    additionally clamped under `gpu_memory_utilization_ceiling` (the run's declared serving
+    utilization) so no trial launches above what the host was validated for.
     """
     strategy = trial.suggest_categorical("strategy", list(strategies or STRATEGIES))
     chunk_size = trial.suggest_int("chunk_size", 256, 1280, step=64)
@@ -148,8 +189,8 @@ def suggest_overrides(
         )
         overrides["context_budget"] = context_budget
     if backend == "vllm":
-        overrides["gpu_memory_utilization"] = trial.suggest_float(
-            "gpu_memory_utilization", 0.70, 0.90, step=0.05
+        overrides["gpu_memory_utilization"] = suggest_gpu_memory_utilization(
+            trial, gpu_memory_utilization_ceiling
         )
         # Context-budget couples max_model_len to the sampled token budget.
         if context_budget is not None:

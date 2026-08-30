@@ -5,6 +5,8 @@ correctly ONLY when the gold chunk leads the prompt, so probe construction, per-
 scoring, the recommendation rule, and the artifacts are provable without a backend or GPU.
 """
 
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,13 +20,14 @@ from llb.eval.position_probe import (
     POSITIONS,
     PositionSummary,
     ProbeCase,
+    ProbeReport,
     assemble_context_chunks,
     build_probe_cases,
     position_index,
     recommend_order,
     run_probe,
 )
-from llb.eval.position_probe_report import write_probe
+from llb.eval.position_probe_report import probe_reading, write_probe
 from llb.goldset.schema import GoldItem
 
 GOLD_TEXT = "Київ є столицею України."
@@ -138,6 +141,46 @@ def test_run_probe_scores_positions_and_recommends_rank(tmp_path: Path):
     rendered = Path(paths["report"]).read_text(encoding="utf-8")
     assert "**rank**" in rendered and "| head |" in rendered
     assert len(Path(paths["cases"]).read_text(encoding="utf-8").splitlines()) == 6
+
+    # The machine-readable sidecar states the same decision without anyone parsing the prose.
+    payload = json.loads(Path(paths["probe"]).read_text(encoding="utf-8"))
+    assert payload["model"] == "m" and payload["k"] == 3
+    assert payload["recommendation"] == report.recommendation
+    assert payload["recommendation_note"] == report.recommendation_note
+    assert [row["position"] for row in payload["positions"]] == list(POSITIONS)
+    assert payload["positions"][0]["mean_objective"] == 1.0
+
+
+def test_probe_reading_separates_only_when_the_head_and_tail_cis_clear_each_other():
+    """The sidecar's verdict is the same cut the note states, in the shared reading vocabulary."""
+    separated = ProbeReport(
+        model="m",
+        backend="ollama",
+        k=3,
+        n_items=4,
+        skipped={},
+        positions=[
+            PositionSummary(POSITION_HEAD, 4, 0.9, (0.8, 1.0)),
+            PositionSummary(POSITION_MIDDLE, 4, 0.4, (0.3, 0.5)),
+            PositionSummary(POSITION_TAIL, 4, 0.2, (0.1, 0.3)),
+        ],
+        recommendation="rank",
+        recommendation_note="",
+    )
+    assert probe_reading(separated) == "separated"
+
+    overlapping = replace(
+        separated,
+        positions=[
+            PositionSummary(POSITION_HEAD, 4, 0.5, (0.3, 0.7)),
+            PositionSummary(POSITION_MIDDLE, 4, 0.4, (0.2, 0.6)),
+            PositionSummary(POSITION_TAIL, 4, 0.6, (0.4, 0.8)),
+        ],
+    )
+    assert probe_reading(overlapping) == "flat"
+
+    # A single-item probe has no CI at all; an unreadable comparison never reads as separated.
+    assert probe_reading(replace(separated, positions=[])) == "flat"
 
 
 def test_recommend_reverse_rank_when_tail_wins():

@@ -118,12 +118,21 @@ Verdict: **middle-critical elision costs completion across both qualified famili
 head/tail pair is unchanged, while the fitting control wins all four middle pairs and loses none.
 This is the positional control the typed-memory task could not provide.
 
-That result opens the predeclared prototype gate. The evidence-only `per_entry_head` strategy shares
-the same summary-input budget across entries and retains the leading facts in each one. Against the
-same elided guard, task bytes, and task ids, it recovers middle completion from 0/2 to 2/2 on both
+That result opens the predeclared prototype gate. The `per_entry_head` strategy shares the same
+summary-input budget across entries and retains the leading facts in each one. Against the same
+elided guard, task bytes, and task ids, it recovers middle completion from 0/2 to 2/2 on both
 families without changing any head/tail outcome. Both strategies send exactly 13992 summarizer
 prompt chars per case, so the recovery is entry placement rather than extra context. The prototype
-does not change the shipped `head_tail` default.
+did not itself change the shipped default; what it became, and how the entry-aware fold went on to
+become that default, is [the policy choice below](#entry-aware-summary-folding-as-a-policy-choice).
+
+Both arms of this study pin their trim explicitly: the base arm is `head_tail` and the prototype
+arm `per_entry_head`. The base arm used to inherit the shipped default, which is the same value it
+now names -- but this study exists to price what the whole-transcript trim loses in the middle, so
+once `per_entry_head` shipped as the default the inherited arm would have become the prototype's
+own trim, and the study would have reported no loss because it had stopped running the arm the loss
+belongs to. The numbers above are unaffected: they were measured under `head_tail`, and that is now
+what the runner asks for by name.
 
 What would overturn the verdict: a family that keeps middle completion under `head_tail`, or a
 middle stratum whose answer span survives the cut by accident -- validation refuses boundary
@@ -135,11 +144,359 @@ across both families. Lookup key: run
 make bench-agentic-context-compact-window-elision-transfer
 ```
 
+## Entry-aware summary folding as a policy choice
+
+`make bench-agentic-context-summary-trim-adoption` promotes the prototype above into a public
+context-policy field and decides whether it should replace the then-shipped `head_tail` fold.
+**The answer measured
+here is: the evidence now carries a default change.** It costs nothing and loses nothing on any
+workload, it recovers every middle-critical case `head_tail` could not finish, a default
+change would retire no published cell, and the power limit that used to hold the verdict at
+"option" is gone -- both families now read all four of their declared middle cases, not 6 of 8, and
+every one of them recovers. The study's verdict is `adopt_entry_aware_as_the_shipped_default`.
+
+It does not itself move the default. `changes_shipped_default` stays false in the design and in
+every persisted analysis, because moving a policy default is a product change that runs through the
+pin gate and the published-value scope, not something a measurement run performs on its own
+authority. That change has since landed:
+`ContextPolicy.summary_trim_strategy` now ships `per_entry_head`, and what the move cost is
+[below](#the-entry-aware-fold-is-the-shipped-default).
+
+What closed the power gap was the WORKLOAD, not the guard.
+[The per-family fit](#the-guard-is-fitted-per-family-and-the-fold-lands-inside-the-walk) had
+already established that no guard could reach the two cases Gemma4 walked short of, because the
+middle-critical set grew its transcript too slowly for any usable guard to fold before step 10. The
+set now pads three times as fast, folds at step 7, and every declared case of both families reaches
+it.
+
+`ContextPolicy.summary_trim_strategy` is a validated choice like `summary_input_cap`
+(`head_tail`, the retired default, and `per_entry_head`, the shipped one), pinned in
+`samples/benchmarks/agentic_context_policy_pins.json`, audited by the policy-change replay, and
+enumerated in the coupling table -- so the field can no longer move without the pin gate naming
+what it retires.
+
+**The field is readable only where a fold ELIDES.** Both strategies return the offered transcript
+untouched while it fits the summarize-input cap, so where nothing is cut they render byte-identical
+prompts. That single property answers every pair the field is in: the six new couplings report
+`no_geometry` or `independent`, and none of them opens a separating band, because a partner field
+that turns an un-elided fold into an elided one has already moved the summarize prompt by itself
+(`summary_trim_strategy x compact_share` and `x summary_input_cap` state that as measured elision
+counts rather than as an assertion).
+
+The study runs five workloads, each predeclaring its fold count, offered transcript, elision, and
+the summarize prompt bytes BOTH strategies spend -- all measured with an oracle controller and no
+model, so a workload that stops producing its regime fails the design gate rather than the reading:
+
+| workload | tasks | guard | share | folds | offered | elided | `head_tail` chars | `per_entry_head` chars |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| typed memory | 4 | 14000 | 0.8 | 1 | 15402 | 2134 | 13992 | 13992 |
+| aggregate search | 3 | 8000 | 0.8 | 1 | 8732 | 1464 | 7992 | 7992 |
+| repeated fold | 2 | 7000 | 0.8 | 2 | 10373 | 659 | 11131 | **9967** |
+| crossover control | 2 | 20240 | 0.5 | 1 | 10494 | 0 | 11188 | 11188 |
+| middle-critical | 12 | 9500 | 0.8 | 1 | 16764 | **7996** | 9492 | 9492 |
+
+The crossover row is the published fold-step cell `fold-d10-step10-lo` at its own guard, share,
+depth and padding; its offered 10494 chars is the same number the step-aligned cap table above
+reports. It elides nothing, so it is a CONTROL that must stay byte-identical rather than evidence.
+The repeated-fold row is the only geometry where the two strategies spend different byte totals,
+and the entry-aware trim spends 1164 FEWER chars per episode: it hands each entry a fixed share of
+the budget and does not redistribute what a short entry leaves over, so it can undershoot the cap
+that `head_tail` fills exactly. Adoption therefore never costs summary bytes on any measured
+geometry.
+
+The middle-critical row cuts nearly half of what it folds: 7996 of 16764 offered chars, 48% of the
+transcript, against 6-17% on the other three eliding workloads. That is
+a DECLARED position in the elision regime rather than a drift -- the padding was raised to 3200
+chars precisely so the transcript outgrows the window bound after five entries -- so the recovery
+this workload measures is a recovery from a much deeper cut than the typed-memory or
+aggregate-search rows measure, and the numbers are not interchangeable with theirs.
+
+Pairing is exact and per case. The two arms are byte-identical up to and including the transcript
+the first fold offers the summarizer, so a case pairs when both arms fold the same offered bytes;
+anything else is reported as an unpaired case instead of being averaged into a delta. That is what
+makes the aggregate-search workload readable at all -- its walk is not forced by a token chain, so a
+live model may search a different number of terms, and only the per-case pairing survives that.
+
+An unpaired case has two kinds, and the study treats them differently because only one of them can
+be about the trim. **A case where an arm never FOLDS ran no trim in that arm at all** -- a replay
+shows the two arms building byte-identical prompts up to the fold, so it diverged upstream of the
+strategy -- and it is excluded from the delta, counted, and named. The exclusion cannot be
+correlated with the arm, and the case stays in the completion RATE, so an arm cannot buy a better
+rate by ending episodes early. **A case
+where BOTH arms fold and still offer different bytes** is downstream of a trim that did run, is not
+separable from the treatment, and refuses the whole workload reading. Excluding a case also costs
+the evidence something, so a run whose middle stratum drops below its declared size in usable pairs
+is reported as UNDER-POWERED rather than as a result in either direction.
+
+### Arm order is balanced, not fixed
+
+Both arms of ONE task run back to back, and which arm opens a task alternates with the task index;
+the rotation carries across workloads and its phase flips per family, so the single leftover first
+position an odd task count leaves over cancels over the run. Under the fixed arm blocks this study
+first ran -- every episode of `head_tail`, then every episode of `per_entry_head` -- "ran second"
+and "ran under the candidate trim" were the same column, and an episode that left the folding
+regime in the second arm alone could not be attributed to either. The schedule is declared in the
+design (`arm_order`) and validated, and the executed order is persisted per episode, so the balance
+is auditable rather than asserted.
+
+The check the schedule buys is read on the FOLDING channel, not on completion. Whether an episode
+reaches its first fold is decided before the arms can diverge -- they build byte-identical prompts
+up to and including the transcript that fold offers -- so a gap there cannot be the treatment and
+is the serving stack by elimination. Completion is the opposite: it is the treatment's own outcome,
+and it moves with position whenever an arm's wins fall unevenly across the two slots, so reading a
+position effect off it would report the recovery itself as a scheduling artifact.
+
+**Which other lanes inherit the seam.** The schedule lives in
+`llb.bench.context_policy.interleave`, not in this study, because every paired agentic comparison
+on this host drives one stateful endpoint. Three lanes still run fixed arm blocks, and they are not
+equally exposed. `compact_vs_cap` walks the observation-cap policy and then the compact policy over
+one task set and pairs them per case with nothing gating the second arm, so it is the one that can
+adopt the balanced schedule as-is. The repeated-fold completion lane runs its two mechanism arms as
+blocks WITHIN each cell, which is interleavable, but its cell ladder is ordered by a control gate
+that stops the run when the one-fold control fails. The window-elision base runner is the same
+shape one level up: its elided arm runs only if the transcript-fitting control passed. For those
+two, arm order is a sequencing DECISION rather than an unexamined default, so removing it needs a
+design that keeps the gate, not this helper -- and until one exists, a dropout in their second
+block carries the same ambiguity this study just removed from its own.
+
+### The measured comparison
+
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB, balanced arm order): `qwen3:14b` at 23.42-23.49
+tok/s and `gemma4:e4b` at 55.67-55.72 tok/s, Ollama `num_ctx=8192`, 23 tasks per arm per family, 92
+paired episodes plus 12 walk-control episodes per family, run twice. Both families qualified by
+completing the elision-free crossover control 2/2 with zero overflows.
+
+| family | workload | pairs | skipped | ea wins | ht wins | d(model-input chars) | d(summary chars) | d(folds) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen | typed memory | 4 | 0 | 0 | 0 | +225 | 0 | 0 |
+| Qwen | aggregate search | 3 | 0 | 0 | 0 | -2 | 0 | 0 |
+| Qwen | repeated fold | 2 | 0 | 0 | 0 | -2653 | **-2029** | 0 |
+| Qwen | crossover control | 2 | 0 | 0 | 0 | **0** | 0 | 0 |
+| Qwen | middle-critical | 12 | 0 | **4** | 0 | +5615 | 0 | 0 |
+| Gemma4 | typed memory | 4 | 0 | 0 | 0 | -183 | 0 | 0 |
+| Gemma4 | aggregate search | 3 | 0 | 0 | 0 | -13221 | 0 | 0 |
+| Gemma4 | repeated fold | 2 | 0 | 0 | 0 | -1754 | **-1828** | 0 |
+| Gemma4 | crossover control | 2 | 0 | 0 | 0 | +78 | 0 | 0 |
+| Gemma4 | middle-critical | 12 | 0 | **4** | 0 | -6590 | 0 | 0 |
+
+Verdict: **the entry-aware fold costs nothing, recovers every declared middle-critical case, and
+the evidence now carries a default change.** `head_tail` wins ZERO paired cases anywhere -- across
+two families, five workloads and 46 paired cases -- so there is no regression to trade against, and
+nothing is skipped: all 46 cases pair in both families. The recovery reproduces per stratum, and
+this time on the full declared set:
+
+| family | head | middle | tail |
+| --- | --- | --- | --- |
+| Qwen | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
+| Gemma4 | 4/4 -> 4/4 | **0/4 -> 4/4** | 4/4 -> 4/4 |
+
+Read the numbers in operator terms. The `head_tail` trim finished NONE of the eight declared
+middle-critical cases across the two families; the entry-aware trim finished all eight, while head
+and tail stayed at 4/4 in both. Summary prompt bytes are EXACTLY equal on every single-fold
+workload and 1828-2029 chars cheaper on the repeatedly folding one, so the recovery is bought with
+entry placement rather than with window.
+
+**Why the middle-critical byte column is large, and why that is not a cost.** The crossover control
+is what makes the column readable: it elides nothing, so both arms render byte-identical summarize
+prompts there, and it moved 0 chars on Qwen and +78 on Gemma4 -- what a served endpoint returns for
+identical prompts under slightly different request histories. That is the run's noise floor, and
+the typed-memory and Qwen aggregate-search rows sit inside it. Three rows do not, for three
+different reasons. The repeated-fold row's -1754 and -2653 travel with its real summary-byte saving
+below. Gemma4's aggregate-search -13221 is one episode taking a shorter walk, on the one workload
+whose walk is not forced by a token chain. And the middle-critical row's +5615 and -6590 are the
+recovery itself showing up in the byte column: on four cases per family the two arms now END
+DIFFERENTLY, so their continuations after the fold are genuinely different episodes. The sign is a per-family
+property of what a failing episode does -- Qwen's `head_tail` failures give up sooner than the
+recovered episode runs, Gemma4's run longer -- which is exactly why model-input chars are reported
+beside the cost gate and not inside it. Gating on them would price a recovered case as a cost.
+Summary prompt chars, which the gate does read, are unchanged at 0 on every eliding single-fold
+workload.
+
+**The order is balanced and nothing dropped out.** Both families opened their tasks with each arm
+within one task of evenly (12/11 and 11/12 of 23), and the pre-divergence channel is flat and FULL
+in both: Qwen and Gemma4 each reached the fold in 23 of 23 first-position and 23 of 23
+second-position episodes. Under the slower-growing shape Gemma4 managed only 21 of 23 either way;
+the two episodes it used to lose were the ones that ended before any fold, and at a fold on step 7
+they no longer do. Completion is 21 of 23 in each position for both families -- the two
+non-completions per slot are `head_tail`'s middle-critical failures, split evenly across the slots,
+so the recovery is a property of the arm and not of the schedule.
+
+What would overturn this: a family that loses a paired case under `per_entry_head` overturns the
+safety claim; a middle stratum whose answer span survives the cut by accident would overturn the
+recovery, and validation refuses boundary overlap precisely so that cannot happen silently. What
+this does NOT establish is the shape-independence of the recovery -- it is measured at one point in
+the elision regime (48% of the folded transcript cut) on one fact-stage triple, and the shallower
+typed-memory and aggregate-search cuts are where it is measured to cost nothing, not where it is
+measured to recover. Lookup key: run
+`agent-context-policy-entry-aware-summary-fold-adoption`, run ids `72d6e04094ce` and
+`568179767d8f`; two consecutive balanced-order runs on this host reproduced every table entry above
+exactly -- every delta, every stratum count, and both guard fits.
+
+### The guard is fitted per family, and the fold lands inside the walk
+
+One shared character guard is not one shared regime. The middle stratum is readable only where an
+episode REACHES its fold -- both arms build byte-identical prompts up to the transcript the fold
+offers -- so a family whose walk ends before the trigger is crossed ran no trim at all, and the
+constant was silently measuring per-family walk length. The middle-critical workload's guard is
+therefore fitted per family from that family's own measured walk, the way the repeated-fold ladder
+fits its guard from the family's measured fold length; the band arithmetic both fits use (declared
+guard wins any tie, centre of the widest run otherwise) is one module.
+
+The measurement is a WALK CONTROL: the same twelve tasks at a guard the model-free probe never
+folds at (20000 chars), which makes its prompts byte-identical to what every candidate guard builds
+before its own fold. It runs first, per family, and is not an arm of anything -- nothing pairs
+against it.
+
+**The band is filtered by the declared REGIME before it is scored.** A lower guard folds earlier,
+but the summarize-input bound is the same window, so it also folds a shorter transcript against a
+smaller cap and moves the span the cap elides. Each of the 45 candidates in the declared band
+(4000-15000 chars, step 250) is walked with an oracle and either usable or refused by name:
+
+| candidate guards | folds | fold step | offered | elided | usable |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 4000 | 2 | 2 | 4557 | 84 | no -- it folds more than once |
+| 4250-4750 | 1 | 2 | 3352 | 0 | no -- the fold fits the bound and elides nothing |
+| 5000-8250 | 2-5 | 3-6 | 20178-30420 | 7642-15201 | no -- it folds more than once |
+| 8500-9250 | 1 | 6 | 13411 | 4893-5643 | no -- the fold stops before the tail fact's stage |
+| **9500-10250** | **1** | **7** | **16764** | **7246-7996** | **yes** (9500 is the declared guard) |
+| 10500-14750 | 1 | 8-11 | 20117-30176 | 9349-16908 | no -- an answer fact leaves its declared stratum |
+| 15000 | 0 | -- | 0 | 0 | no -- the trigger is never crossed, so nothing folds |
+
+Four of 45 candidates survive, and they all fold at step 7. FOUR different properties refuse the
+rest, and the table shows where each bites. At the bottom the guard is small enough that the
+episode folds repeatedly, or small enough that the one fold it does fits the bound and cuts
+nothing. Just below the usable run the fold is a single fold that does elide -- but it stops after
+four entries, and the tail fact sits at stage 4, so the fold happens before the fact exists to be
+placed at all. Above the usable run the fold contains every fact and the trim boundaries move under
+them instead: the retained tail is 0.4 of a cap that grows with the guard, so at six folded entries
+the tail fact is no longer in the tail. The band was drawn wide enough to contain every guard that
+folds at all -- from one that folds twice to the first that never crosses the trigger -- precisely
+so all four are measured rather than assumed outside it.
+
+**The two placement refusals are now reported apart, and at this shape it matters.** They were one
+reason before, because on a slower-growing transcript only the boundary-movement one ever bounded
+the band -- so the floor was always named "an answer fact leaves its declared stratum" and nobody
+had to ask which way. Here the floor is set by the other one:
+`an_answer_fact_is_not_inside_the_folded_transcript_yet` says the fold stops before the stage that
+plants the fact, so nothing was placed anywhere, while
+`an_answer_fact_leaves_its_declared_elision_stratum` says the fold does contain the fact and the
+trim boundaries moved out from under it. Both are facts about the shape rather than the family, but
+they point at different repairs -- more stages before the fold against a different stage inside it
+-- and a floor that cannot say which is a floor nobody can act on.
+
+**The band offers one fold step, so the fit cannot trade.** Every usable guard folds at step 7, so
+`select_guard`'s tie rule returns the declared guard for any family and the fit can only confirm it
+or report that the walk did not reach it. That is a property of the workload's padding rather than
+of the fit: the retained tail is about one entry wide at this fold (0.4 of an 8768-char cap against
+3353-char entries), so a guard one step later has already pushed the tail fact out of it. The
+reading states the reach (`band_fold_steps`) rather than leaving it to be inferred from the guard
+list, because a one-step band is what makes a shortfall unfixable by any guard.
+
+CUDA evidence (2026-08-29, RTX 4060 Ti 16 GB): `qwen3:14b` at 23.42-23.49 tok/s and `gemma4:e4b` at
+55.67-55.72 tok/s, Ollama `num_ctx=8192`, 12 walk-control episodes plus 46 paired episodes per
+family, run twice. The two runs agree on every entry below and on which four guards the band can
+use.
+
+| family | walk control | measured walk | fitted guard | fold step | cases reaching the fold |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Qwen | 12/12 | 11 on every case | 9500 (unchanged) | 7 | 12/12 |
+| Gemma4 | 12/12 | 11 on every case | 9500 (unchanged) | 7 | 12/12 |
+
+Verdict: **the fit moves no guard, and this time that is because the declared one already reaches
+every case.** Both families complete the walk control 12 of 12 with zero folds and walk all 12
+tasks to the full 11 steps, in both runs; every declared case of both families therefore crosses a
+trigger that now sits at step 7 instead of step 11. The short walks are gone TWICE OVER, and the
+two reasons are worth keeping apart because only the second is guaranteed by construction. Gemma4's
+early finish did not reproduce at the re-staged tasks -- these are different tasks with different
+codes and stages, and the walk control measures that it walks them whole rather than explaining
+why. What the shape does guarantee is the other half: a walk that ended at step 7, as those two
+cases did, now reaches a fold that happens AT step 7, so the same behavior would no longer cost the
+stratum a case.
+
+That is the same fit reporting a different answer because the WORKLOAD moved under it, which is
+what the fit was built to make visible. Held at the slower-growing shape the fit had exhausted its
+band and said so: no usable guard folded before step 10, Gemma4 ended two cases at step 7, and the
+recovery rested on 6 of 8 declared middle cases. The obstacle was never the guard -- observations
+are capped at 800 chars while that shape's folded transcript grew 1753 chars a step, so the
+transcript could not outgrow the window bound before step 8 and nothing earlier elided anything to
+be critical about. Padding to 3200 chars a step moves the whole ladder: the transcript outgrows the
+bound after five entries, and the fold lands inside a walk every family was already taking.
+
+What would overturn the fit itself: a usable guard below step 7, which would mean the placement
+check had let a fact out of its stratum, or a family whose walk control does not complete -- which
+would put the shortfall back and, with a one-step band, put it beyond any guard's reach.
+
+### The entry-aware fold is the shipped default
+
+`ContextPolicy.summary_trim_strategy` ships `per_entry_head`
+(`DEFAULT_SUMMARY_TRIM_STRATEGY` in `src/llb/bench/agentic/context_policy.py`). A compact episode
+whose fold elides now keeps each entry's leading facts by default; `head_tail` stays selectable for
+a run reproducing the retired behavior. The move is the product act the study above is not allowed
+to perform: the study recommends, the pin gate and the published-value scope decide, and
+`changes_shipped_default` stays false in the design and in every persisted analysis, because a
+measurement lane recommending a default is not the same act as moving it.
+
+**What a reader of a number measured under `head_tail` should assume: nothing changed.** The field
+is readable only where a fold ELIDES -- both strategies return the offered transcript untouched
+while it fits the summarize-input cap -- and under the pinned `window` bound no published cell
+elides at all. So the model-free policy-change audit, replayed under the pinned policy, reports all
+27 applicable published cells bit-identical under either trim, retires nothing, and finds no
+registered published value whose arithmetic declares the field. Every published agentic number
+stands unrestated under the shipped `per_entry_head`, and the CI pin gate says so in the same
+words when the constant and its pin are read apart:
+
+```text
+- summary_trim_strategy: pinned 'head_tail' -> shipped 'per_entry_head'
+  no published cell is invalidated (27 applicable): the shipped value sends bit-identical prompts,
+  so restating the pin is free.
+```
+
+**The audit is now read from the shipped side, and reports the same thing.** `audit_default_change`
+takes its baseline from `DEFAULT_SUMMARY_TRIM_STRATEGY` rather than from a hard-coded value, so the
+question it asks moved with the default: it read `head_tail -> per_entry_head` (what adopting would
+cost) and now reads `per_entry_head -> head_tail` (what going back would cost). Both are one replay
+of two byte sequences and are symmetric by construction, so the reverse read returning the same
+27/27 invariance is a check that the invariance is a property of the field rather than of the side
+the move started from -- the gate the study's ladder consumes as `audit_invariant` is answered from
+the side the product is actually on.
+
+The same audit read against the designs' own `held_fixed` -- which still records the retired
+`trigger` bound -- invalidates 4 cells (`surface-d10-g23000`, `fold-d10-step10-lo`,
+`fold-d10-step11-lo`, `fold-d10-step11-hi`). Those are exactly the cells whose trigger-bound cap
+elided (374, 794 and 282 chars in the step-aligned table above), which is the same mechanism read
+from a direction that owes it nothing: the field bites where, and only where, something is cut.
+
+**Two places had been reading the default as if it meant `head_tail`, and both are now explicit.**
+The window-elision runner (`src/llb/bench/memory/window_elision/run.py`) took the base arm's trim
+from the shipped default while its conditional prototype arm pinned `per_entry_head`; inheriting
+the new default would have made both arms one trim and the study would have reported no
+middle-critical loss because it had stopped running the arm the loss belongs to. It now pins
+`head_tail` -- the trim that study exists to price. The interaction couplings
+(`src/llb/bench/policy_change/interaction/couplings.py`) state one move per field as
+`(shipped, neighbour)`, and the scan refuses a per-field arm that would replay a policy the change
+does not name, so the trim's move is now `per_entry_head -> head_tail`.
+
+The pin (`samples/benchmarks/agentic_context_policy_pins.json`) records the move, names `head_tail`
+as what it retires, and stays `unstated` against the committed designs -- none of the six audited
+designs states the field in its `held_fixed`. The study's own arm order is unchanged: `head_tail`
+remains the reference arm every delta above is measured against, because moving it would restate
+every published delta for no reading.
+
+```bash
+make bench-agentic-context-summary-trim-adoption
+# the model-free half alone -- geometry plus the audit, no GPU:
+make bench-agentic-context-summary-trim-adoption AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY=1
+```
+
 ## Implementation map
 
 | What | Where |
 | --- | --- |
-| Shipped bound, exact transcript renderer, and evidence-only entry-aware trim | `src/llb/bench/agentic/context_summary.py` |
+| Shipped bound, exact transcript renderer, and both trim strategies | `src/llb/bench/agentic/context_summary.py` |
+| The trim strategy as a validated policy field, and the shipped default | `src/llb/bench/agentic/context_policy.py`, `samples/benchmarks/agentic_context_policy_pins.json` |
+| The gate that refuses a silent default move, and what it names | `src/llb/bench/policy_change/pin_gate.py`, `tests/llb/bench/policy_change/test_agentic_policy_pin_gate.py` |
+| The audited move per field, stated shipped-value first | `src/llb/bench/policy_change/interaction/couplings.py` |
+| Why no partner constant can separate the compound audit reading on it | `src/llb/bench/policy_change/interaction/trim.py` |
 | Generic deterministic task probe | `src/llb/bench/memory/boundary/probe.py` |
 | Trigger-matched base runner and live byte eligibility | `src/llb/bench/memory/window_elision/run.py` |
 | Head/middle/tail tasks and independent span placement | `src/llb/bench/memory/window_elision/tasks.py` |
@@ -147,4 +504,13 @@ make bench-agentic-context-compact-window-elision-transfer
 | Two-family runner and conditional prototype | `src/llb/bench/memory/window_elision/transfer.py` |
 | Per-stratum, transfer, and prototype readings | `src/llb/bench/memory/window_elision/transfer_reading.py` |
 | Persistence and command | `src/llb/bench/memory/window_elision/transfer_report.py`, `src/llb/cli/bench/memory/window_elision_transfer.py` |
-| Deterministic contracts | `tests/llb/bench/memory/test_agentic_memory_window_elision.py`, `tests/llb/bench/memory/test_agentic_memory_window_elision_transfer.py` |
+| Balanced arm schedule shared by every paired agentic study | `src/llb/bench/context_policy/interleave.py` |
+| Guard-band arithmetic shared by every per-family guard fit | `src/llb/bench/context_policy/guard_band.py` |
+| Which guards still measure the middle-critical regime, and why the rest do not | `src/llb/bench/summary_trim/guard_regime.py` |
+| The per-family fit, its walk control, and the design gate on the band | `src/llb/bench/summary_trim/guard_fit.py` |
+| The step each fold lands on, carried from the episode to the probe | `src/llb/bench/agentic/context.py`, `src/llb/bench/memory/boundary/probe.py` |
+| Adoption workloads, their oracles, and the aggregate-search task family | `src/llb/bench/summary_trim/workloads.py`, `src/llb/bench/summary_trim/tasks.py` |
+| Balanced arm schedule shared by any multi-arm policy lane | `src/llb/bench/context_policy/interleave.py` |
+| Adoption design gate, run, readings, verdict, and persistence | `src/llb/bench/summary_trim/design.py`, `run.py`, `reading.py`, `adoption.py`, `analysis.py`, `report.py` |
+| Adoption command | `src/llb/cli/bench/context/summary_trim_adoption.py` |
+| Deterministic contracts | `tests/llb/bench/memory/test_agentic_memory_window_elision.py`, `tests/llb/bench/memory/test_agentic_memory_window_elision_transfer.py`, `tests/llb/bench/summary_trim/test_agentic_summary_trim_adoption.py`, `tests/llb/bench/context_policy/test_agentic_arm_interleave.py` |

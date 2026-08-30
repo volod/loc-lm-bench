@@ -81,13 +81,23 @@ def run_halving_screen(
     min_finalists: int,
     eta: int,
     max_model_len: int,
+    case_cap: int | None = None,
 ) -> HalvingLedger:
-    """Run resumable successive-halving rounds over the tuning split."""
+    """Run resumable successive-halving rounds over the tuning split.
+
+    Classic successive halving MULTIPLIES the case budget by `eta` each round, which is what makes
+    a later round a sharper read than an earlier one. A caller whose screen size was DERIVED rather
+    than chosen -- the confirmation run prices it from paired power -- cannot afford that growth:
+    round 1 would silently spend more items than the declaration priced. `case_cap` is that ceiling,
+    and it bounds every round including the first.
+    """
     active = {row["name"]: row for row in runnable}
     rounds: list[HalvingRound] = []
     round_index = 0
     while True:
         case_limit = screen_limit_for_round(screen_limit, round_index, eta=eta)
+        if case_cap is not None:
+            case_limit = min(case_limit, case_cap)
         scores = [
             _screen_candidate(
                 base,

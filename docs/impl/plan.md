@@ -74,250 +74,6 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
-### Run bundles and the board -- `run-bundle-board`
-
-#### ua-roster-confirmation-run
-
-The confirmation LANE is delivered and CI-green -- predeclared effect, power-derived screen size,
-ranking-stability stopping rule, uncapped held-out scoring, public Ukrainian tracks, bootstrap
-uncertainty, quality/latency frontier, and an adopt-or-retain verdict
-([roster confirmation](current/rigor-board-judge/roster-confirmation.md)). What is missing is a run
-carried through to a recorded verdict: no host has yet produced a `long_run.json` whose reading is
-written into the delivered docs, so the default-model question the lane exists to answer is still
-open. Run it on a CUDA host and record what it decided.
-
-- Serves: `run-bundle-board` -- [Run bundles and the board](../design/spec.md#persistence-and-reproducibility)
-- Agent status: RUN NEEDED
-- Dependencies: none beyond the delivered lane above; the roster and per-tier serving behavior are
-  in [platform matrix](current/platform-vector-matrix.md#ukrainian-model-roster-refresh).
-- User-visible outcome: a recorded adopt-or-retain verdict on the default Ukrainian model, with
-  uncertainty, public-task coverage, and the quality-versus-latency frontier behind it.
-- Scope boundary: in scope -- executing the run, reading its artifact, and writing the evidence.
-  Out of scope -- changing the lane's statistics or schedule, model fine-tuning, and hosted/API-only
-  candidates. Reuse `make joint-search-long-run`; do not write a new driver.
-- Data and artifact paths: `$DATA_DIR/joint-search/<run>/{long_run.json,long_run.md,scoreboard.json}`
-  and `$DATA_DIR/screen/<model>.screen.json`, produced by the run; the reading goes into the
-  documentation target below.
-- Execution path, in order:
-  1. **Pick the candidate slice for the host.** Use the strongest `samples/configs/models_uk.yaml`
-     entries that FIT (`make resolve-models MODELS_MANIFEST=<manifest>` prints the choice; a 12/16
-     GiB box fits `mamaylm-v2-12b`, `lapa-v0.1.2-instruct`, and `gemma-4-e4b-it-w4a16` natively,
-     while `gemma-4-26b-a4b` and `qwen3.8-27b` need offload and are far slower). Pass the slice as
-     `JOINT_SEARCH_CANDIDATES=`. `LONG_RUN_INCUMBENT=` must name one of them -- the UA-specialized
-     reference the baselines must beat.
-  2. **Produce the power reference.** The declared screen size is derived from the paired variance of
-     an earlier pair of models. Two `make run-eval MODEL=<a>` / `MODEL=<b>` bundles of two DIFFERENT
-     models over the same gold set and split supply it; pass their run-bundle directories as
-     `LONG_RUN_POWER_REFERENCE=` and `LONG_RUN_POWER_BASELINE=`. Any pair whose gap resembles the one
-     being measured works; a pair with fewer than two shared items is refused.
-  3. **Install `lm_eval` on `PATH`** (`lm-eval[api]>=0.4.9`, in any environment -- it is an external
-     harness, not a project dependency). Without it the run still completes and states its verdict,
-     but every finalist lands in `public_screen.failures` and the verdict is qualified as having no
-     public backing, which does not satisfy this task.
-  4. **Run it**, then read `long_run.md`:
-
-     ```bash
-     make joint-search-long-run \
-       JOINT_SEARCH_CANDIDATES=<slice.yaml> \
-       GOLDSET=samples/goldsets/ua_squad_postedited_v1/goldset.jsonl \
-       JOINT_SEARCH_CORPUS=samples/goldsets/ua_squad_postedited_v1/corpus \
-       LONG_RUN_INCUMBENT=<candidate> \
-       LONG_RUN_POWER_REFERENCE=<run-bundle> LONG_RUN_POWER_BASELINE=<run-bundle> \
-       LONG_RUN_MIN_GAIN=0.10 LONG_RUN_TRIAL_BUDGET=12 LONG_RUN_TRIAL_BLOCK=3 \
-       LONG_RUN_RUN_ID=<id>
-     ```
-
-     Budget two to three hours on a 12 GiB laptop GPU before the held-out split and public screen;
-     see the cost note in the documentation target. Re-running with the same `LONG_RUN_RUN_ID`
-     resumes on the completed screen, pick, and finalist markers, so a kill is cheap. Nothing else
-     may touch the GPU while it runs -- a stray backend call inflates every latency reading.
-- Acceptance gates: `make ci` green; `long_run.json` carries a `predeclaration` (gain, power,
-  derived screen size with its binding floor, stopping rule), a `search` trail naming the rule that
-  stopped it and the trials consumed, a `final` block on the full held-out split with intervals and
-  paired readings, a complete `public_screen` for every finalist, and a `verdict`; the ledger stays
-  `split=tuning` and the scoreboard `split=final`.
-- Documentation target: the **Host evidence** section of
-  [roster confirmation](current/rigor-board-judge/roster-confirmation.md) -- state what ran on what
-  host and date, the derived screen size and what bound it, which rule stopped the search and at
-  what trial count, the held-out deltas with their intervals and win/loss/tie ledgers, the public
-  scores per track, the verdict and its reading, and what would overturn it. Read
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md) first.
-
-### Agentic and context-policy workloads -- `agentic-workloads`
-
-#### agent-operating-profile-recommendation
-
-Every ingredient of an agent configuration is measured somewhere in this repo and nowhere together:
-`llb recommend` renders host-adaptive model picks plus separate miss-analysis, self-improvement,
-fine-tune-campaign, and context-policy sections (`src/llb/board/recommend/sections.py`), the
-context-order recommendation comes out of the position probe, the retrieval knobs out of the
-comparison lanes, the prompt-system id out of `prompt-system-compare`, and the adapter out of the
-registry. An operator wanting to stand up an agent must read five sections and hand-assemble, and
-nothing checks that the pieces were measured on the same corpus, store, or model. Compose them:
-`llb recommend --agent-profile` emits ONE `agent_profile.json` plus a markdown rationale naming
-model and backend, prompt-system id, adapter (or none), context policy, context order, `top_k` /
-reranker / context budget, and the loop policy. Each field carries its value, the artifact path the
-value came from, that lane's own verdict and uncertainty, and its freshness -- and a field whose
-lane never ran is emitted as `unmeasured`, never as a default dressed up as a recommendation, which
-is the whole failure mode a composed profile invites.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: the
-  [agent loop-policy
-  recommendation](current/extended-workflows/loop-policy-recommendation.md#agent-loop-policy-recommendation)
-  supplies the loop-policy field; the context-policy field comes from the `agentic-context` bundles
-  ([extended
-  workflows](current/extended-workflows/agent-context-policies.md#agent-context-management-policies)),
-  and for memory-dependent work its guard-dependent routing rule comes from the cap-fitting boundary
-  surface ([extended
-  workflows](current/extended-workflows/crossover-geometry.md#cap-fitting-boundary-surface)); the
-  rest are current behavior. Reuse `src/llb/board/recommend/` (sections, build, render), the adapter
-  registry's `staleness()` and its retrieval-fingerprint axis ([extended
-  workflows](current/extended-workflows/adapter-registry.md#staleness)), and the shared borderline
-  vocabulary in `src/llb/rag/fusion_evidence/stability.py` so a field resting on a knife-edge row is
-  marked the same way every lane marks it.
-- User-visible outcome: one artifact an operator (or a runtime) can act on, where every recommended
-  value is traceable to the run that measured it and every gap is visible as a gap.
-- Scope boundary: in scope -- the composition, the per-field evidence/verdict/freshness record, the
-  `unmeasured` state, the consistency guard (fields measured against a different corpus, store
-  fingerprint, or model are refused rather than mixed), the JSON schema, and the markdown rationale.
-  Out of scope -- running any lane on the operator's behalf, inventing a value for an unmeasured
-  field, ranking policy changes, and shipping a runtime that consumes the profile.
-- Data and artifact paths: `$DATA_DIR/agent-profile/<run>/{agent_profile.json,profile.md}`, composed
-  from the existing per-lane roots; no new evidence root.
-- Execution path: `make recommend-agent-profile` after the component lanes have run on the CUDA
-  host; CI covers composition, the `unmeasured` state, the consistency guard, and the staleness
-  demotion over fixture bundles -- no GPU.
-- Acceptance gates: `make ci` green; a profile built with no bundles at all is entirely `unmeasured`
-  and still a valid artifact; every populated field's evidence path resolves and its verdict matches
-  the lane artifact it cites; a stale adapter or a store whose retrieval fingerprint changed demotes
-  every field that depends on it, with the changed knob named; the recommended values replay as
-  `run-eval` / `bench-agentic` flags that reproduce the recommended configuration.
-- Documentation target: a recommendation-composition section in
-  [extended workflows](current/extended-workflows.md) and the recommendation entry in
-  [overview](current/overview.md).
-
-#### agent-context-policy-entry-aware-summary-fold-adoption (optional)
-
-Promote the entry-aware summary-input prototype into an explicit context-policy choice and decide
-whether it should replace the shipped whole-transcript head-and-tail trim. Run it across the typed
-memory, aggregate-search, repeated-fold, and crossover workloads on two host-fit families; compare
-completion, total model-input cost, summary prompt bytes, and fold count against `head_tail`; and
-route the new strategy through policy-change audit and published-value provenance before any default
-change. Require no head/tail or aggregate regression and preserve the middle-critical recovery.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the gated recovery and fixed-byte comparison in
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype),
-  plus the [policy-constant audit](current/extended-workflows/policy-constant-audit.md).
-- User-visible outcome: an operator gets a supported summary-fold strategy for sessions where
-  critical evidence can occupy any entry, rather than an evidence-only prototype.
-- Scope boundary: in scope -- public policy configuration, cross-workload regression, audit and
-  provenance integration, and a default decision. Out of scope -- increasing the resolved window
-  or changing compaction trigger/hysteresis.
-- Documentation target:
-  [summary-input bounds and elision](current/extended-workflows/summary-input-elision.md#middle-critical-transfer-and-entry-aware-prototype).
-
-#### agent-context-policy-hysteresis-second-fold (optional)
-
-Every cap-fitting cell measured so far folds EXACTLY once per episode, which is why the guard drops
-out of the cost once the trigger is fixed: after the first summary, trigger hysteresis raises the
-next trigger to the full guard, and no tested transcript grows back that far
-([extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis)).
-The trigger-only rule is therefore established only in the one-fold regime, and the regime where
-compact is most interesting -- long agent sessions that fold repeatedly -- is unmeasured.
-
-Do NOT look for that geometry inside the cap-fitting band: a cap-fitting cell cannot fold twice, for
-a structural reason rather than a lack of searching
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#why-a-cap-fitting-cell-folds-exactly-once)),
-so "shrink the guard toward the cap peak" cannot work and pushing depth alone does not either. The
-repeatedly folding cells live BELOW the cap peak, where the `observation_cap` arm overflows and
-there is no compact-minus-cap delta to compare -- which is the real obstacle this task has to solve
-first. Restate the equal-trigger claim on a comparison that survives without a cap arm (compact
-against compact at equal triggers, on total model-input tokens), run one equal-trigger family over
-the committed two-fold geometry, and state whether the deltas separate. The later folds also carry
-the running summary into the summarize input, and the shipped `window` bound sizes that input from
-the budget rather than the trigger, so record the per-fold summarize input beside the deltas -- a
-growing prior summary is the other way the guard could re-enter.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: the committed repeatedly folding geometry and its per-fold summarize inputs are
-  current behavior (`samples/benchmarks/agentic_compact_two_fold_geometry_design.json`); reuse the
-  collapse design's family contract and equivalence band, but not its cap-fitting cell gate, which
-  by construction refuses every cell in this regime.
-- User-visible outcome: either the trigger-only routing rule extended to repeated compaction, or an
-  explicit "one fold only" boundary on the rule an operator would otherwise over-apply.
-- Scope boundary: in scope -- the cap-arm-free restatement of the equal-trigger comparison, one
-  family over the committed two-fold geometry, and the validity statement. Out of scope -- new task
-  shapes, changing shipped compaction hysteresis, and relaxing the cap-fitting gate on the studies
-  that legitimately use it.
-- Documentation target:
-  [extended workflows](current/extended-workflows/crossover-geometry.md#the-routing-rule-lives-on-the-trigger-axis).
-
-#### agent-context-policy-repeated-fold-completion-replication (optional)
-
-The current completion reading covers two deterministic memory cases on one qualified model through
-three measured folds
-([extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds)).
-Strengthen the routing claim with a predeclared larger case set and a second model family: require
-both families to pass the one-fold eligibility gate, preserve identical cases and seed across fold
-cells and marker arms within each family, and report paired completion uncertainty at each measured
-fold count. This separates a robust fold-count rule from a ceiling result on two easy codes.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: RUN NEEDED
-- Dependencies: reuse the compact-only runner, eligibility gate, measured-fold grouping, and marker
-  ablation documented in the linked current page; pick the second family by the local-model host-fit
-  rules rather than weakening the task for a smaller model.
-- User-visible outcome: an operator learns whether the three-fold completion result transfers beyond
-  one model and two cases before treating it as a general session-routing bound.
-- Scope boundary: in scope -- a larger predeclared task set, one additional qualified family, paired
-  uncertainty, and a cross-family reading. Out of scope -- folds deeper than three, a new compaction
-  algorithm, and changing the shipped marker-preservation default.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-compact-vs-cap/<run>/` layout, with family
-  and task-set digests in every aggregate.
-- Execution path: extend `make bench-agentic-context-compact-repeated-fold` with a replication design
-  on the CUDA host; CI covers the multi-family aggregation and refusal paths with fakes.
-- Acceptance gates: `make ci` green; each family passes its control before repeated cells run; every
-  fold group reaches the predeclared paired-evidence floor; the report either extends the three-fold
-  rule across families or names the first family/fold where it fails.
-- Documentation target:
-  [extended workflows](current/extended-workflows/imperfect-play-margin.md#completion-through-repeated-folds).
-
-#### agent-loop-budget-warms-an-unpinned-ollama (optional)
-
-The agent-loop prompt guard takes the minimum of the declared and the probed window, but it only
-gets a probe worth having when a run pins one: `resolve_agent_context_budget`
-(`src/llb/cli/bench/_agent_context.py`) warm-loads Ollama only under `if cfg.backend == "ollama"
-and ollama_num_ctx`, and without a warm request `/api/ps` reports nothing at all, so an UNPINNED
-run resolves its guard from the declared window alone -- on a host where declared and served differ
-by 32x ([context
-ablation](current/rag-core/context-ablation-evidence.md#the-served-window-is-32x-smaller-than-the-declared-one-on-this-host-2026-08-24)).
-Warm unconditionally for Ollama, the way `launcher_served_window` does for the document lanes, and
-decide deliberately what an unreachable backend should do there: today a pinned run raises out of
-`warm.start()`, while the budget probe it feeds is documented as best-effort.
-
-- Serves: `agentic-workloads` -- [Agentic and context-policy workloads](../design/spec.md#agentic-and-context-policy-workloads)
-- Agent status: CLEAR
-- Dependencies: none. `probe_served_window` (`src/llb/backends/served_window.py`) already does
-  exactly this warm-then-probe for the Optuna study, so the CLI glue's bespoke copy of it collapses
-  into one call; what remains is the condition and the unreachable-backend decision.
-- User-visible outcome: an agent run's `budget_source` says `served` on an unpinned Ollama host
-  instead of `declared`, so a `context_overflow` termination (or its absence) means the same thing
-  the document lanes' skips do.
-- Scope boundary: in scope -- the warm condition, the unreachable-backend behavior, and a fixture
-  test per binding direction on the CLI wrapper. Out of scope -- changing `ContextBudget`
-  arithmetic, the compaction trigger share, and any policy default.
-- Data and artifact paths: the existing `$DATA_DIR/agentic-context/<run>/` layout; no new artifact.
-- Execution path: `make ci` with an injected launcher; no GPU run is needed to accept it.
-- Acceptance gates: `make ci` green; a fixture where the backend serves less than the config
-  declares resolves `budget_source=served` with no `--max-model-len` passed.
-- Documentation target: the prompt-guard paragraph of
-  [agent context policies](current/extended-workflows/agent-context-policies.md).
-
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
@@ -948,6 +704,34 @@ fragments, so only paths change and `make lint-doc-links` proves the move.
   text changes.
 - Documentation target: [entity resolution](current/entity-resolution.md) and the pages the split
   produces.
+
+#### summary-input-elision-page-is-past-the-split-threshold (optional)
+
+[summary-input bounds and elision](current/extended-workflows/summary-input-elision.md) is ~520
+lines and its headings describe two subjects: what the summarize-input BOUND is (the step-aligned
+cap, and what eliding under it costs on a typed-memory shape) and what the entry-aware TRIM is (the
+middle-critical transfer, the adoption ladder with its arm-order and guard-fit subsections, and the
+shipped default). That is past the ~500-line split rule in [AGENTS.md](../../AGENTS.md), and the
+trim subject is the one that grows: it arrived as a prototype, became a policy field, and has now
+taken a default move, each time landing on the same page. The seam is already a heading boundary
+and the code is split along it too (`llb.bench.memory.window_elision` against
+`llb.bench.summary_trim`), so move the trim sections to their own topic page, add its row to the
+area page, and repoint the inbound links. Anchors keep their fragments, so only paths change and
+`make lint-doc-links` proves the move.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: CLEAR
+- Dependencies: none. `make lint-md` (which runs `lint-doc-links`) is the whole gate; the inbound
+  links are in `extended-workflows.md` and `samples/benchmarks/agentic_context_policy_pins.json`,
+  whose `published_in` anchors the pin gate checks by path.
+- User-visible outcome: a reader who wants the shipped trim default stops scrolling past the whole
+  bound story and two study ladders to reach it.
+- Scope boundary: in scope -- the split, the area-page row, the `published_in` repointing, and the
+  link repointing. Out of scope -- rewriting the moved text and changing any measured result.
+- Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
+  no anchor text changes; the pin gate's doc-anchor test still passes.
+- Documentation target: [extended workflows](current/extended-workflows.md) and the two pages the
+  split produces.
 
 ## Human-Assisted Tasks
 

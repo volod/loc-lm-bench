@@ -77,10 +77,17 @@ def probe_completion_cell(cell: dict[str, object], held: dict[str, object]) -> d
     }
 
 
-def validate_repeated_fold_design(design: dict[str, object]) -> None:
-    """Refuse drift in the held model, source cells, ordering, or fold geometry."""
-    if design.get("study_kind") != STUDY_KIND:
-        raise ValueError(f"repeated-fold study_kind must be {STUDY_KIND!r}")
+def validate_repeated_fold_design(
+    design: dict[str, object], *, study_kind: str = STUDY_KIND
+) -> None:
+    """Refuse drift in the held model, source cells, ordering, or fold geometry.
+
+    `study_kind` is a parameter because the replication design measures the SAME cells over a
+    larger case set and a model roster: what it must not be allowed to change is the geometry
+    contract checked here, so it re-uses this function rather than restating it.
+    """
+    if design.get("study_kind") != study_kind:
+        raise ValueError(f"repeated-fold study_kind must be {study_kind!r}")
     if int(cast(int, design.get("seed", 0))) < 1:
         raise ValueError("repeated-fold completion needs a positive deterministic seed")
     held = as_mapping(design, "held_fixed")

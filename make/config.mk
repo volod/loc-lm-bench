@@ -370,6 +370,11 @@ AGENTIC_MAX_STEPS ?= 6
 AGENTIC_HARNESS ?= loop
 AGENTIC_HARNESSES ?= loop langgraph crewai
 AGENTIC_CONTEXT_POLICY ?= full
+# The loop cell the scored run executes. Defaults are the shipped ones, so `make bench-agentic`
+# is unchanged; set them to the cell `bench-agentic-loop` recommended to score it directly.
+AGENTIC_MALFORMED_POLICY ?= answer
+AGENTIC_REPEATED_CALL_POLICY ?= allow
+AGENTIC_REPEAT_FEEDBACK ?= current
 AGENTIC_BASE_URL ?=
 AGENTIC_MAX_MODEL_LEN ?=
 
@@ -461,9 +466,13 @@ AGENT_CONTEXT_COMPACT_MEMORY_BOUNDARY_SURFACE_DESIGN ?= $(PROJECT_ROOT)/samples/
 AGENT_CONTEXT_COMPACT_TRIGGER_COLLAPSE_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_trigger_guard_collapse_design.json
 AGENT_CONTEXT_COMPACT_FOLD_STEP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_fold_step_crossover_design.json
 AGENT_CONTEXT_COMPACT_REPEATED_FOLD_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_repeated_fold_completion_design.json
+AGENT_CONTEXT_COMPACT_REPEATED_FOLD_REPLICATION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_repeated_fold_replication_design.json
+AGENT_CONTEXT_COMPACT_SECOND_FOLD_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_second_fold_trigger_design.json
 AGENT_CONTEXT_COMPACT_SUMMARY_INPUT_CAP_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_summary_input_cap_design.json
 AGENT_CONTEXT_COMPACT_WINDOW_ELISION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_window_elision_design.json
 AGENT_CONTEXT_COMPACT_WINDOW_ELISION_TRANSFER_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_window_elision_transfer_design.json
+AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_summary_trim_adoption_design.json
+AGENT_CONTEXT_SUMMARY_TRIM_ADOPTION_AUDIT_ONLY ?=
 AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_DESIGN ?= $(PROJECT_ROOT)/samples/benchmarks/agentic_compact_crossover_restatement_design.json
 AGENT_CONTEXT_COMPACT_CROSSOVER_RESTATEMENT_SURFACE ?=
 KNOWLEDGE_CUTOFF_EVENTS ?=
@@ -529,6 +538,13 @@ JOINT_SEARCH_OFFLINE ?=
 JOINT_SEARCH_CORPUS ?=
 JOINT_SEARCH_LIMIT ?=
 JOINT_SEARCH_NO_ISOLATE ?=
+# Serving knobs every vLLM candidate cell (and the confirmation run's public screen) is served
+# at. Both searches accept a run config the same way `run-eval` does; the utilization flag is what
+# keeps a vLLM candidate inside a 16 GiB card's budget, because the pre-launch guard derates
+# against OTHER processes and cannot correct a too-high request on a quiet card.
+JOINT_SEARCH_CONFIG ?=
+JOINT_SEARCH_GPU_UTIL ?=
+JOINT_SEARCH_MAX_MODEL_LEN ?=
 
 # Research-scale roster confirmation (`joint-search-long-run`). The two POWER_* run bundles supply
 # the paired variance the tuning-screen size is derived from; the incumbent is the default model
@@ -545,6 +561,10 @@ LONG_RUN_STABILITY_BLOCKS ?= 2
 LONG_RUN_STABILITY_AGREEMENT ?= 1.0
 LONG_RUN_RUN_ID ?=
 LONG_RUN_PUBLIC_LIMIT ?=
+# Unload Ollama's resident models before a vLLM finalist's public screen launches. On by default:
+# the confirmation run owns the host for hours, the resident models are the ones IT loaded, and a
+# vLLM engine refuses to start on the VRAM an Ollama keep-alive still holds. Set empty to opt out.
+LONG_RUN_PUBLIC_EVICT ?= 1
 LONG_RUN_OFFLINE ?=
 LONG_RUN_NO_ISOLATE ?=
 # Autonomous corpus-to-recommendation pipeline. The default drafter is a 12B Ukrainian model that

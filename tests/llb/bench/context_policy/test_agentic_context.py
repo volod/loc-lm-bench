@@ -14,10 +14,13 @@ from llb.bench.agentic.context import (
 )
 from llb.bench.agentic.context_policy import (
     CONTEXT_POLICIES,
+    DEFAULT_SUMMARY_TRIM_STRATEGY,
     POLICY_COMPACT,
     POLICY_FULL,
     POLICY_KEEP_LAST_N,
     POLICY_OBSERVATION_CAP,
+    SUMMARY_TRIM_HEAD_TAIL,
+    SUMMARY_TRIM_PER_ENTRY_HEAD,
     ContextPolicy,
 )
 from llb.bench.agentic.context_summary import compact_state
@@ -306,19 +309,40 @@ def test_observation_cap_survives_a_budget_that_overflows_full():
     assert capped.status == STATUS_COMPLETED and capped.success is True
 
 
-def test_the_summarize_call_is_itself_capped_so_it_cannot_overflow():
-    """The summarizer's input IS the transcript that blew the step prompt -- it must be trimmed."""
+@pytest.mark.parametrize(
+    "strategy,marker",
+    [(SUMMARY_TRIM_HEAD_TAIL, "обрізано"), (SUMMARY_TRIM_PER_ENTRY_HEAD, "entry elided")],
+)
+def test_the_summarize_call_is_itself_capped_so_it_cannot_overflow(strategy: str, marker: str):
+    """The summarizer's input IS the transcript that blew the step prompt -- it must be trimmed.
+
+    Both trim strategies must bound it; they differ only in WHICH bytes survive, so each is checked
+    against its own elision marker rather than against the one the shipped default happens to use.
+    """
     from llb.bench.agentic.context_summary import summarize_entries
 
     seen: list[str] = []
     entries = [("search", {"query": "дані"}, BIG)]
-    summarize_entries(lambda p: seen.append(p) or "стисло", entries, 500)
-    assert len(seen[0]) < len(BIG) and "обрізано" in seen[0]
+    summarize_entries(lambda p: seen.append(p) or "стисло", entries, 500, trim_strategy=strategy)
+    assert len(seen[0]) < len(BIG) and marker in seen[0]
     assert "[агрегат: chars=" in seen[0]  # per-entry header before the outer trim
     seen.clear()
-    summarize_entries(lambda p: seen.append(p) or "стисло", entries, 0)  # 0 = no cap
-    assert "обрізано" not in seen[0]
+    # 0 = no cap: nothing is elided, so both strategies hand the summarizer the same bytes.
+    summarize_entries(lambda p: seen.append(p) or "стисло", entries, 0, trim_strategy=strategy)
+    assert "обрізано" not in seen[0] and "entry elided" not in seen[0]
     assert "[агрегат: chars=" in seen[0]
+
+
+def test_the_shipped_summary_trim_is_the_entry_aware_one():
+    """The default the summarize seam falls back to when no policy states the field."""
+    from llb.bench.agentic.context_summary import summarize_entries
+
+    seen: list[str] = []
+    summarize_entries(
+        lambda p: seen.append(p) or "стисло", [("search", {"query": "дані"}, BIG)], 500
+    )
+    assert DEFAULT_SUMMARY_TRIM_STRATEGY == SUMMARY_TRIM_PER_ENTRY_HEAD
+    assert "entry elided" in seen[0]
 
 
 def test_summarize_search_hits_carry_hit_count_in_the_compaction_prompt():

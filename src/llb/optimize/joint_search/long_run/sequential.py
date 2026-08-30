@@ -9,9 +9,11 @@ The trail it returns is the audit record the acceptance gate asks for: which rul
 search, and what the search actually cost.
 """
 
+import json
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from llb.optimize.joint_search.long_run.plan import LongRunPlan
@@ -21,6 +23,13 @@ _LOG = logging.getLogger(__name__)
 
 STOPPED_BY_STABILITY = "ranking-stability"
 STOPPED_BY_BUDGET = "trial-budget"
+
+# The trail is the ONLY part of the record no other artifact holds: the finalist `result.json`
+# files carry the tuned picks and their held-out scores, and a resumed run reloads those, but the
+# block ranking that stopped the search exists nowhere else. Without persisting it, re-entering a
+# killed run -- the exact recovery the resume markers exist for -- rewrites `long_run.json` with an
+# empty trail and the artifact can no longer state which rule ended the search.
+TRAIL_FILENAME = "search_trail.json"
 
 # (finalist, cumulative trial target) -> (best tuning-split objective, trials the study now holds).
 AdvanceFinalist = Callable[[str, int], tuple[float, int]]
@@ -100,10 +109,65 @@ def run_trial_blocks(
     )
 
 
+def trail_path(run_dir: Path) -> Path:
+    """Where a confirmation run keeps its block trail across a kill and a re-entry."""
+    return run_dir / TRAIL_FILENAME
+
+
+def write_trail(run_dir: Path, trail: SearchTrail) -> Path:
+    """Persist the trail beside the run's other resume markers."""
+    path = trail_path(run_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(trail.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def read_trail(run_dir: Path) -> SearchTrail | None:
+    """The trail an earlier entry of this run recorded, or None when there is none to reuse."""
+    path = trail_path(run_dir)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("[joint-search] ignore unreadable search trail %s: %s", path, exc)
+        return None
+    try:
+        blocks = tuple(_snapshot_from(block) for block in payload["blocks"])
+        return SearchTrail(
+            blocks=blocks,
+            stopped_by=str(payload["stopped_by"]),
+            trials_per_finalist=int(payload["trials_per_finalist"]),
+            consumed_trials={str(k): int(v) for k, v in payload["consumed_trials"].items()},
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        _LOG.warning("[joint-search] ignore malformed search trail %s: %s", path, exc)
+        return None
+
+
+def _snapshot_from(block: dict[str, Any]) -> BlockSnapshot:
+    """Rebuild one persisted block; the snapshot is data, so nothing is recomputed here."""
+    return BlockSnapshot(
+        index=int(block["index"]),
+        trials_per_finalist=int(block["trials_per_finalist"]),
+        consumed_trials=int(block["consumed_trials"]),
+        ranking=tuple(block["ranking"]),
+        objective={str(k): float(v) for k, v in block["objective"].items()},
+        agreement=None if block["agreement"] is None else float(block["agreement"]),
+        leader_held=None if block["leader_held"] is None else bool(block["leader_held"]),
+        stable=bool(block["stable"]),
+        stable_streak=int(block["stable_streak"]),
+    )
+
+
 __all__ = [
     "STOPPED_BY_BUDGET",
     "STOPPED_BY_STABILITY",
+    "TRAIL_FILENAME",
     "AdvanceFinalist",
     "SearchTrail",
+    "read_trail",
     "run_trial_blocks",
+    "trail_path",
+    "write_trail",
 ]

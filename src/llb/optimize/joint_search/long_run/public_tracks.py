@@ -39,8 +39,14 @@ def screen_report_path(out_dir: Path, model: str) -> Path:
     return out_dir / f"{safe_model_name(model)}{REPORT_SUFFIX}"
 
 
-def read_report(out_dir: Path, model: str) -> ScreenReport | None:
-    """A previously parsed report for this model, or None when it has never been screened."""
+def read_report(out_dir: Path, model: str, *, limit: int | None = None) -> ScreenReport | None:
+    """A previously parsed report for this model, or None when it has never been screened.
+
+    The cache exists so a re-run does not re-pay for lm-eval. It must not, however, hand a SMOKE
+    report to a decision run: a screen capped at a few examples per task is a different measurement
+    from the full track, and reusing one would let a two-example number back an adoption verdict
+    silently. A stored report is reused only when it was taken at the cap this run asked for.
+    """
     path = screen_report_path(out_dir, model)
     if not path.is_file():
         return None
@@ -51,6 +57,14 @@ def read_report(out_dir: Path, model: str) -> ScreenReport | None:
         return None
     if not isinstance(value, dict) or "track" not in value or "requested_tasks" not in value:
         _LOG.warning("[joint-search] ignore invalid screen report %s", path)
+        return None
+    if value.get("limit") != limit:
+        _LOG.info(
+            "[joint-search] re-screen %s: cached report was capped at %s, this run asks for %s",
+            model,
+            value.get("limit"),
+            limit,
+        )
         return None
     return cast(ScreenReport, value)
 
@@ -63,19 +77,53 @@ def write_report(out_dir: Path, report: ScreenReport) -> Path:
     return path
 
 
-def default_screen_runner(cfg: RunConfig, *, limit: int | None) -> ScreenRunner:
-    """The live runner: launch or reuse the backend endpoint and drive lm-eval through it."""
+def default_screen_runner(
+    cfg: RunConfig,
+    *,
+    limit: int | None,
+    isolate: bool = False,
+    evict: bool = False,
+    vram_reader: Callable[[], int] | None = None,
+    pid_usage_reader: Callable[[], dict[int, int]] | None = None,
+) -> ScreenRunner:
+    """The live runner: launch or reuse the backend endpoint and drive lm-eval through it.
+
+    `cfg` must already carry the run's vLLM context cap: a screen that launches a finalist at its
+    NATIVE window (128k+ on every model in this roster) OOMs the KV cache on a 16 GiB card, which
+    reads as a failed public screen rather than as the sizing mistake it is.
+
+    With `isolate` the screen runs under the SAME VRAM-reclaim and thermal-cooldown contract as a
+    sweep cell -- the public screen follows the tuning phase, so the previous backend's memory must
+    be back before a second one is launched.
+
+    `evict` unloads Ollama's resident models before a vLLM finalist launches. The reclaim gate
+    alone cannot cover this: Ollama is a keep-alive daemon whose residency is deliberate, so it is
+    excluded from the gate, and a UA finalist served through it holds 8 GiB for five more minutes
+    while the next finalist's vLLM engine refuses to start on what is left. The models being
+    unloaded are the ones this run itself loaded.
+    """
 
     def run(source: str, backend: str, out_dir: Path) -> ScreenReport:
         from llb.screen.backends import screen_with_backend
 
-        return screen_with_backend(
-            source,
-            backend,
-            cfg.with_overrides(model=source, backend=backend),
-            out_dir=out_dir,
-            limit=limit,
+        def work() -> ScreenReport:
+            return screen_with_backend(
+                source,
+                backend,
+                cfg.with_overrides(model=source, backend=backend),
+                out_dir=out_dir,
+                limit=limit,
+                evict=evict,
+            )
+
+        if not isolate:
+            return work()
+        from llb.screen.public import run_screen_isolated
+
+        report, _iso = run_screen_isolated(
+            backend, work, vram_reader=vram_reader, pid_usage_reader=pid_usage_reader
         )
+        return report
 
     return run
 
@@ -85,6 +133,7 @@ def screen_finalists(
     *,
     out_dir: Path,
     runner: ScreenRunner,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """Screen every finalist (model, backend, source) and summarize track + coverage.
 
@@ -95,7 +144,7 @@ def screen_finalists(
     failures: list[dict[str, str]] = []
     for finalist in finalists:
         name, backend, source = finalist["name"], finalist["backend"], finalist["source"]
-        prior = read_report(out_dir, source)
+        prior = read_report(out_dir, source, limit=limit)
         if prior is not None:
             _LOG.info("[joint-search] public screen reuse %s (track=%s)", name, prior["track"])
             reports[name] = prior

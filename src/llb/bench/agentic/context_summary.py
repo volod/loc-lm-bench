@@ -24,9 +24,6 @@ SUMMARY_PROMPT_PREFIX_CHARS = 40
 ELISION = "[...обрізано {dropped} символів...]"
 ELISION_DROPPED_DIGITS = 12
 MEMORY_MARKER = re.compile(r"\[memory: [^\]\n]+\]")
-SUMMARY_TRIM_HEAD_TAIL = "head_tail"
-SUMMARY_TRIM_PER_ENTRY_HEAD = "per_entry_head"
-SUMMARY_TRIM_STRATEGIES = (SUMMARY_TRIM_HEAD_TAIL, SUMMARY_TRIM_PER_ENTRY_HEAD)
 ENTRY_ELISION = "[...entry elided...]"
 
 Summarize = Callable[[list[TranscriptEntry]], str]
@@ -39,7 +36,7 @@ def summarize_entries(
     *,
     prior_summary: str = "",
     telemetry: ContextTelemetry | None = None,
-    trim_strategy: str = SUMMARY_TRIM_HEAD_TAIL,
+    trim_strategy: str = context_policy.DEFAULT_SUMMARY_TRIM_STRATEGY,
 ) -> str:
     """Ask the model for a bounded running summary of older steps."""
     offered = format_summary_transcript(entries, prior_summary=prior_summary)
@@ -89,11 +86,18 @@ def _bounded_summary_transcript(
     prior_summary: str,
     trim_strategy: str,
 ) -> tuple[str, bool]:
-    """Apply the shipped whole-transcript trim or the evidence-only entry-aware prototype."""
-    if trim_strategy == SUMMARY_TRIM_HEAD_TAIL:
+    """Apply the configured whole-transcript trim or the entry-aware one.
+
+    Both spend the SAME byte budget; they differ only in which bytes of the folded transcript
+    survive it (`llb.bench.agentic.context_policy.SUMMARY_TRIM_STRATEGIES`).
+    """
+    if trim_strategy == context_policy.SUMMARY_TRIM_HEAD_TAIL:
         return trim_observation(offered, transcript_cap_chars, aggregate_safe=False)
-    if trim_strategy != SUMMARY_TRIM_PER_ENTRY_HEAD:
-        raise ValueError(f"unknown summary trim strategy: {trim_strategy!r}")
+    if trim_strategy != context_policy.SUMMARY_TRIM_PER_ENTRY_HEAD:
+        raise ValueError(
+            f"unknown summary trim strategy: {trim_strategy!r}; "
+            f"choose from {context_policy.SUMMARY_TRIM_STRATEGIES}"
+        )
     if transcript_cap_chars <= 0 or len(offered) <= transcript_cap_chars:
         return offered, False
     parts = _summary_transcript_parts(entries, prior_summary=prior_summary)
@@ -125,6 +129,21 @@ def _entry_head(part: str, budget: int) -> str:
 def is_summary_prompt(prompt: str) -> bool:
     """Whether a prompt is the compact policy's summarize call."""
     return prompt.startswith(_empty_summary_prompt()[:SUMMARY_PROMPT_PREFIX_CHARS])
+
+
+def summary_offered_chars(prompt: str) -> int:
+    """How much transcript one summarize prompt is offering, template overhead removed.
+
+    The counterpart of `ContextTelemetry.summary_fold_input_chars` read from the OTHER side: the
+    telemetry field records the offered span as the policy folds it, and this recovers the same
+    span from the prompt a summarizer is handed. A replayed summarizer needs it because how much
+    it writes depends on how much it was shown -- the control's single fold covers the whole
+    transcript and a deeper cell's folds cover a few entries each, so a fold length replayed
+    without the span it was measured at is a length measured against the wrong offer. The two
+    agree exactly whenever the summary-input cap elides nothing, and below it when it does, which
+    is the direction that matters: the span the summarizer SAW is what its output length answers.
+    """
+    return max(0, len(prompt) - len(_empty_summary_prompt()))
 
 
 def summary_prompt_overhead_chars() -> int:
@@ -177,6 +196,9 @@ def compact_state(
     if not older:
         return False
     summary = (summarize(older) or "").strip()
+    # Measured BEFORE the typed facts below are prepended: the fold-length probe replays a
+    # summarizer, so what it needs is the span the model itself wrote.
+    model_summary_chars = len(summary)
     facts = " | ".join(
         fact
         for fact in (
@@ -193,6 +215,10 @@ def compact_state(
         summary = f"{facts}. {summary}".strip() if summary else facts
     if not summary:
         return False
+    state.telemetry.summary_output_chars.append(model_summary_chars)
+    # The step this fold lands on: every completed step has appended its prompt size already, and
+    # the fold happens while the NEXT one is being built.
+    state.telemetry.summary_fold_steps.append(len(state.telemetry.prompt_chars) + 1)
     state.summary = summary
     state.entries = state.entries[len(older) :]
     state.n_dropped += len(older)

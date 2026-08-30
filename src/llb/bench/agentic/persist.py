@@ -42,6 +42,10 @@ def _agentic_config(request: _AgenticPersistInput) -> dict[str, object]:
         "mean_max_prompt_tokens": round(request.mean_max_prompt_tokens, 4),
         "context_policy": request.context_policy,
         "context_policy_supported": request.context_policy_supported,
+        "malformed_call_policy": request.loop_policy.malformed_call,
+        "repeated_call_policy": request.loop_policy.repeated_call,
+        "repeat_feedback_variant": request.loop_policy.repeat_feedback,
+        "loop_policy_supported": request.loop_policy_supported,
         "completion_rate_ci": list(request.scored.completion_ci)
         if request.scored.completion_ci
         else None,

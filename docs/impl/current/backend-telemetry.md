@@ -19,8 +19,11 @@ Important knobs flow from `RunConfig` and CLI flags:
 - sampler environment from the vLLM preflight verdict;
 - `vllm_suppress_thinking`, the reasoning-output controls described next.
 
-The launcher preserves startup logs when readiness fails. This is important because vLLM failures
-often happen before a JSON API is available.
+The launcher preserves a FAILED launch's startup log outside the run's staging dir and names the
+surviving path in the error it raises. This is important because vLLM failures often happen before
+a JSON API is available, and because the staging dir a screen cell or tuning trial launched in is
+deleted before anyone reads the traceback -- see
+[a failed launch names a log that still exists](host-validation/acceptance-paths.md#a-failed-launch-names-a-log-that-still-exists).
 
 ### Thinking Suppression On The vLLM Path
 

@@ -79,6 +79,10 @@ class ProbeReport:
     recommendation: str
     recommendation_note: str
     rows: list[JsonObject] = field(default_factory=list)
+    # The retrieval knobs the probed store was built with. A `context_order` recommendation is only
+    # about the store whose real distractors produced it, so a consumer composing it with other
+    # readings needs to be able to tell it apart from one taken against a re-chunked store.
+    retrieval_fingerprint: JsonObject | None = None
 
 
 def position_index(position: str, k: int) -> int:
@@ -188,6 +192,7 @@ def run_probe(
     backend: str,
     k: int,
     candidate_depth: int = DEFAULT_CANDIDATE_DEPTH,
+    retrieval_fingerprint: JsonObject | None = None,
 ) -> ProbeReport:
     """Execute the full probe: build cases, ask each question at every gold position, score,
     aggregate per position, and derive the ordering recommendation."""
@@ -223,4 +228,5 @@ def run_probe(
         recommendation=recommendation,
         recommendation_note=note,
         rows=rows,
+        retrieval_fingerprint=retrieval_fingerprint,
     )

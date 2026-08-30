@@ -83,8 +83,20 @@ to the declared window and records `served_max_model_len=null` with `budget_sour
 closes the Ollama hole where a GGUF advertising 131072 still serves `num_ctx=4096` by default: the
 guard no longer approves prompts the backend will silently truncate. For Ollama, `bench-agentic` /
 `bench-agentic-context` always drive the native `/api/chat` launcher and pass `num_ctx` from
-`--max-model-len` / `context_budget`, warming the model before the probe so `/api/ps` reports the
-window the run will actually use. The same applies when the operator passes `--base-url` pointing
+`--max-model-len` / `context_budget`.
+
+The probe is only worth as much as the warm that precedes it, so the agent lanes' one entry point
+(`resolve_agent_context_budget` in `src/llb/cli/bench/_agent_context.py`) hands the whole
+warm-then-probe to `probe_served_window`, and that warm is UNCONDITIONAL for Ollama -- not only
+when the run pins a window. Unpinned is the case that needs it most: Ollama reports nothing at all
+on `/api/ps` until a request has loaded the model, so an unpinned run used to resolve its guard
+from the declared window alone precisely where the served 4096 default binds hardest. A pinned run
+re-warms too rather than trusting a window read at launch, because Ollama keeps a previously loaded
+context until a request asks for a different one, so a resident entry left by an earlier run answers
+for that run and not this one (`launcher_served_window(..., force_warm=True)`). An unreachable
+backend resolves to the declared window and logs the fallback instead of raising: the probe is
+telemetry about a window, and the launcher the run itself starts is the reachability gate that
+refuses a dead daemon by name. The same applies when the operator passes `--base-url` pointing
 at Ollama's OpenAI-compatible `/v1` endpoint: `drive_with_backend` detects that the URL resolves
 to the same host as `ollama_host` (`is_ollama_base_url` in `src/llb/backends/served_window.py`)
 and routes the call through the native launcher on that host rather than the OpenAI-compat
@@ -150,7 +162,12 @@ CI drives every policy, the compaction path, and the guard over the fake endpoin
 (`tests/llb/bench/context_policy/test_agentic_context.py`,
 `tests/llb/backends/test_served_window.py`), including the assertion that the `full` policy's prompt
 is byte-identical to the pre-policy loop's, that no episode in any policy sends a prompt over the
-resolved window, and that a declared window larger than a probed one is bound by the probe. The
+resolved window, and that a declared window larger than a probed one is bound by the probe.
+`tests/llb/cli/test_agent_context_budget.py` covers the CLI wrapper itself with an injected
+launcher, one case per binding direction: an unpinned run is warmed and binds `served`, a smaller
+declared window still binds `declared` while recording the probed one, an unreachable daemon and a
+model that never becomes resident both fall back to `declared`, `--max-prompt-chars` skips the probe
+entirely, and an OpenAI-compatible `--base-url` is probed at its native root. The
 constant-sweep lane's trim arithmetic and pin/expose verdicts are covered in
 `tests/llb/bench/context_policy/test_agentic_context_sweep.py`.
 
@@ -159,6 +176,22 @@ CUDA host smoke (2026-07-29, MamayLM-Gemma-3-12B-IT-v2.0 on Ollama): after
 `resolve_context_budget(..., probe=True)` with `--max-model-len 32768` bound to
 `budget_source=served` / `served_max_model_len=8192`. A `make bench-agentic-context` pass with
 `full,observation_cap` persisted those provenance fields on the agentic-context manifests.
+
+CUDA host check of the unconditional warm (2026-08-29, RTX 4060 Ti 16 GB, `gemma4:12b` on Ollama,
+nothing resident): with no `--max-model-len` and no `context_budget`, a probe taken WITHOUT a warm
+read `served_max_model_len=null` and resolved `budget_source=declared` against the model card's
+262144, for a 783,360-char prompt guard; `resolve_agent_context_budget` on the same config warmed
+first, read `served_max_model_len=4096`, and resolved `budget_source=served` for a 9216-char guard
+-- the declared side was 64x looser than the window that truncates, and the old unpinned path took
+it. Pinning `--max-model-len 16384` on top of that now-stale 4096 resident entry re-warmed and read
+`served_max_model_len=16384`, so the pin is what the probe observes rather than the previous run's
+window. Pointing the same pinned config at a dead `http://127.0.0.1:1` resolved
+`budget_source=declared` / `served_max_model_len=null` and logged the fallback without raising.
+Reading: on this host the guard an unpinned agent run enforces is now the served window, so a
+`context_overflow` termination (or its absence) means what the document lanes' skips mean. What
+would overturn it: an Ollama build that reports a resident window on `/api/ps` before any request,
+or one that stops honouring `num_ctx` on the warm request, either of which would make the warm
+either unnecessary or misleading.
 
 `--base-url` routing (2026-07-29): unit test `test_drive_with_backend_routes_ollama_base_url_through_native_launcher`
 in `tests/llb/backends/test_served_window.py` confirms that when `--base-url` resolves to the same

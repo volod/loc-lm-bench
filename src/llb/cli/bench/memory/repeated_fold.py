@@ -13,11 +13,23 @@ def bench_agentic_context_compact_repeated_fold_cmd(
     design_path: Path = typer.Option(
         Path("samples/benchmarks/agentic_compact_repeated_fold_completion_design.json"),
         "--design",
-        help="one-fold control plus the committed repeatedly folding cells",
+        help=(
+            "one-fold control plus the committed repeatedly folding cells; the two-family "
+            "replication design runs the same cells over a larger case set and a model roster"
+        ),
     ),
 ) -> None:
-    """Measure completion by fold count and attribute survival with a marker ablation."""
+    """Measure completion by fold count and attribute survival with a marker ablation.
+
+    The design decides which reading is taken. A `compact_repeated_fold_replication` design
+    carries a candidate roster and is driven family by family; the single-family completion
+    design keeps the pinned-model path it was measured on.
+    """
     from llb.backends.ollama import list_models
+    from llb.bench.memory.repeated_fold.replication_design import (
+        STUDY_KIND as REPLICATION_STUDY_KIND,
+    )
+    from llb.cli.bench.memory.repeated_fold_replication import run_replication
     from llb.bench.memory.repeated_fold.completion import (
         RepeatedFoldRun,
         run_repeated_fold_completion,
@@ -38,6 +50,12 @@ def bench_agentic_context_compact_repeated_fold_cmd(
 
     try:
         design = load_repeated_fold_design(design_path)
+    except ValueError as exc:
+        cli_error(str(exc))
+    if design.get("study_kind") == REPLICATION_STUDY_KIND:
+        run_replication(design_path)
+        return
+    try:
         validate_repeated_fold_design(design)
     except ValueError as exc:
         cli_error(str(exc))

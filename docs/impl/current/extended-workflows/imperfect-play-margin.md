@@ -149,7 +149,10 @@ So the agreement above is structural. It is also a LIMIT: the published verdicts
 about one-fold transcripts, and a repeatedly folding cell is necessarily outside the cap-fitting
 band, below the cap peak, where the `observation_cap` arm overflows and no cost delta exists to
 publish. CI asserts both halves -- every committed surface cell folds exactly once under both walks,
-and the fixture below is refused if any of its cells clears its own cap peak.
+and the fixture below is refused if any of its cells clears its own cap peak. The same structure
+limits the ROUTING rule as well as the invariance verdict, and
+[the trigger rule is a one-fold rule](crossover-geometry.md#the-trigger-rule-is-a-one-fold-rule)
+measures what the guard costs once an episode folds again.
 
 ## The regime the invariance verdict does NOT cover
 
@@ -185,53 +188,13 @@ and checked (`declaration_drift`), so a runtime change that moves the regime rea
 `the_declared_geometry_no_longer_measures_what_it_declares` rather than quietly becoming the new
 expectation.
 
-## Completion through repeated folds
+## What repeated folds cost
 
-The geometry now has a real-model outcome reading. The committed design
-`samples/benchmarks/agentic_compact_repeated_fold_completion_design.json` runs the two depth-10
-fixture cells beside the cap-fitting `surface-d10-g14000` one-fold control. It runs `compact` alone:
-the repeated-fold guards remain below the 11,926-char cap peak, so an `observation_cap` arm there
-would measure overflow rescue rather than the completion cost of another summary hop. Every cell
-uses the same two memory tasks, seed 727, `compact_share=0.8`, the shipped `window` summarize-input
-bound, and an 8192-token served window.
-
-The outcome is grouped by the fold count each REAL episode measured, not the oracle declaration.
-The one-fold control is also an eligibility gate: every control case must complete and measure
-exactly one fold before any later cell runs. A model that never reaches the control's fold cannot
-anchor a decay claim. This refusal was necessary in practice: the first MamayLM 12B pilot completed
-0/2 control cases and measured zero folds in both, so that aggregate is retained as a rejected
-pilot and is not completion evidence (lookup key: run
-`agent-context-policy-repeated-fold-completion-cost`, run id `1376371810ac`).
-
-CUDA host evidence (2026-08-11, RTX PRO 3000 Blackwell Laptop GPU, 12 GiB): `qwen3:14b` on Ollama
-at 22.64 tok/s. The control passed 2/2 with one fold per case, and all six shipped-policy cases
-completed:
-
-| cell | guard | oracle folds | measured folds | typed-marker completion | summary-only completion |
-| --- | ---: | ---: | --- | ---: | ---: |
-| `onefold-d10-g14000` | 14000 | 1 | `1, 1` | 2/2 | 2/2 |
-| `twofold-d10-g7000` | 7000 | 2 | `3, 2` | 2/2 | 2/2 |
-| `twofold-d10-g6500` | 6500 | 3 | `3, 3` | 2/2 | 2/2 |
-
-Grouped by what actually happened, completion was 2/2 at one fold, 1/1 at two folds, and 3/3 at
-three folds. Verdict: **completion is stable through the measured three-fold regime**. The
-operator-facing fold-count limit therefore needs no value tighter than three on this model and task
-set. The evidence does not authorize extrapolation past three folds or to an unqualified model.
-
-The mechanism reading is causal rather than an inspection of prose. Each cell also runs an
-evidence-only `preserve_memory_markers=false` arm: `fold_memory_markers` no longer copies the typed
-`[memory: ...]` record into the running summary, leaving only what the model writes. That ablation
-also completed 6/6, with no paired loss, so **the model-written summary was sufficient** here; the
-typed marker was not required for any measured completion. The shipped default remains marker
-preservation enabled -- the ablation shows the marker is not load-bearing on THIS task set, which is
-a reason to keep it cheap, not a reason to drop it. What would overturn the stability verdict: a
-cell that measures four or more folds, or a model that qualifies on the control and then loses a
-case at two or three folds; neither exists in this run, which is why the claim stops at three.
-Lookup key: run `agent-context-policy-repeated-fold-completion-cost`, run id `9ce2d99c7a89`.
-
-```bash
-make bench-agentic-context-compact-repeated-fold
-```
+Every statement above is about a transcript that folds ONCE, because a cap-fitting guard makes it
+one. What an episode loses when the same task folds two and three times -- and what it takes to hold
+that fold count equal across model families -- is measured in
+[completion through repeated compact folds](repeated-fold-completion.md), which runs the repeatedly
+folding fixture cells above against a real model.
 
 ## Implementation map
 
@@ -248,9 +211,7 @@ make bench-agentic-context-compact-repeated-fold
 | Controller seam on the audit replay | `src/llb/bench/policy_change/replay.py`, `src/llb/bench/policy_change/audit.py`, `src/llb/bench/policy_change/tasks.py` |
 | Two-fold fixture contract and geometry probe | `src/llb/bench/memory/two_fold/fixture.py`, `samples/benchmarks/agentic_compact_two_fold_geometry_design.json` |
 | Two-fold audit rows, margin scaling, and the validity reading | `src/llb/bench/memory/two_fold/reading.py` |
-| Repeated-fold completion design and compact-only runner | `src/llb/bench/memory/repeated_fold/design.py`, `src/llb/bench/memory/repeated_fold/completion.py` |
-| Completion/mechanism readings, report, and command | `src/llb/bench/memory/repeated_fold/reading.py`, `src/llb/bench/memory/repeated_fold/report.py`, `src/llb/cli/bench/memory/repeated_fold.py` |
-| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py`, `tests/llb/bench/memory/test_agentic_memory_repeated_fold_completion.py` |
+| Tests | `tests/llb/bench/memory/test_agentic_memory_worst_case_probe.py`, `tests/llb/bench/memory/test_agentic_memory_two_fold_geometry.py` |
 
-The geometry, readings, gate, persistence, and marker ablation use deterministic fakes in `make ci`;
-the completion values above come from the named CUDA run.
+The probes, the band arithmetic, and both bound-invariance verdicts run on deterministic fakes in
+`make ci`; nothing on this page needs a GPU.

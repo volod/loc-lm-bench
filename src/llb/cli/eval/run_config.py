@@ -32,6 +32,8 @@ _CONFIG_OPTIONS = {
     "reranker": "reranker",
     "rerank_candidates": "rerank_candidates",
     "context_order": "context_order",
+    "top_k": "top_k",
+    "context_budget": "context_budget",
     "restore_table_headers": "restore_table_headers",
     "context_strategy": "context_strategy",
     "retrieved_document_top_n": "retrieved_document_top_n",

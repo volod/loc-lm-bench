@@ -170,14 +170,10 @@ def run_eval(
             telemetry_report = _collect_optional_telemetry(config, backend)
             probe_report = _maybe_run_probes(config, items, store, backend)
     except KeyboardInterrupt:
-        _preserve_failed_staging(
-            active_launcher, config, resume, run_dir, staging_dir, interrupted=True
-        )
+        _preserve_failed_staging(active_launcher, resume, run_dir, staging_dir, interrupted=True)
         raise
     except BaseException:
-        _preserve_failed_staging(
-            active_launcher, config, resume, run_dir, staging_dir, interrupted=False
-        )
+        _preserve_failed_staging(active_launcher, resume, run_dir, staging_dir, interrupted=False)
         raise
 
     backend_telemetry: BackendMetadata = (

@@ -42,6 +42,14 @@ both policies in the same 10 controller steps; compact added one summary call to
 `compact - observation_cap` deltas were completion +0.000 [+0.000, +0.000], total model-input
 tokens +92 [+0, +232.5], and model calls +0.143 [+0, +0.357].
 
+The two policies run as BLOCKS -- every cap episode, then every compact episode, against one
+stateful endpoint -- so a per-case difference here would carry the same ambiguity the summary-fold
+adoption study removed from its own arms by running them task-adjacent in a balanced order
+([summary-input bounds and elision](summary-input-elision.md#arm-order-is-balanced-not-fixed)).
+Nothing gates the second policy in this lane, so it is the one that could adopt that schedule
+unchanged. It has not needed to yet: both policies completed the identical 13 tasks and failed the
+identical one, so there is no per-case difference for order to explain.
+
 Verdict: **still tied**. Once the active summarizer cost is counted, compact does not improve
 completion and its extra input/call cost does not separate clear of zero at this task count.
 Use `observation_cap` for this medium-search shape because it reaches the same observed outcome

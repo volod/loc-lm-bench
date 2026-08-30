@@ -1,0 +1,5 @@
+{
+  "id": "board.agent_profile.gaps_intro",
+  "kind": "text",
+  "template": "gaps_intro.txt"
+}

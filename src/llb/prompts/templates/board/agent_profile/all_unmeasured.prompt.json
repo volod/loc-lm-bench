@@ -1,0 +1,5 @@
+{
+  "id": "board.agent_profile.all_unmeasured",
+  "kind": "text",
+  "template": "all_unmeasured.txt"
+}

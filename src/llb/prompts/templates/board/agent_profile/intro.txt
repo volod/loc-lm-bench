@@ -1,0 +1,1 @@
+Every value below was measured by one lane and is reported with the artifact that measured it, that lane's own verdict, and how old the reading is. A field whose lane never ran is `unmeasured` -- never a default standing in for a recommendation.

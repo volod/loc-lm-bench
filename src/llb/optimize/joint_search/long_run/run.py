@@ -23,6 +23,7 @@ from typing import Any
 
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ModelSpec
+from llb.optimize.joint_search.constants import DEFAULT_SEARCH_MAX_MODEL_LEN
 from llb.optimize.joint_search.long_run.plan import LONG_RUN_METHOD, LongRunPlan
 from llb.optimize.joint_search.long_run.public_tracks import (
     SCREEN_METHOD,
@@ -85,11 +86,12 @@ def run_long_run(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     seed: int = 13,
-    max_model_len: int = 8192,
+    max_model_len: int = DEFAULT_SEARCH_MAX_MODEL_LEN,
     screen_runner: ScreenRunner | None = None,
     screen_evaluate: ScreenEvaluate | None = None,
     stage: LongRunStage | None = None,
     public_limit: int | None = None,
+    public_evict: bool = True,
     resamples: int = DEFAULT_RESAMPLES,
     bootstrap_seed: int = DEFAULT_SEED,
 ) -> LongRunResult:
@@ -128,11 +130,21 @@ def run_long_run(
         seed=seed,
         max_model_len=max_model_len,
         case_limit=None,
+        screen_case_cap=plan.screen.applied_n,
     )
     public = screen_finalists(
         [{"name": f.name, "backend": f.backend, "source": f.source} for f in search.finalists],
         out_dir=base_config.data_dir / SCREEN_METHOD,
-        runner=screen_runner or default_screen_runner(base_config, limit=public_limit),
+        runner=screen_runner
+        or default_screen_runner(
+            base_config.with_overrides(max_model_len=max_model_len),
+            limit=public_limit,
+            isolate=isolate,
+            evict=public_evict,
+            vram_reader=vram_reader,
+            pid_usage_reader=pid_usage_reader,
+        ),
+        limit=public_limit,
     )
     entries = _scoreboard_entries(search)
     rows, unreadable = read_board_rows(entries, {f.name: f.finals for f in search.finalists})

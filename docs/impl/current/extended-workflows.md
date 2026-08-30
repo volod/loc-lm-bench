@@ -25,13 +25,15 @@ to any of it invalidates.
 | [Agent context policies](extended-workflows/agent-context-policies.md) | The policy set, its host evidence, and aggregate-safe observation trimming with compact-finish recovery |
 | [Compact versus cap](extended-workflows/compact-versus-cap.md) | Active compaction against an observation cap on long and memory-dependent transcripts, including summarizer cost and cross-family transfer |
 | [Cap-fitting boundary and crossover geometry](extended-workflows/crossover-geometry.md) | Where compact stops repaying its summary call: the boundary surface plus trigger and fold-step axes |
-| [Summary-input bounds and elision](extended-workflows/summary-input-elision.md) | The step-aligned bound, unavoidable window elision, middle-critical transfer, and entry-aware prototype |
+| [Summary-input bounds and elision](extended-workflows/summary-input-elision.md) | The step-aligned bound, unavoidable window elision, middle-critical transfer, and the entry-aware fold as a policy choice |
 | [The imperfect-play safety margin](extended-workflows/imperfect-play-margin.md) | How far a real controller can grow a transcript past perfect play, the margin design validation spends on it, and the worst-case bound-invariance verdict |
+| [Completion through repeated compact folds](extended-workflows/repeated-fold-completion.md) | What an episode loses when the same task folds two and three times, replicated on a second model family with the middle rung's guard fitted per family |
 | [Published values under the shipped cap](extended-workflows/published-values.md) | Which published compact evidence a summarize-bound change can move, how a number resolves to its run, and the registered arithmetic and reading it declares |
 | [Published-value implementation map](extended-workflows/published-value-implementation.md) | The module and test inventory for provenance, derivation, arithmetic, readings, and crossover restatement |
 | [Policy-constant change audit](extended-workflows/policy-constant-audit.md) | Which published agentic numbers a context-policy constant change invalidates, the geometry that tests the compound guarantee, which constant pair separates the two readings, and the CI gate that pins the shipped constants |
 | [Context-policy constant sweeps](extended-workflows/context-policy-constants.md) | The cap / head-share / `keep_last_n` pin-or-expose sweep, and `keep_last_n` on longer transcripts |
 | [Context-policy comparison](extended-workflows/context-policy-comparison.md) | Running one agentic category across context policies and reading the comparison |
+| [Composed agent operating profile](extended-workflows/agent-operating-profile.md) | Every knob of an agent configuration in one artifact, each traceable to the run that measured it |
 
 ## Prompts, judging, and fine-tuning
 

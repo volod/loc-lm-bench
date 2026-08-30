@@ -216,12 +216,14 @@ class _Ollama:
         self._served: int | None = None
         self._after_warm = after_warm
         self.warmed = 0
+        self.warm_timeout: float | None = None
 
     def served_context(self) -> int | None:
         return self._served
 
     def ensure_num_ctx(self, timeout: float = 120.0) -> int | None:
         self.warmed += 1
+        self.warm_timeout = timeout
         self._served = self._after_warm
         return self._served
 
@@ -241,6 +243,27 @@ def test_launcher_served_window_warms_a_backend_that_reports_nothing_yet():
     launcher = _Ollama(after_warm=4096)
     assert launcher_served_window(launcher) == 4096
     assert launcher.warmed == 1
+
+
+def test_launcher_served_window_force_warm_ignores_a_stale_resident_window():
+    """Ollama keeps a previously loaded context until a request asks for a different one, so a
+    launcher that PINS num_ctx cannot trust a window read before its own first request."""
+
+    class Stale(_Ollama):
+        def served_context(self) -> int | None:
+            return self._served or 32768
+
+    launcher = Stale(after_warm=4096)
+    assert launcher_served_window(launcher) == 32768
+    assert launcher.warmed == 0
+    assert launcher_served_window(launcher, force_warm=True) == 4096
+    assert launcher.warmed == 1
+
+
+def test_launcher_served_window_passes_an_explicit_warm_timeout():
+    launcher = _Ollama(after_warm=4096)
+    assert launcher_served_window(launcher, timeout=7.0) == 4096
+    assert launcher.warm_timeout == 7.0
 
 
 def test_launcher_served_window_reports_none_when_the_warm_request_fails():

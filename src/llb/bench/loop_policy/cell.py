@@ -6,6 +6,7 @@ import time
 from llb.bench.agentic.context_policy import ContextPolicy
 from llb.backends.context_budget import ContextBudget
 from llb.bench.agentic.episode_state import Clock
+from llb.bench.agentic.loop_policy import LoopPolicy
 from llb.bench.agentic.model import HARNESS_LOOP, AgenticTask, Episode
 from llb.bench.agentic.run import run_agentic
 from llb.bench.loop_policy.report import (
@@ -43,6 +44,7 @@ def run_policy_cell(
         max_steps: int = BASELINE_MAX_STEPS,
         policy: ContextPolicy | None = None,
         budget: ContextBudget | None = None,
+        loop_policy: LoopPolicy | None = None,
     ) -> Episode:
         nonlocal task_number
         task_number += 1
@@ -60,7 +62,7 @@ def run_policy_cell(
             max_steps=max_steps,
             policy=policy,
             budget=budget,
-            loop_policy=cell.policy,
+            loop_policy=loop_policy,
             clock=clock,
         )
         _LOG.info(
@@ -91,6 +93,7 @@ def run_policy_cell(
         harness=harness,
         policy=ContextPolicy(),
         budget=budget,
+        loop_policy=cell.policy,
         persist=False,
         meter=meter,
     )

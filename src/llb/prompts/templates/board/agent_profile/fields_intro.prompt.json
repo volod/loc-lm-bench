@@ -1,0 +1,5 @@
+{
+  "id": "board.agent_profile.fields_intro",
+  "kind": "text",
+  "template": "fields_intro.txt"
+}

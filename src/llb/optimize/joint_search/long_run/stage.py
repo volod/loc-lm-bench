@@ -20,9 +20,15 @@ from typing import Any
 
 from llb.core.config import RunConfig
 from llb.core.contracts.models import ResolvedModel
+from llb.optimize.joint_search.constants import DEFAULT_SEARCH_MAX_MODEL_LEN
 from llb.optimize.joint_search.hooks import candidate_config, slug
 from llb.optimize.joint_search.long_run.plan import LongRunPlan
-from llb.optimize.joint_search.long_run.sequential import SearchTrail, run_trial_blocks
+from llb.optimize.joint_search.long_run.sequential import (
+    SearchTrail,
+    read_trail,
+    run_trial_blocks,
+    write_trail,
+)
 from llb.optimize.joint_search.models import FinalistTuneResult
 from llb.optimize.joint_search.pick_scoring import FinalRunner, score_finalist_picks
 from llb.optimize.joint_search.report import write_scoreboard
@@ -70,7 +76,7 @@ class LongRunStage:
     pid_usage_reader: Callable[[], dict[int, int]] | None = None
     vram_mib: int = 0
     ram_mib: int = 0
-    max_model_len: int = 8192
+    max_model_len: int = DEFAULT_SEARCH_MAX_MODEL_LEN
     # CI seams: the block tuner and the held-out runner, injected so the whole schedule is
     # exercised without an Optuna study or a backend.
     tune_block: Callable[["FinalistCell", int], MultiObjectiveResult] | None = None
@@ -90,12 +96,39 @@ class LongRunStage:
             )
             done.append(prior)
         by_name = {cell.name: cell for cell in cells}
-        self.trail = run_trial_blocks(
-            [cell.name for cell in cells],
-            plan=self.plan,
-            advance=lambda name, target: self._advance(by_name[name], target),
-        )
+        self.trail = self._trail(request, cells, by_name)
         return self._score(request, cells, done)
+
+    def _trail(
+        self,
+        request: FinalistStageRequest,
+        cells: Sequence["FinalistCell"],
+        by_name: dict[str, "FinalistCell"],
+    ) -> SearchTrail:
+        """Spend the blocks, or reload the trail a killed earlier entry already spent.
+
+        Every finalist resuming from a finished `result.json` means there are no blocks left to
+        run, and re-deriving the trail is impossible: the ranking it recorded came from tuning-split
+        values this entry never computes. So the persisted trail IS the record, and a re-entry that
+        finds none reports an empty one rather than inventing a stopping rule it did not apply.
+        """
+        if cells:
+            trail = run_trial_blocks(
+                [cell.name for cell in cells],
+                plan=self.plan,
+                advance=lambda name, target: self._advance(by_name[name], target),
+            )
+            write_trail(request.run_dir, trail)
+            return trail
+        prior = read_trail(request.run_dir)
+        if prior is None:
+            return run_trial_blocks([], plan=self.plan, advance=lambda _n, _t: (0.0, 0))
+        _LOG.info(
+            "[joint-search] long-run trail resumed: stopped by %s after %d trials per finalist",
+            prior.stopped_by,
+            prior.trials_per_finalist,
+        )
+        return prior
 
     def _cell_dir(self, request: FinalistStageRequest, name: str) -> Path:
         return request.run_dir / "finalists" / slug(name)

@@ -98,6 +98,15 @@ Additional search knobs in this mode:
 - **Context budget** -- samples a token budget from `{2048, 4096, 8192, 16384}` that couples
   `top_k` / `chunk_size` / `max_model_len` (`RunConfig.context_budget`); disable with
   `--no-context-budget`.
+- **vLLM serving utilization** -- sampled from `GPU_MEMORY_UTILIZATION_RANGE` (0.70-0.90, step
+  0.05) for vLLM backends only, and clamped under the run's DECLARED
+  `RunConfig.gpu_memory_utilization`
+  (`suggest_gpu_memory_utilization` in `src/llb/optimize/tuning_space.py`). The declared value is a
+  host fact, not a search axis: a trial served above it is a launch nobody authorized, and on a
+  card whose validated value is 0.80 it is an out-of-memory graph capture rather than a slow trial.
+  A ceiling at or below the range floor pins the value instead of sampling it, so a very tight host
+  still runs its trials. Because the `RunConfig` default is 0.85, the sampled band is 0.70-0.85
+  unless a config file or a flag declares otherwise.
 
 ```bash
 llb tune --model llama3.2:3b --backend ollama --objectives quality,latency \
@@ -135,7 +144,10 @@ Schedule (`src/llb/optimize/joint_search/`):
 2. **Cheap screen** -- each runnable candidate is scored on the **tuning** split only with a small
    case cap (`--screen-limit`, growing by `--eta` each round). Screen cells reuse
    `isolate_cell` for VRAM-owning backends. Each completed cell writes
-   `screen/<slug>-r<round>.json` so a resume skips re-evaluation.
+   `screen/<slug>-r<round>.json` so a resume skips re-evaluation. A caller whose screen size was
+   DERIVED rather than chosen passes `screen_case_cap=` as a ceiling over every round, so the
+   growth cannot spend more items than the derivation priced; only the
+   [roster confirmation](roster-confirmation.md) passes one, and the run manifest records it.
 3. **Successive halving** -- each round keeps `max(min_finalists, n // eta)` survivors by screen
    quality; eliminations are written to `ledger.json` with `split=tuning` (final-split scores
    never enter the ledger). The ledger is rewritten after every round.
@@ -155,6 +167,67 @@ Schedule (`src/llb/optimize/joint_search/`):
 **Resume:** re-run with the same `--run-id` / `JOINT_SEARCH_RUN_ID=<id>`. Completed screen markers,
 per-pick scoring markers, and finalist `result.json` files are skipped; Optuna studies only
 enqueue `max(0, n_trials - len(study.trials))` new trials.
+
+### Serving knobs a search carries
+
+Both `joint-search` and `joint-search-long-run` take the serving inputs `run-eval` takes:
+`--config <run config>`, `--gpu-memory-utilization`, and `--max-model-len`
+(`src/llb/cli/models/search_serving.py`; `JOINT_SEARCH_CONFIG=`, `JOINT_SEARCH_GPU_UTIL=`,
+`JOINT_SEARCH_MAX_MODEL_LEN=` on the make targets). The values land on the base `RunConfig`, which
+is what `candidate_config` derives every screen cell, every finalist tune, and the confirmation
+run's public screen from -- so one declaration reaches all of them, and the tune's sampled
+utilization is clamped under it (see [the serving-utilization knob](#multi-objective-rag-tuner)).
+
+Why the flag and not the guard: the pre-launch VRAM guard
+(`guard_vllm_contention`, `src/llb/executor/runner_backend.py`) derates against OTHER processes'
+memory, so on a quiet card a too-high request reads as free and is passed through unchanged. What
+follows is not a slower run but a LOST candidate -- the vLLM engine exceeds its own budget during
+graph capture and the candidate drops out of the screen, which on the board is indistinguishable
+from a candidate that scored badly. Declare the value the host class was validated for
+([acceptance paths](../host-validation/acceptance-paths.md#backend-paths)).
+
+`--max-model-len` resolves flag, then config file, then `DEFAULT_SEARCH_MAX_MODEL_LEN` (8192): a
+search always names a window, because every model on this roster has a 128k+ native one whose KV
+cache no 16 GiB card can hold. `manifest.json` records both under a `serving` block, so a board can
+be told apart from one taken at a different utilization.
+
+Host evidence (2026-08-28, RTX 4060 Ti 16 GiB CUDA host, vLLM 0.23.0). One vLLM candidate --
+Gemma 4 E4B int4 `w4a16` (`google/gemma-4-E4B-it-qat-w4a16-ct`), sliced out of `models_uk.yaml`
+with its Ollama/llama.cpp alternates removed so the resolver had to serve it through vLLM or skip
+it -- searched over the committed `ua_squad_postedited_v1` gold set (250 items, 82 tuning / 82
+held-out) and its corpus, embedder `intfloat/multilingual-e5-base` pinned to CPU, no LLM judge, a
+bounded `--trials 2 --screen-limit 3 --min-finalists 1 --limit 3`:
+
+- The run config file declared `gpu_memory_utilization: 0.85` and `max_model_len: 8192`; the run
+  was started with `--gpu-memory-utilization 0.80` and no `--max-model-len`. All six vLLM launches
+  -- the screen cell, the tuning trial's progressive pruning subsets, and the final pick scoring --
+  reported the pre-launch guard line `gpu-memory-utilization 0.80 fits`, and the command echoed
+  `serving: gpu_memory_utilization=0.8 max_model_len=8192`. **Reading: precedence holds in both
+  directions on a real launch -- the flag beat the file's utilization, and the file supplied a
+  window no flag named.**
+- The candidate SCREENED, at `backend=vllm`, tuning-split quality `0.827` and `0.940 s` latency on
+  three cases. **Reading: this is the whole outcome -- before, the same candidate could only reach
+  a board through Ollama, because the search had no way to ask for the 0.80 this tier is validated
+  for.**
+- The tuning trial's sampled `gpu_memory_utilization` came back at `0.80`, the declared ceiling,
+  never the `0.85`/`0.90` the unclamped 0.70-0.90 band allows; both final picks carry
+  `gpu_memory_utilization=0.8, max_model_len=8192` in their overrides, and `manifest.json` records
+  the same pair under `serving`. **Reading: the declaration reaches the tune and the board, not
+  just the screen.**
+- Both picks scored `0.777` on three held-out cases. **Reading: three cases is a plumbing check.
+  These quality numbers say nothing about the model and must not be quoted as a reading of it.**
+- Two host facts the run cost to learn. With the embedder resident on the GPU the pre-launch guard
+  ABORTED the first screen cell (12439 MB free against a ~12609 MB need, "no other GPU process");
+  `LLB_EMBED_DEVICE=cpu` freed it and the same cell reported 14565 MB free and launched. And the
+  FIRST tuning trial died with `vLLM exited (code 1) during startup`, whose log lived in the
+  `emit=False` temp run dir and was deleted with it; the identical utilization reproduced clean in a
+  standalone `run-eval`, and the retried trial completed, so it is not attributable to the serving
+  values. **What would overturn this:** a repeat of that startup failure on a quiet card would make
+  it a real defect rather than a flake. That repeat is now readable rather than lost -- a failed
+  launch keeps its server log and the raised error names where ([a failed launch names a log that
+  still
+  exists](../host-validation/acceptance-paths.md#a-failed-launch-names-a-log-that-still-exists)) --
+  so the next occurrence says which without re-running the search.
 
 ```bash
 make joint-search JOINT_SEARCH_TRIALS=20 JOINT_SEARCH_SCREEN_LIMIT=8

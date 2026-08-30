@@ -7,7 +7,7 @@ resting on one pair through one coupling is a guarantee that retires with the ne
 the `trigger` bound -- already not the shipped default -- and the only counterexample goes with it.
 
 So the question "is there a second pair?" is answered here for ALL of them rather than left open.
-Each of the `C(6, 2) = 15` pairs of `AUDITABLE_FIELDS` states its mechanism and hands the solver its
+Each of the `C(7, 2) = 21` pairs of `AUDITABLE_FIELDS` states its mechanism and hands the solver its
 own three conditions (`agentic_policy_change_interaction_conditions`), and the solver -- not this
 file -- says whether a guard satisfies them:
 
@@ -39,8 +39,10 @@ from llb.bench.policy_change.interaction.terms import (
     FIELD_KEEP_LAST,
     FIELD_KEEP_RECENT,
     FIELD_SHARE,
+    FIELD_TRIM,
     ConditionsFn,
 )
+from llb.bench.policy_change.interaction.trim import trim_strategy_conditions
 
 # What the band arithmetic answers about one pair.
 ANSWER_BAND = "band"
@@ -58,6 +60,7 @@ FIELD_MOVES: dict[str, tuple[Any, Any]] = {
     FIELD_SHARE: (0.5, 0.48),
     FIELD_KEEP_RECENT: (1, 2),
     FIELD_BOUND: ("window", "trigger"),
+    FIELD_TRIM: ("per_entry_head", "head_tail"),
 }
 
 # Candidates the value sweep asks about, per field. The first entry IS the FIELD_MOVES neighbour so
@@ -72,6 +75,7 @@ FIELD_CANDIDATE_GRID: dict[str, tuple[Any, ...]] = {
     FIELD_SHARE: (0.48, 0.55),
     FIELD_KEEP_RECENT: (2, 3),
     FIELD_BOUND: ("trigger",),
+    FIELD_TRIM: ("head_tail",),
 }
 
 _MECHANISM_SHARE_BOUND = (
@@ -102,6 +106,25 @@ _MECHANISM_KEEP_RECENT_BOUND = (
 _MECHANISM_HEAD = (
     "the head share moves bytes inside a trimmed observation and never its length, which is the only"
     " thing another field could read"
+)
+_MECHANISM_CAP_TRIM = (
+    "the cap decides which entries a fold hands the summarizer and how long each of them is, and"
+    " the trim only means something once that transcript overflows the summarize-input cap"
+)
+_MECHANISM_SHARE_TRIM = (
+    "the share decides which step folds, and so how large a transcript the trim is asked to cut"
+)
+_MECHANISM_KEEP_RECENT_TRIM = (
+    "the keep decides how many entries the fold offers, and the trim decides how the cap is spent"
+    " across them"
+)
+_MECHANISM_BOUND_TRIM = (
+    "the bound decides HOW MANY of the folded transcript's bytes reach the summarizer, and the trim"
+    " decides WHICH ones -- so the bound decides whether the trim is read at all"
+)
+_MECHANISM_HEAD_TRIM = (
+    "the head share moves bytes inside a trimmed observation and never its length, so it cannot"
+    " move whether or where a fold elides, which is the only thing the trim reads"
 )
 _MECHANISM_KEEP_LAST = (
     "`keep_last_n` parameterizes neither audited arm (`observation_cap`, `compact`), so no other"
@@ -197,6 +220,36 @@ COUPLINGS: dict[tuple[str, ...], Coupling] = _index(
             _MECHANISM_KEEP_RECENT_BOUND,
             keep_recent_conditions,
         ),
+        Coupling(
+            (FIELD_CAP, FIELD_TRIM),
+            ANSWER_NO_GEOMETRY,
+            _MECHANISM_CAP_TRIM,
+            observation_cap_conditions,
+        ),
+        Coupling(
+            (FIELD_SHARE, FIELD_TRIM),
+            ANSWER_NO_GEOMETRY,
+            _MECHANISM_SHARE_TRIM,
+            trim_strategy_conditions,
+        ),
+        Coupling(
+            (FIELD_KEEP_RECENT, FIELD_TRIM),
+            ANSWER_NO_GEOMETRY,
+            _MECHANISM_KEEP_RECENT_TRIM,
+            keep_recent_conditions,
+        ),
+        Coupling(
+            (FIELD_BOUND, FIELD_TRIM),
+            ANSWER_NO_GEOMETRY,
+            _MECHANISM_BOUND_TRIM,
+            trim_strategy_conditions,
+        ),
+        Coupling(
+            (FIELD_HEAD, FIELD_TRIM),
+            ANSWER_INDEPENDENT,
+            _MECHANISM_HEAD_TRIM,
+            head_share_conditions,
+        ),
         *(
             Coupling(pair, ANSWER_INDEPENDENT, _MECHANISM_HEAD, head_share_conditions)
             for pair in (
@@ -213,6 +266,7 @@ COUPLINGS: dict[tuple[str, ...], Coupling] = _index(
                 (FIELD_KEEP_LAST, FIELD_SHARE),
                 (FIELD_KEEP_LAST, FIELD_KEEP_RECENT),
                 (FIELD_KEEP_LAST, FIELD_BOUND),
+                (FIELD_KEEP_LAST, FIELD_TRIM),
             )
         ),
     ]

@@ -3,10 +3,8 @@
 from pathlib import Path
 from typing import Any, cast
 
-from llb.bench.agentic.context_summary import (
-    SUMMARY_TRIM_PER_ENTRY_HEAD,
-    summary_prompt_overhead_chars,
-)
+from llb.bench.agentic.context_policy import SUMMARY_TRIM_PER_ENTRY_HEAD
+from llb.bench.agentic.context_summary import summary_prompt_overhead_chars
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.agentic.design_fields import as_mapping, as_rows
 from llb.bench.memory.boundary.probe import compact_tasks_fold_input_probe

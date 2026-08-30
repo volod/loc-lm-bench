@@ -80,6 +80,23 @@ class ContextTelemetry:
     summary_input_elided_chars: int = 0
     n_trimmed_summary_inputs: int = 0
     summary_fold_input_chars: list[int] = field(default_factory=list)
+    # What the summarizer WROTE at each fold, before typed facts are prepended to it. The offered
+    # span above is chosen by the geometry; this one is chosen by the model, and it is what decides
+    # how much of the guard the post-fold prompt already spends -- so a family whose summaries run
+    # long re-crosses the trigger sooner and folds again on a geometry another family folds once on.
+    summary_output_chars: list[int] = field(default_factory=list)
+    # What each STEP appended to every later prompt: the rendered transcript entry the step's own
+    # call produces, observation excluded. The raw reply never enters a prompt -- only the tool
+    # name and arguments survive into the transcript -- so this, not the model's output length, is
+    # the rate at which a family's walk grows its own context. A fold-length probe replays a
+    # deterministic walk whose steps are the ORACLE's; carrying this measurement across makes the
+    # replayed growth rate the family's own rather than the probe's assumption.
+    step_entry_chars: list[int] = field(default_factory=list)
+    # Which STEP each fold happened on, 1-based. The offered span says what a fold saw; this says
+    # when it happened, which is the only thing that decides whether an episode reaches the fold
+    # at all -- a walk that ends before the trigger is crossed never enters the folding regime,
+    # however the trim would have behaved.
+    summary_fold_steps: list[int] = field(default_factory=list)
 
     @property
     def max_prompt_chars(self) -> int:
@@ -109,9 +126,6 @@ class ContextState:
     # Evidence-only episode ablation, deliberately not a ContextPolicy field: the shipped compact
     # policy always preserves markers, while a focused study can test the model summary unaided.
     preserve_memory_markers: bool = True
-    # Evidence-only summary-input prototype. The shipped path remains whole-transcript head/tail;
-    # focused studies can compare an entry-aware cap without expanding ContextPolicy vocabulary.
-    summary_trim_strategy: str = "head_tail"
 
     def record(
         self,
@@ -129,6 +143,7 @@ class ContextState:
         self.entries.append(entry)
         self.executed.append(entry)
         self.telemetry.observation_bytes += len(observation.encode("utf-8"))
+        self.telemetry.step_entry_chars.append(step_entry_chars(name, arguments))
         if policy.name in context_policy.TRIMMING_POLICIES:
             _, trimmed = trim_observation(
                 observation,
@@ -140,6 +155,9 @@ class ContextState:
     def record_feedback(self, message: str) -> None:
         """Put controller feedback in the live prompt without claiming a tool executed."""
         self.entries.append((LOOP_FEEDBACK, {}, message))
+        # A malformed call costs the transcript a feedback line, so it is part of what this step
+        # appended -- counted here for the same reason an executed call is.
+        self.telemetry.step_entry_chars.append(len(format_entry((LOOP_FEEDBACK, {}, message))))
 
     def record_channel_feedback(
         self,
@@ -199,6 +217,16 @@ def format_entry(entry: TranscriptEntry) -> str:
     if name == LOOP_FEEDBACK:
         return f"- {observation}"
     return f"- {name}({json.dumps(arguments, ensure_ascii=False)}) -> {observation}"
+
+
+def step_entry_chars(name: str, arguments: dict[str, Any]) -> int:
+    """How many characters one step's own call adds to every later prompt.
+
+    The observation is the WORLD's contribution and a deterministic probe reproduces it exactly;
+    what a model decides is the call it makes, so this is the span a per-family walk-length
+    measurement is about.
+    """
+    return len(format_entry((name, arguments, "")))
 
 
 def summary_hit_count(summary: str) -> int | None:

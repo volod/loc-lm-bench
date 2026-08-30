@@ -9,6 +9,7 @@ from llb.optimize.joint_search.constants import (
     DEFAULT_MIN_FINALISTS,
     DEFAULT_OBJECTIVES,
     DEFAULT_SCREEN_LIMIT,
+    DEFAULT_SEARCH_MAX_MODEL_LEN,
 )
 from llb.optimize.joint_search.halving import finalize_ledger
 from llb.optimize.joint_search.hooks import (
@@ -59,8 +60,9 @@ def run_joint_search(
     vram_reader: Callable[[], int] | None = None,
     pid_usage_reader: Callable[[], dict[int, int]] | None = None,
     seed: int = 13,
-    max_model_len: int = 8192,
+    max_model_len: int = DEFAULT_SEARCH_MAX_MODEL_LEN,
     case_limit: int | None = None,
+    screen_case_cap: int | None = None,
 ) -> JointSearchResult:
     """Resolve -> cheap tuning-split screen with successive-halving -> deep-tune survivors.
 
@@ -85,6 +87,7 @@ def run_joint_search(
             "runnable": [r["name"] for r in runnable],
             "skipped": skipped,
             "screen_limit": screen_limit,
+            "screen_case_cap": screen_case_cap,
             "min_finalists": min_finalists,
             "eta": eta,
             "n_trials": n_trials,
@@ -93,6 +96,13 @@ def run_joint_search(
             "scoreboard_split": FINAL_SPLIT,
             "seed": seed,
             "case_limit": case_limit,
+            # What every vLLM cell (screen, finalist tune, public screen) is served at. A search
+            # is only comparable to an eval taken at the same utilization, and a candidate lost
+            # to an over-budget launch is indistinguishable from a bad one without this row.
+            "serving": {
+                "gpu_memory_utilization": base_config.gpu_memory_utilization,
+                "max_model_len": max_model_len,
+            },
             **(manifest_extra or {}),
         },
     )
@@ -127,6 +137,7 @@ def run_joint_search(
         min_finalists=min_finalists,
         eta=eta,
         max_model_len=max_model_len,
+        case_cap=screen_case_cap,
     )
     write_ledger(run_dir, ledger)
     by_name = {r["name"]: r for r in runnable}

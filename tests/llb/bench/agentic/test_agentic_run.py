@@ -1,6 +1,7 @@
 """Tests for agentic run."""
 
 import json
+from pathlib import Path
 from llb.bench.agentic.model import (
     STATUS_COMPLETED,
     AgenticTask,
@@ -172,3 +173,130 @@ def test_agentic_no_judge_is_objective_only():
     )
     assert run.judge_trusted is False and run.trajectory_quality is None
     assert run.judge_reason == "no judge configured"
+
+
+# --- loop policy on the scored run --------------------------------------------------------------
+
+
+REPEATED_CALL_SCRIPT = [
+    '{"name":"db_set","arguments":{"key":"capital","value":"Київ"}}',
+    '{"name":"db_set","arguments":{"key":"capital","value":"Київ"}}',
+    '{"name":"finish","arguments":{"answer":"done"}}',
+]
+
+
+def _repeat_task():
+    return AgenticTask(
+        "r", "db", success=[{"kind": "db_equals", "key": "capital", "value": "Київ"}]
+    )
+
+
+def _recording_complete(outputs):
+    """A scripted completion that also keeps every prompt it was sent, in order."""
+    prompts: list[str] = []
+    it = iter(outputs)
+
+    def complete(prompt):
+        prompts.append(prompt)
+        return next(it)
+
+    return complete, prompts
+
+
+def test_run_agentic_threads_a_non_default_loop_policy_onto_the_loop_harness():
+    """A recommended cell is RUN here, not merely re-swept: the noop policy changes the episode."""
+    from llb.bench.agentic.loop_policy import REPEATED_NOOP, LoopPolicy
+
+    run = run_agentic(
+        [_repeat_task()],
+        model="m",
+        backend="ollama",
+        complete=scripted(REPEATED_CALL_SCRIPT),
+        loop_policy=LoopPolicy(repeated_call=REPEATED_NOOP),
+        persist=False,
+    )
+
+    assert run.episodes[0].n_repeated_calls == 1
+    assert (
+        run.episodes[0].n_repeated_noops == 1
+    )  # the second identical call never reached the world
+
+
+def test_run_agentic_default_loop_policy_leaves_the_episode_alone():
+    run = run_agentic(
+        [_repeat_task()],
+        model="m",
+        backend="ollama",
+        complete=scripted(REPEATED_CALL_SCRIPT),
+        persist=False,
+    )
+
+    assert run.episodes[0].n_repeated_calls == 1
+    assert run.episodes[0].n_repeated_noops == 0  # `allow` executes it
+
+
+def test_default_cell_prompts_are_byte_identical_with_and_without_an_explicit_policy():
+    """Threading the policy must not move the shipped run's prompts by a single byte."""
+    from llb.bench.agentic.loop_policy import LoopPolicy
+
+    implicit_complete, implicit_prompts = _recording_complete(REPEATED_CALL_SCRIPT)
+    explicit_complete, explicit_prompts = _recording_complete(REPEATED_CALL_SCRIPT)
+    common = {"model": "m", "backend": "ollama", "persist": False}
+
+    run_agentic([_repeat_task()], complete=implicit_complete, **common)
+    run_agentic([_repeat_task()], complete=explicit_complete, loop_policy=LoopPolicy(), **common)
+
+    assert implicit_prompts == explicit_prompts
+
+
+def test_manifest_records_the_loop_cell_that_ran(tmp_path):
+    from llb.bench.agentic.loop_policy import (
+        MALFORMED_STRICT,
+        REPEAT_FEEDBACK_UK,
+        REPEATED_NOOP,
+        LoopPolicy,
+    )
+
+    run = run_agentic(
+        [_repeat_task()],
+        model="m",
+        backend="ollama",
+        complete=scripted(REPEATED_CALL_SCRIPT),
+        loop_policy=LoopPolicy(
+            malformed_call=MALFORMED_STRICT,
+            repeated_call=REPEATED_NOOP,
+            repeat_feedback=REPEAT_FEEDBACK_UK,
+        ),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+    )
+
+    assert run.paths is not None
+    config = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))["config"]
+    assert config["malformed_call_policy"] == MALFORMED_STRICT
+    assert config["repeated_call_policy"] == REPEATED_NOOP
+    assert config["repeat_feedback_variant"] == REPEAT_FEEDBACK_UK
+    assert config["loop_policy_supported"] is True
+
+
+def test_manifest_records_the_shipped_cell_when_no_policy_is_passed(tmp_path):
+    from llb.bench.agentic.loop_policy import (
+        DEFAULT_MALFORMED_POLICY,
+        DEFAULT_REPEAT_FEEDBACK,
+        DEFAULT_REPEATED_CALL_POLICY,
+    )
+
+    run = run_agentic(
+        [_repeat_task()],
+        model="m",
+        backend="ollama",
+        complete=scripted(REPEATED_CALL_SCRIPT),
+        data_dir=tmp_path,
+        mirror=lambda *_: None,
+    )
+
+    assert run.paths is not None
+    config = json.loads(Path(run.paths["manifest"]).read_text(encoding="utf-8"))["config"]
+    assert config["malformed_call_policy"] == DEFAULT_MALFORMED_POLICY
+    assert config["repeated_call_policy"] == DEFAULT_REPEATED_CALL_POLICY
+    assert config["repeat_feedback_variant"] == DEFAULT_REPEAT_FEEDBACK

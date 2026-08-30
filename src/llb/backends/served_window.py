@@ -160,7 +160,9 @@ def probe_served_max_model_len(
     return None
 
 
-def launcher_served_window(launcher: object) -> int | None:
+def launcher_served_window(
+    launcher: object, *, force_warm: bool = False, timeout: float | None = None
+) -> int | None:
     """The window a STARTED launcher is serving, warm-loading the model when that is what it takes.
 
     vLLM and llama.cpp know their `n_ctx` the moment they answer readiness, so `served_context()`
@@ -169,45 +171,63 @@ def launcher_served_window(launcher: object) -> int | None:
     "unknown" exactly when the default 4096 window is about to truncate. `ensure_num_ctx` sends a
     one-token warm request so the probe observes the window the run will actually use.
 
+    `force_warm` skips the already-known shortcut. A launcher that PINS `num_ctx` cannot trust a
+    window read before its own first request: Ollama keeps a previously loaded context until a
+    request asks for a different one, so a stale resident entry answers for the last run rather
+    than for this one. A caller that owns the launcher and knows it pins passes True.
+
     None means "could not observe it" -- never "unbounded". The caller falls back to the declared
     window and records that the probe was unavailable.
     """
     served = getattr(launcher, "served_context", None)
     window = served() if callable(served) else None
-    if isinstance(window, int) and window > 0:
+    if not force_warm and isinstance(window, int) and window > 0:
         return window
     warm = getattr(launcher, "ensure_num_ctx", None)
     if not callable(warm):
         return None
     try:
-        window = warm()
+        window = warm() if timeout is None else warm(timeout=timeout)
     except Exception:  # a warm request is best-effort telemetry, never a run failure
         _LOG.info("[served-window] warm request failed; falling back to the declared window")
         return None
     return window if isinstance(window, int) and window > 0 else None
 
 
-def probe_served_window(config: Any, *, http_get: HttpGet | None = None) -> int | None:
+def probe_served_window(
+    config: Any,
+    *,
+    http_get: HttpGet | None = None,
+    host: str | None = None,
+    timeout: float | None = None,
+) -> int | None:
     """The window `config`'s backend is serving right now, warm-loading Ollama so it can answer.
 
     For a caller that HAS a started launcher, `launcher_served_window` is the thing to use. This is
     for a caller that does not -- an Optuna study resolving its prune threshold before the first
-    trial launches anything. Ollama is the case that needs the warm: it runs as a host daemon that
-    is up long before any run, but `/api/ps` reports nothing until a request has loaded the model,
-    so a probe taken up front reads "unknown" exactly where its 4096 default would bind. vLLM and
-    llama.cpp are launched per run and answer their own `n_ctx`, so for them this is the ordinary
-    HTTP probe against whatever is serving now.
+    trial launches anything, or a CLI lane resolving its agent-loop prompt guard before the run
+    builds a launcher. Ollama is the case that needs the warm: it runs as a host daemon that is up
+    long before any run, but `/api/ps` reports nothing until a request has loaded the model, so a
+    probe taken up front reads "unknown" exactly where its 4096 default would bind. That is true
+    whether or not the run pins `num_ctx` -- UNPINNED is the case the 4096 default binds hardest --
+    so the warm is unconditional for Ollama. vLLM and llama.cpp are launched per run and answer
+    their own `n_ctx`, so for them this is the ordinary HTTP probe against whatever is serving now.
+
+    `host` overrides the per-backend host the config names, for a caller whose `--base-url` points
+    somewhere else. `timeout` bounds the warm request.
 
     Best-effort throughout: an unreachable backend returns None and the caller falls back to the
-    declared window, exactly as a missed HTTP probe does.
+    declared window, exactly as a missed HTTP probe does. A probe is telemetry, never the run's
+    reachability gate -- the launcher the run itself starts is what refuses a dead backend, with a
+    message that names it.
     """
     if getattr(config, "backend", None) != "ollama":
-        return probe_config_served_max_model_len(config, http_get=http_get)
+        return probe_config_served_max_model_len(config, http_get=http_get, host=host)
     from llb.backends.ollama import OllamaLauncher
 
     launcher = OllamaLauncher(
         config.model,
-        host=getattr(config, "ollama_host", DEFAULT_OLLAMA_HOST),
+        host=host or str(getattr(config, "ollama_host", None) or DEFAULT_OLLAMA_HOST),
         num_ctx=getattr(config, "max_model_len", None) or getattr(config, "context_budget", None),
     )
     try:
@@ -216,7 +236,7 @@ def probe_served_window(config: Any, *, http_get: HttpGet | None = None) -> int 
         _LOG.info("[served-window] ollama not reachable; falling back to the declared window")
         return None
     try:
-        return launcher_served_window(launcher)
+        return launcher_served_window(launcher, force_warm=True, timeout=timeout)
     finally:
         launcher.stop()
 
@@ -238,17 +258,17 @@ def bind_window(declared: int, served: int | None) -> tuple[int, str]:
 
 
 def probe_config_served_max_model_len(
-    config: Any, *, http_get: HttpGet | None = None
+    config: Any, *, http_get: HttpGet | None = None, host: str | None = None
 ) -> int | None:
-    """Probe using the host fields already on a `RunConfig`."""
-    host = backend_host(
+    """Probe using the host fields already on a `RunConfig`, or an explicit `host` override."""
+    root = host or backend_host(
         config.backend,
         ollama_host=getattr(config, "ollama_host", DEFAULT_OLLAMA_HOST),
         vllm_host=getattr(config, "vllm_host", DEFAULT_VLLM_HOST),
         llamacpp_host=getattr(config, "llamacpp_host", DEFAULT_LLAMACPP_HOST),
     )
     return probe_served_max_model_len(
-        config.backend, model=config.model, host=host, http_get=http_get
+        config.backend, model=config.model, host=root, http_get=http_get
     )
 
 

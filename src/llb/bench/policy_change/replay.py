@@ -68,6 +68,7 @@ HELD_POLICY_FIELDS = (
     "keep_last_n",
     "compact_keep_recent",
     "summary_input_cap",
+    "summary_trim_strategy",
 )
 
 
