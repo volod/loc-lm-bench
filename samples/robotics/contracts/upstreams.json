@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "hflow",
+      "source_url": "https://github.com/Hebbian-Robotics/hflow",
+      "release": "v0.2.3",
+      "revision": "d2e0f3700f2267cfeb0db1957743bb9f5f41256b",
+      "contract_status": "contract-inspectable",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/Hebbian-Robotics/hflow/blob/d2e0f3700f2267cfeb0db1957743bb9f5f41256b/LICENSE",
+      "transports": [
+        "mcap",
+        "parquet",
+        "duckdb-manifest"
+      ],
+      "semantics": [
+        "landed-episode",
+        "transform",
+        "quality-check",
+        "enrich",
+        "catalog"
+      ],
+      "normative_reference": "docs/FORMAT.md",
+      "references": [
+        {
+          "name": "docs/FORMAT.md",
+          "url": "https://github.com/Hebbian-Robotics/hflow/blob/d2e0f3700f2267cfeb0db1957743bb9f5f41256b/docs/FORMAT.md",
+          "sha256": "sha256:45222345f72b720f56b3dd36677602fa9712c80dc43c515769902ad4e5e92ec1"
+        },
+        {
+          "name": "docs/ARCHITECTURE.md",
+          "url": "https://github.com/Hebbian-Robotics/hflow/blob/d2e0f3700f2267cfeb0db1957743bb9f5f41256b/docs/ARCHITECTURE.md",
+          "sha256": "sha256:7530d880950e6e5bf11af2821c3b8b09a0eaa17fb5ad1baec7d7a5b054efe1c9"
+        },
+        {
+          "name": "pyproject.toml",
+          "url": "https://github.com/Hebbian-Robotics/hflow/blob/d2e0f3700f2267cfeb0db1957743bb9f5f41256b/pyproject.toml",
+          "sha256": "sha256:8b1af457f86957a9669c63691a414954ec580826bb6aca784f4055e103dd5330"
+        },
+        {
+          "name": "LICENSE",
+          "url": "https://github.com/Hebbian-Robotics/hflow/blob/d2e0f3700f2267cfeb0db1957743bb9f5f41256b/LICENSE",
+          "sha256": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      ],
+      "conformance_input": null
+    },
+    {
+      "id": "mhs",
+      "source_url": "https://www.anthropic.com/news/model-hardware-standard-research-preview",
+      "release": "research-preview-2026-08-27",
+      "revision": null,
+      "contract_status": "public-semantics-only",
+      "license": null,
+      "license_url": null,
+      "transports": [
+        "mcp",
+        "cli",
+        "code-api"
+      ],
+      "semantics": [
+        "discover",
+        "read",
+        "write",
+        "reference",
+        "limits"
+      ],
+      "normative_reference": null,
+      "references": [
+        {
+          "name": "normalized-public-semantics",
+          "url": "https://www.anthropic.com/news/model-hardware-standard-research-preview",
+          "sha256": "sha256:8653418579cb2827567ca872878ba4753eeeee0cdc7e463442981d6b2d85db3f"
+        }
+      ],
+      "conformance_input": null
+    }
+  ]
+}

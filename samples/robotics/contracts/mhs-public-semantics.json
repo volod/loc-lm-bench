@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "publication": "research-preview-2026-08-27",
+  "announcement_url": "https://www.anthropic.com/news/model-hardware-standard-research-preview",
+  "preview_url": "https://www.modelhardwarestandard.com/",
+  "access": "limited-application-preview",
+  "normative_schema_public": false,
+  "public_license": null,
+  "public_semantics": {
+    "discover": "A driver exposes the connected device and the operations available on it.",
+    "read": "A model or program can request observations through simple read operations.",
+    "write": "A model or program can request device changes through explicit write operations.",
+    "reference": "Driver metadata can be rendered as device reference material for a model.",
+    "limits": "Safety limits are enforced by the driver rather than delegated to model text."
+  }
+}

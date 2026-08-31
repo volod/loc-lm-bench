@@ -16,9 +16,9 @@ you can engage at the depth you need:
 docs/guides/
 |-- learning-path/   learn the stack: RAG, serving, judging, security, eval categories
 |-- quickstart/      end-to-end tracks: committed goldset, PDF corpus, any corpus
-|-- data-prep/       create corpora and gold sets (local drafting or external AI services)
+|-- data-prep/       create corpora, gold sets, and admitted robotics evidence
 |-- human-tooling/   the human gates: data verification, judge calibration, and the why
-|-- benchmarking/    run, compare, and analyze scored model runs
+|-- benchmarking/    run and compare model, retrieval, serving, and robotics lanes
 '-- development/     contributor setup, heavy runs, and evidence citation
 ```
 
@@ -36,6 +36,7 @@ docs/guides/
 | Run one model through the RAG core | [Run RAG core](benchmarking/run-rag-core.md) |
 | Turn a corpus into a scored RAG recommendation | [Autonomous RAG recommendation](benchmarking/auto-rag.md) |
 | Estimate a local model's real-world knowledge cutoff | [Knowledge cutoff](benchmarking/knowledge-cutoff.md) |
+| Compare robotics operation with retrieval enabled and withheld | [Robotics RAG](benchmarking/robotics-rag.md) |
 | Compare serving backends or hardware tiers | [Platform matrix](benchmarking/platform-matrix.md), [vLLM backend](benchmarking/vllm-backend.md) |
 | Compare retrieval strategies (FAISS vs GraphRAG) | [Graph vs FAISS](benchmarking/graph-vs-faiss-comparison.md) |
 | Pick a chunker, embedder, or vector backend on measured evidence | [Embedder bake-off](../impl/current/rag-core/embedders.md#embedder-conventions-and-bake-off) and [vector-store commands](../impl/current/platform-vector-matrix.md#vector-store-commands) |
@@ -88,6 +89,8 @@ provide granular commands and corpus-specific detail.
   indexing, ontology drafting, or GraphRAG.
 - [Data prep](data-prep/data-prep.md) -- the create-stage commands in brief: gold set modes,
   chunking, and judge calibration entry points.
+- [HFlow robotics evidence](data-prep/robotics-hflow-evidence.md) -- validate a pinned HFlow
+  projection manifest and admit approved episode text to the existing corpus.
 - [Create a gold set (end-to-end)](data-prep/goldset-from-scratch.md) -- the spine:
   create -> validate -> cross-check -> human verification gate -> ledger flip -> calibrate ->
   score, with authoring and review rules.
@@ -121,6 +124,8 @@ provide granular commands and corpus-specific detail.
   model; the smallest complete scored run.
 - [Knowledge cutoff](benchmarking/knowledge-cutoff.md) -- fit a local model's effective public-event
   knowledge horizon with reproducible Optuna and MLflow reports.
+- [Robotics RAG](benchmarking/robotics-rag.md) -- compare retrieval on and off over a frozen
+  emulator ledger while the external action gate owns every side effect.
 - [vLLM backend + telemetry](benchmarking/vllm-backend.md) -- install vLLM, cache weights, and
   run the eval on a real GPU backend with throughput/VRAM/power telemetry.
 - [Platform matrix](benchmarking/platform-matrix.md) -- same logical model base across Ollama /

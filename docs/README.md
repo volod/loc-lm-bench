@@ -11,6 +11,8 @@ routes you from a high-level topic to the specific document.
 - [Choose a scenario](guides/README.md#choose-a-scenario) -- "I want to..." routing table into
   the guides (benchmark my PDFs, build a gold set, verify drafted data, compare backends, ...).
 - [Learning path](guides/learning-path/learning-path.md) -- learn the whole stack from basics.
+- [Robotics RAG](guides/benchmarking/robotics-rag.md) -- evaluate retrieval-backed action
+  proposals inside the protocol-neutral emulator, with no real-hardware authority.
 
 ## Topic map
 
@@ -20,6 +22,7 @@ routes you from a high-level topic to the specific document.
 | Implementation | [impl/current.md](impl/current.md) | Agent-facing map of current behavior under `impl/current/` |
 | Forward plan | [impl/plan.md](impl/plan.md) | Future engineering tasks only |
 | Guides | [guides/README.md](guides/README.md) | Operator workflows and learning material, grouped by topic |
+| Robotics RAG | [impl/current/robotics-rag.md](impl/current/robotics-rag.md) | Pinned contracts and HFlow evidence, the action gate and emulator, paired operation evaluation, and the explicit hardware boundary |
 | Inference | [inference/config-example.md](inference/config-example.md) | GPU tier detection, automatic CUDA-host draft selection, and generated serve/run configs |
 | Reference | [reference/model-families.md](reference/model-families.md), [reference/data-licenses.md](reference/data-licenses.md) | The candidate model roster with per-tier artifacts and weight licenses; the terms on every committed fixture and fetched task set |
 
@@ -40,7 +43,7 @@ the groups are:
 - [benchmarking/](guides/README.md#benchmarking----run-compare-analyze) -- scored runs:
   autonomous RAG recommendation, RAG core, vLLM telemetry, platform matrix, retrieval comparison,
   prompt systems, local fine-tuning and adapters, MLflow analysis, composite headline, agentic
-  harnesses.
+  harnesses, and the protocol-neutral robotics operation benchmark.
 - [development/](guides/README.md#development----contributor-setup) -- contributor environment
   setup, heavy local runs, and how a measured result is cited in the delivered docs.
 

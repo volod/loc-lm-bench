@@ -1,19 +1,36 @@
 # loc-lm-bench -- Production Local LLM Benchmark
 
-loc-lm-bench is a benchmark for selecting open-weight LLMs on local Ukrainian RAG and text-analysis
-workloads. It evaluates candidate models on your corpus and hardware, records the full run bundle,
-and ranks results with reproducible telemetry, confidence intervals, and reviewable data gates.
+loc-lm-bench is an evidence-first benchmark for selecting open-weight LLMs on local Ukrainian RAG,
+text-analysis, and protocol-neutral robotics-operation workloads. It evaluates candidate models on
+your corpus and hardware, records replayable run bundles, and ranks results with telemetry,
+confidence intervals, and reviewable data gates. The robotics lane evaluates model proposals behind
+a deterministic action gate and emulator; it does not grant authority over physical hardware.
+
+## Choose a Workflow
+
+Use this table as the short path into the repository; the capability catalog below is the detailed
+map.
+
+| Goal | Start here | First command |
+| --- | --- | --- |
+| Turn a corpus into a scored local RAG recommendation | [Autonomous RAG recommendation](docs/guides/benchmarking/auto-rag.md) | `make auto-rag CORPUS=<dir> SCORER_POLICY=auto` |
+| Run one model or benchmark a local document collection | [Quick Start](docs/guides/quickstart/quick-start.md) or [RAG core](docs/guides/benchmarking/run-rag-core.md) | `make run-eval` |
+| Compare retrieval, model, or serving choices | [Guides scenario router](docs/guides/README.md#choose-a-scenario) | `make compare-retrieval` / `make platform-matrix` |
+| Evaluate robotics retrieval without touching real hardware | [Robotics RAG benchmark](docs/guides/benchmarking/robotics-rag.md) | `make test-robotics-rag` -> `make bench-robotics-rag ROBOTICS_MODEL=<model>` |
+| Understand the delivered system or extend it | [Current implementation](docs/impl/current.md) and [product specification](docs/design/spec.md) | `make help` |
 
 ## Core Capabilities
 
-One command runs the whole path. Everything below it is a stage you can also run on its own.
+Auto-RAG composes the main corpus-to-recommendation path, and each of its stages can also run on
+its own. Specialized comparison lanes stay independent of that path.
 
 | Entry point | What it does | Command |
 |---|---|---|
 | Autonomous corpus-to-recommendation | Point one command at a corpus and get a scored RAG recommendation: ingest -> ontology draft -> verification gate -> retrieval -> joint model/config search -> prompt system -> final eval -> recommendation. Journaled, so an interrupted run resumes at the last completed stage; runs fully autonomously (`SCORER_POLICY=auto`) or stops at the human gate. See [Auto-RAG guide](docs/guides/benchmarking/auto-rag.md) and [Auto-RAG](docs/impl/current/auto-rag.md). | `make auto-rag CORPUS=<dir> SCORER_POLICY=auto` |
 
-The eight areas below are those stages run individually, plus the lanes beyond them. `make help`
-lists every target with its options; the command areas are mapped in
+Sections 1-6 unpack that RAG path; the later sections cover independent evaluation lanes and the
+evidence rules shared by all of them. `make help` lists every target with its options, and the
+command areas are mapped in
 [current implementation](docs/impl/current.md).
 
 ### 1. Corpus and gold data
@@ -112,7 +129,22 @@ The same evidence discipline applied to workloads that are not single-turn retri
 | Category suites and composite headline | Score security, tooling, agentic, summarization, structured output, and text-analysis categories, then publish a guarded composite headline. See [composite headline guide](docs/guides/benchmarking/composite-headline.md) and [category learning path](docs/guides/learning-path/learning-path-evaluation-categories.md). | `make composite-headline` |
 | Real-world knowledge cutoff | Estimate the effective month where a model's recall of unpredictable public events decays toward chance: a revision-pinned event set, position-balanced MCQs, seeded Optuna fitting, and controls. Run it in English, or on a frozen human-reviewed Ukrainian translation of the same items to separate knowledge from language. See the [knowledge-cutoff guide](docs/guides/benchmarking/knowledge-cutoff.md) and the [bilingual workflow](docs/impl/current/knowledge-cutoff.md#ukrainian-bilingual-calibration-workflow). | `make bench-knowledge-cutoff MODEL=<model> BACKEND=<backend>` -> `make knowledge-cutoff-bilingual` |
 
-### 8. Evidence discipline
+### 8. Robotics evidence and bounded operation
+
+Measure whether retrieval improves operational decisions while trusted code retains control of
+identity, policy, approval, live state, and every possible side effect.
+
+| Capability | What it gives you | Pipeline commands |
+| --- | --- | --- |
+| Pinned contracts and HFlow evidence | Validate the protocol-neutral boundary, then project only admitted, source-bound text from pinned HFlow episodes into the ordinary corpus format. Generation identities, MCAP intervals, quality state, and verification provenance survive the bridge; raw MCAP and quarantined text never enter prompts. See [boundary contracts](docs/impl/current/robotics-rag/boundary-contracts.md) and [HFlow evidence preparation](docs/guides/data-prep/robotics-hflow-evidence.md). | `make robotics-contract-check` -> `make robotics-evidence-replay` |
+| Action gate and deterministic emulator | Parse a typed model proposal, bind trusted identity and approvals outside model text, re-read fresh state, and enforce policy, driver limits, locks, emergency stops, idempotency, and no-retry semantics before at most one adapter invocation. The CPU-only fake proves the side-effect boundary independently of inference. See [action gate and emulator](docs/impl/current/robotics-rag/action-gate-and-emulator.md). | `make test-robotics-emulator` |
+| Paired robotics RAG benchmark | Run the same local model with retrieval withheld and enabled over one frozen 16-task emulator ledger, beside a deterministic reference controller. The report separates proposal grounding from safe completion/refusal, contains eight mandatory fault classes, accounts for every invocation, and ends in `adopt_retrieval` or `retain_no_retrieval`. See the [operator guide](docs/guides/benchmarking/robotics-rag.md) and [implementation evidence](docs/impl/current/robotics-rag/benchmark.md). | `make test-robotics-rag` -> `make bench-robotics-rag ROBOTICS_MODEL=<model>` |
+
+The shipped boundary is emulator-only. MHS adapter conformance and a supervised physical-device
+canary remain human-assisted work in the [forward plan](docs/impl/plan.md#robotics-rag-and-hardware-operation----robotics-rag-operation);
+neither is implied by an emulator result.
+
+### 9. Evidence discipline
 
 Rules for reading a result, shared across every comparison lane above rather than restated per lane.
 

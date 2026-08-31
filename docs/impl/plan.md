@@ -1312,6 +1312,82 @@ the human judge both the reviewer experience and the recommendation quality.
 - Documentation target: `current/auto-rag.md` acceptance evidence and
   [human evaluation guide](../guides/human-tooling/human-in-the-loop-evaluation.md).
 
+### Robotics RAG and hardware operation -- `robotics-rag-operation`
+
+#### robotics-mhs-preview-conformance
+
+Replace the protocol-neutral fake with a real adapter only when an authorized preview participant
+can provide an inspectable, versioned MHS contract and a non-production test endpoint. Map discovery,
+reference generation, read, write, enforced limits, errors, and receipts onto the project records,
+then run the same conformance suite as the emulator. A missing schema, incompatible license,
+unstable identity/state semantics, or transport that bypasses the external gate is a valid negative
+result and must leave the project labelled protocol-neutral.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: HUMAN-GATED, RESEARCH
+- Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) and
+  the [action gate and emulator](current/robotics-rag/action-gate-and-emulator.md). Human step
+  that gates completion: an authorized MHS preview participant accepts the applicable terms,
+  identifies the exact contract/package version, and grants time-bounded access to a simulator or
+  read-only test device without placing credentials in the repository or run artifacts.
+- User-visible outcome: either a version-scoped MHS adapter with reproducible conformance evidence,
+  or a precise incompatibility/insufficient-contract decision that prevents an unsupported
+  compatibility claim.
+- Scope boundary: in scope -- one optional adapter, contract and license pinning, discovery/read
+  against a non-production endpoint, fake write conformance with no physical effect, and deviations
+  from the project contract. Out of scope -- applying for access without the operator, accepting
+  terms on their behalf, live hardware writes, bypassing the project gate, storing credentials, and
+  declaring compatibility across untested MHS versions.
+- Data and artifact paths: sanitized contract metadata and conformance output under
+  `$DATA_DIR/robotics-mhs-conformance/<run>/`; committed tests use redacted recorded responses or an
+  injected fake under `samples/robotics/mhs/`, never preview package bytes whose terms forbid it.
+- Execution path: add `make robotics-mhs-conformance` behind a `robotics-mhs` optional dependency
+  group and explicit endpoint configuration; keep preview access outside quick CI and replay the
+  adapter against contract-safe fixtures in `make ci`.
+- Acceptance gates: the human records the exact contract and allowed artifact handling; discovery,
+  read, limit refusal, error, and receipt cases map without loss; every write attempt still traverses
+  the project gate; changed MHS identity or schema makes the adapter fixture stale; the report says
+  `MHS-compatible` only for the tested version; a negative result removes this task to future
+  research with its reopening condition instead of weakening the adapter contract.
+- Documentation target: `docs/impl/current/robotics-rag/mhs-adapter.md` and the dependency/security
+  boundary in `docs/impl/current/robotics-rag.md`.
+
+#### robotics-supervised-device-canary
+
+Run the admitted MHS adapter on one isolated workcell under its hardware owner's supervision. Start
+with discovery/read-only calls and shadow proposals, reconcile every observed identity, unit, limit,
+state transition, and receipt against the emulator, and only then authorize one predeclared low-risk
+write whose physical envelope, rollback, interlocks, and stop procedure the owner signs. Any drift
+returns the capability to shadow mode; the canary never turns on unattended operation.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: HUMAN-GATED
+- Dependencies: the [held-out emulator benchmark](current/robotics-rag/benchmark.md) and
+  `robotics-mhs-preview-conformance`. Human step that gates completion: the hardware owner supplies
+  the isolated device, approves the risk and rollback worksheet, verifies interlocks and an
+  operator-controlled emergency stop, observes the entire run, grants the proposal-bound write
+  approval, and signs the canary verdict.
+- User-visible outcome: a bounded real-device reading that names where emulator behavior transfers
+  and where it does not, without silently promoting a benchmark result into deployment authority.
+- Scope boundary: in scope -- read-only and shadow phases, one low-risk bounded write, pre/post-state
+  capture, stop and rollback drills, emulator/device mismatch logging, and a human verdict. Out of
+  scope -- safety certification, people or uncontained hazards in the work envelope, high-risk
+  tools, generated procedure files, model-driven emergency actions, parallel live writes,
+  unattended running, and generalizing from one workcell to another.
+- Data and artifact paths: run bundle under `$DATA_DIR/robotics-canary/<run>/`; raw telemetry and MCAP
+  remain in the authorized HFlow data root and are referenced by digest; the signed risk worksheet,
+  approvals, redacted device snapshot, and verdict live in the run bundle with no secrets.
+- Execution path: add `make bench-robotics-canary MODE=read,shadow,bounded-write`; require a fresh
+  preflight before each phase, and require a new explicit approval digest before the write phase.
+  The operator, not the model, advances phases.
+- Acceptance gates: the owner signs the worksheet and final verdict; the physical stop prevents
+  motion independently of the model and adapter; zero out-of-policy invocations occur; every action
+  has matching pre-state, decision, request, receipt, and post-state evidence; an ambiguous result
+  triggers read/escalation with no retry; every emulator/device mismatch is reported; any mandatory
+  gate failure retains shadow/read-only mode and records the negative result.
+- Documentation target: `docs/impl/current/robotics-rag/device-canary.md` and a canary procedure under
+  `docs/guides/human-tooling/`.
+
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### conflict-adjudicator-label-slice
@@ -1483,7 +1559,7 @@ Each task entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a task surfaces new future work, route it by the three kinds above: a chore gets done or
+When a task surfaces new future work, route it by the three kinds above: handle a chore inline or
 dropped, a self-audit gets dropped, and a genuine capability goes through the spec lifecycle before
 it becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
 what is not normal is a task quietly appearing under a capability nobody amended the spec for. Put

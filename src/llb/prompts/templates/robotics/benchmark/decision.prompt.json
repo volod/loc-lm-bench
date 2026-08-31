@@ -1,0 +1,8 @@
+{
+  "id": "robotics.benchmark.decision",
+  "kind": "chat",
+  "messages": [
+    {"role": "system", "template": "system.txt"},
+    {"role": "user", "template": "user.txt"}
+  ]
+}

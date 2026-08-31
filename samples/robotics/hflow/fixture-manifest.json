@@ -1,0 +1,48 @@
+{
+  "files": [
+    {
+      "path": "corpus/projections/clean-model-procedure.md",
+      "sha256": "sha256:23ee8150822fe25ff5902318bc34800c762d8ad2cea49a4c5980ff26706424a7"
+    },
+    {
+      "path": "episodes/3058b973dfa7e3f5.mcap",
+      "sha256": "sha256:3058b973dfa7e3f50519780a1bf9780a10710bddd9904e8e4aa8b42babad8589"
+    },
+    {
+      "path": "episodes/6ba43d95436404c2.mcap",
+      "sha256": "sha256:6ba43d95436404c20e8adfd8aed6ecd3c4e06607954b650182e712ef99ff33ec"
+    },
+    {
+      "path": "manifest.parquet",
+      "sha256": "sha256:edccf56cdc1a81cb1951307562c19349bf13d9d00a5d2572ade86eee08519f24"
+    },
+    {
+      "path": "projections/clean-human-label.md",
+      "sha256": "sha256:a2093046790db8d9ecd15ed4ff81896e230a4e2fa722485621834b403b84f3b7"
+    },
+    {
+      "path": "projections/clean-model-caption-draft.md",
+      "sha256": "sha256:8d0c31dd052039efffe3b1fa4edc477c58f9791ffb6060b85fd48225532c00b1"
+    },
+    {
+      "path": "projections/clean-model-procedure.md",
+      "sha256": "sha256:23ee8150822fe25ff5902318bc34800c762d8ad2cea49a4c5980ff26706424a7"
+    },
+    {
+      "path": "projections/quarantined-human-label.md",
+      "sha256": "sha256:b54cc7d63826eca64e4232bad0c04e09b69efbb64f48255f7039dce7f2b4051c"
+    },
+    {
+      "path": "projections/unverified-human-label.md",
+      "sha256": "sha256:b2c26f35b22ba14196e35c1ee4146b206fa4b0efc5b554eaf4567c3943d672ac"
+    },
+    {
+      "path": "verification/goldset.jsonl",
+      "sha256": "sha256:96062eb154105117e892140822bc53ac405f5ec13adb5c34b9816798f47bc7eb"
+    }
+  ],
+  "hflow_release": "v0.2.3",
+  "hflow_revision": "d2e0f3700f2267cfeb0db1957743bb9f5f41256b",
+  "manifest": "manifest.parquet",
+  "schema_version": 1
+}
