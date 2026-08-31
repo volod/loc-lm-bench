@@ -85,6 +85,7 @@ def test_the_sidecar_addresses_the_rows_it_was_written_beside(tmp_path):
     assert sidecar["census"]["findings"] == 6 and sidecar["census"]["groups"] == 1
     group = sidecar["groups"][0]
     assert group["group_id"] == "G1" and group["rows"] == 6
+    assert group["chain_length"] == 1
     assert group["shared_units"] == [SHARED_CHUNK]
     assert group["documents"] == ["left.md", "right.md"]
     assert group["finding_ids"] == [finding_id(row) for row in rows]
@@ -153,6 +154,7 @@ def test_a_concentrated_plan_carries_one_decision_naming_its_member_rows(tmp_pat
     decision = plan["decisions"][0]
     assert decision["group_key"] == group_key(decision["finding_ids"])
     assert decision["rank"] == 1
+    assert decision["chain_length"] == 1
     assert decision["rows"] == 6 and decision["action"] == ACTION_ESCALATE
     assert decision["status"] == "review_required" and decision["review_rows"] == 6
     assert decision["finding_ids"] == [item["finding_id"] for item in plan["items"]]

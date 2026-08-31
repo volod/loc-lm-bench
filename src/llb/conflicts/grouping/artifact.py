@@ -13,13 +13,19 @@ derive a grouping the other does not have. `findings.jsonl` itself is untouched 
 
 import json
 
-from llb.conflicts.grouping.census import PairUnits, group_indices, row_pair_units, rows_census
+from llb.conflicts.grouping.census import (
+    PairUnits,
+    group_indices,
+    row_pair_units,
+    rows_census,
+    shared_unit_indices,
+)
 from llb.conflicts.constants import decide_count
 from llb.conflicts.grouping.ranking import DecisionStake, stake_ranks
 from llb.conflicts.tiers.hashing import CONTENT_HASH_HEX_LENGTH, finding_id, sha256_text
 from llb.core.contracts.common import JsonObject
 
-GROUPS_SCHEMA_VERSION = 3
+GROUPS_SCHEMA_VERSION = 4
 # What a group's members share, spelled out once for every consumer of the sidecar.
 UNIT_DESCRIPTION = (
     "the chunk each side of a finding rests on, or its document for the hash and lexical tiers, "
@@ -77,6 +83,7 @@ def _summary(
         "finding_ids": member_ids,
         "relations": relations,
         "decide_rows": decide_count(relations),
+        "chain_length": len(shared_unit_indices(pairs)),
         "shared_units": _shared_units(pairs),
         "documents": documents,
         # Present only when the edition-linkage lane ran, so a bundle written without it is
@@ -104,6 +111,7 @@ def group_summaries(
             DecisionStake(
                 group_index=index,
                 decide_rows=int(summary["decide_rows"]),
+                chain_length=int(summary["chain_length"]),
                 rows=int(summary["rows"]),
                 top_score=float(summary["top_score"]),
             )
@@ -158,6 +166,7 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
                 "actions": actions,
                 "action": next(iter(actions)) if len(actions) == 1 else None,
                 "decide_rows": summary["decide_rows"],
+                "chain_length": summary["chain_length"],
                 "rank": summary["rank"],
                 "review_rows": review_rows,
                 "status": "review_required" if review_rows else "accepted",

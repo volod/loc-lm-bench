@@ -29,17 +29,18 @@ counts). `src/llb/conflicts/grouping/census.py` computes the census and the grou
 - **Group.** Findings joined **transitively** by a shared unit, the same closure the `hash` tier
   applies to duplicate groups. A chunk that conflicts with six neighbours is ONE group, and so are
   three copies of one document: a shared unit is what makes two rows the same piece of evidence.
-  The report leads the findings section with a **Decision groups** table (rows, `to decide`,
-  relations, shared unit, documents, top score) and prints every row below it under its group label.
-  `groups` is what an operator triages; `findings` is what a resolution lane consumes. The closure
-  is one of [two measured grouping rules](#how-many-decisions-the-row-count-is), and it is the one
-  the audit quotes.
+  The report leads the findings section with a **Decision groups** table (rows, `to decide`, chain
+  length, relations, shared unit, documents, top score) and prints every row below it under its
+  group label. `groups` is what an operator triages; `findings` is what a resolution lane consumes.
+  The closure is one of [two measured grouping rules](#how-many-decisions-the-row-count-is), and it
+  is the one the audit quotes.
 - **Ranked by stake, named by file order.** The two are deliberately separate. A group's ID comes
   from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` share, so it
   never moves. The decision TABLE is ordered by `stake_key`
-  (`src/llb/conflicts/report/findings.py`): `to decide` rows first, then rows, then top score, then
-  the id. `G3` leading the table is therefore a ranking, not a renumbering, and the row table below
-  it stays in the file's order -- the order a resolution lane consumes.
+  (`src/llb/conflicts/report/findings.py`): `to decide` rows first, then chain length, rows, top
+  score, and the id. Chain length is the number of distinct pieces of shared evidence the flat
+  transitive group runs through. `G3` leading the table is therefore a ranking, not a renumbering,
+  and the row table below it stays in the file's order -- the order a resolution lane consumes.
 - **Rendering only.** `findings.jsonl` keeps one line per row, byte-identical and in the same order
   as before -- the resolution lane reads rows, and nothing here suppresses, merges, or deduplicates
   one. `tests/llb/conflicts/test_finding_census.py` asserts that, the one-group collapse, the
@@ -53,6 +54,39 @@ budget-100 claim bundle four groups tie at 1.000, so three of them were ordered 
 claim-identity tiebreak underneath -- a document id. Ranked by stake, the 29-row decision moves
 above the 14-row one and the 3-row decision above the 2-row one, while the group holding the only
 actionable row still leads the claim bundle.
+
+### Chain length in the stake ranking
+
+Flat row count is only the third ranking term. A six-row fan resting on one chunk has chain length
+one; a transitive group that walks across several reused chunks has one chain step per distinct
+piece of shared evidence. The complete audit order is now `to decide`, chain length, rows, top
+score, then file-order group id. This keeps work ahead of non-work while breaking a flat-size tie on
+the amount of evidence an operator must inspect. It does not rank on projected `to review`, and it
+does not change either grouping rule or any group id.
+
+`FindingGroup.chain_length` and `group_summaries` both read the same `shared_unit_indices` helper in
+`src/llb/conflicts/grouping/census.py`, so object rendering and a later `findings.jsonl` re-read
+cannot disagree. `DecisionStake` in `src/llb/conflicts/grouping/ranking.py` is the one five-part
+ordering contract. The report prints the input as `chain length`; `groups.json` and each
+`plan.json` decision carry it as `chain_length` beside the resulting `rank`.
+
+**Keep verdict, measured 2026-08-31 on the RTX 4060 Ti 16 GiB CUDA host.** A model-free re-read of
+all 25 byte-distinct, non-empty conflict-audit bundles present on the host compared the previous
+four-part key with the new five-part key over the same `findings.jsonl` rows. Some table position
+changed in **6 of 25 bundles (24%)** and no position changed in **19 of 25 (76%)**. The leading
+group changed in **3 of 25 (12%)**: three byte-distinct 38-row, 22-group SQuAD-family semantic
+bundles moved the four-step group ahead of a two-step group that the old row-count term had led.
+The other changed cases were the 100-row, 9-group goods claim bundle, the 99-row, 31-group HR claim
+bundle, and a 50-row, 21-group HR semantic metadata-filter bundle; their leader stayed fixed, but
+later tied-work decisions moved. Unchanged controls included the 17-row, 4-group committed fixture
+semantic bundle and the 50-row, 13-group goods semantic metadata-filter bundle. Reading: the term
+is selective rather than decorative -- it changes the first decision on a minority of bundles and
+leaves three quarters with the same complete order.
+
+The comparison de-duplicated identical `findings.jsonl` bytes before counting, used no model, store,
+or GPU, and changed no artifact. Different finding rows, relation labels (the primary `to decide`
+term), or grouping units could overturn the rate; a new corpus mix should therefore re-run the
+rows-only comparison rather than treating 24% as a transferable constant.
 
 ### To decide and to review are two counts, never one
 
@@ -713,12 +747,12 @@ guarantee that, so a re-sorted audit cannot republish a store generation that ch
 
 The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
 `findings.jsonl` (`src/llb/conflicts/grouping/artifact.py`). Each group carries `group_id`,
-`group_key`, `rows`, `finding_ids`, `relations`, `decide_rows`, `rank`, `shared_units`, `documents`,
-`document_pairs`, and `top_score`; the document also carries the census and
-`source_findings_sha256`, which pins it to the exact rows on disk and equals the
+`group_key`, `rows`, `finding_ids`, `relations`, `decide_rows`, `chain_length`, `rank`,
+`shared_units`, `documents`, `document_pairs`, and `top_score`; the document also carries the
+census and `source_findings_sha256`, which pins it to the exact rows on disk and equals the
 `source_findings_sha256` the resolution plan records. `decide_rows` is computed by the shared
-`decide_count` relation predicate. `rank` is the one-based position in the report's decision table,
-computed from the same `DecisionStake` and `stake_key` in
+`decide_count` relation predicate. `rank` is the one-based position in the report's decision
+table, computed from the same `DecisionStake` and `stake_key` in
 `src/llb/conflicts/grouping/ranking.py` that the renderer uses. The `groups` list and `group_id`
 values remain in findings-file order; consumers sort on `rank` when they want the operator view.
 
@@ -726,10 +760,11 @@ values remain in findings-file order; consumers sort on `rank` when they want th
 companion `group_key` is the first 16 hexadecimal characters of SHA-256 over the group's sorted
 `finding_id` list. Sorting before hashing makes the key independent of both member order and the
 group's position in `findings.jsonl`; changing any member row changes the key, which prevents a
-consumer from treating a different decision as the old one. `groups.json` schema 3 and
-`plan.json` schema 5 carry the same key, `decide_rows`, and `rank` on the sidecar group and plan
-decision respectively. No grouping rule, positional join, row artifact, or review-ledger address
-changed. Schema 3 adds the two ranking inputs to the sidecar; plan schema 5 adds the copied rank.
+consumer from treating a different decision as the old one. `groups.json` schema 4 and
+`plan.json` schema 6 carry the same key, `decide_rows`, `chain_length`, and `rank` on the sidecar
+group and plan decision respectively. No grouping rule, positional join, row artifact, or
+review-ledger address changed. Schema 3 added `decide_rows` and `rank` to the sidecar and plan
+schema 5 added the copied rank; schema 4 and plan schema 6 add the chain length behind that rank.
 
 The `finding_ids` are the SAME ids `plan.json` uses (`finding_id` in `hashing.py`), so a group id
 joins the audit, the plan, and the review ledger without any consumer re-deriving anything. Both
@@ -759,13 +794,14 @@ environment through `scripts/shared/common.sh`.
 On 2026-08-31, the model-free `make audit-corpus-conflicts` hash-tier workflow ran on the committed
 seven-document conflict fixture on the RTX 4060 Ti 16 GiB CUDA host, followed by
 `make resolve-corpus-conflicts` with the conservative policy over its findings. The audit produced
-two duplicate rows in one decision group; `groups.json` schema 3 recorded `decide_rows: 2` and
-`rank: 1`, and `plan.json` schema 5 copied both while reporting `review_rows: 0`. Reading: a machine
-consumer now receives the audit's ranking and its primary input directly, while the policy-specific
-review count remains distinct. This run checks field propagation through the public commands; the
-reverse-order regression checks the multi-group ordering that this one-group corpus cannot. A
-change to the relation-to-work predicate or the four-part stake order would overturn the values and
-must update the shared helper, both artifacts, the rendered table, and that regression together.
+two duplicate rows in one decision group; `groups.json` schema 4 recorded `decide_rows: 2`,
+`chain_length: 1`, and `rank: 1`, and `plan.json` schema 6 copied all three while reporting
+`review_rows: 0`. Reading: a machine consumer receives every policy-free ranking input directly,
+while the policy-specific review count remains distinct. This one-group run checks field
+propagation through the public commands; the reverse-order regression checks the multi-group
+ordering it cannot. A change to the relation-to-work predicate, chain definition, or five-part
+stake order would overturn the values and must update the shared helper, both artifacts, the
+rendered table, and that regression together.
 
 ### Measured on the goods corpus
 

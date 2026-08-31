@@ -25,7 +25,12 @@ pieces of shared evidence a chain actually runs through, which is far below the 
 from statistics import median
 from typing import TYPE_CHECKING
 
-from llb.conflicts.grouping.census import PairUnits, group_indices, row_pair_units
+from llb.conflicts.grouping.census import (
+    PairUnits,
+    group_indices,
+    row_pair_units,
+    shared_unit_indices,
+)
 from llb.conflicts.grouping.artifact import UNIT_DESCRIPTION
 from llb.core.contracts.common import JsonObject
 
@@ -53,35 +58,6 @@ RULE_DESCRIPTIONS = {
         "unit: a cover, so a row carrying two shared units appears in two groups"
     ),
 }
-
-
-def shared_unit_indices(pairs: list[PairUnits], within: list[int] | None = None) -> list[list[int]]:
-    """Member indices per shared-unit group, groups ordered by their first member.
-
-    A unit joins a group only when more than one row rests on it -- a unit one row carries is not
-    shared, and turning it into a group would make every finding its own decision by construction.
-    Two units that join exactly the same rows are ONE group: a left and a right chunk that only
-    ever appear together are one piece of evidence seen from both ends, not two decisions.
-
-    `within` restricts the rule to a subset of the row indices, which is how a transitive group is
-    split into the distinct pieces of evidence its chain runs through. Every shared-unit group is a
-    subset of one transitive group by construction (its members share a unit, so the closure joins
-    them), so splitting each transitive group in turn re-derives exactly the same groups.
-    """
-    indices = list(range(len(pairs))) if within is None else list(within)
-    members_by_unit: dict[str, list[int]] = {}
-    for index in indices:
-        # `dict.fromkeys` de-duplicates a self-pair, whose two sides are the same unit.
-        for unit in dict.fromkeys(pairs[index].units):
-            members_by_unit.setdefault(unit, []).append(index)
-    distinct: dict[tuple[int, ...], list[int]] = {}
-    for _unit, members in sorted(members_by_unit.items()):
-        if len(members) > 1:
-            distinct.setdefault(tuple(members), members)
-    groups = list(distinct.values())
-    covered = {index for members in groups for index in members}
-    groups += [[index] for index in indices if index not in covered]
-    return sorted(groups, key=lambda members: (members[0], members))
 
 
 def _distribution(rule: str, groups: list[list[int]], rows: int) -> JsonObject:

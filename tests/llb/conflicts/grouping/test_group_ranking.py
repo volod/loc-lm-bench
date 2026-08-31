@@ -43,6 +43,31 @@ def _fan(unit: str, rows: int, relation: str, score: float, offset: int = 0) -> 
     ]
 
 
+def _chain(unit: str, rows: int, relation: str, score: float, offset: int = 0) -> list[Finding]:
+    """One transitive group whose rows run through several shared evidence pieces."""
+    refs = [
+        ClaimRef(
+            f"{unit}-{index}.md",
+            offset + index * 20,
+            offset + index * 20 + 10,
+            "c" * 10,
+            chunk_id=f"{unit}#chunk#{index}",
+        )
+        for index in range(rows + 1)
+    ]
+    return [
+        Finding(
+            relation=relation,
+            tier=TIER_CLAIM,
+            a=refs[index],
+            b=refs[index + 1],
+            score=score,
+            evidence="model",
+        )
+        for index in range(rows)
+    ]
+
+
 def _groups_of(report: str) -> list[str]:
     table = report.split("### Decision groups", 1)[1].split("### Rows", 1)[0]
     return [line.split("|")[1].strip() for line in table.splitlines() if line.startswith("| G")]
@@ -74,6 +99,21 @@ def test_work_outranks_size():
     ranked = _groups_of(render_report(_result(findings)))
     actionable = _label_of(findings, lambda group: group.decide_rows == 2)
     assert ranked[0] == actionable, "two rows someone must act on outrank twenty that coexist"
+
+
+def test_chain_length_breaks_a_row_count_tie_before_score():
+    """Equal flat groups cost differently when one crosses several pieces of shared evidence."""
+    findings = _fan("fan", 4, REL_CONTRADICTS, 1.0) + _chain(
+        "chain", 4, REL_CONTRADICTS, 0.1, offset=100
+    )
+    groups = group_findings(findings)
+    fan = next(group for group in groups if group.chain_length == 1)
+    chain = next(group for group in groups if group.chain_length > 1)
+
+    assert fan.decide_rows == chain.decide_rows == 4
+    assert len(fan.findings) == len(chain.findings) == 4
+    assert fan.top_score > chain.top_score, "score alone would put the flat fan first"
+    assert sorted(groups, key=stake_key)[0] == chain
 
 
 def test_the_ranking_is_total_so_a_full_tie_falls_back_to_the_id():
@@ -109,6 +149,7 @@ def test_ranking_the_table_does_not_renumber_the_groups(tmp_path):
         (0, 2),
         (0, 1),
     ]
+    assert [group["chain_length"] for group in sidecar["groups"]] == [1, 1]
     plan = build_plan(rows, POLICY_CONSERVATIVE, "corpus")
     assert [(decision["group_id"], decision["rank"]) for decision in plan["decisions"]] == [
         (group["group_id"], group["rank"]) for group in sidecar["groups"]
@@ -119,6 +160,34 @@ def test_ranking_the_table_does_not_renumber_the_groups(tmp_path):
     ]
     assert plan_order == report_order
     assert group_summaries(rows) == sidecar["groups"], "the file still derives the same ids"
+
+
+def test_the_report_and_artifacts_explain_the_chain_length_rank(tmp_path):
+    findings = _fan("fan", 4, REL_CONTRADICTS, 1.0) + _chain(
+        "chain", 4, REL_CONTRADICTS, 0.1, offset=100
+    )
+    paths = write_audit(tmp_path / "audit", _result(findings))
+    report = paths["report"].read_text(encoding="utf-8")
+    rows = [
+        json.loads(line)
+        for line in paths["findings"].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    sidecar = json.loads(paths["groups"].read_text(encoding="utf-8"))
+    plan = build_plan(rows, POLICY_CONSERVATIVE, "corpus")
+
+    header = next(line for line in report.splitlines() if line.startswith("| group"))
+    report_rows = [line for line in report.splitlines() if line.startswith("| G")]
+    assert "| chain length |" in header
+    assert report_rows[0].split("|")[4].strip() == "3", "the longer chain leads the table"
+    assert [(group["chain_length"], group["rank"]) for group in sidecar["groups"]] == [
+        (1, 2),
+        (3, 1),
+    ]
+    assert [(decision["chain_length"], decision["rank"]) for decision in plan["decisions"]] == [
+        (1, 2),
+        (3, 1),
+    ]
 
 
 def test_the_row_table_stays_in_file_order(tmp_path):

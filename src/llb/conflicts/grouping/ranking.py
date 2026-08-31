@@ -9,13 +9,20 @@ class DecisionStake:
 
     group_index: int
     decide_rows: int
+    chain_length: int
     rows: int
     top_score: float
 
 
-def stake_key(stake: DecisionStake) -> tuple[int, int, float, int]:
-    """Rank work first, then size, score, and the stable file-order id."""
-    return (-stake.decide_rows, -stake.rows, -stake.top_score, stake.group_index)
+def stake_key(stake: DecisionStake) -> tuple[int, int, int, float, int]:
+    """Rank work, evidence-chain cost, size, score, and the stable file-order id."""
+    return (
+        -stake.decide_rows,
+        -stake.chain_length,
+        -stake.rows,
+        -stake.top_score,
+        stake.group_index,
+    )
 
 
 def stake_ranks(stakes: list[DecisionStake]) -> dict[int, int]:

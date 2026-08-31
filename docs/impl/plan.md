@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-decision-chain-length-in-the-stake-ranking (optional)
-
-The decision table ranks a group on `to decide` then rows, and both treat a group as flat -- but the
-audit now measures how many distinct pieces of shared evidence each group's chain runs through
-(`quoted_group_split` in
-[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)),
-and on the measured bundles the spread inside one row count is large: a 6-row fan resting on ONE
-chunk is one decision, while goods G1's 51 rows run through 23. Two groups with the same row count
-therefore cost an operator very different amounts, and the ranking cannot see the difference. Fold
-the chain length into `stake_key` (or add it as a decision-table column and state why it is not
-ranked on), and measure how often the order actually changes on the committed bundles -- a signal
-that never reorders anything is not worth a column.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking and
-  `shared_unit_indices` in `src/llb/conflicts/grouping/granularity.py` is the chain length; the
-  ranking must stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
-- User-visible outcome: the first decision the report offers is the one that actually costs the most,
-  not the one with the most rows.
-- Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
-  and the keep-or-drop verdict. Out of scope -- changing group identity, changing either grouping
-  rule, and ranking on a projected count.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering change with fixture tests; recompute the order over committed bundles,
-  no GPU.
-- Acceptance gates: `make ci` green; group ids never move; the report states on how many of the
-  measured bundles the order changed, including the bundles where it did not.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
-
 #### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
 
 The attribution names ONE stage and one pair, and a run that loses pairs at three stages says

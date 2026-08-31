@@ -107,6 +107,33 @@ def group_indices(pairs: list[PairUnits]) -> list[list[int]]:
     return sorted(buckets.values(), key=lambda members: members[0])
 
 
+def shared_unit_indices(pairs: list[PairUnits], within: list[int] | None = None) -> list[list[int]]:
+    """Member indices per distinct piece of shared evidence, ordered by first member.
+
+    Unlike :func:`group_indices`, this is a cover rather than a transitive partition: a row can
+    join the group for each shared unit it carries. Units that join exactly the same rows collapse
+    to one piece of evidence. Rows sharing no unit remain singleton pieces.
+
+    ``within`` restricts the cover to one transitive decision group. Its resulting group count is
+    that decision's chain length: how many distinct pieces of shared evidence the flat row group
+    runs through.
+    """
+    indices = list(range(len(pairs))) if within is None else list(within)
+    members_by_unit: dict[str, list[int]] = {}
+    for index in indices:
+        # `dict.fromkeys` de-duplicates a self-pair, whose two sides are the same unit.
+        for unit in dict.fromkeys(pairs[index].units):
+            members_by_unit.setdefault(unit, []).append(index)
+    distinct: dict[tuple[int, ...], list[int]] = {}
+    for _unit, members in sorted(members_by_unit.items()):
+        if len(members) > 1:
+            distinct.setdefault(tuple(members), members)
+    groups = list(distinct.values())
+    covered = {index for members in groups for index in members}
+    groups += [[index] for index in indices if index not in covered]
+    return sorted(groups, key=lambda members: (members[0], members))
+
+
 def census_of(pairs: list[PairUnits]) -> JsonObject:
     """The distinct units behind a row count: what the count is evidence of, not how big it is."""
     groups = group_indices(pairs)
@@ -156,6 +183,12 @@ class FindingGroup:
         review count to print.
         """
         return decide_count(self.relation_counts())
+
+    @property
+    def chain_length(self) -> int:
+        """Distinct pieces of shared evidence this transitive group runs through."""
+        pairs = [pair_units(finding) for finding in self.findings]
+        return len(shared_unit_indices(pairs))
 
     @property
     def top_score(self) -> float:
