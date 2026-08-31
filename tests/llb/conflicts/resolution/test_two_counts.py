@@ -131,7 +131,9 @@ def test_the_plan_and_the_ledger_carry_both_counts(tmp_path):
     ]
 
     assert plan["schema_version"] == PLAN_SCHEMA_VERSION
-    assert [(d["decide_rows"], d["review_rows"]) for d in plan["decisions"]] == [(2, 1)]
+    assert [(d["decide_rows"], d["review_rows"], d["rank"]) for d in plan["decisions"]] == [
+        (2, 1, 1)
+    ]
     assert len(records) == 1, "only the escalated row is open"
     assert (records[0]["group_rows"], records[0]["group_decide_rows"]) == (2, 2)
     assert records[0]["group_review_rows"] == 1

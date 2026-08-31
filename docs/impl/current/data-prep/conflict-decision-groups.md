@@ -713,17 +713,23 @@ guarantee that, so a re-sorted audit cannot republish a store generation that ch
 
 The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
 `findings.jsonl` (`src/llb/conflicts/grouping/artifact.py`). Each group carries `group_id`,
-`group_key`, `rows`, `finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and
-`top_score`; the document also carries the census and `source_findings_sha256`, which pins it to
-the exact rows on disk and equals the `source_findings_sha256` the resolution plan records.
+`group_key`, `rows`, `finding_ids`, `relations`, `decide_rows`, `rank`, `shared_units`, `documents`,
+`document_pairs`, and `top_score`; the document also carries the census and
+`source_findings_sha256`, which pins it to the exact rows on disk and equals the
+`source_findings_sha256` the resolution plan records. `decide_rows` is computed by the shared
+`decide_count` relation predicate. `rank` is the one-based position in the report's decision table,
+computed from the same `DecisionStake` and `stake_key` in
+`src/llb/conflicts/grouping/ranking.py` that the renderer uses. The `groups` list and `group_id`
+values remain in findings-file order; consumers sort on `rank` when they want the operator view.
 
 `group_id` remains the positional `G<n>` used by the plan and review ledger inside one run. Its
 companion `group_key` is the first 16 hexadecimal characters of SHA-256 over the group's sorted
 `finding_id` list. Sorting before hashing makes the key independent of both member order and the
 group's position in `findings.jsonl`; changing any member row changes the key, which prevents a
-consumer from treating a different decision as the old one. `groups.json` schema 2 and
-`plan.json` schema 4 carry the same key on the sidecar group and plan decision respectively. No
-grouping rule, positional join, row artifact, or review-ledger address changed.
+consumer from treating a different decision as the old one. `groups.json` schema 3 and
+`plan.json` schema 5 carry the same key, `decide_rows`, and `rank` on the sidecar group and plan
+decision respectively. No grouping rule, positional join, row artifact, or review-ledger address
+changed. Schema 3 adds the two ranking inputs to the sidecar; plan schema 5 adds the copied rank.
 
 The `finding_ids` are the SAME ids `plan.json` uses (`finding_id` in `hashing.py`), so a group id
 joins the audit, the plan, and the review ledger without any consumer re-deriving anything. Both
@@ -742,6 +748,24 @@ effort on the committed seven-document conflict fixture, then `make resolve-corp
 the conservative policy: its two finding rows formed one decision, and `groups.json` and
 `plan.json` emitted the same group key. Reordering the identical rows or repeating that audit must
 retain the key; adding, removing, or changing a member row intentionally overturns the match.
+
+`tests/llb/conflicts/grouping/test_group_ranking.py` also constructs two groups whose stake order
+is the reverse of file order. It checks that the rendered table, sidecar records sorted by `rank`,
+and plan decisions sorted by the copied `rank` agree, while the serialized sidecar and plan still
+name the groups `G1`, `G2` in file order. Run the focused contract with
+`uv run pytest tests/llb/conflicts/grouping/test_group_ranking.py` after loading the project
+environment through `scripts/shared/common.sh`.
+
+On 2026-08-31, the model-free `make audit-corpus-conflicts` hash-tier workflow ran on the committed
+seven-document conflict fixture on the RTX 4060 Ti 16 GiB CUDA host, followed by
+`make resolve-corpus-conflicts` with the conservative policy over its findings. The audit produced
+two duplicate rows in one decision group; `groups.json` schema 3 recorded `decide_rows: 2` and
+`rank: 1`, and `plan.json` schema 5 copied both while reporting `review_rows: 0`. Reading: a machine
+consumer now receives the audit's ranking and its primary input directly, while the policy-specific
+review count remains distinct. This run checks field propagation through the public commands; the
+reverse-order regression checks the multi-group ordering that this one-group corpus cannot. A
+change to the relation-to-work predicate or the four-part stake order would overturn the values and
+must update the shared helper, both artifacts, the rendered table, and that regression together.
 
 ### Measured on the goods corpus
 

@@ -19,6 +19,7 @@ from llb.conflicts.grouping.artifact import group_summaries
 from llb.conflicts.models import AuditResult, ClaimRef, Finding
 from llb.conflicts.report.render import render_report, write_audit
 from llb.conflicts.report.findings import stake_key
+from llb.conflicts.resolution.policy import POLICY_CONSERVATIVE, build_plan
 
 
 def _fan(unit: str, rows: int, relation: str, score: float, offset: int = 0) -> list[Finding]:
@@ -97,8 +98,26 @@ def test_ranking_the_table_does_not_renumber_the_groups(tmp_path):
         if line.strip()
     ]
 
-    assert _groups_of(paths["report"].read_text(encoding="utf-8"))[0] == "G2", "ranked by stake"
+    report_order = _groups_of(paths["report"].read_text(encoding="utf-8"))
+    assert report_order[0] == "G2", "ranked by stake"
     assert [group["group_id"] for group in sidecar["groups"]] == ["G1", "G2"], "ids in file order"
+    sidecar_order = [
+        group["group_id"] for group in sorted(sidecar["groups"], key=lambda group: group["rank"])
+    ]
+    assert sidecar_order == report_order, "the sidecar carries the report's own order"
+    assert [(group["decide_rows"], group["rank"]) for group in sidecar["groups"]] == [
+        (0, 2),
+        (0, 1),
+    ]
+    plan = build_plan(rows, POLICY_CONSERVATIVE, "corpus")
+    assert [(decision["group_id"], decision["rank"]) for decision in plan["decisions"]] == [
+        (group["group_id"], group["rank"]) for group in sidecar["groups"]
+    ], "the plan copies the audit rank instead of deriving another order"
+    plan_order = [
+        decision["group_id"]
+        for decision in sorted(plan["decisions"], key=lambda decision: decision["rank"])
+    ]
+    assert plan_order == report_order
     assert group_summaries(rows) == sidecar["groups"], "the file still derives the same ids"
 
 

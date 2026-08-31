@@ -21,6 +21,7 @@ from llb.conflicts.grouping.census import (
 )
 from llb.conflicts.constants import DECIDE_LABEL
 from llb.conflicts.grouping.granularity import finding_granularity
+from llb.conflicts.grouping.ranking import DecisionStake, stake_key as decision_stake_key
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.report.granularity import granularity_section
 from llb.conflicts.report.projection import projected_columns, two_counts_paragraphs
@@ -75,7 +76,14 @@ def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
     the group that holds it -- and on a corpus where scores saturate, ranking on it is ranking on
     the identity tiebreak underneath.
     """
-    return (-group.decide_rows, -len(group.findings), -group.top_score, group.index)
+    return decision_stake_key(
+        DecisionStake(
+            group_index=group.index,
+            decide_rows=group.decide_rows,
+            rows=len(group.findings),
+            top_score=group.top_score,
+        )
+    )
 
 
 def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[str]:

@@ -15,10 +15,11 @@ import json
 
 from llb.conflicts.grouping.census import PairUnits, group_indices, row_pair_units, rows_census
 from llb.conflicts.constants import decide_count
+from llb.conflicts.grouping.ranking import DecisionStake, stake_ranks
 from llb.conflicts.tiers.hashing import CONTENT_HASH_HEX_LENGTH, finding_id, sha256_text
 from llb.core.contracts.common import JsonObject
 
-GROUPS_SCHEMA_VERSION = 2
+GROUPS_SCHEMA_VERSION = 3
 # What a group's members share, spelled out once for every consumer of the sidecar.
 UNIT_DESCRIPTION = (
     "the chunk each side of a finding rests on, or its document for the hash and lexical tiers, "
@@ -68,12 +69,14 @@ def _summary(
     documents = sorted({doc for pair in pairs for doc in pair.doc_pair})
     grouped = _editions(documents, editions)
     member_ids = [finding_id(row) for row in rows]
+    relations = _relation_counts(rows)
     return {
         "group_id": f"G{index}",
         "group_key": group_key(member_ids),
         "rows": len(rows),
         "finding_ids": member_ids,
-        "relations": _relation_counts(rows),
+        "relations": relations,
+        "decide_rows": decide_count(relations),
         "shared_units": _shared_units(pairs),
         "documents": documents,
         # Present only when the edition-linkage lane ran, so a bundle written without it is
@@ -92,10 +95,24 @@ def group_summaries(
     """One summary per decision group, in the order the rows are listed."""
     pairs = [row_pair_units(row) for row in rows]
     named = editions or {}
-    return [
+    summaries = [
         _summary(index, [rows[at] for at in members], [pairs[at] for at in members], named)
         for index, members in enumerate(group_indices(pairs), start=1)
     ]
+    ranks = stake_ranks(
+        [
+            DecisionStake(
+                group_index=index,
+                decide_rows=int(summary["decide_rows"]),
+                rows=int(summary["rows"]),
+                top_score=float(summary["top_score"]),
+            )
+            for index, summary in enumerate(summaries, start=1)
+        ]
+    )
+    for index, summary in enumerate(summaries, start=1):
+        summary["rank"] = ranks[index]
+    return summaries
 
 
 def groups_document(
@@ -140,7 +157,8 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
                 "shared_units": list(summary["shared_units"]),
                 "actions": actions,
                 "action": next(iter(actions)) if len(actions) == 1 else None,
-                "decide_rows": decide_count(summary["relations"]),
+                "decide_rows": summary["decide_rows"],
+                "rank": summary["rank"],
                 "review_rows": review_rows,
                 "status": "review_required" if review_rows else "accepted",
             }

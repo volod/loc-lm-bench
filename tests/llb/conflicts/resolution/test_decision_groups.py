@@ -152,6 +152,7 @@ def test_a_concentrated_plan_carries_one_decision_naming_its_member_rows(tmp_pat
     assert len(plan["decisions"]) == 1
     decision = plan["decisions"][0]
     assert decision["group_key"] == group_key(decision["finding_ids"])
+    assert decision["rank"] == 1
     assert decision["rows"] == 6 and decision["action"] == ACTION_ESCALATE
     assert decision["status"] == "review_required" and decision["review_rows"] == 6
     assert decision["finding_ids"] == [item["finding_id"] for item in plan["items"]]

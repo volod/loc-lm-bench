@@ -76,34 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
-
-The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
-computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
-same order must re-derive the to-decide count from the relation map and re-implement `stake_key`
-([decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar)). That is
-the same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
-and the rendered `rank` to each group summary, and the same `rank` to the plan's `decisions`, so a
-dashboard, a runtime, or a second report reads the audit's own ordering rather than an
-approximation of it.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking;
-  `group_summaries` in `grouping/artifact.py` builds the sidecar from `findings.jsonl` rows, so the
-  rank must be computable from rows alone to keep the sidecar derivable without the report.
-  `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
-  carry it, so the sidecar must reuse it rather than add a third implementation.
-- User-visible outcome: every consumer of the audit shows the operator the same first decision.
-- Scope boundary: in scope -- the two fields, the shared ranking helper, and its test against the
-  rendered table. Out of scope -- changing the ranking itself, group identity, and `findings.jsonl`.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: sidecar and rendering change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the sidecar's rank order equals the report's decision table
-  order on a fixture whose stake ranking differs from its file order; group ids stay in file order.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
-
 #### conflict-decision-chain-length-in-the-stake-ranking (optional)
 
 The decision table ranks a group on `to decide` then rows, and both treat a group as flat -- but the
