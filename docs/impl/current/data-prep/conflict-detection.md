@@ -356,10 +356,28 @@ contain every true match and that confirmed pair identities equal the unprojecte
 across several projection dimensions.
 
 `summary.json` reports `project_dims`, `projected_backend`, `projected_candidate_pairs`,
-`projected_pruned_pairs`, `projected_pruning_fraction`, and `full_space_comparisons`. A matching
-projection/tree is reused. The source, encoder, centering mode, dimensions, leaf size, and
-projection fingerprint control reuse, so incompatible store generations rebuild rather than
-querying foreign geometry.
+`projected_pruned_pairs`, `projected_pruning_fraction`, and `full_space_comparisons`.
+
+### Persisted-index reuse rule
+
+Only the projected path persists and reuses geometry. Its one gate is
+`_load_reusable_artifacts` in `projected_index.py`: the PCA projection and semantic tree load as a
+pair only when the source fingerprint, the projection's fitted-source and content fingerprints,
+the encoder, source and projected dimensions, centering mode, and leaf size all match. Loading the
+tree also enforces its format version. The source fingerprint covers the corpus fingerprint, store
+manifest, and complete chunk table, so a foreign encoder or store generation rebuilds BOTH
+artifacts before it can be queried. A corrupt or incomplete pair also rebuilds; no partial artifact
+is treated as reusable.
+
+The angular full-space path has no persisted reuse decision: every regular audit invocation builds
+fresh geometry from the current store vectors. An explicitly injected in-memory tree remains a
+low-level API seam, not a store artifact. The former `tree_is_reusable` predicate in `refresh.py`
+was removed because production never called it and its encoder/dimension-only check was weaker
+than the persisted-index identity.
+
+`tests/llb/conflicts/semantic_tree/test_projection.py` covers matching reuse, encoder and corpus
+identity rejection, all-or-nothing PCA refitting, and the fresh full-space build. The focused
+semantic-tree suite and the complete conflict suite pass with these cases.
 
 ## Needle ambiguity lane
 

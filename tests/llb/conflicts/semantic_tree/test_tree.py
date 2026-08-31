@@ -17,7 +17,7 @@ from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.vector_math import angular_distance
 from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.rag.refresh.diff import ManifestDiff
-from llb.conflicts.semantic_tree.refresh import refresh_tree, tree_is_reusable, tree_meta
+from llb.conflicts.semantic_tree.refresh import refresh_tree, tree_meta
 
 
 def brute_force(vectors: VectorSet, threshold: float):
@@ -189,7 +189,7 @@ def test_refresh_is_a_no_op_without_changes():
     assert tree.payload() == before
 
 
-def test_tree_meta_pins_the_encoder():
+def test_tree_meta_records_the_encoder():
     vectors = clustered(20, 8, 3, 0.3, seed=47)
     tree = SemanticPrefixTree.build(vectors, leaf_size=8)
     meta = tree_meta(
@@ -200,9 +200,8 @@ def test_tree_meta_pins_the_encoder():
         doc_fingerprints={"a.md": "x"},
         cos_threshold=0.9,
     )
-    assert tree_is_reusable(meta, "intfloat/multilingual-e5-base", 8)
-    assert not tree_is_reusable(meta, "some/other-encoder", 8)
-    assert not tree_is_reusable(meta, "intfloat/multilingual-e5-base", 768)
+    assert meta["embedding_model"] == "intfloat/multilingual-e5-base"
+    assert meta["dim"] == 8
     assert math.isfinite(float(meta["max_radius_rad"]))
 
 

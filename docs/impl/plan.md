@@ -76,36 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
-
-`tree_is_reusable` (`src/llb/conflicts/semantic_tree/refresh.py`) documents itself as the rule that
-stops a tree built under one encoder from being queried under another, and nothing in `src/` calls
-it: the only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
-`prepare_projected_index`'s `source_fingerprint`, which hashes the encoder, the dimension, the
-centering flag, the corpus fingerprint, the store manifest, and the whole chunk table into one
-value, so it is strictly stronger AND covers only the PROJECTED path -- the full-space path builds a
-fresh tree every run and reuses nothing. Two live functions describing one gate is how a later
-change gets made in the wrong place. Decide which it is: delete the unused one and say the
-fingerprint is the gate, or make it the cheap pre-check the full-space path is missing and give that
-path a persisted tree to reuse.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`semantic_tree/node.py`) are one side,
-  `_source_fingerprint` / `prepare_projected_index`
-  (`src/llb/conflicts/semantic_tree/projected_index.py`) the other, and `_active_tree`
-  (`semantic_run.py`) is the full-space path that persists nothing.
-- User-visible outcome: one documented rule for when a persisted tree may be reused, in the place
-  the reuse actually happens.
-- Scope boundary: in scope -- the verdict, the deletion or the wiring, and the test that follows it.
-  Out of scope -- changing the tree format, changing what the fingerprint covers, and adding
-  persistence to the full-space path unless the verdict picks that.
-- Execution path: source change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; every reuse decision in `src/` goes through exactly one
-  function; a tree built under a different encoder is still refused on both paths.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md).
-
 #### conflict-group-ids-that-survive-a-re-run (optional)
 
 A group id is `G<n>` from `findings.jsonl` file order, and that order is the score-ranked one -- so

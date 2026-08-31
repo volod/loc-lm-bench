@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from llb.conflicts.bundle.store_identity import identity_payload
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.build import bisect
-from llb.conflicts.semantic_tree.node import TREE_VERSION, TreeNode, node_bounds, node_geometry
+from llb.conflicts.semantic_tree.node import TreeNode, node_bounds, node_geometry
 from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.refresh.diff import ManifestDiff
@@ -222,23 +222,6 @@ def tree_meta(
         "corpus_fingerprint": corpus_fingerprint,
         **identity_payload(doc_fingerprints),
     }
-
-
-def tree_is_reusable(meta: dict[str, object], embedding_model: str, dim: int) -> bool:
-    """A persisted tree may only be reused under the encoder and dimension that built it.
-
-    Centroids and radii are only meaningful in the space they were computed in, so a store
-    re-embedded with a different encoder must rebuild rather than patch.
-    """
-    return (
-        meta.get("version") == TREE_VERSION
-        and meta.get("embedding_model") == embedding_model
-        and _as_int(meta.get("dim")) == dim
-    )
-
-
-def _as_int(value: object) -> int:
-    return value if isinstance(value, int) else -1
 
 
 def radius_degrees(radians: float) -> float:

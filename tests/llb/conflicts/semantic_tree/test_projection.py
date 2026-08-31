@@ -16,6 +16,7 @@ from llb.conflicts.semantic_tree.projection import (
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.vectorops import VectorSet
+from llb.conflicts.tiers import semantic_run
 
 from tests.llb.conflicts.conflict_helpers import FAKE_COS_THRESHOLD, FIXTURE_CORPUS, fake_store_view
 
@@ -97,6 +98,63 @@ def test_projected_index_persists_and_reuses_matching_artifacts(tmp_path):
     assert second.tree.payload() == first.tree.payload()
     assert (tmp_path / "semantic_tree" / "projection.json").is_file()
     assert (tmp_path / "semantic_tree" / "tree.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("meta_key", "foreign_value"),
+    [
+        ("embedding_model", "some/other-encoder"),
+        ("corpus_fingerprint", "different-corpus-generation"),
+    ],
+)
+def test_projected_index_rebuilds_foreign_source_artifacts(tmp_path, meta_key, foreign_value):
+    base = fake_store_view()
+    original = StoreView(tmp_path, base.chunks, base.vectors, base.meta)
+    first = prepare_projected_index(original, original.vectors, dims=8, leaf_size=8, centered=False)
+
+    changed_meta = {**base.meta, meta_key: foreign_value}
+    changed = StoreView(tmp_path, base.chunks, base.vectors, changed_meta)
+    replaced = prepare_projected_index(
+        changed, changed.vectors, dims=8, leaf_size=8, centered=False
+    )
+    reused = prepare_projected_index(changed, changed.vectors, dims=8, leaf_size=8, centered=False)
+    projection = json.loads(
+        (tmp_path / "semantic_tree" / "projection.json").read_text(encoding="utf-8")
+    )
+
+    assert first.meta["index_action"] == "built"
+    assert replaced.meta["index_action"] == "built"
+    assert replaced.meta["source_fingerprint"] != first.meta["source_fingerprint"]
+    assert projection["fitted_source_fingerprint"] == replaced.meta["source_fingerprint"]
+    assert reused.meta["index_action"] == "reused"
+
+
+def test_full_space_path_builds_fresh_geometry_for_each_encoder(tmp_path, monkeypatch):
+    base = fake_store_view()
+    builds = 0
+    real_build_tree = semantic_run.build_tree
+
+    def recording_build(vectors, *, leaf_size):
+        nonlocal builds
+        builds += 1
+        return real_build_tree(vectors, leaf_size=leaf_size)
+
+    monkeypatch.setattr(semantic_run, "build_tree", recording_build)
+    first_store = StoreView(tmp_path, base.chunks, base.vectors, base.meta)
+    second_store = StoreView(
+        tmp_path,
+        base.chunks,
+        base.vectors,
+        {**base.meta, "embedding_model": "some/other-encoder"},
+    )
+
+    first = run_audit(FIXTURE_CORPUS, AuditParams(effort="semantic"), store=first_store)
+    second = run_audit(FIXTURE_CORPUS, AuditParams(effort="semantic"), store=second_store)
+
+    assert builds == 2
+    assert first.tree_meta["embedding_model"] == "fake-hashed-bow"
+    assert second.tree_meta["embedding_model"] == "some/other-encoder"
+    assert not (tmp_path / "semantic_tree").exists()
 
 
 def test_audit_projected_output_equals_unprojected_scan(tmp_path):
