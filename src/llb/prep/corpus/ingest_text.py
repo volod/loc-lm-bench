@@ -58,6 +58,7 @@ class CorpusIngestResult:
     out_dir: Path
     items: list[CorpusItem]
     removed_sources: list[str]
+    governance_coverage: dict[str, Any]
 
     @property
     def n_docs(self) -> int:

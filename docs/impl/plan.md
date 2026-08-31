@@ -76,41 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
-
-The audit tells an operator a zero policy delta is "fixable at INGESTION (record `effective_date`
-or `version`)", but ingestion itself never mentions it: `make ingest-corpus` writes a manifest whose
-governance fields are empty and reports success, so the gap is only ever discovered after a store
-build and an audit run
-([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
-Report the same document-side count at ingestion time -- documents carrying `effective_date` /
-`version`, per field -- in the ingest summary and in the corpus manifest, phrased as what it costs
-(no supersession can ever be derived on this corpus) rather than as a warning to scroll past. It
-must stay a REPORT: a corpus without governance dates is a legitimate corpus and ingestion must not
-fail, refuse, or invent a date for it.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance/coverage.py` is the
-  count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
-  is, and `document_pair_orderability` beside it is the same input again -- report both, since a
-  corpus dated end to end with one shared edition is orderable by neither;
-  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus/governance.py` are
-  where ingestion already holds the same fields.
-- User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
-  they are still ingesting it, not two commands and one GPU run later.
-- Scope boundary: in scope -- the count in the ingest summary and manifest, and the one-line
-  consequence. Out of scope -- failing or refusing an undated ingest, inferring dates from document
-  text or file mtime, and any change to the audit-side counts.
-- Data and artifact paths: the existing corpus manifest under the ingested corpus root.
-- Execution path: ingest-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; an undated corpus ingests successfully and reports zero
-  coverage with the consequence named; a dated corpus reports its per-field counts; the manifest
-  round-trips the counts and the audit's own coverage agrees with them on the same corpus.
-- Documentation target: the corpus-ingestion section of
-  [data prep](current/data-prep.md) plus a pointer from
-  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
-
 #### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
 
 `tree_is_reusable` (`src/llb/conflicts/semantic_tree/refresh.py`) documents itself as the rule that

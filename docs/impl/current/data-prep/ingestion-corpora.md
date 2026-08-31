@@ -24,6 +24,37 @@ PDF rows inherit any conversion-manifest governance fields when present and othe
 operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
 non-time governance fields are unchanged.
 
+### Governance coverage at ingestion
+
+Ingestion reports whether those fields can support a later dated supersession, before an operator
+builds a store or runs the conflict audit. `src/llb/prep/corpus/governance_report.py` reuses the
+audit's `document_coverage` and `document_pair_orderability` functions, so both stages count the
+same admitted documents with the same `compare_editions` ordering rule. The command's second
+summary line reports:
+
+- documents carrying either ordering field, plus separate `effective_date` and `version` counts;
+- corpus document pairs with distinct comparable editions; and
+- the consequence when that pair count is zero: no supersession can ever be derived on this
+  corpus, including when every document carries one shared edition.
+
+The same values are persisted under `governance_coverage` in `corpus_manifest.json` (schema version
+1), together with the consequence sentence. This remains a report: zero coverage does not fail the
+command, fill a date from document text or file time, or exclude an otherwise valid document. A
+positive pair count is only a precondition; the conflict audit must still find a contradiction
+before it can derive `superseded_by`.
+
+`tests/llb/prep/test_corpus_ingest_governance_report.py` pins the undated, per-field dated, and
+single-shared-edition cases, manifest round-tripping, successful zero-coverage ingestion, and exact
+agreement with the audit-side coverage over the same staged corpus. On 2026-08-31, the CPU-only
+`make ingest-corpus CORPUS_ROOT=samples/corpus CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=1` path on
+this CUDA host ingested both committed fixture documents and reported 0 of 2 documents carrying an
+ordering field and 0 of 1 orderable document pairs in both the CLI and manifest, with the
+no-supersession consequence. This checks the real Make/CLI/persistence path, not external-corpus
+prevalence; adding governance metadata to that fixture would intentionally overturn those fixture
+counts.
+
+### Refresh and downstream workflows
+
 Deletion propagation is explicit: a source removed from the input root is removed from the next
 `corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
 manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale

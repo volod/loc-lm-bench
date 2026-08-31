@@ -28,6 +28,7 @@ from llb.prep.corpus.governance import (
     utc_ingestion_time,
 )
 from llb.prep.corpus.fingerprints import manifest_items_fingerprint
+from llb.prep.corpus.governance_report import ingestion_governance_coverage
 from llb.prep.corpus.ingest_text import (
     CORPUS_MANIFEST,
     CorpusIngestResult,
@@ -95,6 +96,7 @@ def _manifest(result: CorpusIngestResult) -> dict[str, object]:
         "n_removed_sources": result.n_removed_sources,
         "removed_sources": result.removed_sources,
         "corpus_fingerprint": manifest_items_fingerprint(item_rows),
+        "governance_coverage": result.governance_coverage,
         "items": item_rows,
     }
 
@@ -204,8 +206,13 @@ def ingest_corpus(
         )
 
     removed_sources = _cleanup_stale_outputs(target, previous, items)
+    item_rows = [asdict(item) for item in items]
     result = CorpusIngestResult(
-        source_root=source_root, out_dir=target, items=items, removed_sources=removed_sources
+        source_root=source_root,
+        out_dir=target,
+        items=items,
+        removed_sources=removed_sources,
+        governance_coverage=ingestion_governance_coverage(item_rows),
     )
     (target / CORPUS_MANIFEST).write_text(
         json.dumps(_manifest(result), ensure_ascii=False, indent=2), encoding="utf-8"

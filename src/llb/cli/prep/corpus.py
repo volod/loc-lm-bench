@@ -75,6 +75,7 @@ def ingest_corpus_cmd(
 ) -> None:
     """Ingest a mixed txt/md/pdf directory into one canonical corpus (PDFs converted, text passed through)."""
     from llb.prep.corpus.ingest import ingest_corpus
+    from llb.prep.corpus.governance_report import format_ingestion_governance_coverage
 
     try:
         result = ingest_corpus(
@@ -95,6 +96,10 @@ def ingest_corpus_cmd(
     typer.echo(
         f"[ingest-corpus] {result.n_docs}/{len(result.items)} documents ingested "
         f"({result.n_skipped} skipped{reused_note}{removed_note}) -> {result.out_dir}"
+    )
+    typer.echo(
+        "[ingest-corpus] governance coverage: "
+        f"{format_ingestion_governance_coverage(result.governance_coverage)}"
     )
 
 

@@ -463,9 +463,10 @@ must never be read as a prediction of one. What it does rule out is the opposite
 the one an operator actually makes: a zero delta on a corpus with no orderable pair is not evidence
 about the corpus at all.
 
-Surfacing the corpus-side counts at ingestion time -- where the third reading says the fix belongs
--- is tracked in [`plan.md`](../../plan.md)
-(`corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for`).
+The same corpus-side counts now appear at
+[ingestion time](ingestion-corpora.md#governance-coverage-at-ingestion), where the third reading
+says the fix belongs. The ingest manifest persists them and the CLI names the no-supersession cost,
+without rejecting an undated corpus.
 
 #### Which stage lost the orderable pair
 
