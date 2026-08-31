@@ -291,15 +291,17 @@ Three limits of this measurement, all worth stating because they bound what the 
   have one, not an estimate of what a production corpus carries. The 8-document HR corpus is
   operator data and absent from this host; measuring a real dated corpus stays open work in
   [`plan.md`](../../plan.md) (`conflict-policy-delta-on-an-operator-corpus-with-dated-revisions`).
-- **Group ids are stable inside a run, not across two.** The fixture was audited twice -- the
+- **Positional group ids are stable inside a run, not across two.** The fixture was audited
+  twice -- the
   `corpus-conflicts` runs `policy-choice-fixture-claim` (2026-08-12) and
   `policy-share-fixture-claim` (2026-08-13) -- and returned the same 17 rows, the same relations,
   and the same document pairs both times -- but the adjudicator's scores are not bit-reproducible,
   the row order is score-ranked, and so the group holding the supersession was `G4` in the first run
-  and `G3` in the second. Nothing joins across runs today (`source_findings_sha256` pins a plan to
-  its own rows), so no artifact is wrong; a reader comparing two audit reports by group label would
-  be. A row-derived group key is tracked in [`plan.md`](../../plan.md)
-  (`conflict-group-ids-that-survive-a-re-run`).
+  and `G3` in the second. At the time, nothing joined across runs (`source_findings_sha256` pinned a
+  plan to its own rows), so no artifact was wrong; a reader comparing two audit reports by group
+  label would have been. New audit and resolution artifacts therefore carry the row-derived
+  `group_key` described in [the sidecar contract](#the-groupsjson-sidecar); cross-run consumers
+  join on that key rather than the positional label.
 - **And the share itself is not reproducible across runs.** A third audit of the same fixture at
   the same settings (`corpus-conflicts` run `governance-coverage-fixture-claim`, 2026-08-13: same 7
   documents, same 19-chunk store, same 24/24 frozen probe, same 14 adjudicated rows, same 0.4286
@@ -710,10 +712,18 @@ guarantee that, so a re-sorted audit cannot republish a store generation that ch
 ### The `groups.json` sidecar
 
 The grouping is machine-readable, not only rendered: `write_audit` emits `groups.json` beside
-`findings.jsonl` (`src/llb/conflicts/grouping/artifact.py`). Each group carries `group_id`, `rows`,
-`finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and `top_score`; the
-document also carries the census and `source_findings_sha256`, which pins it to the exact rows on
-disk and equals the `source_findings_sha256` the resolution plan records.
+`findings.jsonl` (`src/llb/conflicts/grouping/artifact.py`). Each group carries `group_id`,
+`group_key`, `rows`, `finding_ids`, `relations`, `shared_units`, `documents`, `document_pairs`, and
+`top_score`; the document also carries the census and `source_findings_sha256`, which pins it to
+the exact rows on disk and equals the `source_findings_sha256` the resolution plan records.
+
+`group_id` remains the positional `G<n>` used by the plan and review ledger inside one run. Its
+companion `group_key` is the first 16 hexadecimal characters of SHA-256 over the group's sorted
+`finding_id` list. Sorting before hashing makes the key independent of both member order and the
+group's position in `findings.jsonl`; changing any member row changes the key, which prevents a
+consumer from treating a different decision as the old one. `groups.json` schema 2 and
+`plan.json` schema 4 carry the same key on the sidecar group and plan decision respectively. No
+grouping rule, positional join, row artifact, or review-ledger address changed.
 
 The `finding_ids` are the SAME ids `plan.json` uses (`finding_id` in `hashing.py`), so a group id
 joins the audit, the plan, and the review ledger without any consumer re-deriving anything. Both
@@ -723,6 +733,15 @@ including an audit run from before it existed -- derives identical groups by gro
 its own order. [Conflict
 resolution](conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger) is the first
 consumer.
+
+The regression in `tests/llb/conflicts/resolution/test_decision_groups.py` reverses the members of
+one group and moves it behind a second group. The positional ids swap `G1` and `G2`, while both
+`groups.json` documents and both `plan.json` decision lists retain the same two keys and agree with
+each other. A model-free acceptance run on 2026-08-31 used `make audit-corpus-conflicts` at hash
+effort on the committed seven-document conflict fixture, then `make resolve-corpus-conflicts` with
+the conservative policy: its two finding rows formed one decision, and `groups.json` and
+`plan.json` emitted the same group key. Reordering the identical rows or repeating that audit must
+retain the key; adding, removing, or changing a member row intentionally overturns the match.
 
 ### Measured on the goods corpus
 

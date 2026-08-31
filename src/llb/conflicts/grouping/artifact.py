@@ -11,17 +11,25 @@ rows it is about to write and the resolution lane passes the rows it just read, 
 derive a grouping the other does not have. `findings.jsonl` itself is untouched -- one line per row.
 """
 
+import json
+
 from llb.conflicts.grouping.census import PairUnits, group_indices, row_pair_units, rows_census
 from llb.conflicts.constants import decide_count
-from llb.conflicts.tiers.hashing import finding_id
+from llb.conflicts.tiers.hashing import CONTENT_HASH_HEX_LENGTH, finding_id, sha256_text
 from llb.core.contracts.common import JsonObject
 
-GROUPS_SCHEMA_VERSION = 1
+GROUPS_SCHEMA_VERSION = 2
 # What a group's members share, spelled out once for every consumer of the sidecar.
 UNIT_DESCRIPTION = (
     "the chunk each side of a finding rests on, or its document for the hash and lexical tiers, "
     "which compare whole documents; rows are grouped by the transitive closure over that unit"
 )
+
+
+def group_key(finding_ids: list[str]) -> str:
+    """Content identity for a decision group, independent of member and group ordering."""
+    members = json.dumps(sorted(finding_ids), ensure_ascii=True, separators=(",", ":"))
+    return sha256_text(members)[:CONTENT_HASH_HEX_LENGTH]
 
 
 def _shared_units(pairs: list[PairUnits]) -> list[str]:
@@ -59,10 +67,12 @@ def _summary(
     """One group's public record: what it is, what it rests on, and which rows it speaks for."""
     documents = sorted({doc for pair in pairs for doc in pair.doc_pair})
     grouped = _editions(documents, editions)
+    member_ids = [finding_id(row) for row in rows]
     return {
         "group_id": f"G{index}",
+        "group_key": group_key(member_ids),
         "rows": len(rows),
-        "finding_ids": [finding_id(row) for row in rows],
+        "finding_ids": member_ids,
         "relations": _relation_counts(rows),
         "shared_units": _shared_units(pairs),
         "documents": documents,
@@ -122,6 +132,7 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
         decisions.append(
             {
                 "group_id": summary["group_id"],
+                "group_key": summary["group_key"],
                 "rows": summary["rows"],
                 "finding_ids": list(summary["finding_ids"]),
                 "relations": dict(summary["relations"]),

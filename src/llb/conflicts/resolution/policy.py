@@ -16,8 +16,8 @@ from llb.conflicts.tiers.hashing import finding_id
 from llb.core.contracts.common import JsonObject
 
 # 2 added `decisions` beside `items`; 3 gives every decision both counts of its work
-# (`decide_rows` beside `review_rows`).
-PLAN_SCHEMA_VERSION = 3
+# (`decide_rows` beside `review_rows`); 4 adds the order-independent `group_key`.
+PLAN_SCHEMA_VERSION = 4
 
 POLICY_CONSERVATIVE = "conservative"
 POLICY_PREFER_NEWER = "prefer-newer"

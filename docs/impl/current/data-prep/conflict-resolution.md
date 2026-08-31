@@ -33,11 +33,12 @@ both units.
 - **`items`** is unchanged -- one per finding row, and still the only thing the overlay and its
   rollback are built from. Each item now names its `group_id`.
 - **`decisions`** is one entry per [decision
-  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
-  `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `decide_rows`,
-  `review_rows`, and a `status`. `action` is the action every member agreed on and is **null** when
-  they did not, so a mixed group reads as mixed. A decision never authorizes what no member row
-  already authorized -- it is a view over the per-row policy, not a second policy.
+  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): positional `group_id`,
+  row-derived `group_key`, `rows`, `finding_ids`, `relations`, `documents`, `shared_units`, the
+  `actions` its members resolved to, `decide_rows`, `review_rows`, and a `status`. `action` is the
+  action every member agreed on and is **null** when they did not, so a mixed group reads as mixed.
+  A decision never authorizes what no member row already authorized -- it is a view over the
+  per-row policy, not a second policy.
 - **Both counts of the work, in the one artifact that holds both.** `decide_rows` is the audit's
   relation-based count restated here; `review_rows` is this policy's count of rows still needing a
   human. They differ in both directions, so the plan is where they are reconciled rather than

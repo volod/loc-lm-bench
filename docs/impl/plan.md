@@ -76,39 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-group-ids-that-survive-a-re-run (optional)
-
-A group id is `G<n>` from `findings.jsonl` file order, and that order is the score-ranked one -- so
-a group id is stable inside one run and NOT across two runs of the same corpus, because the claim
-adjudicator's scores are not bit-reproducible. Measured: two claim-tier runs of the committed
-fixture returned the same 17 rows, the same relations, and the same document pairs, yet the group
-holding the dated supersession was `G4` in one and `G3` in the other
-([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-Nothing joins across runs today, so nothing is broken -- but an operator comparing this week's
-audit to last week's, or a dashboard keying a decision on `G3`, silently compares two different
-decisions. Give a group an identity derived from its ROWS (a digest over its member `finding_id`s,
-which are content hashes) carried beside the positional id, so a cross-run comparison joins on
-something the ordering cannot move.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `finding_id` (`src/llb/conflicts/tiers/hashing.py`) is already the content-addressed
-  row identity and `group_summaries` (`grouping/artifact.py`) is where a group's member list is built;
-  the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
-  join on it within a run.
-- User-visible outcome: an operator can tell whether the decision they triaged last week is the
-  decision the audit is showing them today.
-- Scope boundary: in scope -- the row-derived group key, its appearance in `groups.json` and
-  `plan.json`, and a test that re-ordering the same rows preserves it. Out of scope -- replacing
-  the positional id, changing the grouping rule, and building a cross-run diff command.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: sidecar and plan change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose rows are re-ordered so the positional ids move
-  keeps every row-derived key; two audits of the same corpus whose rows differ only in order agree
-  on the keys group for group.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
-
 #### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
 
 The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is

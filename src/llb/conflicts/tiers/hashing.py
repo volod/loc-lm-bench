@@ -9,6 +9,8 @@ import json
 
 from llb.core.contracts.common import JsonObject
 
+CONTENT_HASH_HEX_LENGTH = 16
+
 
 def finding_id(finding: JsonObject) -> str:
     """Stable identity for one finding, independent of JSON object key order.
@@ -17,7 +19,7 @@ def finding_id(finding: JsonObject) -> str:
     sidecar and the resolution plan must address the same row by the same id.
     """
     encoded = json.dumps(finding, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:CONTENT_HASH_HEX_LENGTH]
 
 
 def sha256_text(text: str) -> str:
