@@ -8,6 +8,7 @@ looked up in the run's own report.
 
 from llb.conflicts.governance.stage import (
     LOST_PAIR_FIELD,
+    lost_pair_counts_phrase,
     lost_pair_sentence,
 )
 from llb.conflicts.governance.stage_rule import STAGE_NAMES
@@ -25,7 +26,9 @@ def stage_phrase(lost: JsonObject | None) -> str:
     if not lost:
         return _NOTHING_LOST
     left, right = lost["documents"]
-    return f"{STAGE_NAMES[lost['stage']]} (`{left}` + `{right}`)"
+    split = lost_pair_counts_phrase(lost)
+    detail = f"; split: {split}" if split else ""
+    return f"{STAGE_NAMES[lost['stage']]} (`{left}` + `{right}`{detail})"
 
 
 def replay_line(entry: JsonObject) -> str:

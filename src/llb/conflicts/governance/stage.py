@@ -5,16 +5,18 @@ named, `governance_stage_rule` says which STAGE that pair stopped at and which s
 it. This module is what the audit and the bundle replay call.
 """
 
-from collections.abc import Container, Sequence
+from collections.abc import Collection, Sequence
 
 from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.bundle.document_exclusions import DocumentExclusions
 from llb.conflicts.governance.stage_rule import STAGE_NAMES, stage_of
+from llb.conflicts.governance.stage_census import lost_pairs_by_stage
 from llb.conflicts.governance.stage_search import earliest_lost_orderable_pair
 from llb.core.contracts.common import JsonObject
 
 # The key the attribution rides under, inside the `governance_coverage` payload it explains.
 LOST_PAIR_FIELD = "lost_orderable_pair"
+LOST_PAIR_COUNTS_FIELD = "lost_pairs_by_stage"
 
 
 def returned_doc_pairs(rows: Sequence[JsonObject]) -> set[tuple[str, str]]:
@@ -33,7 +35,7 @@ def returned_doc_pairs(rows: Sequence[JsonObject]) -> set[tuple[str, str]]:
 def attribution_over_returned(
     coverage: JsonObject,
     documents: Sequence[tuple[str, JsonObject]],
-    returned_pairs: Container[tuple[str, str]],
+    returned_pairs: Collection[tuple[str, str]],
     chunks: DocumentChunks | None,
     exclusions: DocumentExclusions | None = None,
 ) -> JsonObject:
@@ -49,12 +51,14 @@ def attribution_over_returned(
     if lost is None:
         return {}
     stage, reason, knob = stage_of(lost, chunks, exclusions)
+    counts = lost_pairs_by_stage(documents, returned_pairs, chunks)
     return {
         LOST_PAIR_FIELD: {
             "documents": list(lost),
             "stage": stage,
             "reason": reason,
             "knob": knob,
+            LOST_PAIR_COUNTS_FIELD: counts,
         }
     }
 
@@ -83,7 +87,26 @@ def lost_pair_sentence(coverage: JsonObject) -> str:
     if not isinstance(lost, dict):
         return ""
     left, right = lost["documents"]
-    return (
+    sentence = (
         f"Earliest stage an orderable document pair was lost at: {STAGE_NAMES[lost['stage']]}, "
         f"shown by `{left}` + `{right}` ({lost['reason']}). One knob: {lost['knob']}."
+    )
+    counts = lost.get(LOST_PAIR_COUNTS_FIELD)
+    if not isinstance(counts, dict) or not counts:
+        return sentence
+    total = sum(int(count) for count in counts.values())
+    named = int(counts.get(str(lost["stage"]), 0))
+    return (
+        f"{sentence} Stage reach: {STAGE_NAMES[lost['stage']]} accounts for {named} of {total} "
+        f"lost orderable pairs; full split: {lost_pair_counts_phrase(lost)}."
+    )
+
+
+def lost_pair_counts_phrase(lost: JsonObject) -> str:
+    """`CHUNKING 2; CANDIDATE SELECTION 1`, or `""` for an older attribution."""
+    counts = lost.get(LOST_PAIR_COUNTS_FIELD)
+    if not isinstance(counts, dict):
+        return ""
+    return "; ".join(
+        f"{STAGE_NAMES[stage]} {count}" for stage, count in counts.items() if int(count) > 0
     )

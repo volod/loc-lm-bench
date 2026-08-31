@@ -28,7 +28,7 @@ from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH, TIER_SEMANTIC
 from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.bundle.document_index import DocumentInterner, DocumentNaming
-from llb.conflicts.governance.stage import LOST_PAIR_FIELD
+from llb.conflicts.governance.stage import LOST_PAIR_COUNTS_FIELD, LOST_PAIR_FIELD
 from llb.conflicts.governance.stage_rule import (
     STAGE_CANDIDATES,
     STAGE_CHUNKING,
@@ -278,16 +278,33 @@ def test_the_report_puts_both_readings_on_one_row(tmp_path):
     report = replay_report(entries)
 
     assert (
-        "| `kept` | CHUNKING (`new.md` + `old.md`) | CHUNKING (`new.md` + `old.md`) | yes |"
-        in report
+        "| `kept` | CHUNKING (`new.md` + `old.md`; split: CHUNKING 1) "
+        "| CHUNKING (`new.md` + `old.md`; split: CHUNKING 1) | yes |" in report
     )
-    assert "| `older` | CHUNKING (`new.md` + `old.md`) | not recomputable | -- |" in report
+    assert (
+        "| `older` | CHUNKING (`new.md` + `old.md`; split: CHUNKING 1) "
+        "| not recomputable | -- |" in report
+    )
     assert "- bundles read: 2" in report
     assert "- recomputed stage differs from the recorded one: 0" in report
     assert "- not recomputable (no per-document record): 1" in report
     assert f"- {NO_RECORD_REASON} -- 1 of 1" in report, "counted per reason, explained once"
     assert "agrees with the run" in replay_line(entries[0])
     assert NO_RECORD_REASON in replay_line(entries[1])
+
+
+def test_a_legacy_attribution_agrees_when_the_replay_only_adds_the_census(tmp_path):
+    """An additive count is not a changed pair diagnosis, and the report makes the addition visible."""
+    result = _audit(tmp_path / "corpus", UNRELATED, without="new.md")
+    summary, rows = _bundle(result)
+    summary["governance_coverage"][LOST_PAIR_FIELD].pop(LOST_PAIR_COUNTS_FIELD)
+
+    entry = replay_entry("legacy", "summary.json", summary, rows)
+
+    assert entry["agrees"] is True
+    assert LOST_PAIR_COUNTS_FIELD not in entry["recorded"]
+    assert entry["recomputed"][LOST_PAIR_COUNTS_FIELD] == {STAGE_CHUNKING: 1}
+    assert "split: CHUNKING 1" in replay_report([entry])
 
 
 def test_the_cli_reads_a_run_directory_and_writes_both_artifacts(tmp_path):

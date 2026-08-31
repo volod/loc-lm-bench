@@ -386,12 +386,12 @@ unit test pins that count against enumerating `compare_editions` over every pair
 drawable from a governance pool covering present, absent, blank, shared, and unparseable fields.
 
 **Where it appears.** `governance_coverage` rides in `summary.json` on every run, projection or
-not -- it is detection-side and policy-free (`schema_version` 3 since the stage attribution below
-joined it). The READING is printed once beside the delta, in `report.md` and in the CLI through the
-same helper, and only where a delta exists: with one policy there is no choice to call free, and
-with no `--project-policy` the report is unchanged. A non-zero delta carries the counts without a
-reading, because the delta already is one. A zero delta gets one of three, and the stage is the
-whole content of the difference:
+not -- it is detection-side and policy-free (`schema_version` 4 since the stage attribution below
+gained its per-stage lost-pair census). The READING is printed once beside the delta, in `report.md`
+and in the CLI through the same helper, and only where a delta exists: with one policy there is no
+choice to call free, and with no `--project-policy` the report is unchanged. A non-zero delta
+carries the counts without a reading, because the delta already is one. A zero delta gets one of
+three, and the stage is the whole content of the difference:
 
 | coverage | reading | where the fix is |
 | --- | --- | --- |
@@ -552,19 +552,69 @@ corpus-order scan already paid. Every hit is confirmed against the pair rule, wh
 implementation of the stage order. CI pins the bound by counting the document pairs each rule tests
 on a 60-document corpus whose only lost pair is the last one in corpus order: **59 against 1,770**.
 
+##### How many lost pairs each stage reaches
+
+The named pair remains the headline, but it now carries `lost_pairs_by_stage`: an exact count for
+every stage at which this run lost an orderable document pair. The rendered sentence states how
+many of the total the named stage reaches and then prints the full split. A chunking-gap corpus with
+three orderable pairs therefore reads `CHUNKING 2; CANDIDATE SELECTION 1`, rather than letting one
+named pair imply that rebuilding the store reaches all three.
+
+The census does not enumerate corpus pairs. `governance/stage_census.py` groups documents by the
+class `document_stage` already assigns. For each pipeline stage, its possible pair count is the
+orderable count before removing that document class minus the orderable count after removing it;
+the bounded returned-pair set is then subtracted at the stage each surviving pair passed.
+`governance/orderability.py` owns the shared date/version multiset inclusion-exclusion used here and
+by `document_pair_orderability`, so both the denominator and every stage slice use one ordering
+rule. With a fixed four-stage vocabulary the bound is `O(stages * documents + returned pairs)`, not
+`O(documents squared)`.
+
+The four-document acceptance fixture loses all six orderable pairs across three stages and reads
+`CHUNKING 3; the CLAIM-TOKEN FLOOR 2; CANDIDATE SELECTION 1`, whose slices sum to six. The cost
+fixture makes 719,400 pairs from 1,200 distinctly dated documents; the exact census reads 4,798
+ordering keys and never visits those pairs. Both are pinned in
+`tests/llb/conflicts/governance/test_governance_stage.py`.
+
+`lost_pair_sentence` prints the reach and split in the live audit. The bundle replay table prints
+the same split beside the named pair. Agreement and candidate-budget movement deliberately compare
+the headline without this additive field: an older bundle that did not record the census still
+agrees when its pair, stage, reason, and knob agree, and a budget that only resizes the census does
+not claim the attribution moved. The compatibility cases live in
+`tests/llb/conflicts/bundle/test_stage_replay.py` and
+`tests/llb/conflicts/bundle/test_bundle_record.py`.
+
+**Measured 2026-08-31 on the RTX 4060 Ti 16 GB CUDA host, no model call.** One
+`make recompute-conflict-stage STAGE_RUNS="<the 61 bundle directories>" STAGE_BUDGET=2
+STAGE_OUT=<report-dir>` sweep re-read every conflict bundle on the host. Of 61 bundles, 42 carried
+the bounded record and answered, while 19 correctly refused because they predate it. All 42
+recomputed headlines agreed with their recorded pair diagnosis; 24 had lost no orderable pair and
+18 gained a census. Ten of those 18 exposed more than one stage. On the seven-document, 19-chunk
+fixture at a claim-token floor of 31, the named floor reaches 5 of 18 lost pairs; 8 stopped at
+candidate selection and 5 at duplicate collapse. At the recovered floor, 11 of 16 stopped at
+candidate selection and 5 at duplicate collapse. This is the operator distinction the headline
+alone could not supply: the named knob reaches a minority in the first run and a majority in the
+second, while the knobless duplicate residue remains visible in both.
+
+The archive result would be overturned by an enumerated pair oracle disagreeing with any slice, or
+by adding a third ordering basis without extending the two-field inclusion-exclusion. The tests
+cover the first condition; the explicit two-field unpack fails on the second instead of silently
+under-counting. A bundle without the per-document record remains outside the claim and is refused,
+as the 19 older bundles demonstrate.
+
 The attribution rides in `governance_coverage` as
-`lost_orderable_pair` (`documents`, `stage`, `reason`, `knob`) and prints as one sentence after the
-counts, in `report.md` and the CLI alike. Where it is present the retrieval reading DROPS its
-four-knob list; where it is absent -- a corpus that can order nothing, or a run that returned every
-orderable pair it could have -- nothing is printed and nothing is invented. The per-document input
-is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's chunks, the tier's
-comparable ordinals, and the hash tier's settled copies; below the semantic tier it is `None`, and
+`lost_orderable_pair` (`documents`, `stage`, `reason`, `knob`, `lost_pairs_by_stage`) and prints as
+one sentence after the counts, in `report.md` and the CLI alike. Where it is present the retrieval
+reading DROPS its four-knob list; where it is absent -- a corpus that can order nothing, or a run
+that returned every orderable pair it could have -- nothing is printed and nothing is invented.
+The per-document input is `DocumentChunks`, folded once in `run_semantic_tiers` from the store's
+chunks, the tier's comparable ordinals, and the hash tier's settled copies; below the semantic tier
+it is `None`, and
 that absence IS the `effort` reading (with no stage to be earliest, corpus order is the whole rule
 there). `DocumentChunks` lives in `src/llb/conflicts/bundle/document_chunks.py` and is written into
 `summary.json` so the reading survives the store
 ([recomputing the stage from a finished bundle](#recomputing-the-stage-from-a-finished-bundle));
-`tests/llb/conflicts/test_governance_stage.py` pins each stage, the earliest-stage rule, its cost
-bound, and the silence.
+`tests/llb/conflicts/governance/test_governance_stage.py` pins each stage, the earliest-stage rule,
+its cost bound, and the silence.
 
 **Measured 2026-08-13 on the 12 GiB Blackwell CUDA host, one run per stage** (the semantic runs read
 real e5-base store vectors, no model call). Each row names its `corpus-conflicts` run:

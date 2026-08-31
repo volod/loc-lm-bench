@@ -76,39 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
-
-The attribution names ONE stage and one pair, and a run that loses pairs at three stages says
-nothing about how much of the corpus each knob would recover: the purpose-built chunking-gap run
-loses two of its three document pairs to the missing document and one to candidate selection, and
-the reading names only the first
-([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
-An operator sizing a fix wants the split -- turning this knob reaches N of the M orderable pairs
-the run lost, and the rest are elsewhere. Count the lost orderable pairs per stage (the census the
-one-pair scan already walks the classes for) and print it beside the named pair, keeping the single
-named pair as the headline so the reading does not turn back into a list of knobs. Cost is the
-constraint: a full census is the quadratic sweep the one-pair rule exists to avoid, so bound it by
-the per-document classes (a document lost at a stage bounds its own pairs) or cap the count and say
-it is a floor.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `document_stage` and `REPORT_STAGE_ORDER` in
-  `src/llb/conflicts/governance/stage_rule.py` are the classes and their order;
-  `orderable_document_pairs` in `governance/coverage.py` is the denominator and is already counted
-  without enumerating pairs.
-- User-visible outcome: an operator learns whether the named knob recovers most of what the run
-  lost or one pair of it.
-- Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
-  scope -- naming a second pair, adding a stage, and re-running detection.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: audit-side reading with fixture tests; recompute over the bundles on disk, no GPU.
-- Acceptance gates: `make ci` green; the per-stage counts sum to the lost orderable pairs on a
-  fixture that loses pairs at three stages; the cost stays inside the stated bound on a corpus
-  large enough for the difference to show.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
-
 #### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
 
 The budget re-read reports how many DOCUMENT pairs a smaller candidate budget would have returned

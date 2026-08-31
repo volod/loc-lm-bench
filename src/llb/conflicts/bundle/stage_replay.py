@@ -30,6 +30,7 @@ from llb.conflicts.bundle.candidate_record import CandidateRecord
 from llb.conflicts.constants import COVERAGE_FIELD, TIER_CLAIM, TIER_SEMANTIC
 from llb.conflicts.governance.stage import (
     LOST_PAIR_FIELD,
+    LOST_PAIR_COUNTS_FIELD,
     attribution_over_returned,
     returned_doc_pairs,
 )
@@ -82,6 +83,18 @@ def recorded_attribution(summary: JsonObject) -> JsonObject:
     coverage = summary.get(COVERAGE_FIELD)
     lost = coverage.get(LOST_PAIR_FIELD) if isinstance(coverage, dict) else None
     return {LOST_PAIR_FIELD: dict(lost)} if isinstance(lost, dict) else {}
+
+
+def _headline(lost: JsonObject | None) -> JsonObject | None:
+    """The named pair diagnosis, excluding the additive census beside it.
+
+    Older bundles did not record the census, and a budget can resize it without moving the pair.
+    Neither is a changed attribution: agreement and movement continue to mean the named pair,
+    stage, reason, or knob changed.
+    """
+    if lost is None:
+        return None
+    return {key: value for key, value in lost.items() if key != LOST_PAIR_COUNTS_FIELD}
 
 
 def returned_pairs_at_budget(
@@ -170,7 +183,7 @@ def budget_entry(
         "recomputable": at_budget.recomputable,
         "reason": at_budget.reason,
         "recomputed": at_budget.lost,
-        "changes": at_budget.lost != replay.lost if comparable else None,
+        "changes": _headline(at_budget.lost) != _headline(replay.lost) if comparable else None,
         "document_pairs": None,
         "run_document_pairs": len(returned_doc_pairs(rows)),
     }
@@ -205,7 +218,11 @@ def replay_entry(
         "reason": replay.reason,
         "recorded": recorded.get(LOST_PAIR_FIELD),
         "recomputed": replay.lost,
-        "agrees": replay.attribution == recorded if replay.recomputable else None,
+        "agrees": (
+            _headline(replay.lost) == _headline(recorded.get(LOST_PAIR_FIELD))
+            if replay.recomputable
+            else None
+        ),
         "readings": [reading.payload() for reading in bundle_readings(summary)],
     }
     if budget is not None:

@@ -32,10 +32,12 @@ from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.governance.coverage import RETRIEVAL_KNOBS, coverage_reading
 from llb.conflicts.governance.stage import (
     LOST_PAIR_FIELD,
+    LOST_PAIR_COUNTS_FIELD,
     lost_pair_attribution,
     lost_pair_sentence,
     returned_doc_pairs,
 )
+from llb.conflicts.governance.stage_census import lost_pairs_by_stage
 from llb.conflicts.governance.stage_rule import (
     STAGE_CANDIDATES,
     STAGE_CHUNKING,
@@ -43,6 +45,7 @@ from llb.conflicts.governance.stage_rule import (
     STAGE_DUPLICATE_COLLAPSE,
     STAGE_EFFORT,
     STAGE_KNOBS,
+    STAGE_NAMES,
 )
 from llb.conflicts.governance.stage_search import (
     earliest_lost_orderable_pair,
@@ -222,7 +225,9 @@ def test_the_stage_is_the_first_place_the_pair_could_have_stopped(chunks, stage,
     assert attribution["stage"] == stage
     assert attribution["knob"] == STAGE_KNOBS[stage]
     assert named in attribution["reason"]
-    assert lost_pair_sentence({LOST_PAIR_FIELD: attribution}).endswith(f"{STAGE_KNOBS[stage]}.")
+    sentence = lost_pair_sentence({LOST_PAIR_FIELD: attribution})
+    assert f"One knob: {STAGE_KNOBS[stage]}." in sentence
+    assert sentence.endswith(f"{STAGE_NAMES[stage]} 1.")
 
 
 def test_a_document_the_store_collapsed_into_a_copy_it_kept_is_not_a_chunking_gap():
@@ -302,6 +307,79 @@ def test_the_chunking_gap_is_named_even_when_an_unrelated_pair_sorts_first(tmp_p
     assert _lost(result)["stage"] == STAGE_CHUNKING
     assert _lost(result)["documents"] == ["a-old.md", "z-gap.md"]
     assert _lost(result)["knob"] == STAGE_KNOBS[STAGE_CHUNKING]
+    assert _lost(result)[LOST_PAIR_COUNTS_FIELD] == {
+        STAGE_CHUNKING: 2,
+        STAGE_CANDIDATES: 1,
+    }
+    reading = lost_pair_sentence(result.governance_coverage)
+    assert "CHUNKING accounts for 2 of 3 lost orderable pairs" in reading
+    assert "full split: CHUNKING 2; CANDIDATE SELECTION 1" in reading
+
+
+def test_the_stage_counts_sum_to_every_lost_orderable_pair_across_three_stages():
+    """The census sizes each knob while the headline keeps naming only its one pair."""
+    documents = [
+        (name, {"effective_date": date})
+        for name, date in (
+            ("a-gap.md", "2021-01-01"),
+            ("b-short.md", "2022-01-01"),
+            ("c-ready.md", "2023-01-01"),
+            ("d-ready.md", "2024-01-01"),
+        )
+    ]
+    chunks = DocumentChunks(
+        stored={"b-short.md": 1, "c-ready.md": 1, "d-ready.md": 1},
+        comparable={"c-ready.md": 1, "d-ready.md": 1},
+    )
+
+    attribution = lost_pair_attribution({"orderable_document_pairs": 6}, documents, [], chunks)[
+        LOST_PAIR_FIELD
+    ]
+
+    assert attribution["documents"] == ["a-gap.md", "b-short.md"]
+    assert attribution["stage"] == STAGE_CHUNKING
+    assert attribution[LOST_PAIR_COUNTS_FIELD] == {
+        STAGE_CHUNKING: 3,
+        STAGE_CLAIM_FLOOR: 2,
+        STAGE_CANDIDATES: 1,
+    }
+    assert sum(attribution[LOST_PAIR_COUNTS_FIELD].values()) == 6
+    assert lost_pairs_by_stage(documents, {("a-gap.md", "b-short.md")}, chunks) == {
+        STAGE_CHUNKING: 2,
+        STAGE_CLAIM_FLOOR: 2,
+        STAGE_CANDIDATES: 1,
+    }, "a returned orderable pair is removed from the stage it survived"
+
+
+class _CountingGovernance(dict):
+    """A governance record that exposes how often the linear census reads a document."""
+
+    reads = 0
+
+    def get(self, key, default=None):
+        type(self).reads += 1
+        return super().get(key, default)
+
+
+def test_the_full_stage_census_is_bounded_by_documents_not_the_pair_space():
+    """Twelve hundred documents make 719,400 pairs, but the census reads linear key classes."""
+    size = 1200
+    _CountingGovernance.reads = 0
+    documents = [
+        (f"d{index:04d}.md", _CountingGovernance(effective_date=f"{index + 1:04d}-01-01"))
+        for index in range(size)
+    ]
+    names = [doc_id for doc_id, _ in documents]
+    chunks = DocumentChunks(
+        stored={doc_id: 1 for doc_id in names[1:]},
+        comparable={doc_id: 1 for doc_id in names[1:]},
+    )
+
+    counts = lost_pairs_by_stage(documents, set(), chunks)
+
+    assert sum(counts.values()) == size * (size - 1) // 2
+    assert counts[STAGE_CHUNKING] == size - 1
+    assert _CountingGovernance.reads <= 4 * size, "two fields over two document classes"
 
 
 def test_a_pair_through_a_collapsed_duplicate_names_the_copy_the_store_kept(tmp_path):
@@ -441,9 +519,14 @@ def test_the_retrieval_reading_names_one_knob_when_the_stage_is_attributed(tmp_p
     assert RETRIEVAL_KNOBS not in reading, "the four-knob list is what the attribution replaces"
     assert "Earliest stage an orderable document pair was lost at: the CLAIM-TOKEN FLOOR" in reading
     floor = recorded_inputs(result.stage_inputs).exclusions.floor_for("new.md")
-    assert reading.endswith(
+    assert (
         f"One knob: lower `--min-claim-tokens` to {floor} or below (this run used "
         f"{result.params['min_claim_tokens']}), or re-chunk so the claim lands in a longer chunk."
+        in reading
+    )
+    assert reading.endswith(
+        "the CLAIM-TOKEN FLOOR accounts for 1 of 1 lost orderable pairs; "
+        "full split: the CLAIM-TOKEN FLOOR 1."
     )
 
 
