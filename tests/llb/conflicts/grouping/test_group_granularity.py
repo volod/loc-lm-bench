@@ -18,6 +18,7 @@ from llb.conflicts.grouping.granularity import (
     RULE_TRANSITIVE,
     finding_granularity,
     granularity_of,
+    reported_chains,
     rows_granularity,
     shared_unit_indices,
 )
@@ -135,15 +136,13 @@ def test_no_shared_unit_group_spans_two_quoted_groups():
     owner = {index: at for at, members in enumerate(quoted) for index in members}
     for members in shared_unit_indices(pairs):
         assert len({owner[index] for index in members}) == 1
-    split = finding_granularity(findings)["quoted_group_split"]
-    total = sum(int(entry["shared_unit_groups"]) for entry in split)
+    total = sum(len(shared_unit_indices(pairs, members)) for members in quoted)
     assert total == finding_granularity(findings)["rules"][RULE_SHARED_UNIT]["groups"]
 
 
-def test_the_split_names_the_chain_inside_a_quoted_group():
+def test_the_record_names_the_chain_inside_a_quoted_group():
     granularity = finding_granularity(_concentrated(4) + _chain(3))
-    by_id = {entry["group_id"]: entry for entry in granularity["quoted_group_split"]}
-    assert {entry["shared_unit_groups"] for entry in by_id.values()} == {1, 2}
+    assert [entry["shared_unit_groups"] for entry in reported_chains(granularity)] == [2]
 
 
 def test_an_empty_run_reports_both_rules_at_zero():

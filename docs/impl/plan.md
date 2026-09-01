@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-summary-group-granularity-repeats-its-own-prose-in-every-bundle (optional)
-
-With the store manifest gone from the `tree` block, the second-largest key in a 250-document
-`summary.json` is `group_granularity` at **2,537 of 13,409 bytes** (19%), and about a third of it is
-not data: `unit` (181 bytes) plus one `description` per grouping rule are BUILD constants -- the same
-sentences in every bundle every run ever wrote, explaining a rule whose prose already lives in
-[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
-The rest is `rules.*.sizes` and `quoted_group_split`, which are linear in GROUPS and therefore in
-ROWS -- the one growth term in `summary.json` that the record's own size bound (linear in DOCUMENTS
-or bounded by a run parameter) does not cover, so a claim-tier run on a conflict-dense corpus grows
-it without limit. Price both halves against the bundles on disk: drop or version the prose (a rule
-name plus a schema version is what a consumer joins on), and decide whether `sizes` should stay a
-list or become the `size_counts` histogram it is already recorded beside.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `finding_granularity` and `quoted_group_split`
-  (`src/llb/conflicts/grouping/granularity.py`) build the block, `bundle/fold.py` is the gate every other
-  fold in the bundle is held to, and `schema_version` inside the block is the migration seam.
-- User-visible outcome: a bundle's size tracks its corpus and its run parameters, instead of the
-  number of rows the adjudicator happened to return.
-- Scope boundary: in scope -- the measured saving per half, a keep-or-change verdict, and the
-  schema bump if the form changes. Out of scope -- changing either grouping rule, the decision
-  range, and what the report renders from the block.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
-- Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; every bundle reading replays identically through the old and
-  new forms; a corpus whose row count grows tenfold grows the block less than tenfold, or the
-  reading states why a list is kept.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
-
 #### conflict-claim-tier-cross-encoder-prefilter (optional)
 
 Spend the cross-encoder's ordering on adjudication COST instead of on a rate. Scoring a candidate

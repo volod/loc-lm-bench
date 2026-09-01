@@ -25,19 +25,20 @@ pieces of shared evidence a chain actually runs through, which is far below the 
 from statistics import median
 from typing import TYPE_CHECKING
 
+from llb.conflicts.bundle.fold import smaller_form
 from llb.conflicts.grouping.census import (
     PairUnits,
     group_indices,
     row_pair_units,
     shared_unit_indices,
 )
-from llb.conflicts.grouping.artifact import UNIT_DESCRIPTION
 from llb.core.contracts.common import JsonObject
 
 if TYPE_CHECKING:  # `models` renders this granularity, so the dependency only runs one way
     from llb.conflicts.models import Finding
 
-GRANULARITY_SCHEMA_VERSION = 1
+GRANULARITY_SCHEMA_VERSION = 2
+RECORDED_CHAIN_LIMIT = 3
 
 RULE_TRANSITIVE = "transitive"
 RULE_SHARED_UNIT = "shared_unit"
@@ -48,42 +49,44 @@ RULES = (RULE_TRANSITIVE, RULE_SHARED_UNIT)
 # funds has to account for every row exactly once, and the shared-unit cover does not.
 QUOTED_RULE = RULE_TRANSITIVE
 
-RULE_DESCRIPTIONS = {
-    RULE_TRANSITIVE: (
-        "rows joined by the transitive closure over a shared unit: a partition, so every row is in "
-        "exactly one group and the group sizes sum to the row count"
-    ),
-    RULE_SHARED_UNIT: (
-        "one group per unit that more than one row rests on, plus one group per row that shares no "
-        "unit: a cover, so a row carrying two shared units appears in two groups"
-    ),
-}
 
-
-def _distribution(rule: str, groups: list[list[int]], rows: int) -> JsonObject:
+def _distribution(groups: list[list[int]], rows: int) -> JsonObject:
     """One rule's group-size distribution, plus whether it accounts for each row exactly once."""
     sizes = sorted((len(members) for members in groups), reverse=True)
     memberships = sum(sizes)
-    counts: dict[int, int] = {}
-    for size in sizes:
-        counts[size] = counts.get(size, 0) + 1
+    counts = _size_counts(sizes)
     multiple = _rows_in_multiple_groups(groups)
     return {
-        "rule": rule,
-        "description": RULE_DESCRIPTIONS[rule],
         "groups": len(groups),
-        "sizes": sizes,
-        # `{size: how many groups have it}` -- the shape a long `sizes` list is read for anyway.
-        "size_counts": {str(size): counts[size] for size in sorted(counts)},
+        # Keep exactly one form. A short, irregular distribution costs less as a list; repeated
+        # sizes collapse into the histogram the report reads. The fold cannot make a run larger.
+        **smaller_form({"size_counts": counts}, {"sizes": sizes}),
         "largest_group": sizes[0] if sizes else 0,
         "median_group": float(median(sizes)) if sizes else 0.0,
-        "singletons": counts.get(1, 0),
+        "singletons": counts.get("1", 0),
         "memberships": memberships,
         "rows_in_multiple_groups": multiple,
         # A partition can be funded one review per group; a cover cannot, because its sizes
         # double-count the rows that carry two shared units.
         "partition": memberships == rows and multiple == 0,
     }
+
+
+def _size_counts(sizes: list[int]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for size in sizes:
+        key = str(size)
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: int(item[0])))
+
+
+def distribution_size_counts(distribution: JsonObject) -> dict[str, int]:
+    """Read a size distribution from either schema-2 form or schema 1's redundant pair."""
+    counts = distribution.get("size_counts")
+    if isinstance(counts, dict):
+        return {str(size): int(count) for size, count in counts.items()}
+    sizes = distribution.get("sizes")
+    return _size_counts([int(size) for size in sizes]) if isinstance(sizes, list) else {}
 
 
 def _rows_in_multiple_groups(groups: list[list[int]]) -> int:
@@ -104,28 +107,31 @@ def granularity_of(pairs: list[PairUnits]) -> JsonObject:
     """
     rows = len(pairs)
     quoted_groups = group_indices(pairs)
-    transitive = _distribution(RULE_TRANSITIVE, quoted_groups, rows)
-    shared = _distribution(RULE_SHARED_UNIT, shared_unit_indices(pairs), rows)
+    transitive = _distribution(quoted_groups, rows)
+    shared = _distribution(shared_unit_indices(pairs), rows)
     return {
         "schema_version": GRANULARITY_SCHEMA_VERSION,
-        "unit": UNIT_DESCRIPTION,
         "quoted_rule": QUOTED_RULE,
         "rows": rows,
         "rules": {RULE_TRANSITIVE: transitive, RULE_SHARED_UNIT: shared},
         "decision_range": [int(transitive["groups"]), int(shared["groups"])],
-        "quoted_group_split": _quoted_group_split(pairs, quoted_groups),
+        **_quoted_group_record(pairs, quoted_groups),
     }
 
 
-def _quoted_group_split(pairs: list[PairUnits], quoted: list[list[int]]) -> list[JsonObject]:
-    """Per quoted group, how many distinct pieces of shared evidence its chain runs through.
+def _quoted_group_record(pairs: list[PairUnits], quoted: list[list[int]]) -> JsonObject:
+    """The longest chains the report reads, or the full split when that is smaller.
 
     This is the bridge between the two counts and the reason the range is readable at all: a group
     of 51 rows resting on 23 shared chunks is a long chain, while a group of 6 rows resting on one
     chunk is genuinely one decision, and the quoted group count alone cannot tell them apart. Group
     ids follow `census.group_indices`, so they are the ids `groups.json` and `plan.json` address.
+
+    Schema 1 recorded an entry for every group although the report names at most three. Schema 2
+    caps that growth by recording only those three, but keeps the complete form when it is already
+    shorter (which can happen only at or below the cap).
     """
-    return [
+    split: list[JsonObject] = [
         {
             "group_id": f"G{index}",
             "rows": len(members),
@@ -133,6 +139,31 @@ def _quoted_group_split(pairs: list[PairUnits], quoted: list[list[int]]) -> list
         }
         for index, members in enumerate(quoted, start=1)
     ]
+    chains = sorted(
+        (entry for entry in split if int(entry["shared_unit_groups"]) > 1),
+        key=_chain_key,
+    )[:RECORDED_CHAIN_LIMIT]
+    compact = {"quoted_group_chains": chains} if chains else {}
+    return smaller_form(compact, {"quoted_group_split": split})
+
+
+def _chain_key(entry: JsonObject) -> tuple[int, str]:
+    return (-int(entry["shared_unit_groups"]), str(entry["group_id"]))
+
+
+def reported_chains(granularity: JsonObject) -> list[JsonObject]:
+    """The chains a report names, read identically from schema 1 or either schema-2 fold."""
+    entries = granularity.get("quoted_group_chains")
+    if not isinstance(entries, list):
+        entries = granularity.get("quoted_group_split")
+    if not isinstance(entries, list):
+        return []
+    chains = [
+        entry
+        for entry in entries
+        if isinstance(entry, dict) and int(entry.get("shared_unit_groups", 0)) > 1
+    ]
+    return sorted(chains, key=_chain_key)[:RECORDED_CHAIN_LIMIT]
 
 
 def rows_granularity(rows: list[JsonObject]) -> JsonObject:
@@ -144,8 +175,8 @@ def finding_granularity(findings: list["Finding"]) -> JsonObject:
     """Both rules over findings the audit holds as objects.
 
     Sorted into report order first, for the same reason `census.group_findings` sorts: the group
-    ids in `quoted_group_split` have to be the ids `findings.jsonl`, `groups.json`, and `plan.json`
-    address, and those come from the file's own order.
+    ids in the recorded chain summaries have to be the ids `findings.jsonl`, `groups.json`, and
+    `plan.json` address, and those come from the file's own order.
     """
     from llb.conflicts.grouping.census import finding_sort_key, pair_units
 

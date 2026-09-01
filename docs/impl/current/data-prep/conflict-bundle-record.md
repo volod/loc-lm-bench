@@ -636,6 +636,57 @@ scattered corpus and the too-small one),
 `test_the_fold_never_takes_more_of_an_id_than_the_id_has`, and
 `test_an_id_the_corpus_never_carried_is_recorded_whole_rather_than_folded`.
 
+### The decision-range block records the reading, not every row behind it
+
+Once the store manifest left `tree`, `group_granularity` was the next avoidable cost in
+`summary.json`. Its schema-1 form repeated the unit prose and two rule descriptions in every run,
+then recorded BOTH the expanded group-size list and the histogram the report rendered. It also
+carried `quoted_group_split` for every transitive group although the report names only the three
+longest chains. None of those extra copies changed the decision range, partition/cover verdict, or
+operator prose.
+
+**Decision: schema 2 records rule names as the keys under `rules`, not as data plus prose.** It drops
+`unit`, each `description`, and the repeated inner `rule`; a consumer joins the rule key to
+`schema_version`. Each distribution keeps either `sizes` or `size_counts`, whichever is smaller in
+compact JSON, through the same `smaller_form` gate as the bundle record's other folds. Repeated
+sizes therefore collapse to a histogram while a short irregular list pays no histogram overhead.
+
+The per-group list becomes a bounded report record. Schema 2 keeps the three longest chains as
+`quoted_group_chains`, or the complete `quoted_group_split` when that smaller form already has no
+more than three entries. An empty chain record is omitted. The full split remains exactly
+recomputable from `findings.jsonl` with `make compare-conflict-granularity`; it is not copied into
+every summary for a consumer that does not exist. `reported_chains` and
+`distribution_size_counts` in `src/llb/conflicts/grouping/granularity.py` read schema 1 and both
+schema-2 folds, while `src/llb/conflicts/report/granularity.py` renders only those readers.
+
+**Measured 2026-09-01 on the RTX PRO 3000 Blackwell 12 GiB CUDA host.**
+`make compare-conflict-granularity` re-read four existing bundles from `findings.jsonl`; it made no
+model, encoder, store, or CUDA call. Bytes use compact `json.dumps`, the record's own fold unit.
+
+| audited corpus and setting | documents | rows | `group_granularity` schema 1 -> 2 | whole `summary.json` with schema 2 |
+| --- | --- | --- | --- | --- |
+| 250-document SQuAD corpus, cosine 0.060 | 250 | 38 | 2,537 -> 704 (-72.3%) | 13,409 -> 11,576 (-13.7%) |
+| committed conflict fixture, semantic tier | 7 | 17 | 1,398 -> 562 (-59.8%) | 12,656 -> 11,820 (-6.6%) |
+| 250-document SQuAD corpus, cosine 0.050 | 250 | 224 | 2,882 -> 816 (-71.7%) | 71,268 -> 69,202 (-2.9%) |
+| 250-document SQuAD corpus, cosine 0.025 | 250 | 3,127 | 2,777 -> 1,038 (-62.6%) | 233,935 -> 232,196 (-0.7%) |
+
+On the 2,537-byte target block, dropping constant prose and duplicate rule names saves 583 bytes;
+choosing one size form saves another 175; bounding the per-group chain record saves the remaining
+1,075. More rows therefore do not imply proportionally more summary bytes: the 224-row and
+3,127-row SQuAD blocks differ by only 222 bytes at schema 2. The adversarial fixture pins the same
+property without relying on that corpus shape: ten times as many disconnected singleton rows (100
+to 1,000) move the block from 479 to 490 bytes, not tenfold.
+
+Compatibility was replayed over all 44 conflict bundles readable on this host: the schema-1 block
+and a schema-2 recomputation produced identical **How many decisions the row count is** sections in
+every case. `tests/llb/conflicts/grouping/test_group_granularity_record.py` pins the schema fields,
+the per-form fold, the 100-to-1,000 growth bound, and exact old/new rendering; the existing grouping
+suite still pins the rules themselves. Run the focused artifact check or the full acceptance gate
+with `make ci`. A future report that needs more than three named chains, or a real consumer that
+needs every per-group chain length without reading `findings.jsonl`, would overturn the bounded
+record decision and require a newly priced schema. Until then, restoring a row-linear list adds no
+reading.
+
 ## The store the bundle does not copy
 
 Once the four folds finished, the per-document record was no longer what `summary.json` cost. On the

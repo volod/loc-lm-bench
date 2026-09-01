@@ -898,16 +898,20 @@ audit states which one it quotes and why.
 every renderer reads it from there); `report/granularity.py` renders them. Two units that join
 exactly the same rows are ONE group -- a left and a right chunk that only ever appear together are
 one piece of evidence seen from both ends. Every shared-unit group is a subset of one transitive
-group by construction, so the cover REFINES the partition and the per-group split adds up:
-`quoted_group_split` reports, per quoted group id, how many distinct pieces of shared evidence its
-chain runs through, which is what tells a 6-row fan on one chunk apart from a 51-row chain.
+group by construction, so the cover REFINES the partition and the computed per-group split adds up.
+The [bounded bundle record](conflict-bundle-record.md#the-decision-range-block-records-the-reading-not-every-row-behind-it)
+keeps only the three longest chains needed by the report (or a complete split already no longer
+than that); the full split is re-derived from `findings.jsonl` when a comparison asks for it. That
+is what tells a 6-row fan on one chunk apart from a 51-row chain without making every summary grow
+one entry per group.
 
 **Where it appears.** `summary.json` carries `group_granularity` (both distributions, the
-`decision_range`, and the per-group split) on every run; `report.md` renders a
+`decision_range`, and its bounded longest-chain summaries) on every run; `report.md` renders a
 **How many decisions the row count is** section under the decision-groups table. `findings.jsonl`,
 `groups.json`, `plan.json`, and the group ids are untouched -- the second rule is a reading, never
-a regrouping. `tests/llb/conflicts/test_group_granularity.py` pins the rule, the partition/cover
-invariants, the refinement, and the rendered claim.
+a regrouping. `tests/llb/conflicts/grouping/test_group_granularity.py` pins the rule, the
+partition/cover invariants, the refinement, and the rendered claim; the adjacent
+`test_group_granularity_record.py` pins the compact schema and legacy replay.
 
 **Recomputing it over runs already on disk** costs no model call and no store, because the rules
 read `findings.jsonl` and nothing else:

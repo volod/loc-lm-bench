@@ -12,6 +12,8 @@ from llb.conflicts.grouping.granularity import (
     RULE_SHARED_UNIT,
     RULE_TRANSITIVE,
     RULES,
+    distribution_size_counts,
+    reported_chains,
 )
 from llb.core.contracts.common import JsonObject
 
@@ -19,13 +21,11 @@ _TABLE_HEADER = (
     "| rule | groups | largest | median | rows in >1 group | memberships | partition |",
     "| --- | --- | --- | --- | --- | --- | --- |",
 )
-# Longest chain named in prose; beyond this the table is the reading, not a sentence per group.
-_NAMED_CHAINS = 3
 
 
 def _sizes_phrase(distribution: JsonObject) -> str:
-    """`1 x18, 2 x13, 51 x1` -- the size histogram, which is what a long `sizes` list is read for."""
-    counts = distribution.get("size_counts") or {}
+    """`1 x18, 2 x13, 51 x1` from either compact size-distribution form."""
+    counts = distribution_size_counts(distribution)
     return ", ".join(f"{size} x{count}" for size, count in sorted(counts.items(), key=_by_size))
 
 
@@ -33,8 +33,7 @@ def _by_size(item: tuple[str, int]) -> int:
     return int(item[0])
 
 
-def _rule_row(distribution: JsonObject, *, label: str = "") -> str:
-    rule = str(distribution["rule"])
+def _rule_row(rule: str, distribution: JsonObject, *, label: str = "") -> str:
     name = label or (f"`{rule}` (quoted)" if rule == QUOTED_RULE else f"`{rule}`")
     partition = "yes" if distribution["partition"] else "no"
     return (
@@ -48,16 +47,12 @@ def _rule_row(distribution: JsonObject, *, label: str = "") -> str:
 def rule_table(granularity: JsonObject) -> list[str]:
     """Both rules side by side over one run's rows."""
     rules = granularity["rules"]
-    return [*_TABLE_HEADER, *(_rule_row(rules[rule]) for rule in RULES), ""]
+    return [*_TABLE_HEADER, *(_rule_row(rule, rules[rule]) for rule in RULES), ""]
 
 
 def _chain_phrase(granularity: JsonObject) -> str:
     """The quoted groups whose chain runs through the most distinct pieces of evidence."""
-    split = sorted(
-        granularity.get("quoted_group_split") or [],
-        key=lambda entry: (-int(entry["shared_unit_groups"]), str(entry["group_id"])),
-    )
-    chains = [entry for entry in split if int(entry["shared_unit_groups"]) > 1][:_NAMED_CHAINS]
+    chains = reported_chains(granularity)
     if not chains:
         return (
             "No quoted group splits: every group rests on a single shared unit, so the two rules "
