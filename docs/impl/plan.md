@@ -76,36 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
-
-The budget re-read reports how many DOCUMENT pairs a smaller candidate budget would have returned
-(5 of 8 on the fixture at budget 2), but the coverage reading the whole page is about counts
-ORDERABLE pairs -- so an operator cannot tell whether a cheaper budget costs supersession evidence
-or only pairs the corpus could never order anyway
-([bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned)).
-The named-pair reading does not close the gap either: on every measured bundle the named pair was
-identical at every budget, because the corpus-first lost pair is lost at all of them. Report the
-orderable count beside the total -- the record already carries each document's ordering fields, so
-`compare_editions` over the recorded documents is the whole computation -- and state what a budget
-costs in the units the reading is quoted in.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/bundle/stage_replay.py` is
-  the set and `documents_of` beside it carries the ordering fields; `compare_editions`
-  (`governance.py`) is the orderability test the coverage already uses.
-- User-visible outcome: an operator lowering the candidate budget learns whether it costs evidence
-  or only noise.
-- Scope boundary: in scope -- the orderable count at a budget, beside the run's own, and its line in
-  the report. Out of scope -- re-adjudicating rows, a per-stage census, and changing the named pair.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: replay-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; at the run's own budget the orderable count equals the
-  bundle's recorded `orderable_pairs`; a fixture whose budget drops only unorderable pairs reports a
-  cost of zero orderable pairs while the total falls.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned).
-
 #### conflict-bundle-records-the-store-it-read-but-not-where-it-was (optional)
 
 A bundle can now be PLACED against a store -- `recompute-conflict-stage --store <dir>` says whether

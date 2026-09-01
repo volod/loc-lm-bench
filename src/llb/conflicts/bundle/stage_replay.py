@@ -16,7 +16,7 @@ the whole point of reading the record rather than the store: no answer is a corr
 reading recomputed against a store rebuilt since the run is a wrong one.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 
 from llb.conflicts.bundle.readings import bundle_readings
@@ -28,6 +28,7 @@ from llb.conflicts.bundle.record import (
 )
 from llb.conflicts.bundle.candidate_record import CandidateRecord
 from llb.conflicts.constants import COVERAGE_FIELD, TIER_CLAIM, TIER_SEMANTIC
+from llb.conflicts.governance.editions import compare_editions
 from llb.conflicts.governance.stage import (
     LOST_PAIR_FIELD,
     LOST_PAIR_COUNTS_FIELD,
@@ -109,6 +110,29 @@ def returned_pairs_at_budget(
     return returned_doc_pairs(kept) | candidates.doc_pairs_within(budget)
 
 
+def _orderable_rows_on_pairs(
+    rows: Sequence[JsonObject],
+    pairs: Collection[tuple[str, str]],
+    documents: Sequence[tuple[str, JsonObject]],
+) -> int:
+    """How much of the run's orderable-row evidence belongs to these document pairs.
+
+    Governance coverage counts finding rows, not distinct document pairs. Preserve that unit while
+    the budget replay answers at document-pair granularity: every run row is attached to the one
+    document pair the prefix either retains or excludes.
+    """
+    governance = dict(documents)
+    return sum(
+        compare_editions(
+            governance.get(str(row["a"]["doc_id"]), {}),
+            governance.get(str(row["b"]["doc_id"]), {}),
+        ).newer_side
+        is not None
+        for row in rows
+        if tuple(sorted([str(row["a"]["doc_id"]), str(row["b"]["doc_id"])])) in pairs
+    )
+
+
 def _pairs_at_budget(
     record: JsonObject,
     candidates: CandidateRecord | None,
@@ -186,11 +210,15 @@ def budget_entry(
         "changes": _headline(at_budget.lost) != _headline(replay.lost) if comparable else None,
         "document_pairs": None,
         "run_document_pairs": len(returned_doc_pairs(rows)),
+        "orderable_pairs": None,
+        "run_orderable_pairs": int(summary[COVERAGE_FIELD].get("orderable_pairs") or 0),
     }
     record, _ = readable_record(summary)
     candidates = recorded_inputs(record).candidates if record is not None else None
-    if candidates is not None and candidates.covers(budget):
-        entry["document_pairs"] = len(returned_pairs_at_budget(rows, candidates, budget))
+    if record is not None and candidates is not None and candidates.covers(budget):
+        returned = returned_pairs_at_budget(rows, candidates, budget)
+        entry["document_pairs"] = len(returned)
+        entry["orderable_pairs"] = _orderable_rows_on_pairs(rows, returned, documents_of(record))
     return entry
 
 

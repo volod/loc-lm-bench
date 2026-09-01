@@ -475,28 +475,54 @@ make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." STAGE_BUDGET=2
 # -> $DATA_DIR/corpus-conflict-stage/<run>/{stage.md,stage.json}
 ```
 
-The reading reports TWO things, because the attribution alone under-reports the budget: it names one
-pair, and on a corpus whose corpus-first lost pair is lost at every budget the NAME never moves
-however many pairs the budget takes away. So the count comes with it -- how many document pairs
-would have returned, against how many the run returned.
+The reading reports THREE facts, because the attribution alone under-reports the budget: the named
+lost pair and stage; how many distinct DOCUMENT pairs return; and how many of the run's ORDERABLE
+returned pairs belong to those document pairs. The last count deliberately preserves
+`findings.jsonl` row multiplicity. Governance coverage counts returned passage-pair rows, while the
+candidate record collapses them to document pairs; treating both as sets can otherwise put a
+deduplicated numerator beside the run's row-count denominator. The recorded prefix decides which
+document pairs remain, hash and lexical document pairs remain budget-independent, and
+`compare_editions` over the bundle's recorded document governance counts the run's evidence
+attached to the retained pairs. It does not claim that every original chunk-pair row survives a
+smaller rank cutoff; the bundle deliberately records first appearance at document-pair granularity.
 
-**Measured, over the bundles on this host** (2026-08-15, RTX 4060 Ti 16 GB CUDA host, no model
-call; one `make recompute-conflict-stage` sweep at `STAGE_BUDGET=2` over all 24 recorded bundles):
+`budget_entry` in `src/llb/conflicts/bundle/stage_replay.py` records both counts and the run's own
+denominators. `pairs_phrase` in `src/llb/conflicts/report/stage_replay.py` states the orderable-pair
+cost in the CLI line and report table. The focused fixtures in
+`tests/llb/conflicts/bundle/test_bundle_record.py` pin row multiplicity, equality with recorded
+`orderable_pairs` at the run's own budget, and a cheaper budget that drops a document pair but
+costs zero orderable returned pairs.
 
-| bundle | run's document pairs | at budget 2 | attribution moves |
+**Measured on 2026-09-01 on the RTX 4060 Ti 16 GB CUDA host, with no model, store, corpus, or CUDA
+call.** One `make recompute-conflict-stage` replay at `STAGE_BUDGET=2` read four preserved audits:
+the committed 7-document, 19-chunk dated fixture at semantic and hash effort, and two semantic
+audits of the 250-document, 311-chunk SQuAD quickstart corpus at cosine thresholds 0.60 and 0.80.
+
+| audit input | document pairs, run -> budget 2 | orderable run rows on retained pairs | attribution moves |
 | --- | --- | --- | --- |
-| `20260815T-bundle-record-fixture-semantic` (7 docs, 19 chunks) | 8 | 5 | no |
-| `20260815T-bundle-record-squad-semantic-cos060` (250 docs, 311 chunks) | 36 | 2 | no |
-| `20260815T-bundle-record-squad-semantic-cos080` (250 docs) | 1 | 1 | no |
-| `20260815T-bundle-record-fixture-hash` (below the semantic tier) | -- | refused | -- |
+| dated fixture, semantic | 8 -> 5 | 16 -> 9 (cost 7) | no |
+| SQuAD, semantic, cosine 0.60 | 36 -> 2 | 0 -> 0 (cost 0) | no |
+| SQuAD, semantic, cosine 0.80 | 1 -> 1 | 0 -> 0 (cost 0) | no |
+| dated fixture, hash effort | refused | refused: no ranked candidate list | -- |
 
-At its own budget the record reproduces the run exactly: the recorded prefix at `total_pairs` equals
-the document pairs in `findings.jsonl`, checked directly on the fixture bundle (8 of 8) and pinned in
-CI. **The attribution moved on none of the measured bundles**, and the reason is the corpus rather
-than the reading: the fixture's corpus-first lost orderable pair is `archive-policy.md` +
-`deadline-note.md`, which no budget ever returned, so it is the named pair at every cutoff. That is
-precisely why the pair COUNT is reported beside the name -- on the fixture the budget silently costs
-three of eight document pairs while the sentence stays word for word identical.
+Separate own-budget replays at the semantic runs' recorded candidate totals -- ranks 14, 38, and 1
+in table order -- return 16 of 16, 0 of 0, and 0 of 0 orderable pairs. Each therefore equals its
+bundle's recorded `orderable_pairs`, which is the compatibility gate. The dated fixture shows the
+distinction the new count exists to make: three of eight document pairs disappear at budget 2, but
+the run attaches seven of its sixteen orderable returned rows to those excluded pairs, so the
+cheaper budget costs governance evidence rather than only noise. Both undated SQuAD audits exclude
+no orderable evidence even where the total falls from 36 document pairs to 2. The named attribution
+moves on none of the four inputs: the fixture's corpus-first lost orderable pair,
+`archive-policy.md` +
+`deadline-note.md`, is absent at every cutoff, so its sentence cannot reveal either cost. The prior
+2026-08-15 no-model archive sweep on the same host found the same fixed-attribution result across
+all 24 bundles; the replay above narrows to the four budget-answer shapes and adds their evidence
+cost.
+
+This reading would be overturned if the candidate ranking ceased to be prefix-stable, or if a
+replay at the run's own budget differed from its recorded `orderable_pairs`; both conditions are
+pinned in CI. It does not re-adjudicate a row or claim that an undated SQuAD pair is useful conflict
+evidence -- zero here means only that `compare_editions` cannot order it.
 
 ### How deep the prefix reaches, and what the depth costs
 
@@ -734,4 +760,4 @@ size is constant in the corpus where the map it replaces was linear
 | the ranked candidate list | `src/llb/conflicts/bundle/candidate_record.py` |
 | the per-question verdicts | `src/llb/conflicts/bundle/readings.py` |
 | rendering | `src/llb/conflicts/report/stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
-| tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/test_stage_replay.py` |
+| tests | `tests/llb/conflicts/bundle/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/bundle/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/bundle/test_stage_replay.py` |

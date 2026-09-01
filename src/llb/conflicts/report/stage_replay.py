@@ -65,15 +65,22 @@ def store_line(entry: JsonObject) -> str:
 
 
 def pairs_phrase(at_budget: JsonObject) -> str:
-    """`5 of the run's 8 document pairs return` -- what the budget actually took away.
+    """The total and orderable pair costs the named pair cannot give.
 
-    The count is the reading the NAMED pair cannot give: on a corpus whose corpus-first lost pair is
-    lost at every budget, the name is identical at every budget and the count is not.
+    On a corpus whose corpus-first lost pair is lost at every budget, the name stays fixed while
+    the distinct document-pair count and the governance coverage's returned-pair count can move.
     """
     returned, run = at_budget["document_pairs"], at_budget["run_document_pairs"]
     if returned is None:
         return "the returned pairs are not recomputable"
-    return f"{returned} of the run's {run} document pairs return"
+    orderable, run_orderable = at_budget["orderable_pairs"], at_budget["run_orderable_pairs"]
+    cost = run_orderable - orderable
+    unit = "pair" if cost == 1 else "pairs"
+    return (
+        f"{returned} of the run's {run} document pairs return; "
+        f"{orderable} of the run's {run_orderable} orderable returned pairs belong to them "
+        f"(budget costs {cost} orderable returned {unit})"
+    )
 
 
 def replay_report(entries: list[JsonObject]) -> str:
@@ -203,7 +210,7 @@ def _budget_section(entries: list[JsonObject]) -> list[str]:
             for reason in sorted({str(refusal["reason"]) for refusal in refusals})
         ),
         "",
-        "| run | document pairs returned | at this budget | moves |",
+        "| run | pairs returned at this budget | attribution at this budget | moves |",
         "| --- | --- | --- | --- |",
     ]
     for entry in asked:
