@@ -40,6 +40,7 @@ def precision_section(result: AuditResult) -> list[str]:
             "",
         ]
     point = block["returned_budget"]
+    candidate_order = str(block.get("candidate_order", "cosine"))
     lines += [
         f"- adjudicated rows at the returned candidate budget: {point['budget']}",
         f"- rows **{DECIDE_LABEL}** (every relation but `complementary`): "
@@ -59,7 +60,8 @@ def precision_section(result: AuditResult) -> list[str]:
         "",
         "### Precision against the candidate budget",
         "",
-        "Candidates come out in rank order, so the rows at each budget are a prefix of the same "
+        f"Candidates come out in `{candidate_order}` rank order, so the rows at each budget are "
+        "a prefix of the same "
         f"adjudicated list -- this is a sweep, not a re-measurement. `{DECIDE_LABEL} left/right` "
         f"counts the distinct chunks the {DECIDE_LABEL} rows sit on, which is what decides whether "
         "the clustered bound can clear zero: a resampled draw that misses all of them returns "

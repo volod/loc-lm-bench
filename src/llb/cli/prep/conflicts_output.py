@@ -100,6 +100,7 @@ def echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
     echo_projection(result.policy_projection, result.governance_coverage)
     _echo_edition_linkage(result.edition_linkage)
+    _echo_claim_prefilter(result.claim_prefilter)
     _echo_claim_precision(result.claim_precision)
     if result.needles:
         typer.echo(
@@ -140,3 +141,23 @@ def _echo_claim_precision(precision: JsonObject) -> None:
         )
     elif precision:
         typer.echo(f"[conflicts] claim-tier precision not reported: {precision['reason']}")
+
+
+def _echo_claim_prefilter(prefilter: JsonObject) -> None:
+    """The row saving a full-list run measures, or why a capped run cannot measure loss."""
+    if not prefilter:
+        return
+    same = prefilter["same_conflicts"]
+    if same["evaluated"]:
+        typer.echo(
+            "[conflicts] claim prefilter same actionable set: "
+            f"cosine {same['cosine_rows_needed']} rows, cross-encoder "
+            f"{same['reranked_rows_needed']} rows "
+            f"({same['adjudication_calls_saved']} calls saved by the gate, "
+            f"{same['conflict_rows_lost']} conflict rows lost)"
+        )
+    else:
+        typer.echo(
+            f"[conflicts] claim prefilter adjudicated {prefilter['adjudicated_rows']} of "
+            f"{prefilter['candidate_rows']} rows; conflict loss needs a paired full-list run"
+        )

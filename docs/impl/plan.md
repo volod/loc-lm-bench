@@ -76,39 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-claim-tier-cross-encoder-prefilter (optional)
-
-Spend the cross-encoder's ordering on adjudication COST instead of on a rate. Scoring a candidate
-pair with a cross-encoder orders the claim tier's own verdicts where cosine does not -- monotone
-score bins whose top bin is entirely conflicts on the planted fixture and the high-recall corpus
-([closure](current/data-prep/conflict-null-closure.md)) -- yet the claim tier still adjudicates the
-ranked list in cosine order, so it pays a model call for rows a 568M cross-encoder can already place
-at the bottom. Re-rank the candidate rows with the pinned cross-encoder before adjudication and
-measure what that buys: adjudicated rows needed to reach the same set of found conflicts, and the
-conflicts lost if any. The scorer must stay injectable, and a corpus where the ordering is flat
-(goods, four conflicts in fifty rows) must degrade to today's behavior rather than drop rows.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: RUN NEEDED
-- Dependencies: reuse `controls/cross_encoder.py` (pair scoring batched by left passage,
-  calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
-  artifacts are current behavior in [conflict
-  detection](current/data-prep/conflict-detection.md#effort-tiers).
-- User-visible outcome: `audit-corpus-conflicts --effort claim` reaches the same conflicts for fewer
-  adjudication calls on corpora where the ordering is informative, with the saving recorded in the
-  run artifacts.
-- Scope boundary: in scope -- an optional pre-filter stage between candidate generation and
-  adjudication, its per-corpus flat-ordering fallback, and the cost/recall evidence. Out of scope --
-  quoting any cross-encoder score as a probability, rate, or confidence; changing the relation
-  vocabulary; and dropping a row the claim tier would have called a conflict without recording it.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: add the pre-filter behind an injected scorer with a deterministic fixture test,
-  then one CUDA-host claim run per quickstart corpus paired against the same run without it.
-- Acceptance gates: `make ci` green with the injected scorer; no conflict found by the unfiltered
-  run is missing from the filtered run on either quickstart corpus; and the recorded saving is stated
-  per corpus, including the corpus where it is zero.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
-
 #### conflict-adjudicator-probe-difficulty (optional)
 
 The frozen calibration probe is passed **24/24** by MamayLM-Gemma-3-12B, which means the gate is

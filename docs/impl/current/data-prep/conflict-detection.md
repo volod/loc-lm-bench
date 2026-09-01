@@ -327,6 +327,48 @@ is stuck at 1 through budget 25 and reaches only 3 at budget 100. The pair-row W
 budget 100 is `[0.041, 0.150]`, a non-zero floor it has not earned; the clustered bound refuses it.
 That contrast is the whole reason the audit quotes the clustered bound.
 
+### Optional cross-encoder claim prefilter
+
+`CLAIM_PREFILTER=1` scores every semantic candidate with the pinned
+`BAAI/bge-reranker-v2-m3` scorer. An uncapped run keeps cosine prompt order, labels the full list,
+and measures the cross-ranked prefix for the same actionable pairs; a reducing `MAX_CLAIM_PAIRS`
+spends that prefix. Flat or unresolved scores, non-monotone bins, and no positive rank delta all
+recommend the full list. Unadjudicated rows remain provisional findings in the complete ledger.
+Scores only order rows; they are never probabilities, rates, confidence values, or verdicts.
+
+```bash
+make audit-corpus-conflicts CORPUS=<corpus-dir> EFFORT=claim STORE=<store-dir> \
+  CONFLICT_MODEL=<host-fit-model> CONFLICT_TEMPERATURE=0 NULL_SEED=0 \
+  MAX_CANDIDATE_PAIRS=50 CLAIM_PREFILTER=1 CLAIM_PREFILTER_DEVICE=cpu
+```
+
+The implementation is in `claim/prefilter.py` and `tiers/claim_run.py`, with CLI/Make controls,
+report rendering, injected-scorer tests, an exact flat fallback, and a regression keeping uncapped
+prompts identical to baseline. `summary.json` records the scorer/device, both ranks, every score
+and label, bins, actual adjudication order, omitted rows, saving, fallback, and recommended budget.
+
+Measured 2026-09-01 on the RTX 4060 Ti 16 GB CUDA host with the 12B
+MamayLM-Gemma-3-12B-IT-v2.0 Q4_K_M Ollama adjudicator on CUDA, the cross-encoder on CPU,
+temperature 0, seed 0, the 24/24 probe, centered multilingual-E5 stores, and no gold set:
+
+- **HR:** 8 docs, 2578 chunks, 2,432,676 comparable pairs, cosine 0.5349, and 50 candidates. The
+  uncapped baseline and scored run produced identical claim findings: eight actionable pairs and
+  no unparsed rows. Cross-score bin fractions `[0.083, 0.083, 0.083, 0.250, 1.000]` were monotone;
+  the last actionable pair moved from cosine rank 44 to cross rank 42. The 42-call validation kept
+  all eight pair identities and recorded eight provisional rows. Versus the uncapped 50-call
+  baseline, it avoided eight calls; two calls are attributable to cross rank versus the equivalent
+  cosine prefix of 44. Its 333.479 s claim phase plus 23.815 s scoring was 25.118 s (6.6%) below
+  the baseline claim phase's 382.412 s.
+- **goods:** 5 docs, 1099 chunks, 71,736 comparable pairs, cosine 0.3907, and 50 candidates. Both
+  runs produced identical claim findings: five actionable pairs plus the same one unparsed row.
+  Its bins `[0.000, 0.000, 0.083, 0.333, 0.000]` were non-monotone, so 22.378 s of scoring licensed
+  zero saved calls and the artifact recommends all 50 rows.
+
+The reading is corpus-local and modest: the HR order buys two incremental calls and a small net
+runtime reduction; goods safely falls back. A changed corpus/store, scorer, or adjudicator can
+overturn it, as can a repeated full-list pair where an actionable baseline identity is absent or
+the HR bins cease to be monotone. Re-evaluate the complete list before adopting a new cap.
+
 ## What the counts mean
 
 The census behind every printed count, the two decision-grouping rules and the range between them,
@@ -405,9 +447,10 @@ parameters, `finding_census` /
 block, the
 [`stage_attribution_inputs`](conflict-decision-groups.md#recomputing-the-stage-from-a-finished-bundle)
 record a later re-read of the stage attribution is recomputed from, and the `claim_precision` block
-with its per-row ledger and all 24 calibration verdicts), and `tree_meta.json` (tree geometry plus
-the embedder fingerprint that pins reuse, since centroids are only meaningful in the space that
-produced them). With projected blocking, the resolved store
+with its per-row ledger and all 24 calibration verdicts), the optional `claim_prefilter` scorer,
+rank, calibration, cost, and fallback ledger, and `tree_meta.json` (tree geometry plus the embedder
+fingerprint that pins reuse, since centroids are only meaningful in the space that produced them).
+With projected blocking, the resolved store
 generation also holds `semantic_tree/projection.json`, `semantic_tree/tree.json`, and
 `semantic_tree/tree_meta.json`. The projection JSON carries its own SHA-256 fingerprint.
 

@@ -7,6 +7,11 @@ and duplicate the fact it restated, because relations are assigned per claim pai
 
 import pytest
 
+from llb.conflicts.claim.adjudicator import (
+    DEFAULT_ADJUDICATOR_SEED,
+    DEFAULT_ADJUDICATOR_TEMPERATURE,
+    build_adjudicator,
+)
 from llb.conflicts.claim.prompt import (
     AdjudicationError,
     adjudication_prompt,
@@ -44,6 +49,22 @@ OLD_CHUNK = {
 }
 NEW_GOV = {"effective_date": "2024-03-01", "version": "2.0"}
 OLD_GOV = {"effective_date": "2021-01-15", "version": "1.0"}
+
+
+def test_real_adjudicator_defaults_to_repeatable_sampling(monkeypatch):
+    captured = {}
+
+    def fake_build(config, log):
+        captured["temperature"] = config.temperature
+        captured["seed"] = config.seed
+        return lambda prompt: "{}"
+
+    monkeypatch.setattr("llb.prep.ontology.endpoints.client.build_complete", fake_build)
+    complete = build_adjudicator("model", "ollama", None)
+
+    assert complete is not None
+    assert captured["temperature"] == DEFAULT_ADJUDICATOR_TEMPERATURE == 0.0
+    assert captured["seed"] == DEFAULT_ADJUDICATOR_SEED == 0
 
 
 def test_prompt_asks_for_verbatim_quotes_and_hides_provenance():

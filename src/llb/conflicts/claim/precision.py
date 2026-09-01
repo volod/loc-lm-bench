@@ -169,7 +169,14 @@ def rows_precision(rows: list[AdjudicatedRow], *, seed: int) -> JsonObject:
     right = [row.right_key for row in rows]
     curve = precision_curve_points(flags, left, right, seed=seed)
     return {
-        "cosine_range": [round(rows[-1].score, 6), round(rows[0].score, 6)] if rows else None,
+        # Cross-encoder ordering is not monotone in cosine, so read the actual extrema rather than
+        # assuming the first and last rows bound the range. The cosine-ordered path is unchanged.
+        "cosine_range": [
+            round(min(row.score for row in rows), 6),
+            round(max(row.score for row in rows), 6),
+        ]
+        if rows
+        else None,
         "returned_budget": precision_point(flags, left, right, budget=len(rows), seed=seed),
         "precision_curve": curve,
         "budget_resolution": budget_resolution(curve),

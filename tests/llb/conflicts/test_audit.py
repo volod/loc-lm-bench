@@ -62,12 +62,13 @@ def scripted(prompt: str) -> str:
     return DUPLICATE
 
 
-def audit(effort: str, **kwargs):
+def audit(effort: str, claim_scorer=None, **kwargs):
     return run_audit(
         FIXTURE_CORPUS,
         AuditParams(effort=effort, cos_threshold=FAKE_COS_THRESHOLD, **kwargs),
         store=fake_store_view(),
         complete=scripted,
+        claim_scorer=claim_scorer,
     )
 
 
@@ -175,6 +176,51 @@ def test_capped_claim_run_keeps_unadjudicated_pairs_as_provisional():
     capped = audit(TIER_CLAIM, max_claim_pairs=1)
     assert len(capped.findings) == len(full.findings)
     assert {f.tier for f in capped.findings} >= {TIER_SEMANTIC, TIER_CLAIM}
+
+
+def test_flat_claim_prefilter_is_exact_capped_behavior_and_records_every_row():
+    baseline = audit(TIER_CLAIM, max_claim_pairs=1)
+    filtered = audit(
+        TIER_CLAIM,
+        max_claim_pairs=1,
+        claim_prefilter=True,
+        claim_scorer=lambda left, right: [0.5] * len(right),
+    )
+
+    assert [finding.payload() for finding in filtered.findings] == [
+        finding.payload() for finding in baseline.findings
+    ]
+    assert filtered.claim_prefilter["ordering"] == "cosine_fallback"
+    assert filtered.claim_prefilter["candidate_rows"] == len(filtered.claim_prefilter["rows"])
+    assert filtered.claim_prefilter["unadjudicated_rows"] > 0
+    assert all(not row["adjudicated"] for row in filtered.claim_prefilter["rows"][1:])
+    assert "flat-score fallback" in render_report(filtered)
+
+
+def test_uncapped_claim_prefilter_scores_cross_order_but_adjudicates_exact_baseline_order():
+    baseline = audit(TIER_CLAIM)
+
+    def reverse_each_batch(left: str, right: list[str]) -> list[float]:
+        del left
+        return [float(index) for index, _text in enumerate(right)]
+
+    filtered = audit(
+        TIER_CLAIM,
+        claim_prefilter=True,
+        claim_scorer=reverse_each_batch,
+    )
+
+    assert filtered.claim_prefilter["rows_moved"] > 0
+    assert filtered.claim_prefilter["adjudication_order"] == "cosine_evaluation"
+    assert filtered.claim_precision["candidate_order"] == "cosine"
+    assert [finding.payload() for finding in filtered.findings] == [
+        finding.payload() for finding in baseline.findings
+    ]
+
+
+def test_enabled_claim_prefilter_requires_an_injected_scorer():
+    with pytest.raises(SystemExit, match="needs a cross-encoder scorer"):
+        audit(TIER_CLAIM, claim_prefilter=True)
 
 
 def test_every_finding_carries_exact_offsets_into_its_source():

@@ -63,9 +63,12 @@ def score_pairs(scorer: RerankScorer, pairs: list[tuple[str, str]]) -> list[floa
         grouped.setdefault(left, []).append(position)
     scores = [0.0] * len(pairs)
     for left, positions in grouped.items():
-        for position, value in zip(
-            positions, scorer(left, [pairs[index][1] for index in positions])
-        ):
+        values = scorer(left, [pairs[index][1] for index in positions])
+        if len(values) != len(positions):
+            raise ValueError(
+                f"cross-encoder returned {len(values)} scores for {len(positions)} passage pairs"
+            )
+        for position, value in zip(positions, values):
             scores[position] = float(value)
     return scores
 

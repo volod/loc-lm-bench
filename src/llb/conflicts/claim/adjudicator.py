@@ -10,9 +10,16 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from llb.prep.frontier.telemetry import LLMComplete
 
+DEFAULT_ADJUDICATOR_TEMPERATURE = 0.0
+DEFAULT_ADJUDICATOR_SEED = 0
+
 
 def build_adjudicator(
-    model: Optional[str], backend: str, base_url: Optional[str]
+    model: Optional[str],
+    backend: str,
+    base_url: Optional[str],
+    temperature: float = DEFAULT_ADJUDICATOR_TEMPERATURE,
+    seed: int = DEFAULT_ADJUDICATOR_SEED,
 ) -> "LLMComplete | None":
     """Resolve a local completion endpoint, or `None` when no model was requested."""
     if not model:
@@ -30,5 +37,7 @@ def build_adjudicator(
         model=model,
         backend=backend,
         base_url=base_url or DEFAULT_LOCAL_BASE_URL,
+        temperature=temperature,
+        seed=seed,
     )
     return build_complete(config, ProvenanceLog())

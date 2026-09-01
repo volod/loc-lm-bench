@@ -74,17 +74,19 @@ def test_think_disabled_routes_through_native_endpoint(monkeypatch):
         captured["think"] = json["think"]
         captured["format"] = json["format"]
         captured["num_predict"] = json["options"]["num_predict"]
+        captured["seed"] = json["options"].get("seed")
         return _Resp()
 
     import httpx
 
     monkeypatch.setattr(httpx, "post", fake_post)
     log = ProvenanceLog()
-    cfg = EndpointConfig(kind="local", model="gemma4:26b", think=False, max_tokens=4096)
+    cfg = EndpointConfig(kind="local", model="gemma4:26b", think=False, max_tokens=4096, seed=7)
     assert cfg.provenance()["think"] is False
     assert build_complete(cfg, log)("hi") == "OK"
     assert captured["url"].endswith("/api/chat")
     assert captured["think"] is False and captured["num_predict"] == 4096
+    assert captured["seed"] == 7
     assert captured["format"] == "json"
     assert log.summary()["total_prompt_tokens"] == 7
 

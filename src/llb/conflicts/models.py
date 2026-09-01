@@ -119,6 +119,9 @@ class AuditResult:
     tiers: list[TierStats] = field(default_factory=list)
     needles: JsonObject = field(default_factory=dict)
     claim_precision: JsonObject = field(default_factory=dict)
+    # Optional cross-encoder ranking ledger and its full-list cost/recall reading. Kept separate
+    # from precision: a reranker score is an ordering signal, never a confidence or probability.
+    claim_prefilter: JsonObject = field(default_factory=dict)
     tree_meta: JsonObject = field(default_factory=dict)
     params: JsonObject = field(default_factory=dict)
     # Whether this corpus could carry a dated supersession at all: the documents that record an
@@ -186,6 +189,8 @@ class AuditResult:
             payload["needles"] = dict(self.needles)
         if self.claim_precision:
             payload["claim_precision"] = dict(self.claim_precision)
+        if self.claim_prefilter:
+            payload["claim_prefilter"] = dict(self.claim_prefilter)
         if self.tree_meta:
             payload["tree"] = dict(self.tree_meta)
         if self.governance_coverage:

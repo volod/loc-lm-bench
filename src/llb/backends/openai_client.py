@@ -26,6 +26,7 @@ def chat_once(
     messages: list[ChatMessage],
     max_tokens: int = 512,
     temperature: float = 0.0,
+    seed: int | None = None,
     timeout: float = 120.0,
     extra_body: dict[str, Any] | None = None,
 ) -> ChatResult:
@@ -41,6 +42,7 @@ def chat_once(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            **({"seed": seed} if seed is not None else {}),
             timeout=timeout,
             **({"extra_body": extra_body} if extra_body else {}),
         )
