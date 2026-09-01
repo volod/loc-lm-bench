@@ -147,8 +147,9 @@ The confidence contract is the load-bearing part of this capability:
 
 A finished audit is an immutable bundle that answers its own questions offline: which stage lost a
 pair, why a document was excluded, what a smaller candidate budget would have returned, and which
-store it read. Resolution is an overlay with a rollback contract -- the audit proposes, a reviewer
-decides, and the corpus is never silently rewritten.
+store it read plus that store's portable location when it is under `DATA_DIR`. Resolution is an
+overlay with a rollback contract -- the audit proposes, a reviewer decides, and the corpus is never
+silently rewritten.
 
 ## Entity Resolution and Record Linkage
 

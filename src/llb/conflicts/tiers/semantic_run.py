@@ -157,6 +157,7 @@ def run_semantic_tiers(
             corpus_fingerprint=str(store.meta.get("corpus_fingerprint", "")),
             doc_fingerprints=store.doc_fingerprints,
             cos_threshold=cos_threshold,
+            store_dir=store.index_dir,
         ),
         "centered": centered,
         **projection_meta,

@@ -14,8 +14,10 @@ fresh build is the better trade.
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from llb.conflicts.bundle.store_identity import identity_payload
+from llb.conflicts.bundle.store_location import store_location_payload
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.build import bisect
 from llb.conflicts.semantic_tree.node import TreeNode, node_bounds, node_geometry
@@ -197,6 +199,7 @@ def tree_meta(
     corpus_fingerprint: str,
     doc_fingerprints: dict[str, str],
     cos_threshold: float,
+    store_dir: Path | str | None = None,
 ) -> dict[str, object]:
     """The persisted tree sidecar: geometry stats plus the fingerprints that make it reusable.
 
@@ -221,6 +224,7 @@ def tree_meta(
         **radius_payload,
         "corpus_fingerprint": corpus_fingerprint,
         **identity_payload(doc_fingerprints),
+        **store_location_payload(store_dir),
     }
 
 

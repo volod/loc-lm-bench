@@ -137,7 +137,7 @@ compare-conflict-granularity: ## Recompute both decision-grouping rules (transit
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-conflict-granularity "$${args[@]}"
 
-recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_STORE=, STAGE_OUT=); reads summary.json + findings.jsonl only -- no model, no corpus, and no store unless STAGE_STORE asks which bundles were taken over it
+recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_STORE= explicit store override/fallback, STAGE_OUT=); reads summary.json + findings.jsonl and each current bundle's recorded store metadata -- no model or corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(STAGE_RUNS)" || { echo "ERROR: set STAGE_RUNS=\"<audit-run-dir> ...\""; exit 1; }
 	@args=(); \

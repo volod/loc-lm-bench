@@ -144,7 +144,21 @@ def compare_store(
     )
 
 
-def identity_entry(summary: JsonObject, fingerprints: Mapping[str, str]) -> JsonObject:
+def identity_entry(
+    summary: JsonObject,
+    fingerprints: Mapping[str, str],
+    *,
+    label: str = "the store",
+    reference: str | None = None,
+    reference_source: str | None = None,
+) -> JsonObject:
     """One bundle placed against one store, in the shape the stage re-read carries it in."""
     tree_meta = summary.get("tree")
-    return compare_store(tree_meta if isinstance(tree_meta, dict) else {}, fingerprints).payload()
+    payload = compare_store(
+        tree_meta if isinstance(tree_meta, dict) else {}, fingerprints, label=label
+    ).payload()
+    if reference is not None:
+        payload["reference"] = reference
+    if reference_source is not None:
+        payload["reference_source"] = reference_source
+    return payload

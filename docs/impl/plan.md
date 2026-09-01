@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-bundle-records-the-store-it-read-but-not-where-it-was (optional)
-
-A bundle can now be PLACED against a store -- `recompute-conflict-stage --store <dir>` says whether
-the store on disk is the one that run read
-([bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy)) --
-but the operator has to supply the path, and a sweep can only be pointed at ONE store while its
-bundles were taken over many. The bundle records the store's identity and not its LOCATION, so
-"which of my stores is this bundle about" is unanswerable even when every candidate store is on the
-host. Record the store directory the run read (relative to `$DATA_DIR` where it sits under it, since
-an absolute path is host-specific and the repo forbids hardcoding one), and let the re-read resolve
-it -- falling back to the explicit flag, and saying plainly when the recorded location is gone
-rather than reporting a mismatch it did not test.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `StoreView.index_dir` is the resolved path the audit already holds,
-  `store_identity.py` is where the identity is recorded and compared, and `resolve_data_dir` /
-  `resolve_store_dir` (`src/llb/core/`) are how a recorded location must be re-resolved.
-- User-visible outcome: an archive sweep tells an operator which of their stores each bundle's
-  readings are about, without being told the answer first.
-- Scope boundary: in scope -- the recorded location, its resolution on re-read, the explicit-flag
-  precedence, and the "recorded store is gone" reading. Out of scope -- recording anything else
-  about the store, searching the host for a matching store, and changing the identity digest.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
-- Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a bundle whose recorded store still exists is placed against it
-  with no flag; a bundle whose store has been deleted says so rather than reporting a mismatch; an
-  explicit `--store` still wins; no absolute host path reaches the artifact.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy).
-
 #### conflict-summary-group-granularity-repeats-its-own-prose-in-every-bundle (optional)
 
 With the store manifest gone from the `tree` block, the second-largest key in a 250-document

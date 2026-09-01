@@ -28,6 +28,8 @@ from llb.conflicts.audit import AuditParams, run_audit
 from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH, TIER_SEMANTIC
 from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.bundle.document_index import DocumentInterner, DocumentNaming
+from llb.conflicts.bundle.store_identity import identity_payload
+from llb.conflicts.bundle.store_location import store_location_payload
 from llb.conflicts.governance.stage import LOST_PAIR_COUNTS_FIELD, LOST_PAIR_FIELD
 from llb.conflicts.governance.stage_rule import (
     STAGE_CANDIDATES,
@@ -55,6 +57,7 @@ from llb.conflicts.bundle.stage_replay import (
     replay_attribution,
     replay_entry,
 )
+from llb.rag.vector_store.build import META_FILE
 
 from tests.llb.conflicts.conflict_helpers import (
     BODY_TOKENS,
@@ -327,3 +330,40 @@ def test_the_cli_reads_a_run_directory_and_writes_both_artifacts(tmp_path):
     assert data[0]["recomputable"] and data[0]["agrees"] is True
     assert data[0]["recomputed"]["stage"] == STAGE_CHUNKING
     assert "CHUNKING" in (out_dir / "stage.md").read_text(encoding="utf-8")
+
+
+def test_the_cli_resolves_a_bundle_recorded_store_without_an_explicit_flag(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from llb.cli.app import app
+    from llb.conflicts.report.render import write_audit
+    from llb.main import main  # noqa: F401  -- registers every command module
+
+    data_dir = tmp_path / "data"
+    store_dir = data_dir / "stores" / "for-this-bundle"
+    store_dir.mkdir(parents=True)
+    fingerprints = {"old.md": "a" * 64, "new.md": "b" * 64}
+    (store_dir / META_FILE).write_text(
+        json.dumps({"doc_fingerprints": fingerprints}), encoding="utf-8"
+    )
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+
+    run_dir = tmp_path / "audit"
+    write_audit(run_dir, _audit(tmp_path / "corpus", UNRELATED, without="new.md"))
+    summary_path = run_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["tree"].update(identity_payload(fingerprints))
+    summary["tree"].update(store_location_payload(store_dir, data_dir=data_dir))
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    out_dir = tmp_path / "stage"
+
+    invoked = CliRunner().invoke(
+        app, ["recompute-conflict-stage", "--run", str(run_dir), "--out", str(out_dir)]
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    data = json.loads((out_dir / "stage.json").read_text(encoding="utf-8"))
+    placement = data[0]["store_identity"]
+    assert placement["comparable"] and not placement["changed"]
+    assert placement["reference"] == "$DATA_DIR/stores/for-this-bundle"
+    assert placement["reference_source"] == "bundle"

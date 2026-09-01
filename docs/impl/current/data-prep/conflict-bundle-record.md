@@ -705,21 +705,55 @@ force every persisted tree on the host to rebuild, for a change that touches no 
 `stage_attribution_inputs.schema_version` stays at 7, because the `tree` block is not part of that
 record.
 
-**The consumer that asks the question** is the stage re-read, pointed at a store:
+**The bundle also records where to ask the question.** `tree.store_data_dir_relative` is the exact
+resolved `StoreView.index_dir` the semantic pass read, relative to the configured `DATA_DIR`. A
+generation-backed store therefore records its immutable generation directory, not the live base
+whose newest generation can later advance. A store outside `DATA_DIR` records no location and
+continues to need an explicit flag; an absolute host path never reaches `summary.json`.
+
+The re-read has three deliberate cases:
+
+1. An explicit `STAGE_STORE` / `--store` wins for every bundle. This preserves the existing
+   operator-directed comparison and supplies the location for an older bundle that has none.
+2. Without that flag, each current bundle resolves its own recorded location under the current
+   host's `DATA_DIR` and reads that exact directory's `store_meta.json`. A sweep can therefore span
+   stores and generations without being told which bundle belongs to which one.
+3. A recorded directory whose metadata is gone is `not comparable`: the detail names its portable
+   `$DATA_DIR/...` reference and says that no identity comparison was made. The reader neither
+   searches the host nor compares a convenient different store and calls that a mismatch. Invalid
+   absolute and parent-traversal references are refused on the same terms.
+
+The ordinary multi-store path needs no store flag:
 
 ```bash
+make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> <audit-run-dir>" \
+  STAGE_OUT=<report-dir>
+# [stage] <run>: the recorded store at `$DATA_DIR/<store-a>` is the one this run read
+# [stage] <run>: the recorded store at `$DATA_DIR/<store-b>` is the one this run read
+
+# Deliberate override, and the fallback for bundles without a recorded location:
 make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." \
   STAGE_STORE=<index-dir> STAGE_OUT=<report-dir>
-# [stage] <run>: the store is the one this run read (7 documents)
-# [stage] <run>: the store is NOT the one this run read: 250 documents recorded, 7 on disk now
-#   -- this bundle's readings are about the store it held, not this one
 ```
 
-It reads `store_meta.json` and nothing else -- no chunks, no vector index, no encoder -- so an
-archive sweep can place every bundle it holds against one store for the cost of one small JSON file.
-`STAGE_STORE` is opt-in and the sweep without it is exactly what it always was, which is the point:
-the re-read's own answers still come from the bundle alone, and this is the one question that
-genuinely needs the store.
+It reads `store_meta.json` and nothing else -- no chunks, vector index, encoder, corpus, or model.
+The command caches each resolved manifest within the sweep, so many bundles over one store pay for
+one small JSON read while bundles over different stores keep their own placement.
+
+**Acceptance run on 2026-09-01, RTX 4060 Ti 16 GB CUDA host, no model call.** Two semantic audits
+ran at explicit cosine 0.9: the committed seven-document Ukrainian conflict fixture and its
+one-sentence edited variant, each over its own 19-chunk FAISS store built with
+`intfloat/multilingual-e5-base` at heading/600 chunking. Each audit returned 17 findings over eight
+document pairs. Replaying both bundles together with no store flag resolved two of two distinct
+bundle-recorded locations, matched both identities, needed zero explicit fallbacks, produced zero
+unavailable placements, and preserved both recorded stage readings. Pointing the same sweep
+explicitly at the fixture store made the flag win: the fixture bundle matched and the edited bundle
+reported an identity mismatch even though both stores contain seven documents. The first reading
+shows that a mixed-store archive is self-placing; the second shows that the explicit precedence and
+content digest remain live rather than being inferred from the path or document count. Deleting or
+moving a recorded store overturns only its availability -- it must become `not comparable`, never
+`changed` -- while editing, adding, or removing a fingerprint at the same location must produce a
+real mismatch.
 
 **A store that genuinely changed is still detected as changed.** Measured on this host: the fixture
 corpus copied to `.data/store-identity-stores/edited-corpus/` with ONE document extended by one
@@ -742,7 +776,7 @@ ways a manifest changes (a document edited, added, and removed),
 `test_the_digest_is_a_property_of_the_mapping_and_not_of_the_order_it_was_written_in` pins the
 sorting, and `test_the_identity_costs_the_same_whatever_the_corpus_size_is` asserts the recorded
 size is constant in the corpus where the map it replaces was linear
-(`tests/llb/conflicts/test_store_identity.py`).
+(`tests/llb/conflicts/semantic_tree/test_store_identity.py`).
 
 ## Where it lives
 
@@ -754,10 +788,11 @@ size is constant in the corpus where the map it replaces was linear
 | the rule every fold obeys | `src/llb/conflicts/bundle/fold.py` (`json_bytes`, `smaller_form`) |
 | the count default a map is folded on | `src/llb/conflicts/bundle/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
 | the store identity the `tree` block records | `src/llb/conflicts/bundle/store_identity.py` (`fingerprint_digest`, `identity_payload`, `StoreIdentity.of`, `compare_store`), written by `tree_meta` (`semantic_tree/refresh.py`) |
-| the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints`, meta only -- no chunks, no vectors) |
+| the portable store location and placement precedence | `src/llb/conflicts/bundle/store_location.py` (`store_location_payload`, `recorded_store_location`, `resolve_store_placement`) |
+| the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints` for the live explicit store, `store_doc_fingerprints_at` for an exact recorded directory; meta only -- no chunks or vectors) |
 | re-reading a bundle with it | `src/llb/conflicts/bundle/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/bundle/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/bundle/candidate_record.py` |
 | the per-question verdicts | `src/llb/conflicts/bundle/readings.py` |
 | rendering | `src/llb/conflicts/report/stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
-| tests | `tests/llb/conflicts/bundle/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/bundle/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/bundle/test_stage_replay.py` |
+| tests | `tests/llb/conflicts/bundle/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/bundle/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/semantic_tree/test_store_identity.py` (identity, location, exact resolution, override, and gone-store refusal), `tests/llb/conflicts/bundle/test_stage_replay.py` (CLI auto-resolution), `tests/llb/conflicts/test_store_access_and_cli.py` (real FAISS-store recording) |

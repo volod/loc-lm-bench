@@ -71,9 +71,22 @@ def store_doc_fingerprints(index_dir: Path | str) -> dict[str, str]:
     read" for the cost of one small JSON file per store.
     """
     resolved = resolve_store_dir(Path(index_dir), META_FILE)
-    meta_path = resolved / META_FILE
-    if not meta_path.is_file():
+    fingerprints = store_doc_fingerprints_at(resolved)
+    if fingerprints is None:
         raise SystemExit(f"[conflicts] no store at {resolved}: nothing to compare a bundle with.")
+    return fingerprints
+
+
+def store_doc_fingerprints_at(index_dir: Path | str) -> dict[str, str] | None:
+    """Read the exact store directory named, or None when its metadata is gone.
+
+    Unlike ``store_doc_fingerprints``, this does not select the newest live generation below a
+    base directory. A recorded bundle location already names the exact resolved generation that
+    the audit read, so silently advancing it would compare against a store the run never used.
+    """
+    meta_path = Path(index_dir) / META_FILE
+    if not meta_path.is_file():
+        return None
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     recorded = meta.get("doc_fingerprints")
     if not isinstance(recorded, dict):

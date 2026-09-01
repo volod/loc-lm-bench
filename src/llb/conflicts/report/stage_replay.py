@@ -59,7 +59,7 @@ def budget_line(entry: JsonObject) -> str:
 
 
 def store_line(entry: JsonObject) -> str:
-    """Whether the store `--store` names is the store this bundle's readings are about."""
+    """Whether the resolved or fallback store is the one this bundle's readings are about."""
     identity = entry["store_identity"]
     return f"[stage] {entry['label']}: {identity['detail']}"
 
@@ -91,9 +91,11 @@ def replay_report(entries: list[JsonObject]) -> str:
         "# Stage attribution, recomputed from the bundles",
         "",
         "Each run's own `summary.json` record and its own `findings.jsonl` rows, re-read under this "
-        "build's stage rule. No store, no corpus, and no model call -- so a bundle written on "
-        "another host answers exactly as it did the day it was written, and a bundle that recorded "
-        "no per-document accounting answers nothing rather than guessing from a rebuilt store.",
+        "build's stage rule. That stage reading needs no store, corpus, or model call -- so a "
+        "bundle written on another host answers exactly as it did the day it was written, and a "
+        "bundle that recorded no per-document accounting answers nothing rather than guessing "
+        "from a rebuilt store. The separate store-placement section, when present, reads only each "
+        "resolved store's metadata.",
         "",
         f"- bundles read: {len(entries)}",
         f"- recomputed stage differs from the recorded one: {len(disagreeing)}",
@@ -157,29 +159,39 @@ def _readings_section(entries: list[JsonObject]) -> list[str]:
 
 
 def _store_section(entries: list[JsonObject]) -> list[str]:
-    """Which of these bundles were taken over the store `--store` names, and which were not.
+    """Whether each bundle's resolved store is the one its recorded identity names.
 
     This is the one question the recorded store manifest is asked, and it is an equality test: a
-    bundle's readings describe the store its run held, so a bundle taken over a different store
-    answers correctly about something the operator is not looking at.
+    bundle's readings describe the store its run held, so a comparison against a different store
+    answers correctly about something else.
     """
     placed = [entry for entry in entries if "store_identity" in entry]
     comparable = [entry for entry in placed if entry["store_identity"]["comparable"]]
     same = [entry for entry in comparable if not entry["store_identity"]["changed"]]
+    recorded = [
+        entry for entry in placed if entry["store_identity"].get("reference_source") == "bundle"
+    ]
+    fallback = [
+        entry for entry in placed if entry["store_identity"].get("reference_source") == "explicit"
+    ]
     lines = [
         "## The store these bundles read",
         "",
-        "Each run recorded a digest over the store manifest it read, so a bundle can be PLACED "
-        "against a store on disk without keeping a second copy of that manifest. The answer is an "
-        "equality test and nothing more: which documents changed is the store's own question, "
-        "asked of `store_meta.json` by `llb refresh-index`, not of a finished audit.",
+        "Each current run records a DATA_DIR-relative store location beside the digest over the "
+        "store manifest it read. Without a flag, a re-read resolves each bundle's own location. "
+        "An explicit `--store` wins for every bundle and remains the fallback for an older bundle "
+        "without one. A missing recorded location is reported as unavailable and is never turned "
+        "into a mismatch against a store that was not read.",
         "",
-        f"- taken over this store: {len(same)} of {len(placed)}",
-        f"- taken over a different store: {len(comparable) - len(same)} of {len(placed)}",
-        f"- not comparable (no store identity recorded): {len(placed) - len(comparable)} of "
+        f"- resolved from the bundle's recorded location: {len(recorded)} of {len(placed)}",
+        f"- resolved from the explicit override/fallback: {len(fallback)} of {len(placed)}",
+        f"- resolved store matches the bundle identity: {len(same)} of {len(placed)}",
+        f"- resolved store differs from the bundle identity: {len(comparable) - len(same)} of "
+        f"{len(placed)}",
+        f"- not comparable (location or identity unavailable): {len(placed) - len(comparable)} of "
         f"{len(placed)}",
         "",
-        "| run | this store |",
+        "| run | store placement |",
         "| --- | --- |",
     ]
     lines += [f"| `{entry['label']}` | {entry['store_identity']['detail']} |" for entry in placed]
