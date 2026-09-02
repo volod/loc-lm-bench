@@ -74,6 +74,175 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
+### Corpus provenance -- `corpus-provenance`
+
+#### acquired-corpus-provenance-fields
+
+A scored answer traces to a corpus document and stops there. `GOVERNANCE_FIELDS` in
+`src/llb/prep/corpus/governance.py` carries no origin: `ingestion_time` records when THIS project
+ingested a document rather than when the source was observed, and the manifest's `source_sha256`
+covers the staged local file rather than the bytes a publisher served. The sidecar reader already
+loads `<source>.metadata.json` and already drops every key it does not recognize, so a producer can
+render the full projection today and none of it is read. Widen the field set to read it.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: none. The sidecar reader, the fingerprinted manifest item row, and the
+  chunk-metadata copy are current behavior
+  ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md#mixed-txtmdpdf-ingestion)); the
+  field list they all read from is one tuple.
+- User-visible outcome: a gold-set item, and any answer scored against it, resolves to a specific
+  capture of a specific source URI at a specific time under recorded terms.
+- Scope boundary: in scope -- reading `source_uri`, `capture_time`, `capture_id`, `payload_digest`,
+  `licence`, `acquisition_run_id` and `revision_of` from the projection sidecar, widening
+  `GOVERNANCE_FIELDS`, the `CorpusItem` row and the manifest item row, and carrying the values
+  through `manifest_governance_by_doc` into `ChunkRecord.metadata` and the gold-set provenance
+  record. The seven fields enter the fingerprinted item row unconditionally, recorded as absent
+  where a corpus has none: there is no released corpus and no published store to stay
+  fingerprint-compatible with, so no conditional-omission machinery is built for one. Out of scope
+  -- any change to document text, character offsets, or an existing field's meaning; front-matter
+  parsing for the new keys, since a projected corpus writes a sidecar and
+  front matter stays the operator-authored lane; and acting on any of the values, which the later
+  tasks in this group do.
+- Data and artifact paths: `src/llb/prep/corpus/governance.py`,
+  `src/llb/prep/corpus/ingest_text.py`, `src/llb/prep/corpus/ingest.py`,
+  `src/llb/prep/corpus/fingerprints.py`, `src/llb/rag/chunking/corpus.py`,
+  `src/llb/rag/vector_store/factory.py`, and the gold-set provenance record written under
+  `$DATA_DIR/<method>/<run>/`.
+- Execution path: CPU-only. `make ingest-corpus` over a projected fixture and over
+  `samples/corpus/`, then one store build to confirm the chunk metadata carries the fields.
+- Acceptance gates: `make ci` green. A corpus carrying the projection sidecar ingests with every
+  new field present in the manifest item, in chunk metadata, and in the gold-set provenance record.
+  A corpus carrying none of them ingests to the same text, the same `doc_id`s, and the same
+  character offsets, with the new fields recorded as absent -- that is the invariant labels depend
+  on, and it is what the check asserts. The widened row moves `corpus_fingerprint` once, by design:
+  every fingerprint assertion in the suite is relative and no committed fixture pins a literal, so
+  nothing in `make ci` needs surgery, and a store built before the change reports stale through the
+  existing `stale_store_message` path and is rebuilt with `llb refresh-index` or
+  `llb build-index`.
+- Documentation target: a new `docs/impl/current/data-prep/acquired-provenance.md` topic page,
+  its row added to the [data prep](current/data-prep.md) area index in the same change, and a
+  pointer from
+  [mixed-corpus ingestion](current/data-prep/ingestion-corpora.md#governance-coverage-at-ingestion).
+
+#### acquired-corpus-roundtrip-fixture
+
+The projection is written down in [the contract](../design/acquired-corpus-projection.md) and
+checked nowhere, so either side can rename a field and find out from a reader months later. The
+contract's own conformance clause asks for a committed fixture, and this is the consuming half of
+it.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: `acquired-corpus-provenance-fields` -- there is nothing to assert until the fields
+  are read. The producing side maintains the rendering half against the same contract.
+- User-visible outcome: a projected corpus is verified to ingest, and a drifted field name fails a
+  check instead of passing silently as an ignored key.
+- Scope boundary: in scope -- a committed fixture corpus of roughly twenty documents in the
+  projection shape (text plus sidecar, including at least one revision pair and one
+  non-redistributable document for the tasks below), and a check that ingests it and asserts every
+  projected field lands. Out of scope -- generating the fixture from a live acquisition service,
+  any network access in the check, and asserting anything about how the producer derived the
+  values.
+- Data and artifact paths: `samples/corpora/acquired_projection_v1/` and its ingestion check under
+  `tests/llb/prep/`.
+- Execution path: CPU-only, inside `make ci`.
+- Acceptance gates: `make ci` green; the fixture ingests with every document reported `ok`; renaming
+  one projected field in the fixture sidecar fails the check with that field named, so the check is
+  shown to have teeth.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, conformance section.
+
+#### document-revision-semantics
+
+The reuse contract in `_ingest_text_file` treats an unchanged `source_sha256` as a reused document
+and a changed one as a rewrite of the same `doc_id`. Upstream sources are revised, and an in-place
+rewrite silently invalidates every gold span whose character offsets point into the previous text --
+the labels still load, they simply point at different words.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: `acquired-corpus-provenance-fields` -- the branch keys on `revision_of` and on
+  `source_system` naming an acquisition run.
+- User-visible outcome: a revised source produces a new document version, and labels written against
+  the previous version keep resolving instead of silently pointing at different text.
+- Scope boundary: in scope -- the revision rule for documents whose `source_system` names an
+  acquisition run, its enforcement at ingest keyed on `revision_of`, retention of the superseded
+  version in the corpus and its manifest row, and the deletion-propagation interaction (a superseded
+  version is retained, not treated as a removed source). Out of scope -- the local-file lane, whose
+  existing reuse and refresh behavior is unchanged; choosing which version a gold set should use,
+  which is a review decision; and any supersession claim about content, which stays with
+  [the conflict audit](current/data-prep/conflict-detection.md).
+- Data and artifact paths: `src/llb/prep/corpus/ingest_text.py`, `src/llb/prep/corpus/ingest.py`,
+  `src/llb/prep/corpus/fingerprints.py`, and the revision pair in
+  `samples/corpora/acquired_projection_v1/`.
+- Execution path: CPU-only. Ingest the fixture, replace one document with its revision, re-ingest,
+  and resolve a span recorded against the first version.
+- Acceptance gates: `make ci` green. Re-ingesting a corpus whose upstream text was revised yields a
+  new document version with the previous version retained and its spans still resolving. An
+  attempted in-place update of an acquisition-sourced document fails with the document named rather
+  than succeeding quietly. The same sequence on a local-file corpus behaves exactly as it does
+  today.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, with the refresh
+  interaction noted in
+  [mixed-corpus ingestion](current/data-prep/ingestion-corpora.md#refresh-and-downstream-workflows).
+
+#### corpus-version-binding
+
+`corpus_fingerprint` identifies a corpus but not what produced it, so a gold set cannot name the
+corpus version its source spans are valid against, and a bundle built on acquired material can be
+approximated but not reproduced.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: `acquired-corpus-provenance-fields` -- the binding is to `acquisition_run_id`.
+- User-visible outcome: a gold set names the corpus version it was built against, and that version
+  names the acquisition run behind it, so a bundle is reproduced rather than approximated.
+- Scope boundary: in scope -- binding the corpus fingerprint to the `acquisition_run_id` values the
+  corpus carries and recording that binding in the gold-set bundle record. Out of scope --
+  re-running acquisition, which belongs to the producing service; resolving a run id against the
+  producer's store, which needs no network access here; and any change to how the fingerprint itself
+  is computed.
+- Data and artifact paths: `src/llb/prep/corpus/fingerprints.py`, the gold-set bundle record under
+  `$DATA_DIR/<method>/<run>/`, and `samples/corpora/acquired_projection_v1/`.
+- Execution path: CPU-only, inside `make ci`.
+- Acceptance gates: `make ci` green. A bundle built on an acquisition-sourced corpus names both the
+  corpus fingerprint and the acquisition run; one built on a local corpus records the absence
+  explicitly rather than leaving the field blank, because a blank field cannot be told apart from an
+  unanswered question. A corpus mixing two acquisition runs records both rather than picking one.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, version-binding
+  section.
+
+#### export-redistribution-gate
+
+`acl_label` covers who may READ a document inside a run; nothing covers whether the material may be
+copied off the host. Corpus-derived text leaves through the fine-tune export
+(`src/llb/finetune/dataset.py`), the contrastive-pair export (`src/llb/finetune/embedder/pairs.py`),
+and every opt-in frontier path behind `egress_consent`, and none of them can currently refuse
+material acquired on terms that forbid redistribution.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: `acquired-corpus-provenance-fields` -- the check keys on `licence`.
+- User-visible outcome: an export refuses material whose recorded terms forbid redistribution, so
+  the producing side's local-only determination is enforced where the material could actually leave.
+- Scope boundary: in scope -- one shared redistribution check reused by every export and every
+  egress path, keyed on the `licence` field the projection carries, and a refusal that names the
+  offending document. Out of scope -- MAKING the determination, which is the producing service's
+  responsibility and is consumed here as a recorded fact; access control, which `acl_label` already
+  covers; and runtime guardrails in an application embedding a recommended model, which
+  [the egress boundary](../design/spec.md#data-egress-boundary) puts outside this project.
+- Data and artifact paths: `src/llb/finetune/dataset.py`, `src/llb/finetune/embedder/pairs.py`,
+  `src/llb/prep/ontology/endpoints/builder.py`, and the non-redistributable document in
+  `samples/corpora/acquired_projection_v1/`.
+- Execution path: CPU-only, inside `make ci`; no frontier call is made, the consent seam is
+  exercised with an injected fake.
+- Acceptance gates: `make ci` green. A fixture containing one non-redistributable document causes
+  each export path to REFUSE, naming that document, rather than to filter it -- a partial export
+  that looks complete is the failure this prevents. Removing the gate makes the test fail. A corpus
+  with no `licence` field exports exactly as it does today.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
+  [data egress](current/scope-boundaries.md#data-egress) boundary.
+
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
 #### conflict-adjudicator-think-control (optional)
