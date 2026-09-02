@@ -85,6 +85,32 @@ make build-index CORPUS=<out-dir>
 Nothing new is passed on the command line: the sidecar is the only input, and a corpus carrying no
 sidecar takes exactly the path it did before.
 
+## Projection conformance fixture
+
+`samples/corpora/acquired_projection_v1/` is the committed consuming-side fixture for the
+[projection contract](../../../design/acquired-corpus-projection.md). It contains twenty synthetic
+documents and one complete sidecar per document. The plant includes one revision pair
+(`fixture-doc-02.md` revises `fixture-doc-01.md`) and one document whose `licence` is `local-only`,
+so later revision and redistribution work can use the same seam without inventing another corpus.
+Source URIs, capture ids, and payload digests are unique per document.
+
+`tests/llb/prep/test_acquired_projection_roundtrip.py` enforces both halves of the consuming
+contract inside `make ci`:
+
+- fixture shape -- exactly twenty text/sidecar pairs, every sidecar supplying all twelve projected
+  fields (the five upstream-supplied operator fields plus the seven acquired fields), with no
+  orphan sidecar;
+- ingestion -- all twenty documents report `ok`, their text lands byte-for-byte, and every supplied
+  value agrees with the corresponding manifest field;
+- negative control -- each of the twelve field names is renamed in turn, and the check must fail
+  with the missing original field named. This first checks the sidecar keys because ordinary
+  ingestion deliberately records an absent governance value as `None` and ignores additive unknown
+  keys; comparing only the resulting manifest would therefore let a rename pass silently.
+
+The fixture is repo-authored and the check has no network, model, or GPU dependency. It validates
+the projection shape the consumer accepts, not how an acquisition service derived a URI, digest,
+licence determination, or document identity.
+
 ## Tests
 
 `tests/llb/prep/test_corpus_acquired_provenance.py` pins the whole path: the seven fields read into
@@ -96,16 +122,18 @@ moving the corpus fingerprint (parametrized, so a field silently dropped from th
 gold-set provenance record carrying the fields, or recording their absence. The
 `GOVERNANCE_FIELDS`-versus-`CorpusItem` agreement the splat depends on is asserted directly.
 `tests/llb/prep/ontology/drafting/test_ontology_draft.py` asserts the same absence in the full
-draft-flow bundle.
+draft-flow bundle. The committed projection's positive and drifted-name checks live in
+`tests/llb/prep/test_acquired_projection_roundtrip.py` as described above.
 
 ## Evidence
 
 On 2026-09-02 on this CUDA host, all CPU-only:
 
-- `make ingest-corpus` over a two-document projected fixture (`reg-0001.md` at `version` 1 with
-  `licence: redistributable`, `reg-0002.md` at `version` 2 with `licence: local-only` and
-  `revision_of: reg-0001.md`) ingested 2 of 2 documents with all seven fields present and correct
-  on both manifest items, and reported 1 of 1 document pair orderable.
+- `make ci` completed with 4,794 tests passed and 50 deselected. Within it, the
+  acquired-projection conformance check ingested all 20 committed documents with status `ok` and
+  matched all 12 supplied sidecar fields on every manifest item. Its 12 of 12 deliberate field
+  renames failed with the missing original field named. The reading: the committed seam now detects
+  a producer/consumer field-name drift instead of accepting the renamed value as an ignored key.
 - `make ingest-corpus CORPUS_ROOT=samples/corpus CORPUS_MIN_CHARS=1` staged both committed fixture
   documents byte-identically to their sources (`diff -r` clean) with all seven fields present and
   `None`, and kept the existing 0-of-2 dated, 0-of-1 orderable governance coverage. The reading:
@@ -115,6 +143,7 @@ On 2026-09-02 on this CUDA host, all CPU-only:
   its meta. Feeding the pre-change fingerprint of `samples/corpus` to `stale_store_message` against
   the post-change corpus returned the rebuild message, which is the path an existing store takes.
 
-What would overturn this: a producer rendering a field name the projection does not list (it would
-be dropped silently, which is what the round-trip fixture under the same capability is for), or a
-consumer reading `ChunkRecord.metadata` positionally rather than by key.
+What would overturn this: a real producer no longer rendering the committed fixture shape, a new
+required projected field being added without widening the shared field tuples and fixture, or a
+consumer reading `ChunkRecord.metadata` positionally rather than by key. The fixture deliberately
+does not establish that an upstream producer derived any projected value correctly.

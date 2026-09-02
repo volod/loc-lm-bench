@@ -76,34 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus provenance -- `corpus-provenance`
 
-#### acquired-corpus-roundtrip-fixture
-
-The projection is written down in [the contract](../design/acquired-corpus-projection.md) and
-checked nowhere, so either side can rename a field and find out from a reader months later. The
-contract's own conformance clause asks for a committed fixture, and this is the consuming half of
-it.
-
-- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
-- Agent status: CLEAR
-- Dependencies: none. Ingestion reads every projected field already
-  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)); the producing side maintains
-  the rendering half against the same contract.
-- User-visible outcome: a projected corpus is verified to ingest, and a drifted field name fails a
-  check instead of passing silently as an ignored key.
-- Scope boundary: in scope -- a committed fixture corpus of roughly twenty documents in the
-  projection shape (text plus sidecar, including at least one revision pair and one
-  non-redistributable document for the tasks below), and a check that ingests it and asserts every
-  projected field lands. Out of scope -- generating the fixture from a live acquisition service,
-  any network access in the check, and asserting anything about how the producer derived the
-  values.
-- Data and artifact paths: `samples/corpora/acquired_projection_v1/` and its ingestion check under
-  `tests/llb/prep/`.
-- Execution path: CPU-only, inside `make ci`.
-- Acceptance gates: `make ci` green; the fixture ingests with every document reported `ok`; renaming
-  one projected field in the fixture sidecar fails the check with that field named, so the check is
-  shown to have teeth.
-- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, conformance section.
-
 #### document-revision-semantics
 
 The reuse contract in `_ingest_text_file` treats an unchanged `source_sha256` as a reused document
