@@ -9,6 +9,7 @@ from typing import Any
 from llb.prep.pdf.model import PDF_SUFFIX
 from llb.prep.pdf.reuse import _sha256_file
 from llb.prep.corpus.governance import (
+    is_acquisition_source_system,
     preserve_ingestion_time,
     source_governance,
 )
@@ -149,6 +150,7 @@ def _ingest_text_file(
     default_source_system: str,
     default_acl_label: str | None,
     ingestion_time: str,
+    revision_history: dict[str, dict[str, Any]],
 ) -> CorpusItem:
     source = path.relative_to(root).as_posix()
     doc_id = source  # preserve the relative path so RAG/ontology keep the same doc id
@@ -164,6 +166,20 @@ def _ingest_text_file(
         default_acl_label=default_acl_label,
         ingestion_time=ingestion_time,
     )
+    historical = revision_history.get(source)
+    if (
+        historical is not None
+        and historical.get("status") == "ok"
+        and historical.get("source_sha256") != source_sha256
+        and (
+            is_acquisition_source_system(governance.get("source_system"))
+            or is_acquisition_source_system(historical.get("source_system"))
+        )
+    ):
+        raise ValueError(
+            f"acquired document '{source}' changed in place; emit the revision under a new "
+            f"document id and set revision_of to '{source}'"
+        )
     governance = preserve_ingestion_time(prev, governance)
     if (
         not refresh

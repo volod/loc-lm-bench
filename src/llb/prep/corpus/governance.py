@@ -35,6 +35,15 @@ _CYRILLIC = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
 _LATIN = re.compile(r"[A-Za-z]")
 
 
+def is_acquisition_source_system(value: object) -> bool:
+    """Whether a source-system value names an upstream acquisition run.
+
+    The projection contract reserves ``local`` for operator directories. Every non-empty,
+    non-local value therefore opts that document into the acquired, append-only lane.
+    """
+    return isinstance(value, str) and bool(value.strip()) and value != DEFAULT_SOURCE_SYSTEM
+
+
 def utc_ingestion_time() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

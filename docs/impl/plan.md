@@ -76,40 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus provenance -- `corpus-provenance`
 
-#### document-revision-semantics
-
-The reuse contract in `_ingest_text_file` treats an unchanged `source_sha256` as a reused document
-and a changed one as a rewrite of the same `doc_id`. Upstream sources are revised, and an in-place
-rewrite silently invalidates every gold span whose character offsets point into the previous text --
-the labels still load, they simply point at different words.
-
-- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
-- Agent status: CLEAR
-- Dependencies: none. The branch keys on `revision_of` and on `source_system` naming an
-  acquisition run, both read at ingest today ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
-- User-visible outcome: a revised source produces a new document version, and labels written against
-  the previous version keep resolving instead of silently pointing at different text.
-- Scope boundary: in scope -- the revision rule for documents whose `source_system` names an
-  acquisition run, its enforcement at ingest keyed on `revision_of`, retention of the superseded
-  version in the corpus and its manifest row, and the deletion-propagation interaction (a superseded
-  version is retained, not treated as a removed source). Out of scope -- the local-file lane, whose
-  existing reuse and refresh behavior is unchanged; choosing which version a gold set should use,
-  which is a review decision; and any supersession claim about content, which stays with
-  [the conflict audit](current/data-prep/conflict-detection.md).
-- Data and artifact paths: `src/llb/prep/corpus/ingest_text.py`, `src/llb/prep/corpus/ingest.py`,
-  `src/llb/prep/corpus/fingerprints.py`, and the revision pair in
-  `samples/corpora/acquired_projection_v1/`.
-- Execution path: CPU-only. Ingest the fixture, replace one document with its revision, re-ingest,
-  and resolve a span recorded against the first version.
-- Acceptance gates: `make ci` green. Re-ingesting a corpus whose upstream text was revised yields a
-  new document version with the previous version retained and its spans still resolving. An
-  attempted in-place update of an acquisition-sourced document fails with the document named rather
-  than succeeding quietly. The same sequence on a local-file corpus behaves exactly as it does
-  today.
-- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, with the refresh
-  interaction noted in
-  [mixed-corpus ingestion](current/data-prep/ingestion-corpora.md#refresh-and-downstream-workflows).
-
 #### corpus-version-binding
 
 `corpus_fingerprint` identifies a corpus but not what produced it, so a gold set cannot name the

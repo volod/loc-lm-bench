@@ -3,11 +3,11 @@
 Status: **PARTLY IMPLEMENTED data contract**. It describes the shape an upstream acquisition
 service renders into, and what this project reads back from it. Every sidecar field below is read
 at ingestion today and carried into the manifest item, chunk metadata, and the gold-set provenance
-record ([acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md)). The
-round-trip fixture now checks the projection shape; what is still open in
-[the plan](../impl/plan.md) is ACTING on the values through revision semantics, the corpus-version
-binding, and the redistribution gate. The capability itself, its boundary, and why the seam is
-shaped this way are in
+record; acquired revisions are append-only and retain their superseded versions
+([acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md)). The round-trip
+fixture checks both the projection shape and that revision lifecycle. What is still open in
+[the plan](../impl/plan.md) is binding a gold set to its corpus version and enforcing the
+redistribution gate. The capability itself, its boundary, and why the seam is shaped this way are in
 [the spec section that owns it](spec.md#corpus-provenance-and-acquisition-boundary).
 
 This is the sibling of the [external-service draft contract](external-draft-contract.md). That one

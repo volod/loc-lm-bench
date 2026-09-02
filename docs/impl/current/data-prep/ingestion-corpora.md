@@ -61,10 +61,18 @@ supersession needs. What reads the other seven is in
 
 ### Refresh and downstream workflows
 
-Deletion propagation is explicit: a source removed from the input root is removed from the next
-`corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
-manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
-old staged outputs. The rollback unit is the immutable store directory built from a manifest
+Deletion propagation is explicit for the local lane: a source removed from the input root is
+removed from the next `corpus_manifest.json`, its staged output file is deleted from the canonical
+corpus, and the manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also
+clean up stale old staged outputs. An acquired document is different: non-local `source_system`
+marks it append-only, an in-place text change is refused, and a new document whose `revision_of`
+names a previously staged version retains that version's file and manifest row instead of reporting
+it removed. `src/llb/prep/corpus/revisions.py` follows the full known ancestry, including during a
+forced refresh; references that predate the local manifest remain provenance-only. Both old and new
+rows therefore enter the normal corpus and per-document fingerprints, so stores see an added
+revision rather than a modified document whose offsets moved. Details and the fixture result are in
+[acquired-corpus provenance](acquired-provenance.md#append-only-document-revisions). The rollback
+unit is the immutable store directory built from a manifest
 fingerprint (`llb refresh-index` publishes each refresh as a new
 `$DATA_DIR/llb/rag/generations/<utc-ts>/` generation; deleting the newest one rolls back).
 

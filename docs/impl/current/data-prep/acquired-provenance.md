@@ -8,9 +8,10 @@ where the text came from: `ingestion_time` is a local event, and `source_sha256`
 file rather than the bytes a publisher served. This page covers the fields that close that gap --
 what is read, from where, and what each downstream artifact does with them.
 
-Reading is all that lands here. Nothing yet ACTS on a value: binding a bundle to an acquisition run,
-revision semantics, and the redistribution gate are separate open work under the same capability.
-The contract these fields are read against is
+Ingestion also acts on document identity and `revision_of`: the acquired lane is append-only, so a
+revision retains the text and manifest row its predecessor's offsets name. Binding a bundle to an
+acquisition run and enforcing the redistribution gate remain separate open work under the same
+capability. The contract these fields are read against is
 [the acquired-corpus projection](../../../design/acquired-corpus-projection.md).
 
 ## The seven fields and where they come from
@@ -75,6 +76,30 @@ re-read every ingest, so the new `acquisition_run_id` lands in the manifest and 
 build. `preserve_ingestion_time` keeps the prior `ingestion_time` only while every other governance
 field is unchanged, so an acquisition change also re-stamps the ingest time.
 
+## Append-only document revisions
+
+The projection reserves `source_system: local` for operator directories. A non-empty, non-local
+value selects the acquired lane. In that lane, changing the bytes at an already manifested source
+path raises a `ValueError` naming the document and instructing the producer to emit a new document
+identity with `revision_of`; neither the staged bytes nor the manifest is rewritten. The local-file
+lane keeps its existing changed-source replacement behavior.
+
+`src/llb/prep/corpus/revisions.py` follows each current acquired item's `revision_of` through the
+previous manifest. A staged ancestor is carried into the next manifest with `reused: true`, and its
+file is protected from stale-output cleanup. The walk is transitive, so revision three retains
+revision two and revision one even when only revision three remains in the input projection. An
+ancestor named in the prior manifest but missing from the staged corpus fails with that document
+named; a reference older than this corpus, for which no prior row exists, remains valid provenance
+and does not invent a document.
+
+Retention also applies under `--refresh`. Refresh still disables ordinary source reuse and keeps
+the local lane's existing behavior, while a separate read of the prior manifest supplies only the
+acquired immutability check and revision ancestry. Because retained rows remain ordinary `ok`
+manifest items, `corpus_fingerprint` and `corpus_doc_fingerprints` include both versions without a
+second identity mechanism. Gold spans continue to resolve as `(doc_id, char_start, char_end)`
+against the preserved predecessor text; choosing which version a new gold item should cite remains
+a review decision.
+
 ## How to run it
 
 ```bash
@@ -113,7 +138,7 @@ licence determination, or document identity.
 
 ## Tests
 
-`tests/llb/prep/test_corpus_acquired_provenance.py` pins the whole path: the seven fields read into
+`tests/llb/prep/test_corpus_acquired_provenance.py` pins the field path: the seven fields read into
 the manifest item and into chunk metadata; a corpus carrying none of them ingesting to the same
 text, the same `doc_id`s and the same offsets with every field recorded absent; front matter
 refusing to supply an acquired field while still supplying an operator one; each of the seven
@@ -123,17 +148,29 @@ gold-set provenance record carrying the fields, or recording their absence. The
 `GOVERNANCE_FIELDS`-versus-`CorpusItem` agreement the splat depends on is asserted directly.
 `tests/llb/prep/ontology/drafting/test_ontology_draft.py` asserts the same absence in the full
 draft-flow bundle. The committed projection's positive and drifted-name checks live in
-`tests/llb/prep/test_acquired_projection_roundtrip.py` as described above.
+`tests/llb/prep/test_acquired_projection_roundtrip.py` as described above. That file also runs the
+fixture revision pair as a two-ingest lifecycle, checks the predecessor span after replacement,
+checks both per-document fingerprints and manifest rows, and proves that an in-place acquired edit
+fails with the document named. The existing mixed-ingest changed-text test remains the local-lane
+control.
 
 ## Evidence
 
-On 2026-09-02 on this CUDA host, all CPU-only:
+On 2026-09-02 on this RTX 4060 Ti 16 GB CUDA host, all CPU-only and model-free:
 
-- `make ci` completed with 4,794 tests passed and 50 deselected. Within it, the
+- `make ci` completed with 4,796 tests passed and 50 deselected. Within it, the
   acquired-projection conformance check ingested all 20 committed documents with status `ok` and
   matched all 12 supplied sidecar fields on every manifest item. Its 12 of 12 deliberate field
   renames failed with the missing original field named. The reading: the committed seam now detects
   a producer/consumer field-name drift instead of accepting the renamed value as an ignored key.
+- The same gate exercised the committed revision pair in sequence: the first ingest staged the 19
+  documents other than `fixture-doc-02.md`; the input then removed `fixture-doc-01.md` and supplied
+  its revision. The second ingest reported 20 `ok` documents, no removed source, both manifest and
+  per-document fingerprint rows, and the original `three years` span still resolving in the
+  predecessor while the revision said `five years`. An in-place edit of the acquired predecessor
+  was refused with its name, while the local changed-text control continued to replace its staged
+  file. The reading: a producer following `revision_of` preserves existing labels, and one reusing
+  an acquired identity cannot silently move them.
 - `make ingest-corpus CORPUS_ROOT=samples/corpus CORPUS_MIN_CHARS=1` staged both committed fixture
   documents byte-identically to their sources (`diff -r` clean) with all seven fields present and
   `None`, and kept the existing 0-of-2 dated, 0-of-1 orderable governance coverage. The reading:
@@ -144,6 +181,8 @@ On 2026-09-02 on this CUDA host, all CPU-only:
   the post-change corpus returned the rebuild message, which is the path an existing store takes.
 
 What would overturn this: a real producer no longer rendering the committed fixture shape, a new
-required projected field being added without widening the shared field tuples and fixture, or a
-consumer reading `ChunkRecord.metadata` positionally rather than by key. The fixture deliberately
-does not establish that an upstream producer derived any projected value correctly.
+required projected field being added without widening the shared field tuples and fixture, a
+revision run dropping either manifested ancestor, or a consumer reading `ChunkRecord.metadata`
+positionally rather than by key. The fixture deliberately does not establish that an upstream
+producer derived any projected value correctly, and the finite two-version sequence does not prove
+producer-side immutability.

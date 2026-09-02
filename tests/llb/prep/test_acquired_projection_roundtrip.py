@@ -12,6 +12,7 @@ from llb.prep.corpus.governance_fields import (
     OPERATOR_GOVERNANCE_FIELDS,
 )
 from llb.prep.corpus.ingest import CORPUS_MANIFEST, ingest_corpus
+from llb.prep.corpus.fingerprints import corpus_doc_fingerprints
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_ROOT = PROJECT_ROOT / "samples" / "corpora" / "acquired_projection_v1"
@@ -75,6 +76,56 @@ def test_fixture_covers_revision_and_redistribution_boundaries() -> None:
     for identity_field in ("source_uri", "capture_id", "payload_digest"):
         values = [metadata[identity_field] for metadata in sidecars.values()]
         assert len(set(values)) == EXPECTED_DOCUMENT_COUNT, identity_field
+
+
+def test_fixture_revision_retains_superseded_document_and_span(tmp_path: Path) -> None:
+    root = tmp_path / "acquired_projection_v1"
+    shutil.copytree(FIXTURE_ROOT, root)
+    old_name = "fixture-doc-01.md"
+    revision_name = "fixture-doc-02.md"
+    revision_text = (root / revision_name).read_text(encoding="utf-8")
+    revision_sidecar = _load_sidecar(root / revision_name)
+    (root / revision_name).unlink()
+    (root / f"{revision_name}.metadata.json").unlink()
+    out = tmp_path / "out"
+
+    ingest_corpus(root, out, min_chars=1)
+    old_text = (out / old_name).read_text(encoding="utf-8")
+    span_start = old_text.index("three years")
+    span_end = span_start + len("three years")
+
+    (root / old_name).unlink()
+    (root / f"{old_name}.metadata.json").unlink()
+    (root / revision_name).write_text(revision_text, encoding="utf-8")
+    (root / f"{revision_name}.metadata.json").write_text(
+        json.dumps(revision_sidecar, indent=2) + "\n", encoding="utf-8"
+    )
+    result = ingest_corpus(root, out, min_chars=1)
+
+    assert result.n_docs == EXPECTED_DOCUMENT_COUNT
+    assert result.removed_sources == []
+    assert (out / old_name).read_text(encoding="utf-8")[span_start:span_end] == "three years"
+    assert (out / revision_name).read_text(encoding="utf-8") == revision_text
+    assert set(corpus_doc_fingerprints(out)) >= {old_name, revision_name}
+    manifest = json.loads((out / CORPUS_MANIFEST).read_text(encoding="utf-8"))
+    assert {item["doc_id"] for item in manifest["items"]} >= {old_name, revision_name}
+
+
+def test_acquired_document_rejects_in_place_text_change(tmp_path: Path) -> None:
+    root = tmp_path / "acquired_projection_v1"
+    root.mkdir()
+    name = "fixture-doc-01.md"
+    shutil.copy2(FIXTURE_ROOT / name, root / name)
+    shutil.copy2(FIXTURE_ROOT / f"{name}.metadata.json", root / f"{name}.metadata.json")
+    out = tmp_path / "out"
+    ingest_corpus(root, out, min_chars=1)
+    staged_text = (out / name).read_text(encoding="utf-8")
+
+    (root / name).write_text(staged_text + "\nChanged in place.\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=rf"acquired document '{name}' changed in place"):
+        ingest_corpus(root, out, min_chars=1)
+    assert (out / name).read_text(encoding="utf-8") == staged_text
 
 
 @pytest.mark.parametrize("field", PROJECTED_SIDECAR_FIELDS)

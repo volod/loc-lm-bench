@@ -30,6 +30,7 @@ from llb.prep.corpus.governance import (
 )
 from llb.prep.corpus.fingerprints import manifest_items_fingerprint
 from llb.prep.corpus.governance_report import ingestion_governance_coverage
+from llb.prep.corpus.revisions import retain_revision_ancestors
 from llb.prep.corpus.ingest_text import (
     CORPUS_MANIFEST,
     CorpusIngestResult,
@@ -163,7 +164,8 @@ def ingest_corpus(
 
     items: list[CorpusItem] = []
     ingestion_time = utc_ingestion_time()
-    previous = {} if refresh else _previous_manifest_items(target)
+    revision_history = _previous_manifest_items(target)
+    previous = {} if refresh else revision_history
     if pdfs:
         pdf_result = ingest_pdf_corpus(
             source_root,
@@ -198,9 +200,11 @@ def ingest_corpus(
                 source_system,
                 acl_label,
                 ingestion_time,
+                revision_history,
             )
         )
 
+    items = retain_revision_ancestors(target, items, revision_history)
     removed_sources = _cleanup_stale_outputs(target, previous, items)
     item_rows = [asdict(item) for item in items]
     result = CorpusIngestResult(
