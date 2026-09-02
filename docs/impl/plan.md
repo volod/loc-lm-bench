@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
-#### artifact-contract-core-and-catalog
-
-Durable records use several unrelated contract idioms: Pydantic models without embedded identity,
-strict versioned robotics models, typed dictionaries, and raw JSON objects with local or absent
-version fields. Establish one low-dependency contract registry and evolution path before migrating
-the domain producers.
-
-- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
-- Agent status: CLEAR
-- Dependencies: none.
-- User-visible outcome: an operator or external consumer can resolve a stable schema identity and
-  version, validate a record with portable JSON Schema, and see whether this build can read or
-  migrate it before starting downstream work.
-- Scope boundary: in scope -- strict version-specific Pydantic bases, a registry of contract ids and
-  supported versions, deterministic one-step migrations, JSON/JSONL/YAML/CSV/Parquet dataset
-  bindings, generated JSON Schema, an ODCS-aligned catalog projection, and a narrow typed extension
-  mechanism. Out of scope -- inferring schemas from sample data, remodeling third-party databases,
-  indexes or model weights, and accepting unknown fields outside a declared extension point.
-- Data and artifact paths: shared models under `src/llb/core/contracts/`, registry and IO modules
-  under `src/llb/artifacts/`, generated schemas and catalog entries under `schemas/artifacts/`, and
-  compatibility fixtures under `samples/artifact_contracts/`.
-- Execution path: add a `make check-artifact-contracts` target with a `##` help description and put
-  its deterministic generation-drift check inside `make ci`; no GPU or service is required.
-- Acceptance gates: `make ci` green; current, supported-old, unsupported-future, missing-identity,
-  ambiguous-migration, and invalid-source fixtures exercise dispatch and refusal; generated schema
-  drift without a semantic version and compatibility declaration fails; an ODCS validator and a
-  JSON Schema validator can check the exported catalog and records without importing `llb`.
-- Documentation target: a new
-  `docs/impl/current/artifact-contracts/foundation-and-evolution.md` topic, its new area index, and
-  the operator command index for the contract check.
-
 #### artifact-contract-data-prep-migration
 
 Move the data-preparation exchange surface onto the registry first because retrieval, evaluation,
@@ -115,7 +84,7 @@ plus the corpus, PDF, gold, conflict, linkage, and review datasets around it.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: `artifact-contract-core-and-catalog`.
+- Dependencies: [base](current/artifact-contracts/foundation-and-evolution.md); none open.
 - User-visible outcome: corpus and draft bundles identify every dataset member and can be validated
   or upgraded before a store build, review session, or external handoff reads them.
 - Scope boundary: in scope -- project-owned machine-readable producers and consumers under

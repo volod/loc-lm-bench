@@ -1,0 +1,5 @@
+{
+  "extra": "strict validation must reject this field",
+  "schema_id": "llb.artifact-contract.compatibility-probe",
+  "schema_version": "1.0.0"
+}

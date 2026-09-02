@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "ContractReference": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_id": {
+          "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+          "title": "Schema Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_id",
+        "schema_version"
+      ],
+      "title": "ContractReference",
+      "type": "object"
+    },
+    "DatasetMember": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "json",
+            "jsonl",
+            "yaml",
+            "csv",
+            "parquet",
+            "opaque"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "granularity": {
+          "enum": [
+            "document",
+            "row",
+            "table",
+            "opaque"
+          ],
+          "title": "Granularity",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "member_id": {
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "title": "Member Id",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "record_contract": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContractReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "member_id",
+        "path",
+        "format",
+        "media_type",
+        "granularity",
+        "digest"
+      ],
+      "title": "DatasetMember",
+      "type": "object"
+    },
+    "DatasetQualityCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "structural",
+            "domain"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "kind",
+        "description"
+      ],
+      "title": "DatasetQualityCheck",
+      "type": "object"
+    },
+    "DatasetRelationship": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "from_member": {
+          "minLength": 1,
+          "title": "From Member",
+          "type": "string"
+        },
+        "to_member": {
+          "minLength": 1,
+          "title": "To Member",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_member",
+        "to_member",
+        "description"
+      ],
+      "title": "DatasetRelationship",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.dataset-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "dataset_id": {
+      "minLength": 1,
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "extensions": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Extensions",
+      "type": "object"
+    },
+    "members": {
+      "items": {
+        "$ref": "#/$defs/DatasetMember"
+      },
+      "minItems": 1,
+      "title": "Members",
+      "type": "array"
+    },
+    "owner": {
+      "minLength": 1,
+      "title": "Owner",
+      "type": "string"
+    },
+    "quality_checks": {
+      "items": {
+        "$ref": "#/$defs/DatasetQualityCheck"
+      },
+      "minItems": 1,
+      "title": "Quality Checks",
+      "type": "array"
+    },
+    "relationships": {
+      "items": {
+        "$ref": "#/$defs/DatasetRelationship"
+      },
+      "title": "Relationships",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.dataset-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "dataset_id",
+    "description",
+    "owner",
+    "members",
+    "quality_checks"
+  ],
+  "title": "DatasetManifest",
+  "type": "object"
+}

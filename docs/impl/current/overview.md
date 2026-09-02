@@ -487,6 +487,7 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
+| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts` |
 | Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `compare-conflict-granularity`,
 `recompute-conflict-stage`, `calibrate-conflict-adjudicator`, `measure-duplicate-residue` |
 | Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |
@@ -510,6 +511,7 @@ The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cl
 
 ```text
 src/llb/
+  artifacts/        version registry, compatibility reads, dataset IO, schema/catalog generation
   cli/              Typer command modules and config helpers
   core/             canonical RunConfig, contracts, env and filesystem helpers
   goldset/          canonical gold schema, validation, splits, review ledger tooling
@@ -543,6 +545,7 @@ YAML/JSON fixture files are grouped by use:
 
 | Path | Contents |
 | --- | --- |
+| `samples/artifact_contracts/` | contract compatibility cases, dataset manifest, external validator |
 | `samples/configs/` | candidate model manifest and run-eval config examples |
 | `samples/benchmarks/` | category-suite case seeds and tool catalogs |
 | `samples/data-prep/` | import and synthetic RAG-item fixtures |

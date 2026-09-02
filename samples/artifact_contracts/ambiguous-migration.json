@@ -1,0 +1,5 @@
+{
+  "name": "ambiguous migration contract fixture",
+  "schema_id": "llb.artifact-contract.compatibility-probe",
+  "schema_version": "1.0.0"
+}

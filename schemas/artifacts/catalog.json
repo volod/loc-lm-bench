@@ -1,0 +1,109 @@
+{
+  "contracts": [
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        },
+        {
+          "format": "yaml",
+          "granularity": "document",
+          "media_type": "application/yaml"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Catalog version 1 remains readable for this release line.",
+      "description": "Catalog of artifact schema families readable by this build.",
+      "extension_point": null,
+      "schema_id": "llb.artifact-catalog",
+      "schema_paths": {
+        "1.0.0": "llb.artifact-catalog/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        },
+        {
+          "format": "yaml",
+          "granularity": "document",
+          "media_type": "application/yaml"
+        },
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        },
+        {
+          "format": "csv",
+          "granularity": "row",
+          "media_type": "text/csv"
+        },
+        {
+          "format": "parquet",
+          "granularity": "row",
+          "media_type": "application/vnd.apache.parquet"
+        }
+      ],
+      "compatibility": [
+        {
+          "description": "Rename name to label without changing its meaning.",
+          "from_version": "1.0.0",
+          "kind": "migration",
+          "to_version": "2.0.0"
+        }
+      ],
+      "current_version": "2.0.0",
+      "deprecation_policy": "Version 1 is read-and-migrate; version 2 is the only write form.",
+      "description": "Conformance family proving strict validation and deterministic migration.",
+      "extension_point": "extensions: scalar values only",
+      "schema_id": "llb.artifact-contract.compatibility-probe",
+      "schema_paths": {
+        "1.0.0": "llb.artifact-contract.compatibility-probe/1.0.0.schema.json",
+        "2.0.0": "llb.artifact-contract.compatibility-probe/2.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        },
+        {
+          "format": "yaml",
+          "granularity": "document",
+          "media_type": "application/yaml"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Manifest version 1 remains readable for this release line.",
+      "description": "Physical dataset members bound to logical record contracts.",
+      "extension_point": "extensions: scalar values only",
+      "schema_id": "llb.dataset-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.dataset-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    }
+  ],
+  "odcs_api_version": "v3.1.0",
+  "schema_id": "llb.artifact-catalog",
+  "schema_version": "1.0.0"
+}

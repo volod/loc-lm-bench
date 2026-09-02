@@ -1,0 +1,5 @@
+{
+  "label": "unsupported future contract fixture",
+  "schema_id": "llb.artifact-contract.compatibility-probe",
+  "schema_version": "3.0.0"
+}

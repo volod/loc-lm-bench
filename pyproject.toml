@@ -116,6 +116,9 @@ pdf-quality = ["docling[rapidocr]>=2.0", "markitdown[pdf]>=0.1", "unstructured[p
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",
+  # Contract exports are validated as an external consumer would validate them, without importing
+  # llb. Keep the standards validator direct rather than relying on an unrelated extra to bring it.
+  "jsonschema>=4.23",
   "textual>=0.60",
   # Upper bound: the formatter's output is version-sensitive, so a floating major would let a
   # release reformat the tree under CI. Lint rules are pinned by `[tool.ruff.lint].select`.

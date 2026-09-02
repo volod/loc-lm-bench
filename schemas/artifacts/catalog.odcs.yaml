@@ -1,0 +1,71 @@
+version: 1.0.0
+kind: DataContract
+apiVersion: v3.1.0
+id: llb-artifact-contract-catalog
+name: loc-lm-bench artifact contract catalog
+status: active
+domain: artifact-contracts
+description:
+  purpose: Publish project-owned record identities, physical bindings, and checks.
+  usage: Resolve compatibility before reading or acting on an artifact.
+  limitations: Schema validation does not replace domain quality or authorization
+    gates.
+team:
+  id: llb-maintainers
+  name: loc-lm-bench maintainers
+  description: Owners of project artifact contract evolution.
+schema:
+- id: llb-artifact-catalog
+  name: llb.artifact-catalog
+  logicalType: object
+  physicalType: file
+  physicalName: llb.artifact-catalog/1.0.0.schema.json
+  description: Catalog of artifact schema families readable by this build.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+    - yaml
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-artifact-contract-compatibility-probe
+  name: llb.artifact-contract.compatibility-probe
+  logicalType: object
+  physicalType: file
+  physicalName: llb.artifact-contract.compatibility-probe/2.0.0.schema.json
+  description: Conformance family proving strict validation and deterministic migration.
+  customProperties:
+  - property: schemaVersion
+    value: 2.0.0
+  - property: physicalFormats
+    value:
+    - json
+    - yaml
+    - jsonl
+    - csv
+    - parquet
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-dataset-manifest
+  name: llb.dataset-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.dataset-manifest/1.0.0.schema.json
+  description: Physical dataset members bound to logical record contracts.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+    - yaml
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.

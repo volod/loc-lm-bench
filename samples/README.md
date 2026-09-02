@@ -4,6 +4,7 @@ Committed sample files are grouped by the workflow that consumes them.
 
 | Directory | Contents | Typical consumers |
 | --- | --- | --- |
+| `artifact_contracts/` | Version dispatch/refusal cases, a bound dataset manifest, and a package-independent schema validator | `make check-artifact-contracts`, artifact contract tests |
 | `configs/` | Candidate model manifest and run-eval YAML examples | `make list-models`, `make prep-models`, `llb run-eval --config` |
 | `benchmarks/` | Small Ukrainian category-suite seeds and catalogs, plus the adversarial answer-gate fixture | `bench-security`, `bench-tooling`, `bench-agentic`, `bench-summarization`, `bench-structured`, `make check-answer-gate`, composite smoke fixtures |
 | `corpora/acquired_projection_v1/` | Synthetic acquired-corpus projection with twenty documents, complete sidecars, a revision pair, and a local-only document | acquired-projection round-trip conformance test |

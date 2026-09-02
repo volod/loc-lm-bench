@@ -1,0 +1,53 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.artifact-contract.compatibility-probe:2.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Current compatibility probe; ``label`` retains the v1 ``name`` meaning.",
+  "properties": {
+    "extensions": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": "Extensions",
+      "type": "object"
+    },
+    "label": {
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.artifact-contract.compatibility-probe",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "label"
+  ],
+  "title": "CompatibilityProbeV2",
+  "type": "object"
+}
