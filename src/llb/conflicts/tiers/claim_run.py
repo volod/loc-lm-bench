@@ -3,7 +3,8 @@
 import logging
 from typing import TYPE_CHECKING
 
-from llb.conflicts.claim.calibration import calibrate_adjudicator, load_calibration_probe
+from llb.conflicts.claim.calibration import calibrate_adjudicator, log_calibration
+from llb.conflicts.claim.probe import load_calibration_probe
 from llb.conflicts.claim.precision import AdjudicatedRow, precision_block
 from llb.conflicts.claim.prefilter import (
     ClaimPrefilterRanking,
@@ -174,15 +175,7 @@ def _calibrate(params: "AuditParams", complete: LLMComplete) -> JsonObject | Non
     """Adjudicate the frozen probe first, so the precision block knows what it may print."""
     if not params.calibrate_adjudicator:
         return None
-    probe = load_calibration_probe(params.calibration_probe)
+    probe = load_calibration_probe(params.calibration_probe, params.probe_tiers)
     calibration = calibrate_adjudicator(probe, complete)
-    _LOG.info(
-        "[conflicts] adjudicator calibration: %s of %s frozen probe pairs agree (accuracy %s, "
-        "Wilson 95%% lower bound %s, gate %s)",
-        calibration["agreements"],
-        calibration["parsed_pairs"],
-        calibration["accuracy"],
-        calibration["accuracy_wilson_95"][0],
-        calibration["min_accuracy_lcb"],
-    )
+    log_calibration(calibration)
     return calibration

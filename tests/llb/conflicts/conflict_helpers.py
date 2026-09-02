@@ -238,20 +238,23 @@ def scripted_completer(script):
     return complete
 
 
-def probe_aware(base, *, correct: bool = True):
+def probe_aware(base, *, correct: bool = True, wrong_tiers: tuple[str, ...] = ()):
     """Wrap an adjudicator so the frozen calibration probe is answered from its own labels.
 
     `correct=True` is an adjudicator that is calibrated by construction; `correct=False` calls
     every complementary probe pair a duplicate, which is the failure mode the gate exists to
-    catch -- it inflates precision on a corpus with nothing to find.
+    catch -- it inflates precision on a corpus with nothing to find. `wrong_tiers` restricts that
+    failure to the named tiers, which is how a model that holds the floor and loses the separator
+    is written down.
     """
-    from llb.conflicts.claim.calibration import load_calibration_probe
+    from llb.conflicts.claim.probe import load_calibration_probe
+
+    def answered(pair) -> str:
+        wrong = not correct or pair.tier in wrong_tiers
+        return pair.relation if pair.actionable or not wrong else "duplicate"
 
     labels = {
-        (pair.left_text, pair.right_text): pair.relation
-        if correct or pair.actionable
-        else "duplicate"
-        for pair in load_calibration_probe().pairs
+        (pair.left_text, pair.right_text): answered(pair) for pair in load_calibration_probe().pairs
     }
 
     def complete(prompt: str) -> str:
@@ -294,15 +297,51 @@ def adjudicated_rows(flags, *, left_keys=None, right_keys=None, parsed=None):
 def calibrated_stub(accuracy_lcb: float = 0.9) -> dict:
     """A calibration payload that clears the gate, so precision tests isolate the precision."""
     from llb.conflicts.claim.calibration import MIN_ADJUDICATOR_ACCURACY_LCB
+    from llb.conflicts.claim.probe import BASE_TIER, HARD_TIER
+
+    def tier(pairs: int, agreements: int, gate: float | None) -> dict:
+        return {
+            "probe_pairs": pairs,
+            "parsed_pairs": pairs,
+            "unparsed_pairs": 0,
+            "agreements": agreements,
+            "accuracy": round(agreements / pairs, 6),
+            "accuracy_wilson_95": [accuracy_lcb, 1.0],
+            "labelled_actionable": pairs // 2,
+            "labelled_complementary": pairs // 2,
+            "recall_on_actionable": 1.0,
+            "specificity_on_complementary": round((agreements - pairs // 2) / (pairs // 2), 6),
+            "min_accuracy_lcb": gate,
+            "gates": gate is not None,
+            "passed": True if gate is not None else None,
+        }
 
     return {
         "probe_id": "test",
-        "parsed_pairs": 24,
-        "agreements": 23,
-        "accuracy": 0.958333,
+        "probe_corpora": {BASE_TIER: "fixture", HARD_TIER: "fixture-hard"},
+        "parsed_pairs": 40,
+        "agreements": 38,
+        "accuracy": 0.95,
         "accuracy_wilson_95": [accuracy_lcb, 1.0],
         "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
+        "tiers": {
+            BASE_TIER: tier(24, 23, MIN_ADJUDICATOR_ACCURACY_LCB),
+            HARD_TIER: tier(16, 15, None),
+        },
+        "tier_separation": {
+            "floor_tier": BASE_TIER,
+            "floor_accuracy": 0.958333,
+            "scored_tiers": {
+                HARD_TIER: {
+                    "accuracy": 0.9375,
+                    "delta_from_floor": -0.020833,
+                    "recall_on_actionable": 1.0,
+                    "specificity_on_complementary": 0.875,
+                }
+            },
+        },
         "calibrated": True,
+        "gate_failures": [],
     }
 
 

@@ -140,6 +140,11 @@ The confidence contract is the load-bearing part of this capability:
   significance level, or confidence -- it is a candidate budget or a rank cutoff.
 - Confidence in a conflict comes from the **claim tier's adjudication** against frozen labels, and
   a precision figure is publishable only with its clustered bound.
+- The frozen-label gate is a **floor, not a ranking**. It refuses an adjudicator whose agreement is
+  broken and says nothing about which of two working adjudicators an operator should prefer. That
+  choice is a REPORTED comparison against a harder frozen tier, measured beside the gate and never
+  branched on autonomously; a tier earns the right to gate only once measurement shows it separates
+  adjudicators reproducibly.
 - No autonomous gate branches on the semantic tier's provisional verdict alone.
 - Pursuing a per-pair semantic false-positive rate at this corpus scale is a CLOSED question, not a
   paused one; the four generations of evidence that closed it are recorded, along with what would
@@ -748,7 +753,7 @@ Four rules settle it, in order:
 | 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
 | 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
 | 14 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
-| 15 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 15 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
 | 16 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
 | 17 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
 | 18 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |

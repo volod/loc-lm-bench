@@ -6,9 +6,9 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.cli.prep.conflicts_output import echo_summary, projected_policies
+from llb.cli.prep.conflicts_output import echo_summary, parsed_probe_tiers, projected_policies
 from llb.conflicts.claim.adjudicator import DEFAULT_ADJUDICATOR_TEMPERATURE
-from llb.conflicts.claim.calibration import DEFAULT_CALIBRATION_PROBE
+from llb.conflicts.claim.probe import DEFAULT_CALIBRATION_PROBE, PROBE_TIERS
 from llb.conflicts.constants import (
     CONFLICTS_METHOD,
     DEFAULT_CONTAINMENT_THRESHOLD,
@@ -127,6 +127,12 @@ def audit_corpus_conflicts_cmd(
         help="frozen-label probe for adjudicator calibration "
         f"(default {DEFAULT_CALIBRATION_PROBE})",
     ),
+    probe_tiers: Optional[str] = typer.Option(
+        None,
+        help="comma-separated probe tiers to adjudicate (default: every tier the probe declares, "
+        f"currently {','.join(PROBE_TIERS)}); the floor tier is what gates, so dropping it "
+        "suppresses the precision block",
+    ),
     claim_prefilter: bool = typer.Option(
         False,
         "--claim-prefilter/--no-claim-prefilter",
@@ -236,6 +242,7 @@ def audit_corpus_conflicts_cmd(
             project_dims=project_dims,
             calibrate_adjudicator=calibrate_adjudicator,
             calibration_probe=calibration_probe,
+            probe_tiers=parsed_probe_tiers(probe_tiers),
             adjudicator_temperature=conflict_temperature,
             claim_prefilter=claim_prefilter,
             claim_prefilter_device=claim_prefilter_device,

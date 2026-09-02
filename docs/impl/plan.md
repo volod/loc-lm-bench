@@ -76,37 +76,64 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### conflict-adjudicator-probe-difficulty (optional)
+#### conflict-adjudicator-think-control (optional)
 
-The frozen calibration probe is passed **24/24** by MamayLM-Gemma-3-12B, which means the gate is
-currently proving only that an adjudicator is not badly broken -- a probe nobody fails cannot
-separate a good adjudicator from an adequate one, and the audit will happily quote a precision
-figure from either
-([conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)). Add a
-harder frozen tier: pairs whose actionable/complementary split is genuinely arguable (a restated
-fact under a different heading, two numeric claims about different quantities in the same
-sentence shape, a partial supersession where only one clause changed), score two host-fit model
-families against both tiers, and either raise `MIN_ADJUDICATOR_ACCURACY_LCB` on the evidence or
-record that the gate's job is a floor rather than a ranking.
+`build_adjudicator` sets a model, a backend, a temperature, and a seed, and nothing else, so a
+reasoning model on the Ollama path spends its token budget on reasoning and emits no verdict:
+gemma4:12b returned 30 unparsable completions out of 40 probe pairs and the calibration gate
+correctly refused it ([measured claim-tier
+precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers)).
+`EndpointConfig` already carries `think` and `num_ctx`; the adjudicator never passes them, so one
+of the five registered families cannot serve as an adjudicator at all. Plumb a think control
+through the audit and the calibration command, and re-score that family against both probe tiers to
+say whether the refusal was plumbing or quality.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/conflicts/claim/calibration.py`, its heading-addressed probe
-  format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
-  offset-exact and pass the existing corpus-unchanged assertion.
-- User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
-  choose between, instead of only rejecting a broken one.
-- Scope boundary: in scope -- the harder probe tier, its frozen labels and rationale, a two-family
-  comparison, and a gate-threshold decision. Out of scope -- changing the adjudication prompt, the
-  relation vocabulary, and scoring agreement on anything but the actionable binary before the
-  comparison supports it.
-- Data and artifact paths: `samples/corpora/conflicts_uk_v1/adjudicator_probe.json` and the
-  existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts.
-- Execution path: one calibration-only run per model family on the CUDA host; CI covers the new
-  tier's passage resolution and label balance.
-- Acceptance gates: `make ci` green; both families score both tiers; the report states whether the
-  hard tier separates them and either raises the gate or records why it stays a floor.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe).
+- Dependencies: none. `EndpointConfig.think` and the Ollama native path already exist; the gap is
+  that `src/llb/conflicts/claim/adjudicator.py` does not expose them.
+- User-visible outcome: an operator can point the claim tier at a reasoning model without every
+  verdict coming back unparsable.
+- Scope boundary: in scope -- the think (and, if the same run shows it is needed, `num_ctx`)
+  control on both commands, and one calibration re-score of the refused family. Out of scope --
+  changing the prompt, the parser's strictness, and any default that would turn reasoning on for
+  the families that already work without it.
+- Data and artifact paths: `$DATA_DIR/corpus-conflict-calibration/<run>/` only.
+- Execution path: one calibration-only run for the re-scored family on the CUDA host; CI covers the
+  flag reaching the endpoint config with an injected fake.
+- Acceptance gates: `make ci` green; the re-scored family returns parsable verdicts on both tiers,
+  and the page records its agreement beside the other four.
+- Documentation target: [measured claim-tier precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers).
+
+#### conflict-probe-hard-tier-promotion (optional)
+
+The hard probe tier separates adjudicators the base tier cannot, but the gate still reads only the
+base tier: at 16 pairs the same 0.60 Wilson bound means `>= 14/16`, so one relabelled pair moves a
+family across it, and the ordering rests on one host, one seed, and one model per family
+([measured claim-tier
+precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers)).
+Reproduce the ordering on a second seed and widen the hard tier until its pass mark does not turn
+on a single pair, then either add `hard` to `TIER_ACCURACY_GATES` or record that the separation is
+a ranking an operator reads rather than a bar the audit enforces.
+
+- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
+- Agent status: RUN NEEDED
+- Dependencies: the tiered probe and the per-tier gate map are current behavior ([measured
+  claim-tier precision](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe));
+  promoting a tier is one entry in `TIER_ACCURACY_GATES`.
+- User-visible outcome: an adjudicator whose specificity collapses on arguable pairs either cannot
+  publish a precision figure, or is documented as an operator's own call -- not left undecided.
+- Scope boundary: in scope -- more hard pairs in the same corpus, a second-seed re-score of the
+  families already measured, and the promotion decision. Out of scope -- a third tier, a second
+  hard corpus, and changing what the base tier contains.
+- Data and artifact paths: `samples/corpora/conflicts_uk_v1/probe_hard/`,
+  `samples/corpora/conflicts_uk_v1/adjudicator_probe.json`, and
+  `$DATA_DIR/corpus-conflict-calibration/<run>/`.
+- Execution path: one calibration-only run per family per seed on the CUDA host; CI covers the
+  widened tier's passage resolution and label balance.
+- Acceptance gates: `make ci` green; the widened tier's pass mark does not turn on one pair, the
+  measured ordering holds across seeds, and the page states whether `hard` gates.
+- Documentation target: [measured claim-tier precision](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe).
 
 #### conflict-precision-bound-at-document-clustering (optional)
 
@@ -114,7 +141,7 @@ The clustered bound treats a CHUNK as the independent unit, and on a concentrate
 still too generous. Measured: every one of the goods corpus's 8 actionable rows at budget 100 points
 at the same right document, so at the document level the corpus supplies one observation, not eight
 -- yet the chunk-level bound resamples 42 left and 51 right chunks
-([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
+([conflict detection](current/data-prep/conflict-claim-precision.md#measured-both-quickstart-corpora)).
 The bound refused a floor there anyway, which is why this is a sharpening rather than a correction,
 but nothing establishes which unit the audit should quote when the two disagree. Compute the bound
 at both clusterings on the same rows, report them side by side on both quickstart corpora, and state
@@ -137,7 +164,7 @@ its conflicts, or quote both.
 - Acceptance gates: `make ci` green; both corpora report both bounds at every measured budget; the
   report names which bound the audit quotes and why, and the chunk-level bound never reads lower
   than the document-level one on the same rows.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+- Documentation target: [conflict detection](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision).
 
 #### conflict-candidate-record-cap-on-a-natively-dense-corpus (optional)
 
@@ -206,7 +233,7 @@ chunk size, budget) on the same corpus and record which one the yield tracks.
   with the baseline variant; the reading names the factor the yield tracks, or records that the
   variants do not separate.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+  detection](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision).
 
 #### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
 
@@ -1080,13 +1107,14 @@ Produce frozen human labels for real candidate rows so the audit's measured clai
 be trusted off the planted fixture. The shipped calibration gate scores the adjudicator only against
 the seven-document planted probe, whose relations are synthetic by construction and which the
 current host model passes 24/24 ([conflict
-detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)); nothing measures
+detection](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe)); nothing measures
 whether the model agrees with a human on HR or goods rows.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: HUMAN-GATED
 - Dependencies: the audit's precision block and its calibration gate are current behavior
-  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)) and
+  ([measured claim-tier
+  precision](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision)) and
   consume the resulting bound; candidate ranking and claim adjudication are current behavior too.
   Human step that gates completion: an authorized reviewer assigns one relation from the claim
   vocabulary to every row of the frozen slice without seeing the model's verdict.

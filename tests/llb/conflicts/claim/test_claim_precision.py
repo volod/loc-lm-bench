@@ -1,10 +1,11 @@
-"""Measured claim-tier precision: the calibration gate, the clustered bound, and the rendering.
+"""Measured claim-tier precision: the clustered bound, the suppression gate, and the rendering.
 
 The quantity under test is the share of the RETURNED candidate list that survives adjudication.
 Two properties are what make it publishable and both are asserted here: the bound is the same
 two-way clustered estimator the independent-null research established (asserted by running the
 research lane's own curve over the same rows), and the block is suppressed with a stated reason
-whenever the adjudicator that produced the verdicts has not cleared its calibration bound.
+whenever the adjudicator that produced the verdicts has not cleared its calibration bound. The
+probe that decides that last question is its own subject, in `test_adjudicator_probe.py`.
 """
 
 import json
@@ -13,11 +14,6 @@ from types import SimpleNamespace
 import pytest
 
 from llb.conflicts.audit import AuditParams, run_audit
-from llb.conflicts.claim.calibration import (
-    MIN_ADJUDICATOR_ACCURACY_LCB,
-    calibrate_adjudicator,
-    load_calibration_probe,
-)
 from llb.conflicts.claim.precision import precision_block, unparsed_allowance
 from llb.conflicts.constants import TIER_CLAIM
 from llb.conflicts.null_research.statistics.precision import CandidateRow, precision_curve
@@ -33,46 +29,6 @@ from tests.llb.conflicts.conflict_helpers import (
 from tests.llb.conflicts.test_audit import scripted
 
 SEED = 20260812
-
-
-# --- the frozen probe -------------------------------------------------------------------------
-
-
-def test_probe_resolves_to_fixture_passages_and_is_balanced():
-    probe = load_calibration_probe()
-    assert len(probe.pairs) == 24
-    assert sum(pair.actionable for pair in probe.pairs) == 12, "half the probe must be actionable"
-    for pair in probe.pairs:
-        assert pair.left_text.startswith("#") and pair.right_text.startswith("#")
-        assert len(pair.left_text.split()) > 5 and len(pair.right_text.split()) > 5
-    assert len({pair.pair_id for pair in probe.pairs}) == len(probe.pairs)
-
-
-def test_probe_refuses_a_heading_the_fixture_does_not_have(tmp_path):
-    payload = json.loads((FIXTURE_CORPUS.parent / "adjudicator_probe.json").read_text("utf-8"))
-    payload["pairs"][0]["a"]["heading"] = "## Розділ 9. Немає такого"
-    path = tmp_path / "probe.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    with pytest.raises(SystemExit, match="has no heading"):
-        load_calibration_probe(path)
-
-
-def test_a_frozen_label_adjudicator_calibrates():
-    calibration = calibrate_adjudicator(load_calibration_probe(), probe_aware(scripted))
-    assert calibration["accuracy"] == 1.0
-    assert calibration["calibrated"] and calibration["unparsed_pairs"] == 0
-    assert calibration["recall_on_actionable"] == 1.0
-    assert calibration["specificity_on_complementary"] == 1.0
-
-
-def test_an_adjudicator_that_calls_everything_actionable_does_not_calibrate():
-    calibration = calibrate_adjudicator(
-        load_calibration_probe(), probe_aware(scripted, correct=False)
-    )
-    assert calibration["accuracy"] == 0.5
-    assert calibration["specificity_on_complementary"] == 0.0
-    assert not calibration["calibrated"]
-    assert calibration["accuracy_wilson_95"][0] < MIN_ADJUDICATOR_ACCURACY_LCB
 
 
 # --- the bound --------------------------------------------------------------------------------
@@ -155,10 +111,18 @@ def test_precision_is_suppressed_without_calibration():
 
 
 def test_precision_is_suppressed_when_the_adjudicator_misses_its_bound():
-    calibration = {**calibrated_stub(), "calibrated": False, "accuracy_wilson_95": [0.41, 0.72]}
+    calibration = {
+        **calibrated_stub(),
+        "calibrated": False,
+        "gate_failures": [
+            "base-tier accuracy 0.5 over 24 parsed pairs, Wilson 95% lower bound "
+            "0.41 against the 0.6 gate"
+        ],
+    }
     block = precision_block(adjudicated_rows([True] * 6), calibration, seed=SEED)
     assert not block["reported"] and "returned_budget" not in block
     assert "missed its calibration bound" in block["reason"] and "0.41" in block["reason"]
+    assert "base-tier" in block["reason"], "the reason must name the tier that gated"
 
 
 def test_precision_is_suppressed_when_too_many_verdicts_are_unparsable():

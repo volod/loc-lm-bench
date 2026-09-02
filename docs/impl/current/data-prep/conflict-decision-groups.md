@@ -877,7 +877,7 @@ holds 23 distinct pieces of shared evidence, and the bundle's range is 6 to 46, 
 
 Measured 2026-08-12; lookup key `corpus-conflicts` run `census-goods-budget100`. This is a different
 store generation from the
-[budget-100 precision runs](conflict-detection.md#measured-both-quickstart-corpora)
+[budget-100 precision runs](conflict-claim-precision.md#measured-both-quickstart-corpora)
 (954 chunks at cosine 0.3604 against 1,139 at 0.3648), and it returned 1 actionable row where that
 run returned 8; the candidate list at a fixed budget is a rank cutoff into the store's own
 similarity ordering, so the two lists are not the same rows.
@@ -961,7 +961,7 @@ to a point, and the report says so in those words -- which is exactly the case C
 whose rows all quote one chunk (6 rows, 1 group under both rules).
 
 **The measurement's own limit.** The 8-document HR corpus that the
-[claim-tier precision tables](conflict-detection.md#measured-both-quickstart-corpora) were measured
+[claim-tier precision tables](conflict-claim-precision.md#measured-both-quickstart-corpora) were measured
 on is operator data and is not present on this host, so the second and third bundles here are the
 3-document quickstart-PDF corpus and the committed fixture instead. Both are strictly narrower than
 HR: the quickstart-PDF documents are a subset of the goods corpus, and the fixture's 9-chunk store

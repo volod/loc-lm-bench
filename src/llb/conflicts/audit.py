@@ -67,6 +67,8 @@ class AuditParams:
     project_dims: int = 0
     calibrate_adjudicator: bool = True
     calibration_probe: Path | str | None = None
+    # Which probe tiers to adjudicate; None runs every tier the probe declares.
+    probe_tiers: tuple[str, ...] | None = None
     adjudicator_temperature: float = DEFAULT_ADJUDICATOR_TEMPERATURE
     # Optional cross-encoder ordering immediately before claim adjudication. The scorer itself is
     # injected into `run_audit`; these fields make the chosen real-model path part of the bundle.
@@ -98,6 +100,7 @@ class AuditParams:
             "calibration_probe": str(self.calibration_probe)
             if self.calibration_probe is not None
             else None,
+            "probe_tiers": list(self.probe_tiers) if self.probe_tiers is not None else None,
             "adjudicator_temperature": self.adjudicator_temperature,
             "claim_prefilter": self.claim_prefilter,
             "claim_prefilter_model": self.claim_prefilter_model if self.claim_prefilter else None,

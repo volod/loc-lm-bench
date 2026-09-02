@@ -1,343 +1,596 @@
 {
-  "probe_id": "conflicts_uk_v1_adjudicator_probe_v1",
-  "corpus": "samples/corpora/conflicts_uk_v1/corpus",
-  "description": "Frozen adjudicator-calibration probe: 24 section pairs from the planted fixture whose relation is fixed by construction, half actionable and half complementary. The audit adjudicates them with the same prompt it uses on a real corpus, so a claim-tier precision figure is only printed when the model that produced it agrees with these labels.",
-  "pairs": [
+  "probe_id": "conflicts_uk_v1_adjudicator_probe_v2",
+  "description": "Frozen adjudicator-calibration probe in two tiers. Every pair's relation is fixed by construction and every tier is half actionable, so the audit adjudicates them with the same prompt it uses on a real corpus and only prints a claim-tier precision figure when the model that produced it agrees with these labels. Agreement is scored on the actionable/complementary binary; the `relation` field records the intended reading and `trap` records the shallow reading the pair exists to catch.",
+  "tiers": [
     {
-      "pair_id": "deadline-changed-2021-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "contradicts",
-      "actionable": true,
-      "why": "thirty calendar days against fifteen working days for the same deadline"
+      "tier": "base",
+      "corpus": "samples/corpora/conflicts_uk_v1/corpus",
+      "description": "The floor: section pairs of the planted detector fixture whose actionable side is a plainly changed deadline, a verbatim restatement, or a byte-identical re-upload, and whose complementary side is a plainly different subject. A model that fails this tier is broken rather than merely weak.",
+      "pairs": [
+        {
+          "pair_id": "deadline-changed-2021-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "contradicts",
+          "actionable": true,
+          "why": "thirty calendar days against fifteen working days for the same deadline"
+        },
+        {
+          "pair_id": "vague-deadline-subsumed-2021",
+          "a": {
+            "doc_id": "deadline-note.md",
+            "heading": "# Довідка про строки розгляду звернень"
+          },
+          "b": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "subsumed_by",
+          "actionable": true,
+          "why": "the same vague restatement against the superseded thirty-day deadline"
+        },
+        {
+          "pair_id": "deadline-changed-reformatted-2024",
+          "a": {
+            "doc_id": "regulation-2021-reformatted.md",
+            "heading": "### РОЗДІЛ 2. СТРОКИ РОЗГЛЯДУ"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "contradicts",
+          "actionable": true,
+          "why": "reformatting changes case and punctuation, not the contradicted deadline"
+        },
+        {
+          "pair_id": "general-provisions-restated-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the revision restates the registration rule unchanged"
+        },
+        {
+          "pair_id": "responsible-officer-restated-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the revision restates the responsible-officer rule unchanged"
+        },
+        {
+          "pair_id": "responsible-officer-reformatted-2024",
+          "a": {
+            "doc_id": "regulation-2021-reformatted.md",
+            "heading": "### РОЗДІЛ 3. ВІДПОВІДАЛЬНА ОСОБА"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the reissue and the revision restate the same officer rule"
+        },
+        {
+          "pair_id": "deadline-2021-copy",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "b": {
+            "doc_id": "regulation-2021-copy.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "byte-identical re-upload of the same section"
+        },
+        {
+          "pair_id": "general-provisions-2021-reformatted",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "b": {
+            "doc_id": "regulation-2021-reformatted.md",
+            "heading": "### РОЗДІЛ 1. ЗАГАЛЬНІ ПОЛОЖЕННЯ"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the reissue differs only in case, whitespace, and punctuation"
+        },
+        {
+          "pair_id": "responsible-officer-2021-reformatted",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "b": {
+            "doc_id": "regulation-2021-reformatted.md",
+            "heading": "### РОЗДІЛ 3. ВІДПОВІДАЛЬНА ОСОБА"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the reissue differs only in case, whitespace, and punctuation"
+        },
+        {
+          "pair_id": "general-provisions-reformatted-2024",
+          "a": {
+            "doc_id": "regulation-2021-reformatted.md",
+            "heading": "### РОЗДІЛ 1. ЗАГАЛЬНІ ПОЛОЖЕННЯ"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the reissue and the revision restate the same registration rule"
+        },
+        {
+          "pair_id": "e-appeals-absorbed-2024",
+          "a": {
+            "doc_id": "e-appeals-note.md",
+            "heading": "# Пам'ятка про електронні звернення"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 4. Електронні звернення"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the 2024 revision absorbed the note's whole content"
+        },
+        {
+          "pair_id": "vague-deadline-subsumed-2024",
+          "a": {
+            "doc_id": "deadline-note.md",
+            "heading": "# Довідка про строки розгляду звернень"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "subsumed_by",
+          "actionable": true,
+          "why": "the note restates the deadline vaguely; the regulation states it specifically"
+        },
+        {
+          "pair_id": "archive-vs-deadline-2021",
+          "a": {
+            "doc_id": "archive-policy.md",
+            "heading": "# Інструкція про архівне зберігання справ"
+          },
+          "b": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "archival storage and appeal deadlines are different subjects"
+        },
+        {
+          "pair_id": "archive-vs-e-appeals-2024",
+          "a": {
+            "doc_id": "archive-policy.md",
+            "heading": "# Інструкція про архівне зберігання справ"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 4. Електронні звернення"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "archival storage and electronic submission are different subjects"
+        },
+        {
+          "pair_id": "archive-vs-e-appeals-note",
+          "a": {
+            "doc_id": "archive-policy.md",
+            "heading": "# Інструкція про архівне зберігання справ"
+          },
+          "b": {
+            "doc_id": "e-appeals-note.md",
+            "heading": "# Пам'ятка про електронні звернення"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "the unrelated control against the electronic-appeals note"
+        },
+        {
+          "pair_id": "archive-vs-deadline-note",
+          "a": {
+            "doc_id": "archive-policy.md",
+            "heading": "# Інструкція про архівне зберігання справ"
+          },
+          "b": {
+            "doc_id": "deadline-note.md",
+            "heading": "# Довідка про строки розгляду звернень"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "the unrelated control against the deadline note"
+        },
+        {
+          "pair_id": "e-appeals-vs-deadline-2021",
+          "a": {
+            "doc_id": "e-appeals-note.md",
+            "heading": "# Пам'ятка про електронні звернення"
+          },
+          "b": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "how an appeal is submitted and how long it is reviewed are compatible facts"
+        },
+        {
+          "pair_id": "e-appeals-vs-officer-2021",
+          "a": {
+            "doc_id": "e-appeals-note.md",
+            "heading": "# Пам'ятка про електронні звернення"
+          },
+          "b": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "submission channel against the officer responsible for review"
+        },
+        {
+          "pair_id": "e-appeals-vs-deadline-2024",
+          "a": {
+            "doc_id": "e-appeals-note.md",
+            "heading": "# Пам'ятка про електронні звернення"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "submission channel against the review deadline"
+        },
+        {
+          "pair_id": "deadline-note-vs-e-appeals-2024",
+          "a": {
+            "doc_id": "deadline-note.md",
+            "heading": "# Довідка про строки розгляду звернень"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 4. Електронні звернення"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "review deadline against electronic submission rules"
+        },
+        {
+          "pair_id": "officer-2021-vs-deadline-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "who reviews an appeal against how long the review takes"
+        },
+        {
+          "pair_id": "general-2021-vs-officer-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "registration procedure against the responsible officer"
+        },
+        {
+          "pair_id": "deadline-2021-vs-officer-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 2. Строки розгляду"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 3. Відповідальна особа"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "review deadline against the responsible officer"
+        },
+        {
+          "pair_id": "general-2021-vs-e-appeals-2024",
+          "a": {
+            "doc_id": "regulation-2021.md",
+            "heading": "## Розділ 1. Загальні положення"
+          },
+          "b": {
+            "doc_id": "regulation-2024.md",
+            "heading": "## Розділ 4. Електронні звернення"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "paper registration procedure against electronic submission rules"
+        }
+      ]
     },
     {
-      "pair_id": "vague-deadline-subsumed-2021",
-      "a": {
-        "doc_id": "deadline-note.md",
-        "heading": "# Довідка про строки розгляду звернень"
-      },
-      "b": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "subsumed_by",
-      "actionable": true,
-      "why": "the same vague restatement against the superseded thirty-day deadline"
-    },
-    {
-      "pair_id": "deadline-changed-reformatted-2024",
-      "a": {
-        "doc_id": "regulation-2021-reformatted.md",
-        "heading": "### РОЗДІЛ 2. СТРОКИ РОЗГЛЯДУ"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "contradicts",
-      "actionable": true,
-      "why": "reformatting changes case and punctuation, not the contradicted deadline"
-    },
-    {
-      "pair_id": "general-provisions-restated-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the revision restates the registration rule unchanged"
-    },
-    {
-      "pair_id": "responsible-officer-restated-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the revision restates the responsible-officer rule unchanged"
-    },
-    {
-      "pair_id": "responsible-officer-reformatted-2024",
-      "a": {
-        "doc_id": "regulation-2021-reformatted.md",
-        "heading": "### РОЗДІЛ 3. ВІДПОВІДАЛЬНА ОСОБА"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the reissue and the revision restate the same officer rule"
-    },
-    {
-      "pair_id": "deadline-2021-copy",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "b": {
-        "doc_id": "regulation-2021-copy.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "byte-identical re-upload of the same section"
-    },
-    {
-      "pair_id": "general-provisions-2021-reformatted",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "b": {
-        "doc_id": "regulation-2021-reformatted.md",
-        "heading": "### РОЗДІЛ 1. ЗАГАЛЬНІ ПОЛОЖЕННЯ"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the reissue differs only in case, whitespace, and punctuation"
-    },
-    {
-      "pair_id": "responsible-officer-2021-reformatted",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "b": {
-        "doc_id": "regulation-2021-reformatted.md",
-        "heading": "### РОЗДІЛ 3. ВІДПОВІДАЛЬНА ОСОБА"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the reissue differs only in case, whitespace, and punctuation"
-    },
-    {
-      "pair_id": "general-provisions-reformatted-2024",
-      "a": {
-        "doc_id": "regulation-2021-reformatted.md",
-        "heading": "### РОЗДІЛ 1. ЗАГАЛЬНІ ПОЛОЖЕННЯ"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the reissue and the revision restate the same registration rule"
-    },
-    {
-      "pair_id": "e-appeals-absorbed-2024",
-      "a": {
-        "doc_id": "e-appeals-note.md",
-        "heading": "# Пам'ятка про електронні звернення"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 4. Електронні звернення"
-      },
-      "relation": "duplicate",
-      "actionable": true,
-      "why": "the 2024 revision absorbed the note's whole content"
-    },
-    {
-      "pair_id": "vague-deadline-subsumed-2024",
-      "a": {
-        "doc_id": "deadline-note.md",
-        "heading": "# Довідка про строки розгляду звернень"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "subsumed_by",
-      "actionable": true,
-      "why": "the note restates the deadline vaguely; the regulation states it specifically"
-    },
-    {
-      "pair_id": "archive-vs-deadline-2021",
-      "a": {
-        "doc_id": "archive-policy.md",
-        "heading": "# Інструкція про архівне зберігання справ"
-      },
-      "b": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "archival storage and appeal deadlines are different subjects"
-    },
-    {
-      "pair_id": "archive-vs-e-appeals-2024",
-      "a": {
-        "doc_id": "archive-policy.md",
-        "heading": "# Інструкція про архівне зберігання справ"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 4. Електронні звернення"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "archival storage and electronic submission are different subjects"
-    },
-    {
-      "pair_id": "archive-vs-e-appeals-note",
-      "a": {
-        "doc_id": "archive-policy.md",
-        "heading": "# Інструкція про архівне зберігання справ"
-      },
-      "b": {
-        "doc_id": "e-appeals-note.md",
-        "heading": "# Пам'ятка про електронні звернення"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "the unrelated control against the electronic-appeals note"
-    },
-    {
-      "pair_id": "archive-vs-deadline-note",
-      "a": {
-        "doc_id": "archive-policy.md",
-        "heading": "# Інструкція про архівне зберігання справ"
-      },
-      "b": {
-        "doc_id": "deadline-note.md",
-        "heading": "# Довідка про строки розгляду звернень"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "the unrelated control against the deadline note"
-    },
-    {
-      "pair_id": "e-appeals-vs-deadline-2021",
-      "a": {
-        "doc_id": "e-appeals-note.md",
-        "heading": "# Пам'ятка про електронні звернення"
-      },
-      "b": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "how an appeal is submitted and how long it is reviewed are compatible facts"
-    },
-    {
-      "pair_id": "e-appeals-vs-officer-2021",
-      "a": {
-        "doc_id": "e-appeals-note.md",
-        "heading": "# Пам'ятка про електронні звернення"
-      },
-      "b": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "submission channel against the officer responsible for review"
-    },
-    {
-      "pair_id": "e-appeals-vs-deadline-2024",
-      "a": {
-        "doc_id": "e-appeals-note.md",
-        "heading": "# Пам'ятка про електронні звернення"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "submission channel against the review deadline"
-    },
-    {
-      "pair_id": "deadline-note-vs-e-appeals-2024",
-      "a": {
-        "doc_id": "deadline-note.md",
-        "heading": "# Довідка про строки розгляду звернень"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 4. Електронні звернення"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "review deadline against electronic submission rules"
-    },
-    {
-      "pair_id": "officer-2021-vs-deadline-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "who reviews an appeal against how long the review takes"
-    },
-    {
-      "pair_id": "general-2021-vs-officer-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "registration procedure against the responsible officer"
-    },
-    {
-      "pair_id": "deadline-2021-vs-officer-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 2. Строки розгляду"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 3. Відповідальна особа"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "review deadline against the responsible officer"
-    },
-    {
-      "pair_id": "general-2021-vs-e-appeals-2024",
-      "a": {
-        "doc_id": "regulation-2021.md",
-        "heading": "## Розділ 1. Загальні положення"
-      },
-      "b": {
-        "doc_id": "regulation-2024.md",
-        "heading": "## Розділ 4. Електронні звернення"
-      },
-      "relation": "complementary",
-      "actionable": false,
-      "why": "paper registration procedure against electronic submission rules"
+      "tier": "hard",
+      "corpus": "samples/corpora/conflicts_uk_v1/probe_hard",
+      "description": "The separator: pairs whose actionable/complementary split is arguable on a shallow reading and determinate on a close one. Actionable pairs restate one fact under a different heading, in different units, or with only one clause of two changed; complementary pairs put two numeric claims about different quantities into the same sentence shape.",
+      "pairs": [
+        {
+          "pair_id": "hard-restated-submission-window",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про строк подання бюджетного запиту"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 2. Подання бюджетного запиту"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the memo and the regulation state the same thirty-day submission window, counted from the same event, in different register and under different headings",
+          "trap": "different headings and no shared wording read as different subjects"
+        },
+        {
+          "pair_id": "hard-restated-threshold-notice",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про доведення граничних показників"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 1. Доведення граничних показників"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "the same fifteenth-of-February notice duty stated with the actor moved from the passive to the subject position",
+          "trap": "a paraphrase with no shared clause order reads as an unrelated note"
+        },
+        {
+          "pair_id": "hard-same-window-different-units",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про строк погодження змін до кошторису"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 3. Погодження змін до кошторису"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "two working weeks and ten working days are the same amendment window for the same approval by the same body",
+          "trap": "the two passages share no number, so the window looks like a different fact"
+        },
+        {
+          "pair_id": "hard-vague-window-subsumed",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про строк, встановлений порядком"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 3. Погодження змін до кошторису"
+          },
+          "relation": "subsumed_by",
+          "actionable": true,
+          "why": "the memo names no number and defers to the regulation that fixes the same window at ten working days",
+          "trap": "a passage that states no number looks like it asserts nothing to compare"
+        },
+        {
+          "pair_id": "hard-extension-restated",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про продовження строку подання"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 6. Продовження строку подання"
+          },
+          "relation": "duplicate",
+          "actionable": true,
+          "why": "both make a written decision of the head of the institution the only route to extending the same submission deadline",
+          "trap": "a permission and a prohibition of the same rule read as different claims"
+        },
+        {
+          "pair_id": "hard-partial-supersession-registration",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 2. Подання бюджетного запиту"
+          },
+          "b": {
+            "doc_id": "budget-rules-2025.md",
+            "heading": "## Розділ 2. Подання бюджетного запиту"
+          },
+          "relation": "contradicts",
+          "actionable": true,
+          "why": "the submission sentence is restated verbatim and the registration clause changes from the day of receipt to the next working day",
+          "trap": "one identical clause out of two reads as an unchanged restatement"
+        },
+        {
+          "pair_id": "hard-partial-supersession-amendment-window",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 3. Погодження змін до кошторису"
+          },
+          "b": {
+            "doc_id": "budget-rules-2025.md",
+            "heading": "## Розділ 4. Погодження змін до кошторису та штатного розпису"
+          },
+          "relation": "contradicts",
+          "actionable": true,
+          "why": "the same amendment window for the same document moves from ten to fifteen working days, under a heading the revision widened to cover staffing tables as well",
+          "trap": "the revision's wider heading reads as a different subject"
+        },
+        {
+          "pair_id": "hard-reporting-frequency-changed",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 4. Звітування про виконання кошторису"
+          },
+          "b": {
+            "doc_id": "budget-rules-2025.md",
+            "heading": "## Розділ 5. Звітування про виконання кошторису"
+          },
+          "relation": "contradicts",
+          "actionable": true,
+          "why": "the same report changes from quarterly to monthly while the signing clause is restated unchanged",
+          "trap": "the identical signing sentence reads as a restatement rather than a change"
+        },
+        {
+          "pair_id": "hard-days-against-years",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 2. Подання бюджетного запиту"
+          },
+          "b": {
+            "doc_id": "records-schedule.md",
+            "heading": "# Строк зберігання бюджетних документів"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "thirty calendar days to submit a request and thirty calendar years to keep the papers are different quantities about different subjects",
+          "trap": "the identical number in an identical sentence shape reads as the same claim"
+        },
+        {
+          "pair_id": "hard-estimate-against-staffing-window",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 3. Погодження змін до кошторису"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 7. Погодження змін до штатного розпису"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "different documents approved by different bodies, so ten and fifteen working days are two rules rather than two answers to one question",
+          "trap": "two approval windows differing only in the number read as a contradiction"
+        },
+        {
+          "pair_id": "hard-notice-date-against-reporting-date",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 1. Доведення граничних показників"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 4. Звітування про виконання кошторису"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "the February notice of expenditure ceilings and the fifth-of-the-month reporting date govern different acts at different points of the cycle",
+          "trap": "two calendar deadlines in one regulation read as competing versions of one deadline"
+        },
+        {
+          "pair_id": "hard-report-form-against-report-timing",
+          "a": {
+            "doc_id": "treasury-memo.md",
+            "heading": "# Пам'ятка про форму подання звіту"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 4. Звітування про виконання кошторису"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "how the report is transmitted and how often it is due are compatible facts about the same report",
+          "trap": "the same subject in both passages reads as a restatement"
+        },
+        {
+          "pair_id": "hard-treasury-against-finance-window",
+          "a": {
+            "doc_id": "payment-order.md",
+            "heading": "# Реєстрація бюджетних зобов'язань"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 3. Погодження змін до кошторису"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "the treasury registering commitments in three working days and finance approving estimate amendments in ten are different acts by different bodies",
+          "trap": "two working-day windows in the same domain read as a contradiction"
+        },
+        {
+          "pair_id": "hard-advance-against-balance",
+          "a": {
+            "doc_id": "payment-order.md",
+            "heading": "# Перерахування авансу за договором"
+          },
+          "b": {
+            "doc_id": "payment-order.md",
+            "heading": "# Перерахування залишку за договором"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "the advance and the balance are different payments that happen to carry the same five-working-day window, counted from different acceptance certificates",
+          "trap": "an identical sentence shape carrying an identical number reads as a duplicate"
+        },
+        {
+          "pair_id": "hard-permanent-against-temporary-retention",
+          "a": {
+            "doc_id": "records-schedule.md",
+            "heading": "# Строк зберігання справ постійного зберігання"
+          },
+          "b": {
+            "doc_id": "records-schedule.md",
+            "heading": "# Строк зберігання справ тимчасового зберігання"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "permanent and temporary files are different record classes, so indefinite retention and five years are two rules rather than two answers to one question",
+          "trap": "never destroyed against destroyed after five years reads as a contradiction"
+        },
+        {
+          "pair_id": "hard-definition-against-procedure",
+          "a": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 5. Визначення бюджетного запиту"
+          },
+          "b": {
+            "doc_id": "budget-rules-2022.md",
+            "heading": "## Розділ 2. Подання бюджетного запиту"
+          },
+          "relation": "complementary",
+          "actionable": false,
+          "why": "what a budget request IS and when it must be submitted are compatible facts about the same term",
+          "trap": "the same term in both passages reads as one claim restated"
+        }
+      ]
     }
   ]
 }

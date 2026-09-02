@@ -23,7 +23,8 @@ in the order a corpus travels through them.
 
 | Page | What it answers |
 | --- | --- |
-| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, why the rank cutoff is not a false-positive rate, and the measured claim-tier precision with its calibration gate that is reported instead |
+| [Conflict detection](data-prep/conflict-detection.md) | Finding contradictory passages: effort tiers, relation vocabulary, calibrated rank cutoffs, encoder anisotropy, and why the rank cutoff is not a false-positive rate |
+| [Measured claim-tier precision](data-prep/conflict-claim-precision.md) | What share of the returned candidate list survives adjudication: the two-way clustered bound, the free budget sweep, the two-tier frozen probe that gates which adjudicators may be quoted, and the optional cross-encoder claim prefilter |
 | [Decision groups and their counts](data-prep/conflict-decision-groups.md) | How many decisions a row count is: the distinct-unit census, the two grouping rules and their range, `to decide` versus `to review`, policy projection, and the per-stage split of lost orderable pairs |
 | [What a bundle can answer alone](data-prep/conflict-bundle-record.md) | Which questions a finished audit re-reads from its own record without the store -- the stage, the per-document exclusion reason and its recovery floor, a smaller candidate budget -- the two per-chunk readings the record refuses, what the record's own form costs per document, and the store identity plus portable location it records instead of a second copy of the store's manifest |
 | [Independent-null research](data-prep/conflict-null-research.md) | Three generations of candidate nulls, why each failed, the control-bank size a usable tail would need, and the measured claim-tier precision that replaces the missing rate |

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional
 
 import typer
 
+from llb.conflicts.claim.probe import PROBE_TIERS
 from llb.conflicts.constants import TIER_SEMANTIC
 from llb.conflicts.resolution.policy import POLICIES
 from llb.core.contracts.common import JsonObject
@@ -41,6 +42,24 @@ def projected_policies(value: Optional[str]) -> list[str]:
             f"--project-policy repeats a policy ({value!r}); each column must be a distinct policy"
         )
     return named
+
+
+def parsed_probe_tiers(value: Optional[str]) -> Optional[tuple[str, ...]]:
+    """Parse `--probe-tiers a,b` into the tiers to adjudicate, or None for every declared tier.
+
+    The tier NAMES are not validated here: the probe file declares which tiers exist, so an
+    unknown name is the probe's error to report against the tiers it actually carries.
+    """
+    if value is None:
+        return None
+    named = [item.strip() for item in value.split(",") if item.strip()]
+    if not named:
+        raise typer.BadParameter(
+            f"--probe-tiers needs at least one tier; known tiers are {', '.join(PROBE_TIERS)}"
+        )
+    if len(set(named)) != len(named):
+        raise typer.BadParameter(f"--probe-tiers repeats a tier ({value!r})")
+    return tuple(named)
 
 
 def echo_projection(projection: JsonObject, coverage: JsonObject) -> None:

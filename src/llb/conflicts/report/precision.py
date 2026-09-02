@@ -7,18 +7,7 @@ chunks those rows come from, and only when the adjudicator earned the right to b
 
 from llb.conflicts.constants import DECIDE_LABEL, REVIEW_LABEL
 from llb.conflicts.models import AuditResult
-from llb.core.contracts.common import JsonObject
-
-
-def _calibration_line(calibration: JsonObject | None) -> str:
-    if not calibration:
-        return "- adjudicator calibration: not run"
-    return (
-        f"- adjudicator calibration: {calibration['agreements']}/{calibration['parsed_pairs']} "
-        f"frozen probe pairs agree (accuracy {calibration['accuracy']}, Wilson 95% "
-        f"{calibration['accuracy_wilson_95']}, gate {calibration['min_accuracy_lcb']}), "
-        f"probe `{calibration['probe_id']}`"
-    )
+from llb.conflicts.report.calibration import calibration_lines
 
 
 def precision_section(result: AuditResult) -> list[str]:
@@ -33,12 +22,12 @@ def precision_section(result: AuditResult) -> list[str]:
         return []
     lines = ["## Claim-tier precision", ""]
     if not block.get("reported"):
-        return lines + [
-            f"Not reported: {block['reason']}.",
-            "",
-            _calibration_line(block.get("adjudicator_calibration")),
-            "",
-        ]
+        return (
+            lines
+            + [f"Not reported: {block['reason']}.", ""]
+            + calibration_lines(block.get("adjudicator_calibration"))
+            + [""]
+        )
     point = block["returned_budget"]
     candidate_order = str(block.get("candidate_order", "cosine"))
     lines += [
@@ -56,7 +45,7 @@ def precision_section(result: AuditResult) -> list[str]:
             if block["unparsed_rows"]
             else ""
         ),
-        _calibration_line(block.get("adjudicator_calibration")),
+        *calibration_lines(block.get("adjudicator_calibration")),
         "",
         "### Precision against the candidate budget",
         "",
