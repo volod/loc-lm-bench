@@ -74,6 +74,201 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
+### Versioned data and artifact contracts -- `artifact-contracts`
+
+#### artifact-contract-core-and-catalog
+
+Durable records use several unrelated contract idioms: Pydantic models without embedded identity,
+strict versioned robotics models, typed dictionaries, and raw JSON objects with local or absent
+version fields. Establish one low-dependency contract registry and evolution path before migrating
+the domain producers.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: none.
+- User-visible outcome: an operator or external consumer can resolve a stable schema identity and
+  version, validate a record with portable JSON Schema, and see whether this build can read or
+  migrate it before starting downstream work.
+- Scope boundary: in scope -- strict version-specific Pydantic bases, a registry of contract ids and
+  supported versions, deterministic one-step migrations, JSON/JSONL/YAML/CSV/Parquet dataset
+  bindings, generated JSON Schema, an ODCS-aligned catalog projection, and a narrow typed extension
+  mechanism. Out of scope -- inferring schemas from sample data, remodeling third-party databases,
+  indexes or model weights, and accepting unknown fields outside a declared extension point.
+- Data and artifact paths: shared models under `src/llb/core/contracts/`, registry and IO modules
+  under `src/llb/artifacts/`, generated schemas and catalog entries under `schemas/artifacts/`, and
+  compatibility fixtures under `samples/artifact_contracts/`.
+- Execution path: add a `make check-artifact-contracts` target with a `##` help description and put
+  its deterministic generation-drift check inside `make ci`; no GPU or service is required.
+- Acceptance gates: `make ci` green; current, supported-old, unsupported-future, missing-identity,
+  ambiguous-migration, and invalid-source fixtures exercise dispatch and refusal; generated schema
+  drift without a semantic version and compatibility declaration fails; an ODCS validator and a
+  JSON Schema validator can check the exported catalog and records without importing `llb`.
+- Documentation target: a new
+  `docs/impl/current/artifact-contracts/foundation-and-evolution.md` topic, its new area index, and
+  the operator command index for the contract check.
+
+#### artifact-contract-data-prep-migration
+
+Move the data-preparation exchange surface onto the registry first because retrieval, evaluation,
+and training all consume it. This includes the ontology provenance dictionary that exposed the gap,
+plus the corpus, PDF, gold, conflict, linkage, and review datasets around it.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-core-and-catalog`.
+- User-visible outcome: corpus and draft bundles identify every dataset member and can be validated
+  or upgraded before a store build, review session, or external handoff reads them.
+- Scope boundary: in scope -- project-owned machine-readable producers and consumers under
+  `src/llb/prep/`, `src/llb/goldset/`, `src/llb/conflicts/`, `src/llb/linkage/`, and `src/llb/review/`,
+  plus their `src/llb/cli/prep/` entry points, including JSONL row contracts and CSV worksheet
+  columns. Preserve conflict bundle readings across their locally versioned forms through registered
+  adapters. Out of scope -- source document text, human-only Markdown reports, raw PDFs, and changing
+  any verification, conflict, or linkage policy.
+- Data and artifact paths: corpus manifests and metadata sidecars, PDF manifests and citation
+  sidecars, gold sets and chains, ontology `provenance.json`/`ontology.json`/`extraction.jsonl`,
+  external-draft sidecars, conflict bundles and overlays, linkage bundles, and review ledgers under
+  their current `$DATA_DIR/<method>/<run>/` roots; committed old-version fixtures live under
+  `samples/artifact_contracts/data_prep/`.
+- Execution path: CPU-only migration and round-trip tests inside `make ci`; producers write current
+  contracts while readers dispatch through registered compatibility adapters.
+- Acceptance gates: `make ci` green; every named bundle validates member-by-member; a supported old
+  gold, ontology, conflict, and linkage fixture reaches the same canonical domain values as its
+  current form; a future major refuses before store build or review; producer payload builders no
+  longer expose unvalidated `dict[str, object]` as their persistence interface.
+- Documentation target:
+  `docs/impl/current/artifact-contracts/data-prep-contracts.md`, the artifact-contracts area index,
+  and links from the affected data-prep topic pages.
+
+#### artifact-contract-retrieval-and-graph-migration
+
+Retrieval and graph stores mix typed record aliases with unvalidated metadata dictionaries, binary
+indexes, and analysis sidecars. Register the project-owned logical records and bind opaque index
+members without attempting to own their binary formats.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-data-prep-migration` because store and graph fixtures consume its
+  corpus, extraction, and gold contracts.
+- User-visible outcome: a store, graph, or prompt-system package can be rejected as incompatible
+  before retrieval and can be inspected without importing FAISS, DuckDB, or an embedding stack.
+- Scope boundary: in scope -- durable producers and consumers under `src/llb/rag/`,
+  `src/llb/graph/`, and `src/llb/prompt_system/`, plus their `src/llb/cli/rag/` entry points;
+  Pydantic row and metadata contracts for chunks, parents, graph nodes and edges, community
+  summaries, prompt-system packages, and comparison sidecars; dataset-manifest bindings for opaque
+  index and database files. Out of scope -- the internal FAISS, lexical-index, DuckDB, or
+  embedding-model serialization formats and changes to retrieval or graph semantics.
+- Data and artifact paths: vector-store and graph generations beneath `$DATA_DIR/stores/`, retrieval
+  comparison and calibration bundles under their current method roots, prompt-system packages, and
+  compatibility fixtures under `samples/artifact_contracts/retrieval_graph/`.
+- Execution path: CPU-only fixture builds and lazy-load inspection inside `make ci`; tests inject
+  index adapters so schema conformance never imports optional GPU or graph stacks.
+- Acceptance gates: `make ci` green; current and supported-old store, graph, and prompt-system
+  fixtures produce identical logical records after loading; metadata/index digest or contract
+  mismatches refuse before query execution; generated schemas account for every project-owned member
+  while opaque members name their owner and format version.
+- Documentation target:
+  `docs/impl/current/artifact-contracts/retrieval-and-graph-contracts.md`, the artifact-contracts
+  area index, and links from the RAG, GraphRAG, and prompt-system topic pages.
+
+#### artifact-contract-run-evaluation-and-board-migration
+
+Run bundles are the primary downstream API, yet the Pydantic `RunManifest` has no schema identity
+and `persist_run` accepts arbitrary score, retrieval, and additional-artifact payloads. Move the
+tracking, evaluation, benchmark, scoring, board, and orchestration records behind typed dataset
+contracts while preserving board readings from supported older runs.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-retrieval-and-graph-migration` because run-bundle retrieval and
+  prompt-system members embed those records.
+- User-visible outcome: a board or downstream analysis can validate a complete run bundle, identify
+  every member's contract, and read supported historical runs without guessing from filenames.
+- Scope boundary: in scope -- durable producers and consumers under `src/llb/tracking/`,
+  `src/llb/executor/`, `src/llb/scoring/`, `src/llb/eval/`, `src/llb/bench/`, `src/llb/board/`, and
+  `src/llb/auto_rag/`, plus their CLI entry points; typed score/retrieval rows, design and analysis
+  records, progress and abort records, recommendation metadata, and a typed replacement for
+  arbitrary additional artifacts. Out of scope -- model response text before parsing, logs,
+  rendered Markdown, and MLflow's own database schema.
+- Data and artifact paths: canonical `manifest.json`, `scores.jsonl`, `retrieval.jsonl`, study
+  design/analysis sidecars, journals, board and recommendation artifacts under existing
+  `$DATA_DIR/<method>/<run>/` roots, plus old-run fixtures under
+  `samples/artifact_contracts/run_bundles/`.
+- Execution path: CPU-only producer, resume, board, and external-consumer fixtures inside `make ci`;
+  MLflow remains an injected best-effort mirror and no model service is started.
+- Acceptance gates: `make ci` green; atomic publication validates every member before rename; a
+  supported old run yields the same board and published-value readings as its current migration; an
+  unknown or mixed-version member refuses before board admission; no arbitrary artifact content can
+  enter `persist_run` without a registered contract or a declared human-report exemption.
+- Documentation target:
+  `docs/impl/current/artifact-contracts/run-and-evaluation-contracts.md`, the artifact-contracts
+  area index, and links from evaluation rigor, Auto-RAG, and extended-workflow topic pages.
+
+#### artifact-contract-training-and-integration-migration
+
+The remaining durable surface covers model preparation, optimization, fine-tuning, screening,
+inference handoffs, and robotics integration. Several of these are exported directly to another
+runtime, while robotics already supplies strict Pydantic records that should join the shared
+registry instead of remaining a separate versioning island.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-run-evaluation-and-board-migration` because optimization and
+  training consume run records and emit recommendations or adapters back to that surface.
+- User-visible outcome: model, training, and robotics handoffs expose the same inspectable identity,
+  validation, and compatibility behavior as corpus and run bundles.
+- Scope boundary: in scope -- durable producers and consumers under `src/llb/backends/`,
+  `src/llb/optimize/`, `src/llb/finetune/`, `src/llb/inference/`, `src/llb/screen/`,
+  `src/llb/judge/`, `src/llb/robotics/`, and `src/llb/standalone/`, plus their CLI entry points;
+  model and adapter manifests, training datasets and journals, search ledgers, compatibility
+  reports, recommendations, standalone answer exports, evidence and action records, and Parquet
+  projection schemas. Out of scope -- model weights, PEFT and tokenizer-native files,
+  Optuna/SQLite internals, MCAP payloads, hardware-driver protocols, and ML framework checkpoints.
+- Data and artifact paths: the current model, tuning, fine-tune, screen, inference, and robotics
+  `$DATA_DIR/<method>/<run>/` roots; exported adapter and recommendation metadata; robotics fixtures;
+  and compatibility fixtures under `samples/artifact_contracts/integrations/`.
+- Execution path: CPU-only contract and fake-adapter tests inside `make ci`; no training, model
+  download, GPU load, external API, device connection, or HFlow installation is required.
+- Acceptance gates: `make ci` green; current and supported-old manifests and robotics exchanges
+  round-trip through the shared registry; cross-file digests and schema ids bind datasets to opaque
+  members; unsupported versions refuse before training, model load, external export, or device
+  proposal evaluation; the existing robotics safety invariants remain unchanged.
+- Documentation target:
+  `docs/impl/current/artifact-contracts/training-and-integration-contracts.md`, the
+  artifact-contracts area index, and links from model, optimization, fine-tuning, and robotics topic
+  pages.
+
+#### artifact-contract-boundary-enforcement
+
+Close the migration with one operator surface and one repository gate. A new serializer must not be
+able to bypass the registry, and an external application must not need producer-specific Python to
+discover, validate, or materialize a supported contract.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-training-and-integration-migration`; every in-scope producer must
+  have a contract before temporary migration exemptions can be removed.
+- User-visible outcome: `llb artifacts inspect`, `llb artifacts validate`, and
+  `llb artifacts migrate --out <target>` work consistently across datasets and run bundles, and CI
+  prevents new unregistered durable data from entering the repository.
+- Scope boundary: in scope -- CLI commands in `src/llb/cli/`, a machine-readable contract catalog,
+  consumer and producer inventory enforcement, explicit boundary exemptions, generated-schema drift
+  enforcement, and copy-only migration provenance. Out of scope -- in-place mutation, automatic
+  migration on write, remote schema registries, data discovery outside paths the operator supplies,
+  and indefinite support for every historical version.
+- Data and artifact paths: the registered `schemas/artifacts/` catalog, all compatibility fixtures,
+  operator-selected artifact paths, and a new target under `$DATA_DIR/artifact-migrations/<run>/` for
+  explicit materializations; the source path remains unchanged.
+- Execution path: add `make validate-artifacts PATH=<artifact-path>` with a `##` help description;
+  run the no-unregistered-producer check and external-consumer fixtures inside `make ci`.
+- Acceptance gates: `make ci` and `make lint-md` green; every in-scope producer and consumer is in
+  the registry and temporary migration exemptions are empty; every permanent exemption names the
+  boundary owner and reason; inspect and validate require no optional GPU stack; explicit migration
+  records source digest and the complete version path; an injected raw JSON writer makes the
+  repository gate fail.
+- Documentation target: `docs/impl/current/artifact-contracts/operator-workflow-and-coverage.md`,
+  the artifact-contracts area index, CLI reference, and the data egress boundary where exported
+  metadata is described.
+
 ### Corpus provenance -- `corpus-provenance`
 
 #### export-redistribution-gate

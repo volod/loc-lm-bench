@@ -58,6 +58,8 @@ The primary decision loop covers:
 - corpus provenance: which capture of which source produced a document, on what terms, and whether
   that material may be redistributed;
 - corpus self-consistency: which passages contradict each other and which edition supersedes which;
+- versioned contracts for durable datasets, run artifacts, and metadata exchanged with another
+  command or application;
 - record identity: which entity nodes, drafted gold items, and document editions denote the
   same thing;
 - robotics RAG over approved manuals and curated multimodal episode evidence, followed by
@@ -107,6 +109,84 @@ Production Python lives under `src/llb/`. `src/llb/main.py` is the CLI entry poi
 `src/llb/cli/` owns command registration. Make fragments group operator workflows by function.
 Core typed contracts live in domain-specific modules under `src/llb/core/contracts/`; packages do
 not provide facade re-exports.
+
+## Versioned Data and Artifact Contracts
+
+A durable machine-readable file becomes an interface as soon as another command, a later run, or an
+upstream or downstream application reads it. An operator must be able to identify that interface,
+validate it without reverse-engineering its producer, and tell whether this build can read it before
+a pipeline changes any state. That is not uniformly possible today. `RunManifest` and gold items
+have Pydantic models but no embedded contract identity, robotics exchange records are strict and
+versioned, and many other datasets and sidecars - including ontology `provenance.json`, linkage
+bundles, evaluation analyses, and exported recommendations - are assembled from `dict`,
+`TypedDict`, or `JsonObject` values with either a local integer version or no version at all. Those
+forms are useful implementation details but do not give an external consumer one compatibility
+rule.
+
+The artifact-contract layer governs every PROJECT-OWNED durable dataset, machine-readable run
+artifact, sidecar, and exported metadata record. A contract family has a stable `schema_id` and a
+semantic `schema_version`. A single JSON or YAML document carries both fields in its root. A row
+stream or multi-file dataset may carry them in every row, or an adjacent dataset contract manifest
+may bind each physical member to its row contract; filename conventions alone never identify a
+schema. The dataset manifest also states the media type, record granularity, required members,
+digests and relationships between members, and the structural or domain-quality checks a consumer
+must run. Opaque payloads such as a FAISS index or model weights are named and digested there, while
+their third-party binary layout remains owned by the producing library.
+
+Pydantic models are the executable source of truth for project-owned records. Version-specific
+models reject unknown fields unless the contract declares a typed extension point, and generate
+portable JSON Schema documents for consumers that do not import `llb`. A multi-object dataset also
+has a generated catalog projection aligned with the
+[Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/latest/): the
+projection describes identity, logical objects, physical files, quality rules, and ownership, but
+it is not a second hand-maintained record schema. Its `apiVersion` is pinned independently from the
+dataset's own `schema_version`. Pydantic's generated JSON Schema and the catalog projection are
+therefore export surfaces; the Python model and its domain validators remain authoritative inside
+this repository.
+
+Evolution is explicit and directional:
+
+- a patch changes descriptions or examples without changing accepted or emitted data;
+- a minor version may add optional data or relax validation only when the NEW reader still accepts
+  every document accepted by the previous minor and preserves every existing field's meaning;
+- a major version removes, renames, narrows, retypes, or changes the meaning of data, or otherwise
+  makes a previously valid document invalid;
+- a writer emits one declared current version; a reader dispatches on `schema_id` and
+  `schema_version`, validates the source version, applies registered one-step migrations in order,
+  and validates the current model after migration;
+- missing identities, unsupported versions, future major versions, ambiguous migration paths, and
+  invalid source records are refusals that name the file, observed identity and version, and the
+  supported range; they never fall through to a best-effort dictionary read;
+- immutable run artifacts are never rewritten in place. A compatibility read migrates in memory,
+  while an operator-requested materialization writes a new artifact and records the source digest,
+  source contract, migration path, and target contract.
+
+Compatibility is promised per contract family, not forever for the product as a whole. Each family
+declares its supported read versions and deprecation policy. When an older form cannot be migrated
+without guessing or losing meaning, that is a valid negative result: its decoder remains explicitly
+read-only for the declared support window, or the reader refuses it. The migration must not invent a
+default merely to make validation pass. When a downstream application still requires an older
+write format, that format is an explicit compatibility export with its own model and tests, not a
+flag that deletes fields from the current payload.
+
+The boundary is durable, machine-consumed project data. Human-only Markdown reports, logs, terminal
+rendering, transient in-process dictionaries, raw model responses before parsing, and third-party
+stores such as MLflow, Optuna, DuckDB, SQLite, FAISS, and model-weight formats are not remodeled.
+Their project-owned manifests, exported rows, and references ARE in scope. Configuration inputs are
+in scope when this project emits them for another command or application; purely hand-authored
+configuration retains the configuration validation it already has. A schema proves shape and
+declared invariants, not scientific validity, provenance, authorization, or metric quality; the
+domain gates in the rest of this specification continue to own those decisions.
+
+Conformance is evaluated from a committed compatibility matrix and from the producer inventory.
+Every current project-owned record round-trips through its Pydantic model and validates against the
+generated JSON Schema; every registered older fixture either migrates deterministically to the same
+canonical meaning or produces its declared refusal; a future-major fixture is refused before a
+downstream action; and a model change that alters generated schema without the required version and
+migration declaration fails CI. A repository gate accounts for every in-scope producer and consumer
+through a registered contract or a narrow boundary exemption, so adding a new ad hoc durable
+serializer fails rather than silently widening the ungoverned surface. An external fixture validates
+the JSON Schema and dataset catalog without importing this package.
 
 ## Data and Ground Truth
 
@@ -812,24 +892,25 @@ Four rules settle it, in order:
 | # | Capability | Status | How it is evaluated | Implementation |
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
-| 2 | `corpus-provenance` | planned | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus projection](acquired-corpus-projection.md) (the contract it reads; the work is in [the plan](../impl/plan.md)) |
-| 3 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 4 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
-| 5 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 6 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
-| 7 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 8 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
-| 9 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 10 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
-| 11 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
-| 12 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 13 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 14 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 15 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
-| 16 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 17 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 18 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 19 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 2 | `artifact-contracts` | planned | Every in-scope durable producer and consumer resolves through a registered `schema_id` and semantic `schema_version`; current project-owned records round-trip through their Pydantic models and generated JSON Schema, registered older fixtures migrate to the same canonical meaning or their declared refusal, unsupported future versions fail before downstream action, schema drift without a version and migration declaration fails CI, and an external fixture validates the exported schema and dataset catalog without importing `llb` | [Versioned data and artifact contracts](#versioned-data-and-artifact-contracts) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 3 | `corpus-provenance` | planned | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus projection](acquired-corpus-projection.md) (the contract it reads; the work is in [the plan](../impl/plan.md)) |
+| 4 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
+| 5 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
+| 6 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 7 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
+| 8 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
+| 9 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 10 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
+| 11 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
+| 12 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
+| 13 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 14 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 15 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 16 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
+| 17 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 18 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 19 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 20 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -894,6 +975,8 @@ them than it resolves:
 The system succeeds when an operator can:
 
 - create or ingest a representative Ukrainian gold set and verify it;
+- validate the identity and version of a dataset or run artifact before consuming it, and migrate a
+  supported older contract without changing its meaning or its source files;
 - trace a scored answer back to the capture of the source document behind it, and say whether that
   material may be redistributed;
 - learn where their corpus contradicts itself, and which edition supersedes which;
