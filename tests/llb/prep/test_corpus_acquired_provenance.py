@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from llb.prep.corpus.fingerprints import corpus_fingerprint
+from llb.prep.corpus.fingerprints import corpus_fingerprint, corpus_version_binding
 from llb.prep.corpus.governance import manifest_governance_by_doc
 from llb.prep.corpus.governance_fields import (
     ACQUIRED_GOVERNANCE_FIELDS,
@@ -197,3 +197,31 @@ def test_goldset_provenance_records_absent_provenance_explicitly(tmp_path):
 
     for field in ACQUIRED_GOVERNANCE_FIELDS:
         assert field in row and row[field] is None, field
+
+    assert corpus_version_binding(out) == {
+        "corpus_fingerprint": corpus_fingerprint(out),
+        "acquisition_run_ids": [],
+    }
+
+
+def test_corpus_version_binding_keeps_every_acquisition_run(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+    for name, text, run_id in (
+        ("a.md", DOC, "run-b"),
+        ("b.md", OTHER_DOC, "run-a"),
+        ("c.md", DOC + "\n", "run-b"),
+        ("skipped.md", "short", "run-from-skipped-source"),
+    ):
+        (root / name).write_text(text, encoding="utf-8")
+        (root / f"{name}.metadata.json").write_text(
+            json.dumps({**PROJECTED, "acquisition_run_id": run_id}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    out = tmp_path / "out"
+    ingest_corpus(root, out, min_chars=50)
+
+    assert corpus_version_binding(out) == {
+        "corpus_fingerprint": corpus_fingerprint(out),
+        "acquisition_run_ids": ["run-a", "run-b"],
+    }

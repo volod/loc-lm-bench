@@ -76,33 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Corpus provenance -- `corpus-provenance`
 
-#### corpus-version-binding
-
-`corpus_fingerprint` identifies a corpus but not what produced it, so a gold set cannot name the
-corpus version its source spans are valid against, and a bundle built on acquired material can be
-approximated but not reproduced.
-
-- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
-- Agent status: CLEAR
-- Dependencies: none. The binding is to `acquisition_run_id`, read at ingest today
-  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
-- User-visible outcome: a gold set names the corpus version it was built against, and that version
-  names the acquisition run behind it, so a bundle is reproduced rather than approximated.
-- Scope boundary: in scope -- binding the corpus fingerprint to the `acquisition_run_id` values the
-  corpus carries and recording that binding in the gold-set bundle record. Out of scope --
-  re-running acquisition, which belongs to the producing service; resolving a run id against the
-  producer's store, which needs no network access here; and any change to how the fingerprint itself
-  is computed.
-- Data and artifact paths: `src/llb/prep/corpus/fingerprints.py`, the gold-set bundle record under
-  `$DATA_DIR/<method>/<run>/`, and `samples/corpora/acquired_projection_v1/`.
-- Execution path: CPU-only, inside `make ci`.
-- Acceptance gates: `make ci` green. A bundle built on an acquisition-sourced corpus names both the
-  corpus fingerprint and the acquisition run; one built on a local corpus records the absence
-  explicitly rather than leaving the field blank, because a blank field cannot be told apart from an
-  unanswered question. A corpus mixing two acquisition runs records both rather than picking one.
-- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md`, version-binding
-  section.
-
 #### export-redistribution-gate
 
 `acl_label` covers who may READ a document inside a run; nothing covers whether the material may be

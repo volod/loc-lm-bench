@@ -8,6 +8,7 @@ into.
 
 import hashlib
 
+from llb.prep.corpus.fingerprints import corpus_version_binding
 from llb.prep.corpus.governance import manifest_governance_by_doc
 from llb.prep.corpus.governance_fields import ACQUIRED_GOVERNANCE_FIELDS
 from llb.prep.ontology.constants import PROVENANCE_KIND
@@ -105,6 +106,7 @@ def provenance_payload(
         "seed": seed,
         "settings": settings,
         "elapsed_s": round(result.elapsed_s, 3),
+        "corpus_version": corpus_version_binding(result.corpus_root),
         "documents": document_rows(result),
         "stages": {
             "documents": len(result.docs),

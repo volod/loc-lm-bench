@@ -3,12 +3,19 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from llb.prep.corpus.governance_fields import FINGERPRINTED_GOVERNANCE_FIELDS
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX
 
 CORPUS_MANIFEST = "corpus_manifest.json"
+
+
+class CorpusVersionBinding(TypedDict):
+    """Portable identity of one corpus version and its producing acquisition runs."""
+
+    corpus_fingerprint: str
+    acquisition_run_ids: list[str]
 
 
 def _manifest_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -54,6 +61,25 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
     root = Path(corpus_root)
     fingerprint = _corpus_content_fingerprint(root, load_manifest(root))
     return _with_overlay_fingerprint(root, fingerprint)
+
+
+def corpus_version_binding(corpus_root: Path | str) -> CorpusVersionBinding:
+    """Bind the corpus fingerprint to every acquisition run represented in that version.
+
+    An empty ``acquisition_run_ids`` list is the explicit local-corpus state. Only successful
+    manifest rows contribute, matching the rows included by ``corpus_fingerprint``.
+    """
+    root = Path(corpus_root)
+    manifest = load_manifest(root)
+    run_ids = {
+        run_id
+        for row in (_manifest_rows(manifest) if manifest is not None else [])
+        if isinstance((run_id := row.get("acquisition_run_id")), str) and run_id.strip()
+    }
+    return {
+        "corpus_fingerprint": corpus_fingerprint(root),
+        "acquisition_run_ids": sorted(run_ids),
+    }
 
 
 def _is_corpus_document(path: Path) -> bool:

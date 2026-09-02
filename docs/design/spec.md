@@ -130,9 +130,10 @@ time is a local event, and the source hash covers the staged file rather than th
 served. Ingestion now READS the acquisition fields beside them -- source URI, capture time and
 identity, captured-payload digest, redistribution class, acquisition run, revision link -- and
 carries them to the manifest item, chunk metadata, and the gold-set provenance record. What remains
-is acting on them: nothing yet binds a gold set to the acquisition run behind its corpus, keeps a
-revised document from overwriting the one its labels point into, or refuses an export the recorded
-terms forbid.
+is enforcing the recorded redistribution class at every export and egress boundary. Acquired
+documents are append-only, and a gold-set bundle binds its corpus fingerprint to every acquisition
+run represented in that corpus version; those records make the already-read provenance actionable
+without reaching back into a producer's store.
 
 Corpora increasingly arrive from an upstream acquisition service rather than from an operator's own
 directory, and more than one such producer is expected. This project does not acquire: it does not

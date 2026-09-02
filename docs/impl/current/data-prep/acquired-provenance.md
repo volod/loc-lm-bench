@@ -9,9 +9,10 @@ file rather than the bytes a publisher served. This page covers the fields that 
 what is read, from where, and what each downstream artifact does with them.
 
 Ingestion also acts on document identity and `revision_of`: the acquired lane is append-only, so a
-revision retains the text and manifest row its predecessor's offsets name. Binding a bundle to an
-acquisition run and enforcing the redistribution gate remain separate open work under the same
-capability. The contract these fields are read against is
+revision retains the text and manifest row its predecessor's offsets name. A gold-set bundle binds
+its corpus fingerprint to the acquisition runs represented in that version. Enforcing the
+redistribution gate remains separate open work under the same capability. The contract these fields
+are read against is
 [the acquired-corpus projection](../../../design/acquired-corpus-projection.md).
 
 ## The seven fields and where they come from
@@ -56,7 +57,8 @@ reads the same row:
 - **`store_meta.json`** -- `governance_fields` publishes the full list a store was built against.
 - **The gold-set provenance record** -- `document_rows` in
   `src/llb/prep/ontology/pipeline/bundle_provenance.py` puts the seven acquired fields beside each
-  document's `doc_id`, `sha256` and `n_chars` in `provenance.json`.
+  document's `doc_id`, `sha256` and `n_chars` in `provenance.json`; its aggregate
+  `corpus_version` record binds the corpus fingerprint to the contributing acquisition runs.
 
 **Absence is recorded, not omitted.** Every field is present on every row, `None` where the corpus
 supplies nothing, so a reader never has to tell a missing field apart from an unasked question.
@@ -75,6 +77,30 @@ document, so a rewritten sidecar leaves the item `reused: true` -- but its gover
 re-read every ingest, so the new `acquisition_run_id` lands in the manifest and in the next store
 build. `preserve_ingestion_time` keeps the prior `ingestion_time` only while every other governance
 field is unchanged, so an acquisition change also re-stamps the ingest time.
+
+## Corpus-version binding
+
+`corpus_version_binding` in `src/llb/prep/corpus/fingerprints.py` returns one portable record:
+
+```json
+{
+  "corpus_fingerprint": "<sha256>",
+  "acquisition_run_ids": ["<acquisition-run-id>"]
+}
+```
+
+`provenance_payload` writes that record as `corpus_version` in every completed ontology-assisted
+gold-set bundle's `provenance.json`. The fingerprint is the existing corpus identity, unchanged by
+this feature. Acquisition IDs come from the same successful manifest rows the fingerprint reads;
+they are deduplicated and sorted so document order cannot move the bundle record. If successful
+documents came from two acquisition runs, both IDs remain in the list rather than one being picked.
+Per-document provenance remains beside it, so a reader can still resolve each span to its specific
+capture.
+
+A local corpus, or a corpus manifest whose successful rows carry no acquisition ID, records
+`"acquisition_run_ids": []`. The empty list is the explicit no-acquisition state; an omitted key,
+`null`, or an empty string is never emitted. The binding is computed without contacting the
+producer and does not resolve or rerun an acquisition.
 
 ## Append-only document revisions
 
@@ -144,10 +170,13 @@ text, the same `doc_id`s and the same offsets with every field recorded absent; 
 refusing to supply an acquired field while still supplying an operator one; each of the seven
 moving the corpus fingerprint (parametrized, so a field silently dropped from the row fails);
 `ingestion_time` staying out of it; a rewritten sidecar updating a reused document's row; and the
-gold-set provenance record carrying the fields, or recording their absence. The
-`GOVERNANCE_FIELDS`-versus-`CorpusItem` agreement the splat depends on is asserted directly.
+gold-set provenance record carrying the fields, or recording their absence. It also checks that a
+local corpus binds to an empty acquisition-run list and three successful documents spanning two
+runs retain both IDs once each, while a skipped fourth document's run does not enter the version.
+The `GOVERNANCE_FIELDS`-versus-`CorpusItem` agreement the splat depends on is asserted directly.
 `tests/llb/prep/ontology/drafting/test_ontology_draft.py` asserts the same absence in the full
-draft-flow bundle. The committed projection's positive and drifted-name checks live in
+draft-flow bundle and runs the full fake-endpoint flow over a two-run acquired corpus to assert the
+written `corpus_version` record. The committed projection's positive and drifted-name checks live in
 `tests/llb/prep/test_acquired_projection_roundtrip.py` as described above. That file also runs the
 fixture revision pair as a two-ingest lifecycle, checks the predecessor span after replacement,
 checks both per-document fingerprints and manifest rows, and proves that an in-place acquired edit
@@ -158,7 +187,7 @@ control.
 
 On 2026-09-02 on this RTX 4060 Ti 16 GB CUDA host, all CPU-only and model-free:
 
-- `make ci` completed with 4,796 tests passed and 50 deselected. Within it, the
+- `make ci` completed with 4,798 tests passed and 50 deselected. Within it, the
   acquired-projection conformance check ingested all 20 committed documents with status `ok` and
   matched all 12 supplied sidecar fields on every manifest item. Its 12 of 12 deliberate field
   renames failed with the missing original field named. The reading: the committed seam now detects
@@ -179,10 +208,19 @@ On 2026-09-02 on this RTX 4060 Ti 16 GB CUDA host, all CPU-only and model-free:
   seven fields on its chunk metadata and published the thirteen-name `governance_fields` list in
   its meta. Feeding the pre-change fingerprint of `samples/corpus` to `stale_store_message` against
   the post-change corpus returned the rebuild message, which is the path an existing store takes.
+- The same `make ci` run built completed gold-set bundle records through injected local endpoint
+  responses. The local-corpus record carried its fingerprint and an empty acquisition-run list; a
+  two-document acquired corpus whose rows named two distinct runs carried the identical computed
+  fingerprint and both run IDs in sorted order. A separate three-document binding check collapsed
+  a repeated run ID while retaining the other one and excluded a run carried only by a skipped
+  source. The reading: bundle provenance distinguishes local absence from an unanswered field,
+  preserves every producing run for the fingerprinted mixed corpus, and does not claim a producer
+  whose document is outside that version, all without a model, network, or producer-store
+  dependency.
 
 What would overturn this: a real producer no longer rendering the committed fixture shape, a new
 required projected field being added without widening the shared field tuples and fixture, a
-revision run dropping either manifested ancestor, or a consumer reading `ChunkRecord.metadata`
-positionally rather than by key. The fixture deliberately does not establish that an upstream
-producer derived any projected value correctly, and the finite two-version sequence does not prove
-producer-side immutability.
+revision run dropping either manifested ancestor, a bundle omitting or choosing only one of several
+manifested acquisition runs, or a consumer reading `ChunkRecord.metadata` positionally rather than
+by key. The fixture deliberately does not establish that an upstream producer derived any projected
+value correctly, and the finite two-version sequence does not prove producer-side immutability.
