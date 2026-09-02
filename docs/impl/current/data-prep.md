@@ -14,6 +14,7 @@ in the order a corpus travels through them.
 | Contract | [Gold item contract and splits](data-prep/gold-contract.md) | What one gold item must carry, how splits validate, and the committed fixture |
 | Import | [Ingestion](data-prep/ingestion-import.md) | Grounded-JSONL import into a draft bundle, and external-draft curation (merge / dedup / filter, including intra-document repeated blocks) |
 | Import | [Mixed-corpus ingestion and review slices](data-prep/ingestion-corpora.md) | Mixed txt/md/pdf ingestion, widening a multi-hop review slice, and yield-max empirical acceptance |
+| Import | [Acquired-corpus provenance fields](data-prep/acquired-provenance.md) | Which capture of which source produced a document: the seven projection-sidecar fields, where they travel, and what stays unchanged for a corpus carrying none |
 | Draft | [Chain-of-questions artifacts](data-prep/chain-of-questions.md) | Multi-hop chain drafting and the complete chain-goldset workflow |
 | Draft | [Drafting lanes and resumable extraction](data-prep/drafting-lanes.md) | Interrupt-safe drafting, the frontier ontology lane, and the sequential local Qwen/Gemma comparison |
 | Verify | [Verification gate and judge calibration](data-prep/verification-gate.md) | The human gate, experiment-derived acceptance thresholds, reviewer throughput tooling, rejection feedback, multi-annotator adjudication, and judge calibration |

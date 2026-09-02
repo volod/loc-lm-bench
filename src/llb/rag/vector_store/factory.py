@@ -8,7 +8,7 @@ from typing import Any
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.prep.corpus.fingerprints import corpus_doc_fingerprints, corpus_fingerprint
-from llb.prep.corpus.governance import GOVERNANCE_FIELDS
+from llb.prep.corpus.governance_fields import GOVERNANCE_FIELDS
 from llb.rag.duplicates.tiers import TIER_EXACT
 from llb.rag.duplicates.collapse import collapse_is_lossless
 from llb.rag.encoders.embedder import Embedder

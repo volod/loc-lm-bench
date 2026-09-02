@@ -24,6 +24,7 @@ from llb.prep.pdf.model import PdfTextExtractor
 from llb.prep.pdf.render import default_markdown_out_dir
 from llb.prep.corpus.governance import (
     DEFAULT_SOURCE_SYSTEM,
+    converted_governance,
     preserve_ingestion_time,
     utc_ingestion_time,
 )
@@ -36,6 +37,7 @@ from llb.prep.corpus.ingest_text import (
     DEFAULT_MIN_CHARS,
     KIND_PDF,
     _LOG,
+    _governance_kwargs,
     _ingest_text_file,
     _iter_by_suffix,
     _previous_manifest_items,
@@ -55,14 +57,13 @@ def _pdf_item_to_corpus_item(
     prev = previous.get(source)
     governance = preserve_ingestion_time(
         prev,
-        {
-            "language": payload.get("language") or default_language or "und",
-            "version": payload.get("version"),
-            "effective_date": payload.get("effective_date"),
-            "ingestion_time": ingestion_time,
-            "source_system": payload.get("source_system") or default_source_system,
-            "acl_label": payload.get("acl_label") or default_acl_label,
-        },
+        converted_governance(
+            payload,
+            default_language=default_language,
+            default_source_system=default_source_system,
+            default_acl_label=default_acl_label,
+            ingestion_time=ingestion_time,
+        ),
     )
     return CorpusItem(
         source=source,
@@ -74,12 +75,7 @@ def _pdf_item_to_corpus_item(
         reused=bool(payload.get("reused", False)),
         error=payload.get("error"),
         parser=payload.get("parser"),
-        language=governance["language"],
-        version=governance["version"],
-        effective_date=governance["effective_date"],
-        ingestion_time=governance["ingestion_time"],
-        source_system=governance["source_system"],
-        acl_label=governance["acl_label"],
+        **_governance_kwargs(governance),
     )
 
 

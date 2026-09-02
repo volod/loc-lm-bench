@@ -37,7 +37,9 @@ carry these fields, so verify cards, cited answers, miss clustering, and metadat
 Governance metadata (`src/llb/prep/corpus/governance.py`, `src/llb/rag/chunking/corpus.py`, and
 `src/llb/rag/vector_store/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
 `metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
-`metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
+`metadata.version`, optional `metadata.effective_date`, optional `metadata.acl_label`, and the
+seven acquisition fields of
+[acquired-corpus provenance](../data-prep/acquired-provenance.md).
 The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
 `corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
 that fingerprint with the current corpus manifest before loading the vector store; a changed or

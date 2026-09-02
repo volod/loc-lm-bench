@@ -1,10 +1,13 @@
 # Acquired-Corpus Projection
 
-Status: **PLANNED data contract**. It describes the shape an upstream acquisition service renders
-into, and what this project reads back from it. The fields marked *read today* already flow through
-ingestion; the rest are read by the `corpus-provenance` capability, whose tasks are open in
-[the plan](../impl/plan.md). The capability itself, its boundary, and why the seam is shaped this
-way are in [the spec section that owns it](spec.md#corpus-provenance-and-acquisition-boundary).
+Status: **PARTLY IMPLEMENTED data contract**. It describes the shape an upstream acquisition
+service renders into, and what this project reads back from it. Every sidecar field below is read
+at ingestion today and carried into the manifest item, chunk metadata, and the gold-set provenance
+record ([acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md)). What is
+still open in [the plan](../impl/plan.md) is ACTING on the values: the round-trip fixture,
+revision semantics, the corpus-version binding, and the redistribution gate. The capability
+itself, its boundary, and why the seam is shaped this way are in
+[the spec section that owns it](spec.md#corpus-provenance-and-acquisition-boundary).
 
 This is the sibling of the [external-service draft contract](external-draft-contract.md). That one
 governs artifacts an operator obtains by hand from a chat provider; this one governs a corpus a
@@ -72,7 +75,8 @@ rather than a rewrite of an existing one.
 
 ## Sidecar fields
 
-Fields this project reads today, and what each is rendered from:
+The operator-lane fields, and what each is rendered from. These predate the projection and a
+staged corpus carries them whether or not an acquisition service produced it:
 
 | Sidecar field | Rendered from | Note |
 | --- | --- | --- |
@@ -83,8 +87,9 @@ Fields this project reads today, and what each is rendered from:
 | `source_system` | `AcquisitionRun` identity | never `local`, which is this project's default for operator directories |
 | `acl_label` | `Determination.access_class` | who may READ the document inside a run |
 
-Fields the projection adds. A producer may render all of them immediately: unknown sidecar keys are
-ignored today, so the full projection is a legal input before this side reads any of it.
+The fields the projection adds. All seven are read from the sidecar (and from the sidecar only --
+front matter stays the operator-authored lane), and a document supplying none of them records their
+absence explicitly rather than omitting the keys:
 
 | Sidecar field | Rendered from | What it answers here |
 | --- | --- | --- |
@@ -100,7 +105,8 @@ Extra fields are additive by construction: none of them alters document text, a 
 character offset, so adding one can never move a label. A consumer that does not know a field
 ignores it, and a corpus that carries none of them ingests exactly as an operator's own directory
 does. Widening the field set a consumer records does change that consumer's own corpus fingerprint,
-which costs a store rebuild on its side and nothing on the producer's.
+which costs a store rebuild on its side and nothing on the producer's -- this side has taken that
+cost once, for all seven at once.
 
 ## Invariants
 

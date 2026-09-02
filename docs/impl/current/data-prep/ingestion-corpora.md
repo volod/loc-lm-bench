@@ -17,8 +17,10 @@ the output subtree, so the default `<root>/_md` output is never re-ingested as n
 
 Governance metadata is part of the same manifest contract. Every manifest item records
 `language`, `ingestion_time`, `source_system`, optional `version`, optional `effective_date`, and
-optional `acl_label`. Text sources can provide per-document values in `<source>.metadata.json` or
-markdown front matter; otherwise `--default-language` is used, then a cheap deterministic detector.
+optional `acl_label`, plus the seven acquisition fields an upstream service renders into the
+projection sidecar ([acquired-corpus provenance](acquired-provenance.md)). Text sources can provide
+per-document values in `<source>.metadata.json` or markdown front matter; otherwise
+`--default-language` is used, then a cheap deterministic detector.
 `--source-system` and `--acl-label` set defaults for sources that do not provide their own values.
 PDF rows inherit any conversion-manifest governance fields when present and otherwise use the same
 operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
@@ -51,7 +53,11 @@ this CUDA host ingested both committed fixture documents and reported 0 of 2 doc
 ordering field and 0 of 1 orderable document pairs in both the CLI and manifest, with the
 no-supersession consequence. This checks the real Make/CLI/persistence path, not external-corpus
 prevalence; adding governance metadata to that fixture would intentionally overturn those fixture
-counts.
+counts. Acquisition provenance is reported nowhere here: `source_uri`, `capture_time`,
+`capture_id`, `payload_digest`, `licence`, `acquisition_run_id` and `revision_of` are read into the
+same manifest item and carried onward, but this coverage report counts only the two ordering fields
+supersession needs. What reads the other seven is in
+[acquired-corpus provenance](acquired-provenance.md).
 
 ### Refresh and downstream workflows
 

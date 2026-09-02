@@ -123,12 +123,16 @@ model never certifies its own output.
 
 ## Corpus Provenance and Acquisition Boundary
 
-A scored answer traces to a corpus document and stops there. The governance fields a staged corpus
-carries today record when THIS project ingested a document and under which access label it may be
-read; they do not record which source was observed, when, or on what terms. The ingestion time is a
-local event, and the source hash covers the staged file rather than the bytes a publisher served. An
-operator who has to defend a result cannot say which URI at which moment produced the text a gold
-span points into, and cannot say whether that text may leave the host at all.
+A scored answer traces to a corpus document and stops there. The operator-lane governance fields a
+staged corpus carries record when THIS project ingested a document and under which access label it
+may be read; they do not record which source was observed, when, or on what terms. The ingestion
+time is a local event, and the source hash covers the staged file rather than the bytes a publisher
+served. Ingestion now READS the acquisition fields beside them -- source URI, capture time and
+identity, captured-payload digest, redistribution class, acquisition run, revision link -- and
+carries them to the manifest item, chunk metadata, and the gold-set provenance record. What remains
+is acting on them: nothing yet binds a gold set to the acquisition run behind its corpus, keeps a
+revised document from overwriting the one its labels point into, or refuses an export the recorded
+terms forbid.
 
 Corpora increasingly arrive from an upstream acquisition service rather than from an operator's own
 directory, and more than one such producer is expected. This project does not acquire: it does not
@@ -154,8 +158,7 @@ convenient:
 - **Provenance is additive.** Nothing carried across the seam alters document text, a `doc_id`, or
   a character offset, so no label can move because a provenance field was added. Widening the field
   set this side RECORDS does change a corpus fingerprint, but that costs a store rebuild rather than
-  a moved label. A producer may therefore render the full projection before this side reads any of
-  it.
+  a moved label -- taken once, for the whole projection at once.
 
 Access and redistribution are separate questions. The existing access label says who may READ a
 document inside a run; it says nothing about whether the material may be copied out of the host. An

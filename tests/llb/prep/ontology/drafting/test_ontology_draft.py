@@ -149,6 +149,10 @@ def _assert_provenance(out: Path, result) -> None:
     assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
     assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
+    # a corpus with no acquisition behind it records that absence rather than omitting the keys
+    assert all(
+        d["acquisition_run_id"] is None and d["source_uri"] is None for d in prov["documents"]
+    )
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
     assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
 

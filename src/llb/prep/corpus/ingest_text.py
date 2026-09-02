@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,12 +43,22 @@ class CorpusItem:
     reused: bool = False
     error: str | None = None
     parser: str | None = None  # PDF lane only
+    # Governance, in `GOVERNANCE_FIELDS` order: the operator lane first, then the fields an
+    # acquisition service renders into the projection sidecar. Every one is present on every row,
+    # `None` where the corpus carries none, so absence is recorded rather than implied.
     language: str | None = None
     version: str | None = None
     effective_date: str | None = None
     ingestion_time: str | None = None
     source_system: str | None = None
     acl_label: str | None = None
+    source_uri: str | None = None
+    capture_time: str | None = None
+    capture_id: str | None = None
+    payload_digest: str | None = None
+    licence: str | None = None
+    acquisition_run_id: str | None = None
+    revision_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +86,15 @@ class CorpusIngestResult:
     @property
     def n_removed_sources(self) -> int:
         return len(self.removed_sources)
+
+
+def _governance_kwargs(governance: Mapping[str, str | None]) -> dict[str, Any]:
+    """A governance row as `CorpusItem` constructor kwargs.
+
+    The row's keys ARE the dataclass field names: `GOVERNANCE_FIELDS` names both lists, so the
+    only way they drift is if one is edited alone, which the acquired-provenance tests pin.
+    """
+    return dict(governance)
 
 
 def _iter_by_suffix(root: Path, out_dir: Path) -> tuple[list[Path], list[Path]]:
@@ -137,7 +157,6 @@ def _ingest_text_file(
     prev = previous.get(source)
     text = path.read_text(encoding="utf-8")
     governance = source_governance(
-        root,
         path,
         text=text,
         default_language=default_language,
@@ -163,12 +182,7 @@ def _ingest_text_file(
             n_chars=int(prev["n_chars"]),
             source_sha256=source_sha256,
             reused=True,
-            language=governance["language"],
-            version=governance["version"],
-            effective_date=governance["effective_date"],
-            ingestion_time=governance["ingestion_time"],
-            source_system=governance["source_system"],
-            acl_label=governance["acl_label"],
+            **_governance_kwargs(governance),
         )
     if len(text) < min_chars:
         return CorpusItem(
@@ -179,12 +193,7 @@ def _ingest_text_file(
             n_chars=len(text),
             source_sha256=source_sha256,
             error=f"text shorter than {min_chars} chars",
-            language=governance["language"],
-            version=governance["version"],
-            effective_date=governance["effective_date"],
-            ingestion_time=governance["ingestion_time"],
-            source_system=governance["source_system"],
-            acl_label=governance["acl_label"],
+            **_governance_kwargs(governance),
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
@@ -195,10 +204,5 @@ def _ingest_text_file(
         status="ok",
         n_chars=len(text),
         source_sha256=source_sha256,
-        language=governance["language"],
-        version=governance["version"],
-        effective_date=governance["effective_date"],
-        ingestion_time=governance["ingestion_time"],
-        source_system=governance["source_system"],
-        acl_label=governance["acl_label"],
+        **_governance_kwargs(governance),
     )
