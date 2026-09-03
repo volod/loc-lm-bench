@@ -4,6 +4,11 @@ import json
 
 import pytest
 
+from llb.artifacts.runs.fixture import (
+    retrieval_metrics,
+    run_manifest_payload,
+    telemetry_report,
+)
 from llb.board.recommend.build import (
     build_recommendation,
     load_run_summaries,
@@ -165,19 +170,19 @@ def test_load_run_summaries_filters_partial_before_dedup(tmp_path):
         d.mkdir()
         (d / "manifest.json").write_text(
             json.dumps(
-                {
-                    "split": "final",
-                    "n_cases": n,
-                    "config": {"model": model, "backend": "ollama", "top_k": 5},
-                    "metrics": {
+                run_manifest_payload(
+                    split="final",
+                    n_cases=n,
+                    config={"model": model, "backend": "ollama", "top_k": 5},
+                    metrics={
                         "objective_score": obj,
                         "reliability": 1.0,
                         "tokens_per_s": 10.0,
                         "quality_per_watt": 0.1,
                     },
-                    "telemetry": {"peak_vram_mb": 9000},
-                    "retrieval": {"recall": 0.9, "mrr": 0.8},
-                }
+                    telemetry=telemetry_report(peak_vram_mb=9000),
+                    retrieval=retrieval_metrics(recall_at_k=0.9, mrr=0.8),
+                )
             ),
             encoding="utf-8",
         )

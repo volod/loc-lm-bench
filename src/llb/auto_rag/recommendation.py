@@ -6,6 +6,11 @@ from typing import Any
 
 import yaml
 
+from llb.artifacts.runs.rows import encode_record
+from llb.core.contracts.orchestration import (
+    AUTO_RAG_RECOMMENDATION_SCHEMA_ID,
+    AUTO_RAG_STAGE_LINKS_SCHEMA_ID,
+)
 from llb.core.fsutil import atomic_write_text
 
 
@@ -18,7 +23,6 @@ def write_recommendation(run_dir: Path, outputs: dict[str, dict[str, Any]]) -> d
     overrides = dict(recommended.get("overrides") or {})
     selected_retrieval = retrieval["selected"]
     payload = {
-        "schema_version": 1,
         "model": recommended["source"],
         "model_name": recommended["model"],
         "backend": recommended["backend"],
@@ -69,10 +73,23 @@ def write_recommendation(run_dir: Path, outputs: dict[str, dict[str, Any]]) -> d
     # YAML stays anchor-free and is easy to copy into a standalone config.
     payload = json.loads(json.dumps(payload, ensure_ascii=False))
     atomic_write_text(
-        yaml_path, yaml.safe_dump(payload, allow_unicode=False, sort_keys=False, width=100)
+        yaml_path,
+        yaml.safe_dump(
+            encode_record(AUTO_RAG_RECOMMENDATION_SCHEMA_ID, payload),
+            allow_unicode=False,
+            sort_keys=False,
+            width=100,
+        ),
     )
     atomic_write_text(report_path, _report(payload, run_dir))
-    links = {stage: result for stage, result in outputs.items() if stage != "recommendation"}
+    links = encode_record(
+        AUTO_RAG_STAGE_LINKS_SCHEMA_ID,
+        {
+            "stages": {
+                stage: result for stage, result in outputs.items() if stage != "recommendation"
+            }
+        },
+    )
     atomic_write_text(
         run_dir / "artifacts.json", json.dumps(links, ensure_ascii=False, indent=2) + "\n"
     )

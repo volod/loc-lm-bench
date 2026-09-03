@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from llb.board.io import read_case_rows
+from llb.artifacts.runs.bundle import read_case_rows
 from llb.rag.fusion_evidence.slices import MetricVectors
 
 CaseRows = list[Mapping[str, Any]]

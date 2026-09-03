@@ -1,11 +1,11 @@
 """Prospective wording, seeded family routing, and candidate-isolation checks."""
 
-import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
@@ -178,7 +178,7 @@ def test_stable_routes_require_both_seeds_and_cross_family_threshold(tmp_path: P
         mirror=lambda *_args: None,
     )
     run_dir = Path(paths["manifest"]).parent
-    persisted = json.loads((run_dir / "family-adaptation-analysis.json").read_text())
+    persisted = read_study_analysis(run_dir / "family-adaptation-analysis.json")
     assert persisted["supported_family_fraction"] == pytest.approx(2 / 3)
 
 

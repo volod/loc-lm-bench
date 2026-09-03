@@ -2,6 +2,7 @@
 
 from llb.artifacts.data_prep.families import data_prep_definitions
 from llb.artifacts.retrieval.families import retrieval_definitions
+from llb.artifacts.runs.families import run_definitions
 from llb.artifacts.definitions import ContractDefinition, MigrationStep
 from llb.artifacts.registry import ContractRegistry
 from llb.core.contracts.artifact_catalog import ArtifactCatalog, FormatBinding
@@ -74,6 +75,7 @@ def build_default_registry() -> ContractRegistry:
             ),
             *data_prep_definitions(),
             *retrieval_definitions(),
+            *run_definitions(),
         )
     )
 

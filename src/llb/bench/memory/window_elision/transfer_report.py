@@ -1,9 +1,9 @@
 """Rendering and persistence for stratum-controlled window-elision transfer."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_TRIM_STRATEGY
 from llb.bench.memory.window_elision.transfer import TransferFamilyRun
 from llb.bench.memory.window_elision.tasks import STRATA
@@ -97,15 +97,13 @@ def persist_window_elision_transfer(
         },
         case_rows=persisted_rows,
         mirror=mirror,
-        artifacts={
-            "window-elision-transfer-design.json": json.dumps(design, indent=2, sort_keys=True)
-            + "\n",
-            "window-elision-transfer-analysis.json": json.dumps(analysis, indent=2, sort_keys=True)
-            + "\n",
-            "window-elision-transfer.md": "# Middle-critical window-elision transfer\n\n```text\n"
-            + table
-            + "\n```\n",
-        },
+        artifacts=[
+            study_design("window-elision-transfer-design.json", design),
+            study_analysis("window-elision-transfer-analysis.json", analysis),
+            table_report(
+                "window-elision-transfer.md", "Middle-critical window-elision transfer", table
+            ),
+        ],
     )
 
 

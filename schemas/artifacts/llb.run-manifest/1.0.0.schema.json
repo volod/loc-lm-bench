@@ -1,0 +1,772 @@
+{
+  "$defs": {
+    "ContentionReport": {
+      "additionalProperties": false,
+      "description": "Pre-launch VRAM-contention guard outcome.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "derated": {
+          "title": "Derated",
+          "type": "boolean"
+        },
+        "fits": {
+          "title": "Fits",
+          "type": "boolean"
+        },
+        "free_mb": {
+          "title": "Free Mb",
+          "type": "integer"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "requested_util": {
+          "title": "Requested Util",
+          "type": "number"
+        },
+        "residents": {
+          "items": {
+            "$ref": "#/$defs/ResidentProc"
+          },
+          "title": "Residents",
+          "type": "array"
+        },
+        "safe_util": {
+          "title": "Safe Util",
+          "type": "number"
+        },
+        "target_mb": {
+          "title": "Target Mb",
+          "type": "integer"
+        },
+        "total_mb": {
+          "title": "Total Mb",
+          "type": "integer"
+        },
+        "weight_floor_mb": {
+          "title": "Weight Floor Mb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_mb",
+        "free_mb",
+        "requested_util",
+        "safe_util",
+        "target_mb",
+        "weight_floor_mb",
+        "residents",
+        "derated",
+        "fits",
+        "action",
+        "note"
+      ],
+      "title": "ContentionReport",
+      "type": "object"
+    },
+    "DurabilityStatus": {
+      "additionalProperties": false,
+      "description": "Fault-recovery counters for one evaluation run.",
+      "properties": {
+        "backend_relaunches": {
+          "title": "Backend Relaunches",
+          "type": "integer"
+        },
+        "case_retries": {
+          "title": "Case Retries",
+          "type": "integer"
+        },
+        "resumed_cases": {
+          "title": "Resumed Cases",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "case_retries",
+        "backend_relaunches",
+        "resumed_cases"
+      ],
+      "title": "DurabilityStatus",
+      "type": "object"
+    },
+    "GpuSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "driver": {
+          "title": "Driver",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "total_mb": {
+          "title": "Total Mb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "total_mb",
+        "driver"
+      ],
+      "title": "GpuSummary",
+      "type": "object"
+    },
+    "JudgeDiagnostics": {
+      "additionalProperties": false,
+      "description": "Counts and reasons that distinguish candidate and local judge failures.",
+      "properties": {
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "n_ok": {
+          "title": "N Ok",
+          "type": "integer"
+        },
+        "n_zero": {
+          "title": "N Zero",
+          "type": "integer"
+        },
+        "reasons": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Reasons",
+          "type": "object"
+        }
+      },
+      "required": [
+        "n",
+        "n_ok",
+        "n_zero",
+        "reasons"
+      ],
+      "title": "JudgeDiagnostics",
+      "type": "object"
+    },
+    "JudgeStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Base Url"
+        },
+        "budget": {
+          "additionalProperties": true,
+          "title": "Budget",
+          "type": "object"
+        },
+        "calibration_rho": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Calibration Rho"
+        },
+        "diagnostics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgeDiagnostics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_language": {
+          "title": "Prompt Language",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "scorer_policy": {
+          "title": "Scorer Policy",
+          "type": "string"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "trusted": {
+          "title": "Trusted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "calibration_rho",
+        "threshold",
+        "trusted"
+      ],
+      "title": "JudgeStatus",
+      "type": "object"
+    },
+    "ResidentProc": {
+      "additionalProperties": false,
+      "properties": {
+        "pid": {
+          "title": "Pid",
+          "type": "integer"
+        },
+        "used_mb": {
+          "title": "Used Mb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid",
+        "used_mb"
+      ],
+      "title": "ResidentProc",
+      "type": "object"
+    },
+    "RetrievalMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "k": {
+          "title": "K",
+          "type": "integer"
+        },
+        "mrr": {
+          "title": "Mrr",
+          "type": "number"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "recall_at_k": {
+          "title": "Recall At K",
+          "type": "number"
+        },
+        "served_chars_at_k": {
+          "title": "Served Chars At K",
+          "type": "number"
+        },
+        "span_char_coverage_at_k": {
+          "title": "Span Char Coverage At K",
+          "type": "number"
+        },
+        "span_intact_at_k": {
+          "title": "Span Intact At K",
+          "type": "number"
+        }
+      },
+      "required": [
+        "n",
+        "k",
+        "recall_at_k",
+        "mrr"
+      ],
+      "title": "RetrievalMetrics",
+      "type": "object"
+    },
+    "RunEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "title": "Platform",
+          "type": "string"
+        },
+        "python": {
+          "title": "Python",
+          "type": "string"
+        }
+      },
+      "required": [
+        "python",
+        "platform"
+      ],
+      "title": "RunEnvironment",
+      "type": "object"
+    },
+    "RunMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "abstention_accuracy": {
+          "title": "Abstention Accuracy",
+          "type": "number"
+        },
+        "citation_coverage": {
+          "title": "Citation Coverage",
+          "type": "number"
+        },
+        "citation_validity": {
+          "title": "Citation Validity",
+          "type": "number"
+        },
+        "envelope_conformance": {
+          "title": "Envelope Conformance",
+          "type": "number"
+        },
+        "envelope_malformed_rate": {
+          "title": "Envelope Malformed Rate",
+          "type": "number"
+        },
+        "envelope_repair_rate": {
+          "title": "Envelope Repair Rate",
+          "type": "number"
+        },
+        "envelope_schema_invalid_rate": {
+          "title": "Envelope Schema Invalid Rate",
+          "type": "number"
+        },
+        "found_rate": {
+          "title": "Found Rate",
+          "type": "number"
+        },
+        "groundedness": {
+          "title": "Groundedness",
+          "type": "number"
+        },
+        "hallucinated_citation_rate": {
+          "title": "Hallucinated Citation Rate",
+          "type": "number"
+        },
+        "judge_score": {
+          "title": "Judge Score",
+          "type": "number"
+        },
+        "language_mismatch_rate": {
+          "title": "Language Mismatch Rate",
+          "type": "number"
+        },
+        "mean_claims": {
+          "title": "Mean Claims",
+          "type": "number"
+        },
+        "mean_completion_tokens": {
+          "title": "Mean Completion Tokens",
+          "type": "number"
+        },
+        "mean_power_w": {
+          "title": "Mean Power W",
+          "type": "number"
+        },
+        "mean_reasoning_leak_chars": {
+          "title": "Mean Reasoning Leak Chars",
+          "type": "number"
+        },
+        "n_probes": {
+          "title": "N Probes",
+          "type": "integer"
+        },
+        "objective_score": {
+          "title": "Objective Score",
+          "type": "number"
+        },
+        "ontology_violation_rate": {
+          "title": "Ontology Violation Rate",
+          "type": "number"
+        },
+        "quality_per_watt": {
+          "title": "Quality Per Watt",
+          "type": "number"
+        },
+        "ranking_score": {
+          "title": "Ranking Score",
+          "type": "number"
+        },
+        "reasoning_leak_rate": {
+          "title": "Reasoning Leak Rate",
+          "type": "number"
+        },
+        "reliability": {
+          "title": "Reliability",
+          "type": "number"
+        },
+        "stage_latency": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Stage Latency",
+          "type": "object"
+        },
+        "token_precision": {
+          "title": "Token Precision",
+          "type": "number"
+        },
+        "token_recall": {
+          "title": "Token Recall",
+          "type": "number"
+        },
+        "tokens_per_s": {
+          "title": "Tokens Per S",
+          "type": "number"
+        },
+        "tokens_per_watt": {
+          "title": "Tokens Per Watt",
+          "type": "number"
+        },
+        "validation_checked_rate": {
+          "title": "Validation Checked Rate",
+          "type": "number"
+        },
+        "validation_repair_rate": {
+          "title": "Validation Repair Rate",
+          "type": "number"
+        }
+      },
+      "required": [
+        "objective_score",
+        "reliability",
+        "tokens_per_s"
+      ],
+      "title": "RunMetrics",
+      "type": "object"
+    },
+    "TelemetryReport": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Backend"
+        },
+        "flashinfer_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flashinfer Version"
+        },
+        "gpu_memory_utilization": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gpu Memory Utilization"
+        },
+        "gpus": {
+          "items": {
+            "$ref": "#/$defs/GpuSummary"
+          },
+          "title": "Gpus",
+          "type": "array"
+        },
+        "load_time_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Load Time S"
+        },
+        "max_new_tokens": {
+          "title": "Max New Tokens",
+          "type": "integer"
+        },
+        "mean_completion_tokens": {
+          "title": "Mean Completion Tokens",
+          "type": "number"
+        },
+        "mean_power_w": {
+          "title": "Mean Power W",
+          "type": "number"
+        },
+        "n_failed": {
+          "title": "N Failed",
+          "type": "integer"
+        },
+        "n_gpu_layers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "N Gpu Layers"
+        },
+        "n_measured": {
+          "title": "N Measured",
+          "type": "integer"
+        },
+        "n_warmup": {
+          "title": "N Warmup",
+          "type": "integer"
+        },
+        "peak_power_w": {
+          "title": "Peak Power W",
+          "type": "number"
+        },
+        "peak_vram_mb": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Peak Vram Mb"
+        },
+        "power_samples": {
+          "title": "Power Samples",
+          "type": "integer"
+        },
+        "requested_context": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested Context"
+        },
+        "sampler": {
+          "title": "Sampler",
+          "type": "string"
+        },
+        "served_context": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Served Context"
+        },
+        "steady_tokens_per_s": {
+          "title": "Steady Tokens Per S",
+          "type": "number"
+        },
+        "tokens_per_char": {
+          "title": "Tokens Per Char",
+          "type": "number"
+        },
+        "tokens_per_watt": {
+          "title": "Tokens Per Watt",
+          "type": "number"
+        }
+      },
+      "required": [
+        "steady_tokens_per_s",
+        "mean_completion_tokens",
+        "tokens_per_char",
+        "max_new_tokens",
+        "n_warmup",
+        "n_measured",
+        "n_failed",
+        "load_time_s",
+        "peak_vram_mb",
+        "requested_context",
+        "served_context",
+        "backend",
+        "gpu_memory_utilization",
+        "n_gpu_layers",
+        "gpus"
+      ],
+      "title": "TelemetryReport",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.run-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`manifest.json`: the immutable per-run record -- config, environment, headline metrics.\n\nEvery optional block is a lane that may not have run (telemetry, contention, a judge, a\nprompt-system package, a document-lane context window), not a field a reader defaults.",
+  "properties": {
+    "config": {
+      "additionalProperties": true,
+      "title": "Config",
+      "type": "object"
+    },
+    "contention": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContentionReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "context_window": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Window"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "durability": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DurabilityStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "env": {
+      "$ref": "#/$defs/RunEnvironment"
+    },
+    "judge": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JudgeStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "n_cases": {
+      "default": 0,
+      "minimum": 0,
+      "title": "N Cases",
+      "type": "integer"
+    },
+    "prompt_system_provenance": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt System Provenance"
+    },
+    "retrieval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetrievalMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "run_name": {
+      "minLength": 1,
+      "title": "Run Name",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.run-manifest",
+      "default": "llb.run-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Split"
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TelemetryReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "run_id",
+    "run_name",
+    "config"
+  ],
+  "title": "RunManifest",
+  "type": "object"
+}

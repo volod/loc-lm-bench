@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.fixture import run_manifest_payload, run_metrics
 from llb.board.recommend.build import build_recommendation
 from llb.board.recommend.model import HostInfo, RunSummary
 from llb.board.runs import RunRecord
@@ -48,7 +49,9 @@ def run_summary(tmp_path: Path, *, model: str = MODEL, **config_overrides: objec
         "corpus_root": CORPUS,
         **config_overrides,
     }
-    (run_dir / "manifest.json").write_text(json.dumps({"config": config}), encoding="utf-8")
+    (run_dir / "manifest.json").write_text(
+        json.dumps(run_manifest_payload(config=config)), encoding="utf-8"
+    )
     result = ModelResult(
         model=model,
         backend="ollama",
@@ -185,9 +188,9 @@ def write_context_policy(
     )
     (run_dir / "manifest.json").write_text(
         json.dumps(
-            {
-                "created_at": "2026-08-20T00:00:00+00:00",
-                "config": {
+            run_manifest_payload(
+                created_at="2026-08-20T00:00:00+00:00",
+                config={
                     "category": "agentic-context",
                     "model": model,
                     "backend": "ollama",
@@ -196,8 +199,8 @@ def write_context_policy(
                         "completion": {"stability": {"reading": "separated", "borderline": False}}
                     },
                 },
-                "metrics": {"objective_score": 0.875},
-            }
+                metrics=run_metrics(objective_score=0.875),
+            )
         ),
         encoding="utf-8",
     )

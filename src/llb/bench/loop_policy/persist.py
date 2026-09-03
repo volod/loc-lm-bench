@@ -1,9 +1,14 @@
 """Persistence for agent-loop policy cells and their shared comparison artifacts."""
 
-import json
 import logging
 from pathlib import Path
 
+from llb.artifacts.runs.members import (
+    RunMember,
+    study_analysis,
+    study_design,
+    table_report,
+)
 from llb.backends.context_budget import ContextBudget
 from llb.bench.loop_policy.report import METHOD, LoopPolicyReport
 from llb.bench.common import Mirror, persist_category_run
@@ -36,26 +41,17 @@ def persist_reports(
     mirror: Mirror | None,
 ) -> None:
     """Write one atomic category bundle per cell, each carrying the shared comparison."""
-    artifacts = {
-        "comparison.md": f"# Agent loop policy comparison\n\n```\n{table}\n```\n",
-        "recommendation.json": json.dumps(recommendation, indent=2, sort_keys=True) + "\n",
-    }
-    if repeat_power_design is not None:
-        artifacts["study-design.json"] = (
-            json.dumps(repeat_power_design, indent=2, sort_keys=True) + "\n"
-        )
-    if repeat_feedback_design is not None:
-        artifacts["feedback-study-design.json"] = (
-            json.dumps(repeat_feedback_design, indent=2, sort_keys=True) + "\n"
-        )
-    if repeat_power_analysis is not None:
-        artifacts["power-analysis.json"] = (
-            json.dumps(repeat_power_analysis, indent=2, sort_keys=True) + "\n"
-        )
-    if repeat_feedback_analysis is not None:
-        artifacts["feedback-analysis.json"] = (
-            json.dumps(repeat_feedback_analysis, indent=2, sort_keys=True) + "\n"
-        )
+    declared = (
+        ("study-design.json", study_design, repeat_power_design),
+        ("feedback-study-design.json", study_design, repeat_feedback_design),
+        ("power-analysis.json", study_analysis, repeat_power_analysis),
+        ("feedback-analysis.json", study_analysis, repeat_feedback_analysis),
+    )
+    artifacts: list[RunMember] = [
+        table_report("comparison.md", "Agent loop policy comparison", table),
+        study_analysis("recommendation.json", recommendation),
+        *(build(name, payload) for name, build, payload in declared if payload is not None),
+    ]
     for report in reports:
         config: dict[str, object] = {
             "model": model,

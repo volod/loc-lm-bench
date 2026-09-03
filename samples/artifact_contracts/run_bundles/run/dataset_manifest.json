@@ -1,0 +1,121 @@
+{
+  "schema_id": "llb.dataset-manifest",
+  "schema_version": "1.0.0",
+  "extensions": {},
+  "dataset_id": "llb-run-bundle",
+  "description": "One published run bundle: what ran, how every case scored, and what it was served.",
+  "owner": "loc-lm-bench maintainers",
+  "members": [
+    {
+      "member_id": "run-manifest",
+      "path": "manifest.json",
+      "format": "json",
+      "media_type": "application/json",
+      "granularity": "document",
+      "required": true,
+      "digest": "sha256:529b832aab34c27eafe55c9b33008714d36ffb05889f4a945ab4da324167e613",
+      "record_contract": {
+        "schema_id": "llb.run-manifest",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "scores",
+      "path": "scores.jsonl",
+      "format": "jsonl",
+      "media_type": "application/x-ndjson",
+      "granularity": "row",
+      "required": true,
+      "digest": "sha256:da2994ff15ba448e1a12f34191424e59d4d0c8e897b37cb05d34d5ce4bb570a4",
+      "record_contract": {
+        "schema_id": "llb.case-score",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "retrieval",
+      "path": "retrieval.jsonl",
+      "format": "jsonl",
+      "media_type": "application/x-ndjson",
+      "granularity": "row",
+      "required": true,
+      "digest": "sha256:07802e2390301ae21e9d5f779f711e6b6bed7255c74ea7f6bc4ac1a35ef36d76",
+      "record_contract": {
+        "schema_id": "llb.case-retrieval",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "probes",
+      "path": "probes.jsonl",
+      "format": "jsonl",
+      "media_type": "application/x-ndjson",
+      "granularity": "row",
+      "required": true,
+      "digest": "sha256:2975048839ad6eabdf14f67742c7223a3e0f3a79f729cd744e5b11d48610d2ac",
+      "record_contract": {
+        "schema_id": "llb.context-probe",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "budget-abort",
+      "path": "scorer/abort.json",
+      "format": "json",
+      "media_type": "application/json",
+      "granularity": "document",
+      "required": true,
+      "digest": "sha256:69b3a28352cec05c3a955b723d9503171a543c8a179306abbf18ccdca053822a",
+      "record_contract": {
+        "schema_id": "llb.run-abort",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "second-fold-design",
+      "path": "second-fold-design.json",
+      "format": "json",
+      "media_type": "application/json",
+      "granularity": "document",
+      "required": true,
+      "digest": "sha256:fdcfd57f03fc6fae16f39877a8f70a6fe97805d798e42dd1344d2778e2ff052f",
+      "record_contract": {
+        "schema_id": "llb.study-design",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "second-fold-analysis",
+      "path": "second-fold-analysis.json",
+      "format": "json",
+      "media_type": "application/json",
+      "granularity": "document",
+      "required": true,
+      "digest": "sha256:4901efa2bdc5aee7095de3941ceb9edbc4954dff3a6ff55540f50085dac43019",
+      "record_contract": {
+        "schema_id": "llb.study-analysis",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    }
+  ],
+  "relationships": [],
+  "quality_checks": [
+    {
+      "check_id": "member-contract-dispatch",
+      "kind": "structural",
+      "description": "Every present member resolves to its registered contract's current version."
+    },
+    {
+      "check_id": "member-digest",
+      "kind": "structural",
+      "description": "Every member's content matches the digest recorded when it was described."
+    }
+  ]
+}

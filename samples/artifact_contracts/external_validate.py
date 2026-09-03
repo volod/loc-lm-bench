@@ -14,6 +14,7 @@ SCHEMA_ROOT = PROJECT_ROOT / "schemas" / "artifacts"
 FIXTURE_ROOT = PROJECT_ROOT / "samples" / "artifact_contracts"
 DATA_PREP_ROOT = FIXTURE_ROOT / "data_prep"
 RETRIEVAL_ROOT = FIXTURE_ROOT / "retrieval_graph"
+RUN_BUNDLE_ROOT = FIXTURE_ROOT / "run_bundles"
 
 
 def validate(instance_path: Path, schema_path: Path) -> None:
@@ -32,9 +33,11 @@ def refuse(instance_path: Path, schema_path: Path) -> None:
 
 def validate_row(instance_path: Path, schema_path: Path) -> None:
     """Validate the first record of a JSONL member, which is how a row contract is bound."""
-    row = json.loads(next(
-        line for line in instance_path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ))
+    row = json.loads(
+        next(
+            line for line in instance_path.read_text(encoding="utf-8").splitlines() if line.strip()
+        )
+    )
     _validator(schema_path).validate(row)
 
 
@@ -167,6 +170,46 @@ def _validate_retrieval_and_graph() -> None:
     )
 
 
+def _validate_run_bundles() -> None:
+    """An evaluation bundle and a benchmark bundle, current and pre-contract, without llb.
+
+    The bundle's own dataset manifest is validated too: it is the only place that says which score
+    contract the rows are bound to, so an outside consumer that opens `scores.jsonl` without it is
+    guessing whether it holds evaluation cases or benchmark cells.
+    """
+    run = RUN_BUNDLE_ROOT / "run"
+    validate(run / "manifest.json", SCHEMA_ROOT / "llb.run-manifest" / "1.0.0.schema.json")
+    validate_row(run / "scores.jsonl", SCHEMA_ROOT / "llb.case-score" / "1.0.0.schema.json")
+    validate_row(run / "retrieval.jsonl", SCHEMA_ROOT / "llb.case-retrieval" / "1.0.0.schema.json")
+    validate_row(run / "probes.jsonl", SCHEMA_ROOT / "llb.context-probe" / "1.0.0.schema.json")
+    validate(run / "scorer" / "abort.json", SCHEMA_ROOT / "llb.run-abort" / "1.0.0.schema.json")
+    validate(
+        run / "second-fold-design.json", SCHEMA_ROOT / "llb.study-design" / "1.0.0.schema.json"
+    )
+    validate(
+        run / "second-fold-analysis.json",
+        SCHEMA_ROOT / "llb.study-analysis" / "1.0.0.schema.json",
+    )
+    validate(
+        run / "dataset_manifest.json", SCHEMA_ROOT / "llb.dataset-manifest" / "1.0.0.schema.json"
+    )
+    validate_row(
+        RUN_BUNDLE_ROOT / "benchmark" / "scores.jsonl",
+        SCHEMA_ROOT / "llb.benchmark-cell" / "1.0.0.schema.json",
+    )
+    legacy = RUN_BUNDLE_ROOT / "legacy"
+    validate_pre_contract(legacy / "run" / "manifest.json", "llb.run-manifest")
+    validate_pre_contract(legacy / "run" / "scores.jsonl", "llb.case-score")
+    validate_pre_contract(legacy / "run" / "retrieval.jsonl", "llb.case-retrieval")
+    validate_pre_contract(legacy / "run" / "second-fold-design.json", "llb.study-design")
+    validate_pre_contract(legacy / "run" / "second-fold-analysis.json", "llb.study-analysis")
+    validate_pre_contract(legacy / "benchmark" / "scores.jsonl", "llb.benchmark-cell")
+    refuse(
+        RUN_BUNDLE_ROOT / "unsupported-future" / "manifest.json",
+        SCHEMA_ROOT / "llb.run-manifest" / "1.0.0.schema.json",
+    )
+
+
 def main() -> None:
     validate(
         FIXTURE_ROOT / "current.json",
@@ -190,6 +233,7 @@ def main() -> None:
     )
     _validate_data_prep()
     _validate_retrieval_and_graph()
+    _validate_run_bundles()
     refuse(
         FIXTURE_ROOT / "missing-identity.json",
         SCHEMA_ROOT / "llb.artifact-contract.compatibility-probe" / "2.0.0.schema.json",

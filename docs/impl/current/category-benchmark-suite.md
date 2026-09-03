@@ -12,7 +12,11 @@ reliability. Each category has its own tier and is never cross-ranked with RAG o
 - `drive_with_backend`: reuse a running endpoint or launch a VRAM-owning backend under isolation;
 - `category_result`: wrap per-case scores as a `ModelResult` with a category tier;
 - `render_board`: rank within one tier through `rank_board`;
-- `persist_category_run`: write canonical run bundles under `$DATA_DIR/<category>/<timestamp>/`;
+- `persist_category_run`: write canonical run bundles under `$DATA_DIR/<category>/<timestamp>/`,
+  whose per-cell rows are `llb.benchmark-cell` and whose extra members are DECLARED -- a study
+  design, its analysis, or the rendered table a person reads, never arbitrary bytes under a chosen
+  file name ([run, board, and orchestration
+  contracts](artifact-contracts/run-and-evaluation-contracts.md));
 - `run_gated_judge`: optional trusted-judge side signal, recorded alongside objective metrics;
 - `ThroughputMeter`: accumulates REAL generation `tok/s` across a run's model calls (from each
   backend `ChatResult`'s `completion_tokens` / `latency_s`; errored/empty calls skipped).

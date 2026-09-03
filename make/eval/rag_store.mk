@@ -1,7 +1,7 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph resolve-graph-entities refresh-index validate-retrieval \
-	check-store \
+	check-store check-run \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
 	compare-answer-validation check-answer-gate \
@@ -17,6 +17,13 @@ check-store: ## Report every registered member of STORE (STORE_KIND=store|graph|
 	@args=("$(STORE)" --kind "$(or $(STORE_KIND),store)"); \
 	if [ -n "$(STORE_UPGRADE)" ]; then args+=(--upgrade); fi; \
 	$(PY) -m llb.main check-store "$${args[@]}"
+
+check-run: ## Report every registered member of RUN (RUN_KIND=run|benchmark, RUN_UPGRADE=1 rewrites older members at the current contract)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=("$(RUN)"); \
+	if [ -n "$(RUN_KIND)" ]; then args+=(--kind "$(RUN_KIND)"); fi; \
+	if [ -n "$(RUN_UPGRADE)" ]; then args+=(--upgrade); fi; \
+	$(PY) -m llb.main check-run "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

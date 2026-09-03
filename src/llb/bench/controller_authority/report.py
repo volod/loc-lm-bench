@@ -1,9 +1,9 @@
 """Persistence and rendering for controller-channel authority evidence."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.controller_authority.model import ChannelCell
 from llb.bench.agentic.model import STATUS_COMPLETED
 from llb.bench.loop_policy.report import METHOD
@@ -45,12 +45,11 @@ def persist_channel_cell(
         },
         case_rows=cell.rows,
         mirror=mirror,
-        artifacts={
-            "prompt-snapshots.json": json.dumps(
-                cell.snapshots, ensure_ascii=False, indent=2, sort_keys=True
-            )
-            + "\n",
-        },
+        artifacts=[
+            # The rendered prompts this cell ran are part of what it DECLARED, not of what it
+            # measured: a replay reads them to reconstruct the condition, never as a result.
+            study_design("prompt-snapshots.json", {"snapshots": cell.snapshots}),
+        ],
     )
 
 
@@ -124,15 +123,13 @@ def persist_channel_authority(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
-        artifacts={
-            "controller-channel-authority-design.json": (
-                json.dumps(design, indent=2, sort_keys=True) + "\n"
+        artifacts=[
+            study_design("controller-channel-authority-design.json", design),
+            study_analysis("controller-channel-authority-analysis.json", analysis),
+            table_report(
+                "controller-channel-authority-comparison.md",
+                "Controller-channel authority comparison",
+                table,
             ),
-            "controller-channel-authority-analysis.json": (
-                json.dumps(analysis, indent=2, sort_keys=True) + "\n"
-            ),
-            "controller-channel-authority-comparison.md": (
-                "# Controller-channel authority comparison\n\n```text\n" + table + "\n```\n"
-            ),
-        },
+        ],
     )

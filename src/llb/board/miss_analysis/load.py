@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from llb.artifacts.gates import refuse_unreadable_run_bundle
+from llb.artifacts.runs.bundle import read_retrieval_rows, read_run_manifest, read_score_rows
 from llb.board.miss_analysis.model import ITEM_PROVENANCE_FILENAME, RETRIEVAL_FILENAME
 from llb.core.contracts.common import JsonObject
 
@@ -20,9 +22,12 @@ def load_scored_bundle(
             f"[analyze-misses] {run_dir} is not a finalized run bundle "
             f"(manifest.json + scores.jsonl + {RETRIEVAL_FILENAME} required)"
         )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    rows = _read_jsonl(scores_path)
-    retrieval = {str(rec["item_id"]): rec for rec in _read_jsonl(retrieval_path)}
+    # The whole bundle first: the members are read at the current contract AND checked against the
+    # description published with them, so an analysis never mixes rows from a re-written file.
+    refuse_unreadable_run_bundle(run_dir)
+    manifest = read_run_manifest(manifest_path)
+    rows = read_score_rows(scores_path)
+    retrieval = {str(rec["item_id"]): rec for rec in read_retrieval_rows(retrieval_path)}
     missing = [str(row.get("item_id")) for row in rows if str(row.get("item_id")) not in retrieval]
     if missing:
         raise SystemExit(

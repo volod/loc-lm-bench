@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import rank_board
 from llb.scoring.board_format import format_board, ranking_policy_note
@@ -60,7 +61,7 @@ def load_prompt_system_records(data_dir: Path | str) -> list[PromptSystemRunReco
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             continue
         config = manifest.get("config") or {}
@@ -130,7 +131,7 @@ def _add_best_rag_prompt_system(
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             continue
         provenance = manifest.get("prompt_system_provenance") or {}

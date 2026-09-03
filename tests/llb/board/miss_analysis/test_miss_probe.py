@@ -12,7 +12,8 @@ from llb.board.miss_analysis.recommendations import refresh_recommendations
 from llb.board import miss_probe as mp
 from llb.executor import durability_journal
 from llb.executor.cases import CaseBatch, batch_retrieval_records
-from llb.tracking.manifest import RunManifest, persist_run
+from llb.core.contracts.runs import RunManifest
+from llb.tracking.manifest import persist_run
 from tests.llb.board.miss_analysis_helpers import DOC_A, RUN_ID, _analyze, _goldset, _score_row
 from tests.llb.board.miss_probe_helpers import _probe_manifest, _probe_subset, _write_probe_bundle
 

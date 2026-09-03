@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from llb.bench.context_policy.report import METHOD
-from llb.board.io import read_case_series
+from llb.artifacts.runs.bundle import read_case_series, read_run_manifest
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import TIER_AGENTIC, rank_board
@@ -79,7 +79,7 @@ def load_agentic_context_records(data_dir: Path | str) -> list[ContextPolicyRunR
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             _LOG.warning("[board] unreadable agentic-context manifest: %s", manifest_path)
             continue

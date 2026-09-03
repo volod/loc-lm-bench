@@ -1,9 +1,9 @@
 """Rendering and persistence for the policy-change evidence audit."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, table_report
 from llb.bench.policy_change.audit import (
     VERDICT_CHANGED,
     VERDICT_INVARIANT,
@@ -204,10 +204,8 @@ def persist_policy_change_audit(
         },
         case_rows=rows,
         mirror=mirror,
-        artifacts={
-            "policy-change-audit.json": json.dumps(summary, indent=2, sort_keys=True) + "\n",
-            "policy-change-audit.md": (
-                "# Agent policy-change evidence audit\n\n```text\n" + table + "\n```\n"
-            ),
-        },
+        artifacts=[
+            study_analysis("policy-change-audit.json", summary),
+            table_report("policy-change-audit.md", "Agent policy-change evidence audit", table),
+        ],
     )

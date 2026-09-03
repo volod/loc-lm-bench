@@ -8,6 +8,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from llb.artifacts.runs.rows import encode_record, write_rows
+from llb.core.contracts.orchestration import MISS_ANALYSIS_SCHEMA_ID, MISS_RECORD_SCHEMA_ID
 from llb.board.miss_analysis.model import (
     ANALYSIS_FILENAME,
     CLUSTER_DIMENSIONS,
@@ -148,14 +150,17 @@ def write_analysis(analysis: MissAnalysis, out_dir: Path | str) -> dict[str, str
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / REPORT_FILENAME
     report_path.write_text(format_report_md(analysis) + "\n", encoding="utf-8")
-    misses_path = out_dir / MISSES_FILENAME
-    misses_path.write_text(
-        "".join(json.dumps(m.as_dict(), ensure_ascii=False) + "\n" for m in analysis.misses),
-        encoding="utf-8",
+    misses_path = write_rows(
+        out_dir / MISSES_FILENAME, MISS_RECORD_SCHEMA_ID, [m.as_dict() for m in analysis.misses]
     )
     analysis_path = out_dir / ANALYSIS_FILENAME
     analysis_path.write_text(
-        json.dumps(analysis_payload(analysis), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(
+            encode_record(MISS_ANALYSIS_SCHEMA_ID, analysis_payload(analysis)),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return {

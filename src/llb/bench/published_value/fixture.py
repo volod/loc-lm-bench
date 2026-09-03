@@ -44,6 +44,8 @@ from pathlib import Path
 import re
 from typing import cast
 
+from llb.artifacts.runs.bundle import read_study_analysis
+
 # The manifest, project-root relative: one entry per cited artifact, pinning its committed copy.
 PROVENANCE_FIXTURE = Path("samples/benchmarks/agentic_published_crossover_aggregates.json")
 # The committed copies themselves, each at the manifest key's own DATA_DIR-relative path.
@@ -240,9 +242,9 @@ def _committed(root: Path, artifact: str, entry: object) -> CommittedAggregate:
             f"copy digests to {found} -- one of the two was edited by hand, so the committed "
             f"evidence no longer stands for the run it names; {REGENERATE}"
         )
-    return CommittedAggregate(
-        digest=digest, payload=cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
-    )
+    # Read through `llb.study-analysis`: a committed copy is the run's analysis sidecar VERBATIM,
+    # so it is whichever form that run wrote -- the bare body, or the envelope around it.
+    return CommittedAggregate(digest=digest, payload=read_study_analysis(path))
 
 
 def _pin(artifact: str, entry: object) -> str:

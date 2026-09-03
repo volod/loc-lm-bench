@@ -20,7 +20,11 @@ retrieval repair, final evaluation, and renderers. `src/llb/cli/auto_rag.py` exp
 
 Each run pins every score- or artifact-affecting setting in
 `$DATA_DIR/auto-rag/<run>/manifest.json`. A completed stage publishes
-`stages/<stage>/result.json` atomically, then appends a completion event to `journal.jsonl`.
+`stages/<stage>/result.json` atomically, then appends a completion event to `journal.jsonl`. All
+four -- the manifest, the stage result, the journal event, and the `rag_recommendation.yaml` the
+run ends with -- are registered artifact contracts, so a resume never replays stages against a
+marker a newer build wrote ([run, board, and orchestration
+contracts](artifact-contracts/run-and-evaluation-contracts.md)).
 Reusing `--run-id` validates the settings fingerprint and skips every published stage. A truncated
 or missing result marker is incomplete and is rerun. The ontology stage also reuses its
 per-extraction-window journal when interruption happens inside drafting.

@@ -1,10 +1,10 @@
 """Prospective Gemma task-family transfer contract and seeded gate tests."""
 
-import json
 from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
@@ -196,8 +196,8 @@ def test_transfer_requires_response_in_three_families_and_support_on_both_seeds(
         table=table,
         mirror=lambda *_args: None,
     )
-    persisted = json.loads(
-        (Path(paths["manifest"]).parent / "task-family-transfer-analysis.json").read_text()
+    persisted = read_study_analysis(
+        Path(paths["manifest"]).parent / "task-family-transfer-analysis.json"
     )
     assert persisted["supported_seeds"] == 2
 

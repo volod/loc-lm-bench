@@ -1,9 +1,9 @@
 """Rendering and persistence for the published-crossover restatement."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.crossover_restatement.reading import (
     FORM_PORTABLE_RATIO,
     HOLD_READINGS,
@@ -200,15 +200,13 @@ def persist_restatement(
         },
         case_rows=crossovers,
         mirror=mirror,
-        artifacts={
-            "crossover-restatement-design.json": json.dumps(design, indent=2, sort_keys=True)
-            + "\n",
-            "crossover-restatement-analysis.json": json.dumps(analysis, indent=2, sort_keys=True)
-            + "\n",
-            "crossover-restatement.md": (
-                "# Published crossovers under the shipped summarize-input cap\n\n```text\n"
-                + table
-                + "\n```\n"
+        artifacts=[
+            study_design("crossover-restatement-design.json", design),
+            study_analysis("crossover-restatement-analysis.json", analysis),
+            table_report(
+                "crossover-restatement.md",
+                "Published crossovers under the shipped summarize-input cap",
+                table,
             ),
-        },
+        ],
     )

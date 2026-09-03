@@ -94,40 +94,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
-#### artifact-contract-run-evaluation-and-board-migration
-
-Run bundles are the primary downstream API, yet the Pydantic `RunManifest` has no schema identity
-and `persist_run` accepts arbitrary score, retrieval, and additional-artifact payloads. Move the
-tracking, evaluation, benchmark, scoring, board, and orchestration records behind typed dataset
-contracts, each at a single declared version.
-
-- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
-- Agent status: CLEAR
-- Dependencies: the retrieval, graph, and prompt-system contracts run-bundle members embed are
-  registered ([retrieval and graph contracts](current/artifact-contracts/retrieval-and-graph-contracts.md));
-  none open.
-- User-visible outcome: a board or downstream analysis can validate a complete run bundle and
-  identify every member's contract without guessing from filenames.
-- Scope boundary: in scope -- durable producers and consumers under `src/llb/tracking/`,
-  `src/llb/executor/`, `src/llb/scoring/`, `src/llb/eval/`, `src/llb/bench/`, `src/llb/board/`, and
-  `src/llb/auto_rag/`, plus their CLI entry points; typed score/retrieval rows, design and analysis
-  records, progress and abort records, recommendation metadata, and a typed replacement for
-  arbitrary additional artifacts. Out of scope -- model response text before parsing, logs,
-  rendered Markdown, and MLflow's own database schema.
-- Data and artifact paths: canonical `manifest.json`, `scores.jsonl`, `retrieval.jsonl`, study
-  design/analysis sidecars, journals, board and recommendation artifacts under existing
-  `$DATA_DIR/<method>/<run>/` roots, plus current-form fixtures under
-  `samples/artifact_contracts/run_bundles/`.
-- Execution path: CPU-only producer, resume, board, and external-consumer fixtures inside `make ci`;
-  MLflow remains an injected best-effort mirror and no model service is started.
-- Acceptance gates: `make ci` green; atomic publication validates every member before rename; a
-  bundle member carrying an unknown identity or a version this build does not declare refuses
-  before board admission; no arbitrary artifact content can enter `persist_run` without a
-  registered contract or a declared human-report exemption.
-- Documentation target:
-  `docs/impl/current/artifact-contracts/run-and-evaluation-contracts.md`, the artifact-contracts
-  area index, and links from evaluation rigor, Auto-RAG, and extended-workflow topic pages.
-
 #### artifact-contract-training-and-integration-migration
 
 The remaining durable surface covers model preparation, optimization, fine-tuning, screening,
@@ -137,8 +103,9 @@ registry instead of remaining a separate versioning island.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: `artifact-contract-run-evaluation-and-board-migration` because optimization and
-  training consume run records and emit recommendations or adapters back to that surface.
+- Dependencies: the run, board, and orchestration contracts optimization and training consume and
+  emit recommendations or adapters back to ([run, board, and orchestration
+  contracts](current/artifact-contracts/run-and-evaluation-contracts.md)); none open.
 - User-visible outcome: model, training, and robotics handoffs expose the same inspectable identity,
   validation, and compatibility behavior as corpus and run bundles.
 - Scope boundary: in scope -- durable producers and consumers under `src/llb/backends/`,

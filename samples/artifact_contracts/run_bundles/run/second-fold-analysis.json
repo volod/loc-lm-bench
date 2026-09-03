@@ -1,0 +1,13 @@
+{
+  "analysis": {
+    "second_fold_reading": "collapses",
+    "seed_rows": [
+      {
+        "seed": 211
+      }
+    ],
+    "supported_seeds": 2
+  },
+  "schema_id": "llb.study-analysis",
+  "schema_version": "1.0.0"
+}

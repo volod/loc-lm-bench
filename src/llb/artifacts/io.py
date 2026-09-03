@@ -3,7 +3,6 @@
 import csv
 import hashlib
 import json
-from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -59,24 +58,29 @@ def read_bound_member(
 def _load_records(
     path: Path, artifact_format: str, schema_id: str, registry: ContractRegistry
 ) -> tuple[dict[str, object], ...]:
-    """Parse a member's records, normalizing a pre-contract document its family declares.
+    """Parse a member's records, normalizing whatever its family declares a pre-contract file to be.
 
-    Only a WHOLE-document member can be a bare array or map -- a row member is one object per
-    line by construction -- so the normalizer applies to `json` and `yaml` alone.
+    A whole-document member could be a bare array or map; a ROW member could be a bare body -- a
+    benchmark cell's columns were written flat before the envelope around them existed. Both are
+    the same declaration (`legacy_document_field`) and the same normalizer, so every parsed record
+    passes through it and one that already carries an identity is returned untouched.
     """
+    parsed = _parsed(path, artifact_format)
+    return tuple(_normalized(record, path, schema_id, registry) for record in parsed)
+
+
+def _parsed(path: Path, artifact_format: str) -> tuple[object, ...]:
+    """A member's raw records, in whatever physical form it is bound to."""
     if artifact_format == "json":
-        return (_document(json.loads(path.read_text(encoding="utf-8")), path, schema_id, registry),)
+        return (json.loads(path.read_text(encoding="utf-8")),)
     if artifact_format == "yaml":
-        return (
-            _document(yaml.safe_load(path.read_text(encoding="utf-8")), path, schema_id, registry),
-        )
+        return (yaml.safe_load(path.read_text(encoding="utf-8")),)
     if artifact_format == "jsonl":
-        rows = (
+        return tuple(
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         )
-        return tuple(_as_record(row, path) for row in rows)
     if artifact_format == "csv":
         with path.open(encoding="utf-8", newline="") as handle:
             return tuple(cast(dict[str, object], row) for row in csv.DictReader(handle))
@@ -95,16 +99,10 @@ def _load_parquet(path: Path) -> tuple[dict[str, object], ...]:
     return tuple(cast(dict[str, object], row) for row in parquet.read_table(path).to_pylist())
 
 
-def _document(
+def _normalized(
     value: object, path: Path, schema_id: str, registry: ContractRegistry
 ) -> dict[str, object]:
     try:
         return dict(registry.normalize(schema_id, value))
     except ArtifactContractError as exc:
         raise DatasetReadError(f"{path}: {exc}") from exc
-
-
-def _as_record(value: object, path: Path) -> dict[str, object]:
-    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
-        raise DatasetReadError(f"{path}: expected one object record")
-    return dict(cast(Mapping[str, object], value))

@@ -1,9 +1,9 @@
 """Rendering and persistence for the trigger/guard collapse study."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.fold_step.ladder import compaction_trigger_chars
 from llb.bench.memory.trigger_collapse.reading import (
     KIND_EQUAL_TRIGGER,
@@ -115,11 +115,9 @@ def persist_collapse(
         },
         case_rows=cells,
         mirror=mirror,
-        artifacts={
-            "trigger-collapse-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
-            "trigger-collapse-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
-            "trigger-collapse.md": (
-                "# Compact trigger-versus-guard collapse\n\n```text\n" + table + "\n```\n"
-            ),
-        },
+        artifacts=[
+            study_design("trigger-collapse-design.json", design),
+            study_analysis("trigger-collapse-analysis.json", analysis),
+            table_report("trigger-collapse.md", "Compact trigger-versus-guard collapse", table),
+        ],
     )

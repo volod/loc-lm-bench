@@ -1,0 +1,35 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.case-progress:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One row of the resume journal: a completed case and the state it was scored from.\n\nThe journal lives in the staging directory and is dropped before publication, so it is never a\nmember of a bundle -- but it is durable across a crash, which is the whole point of it, and a\nresume that read a journal a newer build wrote would re-score cases against state it cannot\nsee. The state map stays open: its keys are the journalled graph-state keys, owned by the lanes\nthat produce them.",
+  "properties": {
+    "item_id": {
+      "minLength": 1,
+      "title": "Item Id",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.case-progress",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "additionalProperties": true,
+      "title": "State",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id"
+  ],
+  "title": "CaseProgressRecord",
+  "type": "object"
+}

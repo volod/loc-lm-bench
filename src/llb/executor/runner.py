@@ -56,7 +56,8 @@ from llb.executor.runner_target import (
 from llb.goldset.schema import GoldItem
 from llb.rag import retrieval
 from llb.scoring.leaderboard import format_table
-from llb.tracking.manifest import RunManifest, persist_run
+from llb.core.contracts.runs import RunManifest
+from llb.tracking.manifest import persist_run
 
 from llb.eval.graph_contracts import RagState
 

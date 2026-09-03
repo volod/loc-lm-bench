@@ -15,6 +15,22 @@ team:
   name: loc-lm-bench maintainers
   description: Owners of project artifact contract evolution.
 schema:
+- id: llb-agent-profile
+  name: llb.agent-profile
+  logicalType: object
+  physicalType: file
+  physicalName: llb.agent-profile/1.0.0.schema.json
+  description: One composed agent operating profile and the evidence behind each field.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-artifact-catalog
   name: llb.artifact-catalog
   logicalType: object
@@ -52,6 +68,151 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-auto-rag-journal-event
+  name: llb.auto-rag-journal-event
+  logicalType: object
+  physicalType: file
+  physicalName: llb.auto-rag-journal-event/1.0.0.schema.json
+  description: 'One appended auto-RAG journal line: a stage changed state at a time.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-auto-rag-manifest
+  name: llb.auto-rag-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.auto-rag-manifest/1.0.0.schema.json
+  description: The pinned settings an auto-RAG resume is refused against.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-auto-rag-recommendation
+  name: llb.auto-rag-recommendation
+  logicalType: object
+  physicalType: file
+  physicalName: llb.auto-rag-recommendation/1.0.0.schema.json
+  description: The serving, chunking, retrieval, and prompt configuration recommended.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+    - yaml
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-auto-rag-stage-links
+  name: llb.auto-rag-stage-links
+  logicalType: object
+  physicalType: file
+  physicalName: llb.auto-rag-stage-links/1.0.0.schema.json
+  description: Every auto-RAG stage result, collected beside the recommendation.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-auto-rag-stage-result
+  name: llb.auto-rag-stage-result
+  logicalType: object
+  physicalType: file
+  physicalName: llb.auto-rag-stage-result/1.0.0.schema.json
+  description: The durable marker a resume skips one completed auto-RAG stage on.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-benchmark-cell
+  name: llb.benchmark-cell
+  logicalType: object
+  physicalType: file
+  physicalName: llb.benchmark-cell/1.0.0.schema.json
+  description: One measured cell of a benchmark category run, in that lane's columns.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-case-progress
+  name: llb.case-progress
+  logicalType: object
+  physicalType: file
+  physicalName: llb.case-progress/1.0.0.schema.json
+  description: One completed case of an interrupted run, as a resume replays it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-case-retrieval
+  name: llb.case-retrieval
+  logicalType: object
+  physicalType: file
+  physicalName: llb.case-retrieval/1.0.0.schema.json
+  description: What one scored case's context held, against the spans it needed.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-case-score
+  name: llb.case-score
+  logicalType: object
+  physicalType: file
+  physicalName: llb.case-score/1.0.0.schema.json
+  description: How one evaluation case scored, column by column.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-conflict-overlay
   name: llb.conflict-overlay
   logicalType: object
@@ -81,6 +242,22 @@ schema:
   - property: physicalFormats
     value:
     - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-context-probe
+  name: llb.context-probe
+  logicalType: object
+  physicalType: file
+  physicalName: llb.context-probe/1.0.0.schema.json
+  description: How one case answered with its gold context deliberately withheld.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
   quality:
   - name: portableJsonSchemaValidation
     type: text
@@ -258,6 +435,38 @@ schema:
   - property: physicalFormats
     value:
     - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-miss-analysis
+  name: llb.miss-analysis
+  logicalType: object
+  physicalType: file
+  physicalName: llb.miss-analysis/1.0.0.schema.json
+  description: The machine-readable miss analysis an operator recommendation reads.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-miss-record
+  name: llb.miss-record
+  logicalType: object
+  physicalType: file
+  physicalName: llb.miss-record/1.0.0.schema.json
+  description: One case that missed, and the class the analysis put it in.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
   quality:
   - name: portableJsonSchemaValidation
     type: text
@@ -492,6 +701,86 @@ schema:
   physicalType: file
   physicalName: llb.retrieval-comparison/1.0.0.schema.json
   description: Envelope of one machine-readable retrieval comparison sidecar.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-run-abort
+  name: llb.run-abort
+  logicalType: object
+  physicalType: file
+  physicalName: llb.run-abort/1.0.0.schema.json
+  description: A run stopped on a declared budget, and whether it can be resumed.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-run-manifest
+  name: llb.run-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.run-manifest/1.0.0.schema.json
+  description: 'One run''s immutable record: config, environment, and headline metrics.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-run-progress-meta
+  name: llb.run-progress-meta
+  logicalType: object
+  physicalType: file
+  physicalName: llb.run-progress-meta/1.0.0.schema.json
+  description: The run identity a resume onto an interrupted staging directory needs.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-study-analysis
+  name: llb.study-analysis
+  logicalType: object
+  physicalType: file
+  physicalName: llb.study-analysis/1.0.0.schema.json
+  description: The reading one study took against its declared design.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-study-design
+  name: llb.study-design
+  logicalType: object
+  physicalType: file
+  physicalName: llb.study-design/1.0.0.schema.json
+  description: What one study declared about its cells before it measured any of them.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

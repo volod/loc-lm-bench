@@ -1,11 +1,11 @@
 """Context-position probe and miss-analysis / external-RAG scoring commands."""
 
-import json
 from pathlib import Path
 from typing import Optional
 
 import typer
 
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.cli.app import app
 from llb.cli.helpers import load_config
 
@@ -131,7 +131,7 @@ def analyze_misses_cmd(
     if not manifest_path.is_file():
         typer.echo(f"[analyze-misses] no manifest.json in {run_dir}", err=True)
         raise typer.Exit(code=2)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = read_run_manifest(manifest_path)
     config = manifest.get("config") or {}
     goldset_path = goldset or Path(str(config.get("goldset_path", "")))
     if not str(goldset_path) or not goldset_path.is_file():

@@ -1,0 +1,40 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.auto-rag-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`manifest.json` of an auto-RAG run: the settings a resume is refused against.\n\n`fingerprint` is the digest of `settings`; a resume whose settings hash differently is a\ndifferent run and is refused rather than continued.",
+  "properties": {
+    "fingerprint": {
+      "minLength": 1,
+      "title": "Fingerprint",
+      "type": "string"
+    },
+    "kind": {
+      "default": "auto-rag",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.auto-rag-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "settings": {
+      "additionalProperties": true,
+      "title": "Settings",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "fingerprint"
+  ],
+  "title": "AutoRagManifest",
+  "type": "object"
+}

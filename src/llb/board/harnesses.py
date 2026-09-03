@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.bench.agentic.model import HARNESS_LOOP
 from llb.core.contracts.results import BoardRow
 from llb.core.contracts.common import JsonObject
@@ -50,7 +51,7 @@ def load_agentic_harness_records(data_dir: Path | str) -> list[HarnessRunRecord]
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             _LOG.warning("[board] unreadable agentic manifest: %s", manifest_path)
             continue

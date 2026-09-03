@@ -1,9 +1,10 @@
 """Paired English/Ukrainian cutoff statistics and report rendering."""
 
-import json
 import random
 from collections import defaultdict
 from typing import Any
+
+from llb.artifacts.runs.members import RunMember, human_report, study_analysis
 
 BOOTSTRAP_SAMPLES = 2000
 CONFIDENCE_LEVEL = 0.95
@@ -96,8 +97,9 @@ def render_paired_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def paired_artifacts(report: dict[str, object]) -> dict[str, str]:
-    return {
-        "report.json": json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        "report.md": render_paired_markdown(report),
-    }
+def paired_artifacts(report: dict[str, object]) -> list[RunMember]:
+    """The paired probe's reading, as the structured record and the rendering beside it."""
+    return [
+        study_analysis("report.json", report),
+        human_report("report.md", render_paired_markdown(report)),
+    ]

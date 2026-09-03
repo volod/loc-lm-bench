@@ -117,6 +117,41 @@ def refuse_tampered_dataset(root: Path | str) -> None:
         )
 
 
+def refuse_unreadable_run_bundle(run_dir: Path | str, *, kind: str | None = None) -> None:
+    """The gate a board, an export, or a paired comparison passes before it admits a bundle.
+
+    Every member is described and read at the current contract, so a bundle written by a newer
+    build is named here rather than ranked with the half of it this reader understands. A bundle
+    published with a `dataset_manifest.json` is checked against exactly the members it declared --
+    including which score contract its rows are bound to -- and one published before that existed
+    is described at the kind read off its own manifest, which `kind` overrides.
+    """
+    from llb.artifacts.dataset_reading import survey_dataset
+    from llb.artifacts.datasets import load_dataset_manifest
+    from llb.artifacts.runs.bundle import run_bundle_kind
+    from llb.artifacts.runs.datasets import run_bundle_manifest
+
+    base = Path(run_dir)
+    published = load_dataset_manifest(base)
+    try:
+        manifest = (
+            published
+            if published is not None
+            else run_bundle_manifest(base, kind=kind or run_bundle_kind(base))
+        )
+    except FileNotFoundError:
+        return
+    refusals = [
+        f"{reading.path}: {reading.refusal}"
+        for reading in survey_dataset(base, manifest)
+        if reading.refusal
+    ]
+    if refusals:
+        raise ArtifactCompatibilityError(
+            f"{base}: run bundle cannot be read:\n- " + "\n- ".join(refusals)
+        )
+
+
 def refuse_unreadable_prompt_system(run_dir: Path | str) -> None:
     """The gate a prompt-system package passes before a benchmark reads it.
 

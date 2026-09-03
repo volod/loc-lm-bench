@@ -1,0 +1,7 @@
+{
+  "status": "aborted",
+  "resumable": true,
+  "reason": "call budget reached",
+  "calls": 12,
+  "cost_usd": 0.0
+}

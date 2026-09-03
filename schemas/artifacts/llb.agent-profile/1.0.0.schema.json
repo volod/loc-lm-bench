@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "ProfileAnchor": {
+      "additionalProperties": false,
+      "description": "What every field of a composed profile was required to agree with.\n\n`retrieval_fingerprint` is the KNOB SET a lane's reading was taken under -- the encoder, the\nchunker, and the retrieval mode -- not a digest of them, because the drift report names which\nknob moved. It stays an open map for the same reason the chunk metadata does: the knobs are\nthe retrieval surface's to add to.",
+      "properties": {
+        "corpus_root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corpus Root"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "resolved": {
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "retrieval_fingerprint": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retrieval Fingerprint"
+        }
+      },
+      "required": [
+        "resolved"
+      ],
+      "title": "ProfileAnchor",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.agent-profile:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`agent_profile.json`: one composed operating profile and where each value came from.\n\nA field's `value` is whichever lane measured it -- a top-k integer, a policy name, a context\nbudget -- so the per-field entry stays an open map; what the contract fixes is that every field\nHAS one, beside the anchor it was checked against, the drift findings, and the replay commands.",
+  "properties": {
+    "anchor": {
+      "$ref": "#/$defs/ProfileAnchor"
+    },
+    "drift": {
+      "additionalProperties": true,
+      "title": "Drift",
+      "type": "object"
+    },
+    "fields": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Fields",
+      "type": "object"
+    },
+    "generated_at": {
+      "minLength": 1,
+      "title": "Generated At",
+      "type": "string"
+    },
+    "replay": {
+      "additionalProperties": true,
+      "title": "Replay",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.agent-profile",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "states": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "States",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "generated_at",
+    "anchor"
+  ],
+  "title": "AgentProfileRecord",
+  "type": "object"
+}

@@ -11,6 +11,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from llb.artifacts.runs.rows import encode_record
+from llb.core.contracts.run_bundle import RUN_ABORT_SCHEMA_ID
 from llb.core.config import RunConfig
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
@@ -210,13 +212,16 @@ def _write_budget_abort(staging_dir: Path | None, exc: BudgetExceeded) -> None:
         return
     root = scorer_dir(staging_dir)
     root.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "status": "aborted",
-        "resumable": True,
-        "reason": exc.reason,
-        "calls": exc.calls,
-        "cost_usd": round(exc.cost_usd, 6),
-    }
+    payload = encode_record(
+        RUN_ABORT_SCHEMA_ID,
+        {
+            "status": "aborted",
+            "resumable": True,
+            "reason": exc.reason,
+            "calls": exc.calls,
+            "cost_usd": round(exc.cost_usd, 6),
+        },
+    )
     (root / "abort.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 

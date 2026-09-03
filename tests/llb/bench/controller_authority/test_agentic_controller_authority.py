@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.backends.context_budget import unbounded_budget
 from llb.bench.agentic.controller_channel import (
     CHANNEL_CONTROLLER,
@@ -168,7 +169,7 @@ def test_fake_run_proves_snapshots_and_all_adoption_gates(tmp_path: Path):
         mirror=lambda *_args: None,
     )
     run_dir = Path(paths["manifest"]).parent
-    persisted = json.loads((run_dir / "controller-channel-authority-analysis.json").read_text())
+    persisted = read_study_analysis(run_dir / "controller-channel-authority-analysis.json")
     assert persisted["supported_seeds"] == 2
 
 

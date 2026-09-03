@@ -1,9 +1,9 @@
 """Rendering and persistence for Gemma task-family feedback transfer."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.loop_policy.report import METHOD
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -77,13 +77,9 @@ def persist_feedback_transfer(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
-        artifacts={
-            f"{artifact_stem}-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
-            f"{artifact_stem}-analysis.json": (
-                json.dumps(analysis, indent=2, sort_keys=True) + "\n"
-            ),
-            f"{artifact_stem}-comparison.md": (
-                f"# {report_title}\n\n```text\n" + table + "\n```\n"
-            ),
-        },
+        artifacts=[
+            study_design(f"{artifact_stem}-design.json", design),
+            study_analysis(f"{artifact_stem}-analysis.json", analysis),
+            table_report(f"{artifact_stem}-comparison.md", report_title, table),
+        ],
     )

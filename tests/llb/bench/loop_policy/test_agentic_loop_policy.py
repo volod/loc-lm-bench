@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.backends.context_budget import fixed_budget
 from llb.bench.agentic.episode import run_episode
 from llb.bench.agentic.loop_policy import (
@@ -235,7 +236,7 @@ def test_sweep_pairs_every_cell_and_persists_comparison_artifacts(tmp_path: Path
         assert report.paths is not None
         run_dir = Path(report.paths["manifest"]).parent
         assert (run_dir / "comparison.md").is_file()
-        recommendation = json.loads((run_dir / "recommendation.json").read_text())
+        recommendation = read_study_analysis(run_dir / "recommendation.json")
         assert recommendation["malformed_call_policy"] == MALFORMED_ANSWER
         manifest = json.loads(Path(report.paths["manifest"]).read_text())
         assert set(manifest["config"]["paired_vs_baseline"]) == set(METRICS)

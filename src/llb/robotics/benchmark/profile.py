@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.runs.rows import decode_record
+from llb.core.contracts.orchestration import AGENT_PROFILE_SCHEMA_ID
 from llb.robotics.digests import file_digest
 
 
@@ -16,7 +18,9 @@ def latest_profile(data_dir: Path) -> Path:
 
 def load_measured_profile(path: Path, *, model: str, backend: str) -> dict[str, object]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = decode_record(
+            AGENT_PROFILE_SCHEMA_ID, json.loads(path.read_text(encoding="utf-8")), source=str(path)
+        )
         fields = payload["fields"]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"{path}: invalid composed agent profile -- {exc}") from None

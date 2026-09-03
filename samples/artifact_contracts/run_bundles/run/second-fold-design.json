@@ -1,0 +1,12 @@
+{
+  "design": {
+    "depths": [
+      6,
+      10
+    ],
+    "study_id": "second-fold",
+    "study_kind": "compact-second-fold"
+  },
+  "schema_id": "llb.study-design",
+  "schema_version": "1.0.0"
+}

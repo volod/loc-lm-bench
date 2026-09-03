@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.bench.common import new_run_timestamp
-from llb.board.io import read_case_rows
+from llb.artifacts.runs.bundle import read_case_rows
 from llb.core.config import RESTORATION_DEFAULTS, RunConfig, restoration_fields
 from llb.eval import graph as eval_graph
 from llb.eval.query_robustness.evaluate import (

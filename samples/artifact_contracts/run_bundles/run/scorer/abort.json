@@ -1,0 +1,9 @@
+{
+  "schema_id": "llb.run-abort",
+  "schema_version": "1.0.0",
+  "status": "aborted",
+  "resumable": true,
+  "reason": "call budget reached",
+  "calls": 12,
+  "cost_usd": 0.0
+}

@@ -15,7 +15,6 @@ Pure core: `sample_probe_items` / `gold_excluding_filter` / `run_insufficient_co
 injected store and a `chat` callable, so the whole probe is unit-testable with fakes -- no backend.
 """
 
-import json
 import logging
 import random
 from collections.abc import Callable
@@ -23,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.runs.rows import write_rows
+from llb.core.contracts.run_bundle import CONTEXT_PROBE_SCHEMA_ID
 from llb.backends.base import ERR_ARCH_UNSUPPORTED, ERR_BACKEND, ERR_TIMEOUT
 from llb.core.contracts.common import ChatMessage, JsonObject
 from llb.core.contracts.rag import ChunkRecord, SourceSpanRecord
@@ -167,7 +168,5 @@ def write_probe(report: InsufficientContextReport, out_dir: Path) -> dict[str, s
     report_path = out_dir / "insufficient_context_report.md"
     probes_path = out_dir / "probes.jsonl"
     report_path.write_text(render_report(report), encoding="utf-8")
-    with probes_path.open("w", encoding="utf-8") as fh:
-        for row in report.rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    write_rows(probes_path, CONTEXT_PROBE_SCHEMA_ID, report.rows)
     return {"insufficient_context_report": str(report_path), "probes": str(probes_path)}

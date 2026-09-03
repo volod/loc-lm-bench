@@ -27,7 +27,10 @@ from llb.scoring.aggregate import rank_board
 from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
-from llb.tracking.manifest import RunManifest, persist_run
+from llb.artifacts.runs.datasets import KIND_BENCHMARK
+from llb.artifacts.runs.members import RunMember
+from llb.core.contracts.runs import RunManifest
+from llb.tracking.manifest import persist_run
 
 LLMComplete = Callable[[str], str]  # prompt -> raw completion text
 LLMChat = Callable[[list[ChatMessage]], str]  # typed transcript -> raw completion text
@@ -169,12 +172,14 @@ def persist_category_run(
     case_rows: Sequence[Mapping[str, object]],
     judge: JudgeStatus | None = None,
     mirror: Mirror | None = None,
-    artifacts: Mapping[str, str] | None = None,
+    artifacts: Sequence[RunMember] | None = None,
 ) -> RunPaths:
     """Write one category bundle under `$DATA_DIR/<method>/<timestamp>/` atomically.
 
-    The manifest and scores are mandatory; `artifacts` adds report files to the same transaction.
-    `config` carries the category and tier provenance.
+    The manifest and scores are mandatory; `artifacts` adds declared members -- a study design, its
+    analysis, the rendered table a person reads -- to the same transaction. `config` carries the
+    category and tier provenance. The rows are `llb.benchmark-cell`: their columns are this lane's
+    own, so the contract owns the identity around them rather than the cell itself.
     """
     run_id, run_timestamp = new_run_timestamp()
     out_dir = Path(data_dir) / method / run_timestamp
@@ -195,4 +200,5 @@ def persist_category_run(
         mirror=mirror,
         staging_dir=staging,
         artifacts=artifacts,
+        kind=KIND_BENCHMARK,
     )

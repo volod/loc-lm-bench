@@ -1,9 +1,9 @@
 """Rendering and persistence for the entry-aware summary-fold adoption study."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.agentic.context_policy import DEFAULT_SUMMARY_TRIM_STRATEGY
 from llb.bench.memory.window_elision.tasks import STRATA
 from llb.bench.summary_trim.run import FamilyRun
@@ -216,28 +216,24 @@ def persist_summary_trim_adoption(
         },
         case_rows=persisted,
         mirror=mirror,
-        artifacts={
-            "summary-trim-adoption-design.json": json.dumps(design, indent=2, sort_keys=True)
-            + "\n",
-            "summary-trim-adoption-analysis.json": json.dumps(analysis, indent=2, sort_keys=True)
-            + "\n",
-            "summary-trim-adoption-schedule.json": json.dumps(
-                [
-                    {
-                        "model_family": run.model_family,
-                        "order_offset": run.order_offset,
-                        "episodes": run.schedule,
-                    }
-                    for run in runs
-                ],
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            "summary-trim-adoption.md": "# Entry-aware summary-fold adoption\n\n```text\n"
-            + table
-            + "\n```\n",
-        },
+        artifacts=[
+            study_design("summary-trim-adoption-design.json", design),
+            study_analysis("summary-trim-adoption-analysis.json", analysis),
+            study_design(
+                "summary-trim-adoption-schedule.json",
+                {
+                    "schedule": [
+                        {
+                            "model_family": run.model_family,
+                            "order_offset": run.order_offset,
+                            "episodes": run.schedule,
+                        }
+                        for run in runs
+                    ]
+                },
+            ),
+            table_report("summary-trim-adoption.md", "Entry-aware summary-fold adoption", table),
+        ],
     )
 
 

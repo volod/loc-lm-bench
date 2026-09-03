@@ -1,0 +1,29 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.auto-rag-stage-links:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`artifacts.json`: every stage's result, collected beside the recommendation.",
+  "properties": {
+    "schema_id": {
+      "const": "llb.auto-rag-stage-links",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stages": {
+      "additionalProperties": true,
+      "title": "Stages",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "AutoRagStageLinks",
+  "type": "object"
+}

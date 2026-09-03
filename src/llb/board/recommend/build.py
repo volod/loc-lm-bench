@@ -8,6 +8,7 @@ recommended for THIS host (highest accuracy that is Pareto-optimal, VRAM-fitting
 import json
 from pathlib import Path
 
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.board.recommend.model import (
     RAG_CONFIG_KEYS,
     SAFE_VRAM_FRACTION,
@@ -25,12 +26,12 @@ def _manifest_extras(
 ) -> tuple[float | None, float | None, float | None, float | None]:
     """(quality_per_watt, mean_power_w, recall_at_k, mrr) from a run bundle manifest; None when absent."""
     try:
-        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        manifest = read_run_manifest(run_dir)
     except (OSError, json.JSONDecodeError):
         return None, None, None, None
     metrics = manifest.get("metrics") or {}
     retrieval = manifest.get("retrieval") or {}
-    recall = retrieval.get("recall_at_k", retrieval.get("recall"))
+    recall = retrieval.get("recall_at_k")
     return (
         _as_float(metrics.get("quality_per_watt")),
         _as_float(metrics.get("mean_power_w")),

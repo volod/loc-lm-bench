@@ -1,0 +1,29 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.study-analysis:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A study's `<stem>-analysis.json` sidecar: the reading taken against that design.",
+  "properties": {
+    "analysis": {
+      "additionalProperties": true,
+      "title": "Analysis",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.study-analysis",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "StudyAnalysisRecord",
+  "type": "object"
+}

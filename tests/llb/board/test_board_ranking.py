@@ -1,7 +1,7 @@
 """Tests for board ranking."""
 
 import json
-from llb.board.io import read_case_series
+from llb.artifacts.runs.bundle import read_case_series
 from llb.board.runs import (
     best_per_model,
     load_run_records,

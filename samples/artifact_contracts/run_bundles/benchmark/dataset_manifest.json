@@ -1,0 +1,51 @@
+{
+  "schema_id": "llb.dataset-manifest",
+  "schema_version": "1.0.0",
+  "extensions": {},
+  "dataset_id": "llb-run-bundle",
+  "description": "One published run bundle: what ran, how every case scored, and what it was served.",
+  "owner": "loc-lm-bench maintainers",
+  "members": [
+    {
+      "member_id": "run-manifest",
+      "path": "manifest.json",
+      "format": "json",
+      "media_type": "application/json",
+      "granularity": "document",
+      "required": true,
+      "digest": "sha256:8e0d84169aa9ad6836b2ad1509251697f4d7b906d1b30d0c584a86e8caafe1ae",
+      "record_contract": {
+        "schema_id": "llb.run-manifest",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    },
+    {
+      "member_id": "scores",
+      "path": "scores.jsonl",
+      "format": "jsonl",
+      "media_type": "application/x-ndjson",
+      "granularity": "row",
+      "required": true,
+      "digest": "sha256:c12e99584f29bdcf0a6ddce8f5cab6fcc2ddfc331a716c617cf633f8d7f9de74",
+      "record_contract": {
+        "schema_id": "llb.benchmark-cell",
+        "schema_version": "1.0.0"
+      },
+      "opaque_binding": null
+    }
+  ],
+  "relationships": [],
+  "quality_checks": [
+    {
+      "check_id": "member-contract-dispatch",
+      "kind": "structural",
+      "description": "Every present member resolves to its registered contract's current version."
+    },
+    {
+      "check_id": "member-digest",
+      "kind": "structural",
+      "description": "Every member's content matches the digest recorded when it was described."
+    }
+  ]
+}

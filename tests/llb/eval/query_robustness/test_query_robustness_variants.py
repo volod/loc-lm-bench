@@ -7,7 +7,7 @@ from tests.llb.eval._query_robustness_helpers import (
     APOSTROPHE_QUESTION,
 )
 
-from llb.board.io import read_case_rows
+from llb.artifacts.runs.bundle import read_case_rows
 from llb.eval.query_robustness.uncertainty import (
     READING_DEGRADED,
     READING_INDISTINGUISHABLE,

@@ -41,16 +41,15 @@ def decode(
     it is stamped with `version` when a binding supplies one and with the family's declared legacy
     version otherwise.
 
-    A stated `null` is dropped along with the identity. In these families `null` means "this store
-    recorded no such thing", which is what an absent key already means to every reader here, so
-    dropping it makes one reading of a record however it was written -- by an old producer that
-    omitted the key, by a current one that omits it, or by an upgrade that wrote the absence out.
+    A stated `null` is dropped along with the identity, at every level the contract models -- a
+    retrieved span's absent `text_preview` reads the same as one an older writer never wrote. In
+    these families `null` means "this producer recorded no such thing", which is what an absent key
+    already means to every reader here, so dropping it makes one reading of a record however it was
+    written: by an old producer that omitted the key, by a current one that omits it, or by an
+    upgrade that wrote the absence out. An open body map (a benchmark cell, a stage result) is the
+    producer's own and is passed through whole, nulls included.
     """
     normalized = registry.normalize(schema_id, record)
     model = registry.read_as(schema_id, normalized, version=version, source=source)
-    dumped = model.model_dump(mode="json")
-    return {
-        key: value
-        for key, value in dumped.items()
-        if key not in IDENTITY_KEYS and value is not None
-    }
+    dumped = model.model_dump(mode="json", exclude_none=True)
+    return {key: value for key, value in dumped.items() if key not in IDENTITY_KEYS}

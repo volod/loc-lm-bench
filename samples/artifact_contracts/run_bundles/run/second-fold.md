@@ -1,0 +1,5 @@
+# Second fold
+
+```text
+collapses
+```

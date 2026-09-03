@@ -7,6 +7,8 @@ it points back into the per-lane root that measured it.
 import json
 from pathlib import Path
 
+from llb.artifacts.runs.rows import encode_record
+from llb.core.contracts.orchestration import AGENT_PROFILE_SCHEMA_ID
 from llb.board.agent_profile.model import METHOD, PROFILE_JSON, PROFILE_MD, AgentProfile
 from llb.board.agent_profile.render import format_profile_md, profile_payload
 
@@ -21,7 +23,13 @@ def write_profile(profile: AgentProfile, data_dir: Path | str) -> dict[str, Path
     json_path = out_dir / PROFILE_JSON
     md_path = out_dir / PROFILE_MD
     json_path.write_text(
-        json.dumps(profile_payload(profile), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(
+            encode_record(AGENT_PROFILE_SCHEMA_ID, profile_payload(profile)),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     md_path.write_text(format_profile_md(profile) + "\n", encoding="utf-8")
     return {"json": json_path, "markdown": md_path}

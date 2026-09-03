@@ -19,7 +19,7 @@ from llb.scoring.aggregate import (
 from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult
 
-from llb.board.io import read_case_series
+from llb.artifacts.runs.bundle import read_case_series, read_run_manifest
 
 _LOG = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def load_chain_context_records(data_dir: Path | str) -> list[PolicyRunRecord]:
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             _LOG.warning("[board] unreadable chain-context manifest: %s", manifest_path)
             continue

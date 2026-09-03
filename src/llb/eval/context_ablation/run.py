@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from llb.board.io import read_case_rows
+from llb.artifacts.runs.bundle import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval.answer_quality.models import GROUNDING_DRAFTED, GROUNDING_VERIFIED
 from llb.eval.answer_quality.run import select_items

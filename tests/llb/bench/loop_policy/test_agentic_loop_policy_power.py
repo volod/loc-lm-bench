@@ -1,10 +1,10 @@
 """Prospective coverage and realized gates for repeat/no-op power runs."""
 
-import json
 from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
@@ -108,7 +108,7 @@ def test_power_run_reports_activation_separately_and_gates_recommendation(tmp_pa
     for report in run.reports:
         assert all(row["task_family"] in {"read", "mutation"} for row in report.rows)
         run_dir = Path(report.paths["manifest"]).parent
-        persisted = json.loads((run_dir / "power-analysis.json").read_text())
+        persisted = read_study_analysis(run_dir / "power-analysis.json")
         assert persisted["task_family_counts"] == {"mutation": 4, "read": 4}
 
 

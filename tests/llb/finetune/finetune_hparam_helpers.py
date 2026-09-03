@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 
+from llb.artifacts.runs.fixture import case_score_row, run_manifest_payload, run_metrics
 from llb.core.config import RunConfig
 from llb.core.contracts.common import JsonObject
 from llb.finetune.hparam_search.model import (
@@ -130,26 +131,26 @@ def _write_bundle(
     run.mkdir(parents=True, exist_ok=True)
     (run / "manifest.json").write_text(
         json.dumps(
-            {
-                "run_id": name,
-                "split": split,
-                "config": {"model": MODEL, "backend": "vllm", "goldset_path": str(root)},
-                "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
-                "n_cases": len(items),
-            }
+            run_manifest_payload(
+                run_id=name,
+                run_name=name,
+                split=split,
+                config={"model": MODEL, "backend": "vllm", "goldset_path": str(root)},
+                metrics=run_metrics(objective_score=objective, tokens_per_s=1.0),
+                n_cases=len(items),
+            )
         ),
         encoding="utf-8",
     )
     (run / "scores.jsonl").write_text(
         "".join(
             json.dumps(
-                {
-                    "item_id": item.id,
-                    "split": item.split,
-                    "status": "ok",
-                    "objective_score": objective,
-                    "answer_preview": "wrong answer",
-                }
+                case_score_row(
+                    item.id,
+                    split=item.split,
+                    objective_score=objective,
+                    answer_preview="wrong answer",
+                )
             )
             + "\n"
             for item in items

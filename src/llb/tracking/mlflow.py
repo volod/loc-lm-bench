@@ -8,7 +8,7 @@ from typing import Any, TypeGuard
 from urllib.parse import unquote, urlparse
 
 from llb.core.paths import resolve_data_dir, resolve_project_path
-from llb.tracking.manifest import RunManifest
+from llb.core.contracts.runs import RunManifest
 
 _LOG = logging.getLogger(__name__)
 

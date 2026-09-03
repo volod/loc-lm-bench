@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 
+from llb.artifacts.runs.fixture import run_manifest_payload, run_metrics
 from llb.backends.base import BackendLauncher, ChatResult
 from llb.finetune.registry.io import append_event
 from llb.finetune.registry.model import (
@@ -106,13 +107,14 @@ def _run_bundle(run_root: Path, name: str, *, model: str, adapter_digest: str | 
         config["adapter"] = {"adapter_digest": adapter_digest}
     (run / "manifest.json").write_text(
         json.dumps(
-            {
-                "run_id": name,
-                "split": "final",
-                "config": config,
-                "metrics": {"objective_score": 0.5, "reliability": 1.0, "tokens_per_s": 1.0},
-                "n_cases": 1,
-            }
+            run_manifest_payload(
+                run_id=name,
+                run_name=name,
+                split="final",
+                config=config,
+                metrics=run_metrics(objective_score=0.5, tokens_per_s=1.0),
+                n_cases=1,
+            )
         ),
         encoding="utf-8",
     )

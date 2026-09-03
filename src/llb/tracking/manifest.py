@@ -1,4 +1,4 @@
-"""Canonical run record (manifest + per-case scores), MLflow as a mirror only.
+"""Publish a run bundle atomically, with MLflow as a mirror only.
 
 Correctness contract (design): the immutable manifest (JSON) and the per-case scores are
 written to `$DATA_DIR` FIRST; only then is MLflow mirrored, best-effort. So a store/MLflow
@@ -6,78 +6,50 @@ error can never lose a completed run, and the canonical record never depends on 
 being installed. Scores are always JSONL -- a single, zero-dep format so a run bundle is
 identical across environments and never branches on which optional extras are installed.
 
+Every member is written through its registered contract and the whole staged directory is
+described and read back BEFORE the rename, so a bundle that reaches `$DATA_DIR` is one this build
+could read again. Additional members are `RunMember`s rather than a `name -> text` map: each says
+which contract validates it, or that it is the declared human-report exemption.
+
 `persist_run` takes an injectable `mirror` callable, so "manifest-before-mirror" ordering
 and "mirror failure does not lose data" are both unit-testable without MLflow.
 """
 
 import json
 import logging
-import platform
 import shutil
-import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
-from llb.core.contracts.hardware import ContentionReport, TelemetryReport
-from llb.core.contracts.runs import DurabilityStatus, RunEnvironment, RunMetrics, RunPaths
-from llb.core.contracts.common import JsonObject
-from llb.core.contracts.judging import JudgeStatus
-from llb.core.contracts.rag import RetrievalMetrics
+from llb.artifacts.datasets import publish_dataset_manifest
+from llb.artifacts.errors import DatasetReadError
+from llb.artifacts.runs.datasets import CASE_CONTRACTS, KIND_RUN, run_bundle_manifest
+from llb.artifacts.runs.members import RunMember, member_problems
+from llb.artifacts.runs.rows import write_rows
+from llb.core.contracts.run_bundle import CASE_RETRIEVAL_SCHEMA_ID, CASE_SCORE_SCHEMA_ID
+from llb.core.contracts.runs import RunManifest, RunPaths
 from llb.core.fsutil import atomic_write_text as _atomic_write_text
 
 _LOG = logging.getLogger(__name__)
 
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def capture_env() -> RunEnvironment:
-    """Minimal reproducibility environment (GPU/driver added with telemetry in backend telemetry)."""
-    return {
-        "python": sys.version.split()[0],
-        "platform": platform.platform(),
-    }
+MANIFEST_FILE = "manifest.json"
+SCORES_STEM = "scores"
+RETRIEVAL_STEM = "retrieval"
 
 
-class RunManifest(BaseModel):
-    """Immutable per-run record: config + environment + headline metrics."""
-
-    run_id: str
-    run_name: str
-    split: str | None = None
-    created_at: str = Field(default_factory=_utc_now)
-    config: JsonObject
-    env: RunEnvironment = Field(default_factory=capture_env)
-    metrics: RunMetrics | None = None
-    retrieval: RetrievalMetrics | None = None
-    judge: JudgeStatus | None = None
-    telemetry: TelemetryReport | None = None
-    contention: ContentionReport | None = None
-    durability: DurabilityStatus | None = None
-    prompt_system_provenance: JsonObject | None = None
-    # Set only by a context lane that laid whole documents into the prompt: the declared window,
-    # the window the backend was probed as serving, and which of the two bound the skip threshold.
-    context_window: JsonObject | None = None
-    n_cases: int = 0
-
-
-def write_scores(rows: Sequence[Mapping[str, object]], path_no_ext: Path) -> Path:
-    """Write per-case scores as JSONL (deterministic, zero-dep). Returns the path.
+def write_scores(
+    rows: Sequence[Mapping[str, object]],
+    path_no_ext: Path,
+    schema_id: str = CASE_SCORE_SCHEMA_ID,
+) -> Path:
+    """Write per-case rows as JSONL through their contract (deterministic, zero-dep).
 
     JSONL is the single canonical on-disk format so a run bundle is identical regardless of which
     optional extras happen to be installed -- the artifact never branches on `[track]`/pyarrow.
+    A row that does not satisfy `schema_id` fails here, before anything is published.
     """
-    path_no_ext = Path(path_no_ext)
-    path_no_ext.parent.mkdir(parents=True, exist_ok=True)
-    out = path_no_ext.with_suffix(".jsonl")
-    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-    _atomic_write_text(out, content)
-    return out
+    return write_rows(Path(path_no_ext).with_suffix(".jsonl"), schema_id, rows)
 
 
 def persist_run(
@@ -87,19 +59,46 @@ def persist_run(
     mirror: Callable[[RunManifest, Path], None] | None = None,
     staging_dir: Path | str | None = None,
     retrieval_rows: Sequence[Mapping[str, object]] | None = None,
-    artifacts: Mapping[str, str] | None = None,
+    artifacts: Sequence[RunMember] | None = None,
+    kind: str = KIND_RUN,
 ) -> RunPaths:
-    """Atomically publish manifest, scores, and optional artifacts as one directory.
+    """Atomically publish manifest, scores, and declared members as one described directory.
 
     `retrieval_rows` is the additive `retrieval.jsonl` record used by miss analysis. `artifacts`
-    adds named UTF-8 report files to the same staging transaction. The external mirror remains
+    adds declared members to the same staging transaction. `kind` says which contract the score
+    rows satisfy -- an evaluation's case scores or a benchmark lane's cells. The staged directory
+    is described, read back member by member, and given its `dataset_manifest.json` before the
+    rename, so a half-readable bundle never becomes visible. The external mirror remains
     best-effort and starts only after the complete canonical bundle is visible.
     """
     out_dir = Path(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     if out_dir.exists():
         raise FileExistsError(f"run artifacts already exist in {out_dir}")
+    members = tuple(artifacts or ())
+    problems = member_problems(members)
+    if problems:
+        raise ValueError("invalid additional run bundle member(s):\n- " + "\n- ".join(problems))
 
+    staging = _staging_dir(out_dir, staging_dir)
+    try:
+        staged_scores = _stage_bundle(staging, manifest, case_rows, retrieval_rows, members, kind)
+        staging.replace(out_dir)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    paths: RunPaths = {
+        "manifest": str(out_dir / MANIFEST_FILE),
+        "scores": str(out_dir / staged_scores.name),
+        "mirror": _mirrored(manifest, out_dir, mirror),
+    }
+    if retrieval_rows is not None:
+        paths["retrieval"] = str(out_dir / f"{RETRIEVAL_STEM}.jsonl")
+    return paths
+
+
+def _staging_dir(out_dir: Path, staging_dir: Path | str | None) -> Path:
     staging = (
         Path(staging_dir)
         if staging_dir is not None
@@ -108,55 +107,77 @@ def persist_run(
     if staging.parent.resolve() != out_dir.parent.resolve():
         raise ValueError("staging_dir must be a sibling of out_dir for atomic publication")
     staging.mkdir(parents=True, exist_ok=True)
+    return staging
 
+
+def _stage_bundle(
+    staging: Path,
+    manifest: RunManifest,
+    case_rows: Sequence[Mapping[str, object]],
+    retrieval_rows: Sequence[Mapping[str, object]] | None,
+    members: Sequence[RunMember],
+    kind: str,
+) -> Path:
+    """Write every member into `staging`, then refuse the whole bundle unless all read back."""
+    staging_manifest = staging / MANIFEST_FILE
+    if staging_manifest.exists() or any(staging.glob("scores.*")):
+        raise FileExistsError(f"staged canonical artifacts already exist in {staging}")
+    _atomic_write_text(
+        staging_manifest,
+        json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2),
+    )
+    staged_scores = write_scores(case_rows, staging / SCORES_STEM, _case_contract(kind))
+    if retrieval_rows is not None:
+        write_rows(staging / f"{RETRIEVAL_STEM}.jsonl", CASE_RETRIEVAL_SCHEMA_ID, retrieval_rows)
+    for member in members:
+        target = staging / member.name
+        if target.exists():
+            raise ValueError(f"additional member would overwrite a staged file: {member.name!r}")
+        _atomic_write_text(target, member.content)
+    _publish_description(staging, kind, tuple(members))
+    return staged_scores
+
+
+def _case_contract(kind: str) -> str:
     try:
-        staging_manifest = staging / "manifest.json"
-        if staging_manifest.exists() or any(staging.glob("scores.*")):
-            raise FileExistsError(f"staged canonical artifacts already exist in {staging}")
-        _atomic_write_text(
-            staging_manifest,
-            json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
-        )
-        staged_scores = write_scores(case_rows, staging / "scores")
-        staged_retrieval = (
-            write_scores(retrieval_rows, staging / "retrieval")
-            if retrieval_rows is not None
-            else None
-        )
-        for name, content in (artifacts or {}).items():
-            artifact_path = staging / name
-            if (
-                Path(name).name != name
-                or name in {"manifest.json", staged_scores.name}
-                or artifact_path.exists()
-            ):
-                raise ValueError(f"invalid additional artifact name: {name!r}")
-            _atomic_write_text(artifact_path, content)
-        staging.replace(out_dir)
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
+        return CASE_CONTRACTS[kind]
+    except KeyError as exc:
+        raise ValueError(f"unknown run bundle kind {kind!r}") from exc
 
-    manifest_path = out_dir / staging_manifest.name
-    scores_path = out_dir / staged_scores.name
 
-    # Mirror only after the canonical record exists on disk; never let it raise.
+def _publish_description(staging: Path, kind: str, members: tuple[RunMember, ...]) -> None:
+    """Describe the staged bundle, read every member back, and publish the description.
+
+    This is the gate the rename is behind: a member that cannot be read at the current contract,
+    or whose bytes do not match what was just described, refuses here -- while the only thing that
+    exists is a staging directory the caller is about to delete.
+    """
+    from llb.artifacts.dataset_reading import survey_dataset
+
+    description = run_bundle_manifest(staging, kind=kind, extra=members)
+    refusals = [
+        f"{reading.path}: {reading.refusal}"
+        for reading in survey_dataset(staging, description)
+        if reading.refusal
+    ]
+    if refusals:
+        raise DatasetReadError(
+            "staged run bundle cannot be read back at the current contracts:\n- "
+            + "\n- ".join(refusals)
+        )
+    publish_dataset_manifest(staging, description)
+
+
+def _mirrored(
+    manifest: RunManifest, out_dir: Path, mirror: Callable[[RunManifest, Path], None] | None
+) -> str:
+    """Mirror only after the canonical record exists on disk; never let it raise."""
     mirror = mirror if mirror is not None else mlflow_mirror
-    mirror_status = "skipped"
     try:
         mirror(manifest, out_dir)
-        mirror_status = "ok"
     except Exception as exc:  # a mirror failure must not lose a completed run
-        mirror_status = f"failed: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
-
-    paths: RunPaths = {
-        "manifest": str(manifest_path),
-        "scores": str(scores_path),
-        "mirror": mirror_status,
-    }
-    if staged_retrieval is not None:
-        paths["retrieval"] = str(out_dir / staged_retrieval.name)
-    return paths
+        return f"failed: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
+    return "ok"
 
 
 def mlflow_mirror(manifest: RunManifest, out_dir: Path) -> None:

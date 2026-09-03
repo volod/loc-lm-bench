@@ -12,7 +12,8 @@ from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
 from llb.scoring.leaderboard import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
-from llb.board.io import mean_or_none, read_case_objectives, read_case_series
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.runs.bundle import read_case_series, read_run_manifest
 
 _LOG = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ class RunRecord:
     run_dir: str
     created_at: str
     split: str
+
+
+def mean_or_none(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
 
 
 def record_from_manifest(
@@ -85,7 +90,7 @@ def record_from_manifest(
             if metrics.get("mean_completion_tokens") is not None
             else None
         ),
-        case_objectives=read_case_objectives(run_dir),
+        case_objectives=read_case_series(run_dir, "objective_score"),
         case_ranking=read_case_series(run_dir, "ranking_score"),
         case_semantic=case_semantic,
         case_judge=case_judge,
@@ -135,8 +140,13 @@ def load_run_records(
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
             record = record_from_manifest(manifest, manifest_path.parent, registry=registry)
+        except ArtifactContractError:
+            # A bundle whose contract this build does not declare is REFUSED, not skipped: a
+            # board that quietly dropped it would rank a roster missing whichever runs a newer
+            # writer produced, and read as complete.
+            raise
         except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
             _LOG.warning("[board] unreadable run bundle %s: %s", manifest_path.parent, exc)
             continue

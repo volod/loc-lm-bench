@@ -1,8 +1,8 @@
 """Shared operator surface for surveying a described directory of artifacts.
 
-`check-bundle` and `check-store` ask the same question of different directories: can this build
-read every member, and which of them an older writer produced. One implementation renders the
-answer, so a store's report reads exactly like a bundle's.
+`check-bundle`, `check-store`, and `check-run` ask the same question of different directories: can
+this build read every member, and which of them an older writer produced. One implementation
+renders the answer, so a run bundle's report reads exactly like a store's.
 """
 
 from pathlib import Path

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
@@ -182,7 +183,7 @@ def test_authority_requires_three_families_and_both_seeds(tmp_path: Path):
         mirror=lambda *_args: None,
     )
     run_dir = Path(paths["manifest"]).parent
-    persisted = json.loads((run_dir / "controller-authority-transfer-analysis.json").read_text())
+    persisted = read_study_analysis(run_dir / "controller-authority-transfer-analysis.json")
     assert persisted["supported_seeds"] == 2
     assert (
         "controller-authority"

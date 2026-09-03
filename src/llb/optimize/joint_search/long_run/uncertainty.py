@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.board.io import read_case_rows
+from llb.artifacts.runs.bundle import read_case_rows
 from llb.core.contracts.runs import EvalResult
 from llb.eval.paired_cases import rows_by_item
 from llb.rag.fusion_evidence.paired import PairedComparison, paired_comparison

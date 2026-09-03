@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.knowledge_cutoff.data import (
     CutoffEvent,
     EventSource,
@@ -216,7 +217,7 @@ def test_end_to_end_fake_run_persists_reports(tmp_path):
     )
     assert result.summary.eligible_accuracy == 1.0
     assert result.paths is not None
-    report = json.loads(Path(result.report_json).read_text(encoding="utf-8"))
+    report = read_study_analysis(Path(result.report_json))
     markdown = Path(result.report_markdown).read_text(encoding="utf-8")
     manifest = json.loads(Path(result.paths["manifest"]).read_text(encoding="utf-8"))
     assert report["model"] == "local-test"

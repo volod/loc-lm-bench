@@ -7,6 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.runs.rows import append_row, decode_record, encode_record
+from llb.core.contracts.run_bundle import CASE_PROGRESS_SCHEMA_ID, RUN_PROGRESS_META_SCHEMA_ID
 from llb.core.contracts.runs import DurabilityStatus
 from llb.executor.cases import spans_as_dicts
 from llb.core.fsutil import atomic_write_text
@@ -131,12 +134,16 @@ class CaseJournal:
                 if not line:
                     continue
                 try:
-                    record = json.loads(line)
+                    record = decode_record(
+                        CASE_PROGRESS_SCHEMA_ID,
+                        json.loads(line),
+                        source=f"{self.path}:{line_no}",
+                    )
                     item_id = str(record["item_id"])
                     state = record["state"]
                     if not isinstance(state, dict):
                         raise TypeError("state must be an object")
-                except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                except (json.JSONDecodeError, ArtifactContractError, KeyError, TypeError) as exc:
                     _LOG.warning(
                         "[run-eval] skipping malformed case-journal line %s:%d (%s)",
                         self.path,
@@ -161,10 +168,12 @@ class CaseJournal:
             RagState,
             {key: value for key, value in dict(state).items() if key in _JOURNALED_STATE_KEYS},
         )
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"item_id": item_id, "state": trimmed}
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False, default=_json_default) + "\n")
+        append_row(
+            self.path,
+            CASE_PROGRESS_SCHEMA_ID,
+            {"item_id": item_id, "state": trimmed},
+            default=_json_default,
+        )
         self._done[item_id] = trimmed
 
 
@@ -202,13 +211,16 @@ def write_journal_meta(
     split: str,
 ) -> None:
     """Pin the determinism-critical identity of a run at start, so `--resume` can refuse a mismatch."""
-    meta = {
-        "run_id": run_id,
-        "split": split,
-        "config_digest": config_digest(config_fingerprint),
-        "goldset_digest": goldset_digest(items),
-        "n_items": len(items),
-    }
+    meta = encode_record(
+        RUN_PROGRESS_META_SCHEMA_ID,
+        {
+            "run_id": run_id,
+            "split": split,
+            "config_digest": config_digest(config_fingerprint),
+            "goldset_digest": goldset_digest(items),
+            "n_items": len(items),
+        },
+    )
     atomic_write_text(
         journal_meta_path(staging_dir), json.dumps(meta, ensure_ascii=False, indent=2)
     )
@@ -229,8 +241,12 @@ def verify_resume_meta(
             "(only an interrupted durable run can be resumed)"
         )
     try:
-        meta: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        meta: dict[str, Any] = decode_record(
+            RUN_PROGRESS_META_SCHEMA_ID,
+            json.loads(path.read_text(encoding="utf-8")),
+            source=str(path),
+        )
+    except (OSError, json.JSONDecodeError, ArtifactContractError) as exc:
         raise SystemExit(f"[run-eval] cannot resume: unreadable journal meta {path} ({exc})")
     mismatched = []
     if meta.get("config_digest") != config_digest(config_fingerprint):

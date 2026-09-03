@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import pytest
+from llb.artifacts.runs.fixture import telemetry_report
 from llb.core.config import RunConfig
 from llb.core.contracts.runs import EvalResult
 from llb.finetune.campaign.model import COMPLETE_VERDICT, SKIP_VERDICT
@@ -39,7 +40,7 @@ def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path)
         )
         manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
         manifest["config"]["model"] = config.model
-        manifest["telemetry"] = {"peak_vram_mb": 1000 + len(eval_calls)}
+        manifest["telemetry"] = telemetry_report(peak_vram_mb=1000 + len(eval_calls))
         (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return {
             "rows": [],

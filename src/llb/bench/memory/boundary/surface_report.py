@@ -1,9 +1,9 @@
 """Rendering and persistence for the cap-fitting boundary surface."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.boundary.crossover import READING_BRACKETED
 from llb.bench.memory.boundary.surface import METHOD, STUDY_KIND
 from llb.bench.common import Mirror, persist_category_run
@@ -137,11 +137,11 @@ def persist_surface(
         },
         case_rows=rows,
         mirror=mirror,
-        artifacts={
-            "boundary-surface-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
-            "boundary-surface-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
-            "boundary-surface.md": (
-                "# Compact-memory cap-fitting boundary surface\n\n```text\n" + table + "\n```\n"
+        artifacts=[
+            study_design("boundary-surface-design.json", design),
+            study_analysis("boundary-surface-analysis.json", analysis),
+            table_report(
+                "boundary-surface.md", "Compact-memory cap-fitting boundary surface", table
             ),
-        },
+        ],
     )

@@ -42,9 +42,13 @@ continue to use their own objective. The measured policy decision and rank chang
 in [RAG core](../rag-core/scoring.md#headline-decomposition-and-declared-ranking-policy).
 
 `src/llb/board/` loads run bundles and renders Streamlit views. Loading is split by concern:
-`runs`, `categories`, `harnesses`, `prompt_systems`, and `io`. The board uses final private runs
-for RAG leaderboards and separate sections for public screens, category tiers, harness comparisons,
-and prompt-system comparisons.
+`runs`, `categories`, `harnesses`, and `prompt_systems`; every one of them opens a bundle through
+the shared contract readers in `llb.artifacts.runs.bundle`. A bundle whose manifest names a version
+this build does not declare is REFUSED rather than logged and skipped, because a board that quietly
+dropped it would rank a roster missing exactly those runs and read as complete -- see
+[run, board, and orchestration contracts](../artifact-contracts/run-and-evaluation-contracts.md).
+The board uses final private runs for RAG leaderboards and separate sections for public screens,
+category tiers, harness comparisons, and prompt-system comparisons.
 
 ```bash
 make board

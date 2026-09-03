@@ -23,6 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.runs.bundle import read_run_manifest, read_score_rows
 from llb.board.miss_analysis.model import MISS_RETRIEVAL, MissRecord
 from llb.core.config import RUN_EVAL_METHOD, RunConfig
 from llb.core.contracts.common import JsonObject
@@ -69,7 +70,7 @@ def _find_finalized(run_root: Path, name: str, n_items: int) -> Path | None:
         if manifest_path.parent.name.startswith("."):
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
         except (OSError, json.JSONDecodeError):
             continue
         if manifest.get("run_name") == name and int(manifest.get("n_cases", -1)) == n_items:
@@ -110,7 +111,7 @@ def _probe_outcome(
 ) -> JsonObject:
     """Measured probe evidence from the probe bundle's scores: subset mean objective at depth k
     plus how many of the source run's retrieval misses the deeper/shallower context recovered."""
-    rows = _read_jsonl(probe_dir / "scores.jsonl")
+    rows = read_score_rows(probe_dir)
     objectives = [float(row.get("objective_score", 0.0)) for row in rows]
     recovered = sum(
         1

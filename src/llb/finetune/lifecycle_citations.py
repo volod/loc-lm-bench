@@ -4,6 +4,7 @@ import json
 import logging
 from collections import defaultdict
 from pathlib import Path
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.core.contracts.common import JsonObject
 from llb.core.paths import resolve_project_path
 from llb.finetune.registry.model import AdapterEntry
@@ -115,7 +116,7 @@ def _dir_cited_ids(rows: list[JsonObject], dir_to_id: dict[Path, str]) -> set[st
 
 def _cited_ids(manifest_path: Path, dir_to_id: dict[Path, str]) -> set[str]:
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = read_run_manifest(manifest_path)
     except (OSError, json.JSONDecodeError) as exc:
         _LOG.warning("[gc-adapters] unreadable run bundle %s: %s", manifest_path.parent, exc)
         return set()

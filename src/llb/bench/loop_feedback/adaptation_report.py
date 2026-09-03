@@ -1,9 +1,9 @@
 """Rendering and persistence for family-adapted repeat-feedback evidence."""
 
-import json
 from pathlib import Path
 from typing import cast
 
+from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.loop_feedback.adaptation_design import STUDY_KIND
 from llb.bench.loop_policy.report import METHOD
 from llb.bench.common import Mirror, persist_category_run
@@ -70,13 +70,11 @@ def persist_feedback_adaptation(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
-        artifacts={
-            "family-adaptation-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
-            "family-adaptation-analysis.json": (
-                json.dumps(analysis, indent=2, sort_keys=True) + "\n"
+        artifacts=[
+            study_design("family-adaptation-design.json", design),
+            study_analysis("family-adaptation-analysis.json", analysis),
+            table_report(
+                "family-adaptation-comparison.md", "Repeat-feedback family adaptation", table
             ),
-            "family-adaptation-comparison.md": (
-                "# Repeat-feedback family adaptation\n\n```text\n" + table + "\n```\n"
-            ),
-        },
+        ],
     )

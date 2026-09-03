@@ -6,6 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.runs.rows import append_row, decode_record, encode_record
+from llb.core.contracts.orchestration import (
+    AUTO_RAG_JOURNAL_EVENT_SCHEMA_ID,
+    AUTO_RAG_KIND,
+    AUTO_RAG_MANIFEST_SCHEMA_ID,
+    AUTO_RAG_STAGE_RESULT_SCHEMA_ID,
+)
 from llb.core.fsutil import atomic_write_text
 
 MANIFEST_FILE = "manifest.json"
@@ -30,11 +38,18 @@ class AutoRagJournal:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         path = self.run_dir / MANIFEST_FILE
         if path.is_file():
-            prior = json.loads(path.read_text(encoding="utf-8"))
+            prior = decode_record(
+                AUTO_RAG_MANIFEST_SCHEMA_ID,
+                json.loads(path.read_text(encoding="utf-8")),
+                source=str(path),
+            )
             if prior.get("fingerprint") != self.fingerprint:
                 raise ValueError(f"auto-RAG resume settings differ from {path}; use a new --run-id")
             return True
-        payload = {"kind": "auto-rag", "fingerprint": self.fingerprint, **self.manifest}
+        payload = encode_record(
+            AUTO_RAG_MANIFEST_SCHEMA_ID,
+            {"kind": AUTO_RAG_KIND, "fingerprint": self.fingerprint, **self.manifest},
+        )
         atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         self.event("run", "started")
         return False
@@ -47,8 +62,12 @@ class AutoRagJournal:
         if not path.is_file():
             return None
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            payload = decode_record(
+                AUTO_RAG_STAGE_RESULT_SCHEMA_ID,
+                json.loads(path.read_text(encoding="utf-8")),
+                source=str(path),
+            )
+        except (OSError, json.JSONDecodeError, ArtifactContractError):
             return None
         if payload.get("status") != "completed" or payload.get("stage") != stage:
             return None
@@ -56,19 +75,26 @@ class AutoRagJournal:
         return result if isinstance(result, dict) else None
 
     def complete(self, stage: str, result: dict[str, Any]) -> None:
-        payload = {"status": "completed", "stage": stage, "result": result}
+        payload = encode_record(
+            AUTO_RAG_STAGE_RESULT_SCHEMA_ID,
+            {"status": "completed", "stage": stage, "result": result},
+        )
         atomic_write_text(
             self.result_path(stage), json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         )
         self.event(stage, "completed", result_digest=stable_digest(result))
 
     def event(self, stage: str, status: str, **fields: object) -> None:
-        path = self.run_dir / JOURNAL_FILE
-        record = {
-            "time": datetime.now(timezone.utc).isoformat(),
-            "stage": stage,
-            "status": status,
-            **fields,
-        }
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        """Append one journal line. Whatever the event reported travels under `fields`, which is
+        the event's own; the time, the stage, and the status are what every reader keys on."""
+        append_row(
+            self.run_dir / JOURNAL_FILE,
+            AUTO_RAG_JOURNAL_EVENT_SCHEMA_ID,
+            {
+                "time": datetime.now(timezone.utc).isoformat(),
+                "stage": stage,
+                "status": status,
+                "fields": dict(fields),
+            },
+            default=str,
+        )

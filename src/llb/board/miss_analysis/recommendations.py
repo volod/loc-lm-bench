@@ -11,6 +11,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from llb.artifacts.runs.bundle import read_run_manifest
 from llb.board.miss_analysis.model import (
     DICTIONARY_CLUSTER_MIN,
     DICTIONARY_CLUSTER_SHARE,
@@ -99,9 +100,7 @@ def _dominant_generation_cluster(
 def _run_mean_objective(analysis: MissAnalysis) -> float:
     """Mean objective of the analyzed run, recovered from its manifest via the bundle path."""
     try:
-        manifest = json.loads(
-            (Path(analysis.run_dir) / "manifest.json").read_text(encoding="utf-8")
-        )
+        manifest = read_run_manifest(Path(analysis.run_dir))
         return float((manifest.get("metrics") or {}).get("objective_score", 0.0))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return 0.0

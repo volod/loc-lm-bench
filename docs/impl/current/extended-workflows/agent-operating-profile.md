@@ -19,7 +19,10 @@ llb recommend --agent-profile --no-chart
 ```
 
 It writes `$DATA_DIR/agent-profile/<run_timestamp>/{agent_profile.json,profile.md}`. There is no new
-evidence root: every value points back into the per-lane root that measured it.
+evidence root: every value points back into the per-lane root that measured it. `agent_profile.json`
+is the registered `llb.agent-profile` contract, which is what lets the robotics benchmark consume a
+profile it did not write ([run, board, and orchestration
+contracts](../artifact-contracts/run-and-evaluation-contracts.md)).
 
 ## The ten fields and where each comes from
 
