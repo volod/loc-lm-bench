@@ -1,6 +1,8 @@
 # Dev setup
 
-Requires [uv](https://docs.astral.sh/uv/) (Python 3.13) on any host. On **Debian/Ubuntu**,
+Requires [uv](https://docs.astral.sh/uv/) on any host. The default interpreter minor is
+`[tool.llb.toolchain] python-version` in `pyproject.toml` (currently 3.13); `make venv` reads it.
+On **Debian/Ubuntu**,
 `make venv` installs OS packages from [scripts/apt/](../../../scripts/apt/) (`sudo apt-get` when
 needed).
 

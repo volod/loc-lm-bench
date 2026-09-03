@@ -16,6 +16,24 @@ the gap first: [Extending this specification](../design/spec.md#extending-this-s
 six-step lifecycle for turning a discovery into a registered capability with a declared evaluation,
 and only then into tasks here. `make lint-spec-plan` enforces the join in both directions.
 
+## Pre-release rule: no versioning, no backward compatibility
+
+Nothing this project writes has been released, so nothing on disk is a compatibility obligation.
+Until every task in this file is done, a task must NOT introduce a second schema version, a
+migration edge, a compatibility shim, a re-export alias, a deprecation window, or a "read the old
+form too" branch. When a durable form has to change, change it in place: update the model,
+regenerate the exports, update the fixtures, and rebuild whatever no longer parses. A run
+artifact an earlier build of our own code wrote is reproducible input, not a supported form.
+
+The two standing exceptions are already declared and are not a licence to add more: the
+compatibility-probe family that keeps the migration mechanism exercised in CI, and the data-prep
+families whose older versions describe bundles this project actually wrote. See
+[every family starts at one version](current/artifact-contracts/foundation-and-evolution.md#every-family-starts-at-one-version).
+
+Backward compatibility and schema migration become real requirements at release, once this file is
+empty and the code is published; the mechanism is kept working for that day. A task written before
+that point does not get to spend it.
+
 ## Forward Tasks
 
 The forward work is split into two sections by **who must act to complete it**:
@@ -81,15 +99,15 @@ Take the first task of the earliest group that still has one; see
 Run bundles are the primary downstream API, yet the Pydantic `RunManifest` has no schema identity
 and `persist_run` accepts arbitrary score, retrieval, and additional-artifact payloads. Move the
 tracking, evaluation, benchmark, scoring, board, and orchestration records behind typed dataset
-contracts while preserving board readings from supported older runs.
+contracts, each at a single declared version.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
 - Dependencies: the retrieval, graph, and prompt-system contracts run-bundle members embed are
   registered ([retrieval and graph contracts](current/artifact-contracts/retrieval-and-graph-contracts.md));
   none open.
-- User-visible outcome: a board or downstream analysis can validate a complete run bundle, identify
-  every member's contract, and read supported historical runs without guessing from filenames.
+- User-visible outcome: a board or downstream analysis can validate a complete run bundle and
+  identify every member's contract without guessing from filenames.
 - Scope boundary: in scope -- durable producers and consumers under `src/llb/tracking/`,
   `src/llb/executor/`, `src/llb/scoring/`, `src/llb/eval/`, `src/llb/bench/`, `src/llb/board/`, and
   `src/llb/auto_rag/`, plus their CLI entry points; typed score/retrieval rows, design and analysis
@@ -98,14 +116,14 @@ contracts while preserving board readings from supported older runs.
   rendered Markdown, and MLflow's own database schema.
 - Data and artifact paths: canonical `manifest.json`, `scores.jsonl`, `retrieval.jsonl`, study
   design/analysis sidecars, journals, board and recommendation artifacts under existing
-  `$DATA_DIR/<method>/<run>/` roots, plus old-run fixtures under
+  `$DATA_DIR/<method>/<run>/` roots, plus current-form fixtures under
   `samples/artifact_contracts/run_bundles/`.
 - Execution path: CPU-only producer, resume, board, and external-consumer fixtures inside `make ci`;
   MLflow remains an injected best-effort mirror and no model service is started.
 - Acceptance gates: `make ci` green; atomic publication validates every member before rename; a
-  supported old run yields the same board and published-value readings as its current migration; an
-  unknown or mixed-version member refuses before board admission; no arbitrary artifact content can
-  enter `persist_run` without a registered contract or a declared human-report exemption.
+  bundle member carrying an unknown identity or a version this build does not declare refuses
+  before board admission; no arbitrary artifact content can enter `persist_run` without a
+  registered contract or a declared human-report exemption.
 - Documentation target:
   `docs/impl/current/artifact-contracts/run-and-evaluation-contracts.md`, the artifact-contracts
   area index, and links from evaluation rigor, Auto-RAG, and extended-workflow topic pages.
@@ -135,8 +153,8 @@ registry instead of remaining a separate versioning island.
   and compatibility fixtures under `samples/artifact_contracts/integrations/`.
 - Execution path: CPU-only contract and fake-adapter tests inside `make ci`; no training, model
   download, GPU load, external API, device connection, or HFlow installation is required.
-- Acceptance gates: `make ci` green; current and supported-old manifests and robotics exchanges
-  round-trip through the shared registry; cross-file digests and schema ids bind datasets to opaque
+- Acceptance gates: `make ci` green; current manifests and robotics exchanges round-trip through
+  the shared registry; cross-file digests and schema ids bind datasets to opaque
   members; unsupported versions refuse before training, model load, external export, or device
   proposal evaluation; the existing robotics safety invariants remain unchanged.
 - Documentation target:
@@ -1365,7 +1383,7 @@ the fitted cost -- or record that the linear rank is within the measurement's ow
 
 ## Adding Future Tasks
 
-**First decide whether the work is a task at all.** Three kinds of finding look like forward work
+**First decide whether the work is a task at all.** Four kinds of finding look like forward work
 and are not:
 
 - A **chore**: a source file over the soft line limit, or a run artifact already inside its size
@@ -1374,6 +1392,9 @@ and are not:
   the next round.
 - An **audit of our own output**: an artifact's field layout, an artifact's byte count. The measure
   of an audit is a decision it changes, not a byte it saves.
+- A **migration, compatibility shim, or second schema version** for a form only our own code has
+  written. Change the form in place and rebuild the data; see
+  [Pre-release rule](#pre-release-rule-no-versioning-no-backward-compatibility).
 - A **new domain capability** the spec does not describe. This one IS worth doing, and it is not a
   plan task yet: run the six steps of
   [Extending this specification](../design/spec.md#extending-this-specification) first -- state the
@@ -1407,9 +1428,10 @@ Each task entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a task surfaces new future work, route it by the three kinds above: handle a chore inline or
-dropped, a self-audit gets dropped, and a genuine capability goes through the spec lifecycle before
-it becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
+When a task surfaces new future work, route it by the four kinds above: handle a chore inline or
+dropped, a self-audit gets dropped, a compatibility layer for our own unreleased output gets
+replaced by an in-place change, and a genuine capability goes through the spec lifecycle before it
+becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
 what is not normal is a task quietly appearing under a capability nobody amended the spec for. Put
 current behavior and durable decisions in current docs, never in this plan.
 

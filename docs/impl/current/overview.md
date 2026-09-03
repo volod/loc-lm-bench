@@ -226,8 +226,12 @@ The project README stays at capability and navigation level. End-to-end commands
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
-Python `>=3.12`; pytest and build-helper tests derive their behavior and fake wheel ABI tags from
-the running supported interpreter.
+Python `>=3.12`; the default `make venv` interpreter and venv directory are pinned once in
+`[tool.llb.toolchain]` (`python-version` 3.13, `venv` `.venv`). Make, `scripts/setup_venv.sh`,
+mypy, ruff, and basedpyright all consume that table -- `make lint-toolchain` fails if a
+restatement drifts. `make venv PYTHON_VERSION=` or `make venv VENV=` still override the defaults
+for that invocation. pytest and build-helper tests derive their behavior and fake wheel ABI tags
+from the running supported interpreter.
 
 ```bash
 make

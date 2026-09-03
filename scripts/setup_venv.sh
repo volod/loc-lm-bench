@@ -11,8 +11,13 @@ llb_load_env  # also resolves UV_LINK_MODE for the sync below
 export PROJECT_ROOT
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-VENV="${VENV:-$PROJECT_ROOT/.venv}"
-PYTHON_VERSION="${PYTHON_VERSION:-3.13}"
+# Defaults match [tool.llb.toolchain]; Make already exports both for `make venv`.
+if [ -z "${VENV:-}" ]; then
+  VENV="$PROJECT_ROOT/$(PYTHONPATH="$PROJECT_ROOT/src" python3 -m llb.build.toolchain venv)"
+fi
+if [ -z "${PYTHON_VERSION:-}" ]; then
+  PYTHON_VERSION="$(PYTHONPATH="$PROJECT_ROOT/src" python3 -m llb.build.toolchain python-version)"
+fi
 VENV_INSTALL_VLLM="${VENV_INSTALL_VLLM:-auto}"
 RECREATE_VENV="${RECREATE_VENV:-}"
 EXTRAS="${EXTRAS:-}"
