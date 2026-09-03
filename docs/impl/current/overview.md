@@ -213,6 +213,7 @@ Persisted artifacts are interpreted through one current schema:
   `retrieval.jsonl` evidence;
 - ontology extraction-journal rows require `parsed=true`;
 - calibration worksheet headers match their canonical column list exactly;
+- a data-prep artifact from a future major refuses before a store build or a review session;
 - merged tokenizer chat templates come from the Transformers 5 `chat_template.jinja` file.
 
 These boundaries fail visibly when state is incomplete, which keeps the core readers compact and
@@ -487,7 +488,7 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
-| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts` |
+| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts`, `make check-bundle` |
 | Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `compare-conflict-granularity`,
 `recompute-conflict-stage`, `calibrate-conflict-adjudicator`, `measure-duplicate-residue` |
 | Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |
@@ -511,7 +512,8 @@ The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cl
 
 ```text
 src/llb/
-  artifacts/        version registry, compatibility reads, dataset IO, schema/catalog generation
+  artifacts/        version registry, compatibility reads, dataset IO, bundle validation,
+                    compatibility gates, schema/catalog generation
   cli/              Typer command modules and config helpers
   core/             canonical RunConfig, contracts, env and filesystem helpers
   goldset/          canonical gold schema, validation, splits, review ledger tooling
@@ -545,7 +547,7 @@ YAML/JSON fixture files are grouped by use:
 
 | Path | Contents |
 | --- | --- |
-| `samples/artifact_contracts/` | contract compatibility cases, dataset manifest, external validator |
+| `samples/artifact_contracts/` | contract compatibility cases, dataset manifest, data-prep bundle fixtures, external validator |
 | `samples/configs/` | candidate model manifest and run-eval config examples |
 | `samples/benchmarks/` | category-suite case seeds and tool catalogs |
 | `samples/data-prep/` | import and synthetic RAG-item fixtures |

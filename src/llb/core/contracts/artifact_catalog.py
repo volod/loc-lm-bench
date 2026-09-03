@@ -38,7 +38,7 @@ class CompatibilityDeclaration(BaseModel):
     description: str = Field(min_length=1)
 
 
-class ContractCatalogEntry(BaseModel):
+class ContractCatalogEntryV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_id: str = Field(pattern=SCHEMA_ID_PATTERN)
@@ -52,8 +52,25 @@ class ContractCatalogEntry(BaseModel):
     extension_point: str | None = None
 
 
-class ArtifactCatalog(ArtifactContract):
+class ContractCatalogEntry(ContractCatalogEntryV1):
+    """Catalog entry at version 1.1.
+
+    ``legacy_read_version`` is the version an external reader must assume for a file this project
+    wrote before the family joined the registry -- the one case where the file itself cannot say.
+    """
+
+    legacy_read_version: SemanticVersionString | None = None
+
+
+class ArtifactCatalogV1(ArtifactContract):
     schema_id: Literal["llb.artifact-catalog"]
     schema_version: Literal["1.0.0"]
+    odcs_api_version: Literal["v3.1.0"]
+    contracts: list[ContractCatalogEntryV1]
+
+
+class ArtifactCatalog(ArtifactContract):
+    schema_id: Literal["llb.artifact-catalog"]
+    schema_version: Literal["1.1.0"]
     odcs_api_version: Literal["v3.1.0"]
     contracts: list[ContractCatalogEntry]

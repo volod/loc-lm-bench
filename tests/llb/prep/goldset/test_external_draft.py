@@ -11,11 +11,11 @@ import pytest
 
 from llb.goldset.schema import load_goldset
 from llb.goldset.validate import validate_items
-from llb.prep.goldset.external_draft import (
+from llb.prep.goldset.external_draft import import_external_draft
+from llb.prep.goldset.external_draft_schema import (
     GOLDSET_FILENAME,
     ITEM_PROVENANCE_FILENAME,
     PROVENANCE_FILENAME,
-    import_external_draft,
 )
 
 DOC = "Начальник служби веде облік цінностей.\nАкт приймання складається у трьох примірниках."

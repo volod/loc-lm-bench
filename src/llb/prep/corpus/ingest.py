@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from llb.core.contracts.data_prep.corpus import CorpusItemRecord, CorpusManifest
 from llb.prep.pdf.ingest import ingest_pdf_corpus
 from llb.prep.pdf.model import PdfTextExtractor
 from llb.prep.pdf.render import default_markdown_out_dir
@@ -80,22 +81,25 @@ def _pdf_item_to_corpus_item(
     )
 
 
-def _manifest(result: CorpusIngestResult) -> dict[str, object]:
+def _manifest(result: CorpusIngestResult) -> CorpusManifest:
+    """The manifest as its registered contract, not as a dictionary a reader must trust."""
     item_rows = [asdict(item) for item in result.items]
-    return {
-        "kind": "corpus",
-        "source_root": str(result.source_root),
-        "corpus_root": str(result.out_dir),
-        "n_sources": len(result.items),
-        "n_docs": result.n_docs,
-        "n_skipped": result.n_skipped,
-        "n_reused": result.n_reused,
-        "n_removed_sources": result.n_removed_sources,
-        "removed_sources": result.removed_sources,
-        "corpus_fingerprint": manifest_items_fingerprint(item_rows),
-        "governance_coverage": result.governance_coverage,
-        "items": item_rows,
-    }
+    return CorpusManifest(
+        schema_id="llb.corpus-manifest",
+        schema_version="1.0.0",
+        kind="corpus",
+        source_root=str(result.source_root),
+        corpus_root=str(result.out_dir),
+        n_sources=len(result.items),
+        n_docs=result.n_docs,
+        n_skipped=result.n_skipped,
+        n_reused=result.n_reused,
+        n_removed_sources=result.n_removed_sources,
+        removed_sources=list(result.removed_sources),
+        corpus_fingerprint=manifest_items_fingerprint(item_rows),
+        governance_coverage=result.governance_coverage,
+        items=[CorpusItemRecord.model_validate(row) for row in item_rows],
+    )
 
 
 def _unlink_if_file(path: Path, description: str) -> None:
@@ -215,7 +219,8 @@ def ingest_corpus(
         governance_coverage=ingestion_governance_coverage(item_rows),
     )
     (target / CORPUS_MANIFEST).write_text(
-        json.dumps(_manifest(result), ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(_manifest(result).model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     _LOG.info(
         "[corpus] ingested %d/%d documents (%d reused, %d skipped) -> %s",

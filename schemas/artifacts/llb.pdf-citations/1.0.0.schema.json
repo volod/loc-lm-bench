@@ -1,0 +1,122 @@
+{
+  "$defs": {
+    "PdfPageCitationRecord": {
+      "additionalProperties": false,
+      "description": "One rendered page's char offsets into the staged markdown.",
+      "properties": {
+        "blocks": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Blocks",
+          "type": "array"
+        },
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "n_chars": {
+          "minimum": 0,
+          "title": "N Chars",
+          "type": "integer"
+        },
+        "page": {
+          "minimum": 0,
+          "title": "Page",
+          "type": "integer"
+        },
+        "parser": {
+          "minLength": 1,
+          "title": "Parser",
+          "type": "string"
+        },
+        "text_end": {
+          "minimum": 0,
+          "title": "Text End",
+          "type": "integer"
+        },
+        "text_start": {
+          "minimum": 0,
+          "title": "Text Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "char_start",
+        "char_end",
+        "text_start",
+        "text_end",
+        "n_chars",
+        "parser"
+      ],
+      "title": "PdfPageCitationRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.pdf-citations:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`<doc>.citations.json`: the page a staged character offset came from.",
+  "properties": {
+    "diagnostics": {
+      "additionalProperties": true,
+      "title": "Diagnostics",
+      "type": "object"
+    },
+    "doc_id": {
+      "minLength": 1,
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "kind": {
+      "const": "pdf-citations",
+      "title": "Kind",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PdfPageCitationRecord"
+      },
+      "title": "Pages",
+      "type": "array"
+    },
+    "parser": {
+      "minLength": 1,
+      "title": "Parser",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.pdf-citations",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "source",
+    "doc_id",
+    "parser"
+  ],
+  "title": "PdfCitations",
+  "type": "object"
+}

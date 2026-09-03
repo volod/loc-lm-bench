@@ -1,4 +1,4 @@
-version: 1.0.0
+version: 1.1.0
 kind: DataContract
 apiVersion: v3.1.0
 id: llb-artifact-contract-catalog
@@ -19,11 +19,11 @@ schema:
   name: llb.artifact-catalog
   logicalType: object
   physicalType: file
-  physicalName: llb.artifact-catalog/1.0.0.schema.json
+  physicalName: llb.artifact-catalog/1.1.0.schema.json
   description: Catalog of artifact schema families readable by this build.
   customProperties:
   - property: schemaVersion
-    value: 1.0.0
+    value: 1.1.0
   - property: physicalFormats
     value:
     - json
@@ -52,6 +52,55 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-conflict-overlay
+  name: llb.conflict-overlay
+  logicalType: object
+  physicalType: file
+  physicalName: llb.conflict-overlay/1.0.0.schema.json
+  description: Applied conflict overlay read by corpus chunking and fingerprints.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-conflict-stage-inputs
+  name: llb.conflict-stage-inputs
+  logicalType: object
+  physicalType: file
+  physicalName: llb.conflict-stage-inputs/7.0.0.schema.json
+  description: Per-document record a finished conflict audit answers its readings
+    from.
+  customProperties:
+  - property: schemaVersion
+    value: 7.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-corpus-manifest
+  name: llb.corpus-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.corpus-manifest/1.0.0.schema.json
+  description: 'Mixed-corpus ingestion manifest: every source, its status, governance.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-dataset-manifest
   name: llb.dataset-manifest
   logicalType: object
@@ -65,6 +114,198 @@ schema:
     value:
     - json
     - yaml
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-external-draft-item
+  name: llb.external-draft-item
+  logicalType: object
+  physicalType: file
+  physicalName: llb.external-draft-item/1.0.0.schema.json
+  description: Per-item labels an external-draft import records beside the bundle.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-external-draft-provenance
+  name: llb.external-draft-provenance
+  logicalType: object
+  physicalType: file
+  physicalName: llb.external-draft-provenance/1.0.0.schema.json
+  description: What an external-draft import loaded, under which classification.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-gold-chain
+  name: llb.gold-chain
+  logicalType: object
+  physicalType: file
+  physicalName: llb.gold-chain/1.0.0.schema.json
+  description: One ordered chain-of-questions gold item.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-gold-item
+  name: llb.gold-item
+  logicalType: object
+  physicalType: file
+  physicalName: llb.gold-item/2.0.0.schema.json
+  description: 'One gold item: a question, its reference answer, and its source spans.'
+  customProperties:
+  - property: schemaVersion
+    value: 2.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-linkage-settings
+  name: llb.linkage-settings
+  logicalType: object
+  physicalType: file
+  physicalName: llb.linkage-settings/2.0.0.schema.json
+  description: The whole linkage decision a replay re-scores from.
+  customProperties:
+  - property: schemaVersion
+    value: 2.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-needle-item
+  name: llb.needle-item
+  logicalType: object
+  physicalType: file
+  physicalName: llb.needle-item/1.0.0.schema.json
+  description: A citation-valid gold row with its drafting labels and retrieval rank.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-ontology
+  name: llb.ontology
+  logicalType: object
+  physicalType: file
+  physicalName: llb.ontology/1.0.0.schema.json
+  description: The constrained candidate ontology induced over a corpus.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-ontology-extraction
+  name: llb.ontology-extraction
+  logicalType: object
+  physicalType: file
+  physicalName: llb.ontology-extraction/1.0.0.schema.json
+  description: Everything extracted from one document, every span exact-grounded.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-ontology-provenance
+  name: llb.ontology-provenance
+  logicalType: object
+  physicalType: file
+  physicalName: llb.ontology-provenance/2.0.0.schema.json
+  description: What produced one draft bundle, from which corpus version.
+  customProperties:
+  - property: schemaVersion
+    value: 2.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-pdf-citations
+  name: llb.pdf-citations
+  logicalType: object
+  physicalType: file
+  physicalName: llb.pdf-citations/1.0.0.schema.json
+  description: Which PDF page a staged character offset came from.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-pdf-corpus-manifest
+  name: llb.pdf-corpus-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.pdf-corpus-manifest/1.0.0.schema.json
+  description: PDF conversion manifest and its quality report.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-verification-worksheet-row
+  name: llb.verification-worksheet-row
+  logicalType: object
+  physicalType: file
+  physicalName: llb.verification-worksheet-row/1.0.0.schema.json
+  description: One sampled item as the verification worksheet carries it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - csv
   quality:
   - name: portableJsonSchemaValidation
     type: text

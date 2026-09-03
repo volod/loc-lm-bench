@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from llb.artifacts.gates import refuse_unreadable_review
 from llb.review.adapters import (
     ConflictResolutionAdapter,
     DraftCompareAdapter,
@@ -64,8 +65,13 @@ def _open_review_file(path: Path) -> ReviewAdapter:
 
 
 def open_review(path: Path | str) -> ReviewAdapter:
-    """Open the one adapter whose existing ledger signature matches ``path``."""
+    """Open the one adapter whose existing ledger signature matches ``path``.
+
+    The compatibility gate runs first: a reviewer should meet a refusal naming the member this
+    build cannot read, not a session that opens and silently omits what a newer writer recorded.
+    """
     value = Path(path)
+    refuse_unreadable_review(value)
     if value.is_dir():
         return _open_review_directory(value)
     if not value.is_file():

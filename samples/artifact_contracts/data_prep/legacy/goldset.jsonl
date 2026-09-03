@@ -1,0 +1,1 @@
+{"id": "onto-0001", "question": "У скількох примірниках складається акт приймання?", "reference_answer": "у трьох примірниках", "source_doc_id": "poryadok.md", "source_spans": [{"doc_id": "poryadok.md", "char_start": 47, "char_end": 66, "text": "у трьох примірниках"}], "provenance": "ontology-drafted", "split": "final"}

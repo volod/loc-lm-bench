@@ -3,11 +3,11 @@
 import json
 import pytest
 from llb.goldset.schema import load_goldset
-from llb.prep.goldset.external_draft import (
+from llb.prep.goldset.external_draft import import_external_draft
+from llb.prep.goldset.external_draft_schema import (
     GOLDSET_FILENAME,
     ITEM_PROVENANCE_FILENAME,
     PROVENANCE_FILENAME,
-    import_external_draft,
 )
 from tests.llb.prep.goldset.test_external_draft import (
     _FakeRetriever,

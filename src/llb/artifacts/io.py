@@ -10,7 +10,7 @@ from typing import cast
 import yaml
 from pydantic import BaseModel
 
-from llb.artifacts.errors import DatasetReadError
+from llb.artifacts.errors import ArtifactContractError, DatasetReadError
 from llb.artifacts.registry import ContractRegistry
 from llb.core.contracts.artifacts import DatasetMember
 
@@ -40,14 +40,19 @@ def read_bound_member(
     validated: list[BaseModel] = []
     for index, record in enumerate(records, start=1):
         source = f"{path}#record-{index}"
-        observed_id = record.get("schema_id")
-        observed_version = record.get("schema_version")
-        if observed_id != expected.schema_id or observed_version != expected.schema_version:
-            raise DatasetReadError(
-                f"{source}: manifest binds {expected.schema_id}@{expected.schema_version}, "
-                f"observed {observed_id!r}@{observed_version!r}"
+        try:
+            validated.append(
+                registry.read_as(
+                    expected.schema_id,
+                    record,
+                    version=expected.schema_version,
+                    source=source,
+                )
             )
-        validated.append(registry.read_current(record, source=source))
+        except ArtifactContractError as exc:
+            raise DatasetReadError(
+                f"{source}: manifest binds {expected.schema_id}@{expected.schema_version}; {exc}"
+            ) from exc
     return tuple(validated)
 
 

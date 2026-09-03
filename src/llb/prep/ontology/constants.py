@@ -4,7 +4,8 @@ Kept in one place (AGENTS.md: no magic numbers) so the stage modules read declar
 a single edit re-tunes the pipeline.
 """
 
-from llb.goldset.schema import Provenance
+from typing import Final, Literal
+
 
 # --- stage 1: inventory ----------------------------------------------------------------------
 SUPPORTED_SUFFIXES = (".txt", ".md")
@@ -120,4 +121,13 @@ EXTRACTION_JOURNAL_FILENAME = "extraction_journal.jsonl"
 EXTRACTION_JOURNAL_META_FILENAME = "extraction_journal.meta.json"
 EXTRACTION_JOURNAL_META_KIND = "extraction-journal-meta"
 
-PROVENANCE_KIND: Provenance = "ontology-drafted"
+# Narrowed to the one value it has: the drafting lane writes this provenance and no other, and
+# the bundle contract's `kind` is that same literal, so one constant serves both.
+PROVENANCE_KIND: Final[Literal["ontology-drafted"]] = "ontology-drafted"
+# Registered contract identity of the bundle members; see `llb.artifacts.data_prep.families`.
+PROVENANCE_SCHEMA_ID: Final[Literal["llb.ontology-provenance"]] = "llb.ontology-provenance"
+PROVENANCE_SCHEMA_VERSION: Final[Literal["2.0.0"]] = "2.0.0"
+ONTOLOGY_SCHEMA_ID: Final[Literal["llb.ontology"]] = "llb.ontology"
+ONTOLOGY_SCHEMA_VERSION: Final[Literal["1.0.0"]] = "1.0.0"
+EXTRACTION_SCHEMA_ID: Final[Literal["llb.ontology-extraction"]] = "llb.ontology-extraction"
+EXTRACTION_SCHEMA_VERSION: Final[Literal["1.0.0"]] = "1.0.0"

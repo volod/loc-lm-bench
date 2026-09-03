@@ -36,7 +36,7 @@
       "title": "CompatibilityDeclaration",
       "type": "object"
     },
-    "ContractCatalogEntry": {
+    "ContractCatalogEntryV1": {
       "additionalProperties": false,
       "properties": {
         "bindings": {
@@ -111,7 +111,7 @@
         "bindings",
         "compatibility"
       ],
-      "title": "ContractCatalogEntry",
+      "title": "ContractCatalogEntryV1",
       "type": "object"
     },
     "FormatBinding": {
@@ -160,7 +160,7 @@
   "properties": {
     "contracts": {
       "items": {
-        "$ref": "#/$defs/ContractCatalogEntry"
+        "$ref": "#/$defs/ContractCatalogEntryV1"
       },
       "title": "Contracts",
       "type": "array"
@@ -187,6 +187,6 @@
     "odcs_api_version",
     "contracts"
   ],
-  "title": "ArtifactCatalog",
+  "title": "ArtifactCatalogV1",
   "type": "object"
 }

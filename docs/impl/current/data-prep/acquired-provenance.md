@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The bundle record that carries these fields is the registered `llb.ontology-provenance` contract; a
+bundle drafted before the corpus binding existed migrates to it by stating each absence. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 A staged corpus records who may READ a document and when THIS project ingested it. Neither answers
 where the text came from: `ingestion_time` is a local event, and `source_sha256` covers the staged
 file rather than the bytes a publisher served. This page covers the fields that close that gap --

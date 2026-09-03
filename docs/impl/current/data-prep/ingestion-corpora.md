@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The corpus and PDF manifests and the citation sidecars are registered artifact contracts, and
+`make check-bundle BUNDLE=<corpus-dir> BUNDLE_KIND=corpus` validates a staged corpus member by
+member. See [data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## Mixed txt/md/pdf ingestion
 
 `make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the

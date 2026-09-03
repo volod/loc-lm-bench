@@ -1,7 +1,7 @@
 """Tests for ontology pdf draft."""
 
 import json
-from llb.goldset.schema import load_goldset
+from llb.prep.ontology.artifacts.needles import load_needle_items
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,
@@ -93,7 +93,7 @@ def test_full_flow_writes_pdf_citation_artifacts_and_needles(tmp_path):
     assert report["pdf_sidecar_docs"] == 1
     assert report["page_span_citation_coverage"]["coverage"] == 1.0
     assert report["item_page_span_citation_coverage"]["coverage"] == 1.0
-    needles = load_goldset(out / NEEDLE_GOLDSET_FILENAME)
+    needles = load_needle_items(out / NEEDLE_GOLDSET_FILENAME)
     assert len(needles) == report["citation_valid_needle_items"] >= 1
     # PDF corpus: the citation-needle gate is applicable and, with valid needles, the roll-up passes
     assert report["gates"]["pdf_citation_gate_applicable"] is True

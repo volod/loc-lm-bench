@@ -11,7 +11,17 @@ import hashlib
 from llb.prep.corpus.fingerprints import corpus_version_binding
 from llb.prep.corpus.governance import manifest_governance_by_doc
 from llb.prep.corpus.governance_fields import ACQUIRED_GOVERNANCE_FIELDS
-from llb.prep.ontology.constants import PROVENANCE_KIND
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.data_prep.ontology import (
+    CorpusVersionRecord,
+    OntologyProvenance,
+    ProvenanceDocument,
+)
+from llb.prep.ontology.constants import (
+    PROVENANCE_KIND,
+    PROVENANCE_SCHEMA_ID,
+    PROVENANCE_SCHEMA_VERSION,
+)
 from llb.prep.ontology.drafting.run import draft_prompt
 from llb.prep.ontology.endpoints.config import EndpointPlan, endpoint_provenance
 from llb.prep.ontology.extraction.run import extraction_prompt
@@ -68,7 +78,7 @@ def label_counts(result: PipelineResult) -> dict[str, dict[str, int]]:
     }
 
 
-def document_rows(result: PipelineResult) -> list[dict[str, object]]:
+def document_rows(result: PipelineResult) -> list[ProvenanceDocument]:
     """One row per inventoried document: local identity plus the acquisition provenance it carries.
 
     Every acquired field is present on every row, `None` where the staged corpus recorded none, so
@@ -77,68 +87,71 @@ def document_rows(result: PipelineResult) -> list[dict[str, object]]:
     """
     governance = manifest_governance_by_doc(result.corpus_root)
     return [
-        {
-            "doc_id": doc.doc_id,
-            "sha256": doc.sha256,
-            "n_chars": doc.n_chars,
+        ProvenanceDocument(
+            doc_id=doc.doc_id,
+            sha256=doc.sha256,
+            n_chars=doc.n_chars,
             **{
                 field: (governance.get(doc.doc_id) or {}).get(field)
                 for field in ACQUIRED_GOVERNANCE_FIELDS
             },
-        }
+        )
         for doc in result.docs
     ]
 
 
+def _stage_counts(result: PipelineResult, n_multi_hop: int) -> JsonObject:
+    return {
+        "documents": len(result.docs),
+        "entities": sum(len(e.entities) for e in result.extractions),
+        "events": sum(len(e.events) for e in result.extractions),
+        "claims": sum(len(e.claims) for e in result.extractions),
+        "facts": sum(len(e.facts) for e in result.extractions),
+        "ontology_entity_types": len(result.ontology.entity_types),
+        "ontology_relation_types": len(result.ontology.relation_types),
+        "seeds": len(result.seeds),
+        "draft_attempts": result.draft_attempts,
+        "draft_parsed": result.draft_parsed,
+        "draft_parse_rate": (
+            result.draft_parsed / result.draft_attempts if result.draft_attempts else 0.0
+        ),
+        "multi_hop_items": n_multi_hop,
+        "chains": len(result.chains),
+        "items": len(result.items),
+    }
+
+
 def provenance_payload(
     result: PipelineResult, endpoints: EndpointPlan, seed: int, settings: dict[str, object]
-) -> dict[str, object]:
+) -> OntologyProvenance:
+    """The bundle's provenance as its registered contract rather than an unchecked dictionary."""
     n_multi_hop = sum(
         1
         for item in result.items
         if (label := result.item_labels.get(item.id)) and label.question_type == "multi-hop"
     )
-    provenance: dict[str, object] = {
-        "kind": PROVENANCE_KIND,
-        "synthetic": False,  # drafted FROM a real corpus (vs planted synthetic docs)
-        "endpoint": endpoint_provenance(endpoints, result.endpoint_logs),
-        "prompts": prompt_fingerprints(),
-        "seed": seed,
-        "settings": settings,
-        "elapsed_s": round(result.elapsed_s, 3),
-        "corpus_version": corpus_version_binding(result.corpus_root),
-        "documents": document_rows(result),
-        "stages": {
-            "documents": len(result.docs),
-            "entities": sum(len(e.entities) for e in result.extractions),
-            "events": sum(len(e.events) for e in result.extractions),
-            "claims": sum(len(e.claims) for e in result.extractions),
-            "facts": sum(len(e.facts) for e in result.extractions),
-            "ontology_entity_types": len(result.ontology.entity_types),
-            "ontology_relation_types": len(result.ontology.relation_types),
-            "seeds": len(result.seeds),
-            "draft_attempts": result.draft_attempts,
-            "draft_parsed": result.draft_parsed,
-            "draft_parse_rate": (
-                result.draft_parsed / result.draft_attempts if result.draft_attempts else 0.0
-            ),
-            "multi_hop_items": n_multi_hop,
-            "chains": len(result.chains),
-            "items": len(result.items),
-        },
-        "labels": label_counts(result),
-        "ontology": result.ontology.model_dump(),
-        "n_items": len(result.items),
-        "cost": result.endpoint_logs.summary(),
-    }
-    if result.coverage_report is not None:
-        provenance["seed_coverage"] = result.coverage_report
-    if result.dedup_report is not None:
-        provenance["dedup"] = result.dedup_report
-    if result.carry_forward_report is not None:
-        provenance["multi_hop_carry_forward"] = result.carry_forward_report
-    if result.applied_feedback is not None:
-        provenance["applied_feedback"] = result.applied_feedback
-    if result.multi_hop_path_strata is not None:
-        provenance["multi_hop_path_strata"] = result.multi_hop_path_strata
-    return provenance
+    return OntologyProvenance(
+        schema_id=PROVENANCE_SCHEMA_ID,
+        schema_version=PROVENANCE_SCHEMA_VERSION,
+        kind=PROVENANCE_KIND,
+        synthetic=False,  # drafted FROM a real corpus (vs planted synthetic docs)
+        endpoint=endpoint_provenance(endpoints, result.endpoint_logs),
+        prompts=prompt_fingerprints(),
+        seed=seed,
+        settings=settings,
+        elapsed_s=round(result.elapsed_s, 3),
+        corpus_version=CorpusVersionRecord.model_validate(
+            dict(corpus_version_binding(result.corpus_root))
+        ),
+        documents=document_rows(result),
+        stages=_stage_counts(result, n_multi_hop),
+        labels=label_counts(result),
+        ontology=result.ontology.model_dump(),
+        n_items=len(result.items),
+        cost=result.endpoint_logs.summary(),
+        seed_coverage=result.coverage_report,
+        dedup=result.dedup_report,
+        multi_hop_carry_forward=result.carry_forward_report,
+        applied_feedback=result.applied_feedback,
+        multi_hop_path_strata=result.multi_hop_path_strata,
+    )

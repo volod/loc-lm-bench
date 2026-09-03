@@ -11,9 +11,12 @@ Pydantic enforces the schema (types + allowed provenance/split values) at constr
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+GOLD_ITEM_SCHEMA_ID: Final[Literal["llb.gold-item"]] = "llb.gold-item"
+GOLD_ITEM_SCHEMA_VERSION: Final[Literal["2.0.0"]] = "2.0.0"
 
 Provenance = Literal[
     "sample-generated",
@@ -44,8 +47,15 @@ class SourceSpan(BaseModel):
 
 
 class GoldItem(BaseModel):
-    """One RAG gold item with source-span labels."""
+    """One RAG gold item with source-span labels.
 
+    The row carries its own contract identity so a gold set read outside this build says what it
+    is. A row written before the registry existed carries neither field and loads through the
+    registered migration, which states the two values it left to a reader's defaults.
+    """
+
+    schema_id: Literal["llb.gold-item"] = GOLD_ITEM_SCHEMA_ID
+    schema_version: Literal["2.0.0"] = GOLD_ITEM_SCHEMA_VERSION
     id: str
     lang: str = "uk"
     question: str
@@ -63,8 +73,19 @@ class GoldItem(BaseModel):
         return self
 
 
+def _gold_item_at_current(record: dict[str, object], source: str) -> GoldItem:
+    """One row at the current contract, migrating a pre-contract row on the way in."""
+    from llb.artifacts.default_registry import DEFAULT_REGISTRY
+
+    current = DEFAULT_REGISTRY.read_as(GOLD_ITEM_SCHEMA_ID, record, source=source)
+    return GoldItem.model_validate(current.model_dump())
+
+
 def load_goldset(path: Path | str) -> list[GoldItem]:
-    """Load + schema-validate a JSONL gold set. Raises ValueError with line context."""
+    """Load + schema-validate a JSONL gold set, at whatever contract version it was written.
+
+    Raises ValueError with line context.
+    """
     path = Path(path)
     items: list[GoldItem] = []
     with path.open(encoding="utf-8") as fh:
@@ -73,7 +94,7 @@ def load_goldset(path: Path | str) -> list[GoldItem]:
             if not line:
                 continue
             try:
-                items.append(GoldItem.model_validate_json(line))
+                items.append(_gold_item_at_current(json.loads(line), f"{path}:{line_no}"))
             except Exception as exc:  # add file:line context, then re-raise
                 raise ValueError(f"{path}:{line_no}: invalid gold item: {exc}") from exc
     return items

@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The applied overlay is the registered `llb.conflict-overlay` contract, written in the compact
+integer-versioned form its corpus fingerprint hashes. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 `llb resolve-corpus-conflicts` and the `make resolve-corpus-conflicts` alias turn an audit
 `findings.jsonl` into `plan.json`, `conflict_overlay.json`, `resolution_review.jsonl`, and
 `effect.md`. The implementation is split across `src/llb/conflicts/resolution/policy.py`,

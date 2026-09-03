@@ -30,6 +30,8 @@ def _version_and_model_errors(definition: ContractDefinition) -> list[str]:
         errors.append(f"{definition.schema_id}: {exc}")
     if definition.current_version not in definition.models:
         errors.append(f"{definition.schema_id}: current version has no model")
+    if definition.legacy_version is not None and definition.legacy_version not in definition.models:
+        errors.append(f"{definition.schema_id}: legacy read version has no model")
     for version, model in definition.models.items():
         properties = model.model_json_schema().get("properties", {})
         schema_id = properties.get("schema_id", {})

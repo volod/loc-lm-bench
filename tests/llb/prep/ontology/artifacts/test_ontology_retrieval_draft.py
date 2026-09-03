@@ -1,7 +1,7 @@
 """Tests for ontology retrieval draft."""
 
 import json
-from llb.goldset.schema import load_goldset
+from llb.prep.ontology.artifacts.needles import load_needle_items
 from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
@@ -120,7 +120,7 @@ def test_calibration_artifacts_write_retrieval_ranked_needles(tmp_path):
     ]
     assert raw_rows[0]["retrieval_rank"] == 1
     assert raw_rows[0]["retrieval_k"] == 3
-    assert load_goldset(out / NEEDLE_GOLDSET_FILENAME)[0].id == "q1"
+    assert load_needle_items(out / NEEDLE_GOLDSET_FILENAME)[0].id == "q1"
     assert report["citation_valid_needle_items"] == 1
     assert report["needle_items_written"] == 1
     assert report["retrieval_unique_needle_items"] == 1

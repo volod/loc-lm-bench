@@ -1,0 +1,47 @@
+{
+  "schema_id": "llb.corpus-manifest",
+  "schema_version": "1.0.0",
+  "kind": "corpus",
+  "source_root": "<corpus-source-dir>",
+  "corpus_root": "<corpus-dir>",
+  "n_sources": 1,
+  "n_docs": 1,
+  "n_skipped": 0,
+  "n_reused": 0,
+  "n_removed_sources": 0,
+  "removed_sources": [],
+  "corpus_fingerprint": "85f8ad6d033aa31420023b6755761eaba9db06a7096e17aebfb55d70b0068c2f",
+  "governance_coverage": {
+    "schema_version": 1,
+    "documents": 1,
+    "fields": {
+      "language": 1
+    }
+  },
+  "items": [
+    {
+      "source": "poryadok.md",
+      "doc_id": "poryadok.md",
+      "kind": "text",
+      "status": "ok",
+      "n_chars": 114,
+      "source_sha256": "d3b1f0c2a45e6789012345678901234567890123456789012345678901234567",
+      "reused": false,
+      "error": null,
+      "parser": null,
+      "language": "uk",
+      "version": "1.0",
+      "effective_date": "2026-01-01",
+      "ingestion_time": "2026-01-02T00:00:00Z",
+      "source_system": "operator-local",
+      "acl_label": "open",
+      "source_uri": null,
+      "capture_time": null,
+      "capture_id": null,
+      "payload_digest": null,
+      "licence": null,
+      "acquisition_run_id": null,
+      "revision_of": null
+    }
+  ]
+}

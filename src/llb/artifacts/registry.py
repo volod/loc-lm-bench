@@ -19,6 +19,10 @@ from llb.artifacts.errors import (
 from llb.artifacts.versioning import SemanticVersion
 
 
+def _identity(schema_id: str, version: str) -> dict[str, object]:
+    return {"schema_id": schema_id, "schema_version": version}
+
+
 @dataclass(frozen=True)
 class CompatibilityResolution:
     schema_id: str
@@ -91,6 +95,44 @@ class ContractRegistry:
             definition.current_version,
             tuple(step.to_version for step in paths[0]),
         )
+
+    def read_as(
+        self,
+        schema_id: str,
+        record: Mapping[str, object],
+        *,
+        version: str | None = None,
+        source: str = "<record>",
+    ) -> BaseModel:
+        """Read a record whose family the caller already knows, current or pre-contract.
+
+        A record carrying its own identity dispatches exactly as `read_current` does, and one
+        naming a different family -- or a version a binding contradicts -- is refused rather than
+        coerced. A record carrying NO `schema_id` is a file written before this family joined the
+        registry, or one whose physical form encodes its version some other way: it is stamped
+        with `version` when a caller supplies one and with the declared `legacy_version`
+        otherwise, then migrated forward like any other old record. A caller that does not know
+        what it opened still meets the missing-identity refusal through `read_current`.
+        """
+        definition = self.definition(schema_id)
+        observed = record.get("schema_id")
+        if observed is None:
+            assumed = version or definition.legacy_version
+            if assumed is None:
+                raise MissingIdentityError(
+                    f"{source}: no schema_id and {schema_id!r} declares no legacy read version"
+                )
+            return self.read_current({**record, **_identity(schema_id, assumed)}, source=source)
+        if observed != schema_id:
+            raise UnknownContractError(
+                f"{source}: expected schema_id={schema_id!r}, observed schema_id={observed!r}"
+            )
+        if version is not None and record.get("schema_version") != version:
+            raise UnsupportedVersionError(
+                f"{source}: binding declares schema_version={version!r}, observed "
+                f"{record.get('schema_version')!r}"
+            )
+        return self.read_current(record, source=source)
 
     def read_current(self, record: Mapping[str, object], *, source: str = "<record>") -> BaseModel:
         resolution = self.resolve(record, source=source)

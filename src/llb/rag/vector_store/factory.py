@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.gates import refuse_unreadable_corpus
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.prep.corpus.fingerprints import corpus_doc_fingerprints, corpus_fingerprint
@@ -56,6 +57,7 @@ def build_store_parts(
     matching a from-scratch rebuild.
     """
     _validate_build_params(mode, strategy, child_size)
+    refuse_unreadable_corpus(corpus_root)
     if collapse_duplicates and not collapse_is_lossless(strategy):
         log.info(
             "[rag] strategy %s pools document context -- keeping duplicate chunks "

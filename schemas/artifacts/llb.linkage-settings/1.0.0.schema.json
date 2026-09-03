@@ -1,0 +1,289 @@
+{
+  "$defs": {
+    "LinkageSpecRecordV1": {
+      "additionalProperties": false,
+      "description": "The pre-contract specification payload: every tuning knob may be absent.",
+      "properties": {
+        "blocking_rules": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Blocking Rules",
+          "type": "array"
+        },
+        "comparisons": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Comparisons",
+          "type": "array"
+        },
+        "duckdb_threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duckdb Threads"
+        },
+        "em_convergence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Em Convergence"
+        },
+        "em_max_iterations": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Em Max Iterations"
+        },
+        "match_threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match Threshold"
+        },
+        "max_pairs": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Pairs"
+        },
+        "min_level_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Level Probability"
+        },
+        "random_match_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Random Match Probability"
+        },
+        "retain_columns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retain Columns"
+        },
+        "retain_matching_columns": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retain Matching Columns"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "training_rules": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Training Rules",
+          "type": "array"
+        },
+        "unique_id_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unique Id Column"
+        }
+      },
+      "title": "LinkageSpecRecordV1",
+      "type": "object"
+    },
+    "LinkageSummaryRecord": {
+      "additionalProperties": false,
+      "description": "The numbers an operator reads first, and the run bundle's metadata block.",
+      "properties": {
+        "largest_cluster": {
+          "minimum": 0,
+          "title": "Largest Cluster",
+          "type": "integer"
+        },
+        "match_threshold": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Match Threshold",
+          "type": "number"
+        },
+        "n_accuracy_points": {
+          "minimum": 0,
+          "title": "N Accuracy Points",
+          "type": "integer"
+        },
+        "n_clusters": {
+          "minimum": 0,
+          "title": "N Clusters",
+          "type": "integer"
+        },
+        "n_matched_pairs": {
+          "minimum": 0,
+          "title": "N Matched Pairs",
+          "type": "integer"
+        },
+        "n_multi_record_clusters": {
+          "minimum": 0,
+          "title": "N Multi Record Clusters",
+          "type": "integer"
+        },
+        "n_records": {
+          "minimum": 0,
+          "title": "N Records",
+          "type": "integer"
+        },
+        "n_scored_pairs": {
+          "minimum": 0,
+          "title": "N Scored Pairs",
+          "type": "integer"
+        },
+        "n_untrained_levels": {
+          "minimum": 0,
+          "title": "N Untrained Levels",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "trained_from_labels": {
+          "title": "Trained From Labels",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "n_records",
+        "n_scored_pairs",
+        "n_matched_pairs",
+        "n_clusters",
+        "n_multi_record_clusters",
+        "largest_cluster",
+        "match_threshold",
+        "seed",
+        "trained_from_labels",
+        "n_accuracy_points",
+        "n_untrained_levels"
+      ],
+      "title": "LinkageSummaryRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.linkage-settings:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The pre-contract bundle settings: a specification that leans on a reader's defaults.",
+  "properties": {
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Metadata"
+    },
+    "schema_id": {
+      "const": "llb.linkage-settings",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "specification": {
+      "$ref": "#/$defs/LinkageSpecRecordV1"
+    },
+    "summary": {
+      "$ref": "#/$defs/LinkageSummaryRecord"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "specification",
+    "summary"
+  ],
+  "title": "LinkageSettingsV1",
+  "type": "object"
+}

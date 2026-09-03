@@ -76,38 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
-#### artifact-contract-data-prep-migration
-
-Move the data-preparation exchange surface onto the registry first because retrieval, evaluation,
-and training all consume it. This includes the ontology provenance dictionary that exposed the gap,
-plus the corpus, PDF, gold, conflict, linkage, and review datasets around it.
-
-- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
-- Agent status: CLEAR
-- Dependencies: [base](current/artifact-contracts/foundation-and-evolution.md); none open.
-- User-visible outcome: corpus and draft bundles identify every dataset member and can be validated
-  or upgraded before a store build, review session, or external handoff reads them.
-- Scope boundary: in scope -- project-owned machine-readable producers and consumers under
-  `src/llb/prep/`, `src/llb/goldset/`, `src/llb/conflicts/`, `src/llb/linkage/`, and `src/llb/review/`,
-  plus their `src/llb/cli/prep/` entry points, including JSONL row contracts and CSV worksheet
-  columns. Preserve conflict bundle readings across their locally versioned forms through registered
-  adapters. Out of scope -- source document text, human-only Markdown reports, raw PDFs, and changing
-  any verification, conflict, or linkage policy.
-- Data and artifact paths: corpus manifests and metadata sidecars, PDF manifests and citation
-  sidecars, gold sets and chains, ontology `provenance.json`/`ontology.json`/`extraction.jsonl`,
-  external-draft sidecars, conflict bundles and overlays, linkage bundles, and review ledgers under
-  their current `$DATA_DIR/<method>/<run>/` roots; committed old-version fixtures live under
-  `samples/artifact_contracts/data_prep/`.
-- Execution path: CPU-only migration and round-trip tests inside `make ci`; producers write current
-  contracts while readers dispatch through registered compatibility adapters.
-- Acceptance gates: `make ci` green; every named bundle validates member-by-member; a supported old
-  gold, ontology, conflict, and linkage fixture reaches the same canonical domain values as its
-  current form; a future major refuses before store build or review; producer payload builders no
-  longer expose unvalidated `dict[str, object]` as their persistence interface.
-- Documentation target:
-  `docs/impl/current/artifact-contracts/data-prep-contracts.md`, the artifact-contracts area index,
-  and links from the affected data-prep topic pages.
-
 #### artifact-contract-retrieval-and-graph-migration
 
 Retrieval and graph stores mix typed record aliases with unvalidated metadata dictionaries, binary
@@ -116,8 +84,8 @@ members without attempting to own their binary formats.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: `artifact-contract-data-prep-migration` because store and graph fixtures consume its
-  corpus, extraction, and gold contracts.
+- Dependencies: [data-prep contracts](current/artifact-contracts/data-prep-contracts.md) supply the
+  corpus, extraction, and gold contracts store and graph fixtures consume; none open.
 - User-visible outcome: a store, graph, or prompt-system package can be rejected as incompatible
   before retrieval and can be inspected without importing FAISS, DuckDB, or an embedding stack.
 - Scope boundary: in scope -- durable producers and consumers under `src/llb/rag/`,

@@ -1,0 +1,24 @@
+{
+  "schema_id": "llb.ontology",
+  "schema_version": "1.0.0",
+  "entity_types": [
+    {
+      "name": "документ",
+      "count": 2,
+      "confidence": 0.75,
+      "examples": [
+        "акт приймання"
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "name": "складається_у",
+      "count": 1,
+      "confidence": 0.5,
+      "examples": [
+        "акт"
+      ]
+    }
+  ]
+}

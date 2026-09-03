@@ -3,16 +3,16 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 from llb.core.contracts.common import ValidationReport
-from llb.goldset.schema import GoldItem, Provenance, SourceSpan
+from llb.goldset.schema import GoldItem, SourceSpan
 from llb.prep.frontier.client import ground_span
 from llb.prep.ontology.constants import DEFAULT_QUESTION_TYPE, QUESTION_TYPES
 from llb.prep.ontology.coverage.sample import classify_difficulty
 from llb.prep.ontology.models import ItemLabels
 from llb.prep.ontology.drafting.question_types import classify_question_type
 
-PROVENANCE_EXTERNAL: Provenance = "frontier-drafted"
+PROVENANCE_EXTERNAL: Final[Literal["frontier-drafted"]] = "frontier-drafted"
 
 DATA_CLASSIFICATION_OPEN = "open"
 
@@ -29,6 +29,13 @@ PROVENANCE_FILENAME = "provenance.json"
 ITEM_PROVENANCE_FILENAME = "item_provenance.jsonl"
 
 IMPORT_REPORT_FILENAME = "import_report.json"
+
+# Registered contract identity of the sidecars an import writes; see `llb.artifacts.data_prep`.
+EXTERNAL_DRAFT_PROVENANCE_SCHEMA_ID: Final[Literal["llb.external-draft-provenance"]] = (
+    "llb.external-draft-provenance"
+)
+EXTERNAL_DRAFT_ITEM_SCHEMA_ID: Final[Literal["llb.external-draft-item"]] = "llb.external-draft-item"
+EXTERNAL_DRAFT_SCHEMA_VERSION: Final[Literal["1.0.0"]] = "1.0.0"
 
 
 @dataclass

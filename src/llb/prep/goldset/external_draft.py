@@ -15,7 +15,6 @@ was uploaded and where. Reuses `frontier.ground_span`, the lenient `curation` lo
 `goldset.splits.assign_splits`, and `goldset.validate.validate_items`; no network.
 """
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, cast
@@ -26,16 +25,15 @@ from llb.goldset.validate import validate_items
 from llb.prep.curation.input import load_corpus_texts, load_json_documents, load_jsonl_rows
 from llb.prep.ontology.models import ItemLabels
 from llb.prep.ontology.drafting.needles import NeedleRetriever, annotate_needle_retrieval
+from llb.prep.goldset.external_draft_records import (
+    write_import_provenance,
+    write_item_provenance,
+)
 from llb.prep.goldset.external_draft_schema import (
     CORPUS_DIRNAME,
     GOLDSET_FILENAME,
-    IMPORT_REPORT_FILENAME,
-    ITEM_PROVENANCE_FILENAME,
     ImportReport,
     ImportResult,
-    PROVENANCE_EXTERNAL,
-    PROVENANCE_FILENAME,
-    _label_distribution,
     _row_to_item,
     load_sidecar,
 )
@@ -69,46 +67,8 @@ def _write_bundle(
     # Item provenance: question_type / difficulty per item (NOT part of the GoldItem schema);
     # `retrieval_rank` is additive and present only when an index was given (needle parity with
     # the local ontology lane -- the verify worksheet reads it from this file).
-    with (out_dir / ITEM_PROVENANCE_FILENAME).open("w", encoding="utf-8") as fh:
-        for item in items:
-            label = item_labels[item.id]
-            row: dict[str, Any] = {
-                "id": item.id,
-                "question_type": label.question_type,
-                "difficulty": label.difficulty,
-            }
-            if retrieval_ranks is not None:
-                row["retrieval_rank"] = retrieval_ranks.get(item.id)
-                row["retrieval_k"] = retrieval_k
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    provenance = {
-        "kind": "external-draft-import",
-        "provenance": PROVENANCE_EXTERNAL,
-        "synthetic": False,
-        "verified": False,
-        "service": sidecar.get("service"),
-        "service_model": sidecar.get("service_model"),
-        "export_date": sidecar.get("export_date"),
-        "data_classification": sidecar.get("data_classification"),
-        "operator": sidecar.get("operator"),
-        "n_items": len(items),
-        "question_type_distribution": _label_distribution(
-            [item_labels[it.id].question_type for it in items]
-        ),
-        "difficulty_distribution": _label_distribution(
-            [item_labels[it.id].difficulty for it in items]
-        ),
-        "import_report": report.to_dict(),
-    }
-    if needle_report is not None:
-        provenance["needle_retrieval"] = needle_report
-    (out_dir / PROVENANCE_FILENAME).write_text(
-        json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (out_dir / IMPORT_REPORT_FILENAME).write_text(
-        json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    write_item_provenance(out_dir, items, item_labels, retrieval_ranks, retrieval_k)
+    write_import_provenance(out_dir, items, item_labels, sidecar, report, needle_report)
 
 
 def _load_retriever(index_dir: Path | str | None) -> NeedleRetriever | None:

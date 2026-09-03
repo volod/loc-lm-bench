@@ -1,0 +1,224 @@
+{
+  "$defs": {
+    "LinkageSpecRecord": {
+      "additionalProperties": false,
+      "description": "The current specification payload: every knob the run used, stated.",
+      "properties": {
+        "blocking_rules": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Blocking Rules",
+          "type": "array"
+        },
+        "comparisons": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Comparisons",
+          "type": "array"
+        },
+        "duckdb_threads": {
+          "minimum": 1,
+          "title": "Duckdb Threads",
+          "type": "integer"
+        },
+        "em_convergence": {
+          "minimum": 0.0,
+          "title": "Em Convergence",
+          "type": "number"
+        },
+        "em_max_iterations": {
+          "minimum": 0,
+          "title": "Em Max Iterations",
+          "type": "integer"
+        },
+        "match_threshold": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Match Threshold",
+          "type": "number"
+        },
+        "max_pairs": {
+          "exclusiveMinimum": 0,
+          "title": "Max Pairs",
+          "type": "integer"
+        },
+        "min_level_probability": {
+          "exclusiveMaximum": 0.5,
+          "minimum": 0.0,
+          "title": "Min Level Probability",
+          "type": "number"
+        },
+        "random_match_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Random Match Probability",
+          "type": "number"
+        },
+        "retain_columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retain Columns",
+          "type": "array"
+        },
+        "retain_matching_columns": {
+          "title": "Retain Matching Columns",
+          "type": "boolean"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "training_rules": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Training Rules",
+          "type": "array"
+        },
+        "unique_id_column": {
+          "minLength": 1,
+          "title": "Unique Id Column",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unique_id_column",
+        "match_threshold",
+        "max_pairs",
+        "seed",
+        "em_max_iterations",
+        "em_convergence",
+        "random_match_probability",
+        "duckdb_threads",
+        "min_level_probability",
+        "retain_matching_columns"
+      ],
+      "title": "LinkageSpecRecord",
+      "type": "object"
+    },
+    "LinkageSummaryRecord": {
+      "additionalProperties": false,
+      "description": "The numbers an operator reads first, and the run bundle's metadata block.",
+      "properties": {
+        "largest_cluster": {
+          "minimum": 0,
+          "title": "Largest Cluster",
+          "type": "integer"
+        },
+        "match_threshold": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Match Threshold",
+          "type": "number"
+        },
+        "n_accuracy_points": {
+          "minimum": 0,
+          "title": "N Accuracy Points",
+          "type": "integer"
+        },
+        "n_clusters": {
+          "minimum": 0,
+          "title": "N Clusters",
+          "type": "integer"
+        },
+        "n_matched_pairs": {
+          "minimum": 0,
+          "title": "N Matched Pairs",
+          "type": "integer"
+        },
+        "n_multi_record_clusters": {
+          "minimum": 0,
+          "title": "N Multi Record Clusters",
+          "type": "integer"
+        },
+        "n_records": {
+          "minimum": 0,
+          "title": "N Records",
+          "type": "integer"
+        },
+        "n_scored_pairs": {
+          "minimum": 0,
+          "title": "N Scored Pairs",
+          "type": "integer"
+        },
+        "n_untrained_levels": {
+          "minimum": 0,
+          "title": "N Untrained Levels",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "trained_from_labels": {
+          "title": "Trained From Labels",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "n_records",
+        "n_scored_pairs",
+        "n_matched_pairs",
+        "n_clusters",
+        "n_multi_record_clusters",
+        "largest_cluster",
+        "match_threshold",
+        "seed",
+        "trained_from_labels",
+        "n_accuracy_points",
+        "n_untrained_levels"
+      ],
+      "title": "LinkageSummaryRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.linkage-settings:2.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The current bundle settings: the whole decision, replayable without this build.",
+  "properties": {
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Metadata"
+    },
+    "schema_id": {
+      "const": "llb.linkage-settings",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "specification": {
+      "$ref": "#/$defs/LinkageSpecRecord"
+    },
+    "summary": {
+      "$ref": "#/$defs/LinkageSummaryRecord"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "specification",
+    "summary"
+  ],
+  "title": "LinkageSettings",
+  "type": "object"
+}

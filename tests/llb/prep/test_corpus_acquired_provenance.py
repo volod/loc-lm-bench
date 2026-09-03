@@ -175,7 +175,7 @@ def test_goldset_provenance_documents_carry_the_acquired_fields(tmp_path):
         docs=[DocRecord(doc_id="acquired.md", text=text, sha256="0" * 64, n_chars=len(text))],
     )
 
-    row = document_rows(result)[0]
+    row = document_rows(result)[0].model_dump()
 
     assert row["doc_id"] == "acquired.md" and row["n_chars"] == len(text)
     for field in ACQUIRED_GOVERNANCE_FIELDS:
@@ -193,7 +193,7 @@ def test_goldset_provenance_records_absent_provenance_explicitly(tmp_path):
         docs=[DocRecord(doc_id="a.md", text=DOC, sha256="0" * 64, n_chars=len(DOC))],
     )
 
-    row = document_rows(result)[0]
+    row = document_rows(result)[0].model_dump()
 
     for field in ACQUIRED_GOVERNANCE_FIELDS:
         assert field in row and row[field] is None, field

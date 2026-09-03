@@ -10,12 +10,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.default_registry import DEFAULT_REGISTRY
+from llb.artifacts.serialization import stated_sections
 from llb.core.contracts.common import JsonObject
+from llb.core.contracts.data_prep.linkage import (
+    LinkageSettings,
+    LinkageSpecRecord,
+    LinkageSummaryRecord,
+)
 from llb.core.fsutil import atomic_write_text
 from llb.linkage.constants import (
     ACCURACY_FILE,
     BLOCKING_COUNTS_FILE,
     CLUSTERS_FILE,
+    LINKAGE_SETTINGS_SCHEMA_ID,
+    LINKAGE_SETTINGS_SCHEMA_VERSION,
     LINKAGE_SUBDIR,
     MATCH_PARAMETERS_FILE,
     MODEL_FILE,
@@ -50,13 +59,14 @@ def write_linkage_artifacts(
     """Write the whole bundle and return the artifact name -> path map for a run manifest."""
     out_dir = linkage_dir(bundle_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    settings: JsonObject = {
-        "specification": result.spec.payload(),
-        "summary": result.summary(),
-    }
-    if metadata:
-        settings["metadata"] = dict(metadata)
-    _write_json(out_dir / SETTINGS_FILE, settings)
+    settings = LinkageSettings(
+        schema_id=LINKAGE_SETTINGS_SCHEMA_ID,
+        schema_version=LINKAGE_SETTINGS_SCHEMA_VERSION,
+        specification=LinkageSpecRecord.model_validate(result.spec.payload()),
+        summary=LinkageSummaryRecord.model_validate(result.summary()),
+        metadata=dict(metadata) if metadata else None,
+    )
+    _write_json(out_dir / SETTINGS_FILE, stated_sections(settings))
     _write_json(
         out_dir / BLOCKING_COUNTS_FILE,
         {"rules": [count.payload() for count in result.blocking_counts]},
@@ -89,19 +99,31 @@ def write_linkage_artifacts(
     return paths
 
 
+def read_settings(bundle_dir: Path) -> LinkageSettings:
+    """The bundle settings at the current contract, migrating an older bundle on the way.
+
+    A pre-contract bundle carries no identity and left its tuning knobs to whatever build read it
+    back; the registry stamps the version it was written at and the migration states those knobs,
+    so a replay re-scores from the run's settings rather than from today's defaults.
+    """
+    path = linkage_dir(bundle_dir) / SETTINGS_FILE
+    record = json.loads(path.read_text(encoding="utf-8"))
+    settings = DEFAULT_REGISTRY.read_as(LINKAGE_SETTINGS_SCHEMA_ID, record, source=str(path))
+    if not isinstance(settings, LinkageSettings):
+        raise TypeError(f"{path}: linkage settings did not resolve to the current contract")
+    return settings
+
+
 def read_saved_spec(bundle_dir: Path) -> LinkageSpec:
     """Recover the specification a bundle was produced under (no Splink import needed)."""
-    payload = json.loads((linkage_dir(bundle_dir) / SETTINGS_FILE).read_text(encoding="utf-8"))
-    spec = LinkageSpec.from_payload(payload["specification"])
+    spec = LinkageSpec.from_payload(read_settings(bundle_dir).specification.model_dump())
     spec.validate()
     return spec
 
 
 def read_saved_summary(bundle_dir: Path) -> JsonObject:
     """The run summary a bundle recorded -- counts, threshold, and how the model was fitted."""
-    payload = json.loads((linkage_dir(bundle_dir) / SETTINGS_FILE).read_text(encoding="utf-8"))
-    summary: JsonObject = payload.get("summary", {})
-    return summary
+    return read_settings(bundle_dir).summary.model_dump()
 
 
 def read_saved_model(bundle_dir: Path) -> JsonObject:

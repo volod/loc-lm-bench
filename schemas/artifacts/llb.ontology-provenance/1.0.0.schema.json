@@ -1,0 +1,269 @@
+{
+  "$defs": {
+    "ProvenanceDocumentV1": {
+      "additionalProperties": false,
+      "description": "A pre-binding document row: local identity only.",
+      "properties": {
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "n_chars": {
+          "minimum": 0,
+          "title": "N Chars",
+          "type": "integer"
+        },
+        "sha256": {
+          "minLength": 1,
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "sha256",
+        "n_chars"
+      ],
+      "title": "ProvenanceDocumentV1",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.ontology-provenance:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The pre-binding bundle record: no corpus version, document rows without acquisition.",
+  "properties": {
+    "abort": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Abort"
+    },
+    "applied_feedback": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Applied Feedback"
+    },
+    "cost": {
+      "additionalProperties": true,
+      "title": "Cost",
+      "type": "object"
+    },
+    "dedup": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dedup"
+    },
+    "documents": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/ProvenanceDocumentV1"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Documents"
+    },
+    "elapsed_s": {
+      "minimum": 0.0,
+      "title": "Elapsed S",
+      "type": "number"
+    },
+    "endpoint": {
+      "additionalProperties": true,
+      "title": "Endpoint",
+      "type": "object"
+    },
+    "kind": {
+      "const": "ontology-drafted",
+      "title": "Kind",
+      "type": "string"
+    },
+    "labels": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Labels"
+    },
+    "multi_hop_carry_forward": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Multi Hop Carry Forward"
+    },
+    "multi_hop_path_strata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Multi Hop Path Strata"
+    },
+    "n_items": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Items"
+    },
+    "ontology": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ontology"
+    },
+    "prompts": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompts"
+    },
+    "schema_id": {
+      "const": "llb.ontology-provenance",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed"
+    },
+    "seed_coverage": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed Coverage"
+    },
+    "settings": {
+      "additionalProperties": true,
+      "title": "Settings",
+      "type": "object"
+    },
+    "stages": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stages"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    },
+    "synthetic": {
+      "title": "Synthetic",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "synthetic",
+    "elapsed_s"
+  ],
+  "title": "OntologyProvenanceV1",
+  "type": "object"
+}

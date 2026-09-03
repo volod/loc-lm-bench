@@ -10,6 +10,10 @@ This page is the verdict per question: which ones the bundle answers from its ow
 it refuses, and why the record stops where it does. The refusals are the point as much as the
 answers: "not recomputable" is correct, and a reading recomputed against a rebuilt store is not.
 
+The record's seven local forms are registered contract versions, and every earlier one migrates to
+the current form through the readers below rather than through a second implementation of them. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## The questions and their verdicts
 
 | question | answered from the bundle | what it costs to record |

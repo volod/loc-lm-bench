@@ -3,7 +3,13 @@
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
 	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
 	research-conflict-nulls resolve-corpus-conflicts compare-conflict-granularity \
-	recompute-conflict-stage calibrate-conflict-adjudicator
+	recompute-conflict-stage calibrate-conflict-adjudicator check-bundle
+
+check-bundle: ## Validate every registered member of BUNDLE (BUNDLE_KIND=draft|corpus, BUNDLE_UPGRADE=1 rewrites older members at the current contract)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=("$(BUNDLE)" --kind "$(or $(BUNDLE_KIND),draft)"); \
+	if [ -n "$(BUNDLE_UPGRADE)" ]; then args+=(--upgrade); fi; \
+	$(PY) -m llb.main check-bundle "$${args[@]}"
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

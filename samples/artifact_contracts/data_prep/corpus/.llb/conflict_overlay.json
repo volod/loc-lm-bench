@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "policy": "prefer-newer",
+  "source_findings_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "documents": {
+    "poryadok.md": {
+      "annotations": [
+        {
+          "finding_id": "f-1",
+          "note": "superseded by a later edition"
+        }
+      ],
+      "suppress_spans": []
+    }
+  }
+}

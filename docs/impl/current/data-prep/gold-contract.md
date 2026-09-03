@@ -3,6 +3,11 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+Gold rows and chains are registered artifact contracts (`llb.gold-item` at
+`2.0.0`, `llb.gold-chain` at `1.0.0`): each row carries its own `schema_id`/`schema_version`, and a
+row written before the registry existed is migrated on load. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## Gold Item Contract
 
 `src/llb/goldset/schema.py` defines `GoldItem` and `SourceSpan`.

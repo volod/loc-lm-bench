@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "OntologyTypeRecord": {
+      "additionalProperties": false,
+      "description": "One induced type with its support count, confidence, and examples.",
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "examples": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "count",
+        "confidence"
+      ],
+      "title": "OntologyTypeRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.ontology:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`ontology.json`: the constrained candidate ontology induced over the corpus.",
+  "properties": {
+    "entity_types": {
+      "items": {
+        "$ref": "#/$defs/OntologyTypeRecord"
+      },
+      "title": "Entity Types",
+      "type": "array"
+    },
+    "relation_types": {
+      "items": {
+        "$ref": "#/$defs/OntologyTypeRecord"
+      },
+      "title": "Relation Types",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.ontology",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "OntologyDocument",
+  "type": "object"
+}

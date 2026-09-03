@@ -41,6 +41,13 @@ models, duplicate declarations, and an old model with neither exactly one path n
 refusal. Thus changing a model under an existing version drifts its committed schema, while adding
 an older model without an evolution declaration cannot generate a catalog.
 
+`ContractRegistry.read_as` serves the caller who already knows the family: a record with its own
+identity dispatches as above, a record naming a different family or contradicting a binding is
+refused, and a record with no `schema_id` is stamped with the binding's version or the family's
+declared `legacy_version` before migrating forward. That declaration is what lets a family read the
+files this project wrote before the registry existed; the domain surface it was built for is
+[data-prep contracts](data-prep-contracts.md).
+
 The compatibility cases live in `samples/artifact_contracts/`: current, supported old,
 unsupported future, missing identity, ambiguous migration, and invalid source. The adjacent
 `dataset-manifest.json` binds the readable cases by contract identity, version, media type,
@@ -50,7 +57,9 @@ granularity, relative path, and SHA-256 digest.
 
 Generated files live under `schemas/artifacts/`. Each family/version has a standalone JSON Schema;
 `catalog.json` lists current and supported read versions, schema paths, deprecation policy,
-compatibility declarations, extension points, and JSON, JSONL, YAML, CSV, and Parquet bindings.
+compatibility declarations, extension points, the version a pre-contract file is read at
+(`legacy_read_version`), and JSON, JSONL, YAML, CSV, and Parquet bindings. Publishing that last
+field is why the catalog family itself is at `1.1.0`, with `1.0.0` read-and-migrate.
 `catalog.odcs.yaml` projects those logical objects, physical schema files, quality rule, and owner
 into Open Data Contract Standard v3.1.0. The official ODCS v3.1.0 JSON Schema is pinned by digest
 under `schemas/artifacts/vendor/` so the gate is network-free and cannot silently change with an

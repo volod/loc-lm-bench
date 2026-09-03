@@ -8,7 +8,7 @@ chain-specific checks the context-policy benchmark needs.
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +16,8 @@ from llb.core.contracts.common import ValidationReport
 from llb.goldset.schema import Provenance, SourceSpan, Split
 
 CHAINS_FILENAME = "chains.jsonl"
+GOLD_CHAIN_SCHEMA_ID: Final[Literal["llb.gold-chain"]] = "llb.gold-chain"
+GOLD_CHAIN_SCHEMA_VERSION: Final[Literal["1.0.0"]] = "1.0.0"
 MIN_CHAIN_STEPS = 2
 MAX_CHAIN_STEPS = 4
 
@@ -46,8 +48,14 @@ class ChainStep(BaseModel):
 
 
 class ChainItem(BaseModel):
-    """One human-reviewable chain-of-questions item."""
+    """One human-reviewable chain-of-questions item.
 
+    Like a gold row, the chain carries its own contract identity; a chain written before the
+    registry existed carries none and is read at the family's declared legacy version.
+    """
+
+    schema_id: Literal["llb.gold-chain"] = GOLD_CHAIN_SCHEMA_ID
+    schema_version: Literal["1.0.0"] = GOLD_CHAIN_SCHEMA_VERSION
     chain_id: str
     lang: str = "uk"
     steps: list[ChainStep]
@@ -72,6 +80,14 @@ class ChainItem(BaseModel):
 ChainKind = Literal["goldset", "chains"]
 
 
+def _chain_at_current(record: dict[str, object], source: str) -> ChainItem:
+    """One chain at the current contract, whatever version it was written at."""
+    from llb.artifacts.default_registry import DEFAULT_REGISTRY
+
+    current = DEFAULT_REGISTRY.read_as(GOLD_CHAIN_SCHEMA_ID, record, source=source)
+    return ChainItem.model_validate(current.model_dump())
+
+
 def load_chains(path: Path | str) -> list[ChainItem]:
     """Load + schema-validate a JSONL chain set. Raises ValueError with line context."""
     path = Path(path)
@@ -82,7 +98,7 @@ def load_chains(path: Path | str) -> list[ChainItem]:
             if not line:
                 continue
             try:
-                chains.append(ChainItem.model_validate_json(line))
+                chains.append(_chain_at_current(json.loads(line), f"{path}:{line_no}"))
             except Exception as exc:
                 raise ValueError(f"{path}:{line_no}: invalid chain item: {exc}") from exc
     return chains

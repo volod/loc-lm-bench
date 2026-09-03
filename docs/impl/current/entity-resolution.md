@@ -162,6 +162,11 @@ consumer passes its own so the linkage bundle nests inside that domain's run):
 | `clusters.jsonl` | Cluster id, size, and member record ids at the run's threshold |
 | `accuracy.json` | The labelled curve plus the run's own cut scored pairwise and after clustering; written only when labels were supplied |
 
+`settings.json` is the registered `llb.linkage-settings` contract at `2.0.0`: it states every
+tuning knob the run used, so a replay re-scores from the run's settings rather than from the
+reading build's defaults. A bundle written before the contract left those knobs absent and is
+migrated on read. See [data-prep contracts](artifact-contracts/data-prep-contracts.md).
+
 ## Commands
 
 ```bash
