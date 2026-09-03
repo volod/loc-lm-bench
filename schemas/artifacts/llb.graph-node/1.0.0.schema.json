@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "GraphMentionRecord": {
+      "additionalProperties": false,
+      "description": "An offset-bearing evidence span plus the section that contains it.",
+      "properties": {
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "section_title": {
+          "title": "Section Title",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end",
+        "text",
+        "section_title"
+      ],
+      "title": "GraphMentionRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.graph-node:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One entity node: its ontology type, its aliases, and every mention that grounds it.",
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "community_id": {
+      "title": "Community Id",
+      "type": "integer"
+    },
+    "confidence": {
+      "title": "Confidence",
+      "type": "number"
+    },
+    "mentions": {
+      "items": {
+        "$ref": "#/$defs/GraphMentionRecord"
+      },
+      "title": "Mentions",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "node_id": {
+      "minimum": 0,
+      "title": "Node Id",
+      "type": "integer"
+    },
+    "schema_id": {
+      "const": "llb.graph-node",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "type": {
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "node_id",
+    "name",
+    "type",
+    "confidence",
+    "community_id"
+  ],
+  "title": "GraphNodeRecord",
+  "type": "object"
+}

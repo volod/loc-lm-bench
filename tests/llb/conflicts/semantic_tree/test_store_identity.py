@@ -46,7 +46,7 @@ from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.refresh import tree_meta
 from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.store_generations import GENERATIONS_DIRNAME
-from llb.rag.vector_store.build import META_FILE
+from tests.llb.store_meta_helpers import write_store_meta
 
 DIGEST_HEX_CHARS = 64
 # Three corpus sizes spanning two orders of magnitude, the same ones the record's own size table
@@ -197,8 +197,7 @@ def test_a_store_that_cannot_identify_itself_is_refused_rather_than_called_chang
 
 
 def _write_store(path: Path, fingerprints: dict[str, str]) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    (path / META_FILE).write_text(json.dumps({"doc_fingerprints": fingerprints}), encoding="utf-8")
+    write_store_meta(path, doc_fingerprints=fingerprints)
 
 
 def _summary_at(store_dir: Path, data_dir: Path, fingerprints: dict[str, str]) -> dict[str, object]:

@@ -36,8 +36,9 @@
       "title": "CompatibilityDeclaration",
       "type": "object"
     },
-    "ContractCatalogEntryV1": {
+    "ContractCatalogEntry": {
       "additionalProperties": false,
+      "description": "One family as an outside reader sees it.\n\n`legacy_read_version` is the version to assume for a file this project wrote before the family\njoined the registry, and `legacy_document_field` -- present only where such a file was not a\nrecord at all, but a bare array or map -- names the field of the current record that whole file\nbecame. Those two are the only things about reading an artifact that its own bytes cannot say.",
       "properties": {
         "bindings": {
           "items": {
@@ -80,6 +81,31 @@
           "default": null,
           "title": "Extension Point"
         },
+        "legacy_document_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legacy Document Field"
+        },
+        "legacy_read_version": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legacy Read Version"
+        },
         "schema_id": {
           "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
           "title": "Schema Id",
@@ -111,7 +137,7 @@
         "bindings",
         "compatibility"
       ],
-      "title": "ContractCatalogEntryV1",
+      "title": "ContractCatalogEntry",
       "type": "object"
     },
     "FormatBinding": {
@@ -160,7 +186,7 @@
   "properties": {
     "contracts": {
       "items": {
-        "$ref": "#/$defs/ContractCatalogEntryV1"
+        "$ref": "#/$defs/ContractCatalogEntry"
       },
       "title": "Contracts",
       "type": "array"
@@ -187,6 +213,6 @@
     "odcs_api_version",
     "contracts"
   ],
-  "title": "ArtifactCatalogV1",
+  "title": "ArtifactCatalog",
   "type": "object"
 }

@@ -93,3 +93,50 @@ def _identified(record: JsonObject, schema_id: str) -> JsonObject:
     if legacy is None:
         return record
     return {**record, "schema_id": schema_id, "schema_version": legacy}
+
+
+def refuse_tampered_dataset(root: Path | str) -> None:
+    """Refuse a published directory whose members are no longer the ones it described.
+
+    A vector index, a postings file, and a graph database carry no identity of their own, so the
+    manifest's digest is the only thing that says the index beside these chunk rows is the one
+    built from them. A directory published without a manifest is not a refusal -- every store
+    written before this existed is such a directory -- but one whose manifest disagrees with its
+    bytes is, because retrieval would otherwise serve an index for a corpus nobody chunked.
+    """
+    from llb.artifacts.datasets import load_dataset_manifest, member_digest_problems
+
+    base = Path(root)
+    manifest = load_dataset_manifest(base)
+    if manifest is None:
+        return
+    problems = member_digest_problems(base, manifest)
+    if problems:
+        raise ArtifactCompatibilityError(
+            f"{base}: published dataset no longer matches its manifest:\n- " + "\n- ".join(problems)
+        )
+
+
+def refuse_unreadable_prompt_system(run_dir: Path | str) -> None:
+    """The gate a prompt-system package passes before a benchmark reads it.
+
+    Every member is described and read at the current contract, so a package written by a newer
+    build is named here rather than benchmarked with the half of it this reader understands.
+    """
+    from llb.artifacts.dataset_reading import survey_dataset
+    from llb.artifacts.retrieval.datasets import prompt_system_dataset_manifest
+
+    base = Path(run_dir)
+    try:
+        manifest = prompt_system_dataset_manifest(base)
+    except FileNotFoundError:
+        return
+    refusals = [
+        f"{reading.path}: {reading.refusal}"
+        for reading in survey_dataset(base, manifest)
+        if reading.refusal
+    ]
+    if refusals:
+        raise ArtifactCompatibilityError(
+            f"{base}: prompt-system package cannot be read:\n- " + "\n- ".join(refusals)
+        )

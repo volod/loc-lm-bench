@@ -16,7 +16,6 @@ The refreshed store is published as a new immutable generation under
 store is never touched, so deleting the new generation is the rollback.
 """
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +53,7 @@ from llb.rag.vector_store.build import (
     MODE_HYBRID,
     PARENTS_FILE,
 )
-from llb.rag.vector_store.io import _read_jsonl
+from llb.rag.vector_store.persistence import read_store_chunks, read_store_meta
 from llb.rag.vector_store.vector_index import (
     RAG_BACKEND_FAISS,
     build_vector_index,
@@ -157,7 +156,7 @@ def refresh_vector_store(
         raise SystemExit(
             f"[refresh] no RAG store at {base_dir}; build one first with `llb build-index`"
         )
-    meta = cast(RagStoreMeta, json.loads(meta_path.read_text(encoding="utf-8")))
+    meta = read_store_meta(meta_path)
     current = corpus_doc_fingerprints(corpus_root)
     if not current:
         raise SystemExit(f"[refresh] no documents found in corpus at {corpus_root}")
@@ -174,9 +173,9 @@ def refresh_vector_store(
     if recorded and not diff.has_changes:
         return VectorRefreshResult(diff=diff, refreshed=False, source_dir=live_dir)
 
-    old_chunks = _read_jsonl(live_dir / CHUNKS_FILE)
+    old_chunks = read_store_chunks(live_dir / CHUNKS_FILE)
     mode = str(meta.get("mode", "flat"))
-    old_parents = _read_jsonl(live_dir / PARENTS_FILE) if mode == MODE_PARENT_CHILD else None
+    old_parents = read_store_chunks(live_dir / PARENTS_FILE) if mode == MODE_PARENT_CHILD else None
     backend = str(meta.get("backend", RAG_BACKEND_FAISS))
     old_index = load_vector_index(backend, live_dir)
     old_lexical = _load_old_lexical(live_dir, meta)

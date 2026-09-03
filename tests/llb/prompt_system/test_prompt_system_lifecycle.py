@@ -71,7 +71,9 @@ def test_prepare_prompt_system_writes_artifacts(tmp_path):
     manifest = json.loads((run.run_dir / MANIFEST_FILE).read_text(encoding="utf-8"))
     assert manifest["method"] == "prompt-system" and manifest["n_candidates"] == len(run.candidates)
     assert manifest["corpus_digest"] and manifest["context_window"] == 4096
-    candidates = json.loads((run.run_dir / CANDIDATES_FILE).read_text(encoding="utf-8"))
+    record = json.loads((run.run_dir / CANDIDATES_FILE).read_text(encoding="utf-8"))
+    assert record["schema_id"] == "llb.prompt-system-candidates"
+    candidates = record["candidates"]
     assert len(candidates) == len(run.candidates)
 
 

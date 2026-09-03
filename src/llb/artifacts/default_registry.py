@@ -1,10 +1,10 @@
 """Built-in artifact contract declarations."""
 
 from llb.artifacts.data_prep.families import data_prep_definitions
-from llb.artifacts.data_prep.migrations import catalog_v1_to_v1_1
+from llb.artifacts.retrieval.families import retrieval_definitions
 from llb.artifacts.definitions import ContractDefinition, MigrationStep
 from llb.artifacts.registry import ContractRegistry
-from llb.core.contracts.artifact_catalog import ArtifactCatalog, ArtifactCatalogV1, FormatBinding
+from llb.core.contracts.artifact_catalog import ArtifactCatalog, FormatBinding
 from llb.core.contracts.artifacts import (
     CompatibilityProbeV1,
     CompatibilityProbeV2,
@@ -38,19 +38,12 @@ def build_default_registry() -> ContractRegistry:
             ContractDefinition(
                 schema_id="llb.artifact-catalog",
                 description="Catalog of artifact schema families readable by this build.",
-                current_version="1.1.0",
-                models={"1.0.0": ArtifactCatalogV1, "1.1.0": ArtifactCatalog},
+                current_version="1.0.0",
+                models={"1.0.0": ArtifactCatalog},
                 bindings=DOCUMENT_BINDINGS,
                 deprecation_policy=(
-                    "Catalog 1.0 is read-and-migrate: it predates the legacy read version entry."
-                ),
-                migrations=(
-                    MigrationStep(
-                        from_version="1.0.0",
-                        to_version="1.1.0",
-                        description="Publish each family's legacy read version, absent by default.",
-                        transform=catalog_v1_to_v1_1,
-                    ),
+                    "The catalog is generated from the registry on every check; it is read, never "
+                    "migrated."
                 ),
             ),
             ContractDefinition(
@@ -59,7 +52,7 @@ def build_default_registry() -> ContractRegistry:
                 current_version="1.0.0",
                 models={"1.0.0": DatasetManifest},
                 bindings=DOCUMENT_BINDINGS,
-                deprecation_policy="Manifest version 1 remains readable for this release line.",
+                deprecation_policy="Manifest version 1 is the only form this build has written.",
                 extension_point="extensions: scalar values only",
             ),
             ContractDefinition(
@@ -80,6 +73,7 @@ def build_default_registry() -> ContractRegistry:
                 extension_point="extensions: scalar values only",
             ),
             *data_prep_definitions(),
+            *retrieval_definitions(),
         )
     )
 

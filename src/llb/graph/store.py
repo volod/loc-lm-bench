@@ -19,9 +19,7 @@ Both serialize node mentions + edge evidence WITH their source spans, so the exi
 applies. `duckdb` is lazy-imported, so the package still imports in the base install.
 """
 
-import json
 import logging
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -45,18 +43,25 @@ from llb.graph.linking import (
     link_seed_nodes,
     node_link_scores,
 )
+from llb.artifacts.gates import refuse_tampered_dataset
 from llb.core.contracts.rag import ChunkRecord
 from llb.core.store_generations import resolve_store_dir
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
 from llb.graph.retrieval import serialize_subgraph
-from llb.graph.store_io import _connect, _read_jsonl, _write_jsonl
+from llb.graph.store_io import (
+    _connect,
+    read_community_summaries,
+    read_edge_rows,
+    read_graph_meta,
+    read_node_rows,
+    write_graph,
+)
 
 _LOG = logging.getLogger(__name__)
 
 # global_community ranks matched nodes by link score; this tiny floor still serializes the rest of
 # the community (corpus-level context) below the matched members.
 _UNMATCHED_MEMBER_FLOOR = 0.001
-
 
 # Undirected k-hop neighborhood of the seed nodes: a recursive CTE bounded by `depth`, returning
 # each reached node at its shortest hop distance.
@@ -182,18 +187,7 @@ class GraphStore:
         return serialize_subgraph(self.graph, node_relevance, k, question)
 
     def save(self, graph_dir: Path | str) -> None:
-        graph_dir = Path(graph_dir)
-        graph_dir.mkdir(parents=True, exist_ok=True)
-        _write_jsonl((asdict(n) for n in self.graph.nodes), graph_dir / NODES_FILE)
-        _write_jsonl((asdict(e) for e in self.graph.edges), graph_dir / EDGES_FILE)
-        (graph_dir / META_FILE).write_text(
-            json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        if self.community_summaries:
-            (graph_dir / SUMMARIES_FILE).write_text(
-                json.dumps(self.community_summaries, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+        write_graph(Path(graph_dir), self.graph, self.meta, self.community_summaries)
 
     @classmethod
     def load(
@@ -207,18 +201,14 @@ class GraphStore:
     ) -> "GraphStore":
         # A refresh publishes immutable `generations/<ts>/` children; resolve the live one.
         graph_dir = resolve_store_dir(graph_dir, META_FILE)
+        refuse_tampered_dataset(graph_dir)
         meta_path = graph_dir / META_FILE
         if not meta_path.exists():
             raise SystemExit(f"no graph store at {graph_dir} (run `llb build-graph` first)")
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        nodes = [GraphNode(**row) for row in _read_jsonl(graph_dir / NODES_FILE)]
-        edges = [GraphEdge(**row) for row in _read_jsonl(graph_dir / EDGES_FILE)]
-        summaries_path = graph_dir / SUMMARIES_FILE
-        summaries = (
-            json.loads(summaries_path.read_text(encoding="utf-8"))
-            if summaries_path.exists()
-            else {}
-        )
+        meta = read_graph_meta(meta_path)
+        nodes = [GraphNode(**row) for row in read_node_rows(graph_dir / NODES_FILE)]
+        edges = [GraphEdge(**row) for row in read_edge_rows(graph_dir / EDGES_FILE)]
+        summaries = read_community_summaries(graph_dir / SUMMARIES_FILE)
         return cls(
             KnowledgeGraph(nodes=nodes, edges=edges),
             meta,

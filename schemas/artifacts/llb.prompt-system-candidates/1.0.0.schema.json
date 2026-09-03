@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "DroppedContextRecord": {
+      "additionalProperties": false,
+      "description": "The whole budget fit for one candidate.",
+      "properties": {
+        "budget_tokens": {
+          "minimum": 0,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/DroppedSectionRecord"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "used_tokens": {
+          "minimum": 0,
+          "title": "Used Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "budget_tokens",
+        "used_tokens"
+      ],
+      "title": "DroppedContextRecord",
+      "type": "object"
+    },
+    "DroppedSectionRecord": {
+      "additionalProperties": false,
+      "description": "One section of the budget fit: what it kept and what did not fit.",
+      "properties": {
+        "dropped_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dropped Ids",
+          "type": "array"
+        },
+        "dropped_tokens": {
+          "minimum": 0,
+          "title": "Dropped Tokens",
+          "type": "integer"
+        },
+        "n_dropped": {
+          "minimum": 0,
+          "title": "N Dropped",
+          "type": "integer"
+        },
+        "n_kept": {
+          "minimum": 0,
+          "title": "N Kept",
+          "type": "integer"
+        },
+        "section": {
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "section",
+        "n_kept",
+        "n_dropped",
+        "dropped_tokens"
+      ],
+      "title": "DroppedSectionRecord",
+      "type": "object"
+    },
+    "KnowledgeTreeRecord": {
+      "additionalProperties": false,
+      "description": "The knowledge-tree block a candidate carried, and where it came from.\n\n`baseline_prompt_system_id` names the no-tree control this candidate is read against; it is\nabsent for a candidate the tuning grid did not pair with one.",
+      "properties": {
+        "baseline_prompt_system_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Prompt System Id"
+        },
+        "budget_tokens": {
+          "minimum": 0,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "depth": {
+          "minimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "dropped_lines": {
+          "minimum": 0,
+          "title": "Dropped Lines",
+          "type": "integer"
+        },
+        "kept_lines": {
+          "minimum": 0,
+          "title": "Kept Lines",
+          "type": "integer"
+        },
+        "source_digest": {
+          "title": "Source Digest",
+          "type": "string"
+        },
+        "source_kind": {
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "used_tokens": {
+          "minimum": 0,
+          "title": "Used Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "depth",
+        "budget_tokens",
+        "used_tokens",
+        "kept_lines",
+        "dropped_lines",
+        "source_kind",
+        "source_digest"
+      ],
+      "title": "KnowledgeTreeRecord",
+      "type": "object"
+    },
+    "NoKnowledgeTreeRecord": {
+      "additionalProperties": false,
+      "description": "The EMPTY object a candidate with no knowledge tree has always written.\n\nEvery tree-enabled grid renders no-tree controls, so this is the common form in every package\nwritten before this contract, not an edge case. It is a declared alternative rather than a\nreader's fixup, so the generated JSON Schema accepts it too and an outside reader needs no\nPython of ours to validate an archived package.",
+      "properties": {},
+      "title": "NoKnowledgeTreeRecord",
+      "type": "object"
+    },
+    "PromptCandidateRecord": {
+      "additionalProperties": false,
+      "description": "One reviewable candidate: its id, its knobs, its rendered prompts, and its status.",
+      "properties": {
+        "additional_prompt": {
+          "title": "Additional Prompt",
+          "type": "string"
+        },
+        "dropped_context": {
+          "$ref": "#/$defs/DroppedContextRecord"
+        },
+        "fields": {
+          "$ref": "#/$defs/TemplateFieldsRecord"
+        },
+        "knowledge_tree": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KnowledgeTreeRecord"
+            },
+            {
+              "$ref": "#/$defs/NoKnowledgeTreeRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Tree"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "prompt_system_id": {
+          "minLength": 1,
+          "title": "Prompt System Id",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "system_prompt": {
+          "title": "System Prompt",
+          "type": "string"
+        },
+        "used_tokens": {
+          "minimum": 0,
+          "title": "Used Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "prompt_system_id",
+        "fields",
+        "system_prompt",
+        "additional_prompt",
+        "dropped_context",
+        "used_tokens",
+        "status"
+      ],
+      "title": "PromptCandidateRecord",
+      "type": "object"
+    },
+    "TemplateFieldsRecord": {
+      "additionalProperties": false,
+      "description": "The operator-editable knobs one candidate was rendered from.",
+      "properties": {
+        "anthology_size": {
+          "minimum": 0,
+          "title": "Anthology Size",
+          "type": "integer"
+        },
+        "graph_reference_style": {
+          "title": "Graph Reference Style",
+          "type": "string"
+        },
+        "instruction": {
+          "title": "Instruction",
+          "type": "string"
+        },
+        "knowledge_tree_budget": {
+          "minimum": 0,
+          "title": "Knowledge Tree Budget",
+          "type": "integer"
+        },
+        "knowledge_tree_depth": {
+          "minimum": 0,
+          "title": "Knowledge Tree Depth",
+          "type": "integer"
+        },
+        "metadata_density": {
+          "title": "Metadata Density",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "instruction",
+        "metadata_density",
+        "graph_reference_style",
+        "anthology_size",
+        "knowledge_tree_depth",
+        "knowledge_tree_budget"
+      ],
+      "title": "TemplateFieldsRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.prompt-system-candidates:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`candidates.json`: the review surface, and the file a review session writes back.",
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/PromptCandidateRecord"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.prompt-system-candidates",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "PromptSystemCandidates",
+  "type": "object"
+}

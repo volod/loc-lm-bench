@@ -76,37 +76,6 @@ Take the first task of the earliest group that still has one; see
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
-#### artifact-contract-retrieval-and-graph-migration
-
-Retrieval and graph stores mix typed record aliases with unvalidated metadata dictionaries, binary
-indexes, and analysis sidecars. Register the project-owned logical records and bind opaque index
-members without attempting to own their binary formats.
-
-- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
-- Agent status: CLEAR
-- Dependencies: [data-prep contracts](current/artifact-contracts/data-prep-contracts.md) supply the
-  corpus, extraction, and gold contracts store and graph fixtures consume; none open.
-- User-visible outcome: a store, graph, or prompt-system package can be rejected as incompatible
-  before retrieval and can be inspected without importing FAISS, DuckDB, or an embedding stack.
-- Scope boundary: in scope -- durable producers and consumers under `src/llb/rag/`,
-  `src/llb/graph/`, and `src/llb/prompt_system/`, plus their `src/llb/cli/rag/` entry points;
-  Pydantic row and metadata contracts for chunks, parents, graph nodes and edges, community
-  summaries, prompt-system packages, and comparison sidecars; dataset-manifest bindings for opaque
-  index and database files. Out of scope -- the internal FAISS, lexical-index, DuckDB, or
-  embedding-model serialization formats and changes to retrieval or graph semantics.
-- Data and artifact paths: vector-store and graph generations beneath `$DATA_DIR/stores/`, retrieval
-  comparison and calibration bundles under their current method roots, prompt-system packages, and
-  compatibility fixtures under `samples/artifact_contracts/retrieval_graph/`.
-- Execution path: CPU-only fixture builds and lazy-load inspection inside `make ci`; tests inject
-  index adapters so schema conformance never imports optional GPU or graph stacks.
-- Acceptance gates: `make ci` green; current and supported-old store, graph, and prompt-system
-  fixtures produce identical logical records after loading; metadata/index digest or contract
-  mismatches refuse before query execution; generated schemas account for every project-owned member
-  while opaque members name their owner and format version.
-- Documentation target:
-  `docs/impl/current/artifact-contracts/retrieval-and-graph-contracts.md`, the artifact-contracts
-  area index, and links from the RAG, GraphRAG, and prompt-system topic pages.
-
 #### artifact-contract-run-evaluation-and-board-migration
 
 Run bundles are the primary downstream API, yet the Pydantic `RunManifest` has no schema identity
@@ -116,8 +85,9 @@ contracts while preserving board readings from supported older runs.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: `artifact-contract-retrieval-and-graph-migration` because run-bundle retrieval and
-  prompt-system members embed those records.
+- Dependencies: the retrieval, graph, and prompt-system contracts run-bundle members embed are
+  registered ([retrieval and graph contracts](current/artifact-contracts/retrieval-and-graph-contracts.md));
+  none open.
 - User-visible outcome: a board or downstream analysis can validate a complete run bundle, identify
   every member's contract, and read supported historical runs without guessing from filenames.
 - Scope boundary: in scope -- durable producers and consumers under `src/llb/tracking/`,

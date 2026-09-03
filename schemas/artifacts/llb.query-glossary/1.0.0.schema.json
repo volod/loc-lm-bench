@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "GlossaryEntryRecord": {
+      "additionalProperties": false,
+      "description": "One canonical term and the surface forms a query may use instead.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "canonical": {
+          "minLength": 1,
+          "title": "Canonical",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical"
+      ],
+      "title": "GlossaryEntryRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.query-glossary:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query_glossary.json`: the alias-expansion table a query-prep run applies.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/GlossaryEntryRecord"
+      },
+      "title": "Entries",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.query-glossary",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_bundle": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Bundle"
+    },
+    "version": {
+      "minLength": 1,
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "version"
+  ],
+  "title": "QueryGlossary",
+  "type": "object"
+}

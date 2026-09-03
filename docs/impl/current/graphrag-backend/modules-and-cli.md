@@ -110,6 +110,12 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   run bundles it named -- no model call -- and refuse a bundle set whose manifests no longer
   describe those lanes ([re-rendering a recorded comparison](answer-quality-rerender.md)).
 
+The persisted graph is a registered artifact surface: node and edge rows, `graph_meta.json`, the
+diagnostic community summaries, and the extraction and ontology inputs a refresh chains from each
+carry contract identity, and `graph.duckdb` is bound opaquely when present. `make check-store
+STORE=<graph-dir> STORE_KIND=graph` reports every member without importing DuckDB. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 ## Retrieval Strategies
 
 `local_khop`

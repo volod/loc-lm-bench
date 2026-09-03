@@ -33,10 +33,10 @@ def read_bound_member(
         )
     if member.format == "opaque":
         return ()
-    records = _load_records(path, member.format)
     expected = member.record_contract
     if expected is None:
         raise DatasetReadError(f"{path}: structured member has no record contract")
+    records = _load_records(path, member.format, expected.schema_id, registry)
     validated: list[BaseModel] = []
     for index, record in enumerate(records, start=1):
         source = f"{path}#record-{index}"
@@ -56,11 +56,20 @@ def read_bound_member(
     return tuple(validated)
 
 
-def _load_records(path: Path, artifact_format: str) -> tuple[dict[str, object], ...]:
+def _load_records(
+    path: Path, artifact_format: str, schema_id: str, registry: ContractRegistry
+) -> tuple[dict[str, object], ...]:
+    """Parse a member's records, normalizing a pre-contract document its family declares.
+
+    Only a WHOLE-document member can be a bare array or map -- a row member is one object per
+    line by construction -- so the normalizer applies to `json` and `yaml` alone.
+    """
     if artifact_format == "json":
-        return (_as_record(json.loads(path.read_text(encoding="utf-8")), path),)
+        return (_document(json.loads(path.read_text(encoding="utf-8")), path, schema_id, registry),)
     if artifact_format == "yaml":
-        return (_as_record(yaml.safe_load(path.read_text(encoding="utf-8")), path),)
+        return (
+            _document(yaml.safe_load(path.read_text(encoding="utf-8")), path, schema_id, registry),
+        )
     if artifact_format == "jsonl":
         rows = (
             json.loads(line)
@@ -84,6 +93,15 @@ def _load_parquet(path: Path) -> tuple[dict[str, object], ...]:
             f"{path}: Parquet reading requires the optional pyarrow package"
         ) from exc
     return tuple(cast(dict[str, object], row) for row in parquet.read_table(path).to_pylist())
+
+
+def _document(
+    value: object, path: Path, schema_id: str, registry: ContractRegistry
+) -> dict[str, object]:
+    try:
+        return dict(registry.normalize(schema_id, value))
+    except ArtifactContractError as exc:
+        raise DatasetReadError(f"{path}: {exc}") from exc
 
 
 def _as_record(value: object, path: Path) -> dict[str, object]:

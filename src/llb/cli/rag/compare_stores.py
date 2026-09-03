@@ -11,6 +11,8 @@ from typing import Any, Optional
 import typer
 
 from llb.cli.app import app
+from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_COMPARISON
+from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.helpers import load_config
 from llb.rag.fusion_evidence.stats import (
     DEFAULT_CONFIDENCE,
@@ -67,7 +69,6 @@ def compare_vector_stores_cmd(
     over shared resample index sets plus its win/loss/tie ledger, and the report ends in an explicit
     adopt-or-retain verdict rather than a point-estimate rank -- a backend swap is decided the same
     way an embedder swap is. Each non-FAISS backend needs its optional extra installed."""
-    import json
 
     from llb.executor.cases import spans_as_dicts
     from llb.goldset.schema import load_goldset
@@ -111,7 +112,7 @@ def compare_vector_stores_cmd(
     typer.echo(format_comparison(report))
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_sidecar(out, SIDECAR_KIND_COMPARISON, "compare-stores", report)
         typer.echo(f"[compare-vector-stores] wrote report -> {out}")
 
 

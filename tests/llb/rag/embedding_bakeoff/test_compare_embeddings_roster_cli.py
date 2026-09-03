@@ -10,8 +10,6 @@ score is a property of the environment, and a test that only passes on one of th
 this repo deliberately maintains would be testing the host.
 """
 
-import json
-
 import pytest
 from typer.testing import CliRunner
 
@@ -26,6 +24,7 @@ from llb.rag.encoders.model_stack import (
     REQUIRED_TRANSFORMERS_MAJOR_LEGACY,
 )
 from llb.rag.embedding_bakeoff.models import BuiltStore
+from llb.rag.comparison.sidecar import sidecar_report
 
 from tests.llb.rag._embedding_bakeoff_uncertainty_helpers import BASELINE, _HitSetStore, _questions
 
@@ -133,7 +132,7 @@ def test_remote_code_candidate_is_skipped_and_recorded_without_the_opt_in(
     result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_MODEL}")
     assert result.exit_code == 0, result.output
     assert built == [BASELINE]
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert [row["model"] for row in report["skipped"]] == [REMOTE_CODE_MODEL]
     assert report["skipped"][0]["reason"] == SKIP_REMOTE_CODE
     # The reader of report.md must see the row is declined, not beaten.
@@ -158,7 +157,7 @@ def test_a_candidate_needing_the_legacy_transformers_is_routed_not_run(
     result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_MODEL}", "--allow-remote-code")
     assert result.exit_code == 0, result.output
     assert built == [BASELINE]
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert [row["reason"] for row in report["skipped"]] == [SKIP_LEGACY_STACK]
     assert "compare-embeddings-legacy" in report["skipped"][0]["detail"]
 
@@ -178,7 +177,7 @@ def test_allow_remote_code_builds_the_candidate_and_arms_the_process_knob(
     result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_MODEL}", "--allow-remote-code")
     assert result.exit_code == 0, result.output
     assert built == [BASELINE, REMOTE_CODE_MODEL]
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert "skipped" not in report
     row = next(r for r in report["candidates"] if r["model"] == REMOTE_CODE_MODEL)
     # The row records BOTH the convention it was scored under and that repo code ran.

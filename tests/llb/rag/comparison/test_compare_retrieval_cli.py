@@ -8,6 +8,7 @@ the backend command in `test_compare_vector_stores_cli.py`.
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 
 
+from llb.rag.comparison.sidecar import sidecar_report
 from llb.rag.question_types import (
     aligned_question_types,
     load_question_types,
@@ -105,7 +106,6 @@ def test_question_type_map_omits_duplicate_question_text_with_conflicting_labels
 
 
 def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, monkeypatch):
-    import json
 
     from typer.testing import CliRunner
 
@@ -155,7 +155,7 @@ def test_compare_retrieval_cli_persists_paired_rows_and_mode_baseline(tmp_path, 
 
     assert result.exit_code == 0, result.output
     assert "Verdict: RETAIN `recursive`" in result.output
-    report = json.loads(out.read_text(encoding="utf-8"))
+    report = sidecar_report(out)
     assert report["uncertainty"]["baseline"] == "recursive"
     assert report["paired_items"][0]["item_id"] == "paired-a"
     assert "paired_vs_baseline" in report["backends"]["sentence"]
@@ -186,7 +186,6 @@ def _paired_goldset(tmp_path):
 
 
 def test_compare_retrieval_cli_stitch_twin_is_reported_but_never_adopted(tmp_path, monkeypatch):
-    import json
 
     from typer.testing import CliRunner
 
@@ -217,7 +216,7 @@ def test_compare_retrieval_cli_stitch_twin_is_reported_but_never_adopted(tmp_pat
     )
 
     assert result.exit_code == 0, result.output
-    report = json.loads(out.read_text(encoding="utf-8"))
+    report = sidecar_report(out)
     base = report["backends"]["recursive"]
     stitched = report["backends"]["recursive+stitch"]
     assert base["span_intact_at_k"] == 0.0 and stitched["span_intact_at_k"] == 1.0
@@ -231,7 +230,6 @@ def test_compare_retrieval_cli_stitch_twin_is_reported_but_never_adopted(tmp_pat
 def test_compare_retrieval_cli_size_lanes_are_paired_against_the_configs_own_size(
     tmp_path, monkeypatch
 ):
-    import json
 
     from typer.testing import CliRunner
 
@@ -264,7 +262,7 @@ def test_compare_retrieval_cli_size_lanes_are_paired_against_the_configs_own_siz
     )
 
     assert result.exit_code == 0, result.output
-    report = json.loads(out.read_text(encoding="utf-8"))
+    report = sidecar_report(out)
     # the config's shipped size (800) is the incumbent, not the first lane the operator listed
     assert report["uncertainty"]["baseline"] == "recursive#size800"
     assert report["backends"]["recursive#size1600"]["span_intact_at_k"] == 1.0

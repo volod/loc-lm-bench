@@ -1,6 +1,7 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph resolve-graph-entities refresh-index validate-retrieval \
+	check-store \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
 	compare-answer-validation check-answer-gate \
@@ -10,6 +11,12 @@
 	calibrate-fusion-routing compare-context-strategies bench-query-robustness \
 	sweep-restoration-constraints \
 	probe-context-position probe-multihop-hops analyze-misses
+
+check-store: ## Report every registered member of STORE (STORE_KIND=store|graph|prompt-system, STORE_UPGRADE=1 rewrites older members at the current contract)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=("$(STORE)" --kind "$(or $(STORE_KIND),store)"); \
+	if [ -n "$(STORE_UPGRADE)" ]; then args+=(--upgrade); fi; \
+	$(PY) -m llb.main check-store "$${args[@]}"
 
 build-rag-store: ## Chunk a corpus with all strategies into DATA_DIR/llb/rag (CORPUS_DIR=...)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "DocMetadataRecord": {
+      "additionalProperties": false,
+      "description": "What the package says about one source document.",
+      "properties": {
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "n_chars": {
+          "minimum": 0,
+          "title": "N Chars",
+          "type": "integer"
+        },
+        "n_paragraphs": {
+          "minimum": 0,
+          "title": "N Paragraphs",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "top_terms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Top Terms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "doc_id",
+        "title",
+        "n_chars",
+        "n_paragraphs"
+      ],
+      "title": "DocMetadataRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.prompt-system-doc-metadata:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc_metadata.json`: one row per source document.",
+  "properties": {
+    "documents": {
+      "items": {
+        "$ref": "#/$defs/DocMetadataRecord"
+      },
+      "title": "Documents",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.prompt-system-doc-metadata",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "PromptSystemDocMetadata",
+  "type": "object"
+}

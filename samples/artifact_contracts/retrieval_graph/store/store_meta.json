@@ -1,0 +1,16 @@
+{
+  "schema_id": "llb.rag-store-meta",
+  "schema_version": "1.0.0",
+  "mode": "flat",
+  "strategy": "recursive",
+  "size": 800,
+  "overlap": 120,
+  "child_size": 400,
+  "embedding_model": "intfloat/multilingual-e5-base",
+  "n_indexed": 2,
+  "n_parents": 0,
+  "dim": 4,
+  "backend": "faiss",
+  "collapse_duplicates": true,
+  "duplicate_tier": "exact"
+}

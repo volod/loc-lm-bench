@@ -4,8 +4,6 @@ What the command itself owns: one shared pool retrieved at the configured depth,
 the VRAM budget the fit gate reads, and the two written artifacts.
 """
 
-import json
-
 import pytest
 from typer.testing import CliRunner
 
@@ -23,6 +21,7 @@ from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.rag.encoders.candidate_screen import SKIP_REMOTE_CODE
 from llb.rag.embedding_bakeoff.models import BuiltStore
 from llb.rag.rerank_bakeoff.models import ROW_NO_RERANK, LoadedScorer
+from llb.rag.comparison.sidecar import sidecar_report
 
 GOLD_POSITIONS = [4, 4, 1, 4, 4, 1, 4, 4]
 POOL_DEPTH = 6
@@ -139,7 +138,7 @@ def test_the_run_ranks_every_candidate_on_one_shared_pool_and_writes_both_artifa
     out = tmp_path / "report.md"
     result = _invoke(corpus, goldset, out, f"{BASELINE},{CANDIDATE}")
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert {row["model"] for row in report["candidates"]} == {ROW_NO_RERANK, BASELINE, CANDIDATE}
     # One retrieval pass per item, at the configured pool depth -- not one pass per candidate.
     assert store.depths == [POOL_DEPTH] * len(GOLD_POSITIONS)
@@ -172,7 +171,7 @@ def test_a_remote_code_candidate_is_skipped_and_recorded_without_the_opt_in(
     out = tmp_path / "report.md"
     result = _invoke(corpus, goldset, out, f"{BASELINE},{REMOTE_CODE_CANDIDATE}")
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert [row["model"] for row in report["skipped"]] == [REMOTE_CODE_CANDIDATE]
     assert report["skipped"][0]["reason"] == SKIP_REMOTE_CODE
     assert REMOTE_CODE_CANDIDATE not in {row["model"] for row in report["candidates"]}
@@ -192,7 +191,7 @@ def test_a_declared_generator_residency_turns_the_footprint_into_a_fit_gate(
         corpus, goldset, out, f"{BASELINE},{CANDIDATE}", "--generator-vram-mb", "14000"
     )
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert report["headroom"]["headroom_mb"] == pytest.approx(1488.0)
     # 2300 MB does not fit beside a 14 GB generator; 1100 MB does.
     assert [row["model"] for row in report["skipped"]] == [CANDIDATE]
@@ -204,7 +203,7 @@ def test_the_in_process_escape_hatch_uses_the_other_loader(tmp_path, goldset_pat
     out = tmp_path / "report.md"
     result = _invoke(corpus, goldset, out, BASELINE, "--in-process")
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert {row["model"] for row in report["candidates"]} == {ROW_NO_RERANK, BASELINE}
 
 

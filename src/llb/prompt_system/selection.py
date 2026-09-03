@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from llb.prompt_system.manifest import PromptSystemProvenance, template_digest
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.gates import refuse_unreadable_prompt_system
+from llb.artifacts.records import decode
+from llb.core.contracts.retrieval.prompt_system import PROMPT_SYSTEM_MANIFEST_SCHEMA_ID
 from llb.prompt_system.pipeline import CANDIDATES_FILE, MANIFEST_FILE, METHOD
 from llb.prompt_system.review import PromptCandidate, load_candidates
 from llb.prompt_system.template import PromptPackage
@@ -33,6 +37,10 @@ def resolve_prompt_package(
     for run_dir, candidates_path in _candidate_locations(
         data_dir, prompt_system_id, prompt_package
     ):
+        # The whole package is checked before one candidate is taken out of it: a manifest this
+        # build cannot read makes the provenance below unreadable too, and the benchmark records
+        # that provenance per run.
+        refuse_unreadable_prompt_system(run_dir)
         candidates = load_candidates(candidates_path)
         candidate = next((c for c in candidates if c.prompt_system_id == prompt_system_id), None)
         if candidate is None:
@@ -93,9 +101,15 @@ def _provenance(run_dir: Path, candidate: PromptCandidate) -> PromptSystemProven
 def _read_manifest(run_dir: Path) -> dict[str, Any]:
     path = run_dir / MANIFEST_FILE
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = decode(
+            PROMPT_SYSTEM_MANIFEST_SCHEMA_ID,
+            json.loads(path.read_text(encoding="utf-8")),
+            source=str(path),
+        )
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot load prompt-system manifest: {path}") from exc
+    except ArtifactContractError as exc:
+        raise ValueError(f"cannot read prompt-system manifest: {exc}") from exc
     required = (
         "corpus_digest",
         "mapping_digest",

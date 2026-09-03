@@ -1,6 +1,5 @@
 """Execution helpers for the ``validate-retrieval`` CLI command."""
 
-import json
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +8,8 @@ from typing import Any
 import typer
 
 from llb.cli.helpers import load_config
+from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_VALIDATION
+from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.rag.query_prep_endpoint import (
     parse_query_prep_steps,
     resolve_query_prep_endpoint,
@@ -164,5 +165,5 @@ def _emit_query_prep_ab_report(
         report["endpoint"] = endpoint
     typer.echo(format_query_prep_ab(report))
     if out is not None:
-        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_sidecar(out, SIDECAR_KIND_VALIDATION, "validate-retrieval", report)
         typer.echo(f"[validate-retrieval] wrote A/B report -> {out}")

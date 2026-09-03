@@ -8,6 +8,7 @@ covered in `test_compare_retrieval_core.py`.
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
+from llb.rag.comparison.sidecar import sidecar_report
 
 
 from tests.llb.rag._compare_retrieval_helpers import (
@@ -31,7 +32,6 @@ def test_compare_vector_stores_infers_sibling_corpus(tmp_path):
 
 def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypatch):
     """The backend lane reads the same floor as `compare-retrieval` (`--noise-floor`)."""
-    import json
 
     from typer.testing import CliRunner
 
@@ -82,7 +82,7 @@ def test_compare_vector_stores_publishes_the_floor_when_asked(tmp_path, monkeypa
     )
     assert result.exit_code == 0, result.output
     assert "noise floor" in result.output
-    floor = json.loads(out.read_text(encoding="utf-8"))["noise_floor"]
+    floor = sidecar_report(out)["noise_floor"]
     assert set(floor["lanes"]) == {"faiss", "chroma"}
     # Both backends rank the same tie, so neither is distinguished from the other.
     assert floor["floor_recall_at_k"] > 0.0 and floor["margin"]["clears_floor"] is False
@@ -110,7 +110,6 @@ def _one_item_goldset(path, item_id="paired-a"):
 
 def test_compare_vector_stores_pairs_every_backend_against_faiss(tmp_path, monkeypatch):
     """A backend swap is decided the way an embedder swap is: paired delta + adopt-or-retain."""
-    import json
 
     from typer.testing import CliRunner
 
@@ -147,7 +146,7 @@ def test_compare_vector_stores_pairs_every_backend_against_faiss(tmp_path, monke
     assert result.exit_code == 0, result.output
     assert "paired vs faiss: 50 resamples" in result.output
     assert "Verdict: RETAIN `faiss`" in result.output
-    report = json.loads(out.read_text(encoding="utf-8"))
+    report = sidecar_report(out)
     # The baseline is the incumbent backend, not whichever label the build happened to emit first.
     assert report["uncertainty"]["baseline"] == "faiss"
     assert report["paired_items"][0]["item_id"] == "store-a"
@@ -194,7 +193,6 @@ def test_compare_vector_stores_refuses_a_baseline_backend_it_did_not_score(tmp_p
 
 def test_compare_vector_stores_falls_back_to_the_first_backend_without_faiss(tmp_path, monkeypatch):
     """Without the incumbent in the row set the paired lane still names one stable baseline."""
-    import json
 
     from typer.testing import CliRunner
 
@@ -220,4 +218,4 @@ def test_compare_vector_stores_falls_back_to_the_first_backend_without_faiss(tmp
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(out.read_text(encoding="utf-8"))["uncertainty"]["baseline"] == "chroma"
+    assert sidecar_report(out)["uncertainty"]["baseline"] == "chroma"

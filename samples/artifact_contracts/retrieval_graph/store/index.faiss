@@ -1,0 +1,2 @@
+This file stands in for a FAISS index in the artifact-contract fixtures.
+Its bytes are never parsed: the manifest binds it opaquely and checks its digest.

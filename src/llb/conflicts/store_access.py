@@ -6,16 +6,14 @@ persisted artifacts directly instead -- keeping the audit runnable (and testable
 sentence-transformers stack.
 """
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from llb.conflicts.semantic_tree.vectorops import VectorSet
-from llb.core.contracts.rag import ChunkRecord
+from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
 from llb.core.store_generations import resolve_store_dir
 from llb.rag.vector_store.build import CHUNKS_FILE, META_FILE
-from llb.rag.vector_store.io import _read_jsonl
+from llb.rag.vector_store.persistence import read_store_chunks, read_store_meta
 from llb.rag.vector_store.vector_index import RAG_BACKEND_FAISS, load_vector_index
 
 
@@ -26,7 +24,7 @@ class StoreView:
     index_dir: Path
     chunks: list[ChunkRecord]
     vectors: VectorSet
-    meta: dict[str, Any]
+    meta: RagStoreMeta
 
     @property
     def embedding_model(self) -> str:
@@ -51,8 +49,8 @@ def load_store_view(index_dir: Path | str) -> StoreView:
             f"[conflicts] no store at {resolved}: run `make build-index` first "
             "(the semantic and claim tiers need chunk vectors)."
         )
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    chunks = _read_jsonl(resolved / CHUNKS_FILE)
+    meta = read_store_meta(meta_path)
+    chunks = read_store_chunks(resolved / CHUNKS_FILE)
     index = load_vector_index(str(meta.get("backend", RAG_BACKEND_FAISS)), resolved)
     vectors = VectorSet.from_any(index.vectors())  # type: ignore[attr-defined]
     if len(vectors) != len(chunks):
@@ -87,7 +85,7 @@ def store_doc_fingerprints_at(index_dir: Path | str) -> dict[str, str] | None:
     meta_path = Path(index_dir) / META_FILE
     if not meta_path.is_file():
         return None
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = read_store_meta(meta_path)
     recorded = meta.get("doc_fingerprints")
     if not isinstance(recorded, dict):
         return {}

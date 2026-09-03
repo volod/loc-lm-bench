@@ -24,6 +24,7 @@ from llb.rag.embedding_bakeoff.verdict import (
     decide_verdict,
 )
 from llb.rag.embedding_bakeoff.selection import adjust_bakeoff_selection
+from llb.rag.comparison.sidecar import sidecar_report
 
 
 from tests.llb.rag._embedding_bakeoff_uncertainty_helpers import (
@@ -140,7 +141,6 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
     The recorded recommendation could not be re-read because only prose survived; the JSON is what
     a later re-read recomputes from.
     """
-    import json
 
     from typer.testing import CliRunner
 
@@ -199,7 +199,7 @@ def test_cli_writes_the_paired_ledger_machine_readable(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert report["uncertainty"]["baseline"] == BASELINE
     assert (
         report["verdict"]["decision"] == DECISION_ADOPT

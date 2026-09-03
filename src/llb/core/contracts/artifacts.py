@@ -66,7 +66,25 @@ class ContractReference(BaseModel):
     schema_version: str = Field(pattern=SEMANTIC_VERSION_PATTERN)
 
 
+class OpaqueBinding(BaseModel):
+    """Who owns an opaque member's bytes, and which of their formats it is written in.
+
+    This project binds a FAISS index, a lexical postings file, or a DuckDB database into a
+    dataset without modelling their contents: the format belongs to its own owner and is theirs
+    to evolve. What a reader still needs is the two facts a digest cannot supply -- whose format
+    this is and which version of it -- so an incompatible member is named rather than guessed at.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    owner: str = Field(min_length=1)
+    format_version: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+
+
 class DatasetMember(BaseModel):
+    """One member of a dataset, bound either to a record contract or to the owner of its format."""
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     member_id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -77,6 +95,7 @@ class DatasetMember(BaseModel):
     required: bool = True
     digest: str = Field(pattern=DIGEST_PATTERN)
     record_contract: ContractReference | None = None
+    opaque_binding: OpaqueBinding | None = None
 
     @model_validator(mode="after")
     def validate_binding(self) -> "DatasetMember":
@@ -87,10 +106,15 @@ class DatasetMember(BaseModel):
         if self.format == "opaque":
             if self.granularity != "opaque" or self.record_contract is not None:
                 raise ValueError("opaque members require opaque granularity and no record contract")
-        elif self.granularity == "opaque" or self.record_contract is None:
+            if self.opaque_binding is None:
+                raise ValueError("opaque members must declare their owner and format version")
+            return self
+        if self.granularity == "opaque" or self.record_contract is None:
             raise ValueError(
                 "structured members require a record contract and non-opaque granularity"
             )
+        if self.opaque_binding is not None:
+            raise ValueError("only opaque members carry an opaque binding")
         return self
 
 
@@ -111,6 +135,8 @@ class DatasetQualityCheck(BaseModel):
 
 
 class DatasetManifest(ExtensibleArtifactContract):
+    """A physical dataset: its members, how they relate, and what is checked about them."""
+
     schema_id: Literal["llb.dataset-manifest"]
     schema_version: Literal["1.0.0"]
     dataset_id: str = Field(min_length=1)

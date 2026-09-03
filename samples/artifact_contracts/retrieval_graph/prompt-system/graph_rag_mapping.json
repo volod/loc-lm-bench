@@ -1,0 +1,9 @@
+{
+  "schema_id": "llb.prompt-system-mapping",
+  "schema_version": "1.0.0",
+  "mapping": {
+    "akt": [
+      "poryadok.md::p000"
+    ]
+  }
+}

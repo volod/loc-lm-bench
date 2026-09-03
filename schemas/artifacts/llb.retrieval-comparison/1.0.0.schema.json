@@ -1,0 +1,47 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.retrieval-comparison:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One machine-readable retrieval-comparison sidecar and what produced it.",
+  "properties": {
+    "kind": {
+      "default": "comparison",
+      "enum": [
+        "comparison",
+        "calibration",
+        "probe",
+        "validation",
+        "run-config"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "produced_by": {
+      "default": "unrecorded",
+      "minLength": 1,
+      "title": "Produced By",
+      "type": "string"
+    },
+    "report": {
+      "additionalProperties": true,
+      "title": "Report",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.retrieval-comparison",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "RetrievalComparisonSidecar",
+  "type": "object"
+}

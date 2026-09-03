@@ -1,0 +1,2 @@
+{"node_id": 0, "name": "akt pryimannia", "type": "dokument", "confidence": 0.75, "aliases": ["akt"], "mentions": [{"doc_id": "poryadok.md", "char_start": 0, "char_end": 14, "text": "Akt pryimannia", "section_title": "Zahalni polozhennia"}], "community_id": 0}
+{"node_id": 1, "name": "komisiia", "type": "orhan", "confidence": 0.5, "aliases": [], "mentions": [{"doc_id": "poryadok.md", "char_start": 60, "char_end": 68, "text": "komisii", "section_title": "Zahalni polozhennia"}], "community_id": 0}

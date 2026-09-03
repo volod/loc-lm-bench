@@ -12,10 +12,9 @@ from llb.goldset.chains import dump_chains
 from llb.goldset.schema import dump_goldset
 from llb.goldset.span_occurrences import span_occurrence_counts, write_occurrences_sidecar
 from llb.prep.ontology.artifacts.citations import copy_pdf_citation_sidecars
+from llb.prep.ontology.artifacts.contracts import extraction_record, ontology_record
 from llb.prep.ontology.artifacts.report import write_calibration_artifacts
 from llb.core.contracts.data_prep.ontology import (
-    OntologyDocument,
-    OntologyExtractionRow,
     OntologyProvenance,
 )
 from llb.prep.ontology.constants import (
@@ -25,17 +24,13 @@ from llb.prep.ontology.constants import (
     GOLDSET_FILENAME,
     MULTI_HOP_PATH_STRATA_FILENAME,
     ONTOLOGY_FILENAME,
-    ONTOLOGY_SCHEMA_ID,
-    ONTOLOGY_SCHEMA_VERSION,
-    EXTRACTION_SCHEMA_ID,
-    EXTRACTION_SCHEMA_VERSION,
     PROVENANCE_FILENAME,
     PROVENANCE_KIND,
     PROVENANCE_SCHEMA_ID,
     PROVENANCE_SCHEMA_VERSION,
 )
 from llb.prep.ontology.endpoints.config import EndpointPlan, endpoint_provenance
-from llb.prep.ontology.models import DocExtraction, DocRecord
+from llb.prep.ontology.models import DocRecord
 from llb.prep.ontology.drafting.needles import NeedleRetriever
 from llb.prep.ontology.pipeline.bundle_provenance import provenance_payload
 from llb.prep.ontology.pipeline.settings import PipelineResult
@@ -83,28 +78,6 @@ def _write_provenance(out_dir: Path, record: OntologyProvenance) -> None:
     )
 
 
-def _ontology_record(result: PipelineResult) -> OntologyDocument:
-    """The induced ontology as its registered contract."""
-    return OntologyDocument.model_validate(
-        {
-            "schema_id": ONTOLOGY_SCHEMA_ID,
-            "schema_version": ONTOLOGY_SCHEMA_VERSION,
-            **result.ontology.model_dump(),
-        }
-    )
-
-
-def _extraction_record(extraction: DocExtraction) -> OntologyExtractionRow:
-    """One extraction row as its registered contract."""
-    return OntologyExtractionRow.model_validate(
-        {
-            "schema_id": EXTRACTION_SCHEMA_ID,
-            "schema_version": EXTRACTION_SCHEMA_VERSION,
-            **extraction.model_dump(),
-        }
-    )
-
-
 def _write_corpus_copy(source_root: Path, corpus_dir: Path, docs: list[DocRecord]) -> None:
     """Copy inventoried docs verbatim so spans stay exact and the bundle self-validates."""
     for doc in docs:
@@ -144,12 +117,12 @@ def _write_bundle(
         out_dir, span_occurrence_counts(result.items, {doc.doc_id: doc.text for doc in result.docs})
     )
     (out_dir / ONTOLOGY_FILENAME).write_text(
-        json.dumps(_ontology_record(result).model_dump(), ensure_ascii=False, indent=2),
+        json.dumps(ontology_record(result.ontology).model_dump(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     with (out_dir / EXTRACTION_FILENAME).open("w", encoding="utf-8") as fh:
         for extraction in result.extractions:
-            row = _extraction_record(extraction).model_dump()
+            row = extraction_record(extraction).model_dump()
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     _write_provenance(out_dir, provenance_payload(result, endpoints, seed, settings))
     if result.multi_hop_path_strata is not None:

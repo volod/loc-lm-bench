@@ -13,7 +13,14 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from llb.artifacts.records import encode
 from llb.bench.common import new_run_timestamp
+from llb.core.contracts.retrieval.prompt_system import (
+    PROMPT_SYSTEM_ANTHOLOGY_SCHEMA_ID as ANTHOLOGY_SCHEMA_ID,
+    PROMPT_SYSTEM_DOC_METADATA_SCHEMA_ID as DOC_METADATA_SCHEMA_ID,
+    PROMPT_SYSTEM_MANIFEST_SCHEMA_ID as MANIFEST_SCHEMA_ID,
+    PROMPT_SYSTEM_MAPPING_SCHEMA_ID as MAPPING_SCHEMA_ID,
+)
 from llb.core.paths import resolve_data_dir
 from llb.prompt_system.budget import (
     DEFAULT_ANSWER_TOKENS,
@@ -45,6 +52,9 @@ METADATA_FILE = "doc_metadata.json"
 MAPPING_FILE = "graph_rag_mapping.json"
 CANDIDATES_FILE = "candidates.json"
 MANIFEST_FILE = "manifest.json"
+
+# Every member of a package is at the same contract version; the package is written as one unit.
+PACKAGE_CONTRACT_VERSION = "1.0.0"
 
 DEFAULT_QUESTION_TOKENS = 64
 DEFAULT_CHUNK_TOKENS = 1024
@@ -150,9 +160,9 @@ def _write_run(
     tokenizer_name: str,
 ) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(run_dir / ANTHOLOGY_FILE, corpus.anthology)
-    _write_json(run_dir / METADATA_FILE, corpus.metadata)
-    _write_json(run_dir / MAPPING_FILE, corpus.graph_rag_mapping)
+    _write_record(run_dir / ANTHOLOGY_FILE, ANTHOLOGY_SCHEMA_ID, {"passages": corpus.anthology})
+    _write_record(run_dir / METADATA_FILE, DOC_METADATA_SCHEMA_ID, {"documents": corpus.metadata})
+    _write_record(run_dir / MAPPING_FILE, MAPPING_SCHEMA_ID, {"mapping": corpus.graph_rag_mapping})
     save_candidates(candidates, run_dir / CANDIDATES_FILE)
     manifest = {
         "method": METHOD,
@@ -179,7 +189,7 @@ def _write_run(
             for c in candidates
         ],
     }
-    _write_json(run_dir / MANIFEST_FILE, manifest)
+    _write_record(run_dir / MANIFEST_FILE, MANIFEST_SCHEMA_ID, manifest)
 
 
 def _knowledge_tree_source_manifest(candidates: list[PromptCandidate]) -> dict[str, object] | None:
@@ -194,8 +204,10 @@ def _knowledge_tree_source_manifest(candidates: list[PromptCandidate]) -> dict[s
     }
 
 
-def _write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+def _write_record(path: Path, schema_id: str, payload: dict[str, object]) -> None:
+    """Write one prompt-system package member with its contract identity."""
+    record = encode(schema_id, PACKAGE_CONTRACT_VERSION, payload)
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 # Re-export so the CLI persists reviewed candidates with the same serializer.

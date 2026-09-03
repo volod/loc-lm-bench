@@ -23,6 +23,7 @@
     },
     "DatasetMember": {
       "additionalProperties": false,
+      "description": "One member of a dataset, bound either to a record contract or to the owner of its format.",
       "properties": {
         "digest": {
           "pattern": "^sha256:[0-9a-f]{64}$",
@@ -61,6 +62,17 @@
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
           "title": "Member Id",
           "type": "string"
+        },
+        "opaque_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpaqueBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "path": {
           "minLength": 1,
@@ -151,11 +163,40 @@
       ],
       "title": "DatasetRelationship",
       "type": "object"
+    },
+    "OpaqueBinding": {
+      "additionalProperties": false,
+      "description": "Who owns an opaque member's bytes, and which of their formats it is written in.\n\nThis project binds a FAISS index, a lexical postings file, or a DuckDB database into a\ndataset without modelling their contents: the format belongs to its own owner and is theirs\nto evolve. What a reader still needs is the two facts a digest cannot supply -- whose format\nthis is and which version of it -- so an incompatible member is named rather than guessed at.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "format_version": {
+          "minLength": 1,
+          "title": "Format Version",
+          "type": "string"
+        },
+        "owner": {
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "format_version",
+        "description"
+      ],
+      "title": "OpaqueBinding",
+      "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.dataset-manifest:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "A physical dataset: its members, how they relate, and what is checked about them.",
   "properties": {
     "dataset_id": {
       "minLength": 1,

@@ -6,7 +6,6 @@ BM25 side is the real `LexicalIndex`, so the whole hybrid path runs in the light
 install (no GPU, no [rag] extra).
 """
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +19,8 @@ from llb.rag.filters import metadata_filter
 from llb.rag.vector_store.lexical_index import LexicalIndex
 from llb.rag.retrieval import evaluate_retrieval
 from llb.rag.vector_store.store import RagStore
-from llb.rag.vector_store.build import LEXICAL_FILE, META_FILE, MODE_HYBRID
+from llb.rag.vector_store.build import LEXICAL_FILE, MODE_HYBRID
+from tests.llb.store_meta_helpers import write_store_meta
 
 FIXTURE = Path("samples/goldsets/exact_terms_uk")
 
@@ -117,7 +117,7 @@ def test_flat_store_applies_chunk_filter_and_renumbers_ranks():
 
 def test_load_refuses_hybrid_store_without_lexical_file(tmp_path):
     (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
-    (tmp_path / META_FILE).write_text(json.dumps({"mode": MODE_HYBRID}), encoding="utf-8")
+    write_store_meta(tmp_path, mode=MODE_HYBRID)
     with pytest.raises(SystemExit, match="missing its lexical index"):
         RagStore.load(tmp_path)
 

@@ -1,0 +1,230 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.rag-store-meta:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`store_meta.json`: what a store is, and every knob a query applies to it.\n\n`backend`, `collapse_duplicates`, and `duplicate_tier` are optional because a store built\nbefore each knob existed recorded nothing, and stores in exactly that state are still on disk.\nThe reader that needs one applies its documented default (`faiss`, collapse on, the `exact`\ntier); the contract says the store did not record it rather than inventing a value for it.",
+  "properties": {
+    "backend": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Backend"
+    },
+    "child_size": {
+      "minimum": 0,
+      "title": "Child Size",
+      "type": "integer"
+    },
+    "collapse_duplicates": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Collapse Duplicates"
+    },
+    "corpus_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corpus Fingerprint"
+    },
+    "corpus_manifest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corpus Manifest"
+    },
+    "dim": {
+      "minimum": 0,
+      "title": "Dim",
+      "type": "integer"
+    },
+    "doc_fingerprints": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Doc Fingerprints"
+    },
+    "duplicate_tier": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicate Tier"
+    },
+    "duplicates": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicates"
+    },
+    "embedder_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedder Fingerprint"
+    },
+    "embedding_model": {
+      "minLength": 1,
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "governance_fields": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Governance Fields"
+    },
+    "lexical": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lexical"
+    },
+    "mode": {
+      "minLength": 1,
+      "title": "Mode",
+      "type": "string"
+    },
+    "n_indexed": {
+      "minimum": 0,
+      "title": "N Indexed",
+      "type": "integer"
+    },
+    "n_parents": {
+      "minimum": 0,
+      "title": "N Parents",
+      "type": "integer"
+    },
+    "overlap": {
+      "minimum": 0,
+      "title": "Overlap",
+      "type": "integer"
+    },
+    "page_annotation_coverage": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Page Annotation Coverage"
+    },
+    "refreshed_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Refreshed From"
+    },
+    "schema_id": {
+      "const": "llb.rag-store-meta",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "size": {
+      "minimum": 0,
+      "title": "Size",
+      "type": "integer"
+    },
+    "strategy": {
+      "minLength": 1,
+      "title": "Strategy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "mode",
+    "strategy",
+    "size",
+    "overlap",
+    "child_size",
+    "embedding_model",
+    "n_indexed",
+    "n_parents",
+    "dim"
+  ],
+  "title": "RagStoreMetaRecord",
+  "type": "object"
+}

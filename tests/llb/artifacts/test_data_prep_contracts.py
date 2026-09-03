@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from llb.artifacts.bundles import corpus_bundle_manifest, draft_bundle_manifest, read_bundle
+from llb.artifacts.bundles import corpus_bundle_manifest, draft_bundle_manifest
+from llb.artifacts.dataset_reading import read_dataset
 from llb.artifacts.data_prep.families import data_prep_definitions
 from llb.artifacts.default_registry import DEFAULT_REGISTRY
 from llb.artifacts.errors import DatasetReadError, UnsupportedFutureVersionError
@@ -45,7 +46,7 @@ def _read(path: Path, schema_id: str) -> dict[str, object]:
 
 def test_corpus_bundle_validates_member_by_member() -> None:
     manifest = corpus_bundle_manifest(CORPUS_BUNDLE)
-    members = read_bundle(CORPUS_BUNDLE, manifest)
+    members = read_dataset(CORPUS_BUNDLE, manifest)
 
     assert [member.member_id for member in manifest.members] == [
         "corpus-manifest",
@@ -57,7 +58,7 @@ def test_corpus_bundle_validates_member_by_member() -> None:
 
 def test_draft_bundle_validates_member_by_member() -> None:
     manifest = draft_bundle_manifest(DRAFT_BUNDLE)
-    members = read_bundle(DRAFT_BUNDLE, manifest)
+    members = read_dataset(DRAFT_BUNDLE, manifest)
 
     assert [member.member_id for member in manifest.members] == [
         "gold-items",
@@ -76,7 +77,7 @@ def test_a_tampered_member_refuses_before_the_bundle_is_read(tmp_path: Path) -> 
     (bundle / "ontology.json").write_text("{}", encoding="utf-8")
 
     with pytest.raises(DatasetReadError, match="digest mismatch"):
-        read_bundle(bundle, manifest)
+        read_dataset(bundle, manifest)
 
 
 def test_a_pre_contract_gold_set_reaches_the_same_items() -> None:
@@ -201,23 +202,25 @@ def test_a_freshly_ingested_corpus_writes_its_manifest_at_the_current_contract(
 
 
 def test_check_bundle_upgrades_a_pre_contract_bundle_in_place(tmp_path: Path) -> None:
-    from llb.artifacts.bundles import draft_bundle_manifest, survey_bundle, upgrade_bundle
+    from llb.artifacts.bundles import draft_bundle_manifest
+    from llb.artifacts.dataset_reading import survey_dataset, upgrade_dataset
 
     bundle = tmp_path / "draft"
     shutil.copytree(DRAFT_BUNDLE, bundle)
     shutil.copy(LEGACY / "goldset.jsonl", bundle / "goldset.jsonl")
     shutil.copy(LEGACY / "provenance.json", bundle / "provenance.json")
 
-    upgraded = upgrade_bundle(bundle, draft_bundle_manifest(bundle))
+    upgraded = upgrade_dataset(bundle, draft_bundle_manifest(bundle))
 
     assert set(upgraded) == {"gold-items", "provenance"}
-    readings = survey_bundle(bundle, draft_bundle_manifest(bundle))
+    readings = survey_dataset(bundle, draft_bundle_manifest(bundle))
     assert all(not reading.needs_upgrade and not reading.refusal for reading in readings)
-    assert upgrade_bundle(bundle, draft_bundle_manifest(bundle)) == ()
+    assert upgrade_dataset(bundle, draft_bundle_manifest(bundle)) == ()
 
 
 def test_survey_reports_every_refusal_rather_than_the_first(tmp_path: Path) -> None:
-    from llb.artifacts.bundles import draft_bundle_manifest, survey_bundle
+    from llb.artifacts.bundles import draft_bundle_manifest
+    from llb.artifacts.dataset_reading import survey_dataset
 
     bundle = tmp_path / "draft"
     shutil.copytree(DRAFT_BUNDLE, bundle)
@@ -225,6 +228,6 @@ def test_survey_reports_every_refusal_rather_than_the_first(tmp_path: Path) -> N
     (bundle / "ontology.json").write_text("{}", encoding="utf-8")
     (bundle / "chains.jsonl").write_text("{}\n", encoding="utf-8")
 
-    readings = survey_bundle(bundle, manifest)
+    readings = survey_dataset(bundle, manifest)
 
     assert {r.member_id for r in readings if r.refusal} == {"ontology", "gold-chains"}

@@ -11,6 +11,7 @@ from llb.core.config import RunConfig
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.rag.embedding_bakeoff.models import BuiltStore
 from llb.rag.fusion_evidence.models import EvidenceItem
+from llb.rag.comparison.sidecar import sidecar_report
 
 BASELINE = "intfloat/multilingual-e5-base"
 CANDIDATE = "BAAI/bge-m3"
@@ -105,7 +106,7 @@ def test_embedder_lane_writes_the_plan_before_building_and_reports_realized_mde(
         ],
     )
     assert result.exit_code == 0, result.output
-    report = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    report = sidecar_report(out.with_suffix(".json"))
     assert report["power_analysis"]["resolvable_mde"] == 0.0
     assert report["power_analysis"]["selector"]["candidate"] == CANDIDATE
 
@@ -177,6 +178,6 @@ def test_fusion_lane_writes_the_plan_before_retrieval_and_reports_realized_mde(
         ],
     )
     assert result.exit_code == 0, result.output
-    report = json.loads((out_dir / "comparison.json").read_text(encoding="utf-8"))
+    report = sidecar_report(out_dir / "comparison.json")
     assert report["power_analysis"]["resolvable_mde"] == 0.0
     assert report["power_analysis"]["selector"]["candidate"] == "fused/test"

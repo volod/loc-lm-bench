@@ -26,9 +26,13 @@ from llb.core.store_generations import (
     publish_generation,
     resolve_store_dir,
 )
+from llb.artifacts.datasets import publish_dataset_manifest
+from llb.artifacts.retrieval.datasets import graph_dataset_manifest
 from llb.graph.constants import DEFAULT_KHOP_DEPTH, META_FILE
 from llb.graph.ingest import load_extractions, load_ontology
 from llb.graph.store import GraphStore
+from llb.graph.store_io import read_graph_meta
+from llb.prep.ontology.artifacts.contracts import extraction_record, ontology_record
 from llb.prep.ontology.constants import EXTRACTION_FILENAME, ONTOLOGY_FILENAME
 from llb.prep.ontology.coverage.inventory import inventory_corpus
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
@@ -105,11 +109,16 @@ def save_graph_inputs(
     graph_dir.mkdir(parents=True, exist_ok=True)
     with (graph_dir / EXTRACTION_FILENAME).open("w", encoding="utf-8") as fh:
         for extraction in extractions:
-            fh.write(json.dumps(extraction.model_dump(), ensure_ascii=False) + "\n")
+            row = extraction_record(extraction).model_dump()
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     if ontology is not None:
         (graph_dir / ONTOLOGY_FILENAME).write_text(
-            json.dumps(ontology.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(ontology_record(ontology).model_dump(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
+    # The inputs are the last members written, so the manifest is published here rather than in
+    # `GraphStore.save`: a manifest that predates half the directory describes nothing useful.
+    publish_dataset_manifest(graph_dir, graph_dataset_manifest(graph_dir, resolve_live=False))
 
 
 def refresh_graph_store(
@@ -132,7 +141,7 @@ def refresh_graph_store(
         raise SystemExit(
             f"[refresh] no graph store at {base_dir}; build one first with `llb build-graph`"
         )
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = read_graph_meta(meta_path)
     docs = inventory_corpus(corpus_root)
     current = {doc.doc_id: doc.sha256 for doc in docs}
     recorded = _load_recorded_fingerprints(meta, live_dir)

@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "PassageRecord": {
+      "additionalProperties": false,
+      "description": "One selected anthology passage, with the exact source span it was cut from.",
+      "properties": {
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "passage_id": {
+          "minLength": 1,
+          "title": "Passage Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "passage_id",
+        "doc_id",
+        "char_start",
+        "char_end",
+        "text"
+      ],
+      "title": "PassageRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.prompt-system-anthology:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`anthology.json`: the selected passages, in selection order.",
+  "properties": {
+    "passages": {
+      "items": {
+        "$ref": "#/$defs/PassageRecord"
+      },
+      "title": "Passages",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.prompt-system-anthology",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "PromptSystemAnthology",
+  "type": "object"
+}

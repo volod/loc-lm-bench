@@ -12,11 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.records import decode, encode
+from llb.core.contracts.retrieval.query import QUERY_GLOSSARY_SCHEMA_ID
 from llb.rag.vector_store.lexical import tokenize
 from llb.rag.query_prep.base import STEP_GLOSSARY, QUERY_GLOSSARY_VERSION, QueryEdit
 from llb.rag.query_prep.normalize import cyrillic_to_latin
 
 _LOG = logging.getLogger(__name__)
+
+GLOSSARY_CONTRACT_VERSION = "1.0.0"
 
 
 @dataclass(frozen=True)
@@ -66,10 +70,12 @@ class Glossary:
 
     @classmethod
     def load(cls, path: Path | str) -> "Glossary":
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls.from_dict(data)
+        """Read a glossary at the current contract, migrating a pre-contract file forward."""
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(decode(QUERY_GLOSSARY_SCHEMA_ID, record, source=str(path)))
 
     def to_dict(self, source_bundle: str | None = None) -> dict[str, Any]:
+        """The glossary as its registered contract record, ready to write."""
         payload: dict[str, Any] = {
             "version": QUERY_GLOSSARY_VERSION,
             "entries": [
@@ -79,7 +85,7 @@ class Glossary:
         }
         if source_bundle is not None:
             payload["source_bundle"] = source_bundle
-        return payload
+        return encode(QUERY_GLOSSARY_SCHEMA_ID, GLOSSARY_CONTRACT_VERSION, payload)
 
 
 def apply_glossary(query: str, glossary: "Glossary") -> tuple[str, list[QueryEdit]]:

@@ -1,0 +1,61 @@
+{
+  "schema_id": "llb.prompt-system-candidates",
+  "schema_version": "1.0.0",
+  "candidates": [
+    {
+      "prompt_system_id": "aa11bb22cc33",
+      "fields": {
+        "role": "Ty ekspertnyi asystent",
+        "instruction": "Vidpovidai lyshe z nadanoho kontekstu",
+        "metadata_density": "compact",
+        "graph_reference_style": "inline",
+        "anthology_size": 1,
+        "knowledge_tree_depth": 0,
+        "knowledge_tree_budget": 0
+      },
+      "system_prompt": "Ty ekspertnyi asystent.",
+      "additional_prompt": "Kontekst: Akt pryimannia.",
+      "dropped_context": {
+        "budget_tokens": 512,
+        "used_tokens": 64,
+        "sections": []
+      },
+      "used_tokens": 64,
+      "status": "pending",
+      "note": "",
+      "knowledge_tree": null
+    },
+    {
+      "prompt_system_id": "dd44ee55ff66",
+      "fields": {
+        "role": "Ty ekspertnyi asystent",
+        "instruction": "Vidpovidai lyshe z nadanoho kontekstu",
+        "metadata_density": "compact",
+        "graph_reference_style": "inline",
+        "anthology_size": 1,
+        "knowledge_tree_depth": 2,
+        "knowledge_tree_budget": 256
+      },
+      "system_prompt": "Ty ekspertnyi asystent.",
+      "additional_prompt": "Kontekst: Akt pryimannia.",
+      "dropped_context": {
+        "budget_tokens": 512,
+        "used_tokens": 64,
+        "sections": []
+      },
+      "used_tokens": 64,
+      "status": "pending",
+      "note": "",
+      "knowledge_tree": {
+        "depth": 2,
+        "budget_tokens": 256,
+        "used_tokens": 96,
+        "kept_lines": 4,
+        "dropped_lines": 0,
+        "source_kind": "graph-store",
+        "source_digest": "9988776655aa",
+        "baseline_prompt_system_id": "aa11bb22cc33"
+      }
+    }
+  ]
+}

@@ -1,12 +1,12 @@
 """CLI wiring for the paired per-hop query-prep probe."""
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from llb.main import app
+from llb.rag.comparison.sidecar import sidecar_report
 
 
 def test_probe_cli_builds_query_prep_and_writes_the_paired_artifact(
@@ -77,7 +77,7 @@ def test_probe_cli_builds_query_prep_and_writes_the_paired_artifact(
     assert (observed["store"], observed["pipeline"]) == (store, pipeline)
     assert observed["kwargs"]["budgets"] == (10, 25, 50)
     assert "query conversion 2/8; budget cost 1/19" in result.output
-    artifact = json.loads((out_dir / "probe.json").read_text(encoding="utf-8"))
+    artifact = sidecar_report(out_dir / "probe.json")
     assert artifact["endpoint"] == {"model": "model", "backend": "ollama"}
     assert (out_dir / "report.md").read_text(encoding="utf-8") == "paired\n"
 

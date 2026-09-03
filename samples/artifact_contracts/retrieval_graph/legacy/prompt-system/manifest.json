@@ -1,0 +1,38 @@
+{
+  "method": "prompt-system",
+  "corpus_digest": "1122334455aa",
+  "mapping_digest": "6677889900bb",
+  "tokenizer": "char-ratio",
+  "context_window": 4096,
+  "prompt_budget_tokens": 512,
+  "reserved_tokens": 3584,
+  "n_candidates": 2,
+  "knowledge_tree_source": {
+    "kind": "graph-store",
+    "digest": "9988776655aa"
+  },
+  "candidates": [
+    {
+      "prompt_system_id": "aa11bb22cc33",
+      "anthology_size": 1,
+      "metadata_density": "compact",
+      "graph_reference_style": "inline",
+      "used_tokens": 64,
+      "knowledge_tree_depth": 0,
+      "knowledge_tree_budget": 0,
+      "knowledge_tree_used_tokens": 0,
+      "status": "pending"
+    },
+    {
+      "prompt_system_id": "dd44ee55ff66",
+      "anthology_size": 1,
+      "metadata_density": "compact",
+      "graph_reference_style": "inline",
+      "used_tokens": 64,
+      "knowledge_tree_depth": 2,
+      "knowledge_tree_budget": 256,
+      "knowledge_tree_used_tokens": 96,
+      "status": "pending"
+    }
+  ]
+}
