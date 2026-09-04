@@ -1,0 +1,381 @@
+{
+  "schema_id": "llb.fusion-routing-calibration",
+  "schema_version": "1.0.0",
+  "k": 2,
+  "graph_strategy": "global_community",
+  "graph_weight": 0.5,
+  "candidates": 2,
+  "span_identity": "exact",
+  "tuning_split": "tuning",
+  "final_split": "final",
+  "resamples": 20,
+  "confidence": 0.95,
+  "seed": 13,
+  "sidecar_hidden": true,
+  "selection_metric": "multi_span_coverage_delta",
+  "tuning": {
+    "w5/e0": {
+      "policy": {
+        "label": "w5/e0",
+        "long_question_words": 5,
+        "min_linked_entities": 0
+      },
+      "n": 7,
+      "multi_span_n": 6,
+      "single_span_n": 1,
+      "graph_questions": 7,
+      "vector_questions": 0,
+      "route": {
+        "true_positive": 6,
+        "false_positive": 1,
+        "true_negative": 0,
+        "false_negative": 0,
+        "precision": {
+          "mean": 0.8571428571428571,
+          "lo": 0.42857142857142855,
+          "hi": 1.0,
+          "stability": {
+            "reading": "separated",
+            "p_positive": 1.0,
+            "looser_reading": "separated",
+            "tighter_reading": "separated",
+            "borderline": false,
+            "side": null
+          }
+        },
+        "recall": {
+          "mean": 1.0,
+          "lo": 1.0,
+          "hi": 1.0,
+          "stability": {
+            "reading": "separated",
+            "p_positive": 1.0,
+            "looser_reading": "separated",
+            "tighter_reading": "separated",
+            "borderline": false,
+            "side": null
+          }
+        }
+      },
+      "route_errors": [
+        {
+          "item_id": "ts",
+          "predicted": "graph",
+          "expected": "vector",
+          "signals": [
+            "entity_requirement_disabled",
+            "long_question"
+          ]
+        }
+      ],
+      "multi_span_coverage": {
+        "delta": {
+          "mean": 0.5,
+          "lo": 0.5,
+          "hi": 0.5
+        },
+        "wins": 6,
+        "losses": 0,
+        "ties": 0,
+        "sign_test_p": 0.03125,
+        "randomization_p": 0.015625,
+        "randomization_method": "exact",
+        "randomization_samples": 64,
+        "stability": {
+          "reading": "separated",
+          "p_positive": 1.0,
+          "looser_reading": "separated",
+          "tighter_reading": "insufficient_evidence",
+          "borderline": true,
+          "side": "above",
+          "discordant": 6,
+          "pairs": 6,
+          "randomization_p": 0.015625,
+          "randomization_method": "exact",
+          "randomization_samples": 64
+        }
+      },
+      "single_span_recall": {
+        "delta": {
+          "mean": 0.0,
+          "lo": 0.0,
+          "hi": 0.0
+        },
+        "wins": 0,
+        "losses": 0,
+        "ties": 1,
+        "sign_test_p": 1.0,
+        "randomization_p": 1.0,
+        "randomization_method": "exact",
+        "randomization_samples": 1,
+        "stability": {
+          "reading": "flat",
+          "p_positive": 0.0,
+          "looser_reading": "flat",
+          "tighter_reading": "flat",
+          "borderline": false,
+          "side": null,
+          "discordant": 0,
+          "pairs": 1,
+          "randomization_p": 1.0,
+          "randomization_method": "exact",
+          "randomization_samples": 1
+        }
+      },
+      "recommendation_gate": true
+    },
+    "w5/e2": {
+      "policy": {
+        "label": "w5/e2",
+        "long_question_words": 5,
+        "min_linked_entities": 2
+      },
+      "n": 7,
+      "multi_span_n": 6,
+      "single_span_n": 1,
+      "graph_questions": 0,
+      "vector_questions": 7,
+      "route": {
+        "true_positive": 0,
+        "false_positive": 0,
+        "true_negative": 1,
+        "false_negative": 6,
+        "precision": {
+          "mean": 0.0,
+          "lo": 0.0,
+          "hi": 0.0,
+          "stability": {
+            "reading": "flat",
+            "p_positive": 0.0,
+            "looser_reading": "flat",
+            "tighter_reading": "flat",
+            "borderline": false,
+            "side": null
+          }
+        },
+        "recall": {
+          "mean": 0.0,
+          "lo": 0.0,
+          "hi": 0.0,
+          "stability": {
+            "reading": "flat",
+            "p_positive": 0.0,
+            "looser_reading": "flat",
+            "tighter_reading": "flat",
+            "borderline": false,
+            "side": null
+          }
+        }
+      },
+      "route_errors": [
+        {
+          "item_id": "tm0",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        },
+        {
+          "item_id": "tm1",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        },
+        {
+          "item_id": "tm2",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        },
+        {
+          "item_id": "tm3",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        },
+        {
+          "item_id": "tm4",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        },
+        {
+          "item_id": "tm5",
+          "predicted": "vector",
+          "expected": "graph",
+          "signals": [
+            "long_question"
+          ]
+        }
+      ],
+      "multi_span_coverage": {
+        "delta": {
+          "mean": 0.0,
+          "lo": 0.0,
+          "hi": 0.0
+        },
+        "wins": 0,
+        "losses": 0,
+        "ties": 6,
+        "sign_test_p": 1.0,
+        "randomization_p": 1.0,
+        "randomization_method": "exact",
+        "randomization_samples": 1,
+        "stability": {
+          "reading": "flat",
+          "p_positive": 0.0,
+          "looser_reading": "flat",
+          "tighter_reading": "flat",
+          "borderline": false,
+          "side": null,
+          "discordant": 0,
+          "pairs": 6,
+          "randomization_p": 1.0,
+          "randomization_method": "exact",
+          "randomization_samples": 1
+        }
+      },
+      "single_span_recall": {
+        "delta": {
+          "mean": 0.0,
+          "lo": 0.0,
+          "hi": 0.0
+        },
+        "wins": 0,
+        "losses": 0,
+        "ties": 1,
+        "sign_test_p": 1.0,
+        "randomization_p": 1.0,
+        "randomization_method": "exact",
+        "randomization_samples": 1,
+        "stability": {
+          "reading": "flat",
+          "p_positive": 0.0,
+          "looser_reading": "flat",
+          "tighter_reading": "flat",
+          "borderline": false,
+          "side": null,
+          "discordant": 0,
+          "pairs": 1,
+          "randomization_p": 1.0,
+          "randomization_method": "exact",
+          "randomization_samples": 1
+        }
+      },
+      "recommendation_gate": false
+    }
+  },
+  "frozen_policy": "w5/e0",
+  "recommended_policy": "w5/e0",
+  "final": {
+    "policy": {
+      "label": "w5/e0",
+      "long_question_words": 5,
+      "min_linked_entities": 0
+    },
+    "n": 7,
+    "multi_span_n": 6,
+    "single_span_n": 1,
+    "graph_questions": 6,
+    "vector_questions": 1,
+    "route": {
+      "true_positive": 6,
+      "false_positive": 0,
+      "true_negative": 1,
+      "false_negative": 0,
+      "precision": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "stability": {
+          "reading": "separated",
+          "p_positive": 1.0,
+          "looser_reading": "separated",
+          "tighter_reading": "separated",
+          "borderline": false,
+          "side": null
+        }
+      },
+      "recall": {
+        "mean": 1.0,
+        "lo": 1.0,
+        "hi": 1.0,
+        "stability": {
+          "reading": "separated",
+          "p_positive": 1.0,
+          "looser_reading": "separated",
+          "tighter_reading": "separated",
+          "borderline": false,
+          "side": null
+        }
+      }
+    },
+    "route_errors": [],
+    "multi_span_coverage": {
+      "delta": {
+        "mean": 0.5,
+        "lo": 0.5,
+        "hi": 0.5
+      },
+      "wins": 6,
+      "losses": 0,
+      "ties": 0,
+      "sign_test_p": 0.03125,
+      "randomization_p": 0.015625,
+      "randomization_method": "exact",
+      "randomization_samples": 64,
+      "stability": {
+        "reading": "separated",
+        "p_positive": 1.0,
+        "looser_reading": "separated",
+        "tighter_reading": "insufficient_evidence",
+        "borderline": true,
+        "side": "above",
+        "discordant": 6,
+        "pairs": 6,
+        "randomization_p": 0.015625,
+        "randomization_method": "exact",
+        "randomization_samples": 64
+      }
+    },
+    "single_span_recall": {
+      "delta": {
+        "mean": 0.0,
+        "lo": 0.0,
+        "hi": 0.0
+      },
+      "wins": 0,
+      "losses": 0,
+      "ties": 1,
+      "sign_test_p": 1.0,
+      "randomization_p": 1.0,
+      "randomization_method": "exact",
+      "randomization_samples": 1,
+      "stability": {
+        "reading": "flat",
+        "p_positive": 0.0,
+        "looser_reading": "flat",
+        "tighter_reading": "flat",
+        "borderline": false,
+        "side": null,
+        "discordant": 0,
+        "pairs": 1,
+        "randomization_p": 1.0,
+        "randomization_method": "exact",
+        "randomization_samples": 1
+      }
+    },
+    "recommendation_gate": true
+  },
+  "decision": "recommend",
+  "reason": "w5/e0 clears the tuning and final gates: tuning multi-span coverage +0.500 [+0.500, +0.500], single-span recall +0.000 [+0.000, +0.000]; final multi-span coverage +0.500 [+0.500, +0.500], single-span recall +0.000 [+0.000, +0.000]"
+}

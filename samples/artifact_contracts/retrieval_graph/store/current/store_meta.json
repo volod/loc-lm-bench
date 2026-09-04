@@ -1,0 +1,54 @@
+{
+  "schema_id": "llb.rag-store-meta",
+  "schema_version": "2.0.0",
+  "mode": "hybrid",
+  "strategy": "recursive",
+  "size": 800,
+  "overlap": 120,
+  "child_size": 400,
+  "embedding_model": "intfloat/multilingual-e5-base",
+  "embedder_fingerprint": "intfloat/multilingual-e5-base",
+  "n_indexed": 2,
+  "n_parents": 1,
+  "dim": 4,
+  "backend": "faiss",
+  "page_annotation_coverage": 1.0,
+  "lexical": {
+    "lemmatize": false,
+    "n_terms": 14
+  },
+  "corpus_fingerprint": "sha256:2c1f0b",
+  "corpus_manifest": "corpus_manifest.json",
+  "governance_fields": [
+    "language",
+    "version",
+    "acl_label"
+  ],
+  "doc_fingerprints": {
+    "poryadok.md": "9f1c2d"
+  },
+  "collapse_duplicates": true,
+  "duplicate_tier": "exact",
+  "index_members": [
+    {
+      "member_id": "vector-index",
+      "path": "index.faiss",
+      "owner": "faiss",
+      "format": "faiss-index",
+      "format_version": "1.9.0",
+      "description": "FAISS inner-product index over the store's normalized embeddings.",
+      "digest": "sha256:0bd7190e1012800e529683ffd1d7a436211cb57aff6bc8acb98595babaf625b0",
+      "n_bytes": 24
+    },
+    {
+      "member_id": "lexical-index",
+      "path": "lexical_index.json",
+      "owner": "llb.rag.vector_store.lexical",
+      "format": "bm25-postings",
+      "format_version": "bm25-uk-v2",
+      "description": "BM25 postings over this build's tokenizer output; a different tokenizer version would not match the queries.",
+      "digest": "sha256:65bba7b8edaafb49f9b3a5cfe4f42ea6bb727dcc7cd99723010bb1736e5f5f40",
+      "n_bytes": 84
+    }
+  ]
+}

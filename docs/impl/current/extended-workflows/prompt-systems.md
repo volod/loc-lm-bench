@@ -21,6 +21,10 @@ Important modules:
 - `manifest.py`: corpus, mapping, template digests, and stable prompt-system ids;
 - `selection.py`: resolves a selected package for `run-eval`.
 
+Each of the package's five members is a registered contract, so a package can be validated whole
+before `run-eval` reads it and a package prepared before the registry existed still opens. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 ```bash
 llb prompt-system-prepare --corpus-root <dir> --out-dir <review-dir>
 llb prompt-system-review --run-dir <review-dir> --action summary

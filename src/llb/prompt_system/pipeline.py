@@ -8,10 +8,16 @@ digests + tokenizer + context budget). The artifacts are the operator's review s
 provenance the benchmark records per run.
 """
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+from llb.artifacts.retrieval_graph.prompt_systems import write_member, write_prompt_system_manifest
+from llb.core.contracts.retrieval_graph.prompt_system import (
+    ANTHOLOGY_SCHEMA_ID,
+    DOC_METADATA_SCHEMA_ID,
+    MAPPING_SCHEMA_ID,
+)
 
 from llb.bench.common import new_run_timestamp
 from llb.core.paths import resolve_data_dir
@@ -28,6 +34,13 @@ from llb.prompt_system.manifest import (
     mapping_digest,
 )
 from llb.prompt_system.knowledge_tree_render import DEFAULT_TREE_BUDGETS, DEFAULT_TREE_DEPTHS
+from llb.prompt_system.layout import (  # re-exported: every package importer names them here
+    ANTHOLOGY_FILE,
+    CANDIDATES_FILE,
+    MANIFEST_FILE,
+    MAPPING_FILE,
+    METADATA_FILE,
+)
 from llb.prompt_system.knowledge_tree_source import load_knowledge_tree_source
 from llb.prompt_system.review import PromptCandidate, candidate_to_dict, save_candidates
 from llb.prompt_system.template import GRAPH_STYLES, TemplateFields
@@ -40,11 +53,6 @@ from llb.prompt_system.tuning import (
 _LOG = logging.getLogger(__name__)
 
 METHOD = "prompt-system"
-ANTHOLOGY_FILE = "anthology.json"
-METADATA_FILE = "doc_metadata.json"
-MAPPING_FILE = "graph_rag_mapping.json"
-CANDIDATES_FILE = "candidates.json"
-MANIFEST_FILE = "manifest.json"
 
 DEFAULT_QUESTION_TOKENS = 64
 DEFAULT_CHUNK_TOKENS = 1024
@@ -150,9 +158,9 @@ def _write_run(
     tokenizer_name: str,
 ) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(run_dir / ANTHOLOGY_FILE, corpus.anthology)
-    _write_json(run_dir / METADATA_FILE, corpus.metadata)
-    _write_json(run_dir / MAPPING_FILE, corpus.graph_rag_mapping)
+    write_member(run_dir / ANTHOLOGY_FILE, ANTHOLOGY_SCHEMA_ID, corpus.anthology)
+    write_member(run_dir / METADATA_FILE, DOC_METADATA_SCHEMA_ID, corpus.metadata)
+    write_member(run_dir / MAPPING_FILE, MAPPING_SCHEMA_ID, corpus.graph_rag_mapping)
     save_candidates(candidates, run_dir / CANDIDATES_FILE)
     manifest = {
         "method": METHOD,
@@ -179,7 +187,7 @@ def _write_run(
             for c in candidates
         ],
     }
-    _write_json(run_dir / MANIFEST_FILE, manifest)
+    write_prompt_system_manifest(run_dir / MANIFEST_FILE, manifest)
 
 
 def _knowledge_tree_source_manifest(candidates: list[PromptCandidate]) -> dict[str, object] | None:
@@ -194,12 +202,13 @@ def _knowledge_tree_source_manifest(candidates: list[PromptCandidate]) -> dict[s
     }
 
 
-def _write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 # Re-export so the CLI persists reviewed candidates with the same serializer.
 __all__ = [
+    "ANTHOLOGY_FILE",
+    "CANDIDATES_FILE",
+    "MANIFEST_FILE",
+    "MAPPING_FILE",
+    "METADATA_FILE",
     "METHOD",
     "PromptSystemRun",
     "prepare_prompt_system",

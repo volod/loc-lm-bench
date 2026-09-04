@@ -11,7 +11,7 @@ import yaml
 from llb.artifacts.constants import ODCS_SCHEMA_RELATIVE_PATH
 from llb.artifacts.default_registry import DEFAULT_REGISTRY
 from llb.artifacts.definitions import ContractDefinition
-from llb.artifacts.errors import DatasetReadError
+from llb.artifacts.errors import DatasetReadError, InvalidSourceRecordError
 from llb.artifacts.generation import EXPORT_ROOT, check_exports, generated_exports, write_exports
 from llb.artifacts.io import read_bound_member
 from llb.core.contracts.artifact_catalog import ArtifactCatalog
@@ -56,11 +56,42 @@ def _member(path: Path, artifact_format: str) -> DatasetMember:
 
 
 def test_committed_dataset_manifest_binds_and_reads_both_versions() -> None:
+    """The committed manifest is at version 1: it reads through the registry, then binds."""
     raw = json.loads((FIXTURES / "dataset-manifest.json").read_text(encoding="utf-8"))
-    manifest = DatasetManifest.model_validate(raw, strict=True)
+    manifest = DEFAULT_REGISTRY.read_current(raw, source="dataset-manifest.json")
+    assert isinstance(manifest, DatasetManifest)
     read = [read_bound_member(FIXTURES, member, DEFAULT_REGISTRY) for member in manifest.members]
 
     assert [records[0].schema_version for records in read] == ["2.0.0", "2.0.0"]
+
+
+def test_version_one_manifest_binding_an_opaque_member_cannot_reach_the_current_version() -> None:
+    """The one thing version 1 could not say: whose format an opaque member is written in."""
+    raw = {
+        "schema_id": "llb.dataset-manifest",
+        "schema_version": "1.0.0",
+        "dataset_id": "legacy-store",
+        "description": "A version 1 manifest that bound an index it could not attribute.",
+        "owner": "loc-lm-bench maintainers",
+        "members": [
+            {
+                "member_id": "vector-index",
+                "path": "index.faiss",
+                "format": "opaque",
+                "media_type": "application/octet-stream",
+                "granularity": "opaque",
+                "digest": f"sha256:{'0' * 64}",
+            }
+        ],
+        "quality_checks": [
+            {"check_id": "member-digest", "kind": "structural", "description": "bytes match"}
+        ],
+    }
+
+    with pytest.raises(InvalidSourceRecordError) as excinfo:
+        DEFAULT_REGISTRY.read_current(raw, source="dataset-manifest.json")
+
+    assert "opaque_binding" in str(excinfo.value)
 
 
 def test_json_jsonl_yaml_and_csv_bindings_read_through_registry(tmp_path: Path) -> None:

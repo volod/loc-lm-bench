@@ -117,9 +117,24 @@ def test_flat_store_applies_chunk_filter_and_renumbers_ranks():
 
 def test_load_refuses_hybrid_store_without_lexical_file(tmp_path):
     (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
-    (tmp_path / META_FILE).write_text(json.dumps({"mode": MODE_HYBRID}), encoding="utf-8")
+    (tmp_path / META_FILE).write_text(json.dumps(_hybrid_meta()), encoding="utf-8")
     with pytest.raises(SystemExit, match="missing its lexical index"):
         RagStore.load(tmp_path)
+
+
+def _hybrid_meta() -> dict[str, object]:
+    """The smallest store metadata the `llb.rag-store-meta` contract accepts."""
+    return {
+        "mode": MODE_HYBRID,
+        "strategy": "recursive",
+        "size": 800,
+        "overlap": 120,
+        "child_size": 400,
+        "embedding_model": "fake",
+        "n_indexed": 0,
+        "n_parents": 0,
+        "dim": 4,
+    }
 
 
 def test_run_eval_refuses_hybrid_config_over_dense_store(monkeypatch, tmp_path):

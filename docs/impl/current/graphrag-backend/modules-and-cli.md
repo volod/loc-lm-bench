@@ -11,6 +11,11 @@ keeps the graph runtime local without introducing a separate graph database serv
 
 Community ids are computed offline and stored. Query time only needs DuckDB table queries.
 
+The persisted node rows, edge rows, metadata, and community summaries are registered contracts
+(`llb.graph-node`, `llb.graph-edge`, `llb.graph-meta`, `llb.graph-community-summaries`), validated
+on save and resolved on load; a generation written before the registry existed still opens. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 ## Modules
 
 `src/llb/graph/model.py`

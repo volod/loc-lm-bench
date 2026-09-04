@@ -110,7 +110,7 @@ def _candidate() -> PromptCandidate:
         fields=TemplateFields(),
         system_prompt="System",
         additional_prompt="Additional",
-        dropped_context={"sections": []},
+        dropped_context={"budget_tokens": 2048, "used_tokens": 12, "sections": []},
         used_tokens=12,
     )
 

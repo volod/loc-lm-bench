@@ -16,13 +16,13 @@ The refreshed store is published as a new immutable generation under
 store is never touched, so deleting the new generation is the rollback.
 """
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
+from llb.artifacts.retrieval_graph.stores import readable_store_meta
 from llb.core.contracts.rag import RagStoreMeta
 from llb.core.store_generations import (
     generation_timestamp,
@@ -157,7 +157,7 @@ def refresh_vector_store(
         raise SystemExit(
             f"[refresh] no RAG store at {base_dir}; build one first with `llb build-index`"
         )
-    meta = cast(RagStoreMeta, json.loads(meta_path.read_text(encoding="utf-8")))
+    meta = cast(RagStoreMeta, readable_store_meta(meta_path))
     current = corpus_doc_fingerprints(corpus_root)
     if not current:
         raise SystemExit(f"[refresh] no documents found in corpus at {corpus_root}")

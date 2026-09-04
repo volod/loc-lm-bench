@@ -9,7 +9,19 @@ from llb.core.contracts.artifacts import (
     CompatibilityProbeV1,
     CompatibilityProbeV2,
     DatasetManifest,
+    DatasetManifestV1,
 )
+from llb.artifacts.retrieval_graph.families import retrieval_graph_definitions
+
+
+def _dataset_manifest_v1_to_v1_1(record: dict[str, object]) -> dict[str, object]:
+    """Restate a version 1 manifest at 1.1, where an opaque member names whose format it is.
+
+    Every structured member carries forward untouched. A version 1 manifest that DID bind an
+    opaque member has no owner to carry, so the restated record fails 1.1 validation and the read
+    refuses with that reason rather than inventing one.
+    """
+    return {**record, "schema_version": "1.1.0"}
 
 
 def _probe_v1_to_v2(record: dict[str, object]) -> dict[str, object]:
@@ -56,10 +68,20 @@ def build_default_registry() -> ContractRegistry:
             ContractDefinition(
                 schema_id="llb.dataset-manifest",
                 description="Physical dataset members bound to logical record contracts.",
-                current_version="1.0.0",
-                models={"1.0.0": DatasetManifest},
+                current_version="1.1.0",
+                models={"1.0.0": DatasetManifestV1, "1.1.0": DatasetManifest},
                 bindings=DOCUMENT_BINDINGS,
-                deprecation_policy="Manifest version 1 remains readable for this release line.",
+                deprecation_policy=(
+                    "Manifest 1.0 is read-and-migrate: it predates the opaque member binding."
+                ),
+                migrations=(
+                    MigrationStep(
+                        from_version="1.0.0",
+                        to_version="1.1.0",
+                        description="Carry every member forward; an opaque one must now name its owner.",
+                        transform=_dataset_manifest_v1_to_v1_1,
+                    ),
+                ),
                 extension_point="extensions: scalar values only",
             ),
             ContractDefinition(
@@ -80,6 +102,7 @@ def build_default_registry() -> ContractRegistry:
                 extension_point="extensions: scalar values only",
             ),
             *data_prep_definitions(),
+            *retrieval_graph_definitions(),
         )
     )
 

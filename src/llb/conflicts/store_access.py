@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from llb.artifacts.retrieval_graph.stores import readable_store_meta
 from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.contracts.rag import ChunkRecord
 from llb.core.store_generations import resolve_store_dir
@@ -51,7 +52,7 @@ def load_store_view(index_dir: Path | str) -> StoreView:
             f"[conflicts] no store at {resolved}: run `make build-index` first "
             "(the semantic and claim tiers need chunk vectors)."
         )
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = readable_store_meta(meta_path)
     chunks = _read_jsonl(resolved / CHUNKS_FILE)
     index = load_vector_index(str(meta.get("backend", RAG_BACKEND_FAISS)), resolved)
     vectors = VectorSet.from_any(index.vectors())  # type: ignore[attr-defined]
@@ -83,12 +84,20 @@ def store_doc_fingerprints_at(index_dir: Path | str) -> dict[str, str] | None:
     Unlike ``store_doc_fingerprints``, this does not select the newest live generation below a
     base directory. A recorded bundle location already names the exact resolved generation that
     the audit read, so silently advancing it would compare against a store the run never used.
+
+    This asks the metadata for ONE field and acts on nothing else, so it deliberately does not run
+    the store contract gate (`llb.artifacts.retrieval_graph.stores.refuse_unreadable_store`): the
+    question is whether an archived store is still the one a bundle read, and a store this build
+    could not query still answers it. The gate belongs on the paths that go on to retrieve.
     """
     meta_path = Path(index_dir) / META_FILE
     if not meta_path.is_file():
         return None
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    recorded = meta.get("doc_fingerprints")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    recorded = meta.get("doc_fingerprints") if isinstance(meta, dict) else None
     if not isinstance(recorded, dict):
         return {}
     return {str(key): str(value) for key, value in recorded.items()}

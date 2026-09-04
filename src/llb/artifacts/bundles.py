@@ -141,7 +141,7 @@ def _manifest(
         raise FileNotFoundError(f"{root}: no registered data-prep member is present")
     return DatasetManifest(
         schema_id="llb.dataset-manifest",
-        schema_version="1.0.0",
+        schema_version="1.1.0",
         dataset_id=dataset_id,
         description=description,
         owner="loc-lm-bench maintainers",
@@ -162,12 +162,12 @@ def _member(root: Path, spec: MemberSpec, registry: ContractRegistry) -> Dataset
         digest=f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}",
         record_contract=ContractReference(
             schema_id=spec.schema_id,
-            schema_version=_bound_version(path, definition),
+            schema_version=bound_version(path, definition),
         ),
     )
 
 
-def _bound_version(path: Path, definition: ContractDefinition) -> str:
+def bound_version(path: Path, definition: ContractDefinition) -> str:
     """The version a member is bound at: the one it declares, or the family's legacy version.
 
     A member written by this build carries its own identity and is bound at exactly that version;

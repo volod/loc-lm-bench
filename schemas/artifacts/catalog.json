@@ -215,18 +215,27 @@
           "media_type": "application/yaml"
         }
       ],
-      "compatibility": [],
-      "current_version": "1.0.0",
-      "deprecation_policy": "Manifest version 1 remains readable for this release line.",
+      "compatibility": [
+        {
+          "description": "Carry every member forward; an opaque one must now name its owner.",
+          "from_version": "1.0.0",
+          "kind": "migration",
+          "to_version": "1.1.0"
+        }
+      ],
+      "current_version": "1.1.0",
+      "deprecation_policy": "Manifest 1.0 is read-and-migrate: it predates the opaque member binding.",
       "description": "Physical dataset members bound to logical record contracts.",
       "extension_point": "extensions: scalar values only",
       "legacy_read_version": null,
       "schema_id": "llb.dataset-manifest",
       "schema_paths": {
-        "1.0.0": "llb.dataset-manifest/1.0.0.schema.json"
+        "1.0.0": "llb.dataset-manifest/1.0.0.schema.json",
+        "1.1.0": "llb.dataset-manifest/1.1.0.schema.json"
       },
       "supported_read_versions": [
-        "1.0.0"
+        "1.0.0",
+        "1.1.0"
       ]
     },
     {
@@ -268,6 +277,28 @@
       "schema_id": "llb.external-draft-provenance",
       "schema_paths": {
         "1.0.0": "llb.external-draft-provenance/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Held-out calibration of the fusion router: every policy and the frozen one.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.fusion-routing-calibration",
+      "schema_paths": {
+        "1.0.0": "llb.fusion-routing-calibration/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"
@@ -324,6 +355,94 @@
       "supported_read_versions": [
         "1.0.0",
         "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Per-community narrative summaries, tagged diagnostic and never span-scored.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.graph-community-summaries",
+      "schema_paths": {
+        "1.0.0": "llb.graph-community-summaries/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One subject-relation-object fact and the span that evidences it.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.graph-edge",
+      "schema_paths": {
+        "1.0.0": "llb.graph-edge/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The shape of one graph generation and the corpus it was built from.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.graph-meta",
+      "schema_paths": {
+        "1.0.0": "llb.graph-meta/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One ontology-typed entity with its exact-grounded mention spans.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.graph-node",
+      "schema_paths": {
+        "1.0.0": "llb.graph-node/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
       ]
     },
     {
@@ -493,6 +612,191 @@
       "schema_id": "llb.pdf-corpus-manifest",
       "schema_paths": {
         "1.0.0": "llb.pdf-corpus-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The passages a candidate prompt may attach, in selection order.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.prompt-system-anthology",
+      "schema_paths": {
+        "1.0.0": "llb.prompt-system-anthology/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Every generated prompt candidate and the review status it carries.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.prompt-system-candidates",
+      "schema_paths": {
+        "1.0.0": "llb.prompt-system-candidates/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Per-document summary the prompt template surfaces, in corpus order.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.prompt-system-doc-metadata",
+      "schema_paths": {
+        "1.0.0": "llb.prompt-system-doc-metadata/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The digests and budget that make a prompt-system run addressable.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.prompt-system-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.prompt-system-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Each salient term and the anthology passage ids that ground it.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.prompt-system-mapping",
+      "schema_paths": {
+        "1.0.0": "llb.prompt-system-mapping/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One indexed unit or one parent: the offset-bearing record a lane returns.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.rag-chunk",
+      "schema_paths": {
+        "1.0.0": "llb.rag-chunk/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [
+        {
+          "description": "State the duplicate-collapse knobs a reader defaulted and declare no index members.",
+          "from_version": "1.0.0",
+          "kind": "migration",
+          "to_version": "2.0.0"
+        }
+      ],
+      "current_version": "2.0.0",
+      "deprecation_policy": "Version 1 is read-and-migrate: it predates the recorded opaque index members.",
+      "description": "What a vector store was built from, by which encoder, over which corpus.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.rag-store-meta",
+      "schema_paths": {
+        "1.0.0": "llb.rag-store-meta/1.0.0.schema.json",
+        "2.0.0": "llb.rag-store-meta/2.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Every compared retrieval lane, its paired reading, and the verdict.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.retrieval-comparison",
+      "schema_paths": {
+        "1.0.0": "llb.retrieval-comparison/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"

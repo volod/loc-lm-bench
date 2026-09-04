@@ -105,11 +105,11 @@ schema:
   name: llb.dataset-manifest
   logicalType: object
   physicalType: file
-  physicalName: llb.dataset-manifest/1.0.0.schema.json
+  physicalName: llb.dataset-manifest/1.1.0.schema.json
   description: Physical dataset members bound to logical record contracts.
   customProperties:
   - property: schemaVersion
-    value: 1.0.0
+    value: 1.1.0
   - property: physicalFormats
     value:
     - json
@@ -150,6 +150,23 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-fusion-routing-calibration
+  name: llb.fusion-routing-calibration
+  logicalType: object
+  physicalType: file
+  physicalName: llb.fusion-routing-calibration/1.0.0.schema.json
+  description: 'Held-out calibration of the fusion router: every policy and the frozen
+    one.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-gold-chain
   name: llb.gold-chain
   logicalType: object
@@ -175,6 +192,70 @@ schema:
   customProperties:
   - property: schemaVersion
     value: 2.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-graph-community-summaries
+  name: llb.graph-community-summaries
+  logicalType: object
+  physicalType: file
+  physicalName: llb.graph-community-summaries/1.0.0.schema.json
+  description: Per-community narrative summaries, tagged diagnostic and never span-scored.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-graph-edge
+  name: llb.graph-edge
+  logicalType: object
+  physicalType: file
+  physicalName: llb.graph-edge/1.0.0.schema.json
+  description: One subject-relation-object fact and the span that evidences it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-graph-meta
+  name: llb.graph-meta
+  logicalType: object
+  physicalType: file
+  physicalName: llb.graph-meta/1.0.0.schema.json
+  description: The shape of one graph generation and the corpus it was built from.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-graph-node
+  name: llb.graph-node
+  logicalType: object
+  physicalType: file
+  physicalName: llb.graph-node/1.0.0.schema.json
+  description: One ontology-typed entity with its exact-grounded mention spans.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
   - property: physicalFormats
     value:
     - jsonl
@@ -284,6 +365,134 @@ schema:
   physicalType: file
   physicalName: llb.pdf-corpus-manifest/1.0.0.schema.json
   description: PDF conversion manifest and its quality report.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-prompt-system-anthology
+  name: llb.prompt-system-anthology
+  logicalType: object
+  physicalType: file
+  physicalName: llb.prompt-system-anthology/1.0.0.schema.json
+  description: The passages a candidate prompt may attach, in selection order.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-prompt-system-candidates
+  name: llb.prompt-system-candidates
+  logicalType: object
+  physicalType: file
+  physicalName: llb.prompt-system-candidates/1.0.0.schema.json
+  description: Every generated prompt candidate and the review status it carries.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-prompt-system-doc-metadata
+  name: llb.prompt-system-doc-metadata
+  logicalType: object
+  physicalType: file
+  physicalName: llb.prompt-system-doc-metadata/1.0.0.schema.json
+  description: Per-document summary the prompt template surfaces, in corpus order.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-prompt-system-manifest
+  name: llb.prompt-system-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.prompt-system-manifest/1.0.0.schema.json
+  description: The digests and budget that make a prompt-system run addressable.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-prompt-system-mapping
+  name: llb.prompt-system-mapping
+  logicalType: object
+  physicalType: file
+  physicalName: llb.prompt-system-mapping/1.0.0.schema.json
+  description: Each salient term and the anthology passage ids that ground it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-rag-chunk
+  name: llb.rag-chunk
+  logicalType: object
+  physicalType: file
+  physicalName: llb.rag-chunk/1.0.0.schema.json
+  description: 'One indexed unit or one parent: the offset-bearing record a lane returns.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - jsonl
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-rag-store-meta
+  name: llb.rag-store-meta
+  logicalType: object
+  physicalType: file
+  physicalName: llb.rag-store-meta/2.0.0.schema.json
+  description: What a vector store was built from, by which encoder, over which corpus.
+  customProperties:
+  - property: schemaVersion
+    value: 2.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-retrieval-comparison
+  name: llb.retrieval-comparison
+  logicalType: object
+  physicalType: file
+  physicalName: llb.retrieval-comparison/1.0.0.schema.json
+  description: Every compared retrieval lane, its paired reading, and the verdict.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

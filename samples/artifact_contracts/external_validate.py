@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = PROJECT_ROOT / "schemas" / "artifacts"
 FIXTURE_ROOT = PROJECT_ROOT / "samples" / "artifact_contracts"
 DATA_PREP_ROOT = FIXTURE_ROOT / "data_prep"
+RETRIEVAL_GRAPH_ROOT = FIXTURE_ROOT / "retrieval_graph"
 
 
 def validate(instance_path: Path, schema_path: Path) -> None:
@@ -50,6 +51,23 @@ def validate_pre_contract(instance_path: Path, schema_id: str) -> None:
     first = next((line for line in text.splitlines() if line.strip()), text)
     record = json.loads(first if instance_path.suffix == ".jsonl" else text)
     stamped = {"schema_id": schema_id, "schema_version": version, **record}
+    _validator(SCHEMA_ROOT / entry["schema_paths"][version]).validate(stamped)
+
+
+def validate_bound_row(instance_path: Path, schema_id: str) -> None:
+    """Validate a row member whose identity comes from its dataset binding, not from the row.
+
+    A built store holds hundreds of thousands of chunk rows and a graph holds tens of thousands of
+    node rows; none of them repeats an identity per line. The catalog's `current_version` for the
+    family is what the store's manifest binds them at, so that is what an external reader stamps.
+    """
+    catalog = json.loads((SCHEMA_ROOT / "catalog.json").read_text(encoding="utf-8"))
+    entry = next(item for item in catalog["contracts"] if item["schema_id"] == schema_id)
+    version = entry["current_version"]
+    first = next(
+        line for line in instance_path.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+    stamped = {"schema_id": schema_id, "schema_version": version, **json.loads(first)}
     _validator(SCHEMA_ROOT / entry["schema_paths"][version]).validate(stamped)
 
 
@@ -101,6 +119,55 @@ def _validate_data_prep() -> None:
     )
 
 
+def _validate_retrieval_and_graph() -> None:
+    """The store, graph, prompt-system, and comparison surfaces, without importing llb."""
+    store = RETRIEVAL_GRAPH_ROOT / "store"
+    validate(
+        store / "current" / "store_meta.json",
+        SCHEMA_ROOT / "llb.rag-store-meta" / "2.0.0.schema.json",
+    )
+    validate_pre_contract(store / "legacy" / "store_meta.json", "llb.rag-store-meta")
+    validate_bound_row(store / "current" / "chunks.jsonl", "llb.rag-chunk")
+    validate_bound_row(store / "current" / "parents.jsonl", "llb.rag-chunk")
+    validate_pre_contract(store / "legacy" / "chunks.jsonl", "llb.rag-chunk")
+    refuse(
+        store / "unsupported-future" / "store_meta.json",
+        SCHEMA_ROOT / "llb.rag-store-meta" / "2.0.0.schema.json",
+    )
+
+    graph = RETRIEVAL_GRAPH_ROOT / "graph" / "current"
+    validate(graph / "graph_meta.json", SCHEMA_ROOT / "llb.graph-meta" / "1.0.0.schema.json")
+    validate(
+        graph / "community_summaries.json",
+        SCHEMA_ROOT / "llb.graph-community-summaries" / "1.0.0.schema.json",
+    )
+    validate_bound_row(graph / "nodes.jsonl", "llb.graph-node")
+    validate_bound_row(graph / "edges.jsonl", "llb.graph-edge")
+    validate_pre_contract(
+        RETRIEVAL_GRAPH_ROOT / "graph" / "legacy" / "nodes.jsonl", "llb.graph-node"
+    )
+
+    package = RETRIEVAL_GRAPH_ROOT / "prompt_system" / "current"
+    for name, schema_id in (
+        ("manifest.json", "llb.prompt-system-manifest"),
+        ("anthology.json", "llb.prompt-system-anthology"),
+        ("doc_metadata.json", "llb.prompt-system-doc-metadata"),
+        ("graph_rag_mapping.json", "llb.prompt-system-mapping"),
+        ("candidates.json", "llb.prompt-system-candidates"),
+    ):
+        validate(package / name, SCHEMA_ROOT / schema_id / "1.0.0.schema.json")
+
+    sidecars = RETRIEVAL_GRAPH_ROOT / "sidecars"
+    validate(
+        sidecars / "retrieval-comparison.json",
+        SCHEMA_ROOT / "llb.retrieval-comparison" / "1.0.0.schema.json",
+    )
+    validate(
+        sidecars / "routing-calibration.json",
+        SCHEMA_ROOT / "llb.fusion-routing-calibration" / "1.0.0.schema.json",
+    )
+
+
 def main() -> None:
     validate(
         FIXTURE_ROOT / "current.json",
@@ -123,6 +190,7 @@ def main() -> None:
         SCHEMA_ROOT / "vendor" / "odcs-json-schema-v3.1.0.json",
     )
     _validate_data_prep()
+    _validate_retrieval_and_graph()
     refuse(
         FIXTURE_ROOT / "missing-identity.json",
         SCHEMA_ROOT / "llb.artifact-contract.compatibility-probe" / "2.0.0.schema.json",

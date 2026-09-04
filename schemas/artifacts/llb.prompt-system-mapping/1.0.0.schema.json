@@ -1,0 +1,34 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.prompt-system-mapping:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`graph_rag_mapping.json`: each salient term and the passage ids that ground it.",
+  "properties": {
+    "mapping": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Mapping",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.prompt-system-mapping",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "GraphRagMappingDocument",
+  "type": "object"
+}

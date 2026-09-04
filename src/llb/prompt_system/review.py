@@ -9,9 +9,10 @@ Pure + deterministic -- the rendering it calls is the same the benchmark uses.
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
-import json
+from typing import Any, cast
 
+from llb.artifacts.retrieval_graph.prompt_systems import read_member, write_member
+from llb.core.contracts.retrieval_graph.prompt_system import CANDIDATES_SCHEMA_ID
 from llb.prompt_system.budget import ContextBudget, DroppedContextReport, Tokenizer
 from llb.prompt_system.corpus import CorpusPackage
 from llb.prompt_system.manifest import prompt_system_id
@@ -118,7 +119,9 @@ def revise(
 
 
 def candidate_to_dict(candidate: PromptCandidate) -> dict[str, object]:
+    """The candidate as its contract states it: an unrendered knowledge tree is absent, not empty."""
     data = asdict(candidate)
+    data["knowledge_tree"] = candidate.knowledge_tree or None
     return data
 
 
@@ -138,14 +141,12 @@ def candidate_from_dict(data: dict[str, Any]) -> PromptCandidate:
 
 def save_candidates(candidates: list[PromptCandidate], path: Path | str) -> None:
     payload = [candidate_to_dict(c) for c in candidates]
-    Path(path).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    write_member(Path(path), CANDIDATES_SCHEMA_ID, payload)
 
 
 def load_candidates(path: Path | str) -> list[PromptCandidate]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    return [candidate_from_dict(item) for item in raw]
+    rows = read_member(Path(path), CANDIDATES_SCHEMA_ID)
+    return [candidate_from_dict(item) for item in cast(list[dict[str, Any]], rows)]
 
 
 @dataclass(slots=True)

@@ -15,6 +15,20 @@ from llb.artifacts.registry import ContractRegistry
 from llb.core.contracts.artifacts import DatasetMember
 
 
+def json_document(path: Path) -> dict[str, object]:
+    """One JSON object record from `path`, refusing anything that is not one.
+
+    Every single-document member reaches its contract through here, so an unreadable file and a
+    file holding an array both refuse with the path rather than surfacing as a type error inside
+    whichever reader touched the value first.
+    """
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DatasetReadError(f"{path}: cannot read record: {exc}") from exc
+    return _as_record(record, path)
+
+
 def read_bound_member(
     dataset_root: Path,
     member: DatasetMember,
