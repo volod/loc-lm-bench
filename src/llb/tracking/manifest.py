@@ -8,6 +8,11 @@ identical across environments and never branches on which optional extras are in
 
 `persist_run` takes an injectable `mirror` callable, so "manifest-before-mirror" ordering
 and "mirror failure does not lose data" are both unit-testable without MLflow.
+
+The bundle is also a CONTRACT (`llb.run-manifest`). A caller says what its score rows answer to
+and hands over already-declared additional artifacts; publication reads every staged member back
+through those declarations before the rename, so a bundle that reaches `$DATA_DIR` is one a board
+or an external consumer can validate without guessing from filenames.
 """
 
 import json
@@ -20,16 +25,17 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from llb.core.contracts.hardware import ContentionReport, TelemetryReport
-from llb.core.contracts.runs import DurabilityStatus, RunEnvironment, RunMetrics, RunPaths
-from llb.core.contracts.common import JsonObject
-from llb.core.contracts.judging import JudgeStatus
-from llb.core.contracts.rag import RetrievalMetrics
+from llb.artifacts.run_bundle.run_artifacts import RunArtifact
+from llb.core.contracts.run_bundle.manifest import RunManifestDocument
+from llb.core.contracts.runs import RunEnvironment, RunPaths
 from llb.core.fsutil import atomic_write_text as _atomic_write_text
 
 _LOG = logging.getLogger(__name__)
+
+# The three files a bundle always publishes itself, which an additional artifact may not shadow.
+CANONICAL_MEMBERS = frozenset({"manifest.json", "scores.jsonl", "retrieval.jsonl"})
 
 
 def _utc_now() -> str:
@@ -44,26 +50,16 @@ def capture_env() -> RunEnvironment:
     }
 
 
-class RunManifest(BaseModel):
-    """Immutable per-run record: config + environment + headline metrics."""
+class RunManifest(RunManifestDocument):
+    """The manifest as a producer builds it: the published contract, minus the busywork.
 
-    run_id: str
-    run_name: str
-    split: str | None = None
+    It adds no field to `llb.run-manifest` and changes no meaning. The two defaults are the ones
+    no producer should have to state -- when the run happened, and what interpreter it happened on
+    -- so every bundle records them the same way rather than each caller remembering to.
+    """
+
     created_at: str = Field(default_factory=_utc_now)
-    config: JsonObject
     env: RunEnvironment = Field(default_factory=capture_env)
-    metrics: RunMetrics | None = None
-    retrieval: RetrievalMetrics | None = None
-    judge: JudgeStatus | None = None
-    telemetry: TelemetryReport | None = None
-    contention: ContentionReport | None = None
-    durability: DurabilityStatus | None = None
-    prompt_system_provenance: JsonObject | None = None
-    # Set only by a context lane that laid whole documents into the prompt: the declared window,
-    # the window the backend was probed as serving, and which of the two bound the skip threshold.
-    context_window: JsonObject | None = None
-    n_cases: int = 0
 
 
 def write_scores(rows: Sequence[Mapping[str, object]], path_no_ext: Path) -> Path:
@@ -87,18 +83,38 @@ def persist_run(
     mirror: Callable[[RunManifest, Path], None] | None = None,
     staging_dir: Path | str | None = None,
     retrieval_rows: Sequence[Mapping[str, object]] | None = None,
-    artifacts: Mapping[str, str] | None = None,
+    artifacts: Sequence[RunArtifact] | None = None,
+    *,
+    score_contract: str | None = None,
+    score_owner: str | None = None,
 ) -> RunPaths:
-    """Atomically publish manifest, scores, and optional artifacts as one directory.
+    """Atomically publish manifest, scores, and declared artifacts as one directory.
 
-    `retrieval_rows` is the additive `retrieval.jsonl` record used by miss analysis. `artifacts`
-    adds named UTF-8 report files to the same staging transaction. The external mirror remains
-    best-effort and starts only after the complete canonical bundle is visible.
+    `score_contract` names the registered row family the rows satisfy, or `score_owner` names the
+    study whose own column set they are; exactly one is required, because a bundle that cannot say
+    what its rows are is a bundle a later reader has to guess about. `retrieval_rows` is the
+    additive `retrieval.jsonl` record used by miss analysis, and `artifacts` are the already-
+    declared additional records. The external mirror remains best-effort and starts only after the
+    complete canonical bundle is visible.
     """
+    from llb.artifacts.run_bundle.manifests import declare_score_rows
+    from llb.artifacts.run_bundle.publication import validate_staged_bundle
+
     out_dir = Path(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     if out_dir.exists():
         raise FileExistsError(f"run artifacts already exist in {out_dir}")
+
+    declared = list(artifacts or ())
+    published = RunManifestDocument.model_validate(
+        {
+            **manifest.model_dump(),
+            "score_rows": declare_score_rows(
+                case_rows, schema_id=score_contract, owner=score_owner
+            ).model_dump(),
+            "artifacts": [artifact.declaration().model_dump() for artifact in declared],
+        }
+    )
 
     staging = (
         Path(staging_dir)
@@ -115,7 +131,7 @@ def persist_run(
             raise FileExistsError(f"staged canonical artifacts already exist in {staging}")
         _atomic_write_text(
             staging_manifest,
-            json.dumps(manifest.model_dump(), ensure_ascii=False, indent=2),
+            json.dumps(published.model_dump(mode="json"), ensure_ascii=False, indent=2),
         )
         staged_scores = write_scores(case_rows, staging / "scores")
         staged_retrieval = (
@@ -123,15 +139,13 @@ def persist_run(
             if retrieval_rows is not None
             else None
         )
-        for name, content in (artifacts or {}).items():
-            artifact_path = staging / name
-            if (
-                Path(name).name != name
-                or name in {"manifest.json", staged_scores.name}
-                or artifact_path.exists()
-            ):
-                raise ValueError(f"invalid additional artifact name: {name!r}")
-            _atomic_write_text(artifact_path, content)
+        for artifact in declared:
+            # A canonical member is not something an additional artifact may replace: the
+            # manifest, the score rows, and the retrieval sidecar are what the bundle IS.
+            if artifact.name in CANONICAL_MEMBERS:
+                raise ValueError(f"additional artifact may not be named {artifact.name!r}")
+            _atomic_write_text(staging / artifact.name, artifact.content)
+        validate_staged_bundle(staging)
         staging.replace(out_dir)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)

@@ -3,6 +3,11 @@
 Part of the [Extended workflows](../extended-workflows.md) area of the
 [current implementation index](../../current.md).
 
+A study's committed design and the analysis it publishes beside a run bundle are both registered
+records (`llb.study-design`, `llb.study-analysis`), validated before publication and written in the
+study's own local form so the bytes a citation resolves against never move; see
+[run, study, and board contracts](../artifact-contracts/run-and-evaluation-contracts.md).
+
 `make bench-agentic-context-compact-crossover-restatement` answers the question the step-aligned
 bound leaves behind: every compact routing number an operator applies was measured under the retired
 trigger bound, which discounted compact's own cost wherever it actually trimmed the folded

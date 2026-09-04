@@ -216,6 +216,7 @@ def persist_summary_trim_adoption(
         },
         case_rows=persisted,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "summary-trim-adoption-design.json": json.dumps(design, indent=2, sort_keys=True)
             + "\n",

@@ -1,0 +1,61 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.summarization-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One summarization case: the coverage it reached and its faithfulness.",
+  "properties": {
+    "answer_preview": {
+      "title": "Answer Preview",
+      "type": "string"
+    },
+    "coverage": {
+      "title": "Coverage",
+      "type": "number"
+    },
+    "faithfulness": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Faithfulness"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "schema_id": {
+      "const": "llb.summarization-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "status",
+    "coverage",
+    "objective_score",
+    "answer_preview"
+  ],
+  "title": "SummarizationCaseRecord",
+  "type": "object"
+}

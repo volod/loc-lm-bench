@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "$id": "urn:llb:artifact-contract:llb.study-design:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What the study fixed before it ran: sample, roster, effect, and adoption gates.",
+  "properties": {
+    "body": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        }
+      ],
+      "title": "Body"
+    },
+    "local_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Local Version"
+    },
+    "schema_id": {
+      "const": "llb.study-design",
+      "default": "llb.study-design",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "study_id": {
+      "minLength": 1,
+      "title": "Study Id",
+      "type": "string"
+    },
+    "study_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Study Kind"
+    }
+  },
+  "required": [
+    "study_id",
+    "body"
+  ],
+  "title": "StudyDesignDocument",
+  "type": "object"
+}

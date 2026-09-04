@@ -1,0 +1,42 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.auto-rag-stage-result:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`stages/<stage>/result.json`: one stage published only after its artifacts are durable.\n\n`result` is the stage's own payload -- an ingest states a corpus, a joint search states a\nscoreboard -- so what the contract binds is the completion protocol the resume depends on:\nwhich stage this is, and that it finished.",
+  "properties": {
+    "result": {
+      "additionalProperties": true,
+      "title": "Result",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.auto-rag-stage-result",
+      "default": "llb.auto-rag-stage-result",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "minLength": 1,
+      "title": "Stage",
+      "type": "string"
+    },
+    "status": {
+      "const": "completed",
+      "default": "completed",
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "stage",
+    "result"
+  ],
+  "title": "AutoRagStageResult",
+  "type": "object"
+}

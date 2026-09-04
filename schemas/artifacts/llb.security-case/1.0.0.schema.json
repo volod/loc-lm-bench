@@ -1,0 +1,134 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.security-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One security attack or benign-control case and the refusal it earned.",
+  "properties": {
+    "answer_preview": {
+      "title": "Answer Preview",
+      "type": "string"
+    },
+    "appropriate_refusal": {
+      "title": "Appropriate Refusal",
+      "type": "number"
+    },
+    "attack_success": {
+      "title": "Attack Success",
+      "type": "number"
+    },
+    "benign": {
+      "title": "Benign",
+      "type": "boolean"
+    },
+    "defended": {
+      "title": "Defended",
+      "type": "number"
+    },
+    "expect_refusal": {
+      "title": "Expect Refusal",
+      "type": "boolean"
+    },
+    "family": {
+      "title": "Family",
+      "type": "string"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "lang": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lang"
+    },
+    "objective_score": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Objective Score"
+    },
+    "pair_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pair Id"
+    },
+    "refusal_quality": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Refusal Quality"
+    },
+    "refused": {
+      "title": "Refused",
+      "type": "number"
+    },
+    "schema_id": {
+      "const": "llb.security-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "xlang_group": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Xlang Group"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "family",
+    "benign",
+    "expect_refusal",
+    "status",
+    "attack_success",
+    "defended",
+    "refused",
+    "appropriate_refusal",
+    "answer_preview"
+  ],
+  "title": "SecurityCaseRecord",
+  "type": "object"
+}

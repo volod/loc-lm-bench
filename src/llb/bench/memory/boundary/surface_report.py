@@ -137,6 +137,7 @@ def persist_surface(
         },
         case_rows=rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "boundary-surface-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "boundary-surface-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",

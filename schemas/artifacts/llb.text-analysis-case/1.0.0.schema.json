@@ -1,0 +1,78 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.text-analysis-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One text-analysis document: the objective label recovery over its subtasks.",
+  "properties": {
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "judged_quality": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Judged Quality"
+    },
+    "long_doc_answer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Long Doc Answer"
+    },
+    "n_labels": {
+      "title": "N Labels",
+      "type": "integer"
+    },
+    "n_objective_subtasks": {
+      "title": "N Objective Subtasks",
+      "type": "integer"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "schema_id": {
+      "const": "llb.text-analysis-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "subtask_f1_json": {
+      "title": "Subtask F1 Json",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "status",
+    "objective_score",
+    "n_objective_subtasks",
+    "n_labels",
+    "subtask_f1_json"
+  ],
+  "title": "TextAnalysisCaseRecord",
+  "type": "object"
+}

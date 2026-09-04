@@ -11,6 +11,7 @@ from llb.finetune.registry.io import load_registry, registry_path
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import dump_goldset, load_goldset
 from tests.llb.finetune.test_finetune import _item, _write_bundle
+from tests.llb.bundle_fixtures import telemetry
 
 
 @pytest.mark.slow
@@ -39,7 +40,7 @@ def test_finetune_campaign_skips_infeasible_and_ranks_tunability(tmp_path: Path)
         )
         manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
         manifest["config"]["model"] = config.model
-        manifest["telemetry"] = {"peak_vram_mb": 1000 + len(eval_calls)}
+        manifest["telemetry"] = telemetry(peak_vram_mb=1000 + len(eval_calls))
         (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return {
             "rows": [],

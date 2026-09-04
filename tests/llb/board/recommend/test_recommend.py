@@ -1,7 +1,5 @@
 """Recommendation summary: host-adaptive picks from final-split run bundles."""
 
-import json
-
 import pytest
 
 from llb.board.recommend.build import (
@@ -15,6 +13,7 @@ from llb.board.recommend.render import (
 )
 from llb.board.runs import RunRecord
 from llb.scoring.leaderboard import ModelResult
+from tests.llb.bundle_fixtures import telemetry, write_manifest
 
 MAMAYLM_V2_27B = "mamaylm-v2-27b"
 MAMAYLM_V2_12B = "mamaylm-v2-12b"
@@ -163,23 +162,18 @@ def test_load_run_summaries_filters_partial_before_dedup(tmp_path):
     def write_bundle(name, model, n, obj):
         d = tmp_path / name
         d.mkdir()
-        (d / "manifest.json").write_text(
-            json.dumps(
-                {
-                    "split": "final",
-                    "n_cases": n,
-                    "config": {"model": model, "backend": "ollama", "top_k": 5},
-                    "metrics": {
-                        "objective_score": obj,
-                        "reliability": 1.0,
-                        "tokens_per_s": 10.0,
-                        "quality_per_watt": 0.1,
-                    },
-                    "telemetry": {"peak_vram_mb": 9000},
-                    "retrieval": {"recall": 0.9, "mrr": 0.8},
-                }
-            ),
-            encoding="utf-8",
+        write_manifest(
+            d,
+            split="final",
+            n_cases=n,
+            config={"model": model, "backend": "ollama", "top_k": 5},
+            metrics={
+                "objective_score": obj,
+                "reliability": 1.0,
+                "tokens_per_s": 10.0,
+                "quality_per_watt": 0.1,
+            },
+            telemetry=telemetry(peak_vram_mb=9000),
         )
 
     write_bundle("smoke", "modelA", 3, 0.99)

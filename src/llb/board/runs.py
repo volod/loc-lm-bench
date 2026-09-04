@@ -12,7 +12,7 @@ from llb.finetune.registry.model import AdapterEntry
 from llb.finetune.registry.staleness import staleness
 from llb.scoring.leaderboard import DEFAULT_WEIGHT_JUDGE, ModelResult, headline_quality
 
-from llb.board.io import mean_or_none, read_case_objectives, read_case_series
+from llb.board.io import admitted_manifest, mean_or_none, read_case_objectives, read_case_series
 
 _LOG = logging.getLogger(__name__)
 
@@ -134,10 +134,12 @@ def load_run_records(
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
+            continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             record = record_from_manifest(manifest, manifest_path.parent, registry=registry)
-        except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        except (OSError, ValueError, TypeError) as exc:
             _LOG.warning("[board] unreadable run bundle %s: %s", manifest_path.parent, exc)
             continue
         if record is not None:

@@ -1,7 +1,7 @@
 ## RAG stores, retrieval evaluation, scored runs, probes, and miss analysis.
 
 .PHONY: build-rag-store build-index build-graph resolve-graph-entities refresh-index validate-retrieval \
-	check-generation \
+	check-generation check-run-bundle \
 	measure-duplicate-residue \
 	compare-retrieval compare-graph-fusion compare-answer-quality compare-embeddings \
 	compare-answer-validation check-answer-gate \
@@ -39,6 +39,10 @@ build-index: ## RAG core: chunk + embed CORPUS into the FAISS store (CONFIG= CHU
 check-generation: ## Validate every registered member of GENERATION (GENERATION_KIND=store|graph|prompt-system)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main check-generation "$(GENERATION)" --kind "$(or $(GENERATION_KIND),store)"
+
+check-run-bundle: ## Validate every declared member of one published run bundle (RUN_BUNDLE=<run-dir>)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.main check-run-bundle "$(RUN_BUNDLE)"
 
 measure-duplicate-residue: ## What repetition a built store still holds after collapse (STORE= or CONFIG=; RESIDUE_THRESHOLDS= RESIDUE_EXAMPLES= RESIDUE_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

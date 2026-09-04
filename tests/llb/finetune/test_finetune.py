@@ -10,6 +10,7 @@ from llb.finetune.guard import validate_adapter_for_eval
 from llb.finetune.adapter_manifest import load_adapter_manifest
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import GoldItem, dump_goldset
+from tests.llb.bundle_fixtures import write_manifest
 
 
 def _item(item_id: str, split: str) -> GoldItem:
@@ -41,22 +42,16 @@ def _write_bundle(
 ) -> Path:
     run = root / name
     run.mkdir(parents=True)
-    (run / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_id": name,
-                "run_name": name,
-                "split": split,
-                "config": {
-                    "model": "base-model",
-                    "backend": "vllm",
-                    "goldset_path": str(root / "goldset.jsonl"),
-                },
-                "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
-                "n_cases": len(items),
-            }
-        ),
-        encoding="utf-8",
+    write_manifest(
+        run,
+        split=split,
+        config={
+            "model": "base-model",
+            "backend": "vllm",
+            "goldset_path": str(root / "goldset.jsonl"),
+        },
+        metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
+        n_cases=len(items),
     )
     _write_jsonl(
         run / "scores.jsonl",

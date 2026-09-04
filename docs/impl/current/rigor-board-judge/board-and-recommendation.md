@@ -2,6 +2,11 @@
 
 Part of the [Evaluation rigor](../rigor-board-judge.md) area of the [current implementation index](../../current.md).
 
+Every run head the board reads is resolved through its registered contract first: a manifest
+naming an unknown family or an unreadable version, and score rows whose stamped identity
+contradicts what the manifest declared, are dropped with their reason rather than ranked. See
+[run, study, and board contracts](../artifact-contracts/run-and-evaluation-contracts.md).
+
 ## Public Screen
 
 `src/llb/screen/public.py` adapts `lm-eval-harness-uk` to a running local endpoint. It keeps

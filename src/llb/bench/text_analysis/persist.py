@@ -9,6 +9,7 @@ from llb.core.contracts.judging import JudgeStatus
 from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.scoring.aggregate import TIER_TEXT_ANALYSIS
 from llb.scoring.judge.model import JudgeOutcome
+from llb.core.contracts.run_bundle.rows import TEXT_ANALYSIS_CASE_SCHEMA_ID
 
 _LOG = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def persist_text_analysis_run(request: TextAnalysisPersistInput) -> RunPaths | N
         config=_config(request),
         metrics=_metrics(request),
         case_rows=request.rows,
+        score_contract=TEXT_ANALYSIS_CASE_SCHEMA_ID,
         judge=_judge_status(request),
         mirror=request.mirror,
     )

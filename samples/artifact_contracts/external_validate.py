@@ -14,6 +14,7 @@ SCHEMA_ROOT = PROJECT_ROOT / "schemas" / "artifacts"
 FIXTURE_ROOT = PROJECT_ROOT / "samples" / "artifact_contracts"
 DATA_PREP_ROOT = FIXTURE_ROOT / "data_prep"
 RETRIEVAL_GRAPH_ROOT = FIXTURE_ROOT / "retrieval_graph"
+RUN_BUNDLE_ROOT = FIXTURE_ROOT / "run_bundles"
 
 
 def validate(instance_path: Path, schema_path: Path) -> None:
@@ -168,6 +169,33 @@ def _validate_retrieval_and_graph() -> None:
     )
 
 
+def _validate_run_bundles() -> None:
+    """The run bundle surface an external consumer validates, without importing llb.
+
+    The manifest is the entry point: a current one carries its identity, a pre-contract one is
+    read at the version the catalog publishes for the family, and one from a future major is
+    refused. The score and retrieval rows are then validated the way the manifest binds them --
+    stamped from the catalog, never from the line -- because a bundle holds one row per case and
+    none of them repeats an identity.
+
+    The study record beside them is deliberately not validated here. Its file is the study's own
+    local form, and the mapping from that form onto `llb.study-design` is this project's, exactly
+    as the conflict bundle's integer version is: an external reader validates what the bundle
+    publishes with an identity, and reads the rest through the declaration in the manifest.
+    """
+    validate(
+        RUN_BUNDLE_ROOT / "current" / "manifest.json",
+        SCHEMA_ROOT / "llb.run-manifest" / "2.0.0.schema.json",
+    )
+    validate_pre_contract(RUN_BUNDLE_ROOT / "legacy" / "manifest.json", "llb.run-manifest")
+    validate_bound_row(RUN_BUNDLE_ROOT / "current" / "scores.jsonl", "llb.case-score")
+    validate_bound_row(RUN_BUNDLE_ROOT / "current" / "retrieval.jsonl", "llb.retrieval-case")
+    refuse(
+        RUN_BUNDLE_ROOT / "unsupported-future" / "manifest.json",
+        SCHEMA_ROOT / "llb.run-manifest" / "2.0.0.schema.json",
+    )
+
+
 def main() -> None:
     validate(
         FIXTURE_ROOT / "current.json",
@@ -191,6 +219,7 @@ def main() -> None:
     )
     _validate_data_prep()
     _validate_retrieval_and_graph()
+    _validate_run_bundles()
     refuse(
         FIXTURE_ROOT / "missing-identity.json",
         SCHEMA_ROOT / "llb.artifact-contract.compatibility-probe" / "2.0.0.schema.json",

@@ -16,6 +16,7 @@ from llb.board.miss_analysis.model import (
 )
 from llb.core.config import RunConfig
 from llb.goldset.schema import GoldItem
+from tests.llb.bundle_fixtures import write_manifest
 
 DOC_A = "doc_a.txt"
 DOC_B = "doc_b.txt"
@@ -74,6 +75,9 @@ def _score_row(item_id: str, status: str, objective: float, hit: float, **extra)
         "status": status,
         "objective_score": objective,
         "token_f1": objective,
+        "token_precision": objective,
+        "token_recall": objective,
+        "ranking_score": objective,
         "exact": 0.0,
         "contains": 0.0,
         "retrieval_hit": hit,
@@ -111,15 +115,15 @@ def _write_bundle(
     config = _bundle_config(tmp_path)
     run_dir = tmp_path / "run-eval" / name
     run_dir.mkdir(parents=True)
-    manifest = {
-        "run_id": RUN_ID,
-        "run_name": config.run_name,
-        "split": "final",
-        "config": config.fingerprint(),
-        "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 10.0},
-        "n_cases": len(rows),
-    }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    write_manifest(
+        run_dir,
+        run_id=RUN_ID,
+        run_name=config.run_name,
+        split="final",
+        config=config.fingerprint(),
+        metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": 10.0},
+        n_cases=len(rows),
+    )
     (run_dir / "scores.jsonl").write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8"
     )

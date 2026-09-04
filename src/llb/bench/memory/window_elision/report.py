@@ -91,6 +91,7 @@ def persist_window_elision_run(
         metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": tokens_per_s},
         case_rows=rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "window-elision-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "window-elision-analysis.json": json.dumps(run.analysis, indent=2, sort_keys=True)

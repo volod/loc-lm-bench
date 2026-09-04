@@ -70,6 +70,7 @@ def persist_feedback_adaptation(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "family-adaptation-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "family-adaptation-analysis.json": (

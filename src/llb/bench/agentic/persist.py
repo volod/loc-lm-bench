@@ -14,6 +14,7 @@ from llb.core.contracts.runs import RunMetrics, RunPaths
 from llb.scoring.aggregate import TIER_AGENTIC
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
+from llb.core.contracts.run_bundle.rows import AGENTIC_CASE_SCHEMA_ID
 
 _LOG = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ def _persist_agentic_run(request: _AgenticPersistInput) -> RunPaths | None:
         config=_agentic_config(request),
         metrics=_agentic_metrics(request.result, request.scored.reliability, request.tokens_per_s),
         case_rows=request.scored.rows,
+        score_contract=AGENTIC_CASE_SCHEMA_ID,
         judge=_agentic_judge_status(request.judge_config, request.quality.outcome),
         mirror=request.mirror,
     )

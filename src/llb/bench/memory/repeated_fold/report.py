@@ -123,6 +123,7 @@ def persist_repeated_fold_run(
         },
         case_rows=rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "repeated-fold-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "repeated-fold-analysis.json": json.dumps(run.analysis, indent=2, sort_keys=True)

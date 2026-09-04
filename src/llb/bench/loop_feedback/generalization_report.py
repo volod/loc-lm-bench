@@ -64,6 +64,7 @@ def persist_feedback_generalization(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "generalization-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "generalization-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",

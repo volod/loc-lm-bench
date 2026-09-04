@@ -86,6 +86,7 @@ def persist_transfer(
         },
         case_rows=matrix,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "transfer-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "transfer-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",

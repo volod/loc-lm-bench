@@ -6,13 +6,12 @@ their own `agentic-context` method root, so they are never mixed into the harnes
 into the category composite, both of which read the `agentic` root.
 """
 
-import json
 import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from llb.bench.context_policy.report import METHOD
-from llb.board.io import read_case_series
+from llb.board.io import admitted_manifest, read_case_series
 from llb.core.contracts.common import JsonObject
 from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import TIER_AGENTIC, rank_board
@@ -78,10 +77,8 @@ def load_agentic_context_records(data_dir: Path | str) -> list[ContextPolicyRunR
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            _LOG.warning("[board] unreadable agentic-context manifest: %s", manifest_path)
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         record = policy_record_from_manifest(manifest, manifest_path.parent)
         if record is None:

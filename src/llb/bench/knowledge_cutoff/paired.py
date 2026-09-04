@@ -144,6 +144,7 @@ def run_bilingual_cutoff(
             metrics=metrics,
             case_rows=rows,
             mirror=mirror,
+            study_id=METHOD,
             artifacts=paired_artifacts(report),
         )
     return BilingualCutoffRun(english, ukrainian, paired, report, paths)

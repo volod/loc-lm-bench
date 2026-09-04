@@ -81,6 +81,7 @@ def persist_replication(
         },
         case_rows=rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "replication-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "replication-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",

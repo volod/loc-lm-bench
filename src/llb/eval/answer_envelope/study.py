@@ -31,6 +31,7 @@ from llb.core.fsutil import atomic_write_text
 from llb.eval import common as eval_common
 from llb.eval.paired_cases import CaseRows, recorded_lane_rows, shared_item_ids
 from llb.scoring.verbosity import mean
+from llb.artifacts.run_bundle.manifests import read_run_manifest
 
 # A bundle with no envelope column cannot answer this study at all -- it measured a different lane.
 REQUIRED_COLUMNS = ("envelope_status", "repaired", "n_claims")
@@ -42,10 +43,7 @@ JSON_NAME = "report.json"
 
 
 def _read_manifest(run_dir: Path) -> dict[str, Any]:
-    payload = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"{run_dir}: manifest.json is not a JSON object")
-    return payload
+    return read_run_manifest(run_dir / "manifest.json").model_dump(mode="json")
 
 
 def _check_envelope_bundle(run_dir: Path, config: Mapping[str, Any], rows: Sequence[Any]) -> None:

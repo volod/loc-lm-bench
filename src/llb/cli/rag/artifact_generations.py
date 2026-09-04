@@ -1,14 +1,11 @@
 """Check a built store, graph, or prompt-system package against its artifact contracts."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
 
 from llb.cli.app import app
-
-if TYPE_CHECKING:
-    from llb.artifacts.bundles import MemberReading
+from llb.cli.artifact_readings import member_line
 
 KIND_STORE = "store"
 KIND_GRAPH = "graph"
@@ -59,7 +56,7 @@ def check_generation(
 
     readings = survey_generation(target, manifest)
     for reading in readings:
-        typer.echo(_line(reading))
+        typer.echo(member_line(reading))
     refused = [reading for reading in readings if reading.refusal]
     typer.echo(
         f"[check-generation] {len(readings) - len(refused)}/{len(readings)} member(s) readable "
@@ -67,19 +64,3 @@ def check_generation(
     )
     if refused:
         raise typer.Exit(code=1)
-
-
-def _line(reading: "MemberReading") -> str:
-    if reading.refusal:
-        return f"  [refused] {reading.member_id} ({reading.path}): {reading.refusal}"
-    if not reading.schema_id:
-        return f"  [ok] {reading.member_id} ({reading.path}): opaque member, digest matches"
-    version = (
-        f"{reading.source_version} -> {reading.current_version}"
-        if reading.needs_upgrade
-        else reading.current_version
-    )
-    return (
-        f"  [ok] {reading.member_id} ({reading.path}): {reading.records} record(s) of "
-        f"{reading.schema_id}@{version}"
-    )

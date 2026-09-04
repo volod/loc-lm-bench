@@ -1,0 +1,540 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.case-score:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One scored RAG evaluation case: its correctness, retrieval, and delivery columns.",
+  "properties": {
+    "answer_all_spans": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Answer All Spans"
+    },
+    "answer_language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Answer Language"
+    },
+    "answer_preview": {
+      "title": "Answer Preview",
+      "type": "string"
+    },
+    "answer_span_coverage": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Answer Span Coverage"
+    },
+    "answer_spans_measured": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Answer Spans Measured"
+    },
+    "citation_coverage": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Citation Coverage"
+    },
+    "citation_validity": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Citation Validity"
+    },
+    "completion_tokens": {
+      "title": "Completion Tokens",
+      "type": "integer"
+    },
+    "contains": {
+      "title": "Contains",
+      "type": "number"
+    },
+    "envelope_abstained": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Envelope Abstained"
+    },
+    "envelope_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Envelope Status"
+    },
+    "exact": {
+      "title": "Exact",
+      "type": "number"
+    },
+    "first_hit_rank": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "First Hit Rank"
+    },
+    "groundedness": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Groundedness"
+    },
+    "hallucinated_citation_rate": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hallucinated Citation Rate"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "judge_score": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Judge Score"
+    },
+    "language_mismatch": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language Mismatch"
+    },
+    "latency_s": {
+      "title": "Latency S",
+      "type": "number"
+    },
+    "n_citations": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Citations"
+    },
+    "n_claims": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Claims"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "prompt_tokens": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Tokens"
+    },
+    "query_corrections": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Corrections"
+    },
+    "query_decomposition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Decomposition"
+    },
+    "query_dense": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Dense"
+    },
+    "query_hypothetical_answer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Hypothetical Answer"
+    },
+    "query_processed": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Processed"
+    },
+    "query_subqueries": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query Subqueries"
+    },
+    "ranking_score": {
+      "title": "Ranking Score",
+      "type": "number"
+    },
+    "reasoning_leak": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Leak"
+    },
+    "reasoning_leak_chars": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Leak Chars"
+    },
+    "reasoning_leak_marker": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Leak Marker"
+    },
+    "repaired": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repaired"
+    },
+    "rerank_latency_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rerank Latency S"
+    },
+    "retrieval_hit": {
+      "title": "Retrieval Hit",
+      "type": "number"
+    },
+    "retrieve_latency_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retrieve Latency S"
+    },
+    "schema_id": {
+      "const": "llb.case-score",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic"
+    },
+    "split": {
+      "title": "Split",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "table_header_chars": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Table Header Chars"
+    },
+    "table_headers_restored": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Table Headers Restored"
+    },
+    "token_f1": {
+      "title": "Token F1",
+      "type": "number"
+    },
+    "token_precision": {
+      "title": "Token Precision",
+      "type": "number"
+    },
+    "token_recall": {
+      "title": "Token Recall",
+      "type": "number"
+    },
+    "tokens_per_s": {
+      "title": "Tokens Per S",
+      "type": "number"
+    },
+    "validation_axioms": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Axioms"
+    },
+    "validation_checked_triples": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Checked Triples"
+    },
+    "validation_classes": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Classes"
+    },
+    "validation_repaired": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Repaired"
+    },
+    "validation_violations": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Validation Violations"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "split",
+    "status",
+    "objective_score",
+    "token_f1",
+    "token_precision",
+    "token_recall",
+    "ranking_score",
+    "exact",
+    "contains",
+    "retrieval_hit",
+    "first_hit_rank",
+    "tokens_per_s",
+    "latency_s",
+    "completion_tokens",
+    "answer_preview"
+  ],
+  "title": "CaseScoreRecord",
+  "type": "object"
+}

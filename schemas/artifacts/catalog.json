@@ -3,6 +3,28 @@
     {
       "bindings": [
         {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One agentic episode: its outcome, loop counters, and context accounting.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.agentic-case",
+      "schema_paths": {
+        "1.0.0": "llb.agentic-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
           "format": "json",
           "granularity": "document",
           "media_type": "application/json"
@@ -85,6 +107,94 @@
       "supported_read_versions": [
         "1.0.0",
         "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One append-only auto-RAG journal line: what happened to a stage, and when.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.auto-rag-journal-event",
+      "schema_paths": {
+        "1.0.0": "llb.auto-rag-journal-event/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "Every score- or artifact-affecting auto-RAG input, pinned at the first stage.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.auto-rag-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.auto-rag-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One auto-RAG stage, published only after all of its artifacts are durable.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.auto-rag-stage-result",
+      "schema_paths": {
+        "1.0.0": "llb.auto-rag-stage-result/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One scored RAG evaluation case: correctness, retrieval, and delivery columns.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.case-score",
+      "schema_paths": {
+        "1.0.0": "llb.case-score/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
       ]
     },
     {
@@ -453,6 +563,28 @@
           "media_type": "application/json"
         }
       ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "A judge stopped on its declared spend or call budget, state intact.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.judge-budget-abort",
+      "schema_paths": {
+        "1.0.0": "llb.judge-budget-abort/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
       "compatibility": [
         {
           "description": "State every tuning knob the specification left to a default.",
@@ -474,6 +606,50 @@
       "supported_read_versions": [
         "1.0.0",
         "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The machine-readable miss summary a tuning recommendation is read from.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.miss-analysis",
+      "schema_paths": {
+        "1.0.0": "llb.miss-analysis/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One classified miss: a pointer a human follows back into the run.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.miss-case",
+      "schema_paths": {
+        "1.0.0": "llb.miss-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
       ]
     },
     {
@@ -752,6 +928,28 @@
     {
       "bindings": [
         {
+          "format": "yaml",
+          "granularity": "document",
+          "media_type": "application/yaml"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The configuration auto-RAG selected, and the stage readings behind it.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.rag-recommendation",
+      "schema_paths": {
+        "1.0.0": "llb.rag-recommendation/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
           "format": "json",
           "granularity": "document",
           "media_type": "application/json"
@@ -783,6 +981,28 @@
     {
       "bindings": [
         {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "What one case's scored context contained, against the gold spans it was scored on.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.retrieval-case",
+      "schema_paths": {
+        "1.0.0": "llb.retrieval-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
           "format": "json",
           "granularity": "document",
           "media_type": "application/json"
@@ -797,6 +1017,235 @@
       "schema_id": "llb.retrieval-comparison",
       "schema_paths": {
         "1.0.0": "llb.retrieval-comparison/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [
+        {
+          "description": "Carry the run head forward and declare that it states no score-row contract and no additional artifacts.",
+          "from_version": "1.0.0",
+          "kind": "migration",
+          "to_version": "2.0.0"
+        }
+      ],
+      "current_version": "2.0.0",
+      "deprecation_policy": "Manifest 1.0 is read-and-migrate: it predates the declared bundle members.",
+      "description": "The head of one run bundle: what ran, on what, and what it measured.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.run-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.run-manifest/1.0.0.schema.json",
+        "2.0.0": "llb.run-manifest/2.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One completed case in the append-only resume journal of a durable run.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.run-progress",
+      "schema_paths": {
+        "1.0.0": "llb.run-progress/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "The identity a resume must still match to be a continuation of the run.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.run-progress-meta",
+      "schema_paths": {
+        "1.0.0": "llb.run-progress-meta/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One security attack or benign-control case and the refusal it earned.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.security-case",
+      "schema_paths": {
+        "1.0.0": "llb.security-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One structured-output case: schema conformance and per-field accuracy.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.structured-case",
+      "schema_paths": {
+        "1.0.0": "llb.structured-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "What a benchmark study read out of the run it had committed to.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.study-analysis",
+      "schema_paths": {
+        "1.0.0": "llb.study-analysis/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "What a benchmark study fixed before it ran: sample, roster, and gates.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.study-design",
+      "schema_paths": {
+        "1.0.0": "llb.study-design/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One summarization case: the coverage it reached and its faithfulness.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.summarization-case",
+      "schema_paths": {
+        "1.0.0": "llb.summarization-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One text-analysis document: objective label recovery over its subtasks.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.text-analysis-case",
+      "schema_paths": {
+        "1.0.0": "llb.text-analysis-case/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "jsonl",
+          "granularity": "row",
+          "media_type": "application/x-ndjson"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 remains readable for this release line.",
+      "description": "One tooling case: which tool was selected and whether its arguments held.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.tooling-case",
+      "schema_paths": {
+        "1.0.0": "llb.tooling-case/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"

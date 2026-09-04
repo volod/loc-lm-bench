@@ -22,6 +22,7 @@ from llb.scoring.aggregate import (
     TIER_TEXT_ANALYSIS,
     TIER_TOOLING,
 )
+from tests.llb.bundle_fixtures import telemetry, write_manifest
 
 
 def _write_run(
@@ -41,13 +42,10 @@ def _write_run(
     run_dir = root / name
     run_dir.mkdir(parents=True)
     manifest = {
-        "run_id": name,
-        "run_name": name,
         "split": split,
-        "created_at": "2026-06-21T00:00:00Z",
         "config": {"model": model, "backend": backend, "strategy": strategy, "top_k": 6},
         "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 50.0},
-        "telemetry": {"peak_vram_mb": 5500},
+        "telemetry": telemetry(peak_vram_mb=5500),
         "n_cases": len(cases),
     }
     if prompt_system is not None:
@@ -63,7 +61,7 @@ def _write_run(
         }
         if knowledge_tree is not None:
             manifest["prompt_system_provenance"]["knowledge_tree"] = knowledge_tree
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    write_manifest(run_dir, **manifest)
     rows = []
     for i, c in enumerate(cases):
         row = {"objective_score": c, "split": split}
@@ -197,9 +195,7 @@ def _write_category_run(
     if data_verified and verification_ref is None:
         verification_ref = _write_verification_ref(data_dir)
     manifest = {
-        "run_id": f"{method}-{model}",
         "split": "final",
-        "created_at": "2026-06-21T00:00:00Z",
         "config": {
             "model": model,
             "backend": "ollama",
@@ -211,7 +207,7 @@ def _write_category_run(
         "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 0.0},
         "n_cases": n_cases,
     }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    write_manifest(run_dir, run_id=f"{method}-{model}", **manifest)
     rows = [json.dumps({"objective_score": score}) for score in scores]
     (run_dir / "scores.jsonl").write_text("\n".join(rows), encoding="utf-8")
     return run_dir

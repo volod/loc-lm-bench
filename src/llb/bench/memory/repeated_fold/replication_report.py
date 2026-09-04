@@ -184,6 +184,7 @@ def persist_replication_run(
             for run in runs
         ],
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "repeated-fold-replication-design.json": json.dumps(design, indent=2, sort_keys=True)
             + "\n",

@@ -12,6 +12,7 @@ from llb.core.contracts.artifacts import (
     DatasetManifestV1,
 )
 from llb.artifacts.retrieval_graph.families import retrieval_graph_definitions
+from llb.artifacts.run_bundle.families import run_bundle_definitions
 
 
 def _dataset_manifest_v1_to_v1_1(record: dict[str, object]) -> dict[str, object]:
@@ -103,6 +104,7 @@ def build_default_registry() -> ContractRegistry:
             ),
             *data_prep_definitions(),
             *retrieval_graph_definitions(),
+            *run_bundle_definitions(),
         )
     )
 

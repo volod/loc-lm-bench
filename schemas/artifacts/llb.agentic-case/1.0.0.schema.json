@@ -1,0 +1,299 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.agentic-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One agentic episode: its outcome, its loop counters, and its context accounting.",
+  "properties": {
+    "answer_preview": {
+      "title": "Answer Preview",
+      "type": "string"
+    },
+    "compaction_prompt_tokens": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compaction Prompt Tokens"
+    },
+    "elapsed_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Elapsed S"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "malformed_call_rate": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Malformed Call Rate"
+    },
+    "max_prompt_tokens": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Prompt Tokens"
+    },
+    "n_compactions": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Compactions"
+    },
+    "n_malformed_calls": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Malformed Calls"
+    },
+    "n_model_calls": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Model Calls"
+    },
+    "n_repair_attempts": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Repair Attempts"
+    },
+    "n_repeated_calls": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Repeated Calls"
+    },
+    "n_repeated_noops": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Repeated Noops"
+    },
+    "n_steps": {
+      "title": "N Steps",
+      "type": "integer"
+    },
+    "n_tool_calls": {
+      "title": "N Tool Calls",
+      "type": "integer"
+    },
+    "n_trimmed_observations": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Trimmed Observations"
+    },
+    "n_trimmed_summary_inputs": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Trimmed Summary Inputs"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "observation_bytes": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Observation Bytes"
+    },
+    "repeat_feedback_redirected": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repeat Feedback Redirected"
+    },
+    "schema_id": {
+      "const": "llb.agentic-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "number"
+    },
+    "summary_input_chars": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary Input Chars"
+    },
+    "summary_input_elided_chars": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary Input Elided Chars"
+    },
+    "task_family": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Family"
+    },
+    "total_model_input_tokens": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Total Model Input Tokens"
+    },
+    "total_prompt_tokens": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Total Prompt Tokens"
+    },
+    "trajectory_quality": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trajectory Quality"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "status",
+    "success",
+    "objective_score",
+    "n_steps",
+    "n_tool_calls",
+    "answer_preview"
+  ],
+  "title": "AgenticCaseRecord",
+  "type": "object"
+}

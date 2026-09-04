@@ -1,6 +1,5 @@
 """Agentic harness comparison loading for the board."""
 
-import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -17,6 +16,7 @@ from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult
 
 from llb.board.categories import AGENTIC_METHOD, category_case_objectives
+from llb.board.io import admitted_manifest
 
 _LOG = logging.getLogger(__name__)
 
@@ -49,10 +49,8 @@ def load_agentic_harness_records(data_dir: Path | str) -> list[HarnessRunRecord]
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            _LOG.warning("[board] unreadable agentic manifest: %s", manifest_path)
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         record = harness_record_from_manifest(manifest, manifest_path.parent)
         if record is None:

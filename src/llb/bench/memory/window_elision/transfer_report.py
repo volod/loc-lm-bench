@@ -97,6 +97,7 @@ def persist_window_elision_transfer(
         },
         case_rows=persisted_rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "window-elision-transfer-design.json": json.dumps(design, indent=2, sort_keys=True)
             + "\n",
