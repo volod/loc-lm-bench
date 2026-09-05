@@ -149,6 +149,8 @@ watchers, the GPU check -- is in
 
 ## Formatting & Conventions
 
+- **Pre-CI:** After Python edits, run `make format` before `make ci`; do not use CI to discover
+  formatting changes.
 - **ASCII Only:** Use ASCII in logs, docs, comments, and generated shell output. No emojis or
   Unicode box-drawing characters (use `[ok]`, `->`, `=`, `-`, `[info]`, `*`).
 - **Constants:** Avoid magic numbers. Create constant modules with well-described variables to

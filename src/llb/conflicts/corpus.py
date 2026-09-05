@@ -51,7 +51,6 @@ def _governance_for(
     if recorded:
         return dict(recorded)
     resolved = source_governance(
-        corpus_root,
         corpus_root / doc_id,
         text=text,
         default_language=None,

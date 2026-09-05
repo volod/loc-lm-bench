@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "RetrievedOccurrence": {
+      "additionalProperties": false,
+      "description": "One other place a retrieved chunk's text appears (see `llb.rag.duplicates.collapse`).",
+      "properties": {
+        "char_end": {
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end"
+      ],
+      "title": "RetrievedOccurrence",
+      "type": "object"
+    },
+    "RetrievedSpanRecord": {
+      "additionalProperties": false,
+      "description": "Bounded retrieved-span data persisted for miss analysis.",
+      "properties": {
+        "char_end": {
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "duplicate_count": {
+          "title": "Duplicate Count",
+          "type": "integer"
+        },
+        "duplicate_occurrences": {
+          "items": {
+            "$ref": "#/$defs/RetrievedOccurrence"
+          },
+          "title": "Duplicate Occurrences",
+          "type": "array"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "retrieval_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Retrieval Score"
+        },
+        "text_preview": {
+          "title": "Text Preview",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end",
+        "rank"
+      ],
+      "title": "RetrievedSpanRecord",
+      "type": "object"
+    },
+    "SourceSpanRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "char_end": {
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end",
+        "text"
+      ],
+      "title": "SourceSpanRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.retrieval-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What one case's scored context actually contained, against its gold spans.",
+  "properties": {
+    "gold_spans": {
+      "items": {
+        "$ref": "#/$defs/SourceSpanRecord"
+      },
+      "title": "Gold Spans",
+      "type": "array"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "retrieved": {
+      "items": {
+        "$ref": "#/$defs/RetrievedSpanRecord"
+      },
+      "title": "Retrieved",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.retrieval-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "retrieved",
+    "gold_spans"
+  ],
+  "title": "RetrievalCaseRecord",
+  "type": "object"
+}

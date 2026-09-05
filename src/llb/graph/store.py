@@ -19,7 +19,6 @@ Both serialize node mentions + edge evidence WITH their source spans, so the exi
 applies. `duckdb` is lazy-imported, so the package still imports in the base install.
 """
 
-import json
 import logging
 from dataclasses import asdict
 from pathlib import Path
@@ -44,6 +43,14 @@ from llb.graph.linking import (
     link_communities,
     link_seed_nodes,
     node_link_scores,
+)
+from llb.artifacts.retrieval_graph.graphs import (
+    read_community_summaries,
+    readable_graph_meta,
+    validated_edges,
+    validated_nodes,
+    write_community_summaries,
+    write_graph_meta,
 )
 from llb.core.contracts.rag import ChunkRecord
 from llb.core.store_generations import resolve_store_dir
@@ -184,16 +191,11 @@ class GraphStore:
     def save(self, graph_dir: Path | str) -> None:
         graph_dir = Path(graph_dir)
         graph_dir.mkdir(parents=True, exist_ok=True)
-        _write_jsonl((asdict(n) for n in self.graph.nodes), graph_dir / NODES_FILE)
-        _write_jsonl((asdict(e) for e in self.graph.edges), graph_dir / EDGES_FILE)
-        (graph_dir / META_FILE).write_text(
-            json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        _write_jsonl(validated_nodes(asdict(n) for n in self.graph.nodes), graph_dir / NODES_FILE)
+        _write_jsonl(validated_edges(asdict(e) for e in self.graph.edges), graph_dir / EDGES_FILE)
+        write_graph_meta(graph_dir / META_FILE, dict(self.meta))
         if self.community_summaries:
-            (graph_dir / SUMMARIES_FILE).write_text(
-                json.dumps(self.community_summaries, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            write_community_summaries(graph_dir / SUMMARIES_FILE, self.community_summaries)
 
     @classmethod
     def load(
@@ -210,15 +212,11 @@ class GraphStore:
         meta_path = graph_dir / META_FILE
         if not meta_path.exists():
             raise SystemExit(f"no graph store at {graph_dir} (run `llb build-graph` first)")
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta = readable_graph_meta(meta_path)
         nodes = [GraphNode(**row) for row in _read_jsonl(graph_dir / NODES_FILE)]
         edges = [GraphEdge(**row) for row in _read_jsonl(graph_dir / EDGES_FILE)]
         summaries_path = graph_dir / SUMMARIES_FILE
-        summaries = (
-            json.loads(summaries_path.read_text(encoding="utf-8"))
-            if summaries_path.exists()
-            else {}
-        )
+        summaries = read_community_summaries(summaries_path) if summaries_path.exists() else {}
         return cls(
             KnowledgeGraph(nodes=nodes, edges=edges),
             meta,

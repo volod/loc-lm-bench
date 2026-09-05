@@ -11,17 +11,32 @@ rows it is about to write and the resolution lane passes the rows it just read, 
 derive a grouping the other does not have. `findings.jsonl` itself is untouched -- one line per row.
 """
 
-from llb.conflicts.grouping.census import PairUnits, group_indices, row_pair_units, rows_census
+import json
+
+from llb.conflicts.grouping.census import (
+    PairUnits,
+    group_indices,
+    row_pair_units,
+    rows_census,
+    shared_unit_indices,
+)
 from llb.conflicts.constants import decide_count
-from llb.conflicts.tiers.hashing import finding_id
+from llb.conflicts.grouping.ranking import DecisionStake, stake_ranks
+from llb.conflicts.tiers.hashing import CONTENT_HASH_HEX_LENGTH, finding_id, sha256_text
 from llb.core.contracts.common import JsonObject
 
-GROUPS_SCHEMA_VERSION = 1
+GROUPS_SCHEMA_VERSION = 4
 # What a group's members share, spelled out once for every consumer of the sidecar.
 UNIT_DESCRIPTION = (
     "the chunk each side of a finding rests on, or its document for the hash and lexical tiers, "
     "which compare whole documents; rows are grouped by the transitive closure over that unit"
 )
+
+
+def group_key(finding_ids: list[str]) -> str:
+    """Content identity for a decision group, independent of member and group ordering."""
+    members = json.dumps(sorted(finding_ids), ensure_ascii=True, separators=(",", ":"))
+    return sha256_text(members)[:CONTENT_HASH_HEX_LENGTH]
 
 
 def _shared_units(pairs: list[PairUnits]) -> list[str]:
@@ -59,11 +74,16 @@ def _summary(
     """One group's public record: what it is, what it rests on, and which rows it speaks for."""
     documents = sorted({doc for pair in pairs for doc in pair.doc_pair})
     grouped = _editions(documents, editions)
+    member_ids = [finding_id(row) for row in rows]
+    relations = _relation_counts(rows)
     return {
         "group_id": f"G{index}",
+        "group_key": group_key(member_ids),
         "rows": len(rows),
-        "finding_ids": [finding_id(row) for row in rows],
-        "relations": _relation_counts(rows),
+        "finding_ids": member_ids,
+        "relations": relations,
+        "decide_rows": decide_count(relations),
+        "chain_length": len(shared_unit_indices(pairs)),
         "shared_units": _shared_units(pairs),
         "documents": documents,
         # Present only when the edition-linkage lane ran, so a bundle written without it is
@@ -82,10 +102,25 @@ def group_summaries(
     """One summary per decision group, in the order the rows are listed."""
     pairs = [row_pair_units(row) for row in rows]
     named = editions or {}
-    return [
+    summaries = [
         _summary(index, [rows[at] for at in members], [pairs[at] for at in members], named)
         for index, members in enumerate(group_indices(pairs), start=1)
     ]
+    ranks = stake_ranks(
+        [
+            DecisionStake(
+                group_index=index,
+                decide_rows=int(summary["decide_rows"]),
+                chain_length=int(summary["chain_length"]),
+                rows=int(summary["rows"]),
+                top_score=float(summary["top_score"]),
+            )
+            for index, summary in enumerate(summaries, start=1)
+        ]
+    )
+    for index, summary in enumerate(summaries, start=1):
+        summary["rank"] = ranks[index]
+    return summaries
 
 
 def groups_document(
@@ -122,6 +157,7 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
         decisions.append(
             {
                 "group_id": summary["group_id"],
+                "group_key": summary["group_key"],
                 "rows": summary["rows"],
                 "finding_ids": list(summary["finding_ids"]),
                 "relations": dict(summary["relations"]),
@@ -129,7 +165,9 @@ def group_decisions(summaries: list[JsonObject], items: list[JsonObject]) -> lis
                 "shared_units": list(summary["shared_units"]),
                 "actions": actions,
                 "action": next(iter(actions)) if len(actions) == 1 else None,
-                "decide_rows": decide_count(summary["relations"]),
+                "decide_rows": summary["decide_rows"],
+                "chain_length": summary["chain_length"],
+                "rank": summary["rank"],
                 "review_rows": review_rows,
                 "status": "review_required" if review_rows else "accepted",
             }

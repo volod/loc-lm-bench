@@ -35,6 +35,7 @@ from llb.conflicts.tiers.hashing import sha256_text
 from llb.conflicts.models import AuditResult
 from llb.conflicts.report.findings import findings_section
 from llb.conflicts.report.precision import precision_section
+from llb.conflicts.report.prefilter import prefilter_section
 from llb.conflicts.linkage.report import report_section as linkage_section
 from llb.conflicts.report.projection import projected_review_lines
 
@@ -58,6 +59,7 @@ def render_report(result: AuditResult) -> str:
     ]
     lines += _relations_section(result)
     lines += _tiers_section(result)
+    lines += prefilter_section(result.claim_prefilter)
     lines += precision_section(result)
     lines += _needles_section(result)
     lines += linkage_section(result.edition_linkage)

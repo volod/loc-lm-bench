@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The worksheet's shared columns are the registered `llb.verification-worksheet-row` contract,
+checked before a sheet is written, and `llb review` refuses a bundle this build cannot read before
+showing a reviewer anything. See [data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## Verification Gate
 
 The verification path has a mechanical half and a human half.

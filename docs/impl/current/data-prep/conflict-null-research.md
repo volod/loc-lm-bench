@@ -374,7 +374,7 @@ cannot serve two corpora. The consequence was to stop looking for a universal cu
 measured precision and its bound PER CORPUS in the audit itself; `audit-corpus-conflicts --effort
 claim` now reports it from its own verdicts, behind a frozen-label calibration gate, reusing this
 lane's curve and clustered bound ([conflict
-detection](conflict-detection.md#measured-claim-tier-precision)).
+detection](conflict-claim-precision.md#measured-claim-tier-precision)).
 
 ### Verdict
 

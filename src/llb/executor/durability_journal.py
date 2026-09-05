@@ -7,6 +7,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.run_bundle.journals import read_progress_meta
+from llb.core.contracts.run_bundle.journals import (
+    CaseProgressMeta,
+    CaseProgressRow,
+    JournaledCaseState,
+)
 from llb.core.contracts.runs import DurabilityStatus
 from llb.executor.cases import spans_as_dicts
 from llb.core.fsutil import atomic_write_text
@@ -20,43 +27,10 @@ JOURNAL_NAME = "cases.progress.jsonl"
 
 JOURNAL_META_NAME = "cases.progress.meta.json"
 
-_JOURNALED_STATE_KEYS = (
-    "retrieved",
-    "answer",
-    "status",
-    "error",
-    "usage",
-    "retrieve_latency_s",
-    "rerank_latency_s",
-    "query_processed",
-    "query_corrections",
-    "query_dense",
-    "query_hypothetical_answer",
-    "query_decomposition",
-    "query_subqueries",
-    # Prompt-side context assembly (`llb.eval.table_headers`): the accounting columns, plus the
-    # prompt copies the answer-side signals are scored against. Journaling them is what keeps a
-    # RESUMED bundle byte-identical to an uninterrupted one -- a state key the journal drops is a
-    # score column a resumed case silently loses.
-    "table_headers_restored",
-    "table_header_chars",
-    "prompt_chunks",
-    # The declared answer contract (`llb.eval.answer_envelope`): the validated envelope and its
-    # parse verdict, for the same reason -- a resumed envelope case must re-score to the same row.
-    "envelope",
-    "envelope_status",
-    "envelope_error",
-    "envelope_repaired",
-    # Step two of the answer gate (`llb.eval.answer_validation`): the verdict columns, so a resumed
-    # gated case re-scores to the same row -- including the `ontology_violation` status, which is
-    # already covered by `status` above but whose evidence columns are not.
-    "validation_checked_triples",
-    "validation_violations",
-    "validation_classes",
-    "validation_axioms",
-    "validation_repaired",
-    "validation_error",
-)
+# The columns a completed case carries forward. The SET is the contract's -- `llb.run-progress`
+# names exactly the outputs a resume cannot recompute -- so a column added to a score row without
+# being added there is a column a resumed case would silently lose, and the two cannot drift.
+_JOURNALED_STATE_KEYS = tuple(JournaledCaseState.model_fields)
 
 
 @dataclass
@@ -163,8 +137,13 @@ class CaseJournal:
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"item_id": item_id, "state": trimmed}
+        # Validate the LINE, not the mapping above it: a numpy score coerced by `_json_default`
+        # is what a resume will actually read back, and a row that does not re-read is a case
+        # this run would have to pay for twice.
+        line = json.dumps(payload, ensure_ascii=False, default=_json_default)
+        CaseProgressRow.model_validate(json.loads(line), strict=True)
         with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False, default=_json_default) + "\n")
+            fh.write(line + "\n")
         self._done[item_id] = trimmed
 
 
@@ -202,15 +181,16 @@ def write_journal_meta(
     split: str,
 ) -> None:
     """Pin the determinism-critical identity of a run at start, so `--resume` can refuse a mismatch."""
-    meta = {
-        "run_id": run_id,
-        "split": split,
-        "config_digest": config_digest(config_fingerprint),
-        "goldset_digest": goldset_digest(items),
-        "n_items": len(items),
-    }
+    meta = CaseProgressMeta(
+        run_id=run_id,
+        split=split,
+        config_digest=config_digest(config_fingerprint),
+        goldset_digest=goldset_digest(items),
+        n_items=len(items),
+    )
     atomic_write_text(
-        journal_meta_path(staging_dir), json.dumps(meta, ensure_ascii=False, indent=2)
+        journal_meta_path(staging_dir),
+        json.dumps(meta.model_dump(mode="json"), ensure_ascii=False, indent=2),
     )
 
 
@@ -229,8 +209,8 @@ def verify_resume_meta(
             "(only an interrupted durable run can be resumed)"
         )
     try:
-        meta: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        meta = read_progress_meta(path).model_dump(mode="json")
+    except (OSError, ArtifactContractError) as exc:
         raise SystemExit(f"[run-eval] cannot resume: unreadable journal meta {path} ({exc})")
     mismatched = []
     if meta.get("config_digest") != config_digest(config_fingerprint):

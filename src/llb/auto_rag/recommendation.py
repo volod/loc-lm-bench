@@ -6,6 +6,7 @@ from typing import Any
 
 import yaml
 
+from llb.core.contracts.run_bundle.auto_rag import RagRecommendationDocument
 from llb.core.fsutil import atomic_write_text
 
 
@@ -18,7 +19,6 @@ def write_recommendation(run_dir: Path, outputs: dict[str, dict[str, Any]]) -> d
     overrides = dict(recommended.get("overrides") or {})
     selected_retrieval = retrieval["selected"]
     payload = {
-        "schema_version": 1,
         "model": recommended["source"],
         "model_name": recommended["model"],
         "backend": recommended["backend"],
@@ -68,6 +68,10 @@ def write_recommendation(run_dir: Path, outputs: dict[str, dict[str, Any]]) -> d
     # Break shared dict identities (retrieval.metrics also appears in attempts) so the operator
     # YAML stays anchor-free and is easy to copy into a standalone config.
     payload = json.loads(json.dumps(payload, ensure_ascii=False))
+    # Validate and publish the record with its identity: this file is what an operator copies a
+    # standalone configuration out of, so a field the recommendation cannot state is one they
+    # would silently run without.
+    payload = RagRecommendationDocument.model_validate(payload).model_dump(mode="json")
     atomic_write_text(
         yaml_path, yaml.safe_dump(payload, allow_unicode=False, sort_keys=False, width=100)
     )

@@ -5,7 +5,8 @@
 	demo-eval mlflow board recommend recommend-agent-profile acceptance-gate-audit venv venv-restamp \
 	install-extras lock-drift \
 	apt-deps test test-fast format \
-	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan
+	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan \
+	lint-toolchain check-artifact-contracts generate-artifact-contracts
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
 	@source "$(PROJECT_ROOT)/scripts/shared/common.sh"; \
@@ -144,7 +145,9 @@ ci-checks:
 	@$(MAKE) --no-print-directory complexity-gate
 	@$(MAKE) --no-print-directory shell-lint-gate
 	@$(MAKE) --no-print-directory lint-spec-plan
+	@$(MAKE) --no-print-directory lint-toolchain
 	@$(MAKE) --no-print-directory lint-model-roster
+	@$(MAKE) --no-print-directory check-artifact-contracts
 
 # Both also run inside ci-checks -- these aliases are for running one gate alone after a change.
 complexity-gate: ## Fail on any Radon D-or-worse or cognitive-complexity finding
@@ -173,3 +176,17 @@ lint-doc-links: ## Check every relative docs link resolves and no result is cite
 lint-spec-plan: ## Check the spec's capability registry and plan.md agree (also runs in ci-checks)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.spec_plan_integrity
+
+lint-toolchain: ## Check mypy/ruff/basedpyright restatements match [tool.llb.toolchain]
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.build.toolchain check
+
+check-artifact-contracts: ## Check registry, generated schemas/catalog, ODCS projection, and external validation
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.artifacts.check
+	$(PY) samples/artifact_contracts/external_validate.py
+
+generate-artifact-contracts: ## Refresh generated artifact schemas and catalog, then validate them
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	$(PY) -m llb.artifacts.check --write
+	$(PY) samples/artifact_contracts/external_validate.py

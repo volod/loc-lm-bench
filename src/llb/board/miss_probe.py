@@ -28,6 +28,7 @@ from llb.core.config import RUN_EVAL_METHOD, RunConfig
 from llb.core.contracts.common import JsonObject
 from llb.executor import durability_journal as durability
 from llb.goldset.schema import GoldItem
+from llb.board.io import admitted_manifest
 
 _LOG = logging.getLogger(__name__)
 
@@ -68,9 +69,8 @@ def _find_finalized(run_root: Path, name: str, n_items: int) -> Path | None:
     for manifest_path in sorted(run_root.glob("*/manifest.json"), reverse=True):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         if manifest.get("run_name") == name and int(manifest.get("n_cases", -1)) == n_items:
             return manifest_path.parent

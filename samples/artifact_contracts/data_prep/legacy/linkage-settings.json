@@ -1,0 +1,36 @@
+{
+  "specification": {
+    "comparisons": [
+      {
+        "column": "question",
+        "metric": "jaro_winkler"
+      },
+      {
+        "column": "answer",
+        "metric": "exact"
+      }
+    ],
+    "blocking_rules": [
+      {
+        "expressions": [
+          "l.source_doc_id = r.source_doc_id"
+        ],
+        "arrays_to_explode": []
+      }
+    ],
+    "training_rules": []
+  },
+  "summary": {
+    "n_records": 4,
+    "n_scored_pairs": 3,
+    "n_matched_pairs": 1,
+    "n_clusters": 3,
+    "n_multi_record_clusters": 1,
+    "largest_cluster": 2,
+    "match_threshold": 0.9,
+    "seed": 7,
+    "trained_from_labels": false,
+    "n_accuracy_points": 0,
+    "n_untrained_levels": 0
+  }
+}

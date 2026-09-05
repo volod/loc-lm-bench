@@ -1,0 +1,66 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.external-draft-item:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One `item_provenance.jsonl` row: the labels an item carries outside the gold schema.",
+  "properties": {
+    "difficulty": {
+      "minLength": 1,
+      "title": "Difficulty",
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "question_type": {
+      "minLength": 1,
+      "title": "Question Type",
+      "type": "string"
+    },
+    "retrieval_k": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retrieval K"
+    },
+    "retrieval_rank": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retrieval Rank"
+    },
+    "schema_id": {
+      "const": "llb.external-draft-item",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "id",
+    "question_type",
+    "difficulty"
+  ],
+  "title": "ExternalDraftItemRow",
+  "type": "object"
+}

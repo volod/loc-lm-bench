@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "AutoRagRunSettings": {
+      "additionalProperties": false,
+      "description": "Every score- or artifact-affecting input of one auto-RAG run.\n\nThis is the record the run fingerprint is taken over, which is why it is modelled field by\nfield rather than left an open mapping: a resume that compared a digest of \"whatever keys the\nfile held\" would accept a manifest whose settings this build can no longer read.",
+      "properties": {
+        "candidate_models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Models",
+          "type": "array"
+        },
+        "candidates": {
+          "title": "Candidates",
+          "type": "string"
+        },
+        "corpus": {
+          "title": "Corpus",
+          "type": "string"
+        },
+        "data_dir": {
+          "title": "Data Dir",
+          "type": "string"
+        },
+        "doc_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Limit"
+        },
+        "draft_concurrency": {
+          "title": "Draft Concurrency",
+          "type": "integer"
+        },
+        "draft_max_tokens": {
+          "title": "Draft Max Tokens",
+          "type": "integer"
+        },
+        "draft_model": {
+          "title": "Draft Model",
+          "type": "string"
+        },
+        "draft_num_ctx": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft Num Ctx"
+        },
+        "egress_consent": {
+          "title": "Egress Consent",
+          "type": "boolean"
+        },
+        "eval_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eval Limit"
+        },
+        "gate_policy": {
+          "title": "Gate Policy",
+          "type": "string"
+        },
+        "judge_base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge Base Url"
+        },
+        "judge_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge Model"
+        },
+        "max_calls": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Calls"
+        },
+        "max_items": {
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "max_model_len": {
+          "title": "Max Model Len",
+          "type": "integer"
+        },
+        "max_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Usd"
+        },
+        "min_accept_rate": {
+          "title": "Min Accept Rate",
+          "type": "number"
+        },
+        "min_finalists": {
+          "title": "Min Finalists",
+          "type": "integer"
+        },
+        "objectives": {
+          "title": "Objectives",
+          "type": "string"
+        },
+        "parity_check": {
+          "title": "Parity Check",
+          "type": "boolean"
+        },
+        "retrieval_k": {
+          "title": "Retrieval K",
+          "type": "integer"
+        },
+        "retrieval_recall_gate": {
+          "title": "Retrieval Recall Gate",
+          "type": "number"
+        },
+        "run_id": {
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "screen_limit": {
+          "title": "Screen Limit",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "trials": {
+          "title": "Trials",
+          "type": "integer"
+        },
+        "verify_threshold": {
+          "title": "Verify Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "corpus",
+        "data_dir",
+        "run_id",
+        "draft_model",
+        "candidates",
+        "gate_policy",
+        "egress_consent",
+        "max_items",
+        "seed",
+        "draft_max_tokens",
+        "draft_concurrency",
+        "verify_threshold",
+        "min_accept_rate",
+        "retrieval_k",
+        "retrieval_recall_gate",
+        "trials",
+        "screen_limit",
+        "min_finalists",
+        "objectives",
+        "max_model_len",
+        "parity_check"
+      ],
+      "title": "AutoRagRunSettings",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.auto-rag-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`manifest.json`: the settings pinned at the first stage, and their fingerprint.\n\n`fingerprint` is a digest of the settings below it, and it is what a resume compares against:\na directory reopened with different settings is a different run, and continuing it would mix\ntwo configurations into one recommendation.",
+  "properties": {
+    "fingerprint": {
+      "minLength": 1,
+      "title": "Fingerprint",
+      "type": "string"
+    },
+    "kind": {
+      "const": "auto-rag",
+      "default": "auto-rag",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.auto-rag-manifest",
+      "default": "llb.auto-rag-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "settings": {
+      "$ref": "#/$defs/AutoRagRunSettings"
+    }
+  },
+  "required": [
+    "fingerprint",
+    "settings"
+  ],
+  "title": "AutoRagManifestDocument",
+  "type": "object"
+}

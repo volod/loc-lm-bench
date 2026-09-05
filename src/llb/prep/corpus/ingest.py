@@ -19,15 +19,19 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from llb.core.contracts.data_prep.corpus import CorpusItemRecord, CorpusManifest
 from llb.prep.pdf.ingest import ingest_pdf_corpus
 from llb.prep.pdf.model import PdfTextExtractor
 from llb.prep.pdf.render import default_markdown_out_dir
 from llb.prep.corpus.governance import (
     DEFAULT_SOURCE_SYSTEM,
+    converted_governance,
     preserve_ingestion_time,
     utc_ingestion_time,
 )
 from llb.prep.corpus.fingerprints import manifest_items_fingerprint
+from llb.prep.corpus.governance_report import ingestion_governance_coverage
+from llb.prep.corpus.revisions import retain_revision_ancestors
 from llb.prep.corpus.ingest_text import (
     CORPUS_MANIFEST,
     CorpusIngestResult,
@@ -35,6 +39,7 @@ from llb.prep.corpus.ingest_text import (
     DEFAULT_MIN_CHARS,
     KIND_PDF,
     _LOG,
+    _governance_kwargs,
     _ingest_text_file,
     _iter_by_suffix,
     _previous_manifest_items,
@@ -54,14 +59,13 @@ def _pdf_item_to_corpus_item(
     prev = previous.get(source)
     governance = preserve_ingestion_time(
         prev,
-        {
-            "language": payload.get("language") or default_language or "und",
-            "version": payload.get("version"),
-            "effective_date": payload.get("effective_date"),
-            "ingestion_time": ingestion_time,
-            "source_system": payload.get("source_system") or default_source_system,
-            "acl_label": payload.get("acl_label") or default_acl_label,
-        },
+        converted_governance(
+            payload,
+            default_language=default_language,
+            default_source_system=default_source_system,
+            default_acl_label=default_acl_label,
+            ingestion_time=ingestion_time,
+        ),
     )
     return CorpusItem(
         source=source,
@@ -73,30 +77,29 @@ def _pdf_item_to_corpus_item(
         reused=bool(payload.get("reused", False)),
         error=payload.get("error"),
         parser=payload.get("parser"),
-        language=governance["language"],
-        version=governance["version"],
-        effective_date=governance["effective_date"],
-        ingestion_time=governance["ingestion_time"],
-        source_system=governance["source_system"],
-        acl_label=governance["acl_label"],
+        **_governance_kwargs(governance),
     )
 
 
-def _manifest(result: CorpusIngestResult) -> dict[str, object]:
+def _manifest(result: CorpusIngestResult) -> CorpusManifest:
+    """The manifest as its registered contract, not as a dictionary a reader must trust."""
     item_rows = [asdict(item) for item in result.items]
-    return {
-        "kind": "corpus",
-        "source_root": str(result.source_root),
-        "corpus_root": str(result.out_dir),
-        "n_sources": len(result.items),
-        "n_docs": result.n_docs,
-        "n_skipped": result.n_skipped,
-        "n_reused": result.n_reused,
-        "n_removed_sources": result.n_removed_sources,
-        "removed_sources": result.removed_sources,
-        "corpus_fingerprint": manifest_items_fingerprint(item_rows),
-        "items": item_rows,
-    }
+    return CorpusManifest(
+        schema_id="llb.corpus-manifest",
+        schema_version="1.0.0",
+        kind="corpus",
+        source_root=str(result.source_root),
+        corpus_root=str(result.out_dir),
+        n_sources=len(result.items),
+        n_docs=result.n_docs,
+        n_skipped=result.n_skipped,
+        n_reused=result.n_reused,
+        n_removed_sources=result.n_removed_sources,
+        removed_sources=list(result.removed_sources),
+        corpus_fingerprint=manifest_items_fingerprint(item_rows),
+        governance_coverage=result.governance_coverage,
+        items=[CorpusItemRecord.model_validate(row) for row in item_rows],
+    )
 
 
 def _unlink_if_file(path: Path, description: str) -> None:
@@ -165,7 +168,8 @@ def ingest_corpus(
 
     items: list[CorpusItem] = []
     ingestion_time = utc_ingestion_time()
-    previous = {} if refresh else _previous_manifest_items(target)
+    revision_history = _previous_manifest_items(target)
+    previous = {} if refresh else revision_history
     if pdfs:
         pdf_result = ingest_pdf_corpus(
             source_root,
@@ -200,15 +204,23 @@ def ingest_corpus(
                 source_system,
                 acl_label,
                 ingestion_time,
+                revision_history,
             )
         )
 
+    items = retain_revision_ancestors(target, items, revision_history)
     removed_sources = _cleanup_stale_outputs(target, previous, items)
+    item_rows = [asdict(item) for item in items]
     result = CorpusIngestResult(
-        source_root=source_root, out_dir=target, items=items, removed_sources=removed_sources
+        source_root=source_root,
+        out_dir=target,
+        items=items,
+        removed_sources=removed_sources,
+        governance_coverage=ingestion_governance_coverage(item_rows),
     )
     (target / CORPUS_MANIFEST).write_text(
-        json.dumps(_manifest(result), ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(_manifest(result).model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     _LOG.info(
         "[corpus] ingested %d/%d documents (%d reused, %d skipped) -> %s",

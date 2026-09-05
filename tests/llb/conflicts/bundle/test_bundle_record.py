@@ -46,7 +46,7 @@ from llb.conflicts.bundle.candidate_record import (
     UNRECORDED_CAP_PHRASE,
     CandidateRecord,
 )
-from llb.conflicts.constants import STAGE_INPUTS_FIELD, TIER_HASH
+from llb.conflicts.constants import COVERAGE_FIELD, STAGE_INPUTS_FIELD, TIER_HASH
 from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.bundle.document_exclusions import DocumentExclusions
 from llb.conflicts.bundle.document_index import DocumentInterner, DocumentNaming
@@ -199,6 +199,28 @@ def test_the_recorded_candidate_pairs_are_the_pairs_the_run_returned(tmp_path):
 
     assert candidates.total_pairs >= 2, "the corpus has to rank two pairs for a budget to matter"
     assert candidates.doc_pairs_within(candidates.total_pairs) == returned
+    at_own_budget = replay_entry("ranked", "s.json", summary, rows, budget=candidates.total_pairs)[
+        "at_budget"
+    ]
+    assert at_own_budget["orderable_pairs"] == summary[COVERAGE_FIELD]["orderable_pairs"]
+
+
+def test_the_own_budget_preserves_multiple_returned_rows_for_one_document_pair(tmp_path):
+    """Coverage counts returned rows, while the candidate record intentionally deduplicates docs."""
+    result = audit_over(tmp_path / "corpus", RANKED, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
+    candidates = recorded_inputs(summary[STAGE_INPUTS_FIELD]).candidates
+    rows.append(dict(rows[0]))
+    summary[COVERAGE_FIELD]["returned_pairs"] += 1
+    summary[COVERAGE_FIELD]["orderable_pairs"] += 1
+
+    at_own_budget = replay_entry(
+        "repeated-doc-pair", "s.json", summary, rows, budget=candidates.total_pairs
+    )["at_budget"]
+
+    assert at_own_budget["run_document_pairs"] == 2
+    assert at_own_budget["run_orderable_pairs"] == 3
+    assert at_own_budget["orderable_pairs"] == 3
 
 
 def test_a_smaller_budget_moves_the_attribution_to_the_pair_it_drops(tmp_path):
@@ -224,9 +246,27 @@ def test_the_budget_reading_counts_the_pairs_the_named_pair_cannot_show(tmp_path
 
     assert at_budget["run_document_pairs"] == 2
     assert at_budget["document_pairs"] == 1, "the budget-1 prefix returns only the top pair"
+    assert (at_budget["orderable_pairs"], at_budget["run_orderable_pairs"]) == (1, 2)
     assert "1 of the run's 2 document pairs return" in budget_line(
         {"label": "ranked", "at_budget": at_budget}
     )
+
+
+def test_a_budget_that_drops_only_an_unorderable_pair_reports_no_evidence_cost(tmp_path):
+    """A lower total is noise-only when every pair it removes is unorderable by the record."""
+    noise_tail = {
+        **RANKED,
+        "c-third.md": (RANKED["a-first.md"][0], RANKED["c-third.md"][1]),
+    }
+    result = audit_over(tmp_path / "corpus", noise_tail, cos_threshold=RANKED_COS)
+    summary, rows = bundle_of(result)
+
+    at_budget = replay_entry("noise-tail", "s.json", summary, rows, budget=1)["at_budget"]
+    line = budget_line({"label": "noise-tail", "at_budget": at_budget})
+
+    assert (at_budget["document_pairs"], at_budget["run_document_pairs"]) == (1, 2)
+    assert (at_budget["orderable_pairs"], at_budget["run_orderable_pairs"]) == (1, 1)
+    assert "budget costs 0 orderable returned pairs" in line
 
 
 def test_a_run_below_the_semantic_tier_refuses_the_budget_by_naming_the_store(tmp_path):
@@ -398,6 +438,7 @@ def test_the_report_states_per_question_what_the_archive_can_answer(tmp_path):
     assert "| Which chunk would a lost pair have matched on? | 0 of 1 |" in report
     assert "## The same bundles at candidate budget 1" in report
     assert "- attribution moves at this budget: 1 of 1" in report
+    assert "orderable returned pairs belong to them" in report
     assert "MOVES the attribution" in budget_line(entries[0])
 
 

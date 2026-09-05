@@ -1,0 +1,2 @@
+{"node_id": 0, "name": "Орган соціального захисту", "type": "organisation", "confidence": 0.82, "aliases": ["Орган соцзахисту"], "mentions": [{"doc_id": "poryadok.md", "char_start": 84, "char_end": 117, "text": "органу соціального захисту населення", "section_title": "Загальні положення"}], "community_id": 0}
+{"node_id": 1, "name": "Соціальна допомога", "type": "benefit", "confidence": 0.74, "aliases": [], "mentions": [{"doc_id": "poryadok.md", "char_start": 16, "char_end": 35, "text": "соціальної допомоги", "section_title": "Загальні положення"}], "community_id": 0}

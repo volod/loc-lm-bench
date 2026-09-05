@@ -17,7 +17,12 @@ from llb.conflicts.constants import (
     REVIEW_RECORDS_FILE,
     TIER_CLAIM,
 )
-from llb.conflicts.grouping.artifact import GROUPS_SCHEMA_VERSION, group_summaries
+from llb.conflicts.grouping.artifact import (
+    GROUPS_SCHEMA_VERSION,
+    group_key,
+    group_summaries,
+    groups_document,
+)
 from llb.conflicts.tiers.hashing import finding_id
 from llb.conflicts.models import AuditResult, ClaimRef, Finding
 from llb.conflicts.report.render import write_audit
@@ -80,9 +85,52 @@ def test_the_sidecar_addresses_the_rows_it_was_written_beside(tmp_path):
     assert sidecar["census"]["findings"] == 6 and sidecar["census"]["groups"] == 1
     group = sidecar["groups"][0]
     assert group["group_id"] == "G1" and group["rows"] == 6
+    assert group["chain_length"] == 1
     assert group["shared_units"] == [SHARED_CHUNK]
     assert group["documents"] == ["left.md", "right.md"]
     assert group["finding_ids"] == [finding_id(row) for row in rows]
+    assert group["group_key"] == group_key(group["finding_ids"])
+
+
+def test_group_keys_survive_member_and_group_reordering():
+    first_group = [_finding(0).payload(), _finding(1).payload()]
+    second_group = [
+        Finding(
+            relation="contradicts",
+            tier=TIER_CLAIM,
+            a=ClaimRef("third.md", 0, 10, "c" * 10, chunk_id="third.md#recursive#0001"),
+            b=ClaimRef("fourth.md", 0, 10, "d" * 10, chunk_id="fourth.md#recursive#0001"),
+            score=0.7,
+            evidence="model",
+        ).payload()
+    ]
+
+    before_rows = first_group + second_group
+    after_rows = second_group + list(reversed(first_group))
+    before_sidecar = groups_document(before_rows, findings_sha256="before")
+    after_sidecar = groups_document(after_rows, findings_sha256="after")
+    before = before_sidecar["groups"]
+    after = after_sidecar["groups"]
+
+    before_by_key = {summary["group_key"]: summary for summary in before}
+    after_by_key = {summary["group_key"]: summary for summary in after}
+    assert before_by_key.keys() == after_by_key.keys()
+    assert before_by_key.keys() == {
+        group_key([finding_id(row) for row in first_group]),
+        group_key([finding_id(row) for row in second_group]),
+    }
+    assert {
+        key: (before_by_key[key]["group_id"], after_by_key[key]["group_id"])
+        for key in before_by_key
+    } == {
+        before[0]["group_key"]: ("G1", "G2"),
+        before[1]["group_key"]: ("G2", "G1"),
+    }
+
+    before_plan = build_plan(before_rows, POLICY_CONSERVATIVE, "corpus")
+    after_plan = build_plan(after_rows, POLICY_CONSERVATIVE, "corpus")
+    assert {decision["group_key"] for decision in before_plan["decisions"]} == before_by_key.keys()
+    assert {decision["group_key"] for decision in after_plan["decisions"]} == after_by_key.keys()
 
 
 def test_the_resolution_lane_derives_the_same_groups_without_the_sidecar(tmp_path):
@@ -104,6 +152,9 @@ def test_a_concentrated_plan_carries_one_decision_naming_its_member_rows(tmp_pat
     assert {item["group_id"] for item in plan["items"]} == {"G1"}
     assert len(plan["decisions"]) == 1
     decision = plan["decisions"][0]
+    assert decision["group_key"] == group_key(decision["finding_ids"])
+    assert decision["rank"] == 1
+    assert decision["chain_length"] == 1
     assert decision["rows"] == 6 and decision["action"] == ACTION_ESCALATE
     assert decision["status"] == "review_required" and decision["review_rows"] == 6
     assert decision["finding_ids"] == [item["finding_id"] for item in plan["items"]]

@@ -8,7 +8,8 @@ from typing import Any, TypeGuard
 from urllib.parse import unquote, urlparse
 
 from llb.core.paths import resolve_data_dir, resolve_project_path
-from llb.tracking.manifest import RunManifest
+from llb.artifacts.run_bundle.manifests import read_run_manifest
+from llb.core.contracts.run_bundle.manifest import RunManifestDocument
 
 _LOG = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ MLFLOW_RUN_ID_TAG = "llb.canonical_run_id"
 MLFLOW_SCHEMA_TAG = "llb.mirror_schema"
 
 
-def mirror_run(manifest: RunManifest, out_dir: Path) -> None:
+def mirror_run(manifest: RunManifestDocument, out_dir: Path) -> None:
     """Mirror one canonical run into the shared local MLflow SQLite store."""
     client, experiment_id = _mlflow_client(_mlflow_root(manifest, out_dir))
     _log_mlflow_run(client, experiment_id, manifest, out_dir)
@@ -51,7 +52,7 @@ def _mlflow_client(tracking_root: Path) -> tuple[Any, str]:
 def _log_mlflow_run(
     client: Any,
     experiment_id: str,
-    manifest: RunManifest,
+    manifest: RunManifestDocument,
     out_dir: Path,
     existing_run_id: str | None = None,
 ) -> str:
@@ -91,13 +92,13 @@ def _log_mlflow_run(
     return run_id
 
 
-def _mlflow_run_name(manifest: RunManifest) -> str:
+def _mlflow_run_name(manifest: RunManifestDocument) -> str:
     model = str(manifest.config.get("model", "unknown-model"))
     backend = str(manifest.config.get("backend", "unknown-backend"))
     return f"{model} | {backend} | {manifest.run_id}"
 
 
-def _mlflow_tags(manifest: RunManifest) -> dict[str, str]:
+def _mlflow_tags(manifest: RunManifestDocument) -> dict[str, str]:
     tags = {
         MLFLOW_RUN_ID_TAG: manifest.run_id,
         "llb.run_name": manifest.run_name,
@@ -116,7 +117,7 @@ def _mlflow_tags(manifest: RunManifest) -> dict[str, str]:
     return tags
 
 
-def _mlflow_metrics(manifest: RunManifest) -> dict[str, float]:
+def _mlflow_metrics(manifest: RunManifestDocument) -> dict[str, float]:
     values: dict[str, float] = {"cases.n": float(manifest.n_cases)}
 
     def add(prefix: str, record: Mapping[str, object] | None) -> None:
@@ -165,7 +166,7 @@ def _canonical_run_id(client: Any, run: Any) -> str | None:
                 if parsed.scheme == "file"
                 else Path(client.download_artifacts(run.info.run_id, artifact))
             )
-            manifest = RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(path)
         except Exception:
             continue
         client.set_tag(run.info.run_id, MLFLOW_RUN_ID_TAG, manifest.run_id)
@@ -186,7 +187,7 @@ def sync_mlflow_runs(data_dir: Path | None = None) -> dict[str, int]:
     report = {"created": 0, "updated": 0, "current": 0, "failed": 0}
     for manifest_path in sorted((data_root / "run-eval").glob("*/manifest.json")):
         try:
-            manifest = RunManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+            manifest = read_run_manifest(manifest_path)
             previous = existing.get(manifest.run_id)
             if (
                 previous is not None
@@ -208,7 +209,7 @@ def sync_mlflow_runs(data_dir: Path | None = None) -> dict[str, int]:
     return report
 
 
-def _mlflow_root(manifest: RunManifest, out_dir: Path) -> Path:
+def _mlflow_root(manifest: RunManifestDocument, out_dir: Path) -> Path:
     configured = manifest.config.get("data_dir")
     data_dir = resolve_project_path(configured) if isinstance(configured, str) else out_dir.parent
     return data_dir / MLFLOW_STORE_DIR

@@ -36,6 +36,8 @@ def persist_reports(
     mirror: Mirror | None,
 ) -> None:
     """Write one atomic category bundle per cell, each carrying the shared comparison."""
+    design = repeat_power_design or repeat_feedback_design
+    study_id = str((design or {}).get("study_id") or METHOD)
     artifacts = {
         "comparison.md": f"# Agent loop policy comparison\n\n```\n{table}\n```\n",
         "recommendation.json": json.dumps(recommendation, indent=2, sort_keys=True) + "\n",
@@ -113,6 +115,7 @@ def persist_reports(
             },
             case_rows=report.rows,
             mirror=mirror,
+            study_id=study_id,
             artifacts=artifacts,
         )
         _LOG.info(

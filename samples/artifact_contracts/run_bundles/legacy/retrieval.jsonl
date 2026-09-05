@@ -1,0 +1,2 @@
+{"item_id": "case-1", "retrieved": [{"doc_id": "doc-a", "char_start": 0, "char_end": 42, "rank": 1, "retrieval_score": 0.87, "text_preview": "Перший фрагмент."}], "gold_spans": [{"doc_id": "doc-a", "char_start": 0, "char_end": 42, "text": "Перший фрагмент."}]}
+{"item_id": "case-2", "retrieved": [], "gold_spans": [{"doc_id": "doc-b", "char_start": 10, "char_end": 30, "text": "Другий фрагмент."}]}

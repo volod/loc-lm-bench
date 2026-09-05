@@ -5,7 +5,9 @@ shared Typer app (same registration contract as the former single prep.py module
 """
 
 from llb.cli.prep import (  # noqa: F401
+    artifact_bundles,
     benchmarks,
+    conflict_calibration,
     conflict_granularity,
     conflict_null_research,
     conflicts,

@@ -21,6 +21,9 @@ build when the two disagree.
 - [Architecture](spec.md#architecture) -- ownership across data prep, retrieval, execution, scoring,
   persistence, and analysis.
 - [Data and ground truth](spec.md#data-and-ground-truth) -- source-span labels and human gates.
+- [Corpus provenance and acquisition boundary](spec.md#corpus-provenance-and-acquisition-boundary)
+  -- what an acquired document must carry, why the seam is a projection rather than a format, and
+  what this project refuses to do on a producer's behalf.
 - [Corpus conflict and governance](spec.md#corpus-conflict-and-governance) -- contradiction and
   supersession auditing, and the confidence contract that bounds what it may claim.
 - [Retrieval before generation](spec.md#retrieval-before-generation) -- isolating evidence delivery
@@ -52,7 +55,11 @@ build when the two disagree.
 - [Success criteria](spec.md#success-criteria) -- what a defensible selection workflow must prove.
 
 The ontology graph schema is defined separately in
-[graph-ontology-schema.md](graph-ontology-schema.md).
+[graph-ontology-schema.md](graph-ontology-schema.md). Two data contracts with parties outside this
+repository are also separate documents: the
+[acquired-corpus projection](acquired-corpus-projection.md) an upstream acquisition service renders
+into, and the [external-service draft contract](external-draft-contract.md) for artifacts drafted by
+hand with a chat provider.
 
 Current implementation detail is indexed in [../impl/current.md](../impl/current.md). Forward work
 is tracked in [../impl/plan.md](../impl/plan.md).

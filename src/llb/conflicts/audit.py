@@ -24,6 +24,7 @@ from llb.conflicts.constants import (
     TIER_SEMANTIC,
     tiers_up_to,
 )
+from llb.conflicts.claim.adjudicator import DEFAULT_ADJUDICATOR_TEMPERATURE
 from llb.conflicts.bundle.record import RunInputs, stage_attribution_inputs
 from llb.conflicts.corpus import CorpusDoc, load_corpus_docs
 from llb.conflicts.governance.coverage import governance_coverage
@@ -38,6 +39,7 @@ from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.core.contracts.common import JsonObject
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier.telemetry import LLMComplete
+from llb.rag.rerank import DEFAULT_RERANKER, RerankScorer
 
 _LOG = logging.getLogger(__name__)
 
@@ -65,6 +67,14 @@ class AuditParams:
     project_dims: int = 0
     calibrate_adjudicator: bool = True
     calibration_probe: Path | str | None = None
+    # Which probe tiers to adjudicate; None runs every tier the probe declares.
+    probe_tiers: tuple[str, ...] | None = None
+    adjudicator_temperature: float = DEFAULT_ADJUDICATOR_TEMPERATURE
+    # Optional cross-encoder ordering immediately before claim adjudication. The scorer itself is
+    # injected into `run_audit`; these fields make the chosen real-model path part of the bundle.
+    claim_prefilter: bool = False
+    claim_prefilter_model: str = DEFAULT_RERANKER
+    claim_prefilter_device: str = "cpu"
     # Price the hash and lexical tiers' duplicate evidence as one match probability and cluster it
     # into edition groups. Off by default: it needs the `linkage` extra, and the audit's findings
     # are the tiers' either way.
@@ -90,6 +100,11 @@ class AuditParams:
             "calibration_probe": str(self.calibration_probe)
             if self.calibration_probe is not None
             else None,
+            "probe_tiers": list(self.probe_tiers) if self.probe_tiers is not None else None,
+            "adjudicator_temperature": self.adjudicator_temperature,
+            "claim_prefilter": self.claim_prefilter,
+            "claim_prefilter_model": self.claim_prefilter_model if self.claim_prefilter else None,
+            "claim_prefilter_device": self.claim_prefilter_device if self.claim_prefilter else None,
             "linkage": self.linkage,
         }
 
@@ -111,6 +126,7 @@ def run_audit(
     store: StoreView | None = None,
     goldset: list[GoldItem] | None = None,
     complete: LLMComplete | None = None,
+    claim_scorer: RerankScorer | None = None,
     tree: SemanticPrefixTree | None = None,
 ) -> AuditResult:
     """Run every tier up to `params.effort` and return the assembled result.
@@ -169,7 +185,17 @@ def run_audit(
                 "[conflicts] the semantic tier needs a built store: pass --store or build one "
                 "with `make build-index`."
             )
-        inputs = run_semantic_tiers(result, params, docs, store, goldset, complete, settled, tree)
+        inputs = run_semantic_tiers(
+            result,
+            params,
+            docs,
+            store,
+            goldset,
+            complete,
+            claim_scorer,
+            settled,
+            tree,
+        )
 
     # One exit, because the governance coverage is a property of the corpus AND of the rows every
     # tier returned: a delta of zero means one thing when a returned pair could have been ordered

@@ -1,0 +1,50 @@
+{
+  "dataset_id": "artifact-contract-compatibility-fixtures",
+  "description": "Committed records that exercise current and supported-old compatibility reads.",
+  "extensions": {},
+  "members": [
+    {
+      "digest": "sha256:802c24a2912a0e537e8789928ac3f4dfde12de0c7eb7f6b430e24cfb303ec6d0",
+      "format": "json",
+      "granularity": "document",
+      "media_type": "application/json",
+      "member_id": "current",
+      "path": "current.json",
+      "record_contract": {
+        "schema_id": "llb.artifact-contract.compatibility-probe",
+        "schema_version": "2.0.0"
+      },
+      "required": true
+    },
+    {
+      "digest": "sha256:da0aed2b53c7f5db481109e43835430411f90a9b3696b369a15fe91e7a9751e1",
+      "format": "json",
+      "granularity": "document",
+      "media_type": "application/json",
+      "member_id": "supported-old",
+      "path": "supported-old.json",
+      "record_contract": {
+        "schema_id": "llb.artifact-contract.compatibility-probe",
+        "schema_version": "1.0.0"
+      },
+      "required": true
+    }
+  ],
+  "owner": "loc-lm-bench maintainers",
+  "quality_checks": [
+    {
+      "check_id": "contract-dispatch",
+      "description": "Every member validates at its source version and resolves to the current model.",
+      "kind": "structural"
+    }
+  ],
+  "relationships": [
+    {
+      "description": "The old member migrates to the same current contract family.",
+      "from_member": "supported-old",
+      "to_member": "current"
+    }
+  ],
+  "schema_id": "llb.dataset-manifest",
+  "schema_version": "1.0.0"
+}

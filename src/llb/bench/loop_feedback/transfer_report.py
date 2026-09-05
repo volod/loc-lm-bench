@@ -77,6 +77,7 @@ def persist_feedback_transfer(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             f"{artifact_stem}-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             f"{artifact_stem}-analysis.json": (

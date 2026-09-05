@@ -1,0 +1,230 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.verification-worksheet-row:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One sampled item as the worksheet carries it: read-only context, then the human columns.",
+  "properties": {
+    "cc_answerable": {
+      "default": "",
+      "title": "Cc Answerable",
+      "type": "string"
+    },
+    "cc_grounded": {
+      "default": "",
+      "title": "Cc Grounded",
+      "type": "string"
+    },
+    "cc_non_circular": {
+      "default": "",
+      "title": "Cc Non Circular",
+      "type": "string"
+    },
+    "cc_note": {
+      "default": "",
+      "title": "Cc Note",
+      "type": "string"
+    },
+    "cc_supported": {
+      "default": "",
+      "title": "Cc Supported",
+      "type": "string"
+    },
+    "chain_steps": {
+      "default": "",
+      "title": "Chain Steps",
+      "type": "string"
+    },
+    "chk_answerable": {
+      "default": "",
+      "enum": [
+        "pass",
+        "fail",
+        ""
+      ],
+      "title": "Chk Answerable",
+      "type": "string"
+    },
+    "chk_grounded": {
+      "default": "",
+      "enum": [
+        "pass",
+        "fail",
+        ""
+      ],
+      "title": "Chk Grounded",
+      "type": "string"
+    },
+    "chk_planted": {
+      "default": "",
+      "enum": [
+        "pass",
+        "fail",
+        ""
+      ],
+      "title": "Chk Planted",
+      "type": "string"
+    },
+    "chk_reference": {
+      "default": "",
+      "enum": [
+        "pass",
+        "fail",
+        ""
+      ],
+      "title": "Chk Reference",
+      "type": "string"
+    },
+    "context": {
+      "default": "",
+      "title": "Context",
+      "type": "string"
+    },
+    "decision": {
+      "default": "",
+      "enum": [
+        "accept",
+        "reject",
+        ""
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "edited_answer": {
+      "default": "",
+      "title": "Edited Answer",
+      "type": "string"
+    },
+    "human_note": {
+      "default": "",
+      "title": "Human Note",
+      "type": "string"
+    },
+    "human_status": {
+      "default": "",
+      "enum": [
+        "pending",
+        "decided",
+        ""
+      ],
+      "title": "Human Status",
+      "type": "string"
+    },
+    "item_id": {
+      "minLength": 1,
+      "title": "Item Id",
+      "type": "string"
+    },
+    "item_kind": {
+      "default": "",
+      "title": "Item Kind",
+      "type": "string"
+    },
+    "page_citation": {
+      "default": "",
+      "title": "Page Citation",
+      "type": "string"
+    },
+    "provenance": {
+      "default": "",
+      "title": "Provenance",
+      "type": "string"
+    },
+    "question": {
+      "default": "",
+      "title": "Question",
+      "type": "string"
+    },
+    "reference_answer": {
+      "default": "",
+      "title": "Reference Answer",
+      "type": "string"
+    },
+    "reject_code": {
+      "default": "",
+      "title": "Reject Code",
+      "type": "string"
+    },
+    "retrieval_rank": {
+      "default": "",
+      "title": "Retrieval Rank",
+      "type": "string"
+    },
+    "review_profile": {
+      "default": "",
+      "title": "Review Profile",
+      "type": "string"
+    },
+    "reviewer_id": {
+      "default": "",
+      "title": "Reviewer Id",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.verification-worksheet-row",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_answer": {
+      "default": "",
+      "title": "Source Answer",
+      "type": "string"
+    },
+    "source_doc_id": {
+      "default": "",
+      "title": "Source Doc Id",
+      "type": "string"
+    },
+    "source_hash": {
+      "default": "",
+      "title": "Source Hash",
+      "type": "string"
+    },
+    "span_doc_id": {
+      "default": "",
+      "title": "Span Doc Id",
+      "type": "string"
+    },
+    "span_occurrences": {
+      "default": "",
+      "title": "Span Occurrences",
+      "type": "string"
+    },
+    "span_text": {
+      "default": "",
+      "title": "Span Text",
+      "type": "string"
+    },
+    "split": {
+      "default": "",
+      "title": "Split",
+      "type": "string"
+    },
+    "stratum": {
+      "default": "",
+      "title": "Stratum",
+      "type": "string"
+    },
+    "synthetic": {
+      "default": "",
+      "title": "Synthetic",
+      "type": "string"
+    },
+    "translation_hash": {
+      "default": "",
+      "title": "Translation Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id"
+  ],
+  "title": "VerificationWorksheetRow",
+  "type": "object"
+}

@@ -53,6 +53,7 @@ def _openai_compatible_complete(
             messages,
             max_tokens=cfg.max_tokens,
             temperature=cfg.temperature,
+            seed=cfg.seed,
             timeout=cfg.timeout,
             extra_body=extra_body,
         )
@@ -112,6 +113,8 @@ def _ollama_native_complete(cfg: EndpointConfig, log: ProvenanceLog) -> LLMCompl
     def complete(prompt: str) -> str:
         started = monotonic()
         options: dict[str, object] = {"temperature": cfg.temperature, "num_predict": cfg.max_tokens}
+        if cfg.seed is not None:
+            options["seed"] = cfg.seed
         if cfg.num_ctx is not None:
             options["num_ctx"] = cfg.num_ctx
         payload = {

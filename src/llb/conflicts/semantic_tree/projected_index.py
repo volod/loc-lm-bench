@@ -1,4 +1,4 @@
-"""Persistence and reuse for the PCA-projected semantic conflict index."""
+"""Persistence and the single reuse gate for the PCA-projected conflict index."""
 
 import hashlib
 import json
@@ -67,15 +67,18 @@ def prepare_projected_index(
     tree_path = directory / TREE_FILE
     meta_path = directory / TREE_META_FILE
 
-    projection = _load_compatible_projection(
+    loaded_artifacts = _load_reusable_artifacts(
         projection_path,
+        tree_path,
+        meta_path,
         embedding_model=store.embedding_model,
         source_dim=source_vectors.dim,
         dims=resolved_dims,
         centered=centered,
+        source_fingerprint=source_fingerprint,
+        leaf_size=leaf_size,
     )
-    fitted = projection is None
-    if projection is None:
+    if loaded_artifacts is None:
         projection = fit_pca_projection(
             source_vectors,
             resolved_dims,
@@ -83,19 +86,13 @@ def prepare_projected_index(
             centered=centered,
             source_fingerprint=source_fingerprint,
         )
+        tree = None
+    else:
+        projection, tree = loaded_artifacts
     projected = projection.transform(source_vectors)
 
-    previous_meta = _load_json(meta_path)
-    reusable = (
-        not fitted
-        and previous_meta.get("source_fingerprint") == source_fingerprint
-        and previous_meta.get("projection_fingerprint") == projection.fingerprint
-        and previous_meta.get("leaf_size") == leaf_size
-        and tree_path.is_file()
-    )
-    tree = _load_tree(tree_path) if reusable else None
+    reusable = tree is not None
     if tree is None:
-        reusable = False
         tree = SemanticPrefixTree.build(projected, leaf_size=leaf_size)
     action = "reused" if reusable else "built"
     meta: JsonObject = {
@@ -122,33 +119,48 @@ def prepare_projected_index(
     return ProjectedIndex(vectors=projected, tree=tree, meta=meta)
 
 
-def _load_compatible_projection(
-    path: Path,
+def _load_reusable_artifacts(
+    projection_path: Path,
+    tree_path: Path,
+    meta_path: Path,
     *,
     embedding_model: str,
     source_dim: int,
     dims: int,
     centered: bool,
-) -> PCAProjection | None:
-    if not path.is_file():
-        return None
+    source_fingerprint: str,
+    leaf_size: int,
+) -> tuple[PCAProjection, SemanticPrefixTree] | None:
+    """Load the persisted projection and tree only when their complete identity still matches.
+
+    The source fingerprint includes the encoder, source dimensions, centering mode, corpus and
+    store identities, and chunk table. The projection fingerprint and leaf size complete the
+    persisted-tree identity; loading the tree itself enforces the tree format version.
+    """
+    meta = _load_json(meta_path)
     try:
-        projection = PCAProjection.load(path)
+        projection = PCAProjection.load(projection_path)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return None
-    return (
-        projection
-        if projection.compatible(
+    if not (
+        projection.compatible(
             embedding_model=embedding_model,
             source_dim=source_dim,
             dims=dims,
             centered=centered,
         )
-        else None
-    )
+        and projection.fitted_source_fingerprint == source_fingerprint
+        and meta.get("source_fingerprint") == source_fingerprint
+        and meta.get("projection_fingerprint") == projection.fingerprint
+        and meta.get("leaf_size") == leaf_size
+    ):
+        return None
+    tree = _load_tree(tree_path)
+    return (projection, tree) if tree is not None else None
 
 
 def _source_fingerprint(store: StoreView, *, centered: bool) -> str:
+    """Identify every source input whose change makes persisted tree geometry foreign."""
     payload: dict[str, Any] = {
         "embedding_model": store.embedding_model,
         "dim": store.dim,

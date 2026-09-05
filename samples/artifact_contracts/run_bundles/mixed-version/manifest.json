@@ -1,0 +1,45 @@
+{
+  "schema_id": "llb.run-manifest",
+  "schema_version": "2.0.0",
+  "run_id": "sample000run",
+  "run_name": "artifact-contract-sample",
+  "split": "final",
+  "created_at": "2026-09-04T00:00:00Z",
+  "config": {
+    "model": "sample-model",
+    "backend": "ollama",
+    "top_k": 5,
+    "retrieval_mode": "hybrid"
+  },
+  "env": {
+    "python": "3.13.0",
+    "platform": "Linux-sample"
+  },
+  "metrics": {
+    "objective_score": 0.5,
+    "reliability": 1.0,
+    "tokens_per_s": 42.5
+  },
+  "retrieval": {
+    "n": 2,
+    "k": 5,
+    "recall_at_k": 0.5,
+    "mrr": 0.5
+  },
+  "judge": null,
+  "telemetry": null,
+  "contention": null,
+  "durability": null,
+  "prompt_system_provenance": null,
+  "context_window": null,
+  "n_cases": 2,
+  "score_rows": {
+    "record_contract": {
+      "schema_id": "llb.case-score",
+      "schema_version": "1.0.0"
+    },
+    "owner": null,
+    "columns": null
+  },
+  "artifacts": []
+}

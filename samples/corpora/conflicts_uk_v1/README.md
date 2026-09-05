@@ -36,15 +36,40 @@ Governance front matter (`version`, `effective_date`, `source_system`, `language
 staleness ordering resolve, and is deliberately excluded from content hashing: two byte-identical
 documents carrying different `effective_date` values must still read as duplicates.
 
-**The adjudicator-calibration probe.** `adjudicator_probe.json` beside this file pairs 24 sections
-of these documents with frozen actionable/complementary labels, half each way. Every claim-tier
-audit adjudicates it before quoting a precision figure, so the corpus doubles as the calibration
-set for the model that judges other corpora ([conflict
-detection](../../../docs/impl/current/data-prep/conflict-detection.md#the-frozen-calibration-probe)).
+**The adjudicator-calibration probe.** `adjudicator_probe.json` beside this file carries two
+tiers of frozen actionable/complementary labels, each half and half. Every claim-tier audit
+adjudicates them before quoting a precision figure, so this corpus doubles as the calibration set
+for the model that judges other corpora ([conflict
+detection](../../../docs/impl/current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe)).
 The probe addresses passages by `doc_id` + heading line, never by copied text: editing a section
-below fails the probe loudly instead of leaving a frozen label on text that moved. Two sections
-that carry byte-identical text (the copy and its original) must not both appear as probe pairs
-against the same third section -- that is one prompt counted twice, not two observations.
+below fails the probe loudly instead of leaving a frozen label on text that moved.
+
+| tier | corpus | pairs | what it asks |
+| --- | --- | --- | --- |
+| `base` | `corpus/` | 24 | is this adjudicator broken? -- the only tier that gates |
+| `hard` | `probe_hard/` | 16 | which of two working adjudicators is better? -- reported, does not gate |
+
+Two sections that carry byte-identical text (the copy and its original) must not both appear as
+probe pairs against the same third section -- that is one prompt counted twice, not two
+observations. The base tier does carry two pairs that show the SAME two passages with A and B
+exchanged (`general-provisions-2021-reformatted` against `general-provisions-reformatted-2024`, and
+the officer pair beside it), because the 2024 revision restates those sections verbatim; that is an
+order-symmetry check on `subsumes`/`subsumed_by` rather than a second observation, and the hard tier
+deliberately carries none.
+
+**The hard tier's own corpus.** `probe_hard/` is five Ukrainian budget-process documents authored
+for one job: pairs whose actionable/complementary split is arguable on a shallow reading and
+determinate on a close one. Its actionable half restates one fact under a different heading, in
+different units (two working weeks against ten working days), or with only one clause of two
+changed; its complementary half puts two numeric claims about different quantities into the same
+sentence shape (thirty calendar days to submit against thirty calendar years to retain; an advance
+and a balance that share one five-working-day window). Each pair records the shallow reading it
+exists to catch in its `trap` field.
+
+It is a SEPARATE corpus rather than more sections here on purpose. The documents above plant one
+instance of every relation the detector must find, each with a known answer; an arguable pair is
+precisely what that fixture must not contain, and adding one would change what the detector tiers
+return over it. `probe_hard/` is never audited -- only adjudicated.
 
 **Repeated metadata is not a claim.** `archive-policy.md` and `deadline-note.md` each carry one
 number-heavy `Reiestr vydannia` publication record under the same structural heading. The semantic

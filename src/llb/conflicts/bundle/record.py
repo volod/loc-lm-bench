@@ -278,4 +278,22 @@ def readable_record(summary: JsonObject) -> tuple[JsonObject | None, str]:
         return None, NEWER_SCHEMA_REASON.format(version=version, known=STAGE_INPUTS_SCHEMA_VERSION)
     if not isinstance(summary.get(COVERAGE_FIELD), dict):
         return None, NO_COVERAGE_REASON
-    return record, ""
+    return _at_current_form(record)
+
+
+def _at_current_form(record: JsonObject) -> tuple[JsonObject | None, str]:
+    """Every reading is taken from the CURRENT form, whatever form the bundle was written at.
+
+    An older record is re-encoded through the registered migration rather than read in place, so
+    the forms are described once -- in the registry -- instead of once per reader. A record the
+    registry cannot resolve is refused with its reason rather than read as an empty one.
+    """
+    from llb.artifacts.errors import ArtifactContractError
+    from llb.conflicts.bundle.contract import is_current_form, stage_inputs_at_current
+
+    if is_current_form(record):
+        return record, ""
+    try:
+        return stage_inputs_at_current(record), ""
+    except ArtifactContractError as exc:
+        return None, str(exc)

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 
 from llb.conflicts.constants import (
     APPLIED_OVERLAY_DIR,
@@ -14,8 +14,19 @@ from llb.conflicts.resolution.policy import (
     ACTION_PREFER_NEWER,
     STATUS_ACCEPTED,
 )
+from llb.artifacts.default_registry import DEFAULT_REGISTRY
 from llb.core.contracts.common import JsonObject
+from llb.core.contracts.data_prep.conflicts import (
+    CONFLICT_OVERLAY_SCHEMA_ID,
+    ConflictOverlay,
+)
 from llb.core.contracts.rag import ChunkRecord
+
+
+# The overlay keeps the compact integer schema it has always written; the registry names the same
+# single form. The two are one version in two encodings, so the map lives here, at the seam.
+OVERLAY_LOCAL_SCHEMA_VERSION: Final[int] = 1
+CONFLICT_OVERLAY_CONTRACT_VERSION: Final[Literal["1.0.0"]] = "1.0.0"
 
 
 def applied_overlay_path(corpus_root: Path | str) -> Path:
@@ -23,13 +34,44 @@ def applied_overlay_path(corpus_root: Path | str) -> Path:
 
 
 def load_applied_overlay(corpus_root: Path | str) -> JsonObject | None:
+    """The applied overlay at its current contract, or None where the corpus carries none.
+
+    The overlay's own `schema_version` is an integer inside the file; the registry names the same
+    form semantically, so an unsupported or future overlay is refused here -- before a store build
+    folds it into a corpus fingerprint -- rather than after.
+    """
     path = applied_overlay_path(corpus_root)
     if not path.is_file():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-        raise ValueError(f"{path}: unsupported conflict overlay schema")
-    return payload
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path}: conflict overlay must be an object")
+    overlay = DEFAULT_REGISTRY.read_as(
+        CONFLICT_OVERLAY_SCHEMA_ID,
+        payload,
+        version=overlay_contract_version(payload.get("schema_version")),
+        source=str(path),
+    )
+    if not isinstance(overlay, ConflictOverlay):
+        raise ValueError(f"{path}: overlay did not resolve to the current contract")
+    return _local_form(overlay)
+
+
+def _local_form(overlay: ConflictOverlay) -> JsonObject:
+    """The overlay in the encoding the file uses, which is what a fingerprint hashes."""
+    fields: JsonObject = overlay.model_dump(mode="json")
+    fields.pop("schema_id")
+    return {**fields, "schema_version": OVERLAY_LOCAL_SCHEMA_VERSION}
+
+
+def overlay_contract_version(local_version: object) -> str:
+    """The registry version naming the overlay's own integer schema."""
+    if local_version != OVERLAY_LOCAL_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported conflict overlay schema {local_version!r}; "
+            f"this build writes and reads {OVERLAY_LOCAL_SCHEMA_VERSION}"
+        )
+    return CONFLICT_OVERLAY_CONTRACT_VERSION
 
 
 def directives_by_doc(overlay: JsonObject | None) -> dict[str, JsonObject]:
@@ -88,18 +130,25 @@ def _suppressed(chunk: ChunkRecord, spans: list[Any]) -> bool:
 
 
 def overlay_from_plan(plan: JsonObject) -> JsonObject:
+    """The overlay a resolution plan implies, built and validated through its contract."""
     documents: dict[str, JsonObject] = {}
     items = plan.get("items")
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
             continue
         _add_item(documents, item)
-    return {
-        "schema_version": 1,
-        "policy": plan.get("policy"),
-        "source_findings_sha256": plan.get("source_findings_sha256"),
-        "documents": {doc: _ordered(directive) for doc, directive in sorted(documents.items())},
-    }
+    overlay = ConflictOverlay(
+        schema_id=CONFLICT_OVERLAY_SCHEMA_ID,
+        schema_version=CONFLICT_OVERLAY_CONTRACT_VERSION,
+        policy=_optional_str(plan.get("policy")),
+        source_findings_sha256=_optional_str(plan.get("source_findings_sha256")),
+        documents={doc: _ordered(directive) for doc, directive in sorted(documents.items())},
+    )
+    return _local_form(overlay)
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _ordered(directive: JsonObject) -> JsonObject:

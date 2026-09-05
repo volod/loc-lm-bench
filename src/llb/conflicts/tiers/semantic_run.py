@@ -5,25 +5,21 @@ from typing import TYPE_CHECKING
 
 from llb.conflicts.bundle.record import RunInputs
 from llb.conflicts.bundle.candidate_record import DEFAULT_CANDIDATE_RECORD_PAIRS, CandidateRecord
-from llb.conflicts.claim.calibration import calibrate_adjudicator, load_calibration_probe
-from llb.conflicts.claim.precision import precision_block
-from llb.conflicts.tiers.claim import adjudicate_pairs
 from llb.conflicts.constants import (
     DEFAULT_COSINE_THRESHOLD,
     MIN_CENTERING_VECTORS,
-    TIER_CLAIM,
-    tiers_up_to,
 )
 from llb.conflicts.corpus import CorpusDoc
 from llb.conflicts.bundle.document_chunks import DocumentChunks
 from llb.conflicts.bundle.document_exclusions import DocumentExclusions
-from llb.conflicts.models import AuditResult, Finding
+from llb.conflicts.models import AuditResult
 from llb.conflicts.needles import analyze_needles
 from llb.conflicts.calibration.operating_point import resolve_cos_threshold
 from llb.conflicts.calibration.sampling import estimate_null_distribution
 from llb.conflicts.semantic_tree.projected_index import prepare_projected_index
 from llb.conflicts.tiers.semantic_filter import select_content_chunks
 from llb.conflicts.tiers.semantic import build_tree, detect_semantic_pairs
+from llb.conflicts.tiers.claim_run import record_claims
 from llb.conflicts.store_access import StoreView
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.refresh import tree_meta
@@ -32,6 +28,7 @@ from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord
 from llb.goldset.schema import GoldItem
 from llb.prep.frontier.telemetry import LLMComplete
+from llb.rag.rerank import RerankScorer
 
 if TYPE_CHECKING:
     from llb.conflicts.audit import AuditParams
@@ -103,6 +100,7 @@ def run_semantic_tiers(
     store: StoreView,
     goldset: list[GoldItem] | None,
     complete: LLMComplete | None,
+    claim_scorer: RerankScorer | None,
     settled: set[tuple[str, str]],
     tree: SemanticPrefixTree | None,
 ) -> RunInputs:
@@ -157,13 +155,23 @@ def run_semantic_tiers(
             corpus_fingerprint=str(store.meta.get("corpus_fingerprint", "")),
             doc_fingerprints=store.doc_fingerprints,
             cos_threshold=cos_threshold,
+            store_dir=store.index_dir,
         ),
         "centered": centered,
         **projection_meta,
         "cos_threshold": cos_threshold,
     }
     _record_needles(result, goldset, store, vectors, cos_threshold)
-    _record_claims(result, params, store, governance, complete, semantic_findings, pairs)
+    record_claims(
+        result,
+        params,
+        store,
+        governance,
+        complete,
+        claim_scorer,
+        semantic_findings,
+        pairs,
+    )
     return RunInputs(
         chunks=DocumentChunks.of(store.chunks, allowed, settled),
         exclusions=DocumentExclusions.of(
@@ -205,61 +213,3 @@ def _record_needles(
         report.get("ambiguous_items"),
         report.get("items"),
     )
-
-
-def _record_claims(
-    result: AuditResult,
-    params: "AuditParams",
-    store: StoreView,
-    governance: dict[str, JsonObject],
-    complete: LLMComplete | None,
-    semantic_findings: list[Finding],
-    pairs: list[tuple[int, int, float]],
-) -> None:
-    if TIER_CLAIM not in tiers_up_to(params.effort):
-        result.findings.extend(semantic_findings)
-        return
-    if complete is None:
-        raise SystemExit(
-            "[conflicts] the claim tier needs a model endpoint: pass --conflict-model "
-            "(and --conflict-backend) so candidate pairs can be adjudicated."
-        )
-    calibration = _calibrate(params, complete)
-    cap = params.max_claim_pairs or len(pairs)
-    selected = pairs[:cap]
-    if len(selected) < len(pairs):
-        _LOG.warning(
-            "[conflicts] adjudicating %d of %d candidate pairs (--max-claim-pairs)",
-            len(selected),
-            len(pairs),
-        )
-    claim_findings, claim_stats, rows = adjudicate_pairs(
-        selected, store.chunks, governance, complete
-    )
-    result.findings.extend(claim_findings)
-    result.findings.extend(semantic_findings[len(selected) :])
-    result.tiers.append(claim_stats)
-    result.claim_precision = precision_block(rows, calibration, seed=params.null_seed)
-    _LOG.info("[conflicts] tier=claim findings=%d", len(claim_findings))
-    if not result.claim_precision["reported"]:
-        _LOG.warning(
-            "[conflicts] claim-tier precision not reported: %s", result.claim_precision["reason"]
-        )
-
-
-def _calibrate(params: "AuditParams", complete: LLMComplete) -> JsonObject | None:
-    """Adjudicate the frozen probe first, so the precision block knows what it may print."""
-    if not params.calibrate_adjudicator:
-        return None
-    probe = load_calibration_probe(params.calibration_probe)
-    calibration = calibrate_adjudicator(probe, complete)
-    _LOG.info(
-        "[conflicts] adjudicator calibration: %s of %s frozen probe pairs agree (accuracy %s, "
-        "Wilson 95%% lower bound %s, gate %s)",
-        calibration["agreements"],
-        calibration["parsed_pairs"],
-        calibration["accuracy"],
-        calibration["accuracy_wilson_95"][0],
-        calibration["min_accuracy_lcb"],
-    )
-    return calibration

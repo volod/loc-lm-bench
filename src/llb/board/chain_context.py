@@ -4,7 +4,6 @@ Each context-policy run bundle is tagged with its policy; per fixed model, the b
 policy is ranked under ``TIER_CHAIN_CONTEXT`` with the policy as the row label.
 """
 
-import json
 import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -19,7 +18,7 @@ from llb.scoring.aggregate import (
 from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult
 
-from llb.board.io import read_case_series
+from llb.board.io import admitted_manifest, read_case_series
 
 _LOG = logging.getLogger(__name__)
 
@@ -83,10 +82,8 @@ def load_chain_context_records(data_dir: Path | str) -> list[PolicyRunRecord]:
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            _LOG.warning("[board] unreadable chain-context manifest: %s", manifest_path)
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         record = policy_record_from_manifest(manifest, manifest_path.parent)
         if record is None:

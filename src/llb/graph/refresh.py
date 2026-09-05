@@ -28,6 +28,7 @@ from llb.core.store_generations import (
 )
 from llb.graph.constants import DEFAULT_KHOP_DEPTH, META_FILE
 from llb.graph.ingest import load_extractions, load_ontology
+from llb.artifacts.retrieval_graph.graphs import readable_graph_meta
 from llb.graph.store import GraphStore
 from llb.prep.ontology.constants import EXTRACTION_FILENAME, ONTOLOGY_FILENAME
 from llb.prep.ontology.coverage.inventory import inventory_corpus
@@ -132,7 +133,7 @@ def refresh_graph_store(
         raise SystemExit(
             f"[refresh] no graph store at {base_dir}; build one first with `llb build-graph`"
         )
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = readable_graph_meta(meta_path)
     docs = inventory_corpus(corpus_root)
     current = {doc.doc_id: doc.sha256 for doc in docs}
     recorded = _load_recorded_fingerprints(meta, live_dir)

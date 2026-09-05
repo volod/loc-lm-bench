@@ -1,0 +1,157 @@
+{
+  "$defs": {
+    "ChainStepRecord": {
+      "additionalProperties": false,
+      "description": "One ordered step of a chain item, with its own question, answer, and spans.",
+      "properties": {
+        "dependency_note": {
+          "default": "",
+          "title": "Dependency Note",
+          "type": "string"
+        },
+        "order": {
+          "minimum": 1,
+          "title": "Order",
+          "type": "integer"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "reference_answer": {
+          "minLength": 1,
+          "title": "Reference Answer",
+          "type": "string"
+        },
+        "source_doc_id": {
+          "minLength": 1,
+          "title": "Source Doc Id",
+          "type": "string"
+        },
+        "source_spans": {
+          "items": {
+            "$ref": "#/$defs/SourceSpanRecord"
+          },
+          "minItems": 1,
+          "title": "Source Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "order",
+        "question",
+        "reference_answer",
+        "source_doc_id",
+        "source_spans"
+      ],
+      "title": "ChainStepRecord",
+      "type": "object"
+    },
+    "SourceSpanRecord": {
+      "additionalProperties": false,
+      "description": "A labelled span: char offsets into a source document plus the exact text.",
+      "properties": {
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end",
+        "text"
+      ],
+      "title": "SourceSpanRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.gold-chain:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`chains.jsonl`: one ordered chain-of-questions item.",
+  "properties": {
+    "chain_id": {
+      "minLength": 1,
+      "title": "Chain Id",
+      "type": "string"
+    },
+    "lang": {
+      "default": "uk",
+      "minLength": 1,
+      "title": "Lang",
+      "type": "string"
+    },
+    "provenance": {
+      "default": "ontology-drafted",
+      "enum": [
+        "sample-generated",
+        "public-reused",
+        "human-authored",
+        "frontier-drafted",
+        "ontology-drafted",
+        "human-verified"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.gold-chain",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "default": "final",
+      "enum": [
+        "calibration",
+        "tuning",
+        "final"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/ChainStepRecord"
+      },
+      "maxItems": 4,
+      "minItems": 2,
+      "title": "Steps",
+      "type": "array"
+    },
+    "verified": {
+      "default": false,
+      "title": "Verified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "chain_id",
+    "steps"
+  ],
+  "title": "GoldChainRecord",
+  "type": "object"
+}

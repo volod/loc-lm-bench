@@ -13,6 +13,8 @@ from pathlib import Path
 
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 from llb.goldset.validate import validate_items
+from llb.prep.corpus.fingerprints import corpus_fingerprint
+from llb.prep.corpus.ingest import ingest_corpus
 from llb.prep.ontology.constants import (
     NEEDLE_GOLDSET_FILENAME,
     PDF_ONTOLOGY_REPORT_FILENAME,
@@ -149,6 +151,14 @@ def _assert_provenance(out: Path, result) -> None:
     assert set(prov["prompts"]) == {"extraction", "draft", "multi_hop"}
     assert prov["settings"]["extract_concurrency"] == 2
     assert {d["doc_id"] for d in prov["documents"]} == {"doc1.md", "doc2.md"}
+    # a corpus with no acquisition behind it records that absence rather than omitting the keys
+    assert all(
+        d["acquisition_run_id"] is None and d["source_uri"] is None for d in prov["documents"]
+    )
+    assert prov["corpus_version"] == {
+        "corpus_fingerprint": corpus_fingerprint(result.corpus_root),
+        "acquisition_run_ids": [],
+    }
     assert prov["stages"]["facts"] == 4 and prov["n_items"] == len(result.items)
     assert prov["stages"]["claims"] == 1 and prov["stages"]["events"] == 1  # seeded kinds counted
 
@@ -189,6 +199,38 @@ def test_full_flow_drafts_grounded_unverified_bundle(tmp_path):
     _assert_ontology_artifacts(out)
     _assert_provenance(out, result)
     _assert_ontology_report_and_gates(out)
+
+
+def test_full_flow_binds_an_acquired_corpus_to_all_of_its_runs(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    for name, text, run_id in (
+        ("doc1.md", DOC1, "acquisition-run-b"),
+        ("doc2.md", DOC2, "acquisition-run-a"),
+    ):
+        (source / name).write_text(text, encoding="utf-8")
+        (source / f"{name}.metadata.json").write_text(
+            json.dumps({"source_system": "fixture-acquisition", "acquisition_run_id": run_id}),
+            encoding="utf-8",
+        )
+    corpus = tmp_path / "corpus"
+    ingest_corpus(source, corpus, min_chars=1)
+    out = tmp_path / "bundle"
+
+    result = _draft(
+        corpus,
+        fake_endpoint,
+        max_items=20,
+        out_dir=out,
+        extract_concurrency=2,
+    )
+
+    provenance = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["corpus_version"] == {
+        "corpus_fingerprint": corpus_fingerprint(corpus),
+        "acquisition_run_ids": ["acquisition-run-a", "acquisition-run-b"],
+    }
+    assert len(result.items) > 0
 
 
 def _grounded_span(doc_id: str, text: str, quote: str) -> SourceSpan:

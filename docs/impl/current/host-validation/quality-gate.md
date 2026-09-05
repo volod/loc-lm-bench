@@ -21,7 +21,8 @@ complexity finding also exits the sweep non-zero (see
 ## Code quality checks
 
 `make ci` checks Ruff formatting and lint, mypy, the acceptance-gate inventory, the
-[complexity and shell-lint gates](complexity-and-shell-gates.md), and the non-slow pytest suite.
+[complexity and shell-lint gates](complexity-and-shell-gates.md), toolchain-pin integrity
+(`make lint-toolchain`), and the non-slow pytest suite.
 `make test` adds the full local test flow and Markdown lint; `make lint-md` also runs
 `make lint-doc-links` (`llb.quality.doc_links`), which resolves every relative docs link -- file
 plus `#anchor` -- so the three-level

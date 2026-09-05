@@ -35,18 +35,19 @@ promote a dated contradiction to `superseded_by`, so the precondition cannot dri
 it is a precondition for.
 """
 
-from collections import Counter
-from collections.abc import Hashable, Sequence
+from collections.abc import Sequence
 
 from llb.conflicts.grouping.census import counted
-from llb.conflicts.governance.editions import ORDERING_FIELDS, compare_editions, edition_key
+from llb.conflicts.governance.editions import ORDERING_FIELDS, compare_editions
+from llb.conflicts.governance.orderability import orderable_pair_count, unordered_pairs
 from llb.conflicts.governance.stage import lost_pair_sentence
 from llb.core.contracts.common import JsonObject
 
 # 1 counts dated documents and orderable returned pairs beside the policy delta.
 # 2 adds the orderable DOCUMENT pairs between them, which is what names the stage a run lost one at.
 # 3 adds the optional `lost_orderable_pair` attribution, which names that stage on one pair.
-COVERAGE_SCHEMA_VERSION = 3
+# 4 adds the exact per-stage lost-pair census inside that attribution.
+COVERAGE_SCHEMA_VERSION = 4
 ORDERING_FIELDS_PHRASE = " or ".join(f"`{field}`" for field in ORDERING_FIELDS)
 # The knobs the retrieval reading lists when nothing narrowed them to one. `governance_stage.py`
 # narrows them whenever the run recorded what it needs to; this is what an audit that did not says.
@@ -87,35 +88,6 @@ def document_coverage(document_governance: Sequence[JsonObject]) -> JsonObject:
     }
 
 
-def _pairs(count: int) -> int:
-    """How many unordered pairs `count` items make."""
-    return count * (count - 1) // 2
-
-
-def _same_key_pairs(keys: Sequence[Hashable]) -> int:
-    """Pairs sharing a key, counted from the key multiset -- linear in the items, not the pairs."""
-    return sum(_pairs(count) for count in Counter(keys).values())
-
-
-def _differing_key_pairs(keys: Sequence[Hashable]) -> int:
-    """Pairs whose keys differ. Every key here EXISTS; an absent one is filtered out first."""
-    return _pairs(len(keys)) - _same_key_pairs(keys)
-
-
-def _both_differing_pairs(keyed: Sequence[tuple[Hashable, Hashable]]) -> int:
-    """Pairs differing in BOTH keys -- the overlap a per-field count would otherwise claim twice.
-
-    From the multisets again: every pair, minus the ones agreeing on either key, plus back the ones
-    agreeing on both, which those two subtractions each removed.
-    """
-    return (
-        _pairs(len(keyed))
-        - _same_key_pairs([first for first, _ in keyed])
-        - _same_key_pairs([second for _, second in keyed])
-        + _same_key_pairs(keyed)
-    )
-
-
 def document_pair_orderability(document_governance: Sequence[JsonObject]) -> JsonObject:
     """How many of the corpus's own DOCUMENT pairs `compare_editions` could order.
 
@@ -131,19 +103,9 @@ def document_pair_orderability(document_governance: Sequence[JsonObject]) -> Jso
     documents off a quadratic path. The unpack below is deliberate: two bases is what makes two
     terms enough, so a third ordering field must fail here rather than silently under-count.
     """
-    date_field, version_field = ORDERING_FIELDS
-    keyed = [
-        (edition_key(governance, date_field), edition_key(governance, version_field))
-        for governance in document_governance
-    ]
     return {
-        "document_pairs": _pairs(len(document_governance)),
-        "orderable_document_pairs": (
-            _differing_key_pairs([date for date, _ in keyed if date is not None])
-            + _differing_key_pairs([version for _, version in keyed if version is not None])
-            # Only a document carrying BOTH keys can sit in a pair the two terms above both count.
-            - _both_differing_pairs([keys for keys in keyed if None not in keys])
-        ),
+        "document_pairs": unordered_pairs(len(document_governance)),
+        "orderable_document_pairs": orderable_pair_count(document_governance),
     }
 
 

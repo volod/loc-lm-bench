@@ -28,6 +28,7 @@ from llb.prompts.registry import render_text
 from llb.scoring.structured import run as structured
 from llb.scoring.aggregate import TIER_STRUCTURED
 from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
+from llb.core.contracts.run_bundle.rows import STRUCTURED_CASE_SCHEMA_ID
 
 _LOG = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ def run_structured(
             config=config,
             metrics=metrics,
             case_rows=rows,
+            score_contract=STRUCTURED_CASE_SCHEMA_ID,
             mirror=mirror,
         )
         _LOG.info(

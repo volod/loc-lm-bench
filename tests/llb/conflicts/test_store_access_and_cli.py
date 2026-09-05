@@ -87,7 +87,8 @@ def test_cli_hash_effort_writes_the_report_artifacts(tmp_path):
     assert "duplicate" in result.output
 
 
-def test_cli_semantic_effort_uses_the_built_store(built_store, tmp_path):
+def test_cli_semantic_effort_uses_the_built_store(built_store, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
     out = tmp_path / "report"
     result = CliRunner().invoke(
         app,
@@ -111,6 +112,7 @@ def test_cli_semantic_effort_uses_the_built_store(built_store, tmp_path):
     summary = json.loads((out / SUMMARY_FILE).read_text(encoding="utf-8"))
     assert summary["tree"]["n_vectors"] > 0
     assert summary["tree"]["embedding_model"] == "fake-hashed-bow"
+    assert summary["tree"]["store_data_dir_relative"] == "rag"
     assert summary["tree"]["project_dims"] == 8
     assert summary["tiers"][-1]["blocking"] == "pca-euclidean"
     assert (built_store / "semantic_tree" / "projection.json").is_file()

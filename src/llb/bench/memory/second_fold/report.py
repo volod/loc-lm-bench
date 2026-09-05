@@ -194,6 +194,7 @@ def persist_second_fold(
         },
         case_rows=cells,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "second-fold-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "second-fold-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",

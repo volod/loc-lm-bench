@@ -188,8 +188,8 @@ def test_the_report_labels_the_number_a_projection_wherever_it_prints_it():
     assert f"{REVIEW_LABEL} (PROJECTED under policy `{POLICY_CONSERVATIVE}`): 1 row" in headline
     assert "not a\nmeasurement" in headline or "not a measurement" in headline
     assert f"| {REVIEW_LABEL} (projected) |" in header
-    assert [cell.strip() for cell in row.split("|")][1:5] == ["G1", "2", "2", "1"], (
-        "rows, to decide, then the projected review count -- in that order"
+    assert [cell.strip() for cell in row.split("|")][1:6] == ["G1", "2", "2", "1", "1"], (
+        "rows, to decide, chain length, then the projected review count -- in that order"
     )
     assert "projection under a named policy, never a measurement" in table
     assert POLICY_CONSERVATIVE in table
@@ -400,12 +400,12 @@ def test_two_policies_render_one_labelled_column_each_plus_the_delta():
     header = [cell.strip() for cell in _group_header(report).split("|")]
     row = next(line for line in table.splitlines() if line.startswith("| G2 |"))
 
-    assert header[4:7] == [
+    assert header[5:8] == [
         f"{REVIEW_LABEL} (projected, `{POLICY_CONSERVATIVE}`)",
         f"{REVIEW_LABEL} (projected, `{POLICY_PREFER_NEWER}`)",
         f"delta (`{POLICY_CONSERVATIVE}` -> `{POLICY_PREFER_NEWER}`)",
     ]
-    assert [cell.strip() for cell in row.split("|")][4:7] == ["1", "0", "-1"], (
+    assert [cell.strip() for cell in row.split("|")][5:8] == ["1", "0", "-1"], (
         "the dated supersession costs a review under one policy and nothing under the other"
     )
     assert f"policy choice `{POLICY_CONSERVATIVE}` -> `{POLICY_PREFER_NEWER}`: **-1 row**" in report
@@ -428,7 +428,7 @@ def test_a_delta_column_never_reads_as_a_count():
     """`+2` is a change and `2` is a count; a table that renders both must not confuse them."""
     swapped = render_report(_projected(_separating(), POLICY_PREFER_NEWER, POLICY_CONSERVATIVE))
     row = next(line for line in swapped.splitlines() if line.startswith("| G2 |"))
-    assert [cell.strip() for cell in row.split("|")][4:7] == ["0", "1", "+1"]
+    assert [cell.strip() for cell in row.split("|")][5:8] == ["0", "1", "+1"]
 
 
 def test_the_projection_refuses_a_repeated_policy():

@@ -174,6 +174,7 @@ def persist_summary_cap(
         },
         case_rows=cells,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "summary-input-cap-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
             "summary-input-cap-analysis.json": (

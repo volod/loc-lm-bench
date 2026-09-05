@@ -3,11 +3,19 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
+from llb.prep.corpus.governance_fields import FINGERPRINTED_GOVERNANCE_FIELDS
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX
 
 CORPUS_MANIFEST = "corpus_manifest.json"
+
+
+class CorpusVersionBinding(TypedDict):
+    """Portable identity of one corpus version and its producing acquisition runs."""
+
+    corpus_fingerprint: str
+    acquisition_run_ids: list[str]
 
 
 def _manifest_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -53,6 +61,25 @@ def corpus_fingerprint(corpus_root: Path | str) -> str:
     root = Path(corpus_root)
     fingerprint = _corpus_content_fingerprint(root, load_manifest(root))
     return _with_overlay_fingerprint(root, fingerprint)
+
+
+def corpus_version_binding(corpus_root: Path | str) -> CorpusVersionBinding:
+    """Bind the corpus fingerprint to every acquisition run represented in that version.
+
+    An empty ``acquisition_run_ids`` list is the explicit local-corpus state. Only successful
+    manifest rows contribute, matching the rows included by ``corpus_fingerprint``.
+    """
+    root = Path(corpus_root)
+    manifest = load_manifest(root)
+    run_ids = {
+        run_id
+        for row in (_manifest_rows(manifest) if manifest is not None else [])
+        if isinstance((run_id := row.get("acquisition_run_id")), str) and run_id.strip()
+    }
+    return {
+        "corpus_fingerprint": corpus_fingerprint(root),
+        "acquisition_run_ids": sorted(run_ids),
+    }
 
 
 def _is_corpus_document(path: Path) -> bool:
@@ -113,18 +140,21 @@ def load_manifest(corpus_root: Path) -> dict[str, Any] | None:
 
 
 def _manifest_item_row(item: dict[str, Any]) -> dict[str, Any]:
-    return {
+    """The identity of one staged document: content, then every governance field but the local one.
+
+    Governance enters unconditionally, `None` where the corpus supplies nothing, so a corpus with
+    no acquisition provenance fingerprints the same way whichever fields this side has learned to
+    read. Widening the row moves every fingerprint once and costs a store rebuild; it never moves
+    a character offset, so no label moves with it.
+    """
+    row = {
         "source": item.get("source"),
         "doc_id": item.get("doc_id"),
         "kind": item.get("kind"),
         "n_chars": item.get("n_chars"),
         "source_sha256": item.get("source_sha256"),
-        "language": item.get("language"),
-        "version": item.get("version"),
-        "effective_date": item.get("effective_date"),
-        "source_system": item.get("source_system"),
-        "acl_label": item.get("acl_label"),
     }
+    return {**row, **{field: item.get(field) for field in FINGERPRINTED_GOVERNANCE_FIELDS}}
 
 
 def _citation_sidecar_sha(root: Path, doc_id: str) -> str | None:

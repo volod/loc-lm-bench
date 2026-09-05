@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "SourceSpanRecord": {
+      "additionalProperties": false,
+      "description": "A labelled span: char offsets into a source document plus the exact text.",
+      "properties": {
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "char_start",
+        "char_end",
+        "text"
+      ],
+      "title": "SourceSpanRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.gold-item:2.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The canonical gold row: every field stated, nothing left to a reader's default.",
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "lang": {
+      "minLength": 1,
+      "title": "Lang",
+      "type": "string"
+    },
+    "provenance": {
+      "enum": [
+        "sample-generated",
+        "public-reused",
+        "human-authored",
+        "frontier-drafted",
+        "ontology-drafted",
+        "human-verified"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "question": {
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "reference_answer": {
+      "title": "Reference Answer",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.gold-item",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_doc_id": {
+      "minLength": 1,
+      "title": "Source Doc Id",
+      "type": "string"
+    },
+    "source_spans": {
+      "items": {
+        "$ref": "#/$defs/SourceSpanRecord"
+      },
+      "minItems": 1,
+      "title": "Source Spans",
+      "type": "array"
+    },
+    "split": {
+      "enum": [
+        "calibration",
+        "tuning",
+        "final"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "verified": {
+      "title": "Verified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "id",
+    "lang",
+    "question",
+    "reference_answer",
+    "source_doc_id",
+    "source_spans",
+    "provenance",
+    "verified",
+    "split"
+  ],
+  "title": "GoldItemRecord",
+  "type": "object"
+}

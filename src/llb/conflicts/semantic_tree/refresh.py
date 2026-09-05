@@ -14,11 +14,13 @@ fresh build is the better trade.
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from llb.conflicts.bundle.store_identity import identity_payload
+from llb.conflicts.bundle.store_location import store_location_payload
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.build import bisect
-from llb.conflicts.semantic_tree.node import TREE_VERSION, TreeNode, node_bounds, node_geometry
+from llb.conflicts.semantic_tree.node import TreeNode, node_bounds, node_geometry
 from llb.conflicts.semantic_tree.vectorops import VectorSet
 from llb.core.contracts.rag import ChunkRecord
 from llb.rag.refresh.diff import ManifestDiff
@@ -197,6 +199,7 @@ def tree_meta(
     corpus_fingerprint: str,
     doc_fingerprints: dict[str, str],
     cos_threshold: float,
+    store_dir: Path | str | None = None,
 ) -> dict[str, object]:
     """The persisted tree sidecar: geometry stats plus the fingerprints that make it reusable.
 
@@ -221,24 +224,8 @@ def tree_meta(
         **radius_payload,
         "corpus_fingerprint": corpus_fingerprint,
         **identity_payload(doc_fingerprints),
+        **store_location_payload(store_dir),
     }
-
-
-def tree_is_reusable(meta: dict[str, object], embedding_model: str, dim: int) -> bool:
-    """A persisted tree may only be reused under the encoder and dimension that built it.
-
-    Centroids and radii are only meaningful in the space they were computed in, so a store
-    re-embedded with a different encoder must rebuild rather than patch.
-    """
-    return (
-        meta.get("version") == TREE_VERSION
-        and meta.get("embedding_model") == embedding_model
-        and _as_int(meta.get("dim")) == dim
-    )
-
-
-def _as_int(value: object) -> int:
-    return value if isinstance(value, int) else -1
 
 
 def radius_degrees(radians: float) -> float:

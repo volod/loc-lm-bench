@@ -30,8 +30,9 @@ Model quality is only meaningful after three upstream questions have clear answe
 The benchmark therefore follows this trust chain:
 
 ```text
-corpus -> source-span labels -> human verification -> retrieval gate
-       -> host-fit serving plan -> model scoring -> immutable run bundle -> tiered board
+source capture -> corpus -> source-span labels -> human verification
+    -> retrieval gate -> host-fit serving plan -> model scoring
+    -> immutable run bundle -> tiered board
 ```
 
 A downstream score cannot repair a weak upstream link. In particular, generation models are not
@@ -54,11 +55,17 @@ The primary decision loop covers:
 - local Ollama, vLLM, and llama.cpp serving;
 - host-aware model and context feasibility;
 - objective metrics, calibrated judge diagnostics, throughput, VRAM, and power;
+- corpus provenance: which capture of which source produced a document, on what terms, and whether
+  that material may be redistributed;
 - corpus self-consistency: which passages contradict each other and which edition supersedes which;
+- versioned contracts for durable datasets, run artifacts, and metadata exchanged with another
+  command or application;
 - record identity: which entity nodes, drafted gold items, and document editions denote the
   same thing;
 - robotics RAG over approved manuals and curated multimodal episode evidence, followed by
   policy-gated operation in an emulator or explicitly authorized device canary;
+- dual-control conversation: whether a model still completes a task when a simulated user holds
+  half of it, and whether it obeys the written domain policy while doing so;
 - reproducible sweep, recommendation, and board artifacts.
 
 The project does not try to be a hosted benchmark service, scheduler, model registry, generic agent
@@ -74,12 +81,20 @@ Tier mixing is out of scope for a single board. Public screens, private RAG resu
 category suite have separate metric semantics; a comparison presents them side by side or hands off
 explicitly, never blended into one leaderboard row.
 
+A tier may be SOURCED from an external suite. Such a lane runs that suite's own task set unmodified
+under a pinned version, in that suite's own language, and reports its numbers as that suite's
+numbers: comparable to what the suite publishes and to nothing of ours. What it buys is a
+candidate screen, never a local decision, so its row is never merged with a localized lane and
+never enters the private board. When an external lane and a localized lane disagree, both are
+reported and neither is reweighted to close the gap.
+
 ## Architecture
 
 ```text
 Typer CLI / Make workflows
           |
           +-> data prep and human gates
+          |      acquired projection -> ingest -> provenance-bound corpus
           |      corpus -> draft -> verify -> accepted ledger
           |      corpus -> conflict audit -> decision groups -> resolution overlay
           |
@@ -104,6 +119,84 @@ Production Python lives under `src/llb/`. `src/llb/main.py` is the CLI entry poi
 Core typed contracts live in domain-specific modules under `src/llb/core/contracts/`; packages do
 not provide facade re-exports.
 
+## Versioned Data and Artifact Contracts
+
+A durable machine-readable file becomes an interface as soon as another command, a later run, or an
+upstream or downstream application reads it. An operator must be able to identify that interface,
+validate it without reverse-engineering its producer, and tell whether this build can read it before
+a pipeline changes any state. That is not uniformly possible today. `RunManifest` and gold items
+have Pydantic models but no embedded contract identity, robotics exchange records are strict and
+versioned, and many other datasets and sidecars - including ontology `provenance.json`, linkage
+bundles, evaluation analyses, and exported recommendations - are assembled from `dict`,
+`TypedDict`, or `JsonObject` values with either a local integer version or no version at all. Those
+forms are useful implementation details but do not give an external consumer one compatibility
+rule.
+
+The artifact-contract layer governs every PROJECT-OWNED durable dataset, machine-readable run
+artifact, sidecar, and exported metadata record. A contract family has a stable `schema_id` and a
+semantic `schema_version`. A single JSON or YAML document carries both fields in its root. A row
+stream or multi-file dataset may carry them in every row, or an adjacent dataset contract manifest
+may bind each physical member to its row contract; filename conventions alone never identify a
+schema. The dataset manifest also states the media type, record granularity, required members,
+digests and relationships between members, and the structural or domain-quality checks a consumer
+must run. Opaque payloads such as a FAISS index or model weights are named and digested there, while
+their third-party binary layout remains owned by the producing library.
+
+Pydantic models are the executable source of truth for project-owned records. Version-specific
+models reject unknown fields unless the contract declares a typed extension point, and generate
+portable JSON Schema documents for consumers that do not import `llb`. A multi-object dataset also
+has a generated catalog projection aligned with the
+[Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/latest/): the
+projection describes identity, logical objects, physical files, quality rules, and ownership, but
+it is not a second hand-maintained record schema. Its `apiVersion` is pinned independently from the
+dataset's own `schema_version`. Pydantic's generated JSON Schema and the catalog projection are
+therefore export surfaces; the Python model and its domain validators remain authoritative inside
+this repository.
+
+Evolution is explicit and directional:
+
+- a patch changes descriptions or examples without changing accepted or emitted data;
+- a minor version may add optional data or relax validation only when the NEW reader still accepts
+  every document accepted by the previous minor and preserves every existing field's meaning;
+- a major version removes, renames, narrows, retypes, or changes the meaning of data, or otherwise
+  makes a previously valid document invalid;
+- a writer emits one declared current version; a reader dispatches on `schema_id` and
+  `schema_version`, validates the source version, applies registered one-step migrations in order,
+  and validates the current model after migration;
+- missing identities, unsupported versions, future major versions, ambiguous migration paths, and
+  invalid source records are refusals that name the file, observed identity and version, and the
+  supported range; they never fall through to a best-effort dictionary read;
+- immutable run artifacts are never rewritten in place. A compatibility read migrates in memory,
+  while an operator-requested materialization writes a new artifact and records the source digest,
+  source contract, migration path, and target contract.
+
+Compatibility is promised per contract family, not forever for the product as a whole. Each family
+declares its supported read versions and deprecation policy. When an older form cannot be migrated
+without guessing or losing meaning, that is a valid negative result: its decoder remains explicitly
+read-only for the declared support window, or the reader refuses it. The migration must not invent a
+default merely to make validation pass. When a downstream application still requires an older
+write format, that format is an explicit compatibility export with its own model and tests, not a
+flag that deletes fields from the current payload.
+
+The boundary is durable, machine-consumed project data. Human-only Markdown reports, logs, terminal
+rendering, transient in-process dictionaries, raw model responses before parsing, and third-party
+stores such as MLflow, Optuna, DuckDB, SQLite, FAISS, and model-weight formats are not remodeled.
+Their project-owned manifests, exported rows, and references ARE in scope. Configuration inputs are
+in scope when this project emits them for another command or application; purely hand-authored
+configuration retains the configuration validation it already has. A schema proves shape and
+declared invariants, not scientific validity, provenance, authorization, or metric quality; the
+domain gates in the rest of this specification continue to own those decisions.
+
+Conformance is evaluated from a committed compatibility matrix and from the producer inventory.
+Every current project-owned record round-trips through its Pydantic model and validates against the
+generated JSON Schema; every registered older fixture either migrates deterministically to the same
+canonical meaning or produces its declared refusal; a future-major fixture is refused before a
+downstream action; and a model change that alters generated schema without the required version and
+migration declaration fails CI. A repository gate accounts for every in-scope producer and consumer
+through a registered contract or a narrow boundary exemption, so adding a new ad hoc durable
+serializer fails rather than silently widening the ungoverned surface. An external fixture validates
+the JSON Schema and dataset catalog without importing this package.
+
 ## Data and Ground Truth
 
 Each RAG gold item contains a question, reference answer, source document id, and exact character
@@ -116,6 +209,66 @@ written. Accepted ledgers are the only corpus-derived inputs eligible for headli
 
 Synthetic benchmark data uses planted labels and a separate verification gate. The generating
 model never certifies its own output.
+
+## Corpus Provenance and Acquisition Boundary
+
+A scored answer traces to a corpus document and stops there. The operator-lane governance fields a
+staged corpus carries record when THIS project ingested a document and under which access label it
+may be read; they do not record which source was observed, when, or on what terms. The ingestion
+time is a local event, and the source hash covers the staged file rather than the bytes a publisher
+served. Ingestion now READS the acquisition fields beside them -- source URI, capture time and
+identity, captured-payload digest, redistribution class, acquisition run, revision link -- and
+carries them to the manifest item, chunk metadata, and the gold-set provenance record. What remains
+is enforcing the recorded redistribution class at every export and egress boundary. Acquired
+documents are append-only, and a gold-set bundle binds its corpus fingerprint to every acquisition
+run represented in that corpus version; those records make the already-read provenance actionable
+without reaching back into a producer's store.
+
+Corpora increasingly arrive from an upstream acquisition service rather than from an operator's own
+directory, and more than one such producer is expected. This project does not acquire: it does not
+fetch, crawl, schedule, authenticate against a source, or decide what a source's terms permit. What
+it defines is what an acquired document must CARRY, expressed as a PROJECTION of the producer's own
+object model into the corpus directory this project already reads, rather than as a file format the
+two sides agree bilaterally. A format negotiated between two repositories is a point-to-point
+mapping, and a third consumer makes three of them; a projection is rendered per consumer from one
+model, so a field this project needs later is added to its projection rather than to anyone's
+schema. The contract is [the acquired-corpus projection](acquired-corpus-projection.md).
+
+Three properties are load-bearing, and they are what make the seam safe rather than merely
+convenient:
+
+- **Character offsets are the join key.** A gold span is a character range into document text, so
+  that is the only identity that crosses the seam. Chunk identities are internal to this project and
+  are never exported, imported, or agreed with a producer.
+- **Documents are append-only.** A revised upstream produces a NEW document version linked to the
+  one it revises, never a rewrite of the old text, because an in-place rewrite silently invalidates
+  every label whose offsets point into it. The existing reuse contract treats an unchanged source
+  hash as a reused document; for acquired material that rule is not enough, and the recorded
+  revision link is what replaces it.
+- **Provenance is additive.** Nothing carried across the seam alters document text, a `doc_id`, or
+  a character offset, so no label can move because a provenance field was added. Widening the field
+  set this side RECORDS does change a corpus fingerprint, but that costs a store rebuild rather than
+  a moved label -- taken once, for the whole projection at once.
+
+Access and redistribution are separate questions. The existing access label says who may READ a
+document inside a run; it says nothing about whether the material may be copied out of the host. An
+acquired document therefore also carries a redistribution class, and the
+[data egress boundary](#data-egress-boundary) is where that class is enforced -- an export refuses
+material it may not redistribute rather than silently filtering it, because a partial export that
+looks complete is the failure this is meant to prevent.
+
+Provenance also binds a reproduction. A corpus fingerprint identifies a corpus but not what produced
+it, so a gold set built on acquired material names the corpus version its spans are valid against
+and the acquisition run behind that version. A corpus with no acquisition behind it records that
+absence explicitly rather than leaving the field blank, because a blank field is indistinguishable
+from an unanswered question.
+
+The boundary: this capability reads provenance, binds it to the artifacts a decision is reproduced
+from, and refuses egress it is not entitled to. It does not make licence determinations, which are
+the producing side's judgement and are consumed here as a recorded fact; it does not retain captured
+payloads, only their digests, URIs, offsets and terms; it does not chunk on a producer's behalf; and
+it adds no ability to acquire material by itself. Where a corpus carries no provenance, every
+existing behaviour is unchanged -- this capability adds a lane, it does not gate the local one.
 
 ## Corpus Conflict and Governance
 
@@ -140,6 +293,11 @@ The confidence contract is the load-bearing part of this capability:
   significance level, or confidence -- it is a candidate budget or a rank cutoff.
 - Confidence in a conflict comes from the **claim tier's adjudication** against frozen labels, and
   a precision figure is publishable only with its clustered bound.
+- The frozen-label gate is a **floor, not a ranking**. It refuses an adjudicator whose agreement is
+  broken and says nothing about which of two working adjudicators an operator should prefer. That
+  choice is a REPORTED comparison against a harder frozen tier, measured beside the gate and never
+  branched on autonomously; a tier earns the right to gate only once measurement shows it separates
+  adjudicators reproducibly.
 - No autonomous gate branches on the semantic tier's provisional verdict alone.
 - Pursuing a per-pair semantic false-positive rate at this corpus scale is a CLOSED question, not a
   paused one; the four generations of evidence that closed it are recorded, along with what would
@@ -147,8 +305,9 @@ The confidence contract is the load-bearing part of this capability:
 
 A finished audit is an immutable bundle that answers its own questions offline: which stage lost a
 pair, why a document was excluded, what a smaller candidate budget would have returned, and which
-store it read. Resolution is an overlay with a rollback contract -- the audit proposes, a reviewer
-decides, and the corpus is never silently rewritten.
+store it read plus that store's portable location when it is under `DATA_DIR`. Resolution is an
+overlay with a rollback contract -- the audit proposes, a reviewer decides, and the corpus is never
+silently rewritten.
 
 ## Entity Resolution and Record Linkage
 
@@ -472,6 +631,50 @@ parts were never measured together describes a configuration nobody ran. The bou
 runs no lane on the operator's behalf, invents no value for a field nobody measured, decides no
 ranking policy of its own, and ships no runtime that consumes the profile.
 
+## Simulated-User Dual-Control Workloads
+
+The agentic tier drives one actor: a model reads a task statement, calls tools, and finishes. A
+large class of deployments does not look like that. A support, intake, or dispatch agent shares
+control of the task with a person who holds information the agent cannot read, performs steps the
+agent cannot perform, and states the goal incompletely and out of order. Two failures are invisible
+to a single-actor task set: an agent that only solves the task when the whole goal is handed to it
+up front, and an agent that satisfies the user by breaking the written policy it was told to
+follow. An operator choosing a local model for a conversational Ukrainian workload has no evidence
+about either today.
+
+This capability adds a benchmark tier in which a SECOND simulated actor holds part of the task. A
+case supplies a domain policy the agent must obey, a tool-backed world with an inspectable end
+state, a user-side scenario the agent never sees, and a success criterion read off the world after
+the conversation rather than off the agent's own claim about it. The user simulator is itself a
+model under a recorded configuration, so it belongs to the configuration under test exactly as the
+context policy does: a run records which model played the user and on which endpoint, and cases
+answered against different user-simulator configurations are refused rather than mixed, under the
+same rule [agentic workloads](#agentic-and-context-policy-workloads) applies to a composed profile.
+
+Scoring is END-STATE first. A case declares which components gate its reward -- world end state,
+information the agent was required to communicate, and, only where a path is genuinely unique, the
+tool trajectory -- and the reward is their product. A reference trajectory exists to DERIVE the
+target end state, not to constrain the agent: any sequence of calls reaching an equivalent end
+state passes, and a trajectory match is a diagnostic beside the reward, never the reward itself.
+Reliability across repeated trials is a separate published number rather than a mean, because an
+agent that succeeds once in five attempts is a different product decision from one that succeeds
+every time, and it carries its uncertainty width like every other published number.
+
+Two lanes stay apart under the [benchmark tier](#benchmark-tiers) rule. The EXTERNAL SUITE lane
+runs a published third-party task set unmodified as a candidate screen. The LOCALIZED lane runs
+Ukrainian domains whose policy, world, and cases this project owns, and only that lane can inform a
+local model choice. A localization is correct when replaying each case's reference trajectory still
+produces that case's target end state; a translation that moves the target has changed the task,
+not translated it.
+
+The boundary. This capability ships no conversational runtime, no customer-service product, and no
+user simulator anyone should deploy. It adds no voice, audio, or full-duplex evaluation and no
+reinforcement-learning training loop over the environment. It does not replace this project's
+retrieval stack with an external suite's: a suite's own retrieval pipeline is disabled or ignored,
+and retrieval questions stay in [retrieval before generation](#retrieval-before-generation). It
+submits nothing to an external leaderboard. And it does not repair, reweight, or blend an external
+suite's score into ours.
+
 ## Autonomous Orchestration
 
 The corpus-to-recommendation path can run end to end without a human at each step: ingest, draft,
@@ -683,10 +886,21 @@ The implementation favors maintained Python-native components and small project-
 - Optuna for bounded tuning;
 - MLflow for experiment analysis;
 - DeepEval for calibrated judge execution;
+- tau2-bench for the dual-control orchestrator, its domain/task/reward contracts, and the published
+  English task sets the external-suite lane screens against;
 - NVML, `nvidia-smi`, and process telemetry for runtime evidence.
 
 Heavy or backend-specific dependencies stay behind optional extras and lazy imports. A base install
 can inspect data, plans, and artifacts without importing GPU stacks.
+
+One reused component carries an acquisition constraint the others do not, and the constraint is part
+of the contract rather than a packaging detail. tau2-bench publishes no package to an index, so it
+is pinned by git tag rather than by version range; its grading has changed results within a major
+version, so a run scored under one tag is not comparable to a run scored under another. The pinned
+tag is therefore recorded on every run bundle the tier writes and is part of what a comparison must
+match, and a tag bump names every published number it invalidates under the same rule a pinned
+policy constant follows. Its transitive LLM-client pin is narrower than this project's, so it lives
+behind its own optional extra and never enters a base install.
 
 ## Data Egress Boundary
 
@@ -697,11 +911,25 @@ every drafted bundle still needs human verification before headline scoring. Fro
 separate opt-in with one upfront consent plus a hard per-run budget enforced by a cost ledger;
 over-cap aborts are resumable and never silent.
 
+A simulated user is a model call like any other. The dual-control tier defaults to a local endpoint
+for BOTH the agent and the user simulator; a frontier user simulator is the same opt-in as frontier
+scoring -- one upfront consent plus the per-run budget -- and either way the model that played the
+user is recorded on the run, because a task statement that a frontier model paraphrased into the
+conversation has left the host.
+
 loc-lm-bench measures model security behavior; it is a benchmark, not a production RAG service.
 Runtime guardrails -- prompt-injection filtering of retrieved content, output PII/secret filters,
 identity-backed authorization -- belong to the application embedding a recommended model. The
 benchmark-side governance layer is limited to metadata tags, ACL-scoped retrieval, deletion
-propagation, stale-store refusal, and immutable store-directory rollback.
+propagation, stale-store refusal, immutable store-directory rollback, and a redistribution refusal
+on every export path for material whose recorded terms forbid it.
+
+Acquired corpora extend that boundary in one direction only. What may leave the host for such
+material is its digest, source URI, character offsets, and recorded terms -- never the captured
+payload, and never a document whose redistribution class refuses it. The refusal is a refusal, not a
+filter: an export that silently drops what it may not carry produces a partial artifact
+indistinguishable from a complete one, which is the outcome the check exists to prevent. See
+[corpus provenance and acquisition boundary](#corpus-provenance-and-acquisition-boundary).
 
 ## Capability Registry
 
@@ -734,23 +962,26 @@ Four rules settle it, in order:
 | # | Capability | Status | How it is evaluated | Implementation |
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
-| 2 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 3 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
-| 4 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 5 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
-| 6 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 7 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
-| 8 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 9 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
-| 10 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
-| 11 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 12 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 13 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 14 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
-| 15 | `corpus-conflict-audit` | shipped | Claim-tier precision against frozen adjudicator labels with a clustered lower bound; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 16 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 17 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 18 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 2 | `artifact-contracts` | planned | Every in-scope durable producer and consumer resolves through a registered `schema_id` and semantic `schema_version`; current project-owned records round-trip through their Pydantic models and generated JSON Schema, registered older fixtures migrate to the same canonical meaning or their declared refusal, unsupported future versions fail before downstream action, schema drift without a version and migration declaration fails CI, and an external fixture validates the exported schema and dataset catalog without importing `llb` | [Versioned data and artifact contracts](#versioned-data-and-artifact-contracts) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 3 | `corpus-provenance` | planned | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus projection](acquired-corpus-projection.md) (the contract it reads; the work is in [the plan](../impl/plan.md)) |
+| 4 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
+| 5 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
+| 6 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 7 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
+| 8 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
+| 9 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 10 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
+| 11 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
+| 12 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
+| 13 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 14 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 15 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 16 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
+| 17 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 18 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 19 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 20 | `simulated-user-dialogue` | planned | A case's reward decomposes into the components it declares as gating and recomputes from the saved simulation bundle alone; the user-simulator model and endpoint are recorded per run and a comparison whose cases were answered against different ones is refused rather than mixed; success across repeated trials is published as an interval, never a point estimate; the external-suite lane reproduces the suite's published numbers under its pinned tag and appears in no localized or private board row; a localized Ukrainian domain preserves every case's target end state under replay of its reference trajectory; and a lane that separates no models the single-actor agentic tier already ranks apart is recorded as buying nothing there rather than adopted | [Simulated-user dual-control workloads](#simulated-user-dual-control-workloads) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 21 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -815,6 +1046,10 @@ them than it resolves:
 The system succeeds when an operator can:
 
 - create or ingest a representative Ukrainian gold set and verify it;
+- validate the identity and version of a dataset or run artifact before consuming it, and migrate a
+  supported older contract without changing its meaning or its source files;
+- trace a scored answer back to the capture of the source document behind it, and say whether that
+  material may be redistributed;
 - learn where their corpus contradicts itself, and which edition supersedes which;
 - learn which entity nodes, gold items, and document editions denote the same thing, and at
   what threshold that was decided;
@@ -823,6 +1058,8 @@ The system succeeds when an operator can:
 - execute comparable final-split runs without manual artifact repair;
 - explain misses as retrieval, generation, refusal, artifact, or judge disagreement;
 - choose a model from recorded quality and resource evidence;
+- learn whether a model still finishes a task when a simulated user holds half of it, and whether it
+  obeys the written domain policy while doing so;
 - reproduce the decision from the saved inputs and manifest.
 
 Current implementation detail is indexed in [../impl/current.md](../impl/current.md). Operator

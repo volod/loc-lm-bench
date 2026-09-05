@@ -1,0 +1,17 @@
+{
+  "schema_id": "llb.prompt-system-doc-metadata",
+  "schema_version": "1.0.0",
+  "documents": [
+    {
+      "doc_id": "poryadok.md",
+      "title": "Порядок надання соціальної допомоги",
+      "n_chars": 118,
+      "n_paragraphs": 2,
+      "top_terms": [
+        "соціальної",
+        "допомоги",
+        "заява"
+      ]
+    }
+  ]
+}

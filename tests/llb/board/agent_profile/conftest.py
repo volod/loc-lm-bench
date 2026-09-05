@@ -14,6 +14,7 @@ from llb.board.recommend.build import build_recommendation
 from llb.board.recommend.model import HostInfo, RunSummary
 from llb.board.runs import RunRecord
 from llb.scoring.leaderboard import ModelResult
+from tests.llb.bundle_fixtures import write_manifest
 
 MODEL = "mamaylm-v2-12b"
 CORPUS = "/corpora/ua"
@@ -48,7 +49,7 @@ def run_summary(tmp_path: Path, *, model: str = MODEL, **config_overrides: objec
         "corpus_root": CORPUS,
         **config_overrides,
     }
-    (run_dir / "manifest.json").write_text(json.dumps({"config": config}), encoding="utf-8")
+    write_manifest(run_dir, config=config)
     result = ModelResult(
         model=model,
         backend="ollama",
@@ -183,22 +184,18 @@ def write_context_policy(
     (run_dir / "scores.jsonl").write_text(
         "\n".join(json.dumps({"success": 1.0}) for _ in range(24)) + "\n", encoding="utf-8"
     )
-    (run_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "created_at": "2026-08-20T00:00:00+00:00",
-                "config": {
-                    "category": "agentic-context",
-                    "model": model,
-                    "backend": "ollama",
-                    "policy": policy,
-                    "paired_vs_full": {
-                        "completion": {"stability": {"reading": "separated", "borderline": False}}
-                    },
-                },
-                "metrics": {"objective_score": 0.875},
-            }
-        ),
-        encoding="utf-8",
+    write_manifest(
+        run_dir,
+        created_at="2026-08-20T00:00:00+00:00",
+        config={
+            "category": "agentic-context",
+            "model": model,
+            "backend": "ollama",
+            "policy": policy,
+            "paired_vs_full": {
+                "completion": {"stability": {"reading": "separated", "borderline": False}}
+            },
+        },
+        metrics={"objective_score": 0.875, "reliability": 1.0, "tokens_per_s": 10.0},
     )
     return run_dir / "manifest.json"

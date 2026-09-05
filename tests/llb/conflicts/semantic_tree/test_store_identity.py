@@ -7,16 +7,19 @@ holds the authoritative map and `llb refresh-index` asks the per-document questi
 itself. What a bundle is asked is one equality test -- is the store on disk still the store this run
 read -- so it records one digest over the sorted pairs.
 
-These tests pin the three things that decision rests on:
+These tests pin the four things that decision rests on:
 
 1. the record no longer grows with the corpus, and no longer repeats an id the record just interned;
 2. a store that GENUINELY changed is still detected as changed, in all three ways a manifest can
    change (an edited document, an added one, a removed one);
 3. a bundle at the OLD form -- the whole map -- returns the identical verdict, so the archive on
-   disk answers this question exactly as a bundle written today does.
+   disk answers this question exactly as a bundle written today does;
+4. a current bundle records the store's DATA_DIR-relative location, while a replay refuses an
+   invalid or vanished reference and preserves the explicit ``--store`` override.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -33,9 +36,17 @@ from llb.conflicts.bundle.store_identity import (
     identity_entry,
     identity_payload,
 )
+from llb.conflicts.bundle.store_location import (
+    STORE_DATA_DIR_RELATIVE_KEY,
+    recorded_store_location,
+    resolve_store_placement,
+    store_location_payload,
+)
 from llb.conflicts.semantic_tree.tree import SemanticPrefixTree
 from llb.conflicts.semantic_tree.refresh import tree_meta
 from llb.conflicts.semantic_tree.vectorops import VectorSet
+from llb.core.store_generations import GENERATIONS_DIRNAME
+from llb.rag.vector_store.build import META_FILE
 
 DIGEST_HEX_CHARS = 64
 # Three corpus sizes spanning two orders of magnitude, the same ones the record's own size table
@@ -80,6 +91,30 @@ def test_the_store_manifest_is_recorded_as_a_digest_rather_than_a_second_copy_of
     # The point of the change: no document id and no per-document digest survives into the bundle.
     encoded = json.dumps(block, ensure_ascii=False)
     assert not any(doc_id in encoded for doc_id in fingerprints)
+
+
+def test_the_store_location_is_recorded_relative_to_data_dir_and_never_as_an_absolute_path(
+    tmp_path,
+):
+    data_dir = tmp_path / "data"
+    store_dir = data_dir / "llb" / "rag" / GENERATIONS_DIRNAME / "one"
+    store_dir.mkdir(parents=True)
+
+    payload = store_location_payload(store_dir, data_dir=data_dir)
+    recorded = recorded_store_location(payload, data_dir=data_dir)
+
+    assert payload == {STORE_DATA_DIR_RELATIVE_KEY: "llb/rag/generations/one"}
+    assert recorded is not None
+    assert recorded.path == store_dir.resolve()
+    assert recorded.display == "$DATA_DIR/llb/rag/generations/one"
+    assert str(data_dir) not in json.dumps(payload)
+    assert store_location_payload(tmp_path / "outside", data_dir=data_dir) == {}
+
+
+@pytest.mark.parametrize("location", ["../outside", "/absolute/store", ""])
+def test_a_recorded_store_location_must_be_a_safe_nonempty_relative_path(tmp_path, location):
+    with pytest.raises(ValueError, match=STORE_DATA_DIR_RELATIVE_KEY):
+        recorded_store_location({STORE_DATA_DIR_RELATIVE_KEY: location}, data_dir=tmp_path / "data")
 
 
 def test_the_identity_costs_the_same_whatever_the_corpus_size_is():
@@ -161,6 +196,105 @@ def test_a_store_that_cannot_identify_itself_is_refused_rather_than_called_chang
     assert "records no per-document fingerprints" in verdict.detail
 
 
+def _write_store(path: Path, fingerprints: dict[str, str]) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / META_FILE).write_text(json.dumps({"doc_fingerprints": fingerprints}), encoding="utf-8")
+
+
+def _summary_at(store_dir: Path, data_dir: Path, fingerprints: dict[str, str]) -> dict[str, object]:
+    return {
+        "tree": {
+            **meta_over(fingerprints),
+            **store_location_payload(store_dir, data_dir=data_dir),
+        }
+    }
+
+
+def test_a_re_read_resolves_each_bundle_own_recorded_store_and_keeps_the_explicit_override(
+    tmp_path,
+):
+    data_dir = tmp_path / "data"
+    first_fingerprints = manifest(3, prefix="first/")
+    second_fingerprints = manifest(4, prefix="second/")
+    first_store, second_store = data_dir / "stores" / "first", data_dir / "stores" / "second"
+    _write_store(first_store, first_fingerprints)
+    _write_store(second_store, second_fingerprints)
+    cache: dict[tuple[str, str], dict[str, str] | None] = {}
+
+    first = resolve_store_placement(
+        _summary_at(first_store, data_dir, first_fingerprints),
+        fallback_store=None,
+        data_dir=data_dir,
+        cache=cache,
+    )
+    second = resolve_store_placement(
+        _summary_at(second_store, data_dir, second_fingerprints),
+        fallback_store=None,
+        data_dir=data_dir,
+        cache=cache,
+    )
+    legacy = resolve_store_placement(
+        {"tree": meta_over(second_fingerprints)},
+        fallback_store=second_store,
+        data_dir=data_dir,
+        cache=cache,
+    )
+    overridden = resolve_store_placement(
+        _summary_at(first_store, data_dir, first_fingerprints),
+        fallback_store=second_store,
+        data_dir=data_dir,
+        cache=cache,
+    )
+
+    assert first is not None and first["comparable"] and not first["changed"]
+    assert first["reference"] == "$DATA_DIR/stores/first"
+    assert first["reference_source"] == "bundle"
+    assert second is not None and second["comparable"] and not second["changed"]
+    assert second["reference"] == "$DATA_DIR/stores/second"
+    assert legacy is not None and legacy["comparable"] and not legacy["changed"]
+    assert legacy["reference"] == "--store"
+    assert legacy["reference_source"] == "explicit"
+    assert overridden is not None and overridden["comparable"] and overridden["changed"]
+    assert overridden["reference_source"] == "explicit"
+
+
+def test_a_recorded_store_location_reads_that_exact_directory_not_a_newer_live_generation(tmp_path):
+    data_dir = tmp_path / "data"
+    base = data_dir / "stores" / "versioned"
+    recorded_fingerprints = manifest(3)
+    _write_store(base, recorded_fingerprints)
+    _write_store(base / GENERATIONS_DIRNAME / "newer", manifest(4, prefix="newer/"))
+
+    placement = resolve_store_placement(
+        _summary_at(base, data_dir, recorded_fingerprints),
+        fallback_store=None,
+        data_dir=data_dir,
+        cache={},
+    )
+
+    assert placement is not None and placement["comparable"] and not placement["changed"]
+
+
+def test_a_gone_recorded_location_is_reported_as_unavailable_not_as_an_identity_mismatch(tmp_path):
+    data_dir = tmp_path / "data"
+    gone = data_dir / "stores" / "gone"
+    recorded_fingerprints = manifest(3)
+
+    placement = resolve_store_placement(
+        _summary_at(gone, data_dir, recorded_fingerprints),
+        fallback_store=None,
+        data_dir=data_dir,
+        cache={},
+    )
+
+    assert placement is not None and not placement["comparable"]
+    assert placement["changed"] is None
+    assert placement["reference_source"] == "bundle"
+    assert "is gone" in placement["detail"]
+    assert "no identity comparison was made" in placement["detail"]
+    assert "NOT the one" not in placement["detail"]
+
+
 def _entry(label: str, summary: dict, fingerprints: dict[str, str]) -> dict:
     return {
         "label": label,
@@ -186,9 +320,9 @@ def test_the_stage_re_read_places_every_bundle_against_the_store_it_is_pointed_a
     ]
     report = replay_report(entries)
     assert "## The store these bundles read" in report
-    assert "- taken over this store: 2 of 4" in report
-    assert "- taken over a different store: 1 of 4" in report
-    assert "- not comparable (no store identity recorded): 1 of 4" in report
+    assert "- resolved store matches the bundle identity: 2 of 4" in report
+    assert "- resolved store differs from the bundle identity: 1 of 4" in report
+    assert "- not comparable (location or identity unavailable): 1 of 4" in report
     assert "NOT the one this run read" in store_line(entries[2])
 
 

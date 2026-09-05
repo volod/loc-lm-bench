@@ -1,0 +1,1 @@
+{"schema_id": "llb.ontology-extraction", "schema_version": "1.0.0", "doc_id": "poryadok.md", "entities": [{"name": "акт приймання", "type": "документ", "aliases": [], "mentions": []}], "events": [], "claims": [], "facts": []}

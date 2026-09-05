@@ -20,6 +20,7 @@ from llb.finetune.serving.model import (
 )
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import GoldItem, dump_goldset
+from tests.llb.bundle_fixtures import write_manifest
 
 FIXTURE_REGISTRY = Path("samples/finetune/registry/registry.jsonl")
 LAUNDERED_ADAPTER = Path("samples/finetune/laundered-adapter")
@@ -104,17 +105,12 @@ def _run_bundle(run_root: Path, name: str, *, model: str, adapter_digest: str | 
     config: dict[str, object] = {"model": model, "backend": "vllm"}
     if adapter_digest is not None:
         config["adapter"] = {"adapter_digest": adapter_digest}
-    (run / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_id": name,
-                "split": "final",
-                "config": config,
-                "metrics": {"objective_score": 0.5, "reliability": 1.0, "tokens_per_s": 1.0},
-                "n_cases": 1,
-            }
-        ),
-        encoding="utf-8",
+    write_manifest(
+        run,
+        split="final",
+        config=config,
+        metrics={"objective_score": 0.5, "reliability": 1.0, "tokens_per_s": 1.0},
+        n_cases=1,
     )
     (run / "scores.jsonl").write_text(
         json.dumps({"item_id": "final-1", "split": "final", "objective_score": 0.5}) + "\n",

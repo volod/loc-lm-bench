@@ -213,6 +213,7 @@ Persisted artifacts are interpreted through one current schema:
   `retrieval.jsonl` evidence;
 - ontology extraction-journal rows require `parsed=true`;
 - calibration worksheet headers match their canonical column list exactly;
+- a data-prep artifact from a future major refuses before a store build or a review session;
 - merged tokenizer chat templates come from the Transformers 5 `chat_template.jinja` file.
 
 These boundaries fail visibly when state is incomplete, which keeps the core readers compact and
@@ -225,8 +226,12 @@ The project README stays at capability and navigation level. End-to-end commands
 ## Setup Surface
 
 The repo uses `uv` and `pyproject.toml` for Python dependency management. Project metadata requires
-Python `>=3.12`; pytest and build-helper tests derive their behavior and fake wheel ABI tags from
-the running supported interpreter.
+Python `>=3.12`; the default `make venv` interpreter and venv directory are pinned once in
+`[tool.llb.toolchain]` (`python-version` 3.13, `venv` `.venv`). Make, `scripts/setup_venv.sh`,
+mypy, ruff, and basedpyright all consume that table -- `make lint-toolchain` fails if a
+restatement drifts. `make venv PYTHON_VERSION=` or `make venv VENV=` still override the defaults
+for that invocation. pytest and build-helper tests derive their behavior and fake wheel ABI tags
+from the running supported interpreter.
 
 ```bash
 make
@@ -487,8 +492,9 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
+| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts`, `make check-bundle` |
 | Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `compare-conflict-granularity`,
-`recompute-conflict-stage`, `measure-duplicate-residue` |
+`recompute-conflict-stage`, `calibrate-conflict-adjudicator`, `measure-duplicate-residue` |
 | Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |
 | Verification and review | `cross-check-goldset`, `verify-sample`, `verify-review`, `verify-adjudicate`, `verify-accept`, `review` (`make review-workbench`) |
 | Judge calibration | `calibration-worksheet`, `calibration-run`, `calibration-rate`, `calibration-score`, `judge-experiment`, `frontier-judge-agreement` |
@@ -510,6 +516,8 @@ The CLI entry point is `src/llb/main.py`; command modules live under `src/llb/cl
 
 ```text
 src/llb/
+  artifacts/        version registry, compatibility reads, dataset IO, bundle validation,
+                    compatibility gates, schema/catalog generation
   cli/              Typer command modules and config helpers
   core/             canonical RunConfig, contracts, env and filesystem helpers
   goldset/          canonical gold schema, validation, splits, review ledger tooling
@@ -543,6 +551,7 @@ YAML/JSON fixture files are grouped by use:
 
 | Path | Contents |
 | --- | --- |
+| `samples/artifact_contracts/` | contract compatibility cases, dataset manifest, data-prep bundle fixtures, external validator |
 | `samples/configs/` | candidate model manifest and run-eval config examples |
 | `samples/benchmarks/` | category-suite case seeds and tool catalogs |
 | `samples/data-prep/` | import and synthetic RAG-item fixtures |

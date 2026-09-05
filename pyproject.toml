@@ -116,6 +116,9 @@ pdf-quality = ["docling[rapidocr]>=2.0", "markitdown[pdf]>=0.1", "unstructured[p
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",
+  # Contract exports are validated as an external consumer would validate them, without importing
+  # llb. Keep the standards validator direct rather than relying on an unrelated extra to bring it.
+  "jsonschema>=4.23",
   "textual>=0.60",
   # Upper bound: the formatter's output is version-sensitive, so a floating major would let a
   # release reformat the tree under CI. Lint rules are pinned by `[tool.ruff.lint].select`.
@@ -183,7 +186,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py313"  # restatement of [tool.llb.toolchain] python-version; make lint-toolchain joins them
 # NOTE: no `cache-dir` here on purpose. A static path cannot read .env, so it would keep writing
 # into the project root after an operator moved DATA_DIR. `make/config.mk` and
 # `scripts/shared/common.sh` export RUFF_CACHE_DIR=$DATA_DIR/cache/ruff instead; a bare `ruff` with
@@ -215,8 +218,22 @@ plugins.MD004.enabled = false  # unordered-list marker style ("+" is used as a w
 plugins.MD007.enabled = false  # nested-list indentation (compact nested lists)
 plugins.MD026.enabled = false  # trailing punctuation in headings (sentence-style schema titles)
 
+# Default interpreter minor and venv directory for `make venv`. Make, setup_venv.sh, and
+# llb.build.toolchain read this table; mypy / ruff keys below must match it (`make ci` checks).
+[tool.llb.toolchain]
+python-version = "3.13"
+venv = ".venv"
+
+# Cursor's basedpyright language server does not inherit the Make/uv interpreter. Point it at
+# [tool.llb.toolchain].venv so third-party imports resolve. Do not set pythonVersion: `make venv
+# PYTHON_VERSION=` can change the interpreter in that directory, and a restated minor would lie.
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src"]
+
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.13"  # restatement of [tool.llb.toolchain] python-version; make lint-toolchain joins them
 files = ["src/llb"]
 # Cache dir: MYPY_CACHE_DIR=$DATA_DIR/cache/mypy, exported by make/config.mk and
 # scripts/shared/common.sh -- see the ruff note above for why it is not a static path here.

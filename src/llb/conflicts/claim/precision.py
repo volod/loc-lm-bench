@@ -169,7 +169,14 @@ def rows_precision(rows: list[AdjudicatedRow], *, seed: int) -> JsonObject:
     right = [row.right_key for row in rows]
     curve = precision_curve_points(flags, left, right, seed=seed)
     return {
-        "cosine_range": [round(rows[-1].score, 6), round(rows[0].score, 6)] if rows else None,
+        # Cross-encoder ordering is not monotone in cosine, so read the actual extrema rather than
+        # assuming the first and last rows bound the range. The cosine-ordered path is unchanged.
+        "cosine_range": [
+            round(min(row.score for row in rows), 6),
+            round(max(row.score for row in rows), 6),
+        ]
+        if rows
+        else None,
         "returned_budget": precision_point(flags, left, right, budget=len(rows), seed=seed),
         "precision_curve": curve,
         "budget_resolution": budget_resolution(curve),
@@ -188,12 +195,9 @@ def _suppression_reason(
             "unmeasured adjudicator"
         )
     if not calibration.get("calibrated"):
-        lower = float(calibration.get("accuracy_wilson_95", [0.0, 1.0])[0])
-        return (
-            f"the adjudicator missed its calibration bound on the frozen probe: accuracy "
-            f"{calibration.get('accuracy')} over {calibration.get('parsed_pairs')} parsed pairs, "
-            f"Wilson 95% lower bound {round(lower, 4)} against the "
-            f"{calibration.get('min_accuracy_lcb')} gate"
+        failures = calibration.get("gate_failures") or ["the adjudicator did not clear the gate"]
+        return "the adjudicator missed its calibration bound on the frozen probe: " + "; ".join(
+            str(failure) for failure in failures
         )
     allowance = unparsed_allowance(len(rows))
     if unparsed > allowance:

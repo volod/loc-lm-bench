@@ -1,0 +1,14 @@
+{
+  "language": "en",
+  "version": "1",
+  "effective_date": "2026-01-13",
+  "source_system": "fixture-acquisition",
+  "acl_label": "public",
+  "source_uri": "https://acquisition.example/documents/13",
+  "capture_time": "2026-01-21T10:13:00Z",
+  "capture_id": "fixture-capture-13",
+  "payload_digest": "sha256:1313131313131313131313131313131313131313131313131313131313131313",
+  "licence": "redistributable",
+  "acquisition_run_id": "fixture-run-2026-01-21",
+  "revision_of": null
+}

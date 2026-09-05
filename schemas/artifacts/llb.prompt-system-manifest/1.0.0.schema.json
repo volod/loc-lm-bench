@@ -1,0 +1,168 @@
+{
+  "$defs": {
+    "CandidateSummaryRow": {
+      "additionalProperties": false,
+      "description": "The manifest's index line for one candidate: enough to pick one without opening it.",
+      "properties": {
+        "anthology_size": {
+          "minimum": 0,
+          "title": "Anthology Size",
+          "type": "integer"
+        },
+        "graph_reference_style": {
+          "title": "Graph Reference Style",
+          "type": "string"
+        },
+        "knowledge_tree_budget": {
+          "minimum": 0,
+          "title": "Knowledge Tree Budget",
+          "type": "integer"
+        },
+        "knowledge_tree_depth": {
+          "minimum": 0,
+          "title": "Knowledge Tree Depth",
+          "type": "integer"
+        },
+        "knowledge_tree_used_tokens": {
+          "minimum": 0,
+          "title": "Knowledge Tree Used Tokens",
+          "type": "integer"
+        },
+        "metadata_density": {
+          "title": "Metadata Density",
+          "type": "string"
+        },
+        "prompt_system_id": {
+          "title": "Prompt System Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "used_tokens": {
+          "minimum": 0,
+          "title": "Used Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "prompt_system_id",
+        "anthology_size",
+        "metadata_density",
+        "graph_reference_style",
+        "used_tokens",
+        "knowledge_tree_depth",
+        "knowledge_tree_budget",
+        "knowledge_tree_used_tokens",
+        "status"
+      ],
+      "title": "CandidateSummaryRow",
+      "type": "object"
+    },
+    "KnowledgeTreeSourceRow": {
+      "additionalProperties": false,
+      "description": "Which artifact the knowledge tree was rendered from, and its digest.",
+      "properties": {
+        "digest": {
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "digest"
+      ],
+      "title": "KnowledgeTreeSourceRow",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.prompt-system-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`manifest.json`: the digests and budget that make every run of this package addressable.",
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/CandidateSummaryRow"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "context_window": {
+      "minimum": 0,
+      "title": "Context Window",
+      "type": "integer"
+    },
+    "corpus_digest": {
+      "title": "Corpus Digest",
+      "type": "string"
+    },
+    "knowledge_tree_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KnowledgeTreeSourceRow"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "mapping_digest": {
+      "title": "Mapping Digest",
+      "type": "string"
+    },
+    "method": {
+      "title": "Method",
+      "type": "string"
+    },
+    "n_candidates": {
+      "minimum": 0,
+      "title": "N Candidates",
+      "type": "integer"
+    },
+    "prompt_budget_tokens": {
+      "minimum": 0,
+      "title": "Prompt Budget Tokens",
+      "type": "integer"
+    },
+    "reserved_tokens": {
+      "minimum": 0,
+      "title": "Reserved Tokens",
+      "type": "integer"
+    },
+    "schema_id": {
+      "const": "llb.prompt-system-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tokenizer": {
+      "title": "Tokenizer",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "method",
+    "corpus_digest",
+    "mapping_digest",
+    "tokenizer",
+    "context_window",
+    "prompt_budget_tokens",
+    "reserved_tokens",
+    "n_candidates"
+  ],
+  "title": "PromptSystemManifestDocument",
+  "type": "object"
+}

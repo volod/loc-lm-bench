@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "MissClusterRow": {
+      "additionalProperties": false,
+      "description": "Miss density for one cluster key (document, topic, or question type).",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "miss_rate": {
+          "title": "Miss Rate",
+          "type": "number"
+        },
+        "n_cases": {
+          "minimum": 0,
+          "title": "N Cases",
+          "type": "integer"
+        },
+        "n_misses": {
+          "minimum": 0,
+          "title": "N Misses",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "n_misses",
+        "n_cases",
+        "miss_rate"
+      ],
+      "title": "MissClusterRow",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.miss-analysis:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`analysis.json`: the machine-readable miss summary `llb recommend` reads.",
+  "properties": {
+    "backend": {
+      "title": "Backend",
+      "type": "string"
+    },
+    "class_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Class Counts",
+      "type": "object"
+    },
+    "clusters": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/MissClusterRow"
+        },
+        "type": "array"
+      },
+      "title": "Clusters",
+      "type": "object"
+    },
+    "created_at": {
+      "minLength": 1,
+      "title": "Created At",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "n_cases": {
+      "minimum": 0,
+      "title": "N Cases",
+      "type": "integer"
+    },
+    "n_misses": {
+      "minimum": 0,
+      "title": "N Misses",
+      "type": "integer"
+    },
+    "probes": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Probes",
+      "type": "array"
+    },
+    "rag_config": {
+      "additionalProperties": true,
+      "title": "Rag Config",
+      "type": "object"
+    },
+    "recommendations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Recommendations",
+      "type": "array"
+    },
+    "run_dir": {
+      "title": "Run Dir",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.miss-analysis",
+      "default": "llb.miss-analysis",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "title": "Split",
+      "type": "string"
+    },
+    "threshold": {
+      "title": "Threshold",
+      "type": "number"
+    }
+  },
+  "required": [
+    "created_at",
+    "run_dir",
+    "model",
+    "backend",
+    "split",
+    "n_cases",
+    "n_misses",
+    "threshold",
+    "rag_config",
+    "class_counts",
+    "clusters"
+  ],
+  "title": "MissAnalysisDocument",
+  "type": "object"
+}

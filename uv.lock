@@ -5755,6 +5755,7 @@ cutoff = [
 dev = [
     { name = "complexipy" },
     { name = "duckdb" },
+    { name = "jsonschema" },
     { name = "mcap" },
     { name = "mypy" },
     { name = "optuna" },
@@ -5873,6 +5874,7 @@ requires-dist = [
     { name = "gguf", marker = "extra == 'finetune'", specifier = ">=0.10" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "huggingface-hub", specifier = ">=0.24" },
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
     { name = "lancedb", marker = "extra == 'rag-lancedb'", specifier = "==0.33.0" },
     { name = "langchain-text-splitters", specifier = "==1.1.2" },
     { name = "langgraph", marker = "extra == 'eval'", specifier = ">=0.2" },

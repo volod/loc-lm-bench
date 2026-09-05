@@ -27,6 +27,7 @@ class EndpointConfig:
     base_url: str = DEFAULT_LOCAL_BASE_URL
     api_key: str = "not-needed"
     temperature: float = 0.2
+    seed: int | None = None
     max_tokens: int = 1024
     timeout: float = 120.0
     think: bool | None = None
@@ -47,6 +48,8 @@ class EndpointConfig:
         }
         if self.kind == ENDPOINT_LOCAL:
             record.update({"backend": self.backend, "base_url": self.base_url})
+        if self.seed is not None:
+            record["seed"] = self.seed
         if self.think is not None:
             record["think"] = self.think
         if self.num_ctx is not None:

@@ -5,11 +5,16 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, cast
 
+from llb.core.contracts.data_prep.goldset import NeedleItemRecord
 from llb.goldset.schema import GoldItem
 from llb.prep.ontology.artifacts.citations import ratio, span_page_refs
 from llb.prep.ontology.constants import DEFAULT_QUESTION_TYPE
 from llb.prep.ontology.models import ItemLabels
 from llb.prep.ontology.drafting.needles import NeedleRetriever, annotate_needle_retrieval
+
+NEEDLE_ITEM_SCHEMA_ID = "llb.needle-item"
+NEEDLE_ITEM_SCHEMA_VERSION = "1.0.0"
+_GOLD_IDENTITY = ("schema_id", "schema_version")
 
 
 def citation_valid_items(items: list[GoldItem], index: dict[str, dict[str, Any]]) -> list[GoldItem]:
@@ -42,7 +47,35 @@ def needle_rows_and_report(
             if label is not None:
                 row["question_type"] = label.question_type
                 row["difficulty"] = label.difficulty
-    return rows, report
+    return [_needle_row(row) for row in rows], report
+
+
+def _needle_row(row: dict[str, object]) -> dict[str, object]:
+    """One needle row at its registered contract, replacing the gold row's own identity."""
+    fields = {key: value for key, value in row.items() if key not in _GOLD_IDENTITY}
+    record = NeedleItemRecord.model_validate(
+        {
+            "schema_id": NEEDLE_ITEM_SCHEMA_ID,
+            "schema_version": NEEDLE_ITEM_SCHEMA_VERSION,
+            **fields,
+        }
+    )
+    return cast(dict[str, object], record.model_dump())
+
+
+def load_needle_items(path: Path) -> list[NeedleItemRecord]:
+    """Read a needle sidecar at the current contract, whatever version it was written at."""
+    from llb.artifacts.default_registry import DEFAULT_REGISTRY
+
+    rows: list[NeedleItemRecord] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        record = DEFAULT_REGISTRY.read_as(
+            NEEDLE_ITEM_SCHEMA_ID, json.loads(line), source=f"{path}:{line_no}"
+        )
+        rows.append(cast(NeedleItemRecord, record))
+    return rows
 
 
 def label_distributions(

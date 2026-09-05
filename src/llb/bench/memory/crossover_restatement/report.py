@@ -200,6 +200,7 @@ def persist_restatement(
         },
         case_rows=crossovers,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "crossover-restatement-design.json": json.dumps(design, indent=2, sort_keys=True)
             + "\n",

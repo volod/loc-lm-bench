@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional
 
 import typer
 
+from llb.conflicts.claim.probe import PROBE_TIERS
 from llb.conflicts.constants import TIER_SEMANTIC
 from llb.conflicts.resolution.policy import POLICIES
 from llb.core.contracts.common import JsonObject
@@ -41,6 +42,24 @@ def projected_policies(value: Optional[str]) -> list[str]:
             f"--project-policy repeats a policy ({value!r}); each column must be a distinct policy"
         )
     return named
+
+
+def parsed_probe_tiers(value: Optional[str]) -> Optional[tuple[str, ...]]:
+    """Parse `--probe-tiers a,b` into the tiers to adjudicate, or None for every declared tier.
+
+    The tier NAMES are not validated here: the probe file declares which tiers exist, so an
+    unknown name is the probe's error to report against the tiers it actually carries.
+    """
+    if value is None:
+        return None
+    named = [item.strip() for item in value.split(",") if item.strip()]
+    if not named:
+        raise typer.BadParameter(
+            f"--probe-tiers needs at least one tier; known tiers are {', '.join(PROBE_TIERS)}"
+        )
+    if len(set(named)) != len(named):
+        raise typer.BadParameter(f"--probe-tiers repeats a tier ({value!r})")
+    return tuple(named)
 
 
 def echo_projection(projection: JsonObject, coverage: JsonObject) -> None:
@@ -100,6 +119,7 @@ def echo_summary(result: "AuditResult", paths: dict[str, Path]) -> None:
         typer.echo(f"[conflicts]   {relation}: {row['findings']} rows {census_units(row)}")
     echo_projection(result.policy_projection, result.governance_coverage)
     _echo_edition_linkage(result.edition_linkage)
+    _echo_claim_prefilter(result.claim_prefilter)
     _echo_claim_precision(result.claim_precision)
     if result.needles:
         typer.echo(
@@ -140,3 +160,23 @@ def _echo_claim_precision(precision: JsonObject) -> None:
         )
     elif precision:
         typer.echo(f"[conflicts] claim-tier precision not reported: {precision['reason']}")
+
+
+def _echo_claim_prefilter(prefilter: JsonObject) -> None:
+    """The row saving a full-list run measures, or why a capped run cannot measure loss."""
+    if not prefilter:
+        return
+    same = prefilter["same_conflicts"]
+    if same["evaluated"]:
+        typer.echo(
+            "[conflicts] claim prefilter same actionable set: "
+            f"cosine {same['cosine_rows_needed']} rows, cross-encoder "
+            f"{same['reranked_rows_needed']} rows "
+            f"({same['adjudication_calls_saved']} calls saved by the gate, "
+            f"{same['conflict_rows_lost']} conflict rows lost)"
+        )
+    else:
+        typer.echo(
+            f"[conflicts] claim prefilter adjudicated {prefilter['adjudicated_rows']} of "
+            f"{prefilter['candidate_rows']} rows; conflict loss needs a paired full-list run"
+        )

@@ -1,6 +1,5 @@
 """Prompt-system comparison loading for the board."""
 
-import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +12,7 @@ from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
 from llb.board.categories import AGENTIC_METHOD
 from llb.board.harnesses import harness_record_from_manifest
 from llb.board.runs import record_from_manifest
+from llb.board.io import admitted_manifest
 
 
 @dataclass
@@ -59,9 +59,8 @@ def load_prompt_system_records(data_dir: Path | str) -> list[PromptSystemRunReco
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         config = manifest.get("config") or {}
         prompt_system = config.get("prompt_system")
@@ -129,9 +128,8 @@ def _add_best_rag_prompt_system(
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         provenance = manifest.get("prompt_system_provenance") or {}
         if not isinstance(provenance, dict):

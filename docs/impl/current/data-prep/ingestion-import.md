@@ -3,6 +3,11 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+An external-draft import writes its sidecars through registered contracts
+(`llb.external-draft-provenance`, `llb.external-draft-item`); the operator-supplied
+`external_provenance.json` stays unregistered because an external service authors it. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 `src/llb/prep/squad/ingest.py` maps SQuAD-like rows to `GoldItem` records. It accepts local JSON,
 Hugging Face rows, flattened rows, nested article rows, and rows whose `answers` value is encoded
 as a dict string.

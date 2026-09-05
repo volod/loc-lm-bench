@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "ImportReportRecord": {
+      "additionalProperties": false,
+      "description": "`import_report.json`: what one external-draft import loaded, kept, dropped, and repaired.",
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "dropped": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Dropped",
+          "type": "array"
+        },
+        "kept": {
+          "minimum": 0,
+          "title": "Kept",
+          "type": "integer"
+        },
+        "loaded": {
+          "minimum": 0,
+          "title": "Loaded",
+          "type": "integer"
+        },
+        "repaired": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Repaired",
+          "type": "array"
+        }
+      },
+      "required": [
+        "loaded",
+        "kept"
+      ],
+      "title": "ImportReportRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.external-draft-provenance:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`provenance.json` of an imported external draft: which service drafted it, under what\nclassification, and what the import kept.",
+  "properties": {
+    "data_classification": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data Classification"
+    },
+    "difficulty_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Difficulty Distribution",
+      "type": "object"
+    },
+    "export_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Export Date"
+    },
+    "import_report": {
+      "$ref": "#/$defs/ImportReportRecord"
+    },
+    "kind": {
+      "const": "external-draft-import",
+      "title": "Kind",
+      "type": "string"
+    },
+    "n_items": {
+      "minimum": 0,
+      "title": "N Items",
+      "type": "integer"
+    },
+    "needle_retrieval": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Needle Retrieval"
+    },
+    "operator": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Operator"
+    },
+    "provenance": {
+      "const": "frontier-drafted",
+      "title": "Provenance",
+      "type": "string"
+    },
+    "question_type_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Question Type Distribution",
+      "type": "object"
+    },
+    "schema_id": {
+      "const": "llb.external-draft-provenance",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "service": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Service"
+    },
+    "service_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Service Model"
+    },
+    "synthetic": {
+      "title": "Synthetic",
+      "type": "boolean"
+    },
+    "verified": {
+      "title": "Verified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "provenance",
+    "synthetic",
+    "verified",
+    "n_items",
+    "import_report"
+  ],
+  "title": "ExternalDraftProvenance",
+  "type": "object"
+}

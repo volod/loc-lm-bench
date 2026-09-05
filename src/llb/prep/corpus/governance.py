@@ -3,24 +3,27 @@
 The fields here are additive provenance only. They never alter document text or character
 offsets; chunking copies them into `ChunkRecord.metadata` so retrieval filters can enforce an
 application-level ACL tag before generation sees any candidate.
+
+Two lanes supply values. The operator lane authors them here -- CLI defaults, a
+`<source>.metadata.json` sidecar, or markdown front matter. The acquisition lane renders them
+upstream into the sidecar alone: front matter stays the operator-authored lane, so a projected
+field name never has to be told apart from prose a document happens to open with.
 """
 
 import json
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from llb.prep.corpus.fingerprints import load_manifest
-
-GOVERNANCE_FIELDS = (
-    "language",
-    "version",
-    "effective_date",
-    "ingestion_time",
-    "source_system",
-    "acl_label",
+from llb.prep.corpus.governance_fields import (
+    GOVERNANCE_FIELDS,
+    LOCAL_GOVERNANCE_FIELDS,
+    OPERATOR_GOVERNANCE_FIELDS,
 )
+
 SOURCE_METADATA_SUFFIX = ".metadata.json"
 DEFAULT_SOURCE_SYSTEM = "local"
 UNKNOWN_LANGUAGE = "und"
@@ -30,6 +33,15 @@ _KEY_VALUE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*?)\s*$")
 _UKRAINIAN_CHARS = set("іїєґІЇЄҐ")
 _CYRILLIC = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
 _LATIN = re.compile(r"[A-Za-z]")
+
+
+def is_acquisition_source_system(value: object) -> bool:
+    """Whether a source-system value names an upstream acquisition run.
+
+    The projection contract reserves ``local`` for operator directories. Every non-empty,
+    non-local value therefore opts that document into the acquired, append-only lane.
+    """
+    return isinstance(value, str) and bool(value.strip()) and value != DEFAULT_SOURCE_SYSTEM
 
 
 def utc_ingestion_time() -> str:
@@ -52,7 +64,6 @@ def detect_language(text: str, default: str | None = None) -> str:
 
 
 def source_governance(
-    root: Path,
     path: Path,
     *,
     text: str | None,
@@ -66,6 +77,8 @@ def source_governance(
     A source can provide `<name>.metadata.json` beside the document, or markdown-style front
     matter at the top of a text file. Source-provided values override operator defaults only for
     that document. The source text itself is passed through unchanged.
+
+    Acquisition fields are read from the sidecar only; front matter carries operator fields.
     """
     supplied = _sidecar_metadata(path)
     if text is not None:
@@ -73,14 +86,60 @@ def source_governance(
     language = _string_or_none(supplied.get("language")) or detect_language(
         text or "", default_language
     )
-    return {
-        "language": language,
-        "version": _string_or_none(supplied.get("version")),
-        "effective_date": _string_or_none(supplied.get("effective_date")),
-        "ingestion_time": ingestion_time,
-        "source_system": _string_or_none(supplied.get("source_system")) or default_source_system,
-        "acl_label": _string_or_none(supplied.get("acl_label")) or default_acl_label,
+    return _governance_row(
+        supplied,
+        language=language,
+        default_source_system=default_source_system,
+        default_acl_label=default_acl_label,
+        ingestion_time=ingestion_time,
+    )
+
+
+def converted_governance(
+    payload: Mapping[str, Any],
+    *,
+    default_language: str | None,
+    default_source_system: str,
+    default_acl_label: str | None,
+    ingestion_time: str,
+) -> dict[str, str | None]:
+    """Governance for a lane whose own converter already emitted the fields (the PDF manifest).
+
+    Unlike `source_governance` there is no source text to sniff a language from, so the operator
+    default -- and then `und` -- stands in.
+    """
+    language = _string_or_none(payload.get("language")) or default_language or UNKNOWN_LANGUAGE
+    return _governance_row(
+        payload,
+        language=language,
+        default_source_system=default_source_system,
+        default_acl_label=default_acl_label,
+        ingestion_time=ingestion_time,
+    )
+
+
+def _governance_row(
+    supplied: Mapping[str, Any],
+    *,
+    language: str,
+    default_source_system: str,
+    default_acl_label: str | None,
+    ingestion_time: str,
+) -> dict[str, str | None]:
+    """One row over every governance field: supplied value, then operator default, then absent.
+
+    Every field is present in the row, `None` where nothing supplied one -- a corpus that carries
+    no acquisition provenance records its absence rather than omitting the key, so a reader never
+    has to tell a missing field apart from an unasked question.
+    """
+    row: dict[str, str | None] = {
+        field: _string_or_none(supplied.get(field)) for field in GOVERNANCE_FIELDS
     }
+    row["language"] = language
+    row["ingestion_time"] = ingestion_time
+    row["source_system"] = row["source_system"] or default_source_system
+    row["acl_label"] = row["acl_label"] or default_acl_label
+    return row
 
 
 def preserve_ingestion_time(
@@ -93,7 +152,7 @@ def preserve_ingestion_time(
     if not isinstance(prior_time, str):
         return governance
     for field in GOVERNANCE_FIELDS:
-        if field == "ingestion_time":
+        if field in LOCAL_GOVERNANCE_FIELDS:
             continue
         if previous.get(field) != governance.get(field):
             return governance
@@ -150,7 +209,7 @@ def _front_matter_metadata(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for line in match.group("body").splitlines():
         key_match = _KEY_VALUE.match(line)
-        if key_match and key_match.group(1) in GOVERNANCE_FIELDS:
+        if key_match and key_match.group(1) in OPERATOR_GOVERNANCE_FIELDS:
             out[key_match.group(1)] = key_match.group(2).strip().strip("\"'")
     return out
 

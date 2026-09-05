@@ -204,6 +204,7 @@ def persist_policy_change_audit(
         },
         case_rows=rows,
         mirror=mirror,
+        study_id=METHOD,
         artifacts={
             "policy-change-audit.json": json.dumps(summary, indent=2, sort_keys=True) + "\n",
             "policy-change-audit.md": (

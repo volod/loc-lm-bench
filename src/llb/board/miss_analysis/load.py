@@ -5,6 +5,7 @@ from pathlib import Path
 
 from llb.board.miss_analysis.model import ITEM_PROVENANCE_FILENAME, RETRIEVAL_FILENAME
 from llb.core.contracts.common import JsonObject
+from llb.artifacts.run_bundle.manifests import read_run_manifest
 
 
 def load_scored_bundle(
@@ -20,7 +21,7 @@ def load_scored_bundle(
             f"[analyze-misses] {run_dir} is not a finalized run bundle "
             f"(manifest.json + scores.jsonl + {RETRIEVAL_FILENAME} required)"
         )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = read_run_manifest(manifest_path).model_dump(mode="json")
     rows = _read_jsonl(scores_path)
     retrieval = {str(rec["item_id"]): rec for rec in _read_jsonl(retrieval_path)}
     missing = [str(row.get("item_id")) for row in rows if str(row.get("item_id")) not in retrieval]

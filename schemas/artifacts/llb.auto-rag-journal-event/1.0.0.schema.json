@@ -1,0 +1,78 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.auto-rag-journal-event:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One append-only line of `journal.jsonl`: what happened to a stage and when.",
+  "properties": {
+    "error_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Type"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "result_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Digest"
+    },
+    "schema_id": {
+      "const": "llb.auto-rag-journal-event",
+      "default": "llb.auto-rag-journal-event",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "minLength": 1,
+      "title": "Stage",
+      "type": "string"
+    },
+    "status": {
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    },
+    "time": {
+      "minLength": 1,
+      "title": "Time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "time",
+    "stage",
+    "status"
+  ],
+  "title": "AutoRagJournalEvent",
+  "type": "object"
+}

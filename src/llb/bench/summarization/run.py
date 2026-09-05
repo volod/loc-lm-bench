@@ -35,6 +35,7 @@ from llb.scoring.text_analysis.similarity import embedder_similarity
 from llb.scoring.aggregate import TIER_SUMMARIZATION
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import JudgeOutcome
+from llb.core.contracts.run_bundle.rows import SUMMARIZATION_CASE_SCHEMA_ID
 from llb.bench.summarization.scoring import (
     SummarizationCase,
     _FaithfulnessResult,
@@ -140,6 +141,7 @@ def _persist_summarization_run(request: _SummarizationPersistInput) -> RunPaths 
             request.result, request.scored.reliability, request.tokens_per_s
         ),
         case_rows=request.scored.rows,
+        score_contract=SUMMARIZATION_CASE_SCHEMA_ID,
         judge=_summarization_judge_status(request.judge_config, request.faithfulness.outcome),
         mirror=request.mirror,
     )

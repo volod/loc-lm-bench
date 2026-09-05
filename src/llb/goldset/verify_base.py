@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from llb.core.contracts.data_prep.review import validate_worksheet_row
 from llb.core.fsutil import atomic_write_text
 from llb.goldset.chains import CHAINS_FILENAME
 
@@ -196,8 +197,16 @@ def load_worksheet(path: Path) -> tuple[list[dict[str, str]], list[str]]:
 def write_worksheet_rows(
     out_path: Path, rows: Sequence[dict[str, str]], fieldnames: Sequence[str] | None = None
 ) -> int:
-    """Atomically (re)write the whole worksheet, preserving column order (crash-safe resume)."""
+    """Atomically (re)write the whole worksheet, preserving column order (crash-safe resume).
+
+    Every registered column is validated before the sheet is written: a decision or check value
+    outside its closed set is a sampler or session bug that would otherwise reach a reviewer as a
+    sheet that silently scores nothing. Columns a review profile adds are written through
+    unchecked -- the contract owns the shared verification surface, not a profile's own.
+    """
     columns = list(fieldnames) if fieldnames else list(WORKSHEET_COLS)
+    for row in rows:
+        validate_worksheet_row(row, out_path)
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()

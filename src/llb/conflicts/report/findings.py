@@ -8,9 +8,9 @@ row table below the groups is the same list the report always printed, in the sa
 
 The two tables are ordered on different questions, deliberately. Rows are read in file order, which
 is the order a resolution lane consumes them in. Groups are read to decide what to fund first, so
-they are ranked by `stake_key` -- work, then size, then score. The ids never move: a group id is
-derived from `findings.jsonl` in file order and is the join key `groups.json` and `plan.json` use,
-so ranking is a way of reading the table, not a renaming of what is in it.
+they are ranked by `stake_key` -- work, then evidence-chain cost, size, and score. The ids never
+move: a group id is derived from `findings.jsonl` in file order and is the join key `groups.json`
+and `plan.json` use, so ranking is a way of reading the table, not a renaming of what is in it.
 """
 
 from llb.conflicts.grouping.census import (
@@ -21,6 +21,7 @@ from llb.conflicts.grouping.census import (
 )
 from llb.conflicts.constants import DECIDE_LABEL
 from llb.conflicts.grouping.granularity import finding_granularity
+from llb.conflicts.grouping.ranking import DecisionStake, stake_key as decision_stake_key
 from llb.conflicts.models import AuditResult, Finding
 from llb.conflicts.report.granularity import granularity_section
 from llb.conflicts.report.projection import projected_columns, two_counts_paragraphs
@@ -62,20 +63,29 @@ def _relations_cell(group: FindingGroup) -> str:
     )
 
 
-def stake_key(group: FindingGroup) -> tuple[int, int, float, int]:
+def stake_key(group: FindingGroup) -> tuple[int, int, int, float, int]:
     """Rank a decision by what it costs an operator, not by which row happened to score highest.
 
-    The ranking count is TO DECIDE (`decide_rows`), then how much of the list the decision settles,
-    then the top score, then the group's own id so the order is total. It is not TO REVIEW, the
-    count an operator funds, for a reason the report cannot engineer away: the review count is a
-    property of a resolution POLICY, and an audit runs before one is chosen. `constants` states the
-    pair; the resolution plan ranks on the review count once a policy exists.
+    The ranking count is TO DECIDE (`decide_rows`), then how many distinct pieces of shared
+    evidence its chain crosses, how much of the list it settles, the top score, and the group's own
+    id so the order is total. It is not TO REVIEW, the count an operator funds, for a reason the
+    report cannot engineer away: the review count is a property of a resolution POLICY, and an
+    audit runs before one is chosen. `constants` states the pair; the resolution plan ranks on the
+    review count once a policy exists.
 
     A score is the model's confidence in one pair; it says nothing about how much is at stake in
     the group that holds it -- and on a corpus where scores saturate, ranking on it is ranking on
     the identity tiebreak underneath.
     """
-    return (-group.decide_rows, -len(group.findings), -group.top_score, group.index)
+    return decision_stake_key(
+        DecisionStake(
+            group_index=group.index,
+            decide_rows=group.decide_rows,
+            chain_length=group.chain_length,
+            rows=len(group.findings),
+            top_score=group.top_score,
+        )
+    )
 
 
 def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[str]:
@@ -88,15 +98,16 @@ def _groups_table(groups: list[FindingGroup], projection: JsonObject) -> list[st
     projected_header = "".join(f" {column.header} |" for column in columns)
     projected_divider = " --- |" * len(columns)
     lines = [
-        f"| group | rows | {DECIDE_LABEL} |{projected_header} relations | shared unit "
+        f"| group | rows | {DECIDE_LABEL} | chain length |{projected_header} relations | shared unit "
         "| documents | top score |",
-        f"| --- | --- | --- |{projected_divider} --- | --- | --- | --- |",
+        f"| --- | --- | --- | --- |{projected_divider} --- | --- | --- | --- |",
     ]
     for group in sorted(groups, key=stake_key):
         documents = ", ".join(f"`{doc}`" for doc in group.documents)
         projected = "".join(f" {column.cell(group.label)} |" for column in columns)
         lines.append(
-            f"| {group.label} | {len(group.findings)} | {group.decide_rows} |{projected}"
+            f"| {group.label} | {len(group.findings)} | {group.decide_rows} "
+            f"| {group.chain_length} |{projected}"
             f" {_relations_cell(group)} | {_shared_cell(group)} | {documents} "
             f"| {group.top_score:.3f} |"
         )
@@ -144,7 +155,8 @@ def findings_section(result: AuditResult) -> list[str]:
             "### Decision groups",
             "",
             f"Ranked by **{DECIDE_LABEL}** -- rows whose relation is work rather than two facts "
-            "coexisting -- then by how many rows the decision settles, then by the top score. "
+            "coexisting -- then by chain length (distinct pieces of shared evidence), how many "
+            "rows the decision settles, and the top score. "
             "Group ids are assigned in file order, so `G3` leading this table is a ranking, not a "
             "renumbering -- the row table below and `findings.jsonl` keep the file's own order.",
             "",

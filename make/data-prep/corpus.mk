@@ -3,7 +3,13 @@
 .PHONY: gen-rag-items pdf-to-markdown ingest-corpus strip-corpus-repeats audit-repeat-yield \
 	validate-goldset ingest-squad external-squad-rag audit-corpus-conflicts \
 	research-conflict-nulls resolve-corpus-conflicts compare-conflict-granularity \
-	recompute-conflict-stage
+	recompute-conflict-stage calibrate-conflict-adjudicator check-bundle
+
+check-bundle: ## Validate every registered member of BUNDLE (BUNDLE_KIND=draft|corpus, BUNDLE_UPGRADE=1 rewrites older members at the current contract)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=("$(BUNDLE)" --kind "$(or $(BUNDLE_KIND),draft)"); \
+	if [ -n "$(BUNDLE_UPGRADE)" ]; then args+=(--upgrade); fi; \
+	$(PY) -m llb.main check-bundle "$${args[@]}"
 
 gen-rag-items: ## Generate sample canonical UA RAG gold items into .data/llb/
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -54,7 +60,7 @@ audit-repeat-yield: ## Per-question yield of --repeat-blocks drop on CORPUS/GOLD
 	if [ -n "$(REPEAT_RECOVER)" ]; then args+=(--recover-straddle); fi; \
 	$(PY) -m llb.main audit-repeat-yield "$${args[@]}"
 
-audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CALIBRATION_PROBE=, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block, PROJECT_POLICY=conservative[,prefer-newer] projects the `to review` count under each named policy plus the DELTA between them, MAX_CANDIDATE_RECORD_PAIRS= sets how deep the bundle's candidate record reaches for a later budget re-read, LINKAGE=1 prices the duplicate evidence as one match probability per document pair and clusters it into edition groups); never edits the corpus
+audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in CORPUS (EFFORT=hash|lexical|semantic|claim, STORE=, PROJECT_DIMS=32 exact PCA blocking, GOLDSET=, CONFLICT_MODEL=, CONFLICT_TEMPERATURE=0 makes paired claim runs repeatable, CLAIM_PREFILTER=1 scores claim rows with the pinned cross-encoder on CLAIM_PREFILTER_DEVICE=cpu and applies that order when MAX_CLAIM_PAIRS= reduces the list, CALIBRATION_PROBE=, PROBE_TIERS=base,hard picks which frozen probe tiers are adjudicated, NO_CALIBRATE_ADJUDICATOR=1 suppresses the claim-tier precision block, PROJECT_POLICY=conservative[,prefer-newer] projects the `to review` count under each named policy plus the DELTA between them, MAX_CANDIDATE_RECORD_PAIRS= sets how deep the bundle's candidate record reaches for a later budget re-read, LINKAGE=1 prices the duplicate evidence as one match probability per document pair and clusters it into edition groups); never edits the corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@args=(--corpus "$(CORPUS)" --effort "$(or $(EFFORT),hash)"); \
 	if [ -n "$(STORE)" ]; then args+=(--store "$(STORE)"); fi; \
@@ -63,6 +69,7 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(CONFLICT_MODEL)" ]; then args+=(--conflict-model "$(CONFLICT_MODEL)"); fi; \
 	if [ -n "$(CONFLICT_BACKEND)" ]; then args+=(--conflict-backend "$(CONFLICT_BACKEND)"); fi; \
 	if [ -n "$(CONFLICT_BASE_URL)" ]; then args+=(--conflict-base-url "$(CONFLICT_BASE_URL)"); fi; \
+	if [ -n "$(CONFLICT_TEMPERATURE)" ]; then args+=(--conflict-temperature "$(CONFLICT_TEMPERATURE)"); fi; \
 	if [ -n "$(COS_THRESHOLD)" ]; then args+=(--cos-threshold "$(COS_THRESHOLD)"); fi; \
 	if [ -n "$(COS_QUANTILE)" ]; then args+=(--cos-quantile "$(COS_QUANTILE)"); fi; \
 	if [ -n "$(MAX_CANDIDATE_PAIRS)" ]; then args+=(--max-candidate-pairs "$(MAX_CANDIDATE_PAIRS)"); fi; \
@@ -70,6 +77,8 @@ audit-corpus-conflicts: ## Report duplicate/stale/contradictory knowledge in COR
 	if [ -n "$(NULL_SAMPLE_PAIRS)" ]; then args+=(--null-sample-pairs "$(NULL_SAMPLE_PAIRS)"); fi; \
 	if [ -n "$(NULL_SEED)" ]; then args+=(--null-seed "$(NULL_SEED)"); fi; \
 	if [ -n "$(MAX_CLAIM_PAIRS)" ]; then args+=(--max-claim-pairs "$(MAX_CLAIM_PAIRS)"); fi; \
+	if [ -n "$(CLAIM_PREFILTER)" ]; then args+=(--claim-prefilter); fi; \
+	if [ -n "$(CLAIM_PREFILTER_DEVICE)" ]; then args+=(--claim-prefilter-device "$(CLAIM_PREFILTER_DEVICE)"); fi; \
 	if [ -n "$(MIN_CLAIM_TOKENS)" ]; then args+=(--min-claim-tokens "$(MIN_CLAIM_TOKENS)"); fi; \
 	if [ -n "$(PROJECT_DIMS)" ]; then args+=(--project-dims "$(PROJECT_DIMS)"); fi; \
 	if [ -n "$(NO_CENTER_VECTORS)" ]; then args+=(--no-center-vectors); fi; \
@@ -127,6 +136,21 @@ resolve-corpus-conflicts: ## Plan/apply reversible conflict overlay (FINDINGS= P
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main resolve-corpus-conflicts "$${args[@]}"
 
+calibrate-conflict-adjudicator: ## Score one adjudicator against the frozen calibration probe alone (CONFLICT_MODEL=, CONFLICT_BACKEND=ollama, CONFLICT_BASE_URL=, CONFLICT_TEMPERATURE=0, NULL_SEED=, CALIBRATION_PROBE=, PROBE_TIERS=base,hard, CALIBRATION_OUT=); no corpus, no store, no adjudication budget -- the probe is the whole measurement
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(CONFLICT_MODEL)" || { echo "ERROR: set CONFLICT_MODEL=<local model>"; exit 1; }
+	@args=(--conflict-model "$(CONFLICT_MODEL)"); \
+	if [ -n "$(CONFLICT_BACKEND)" ]; then args+=(--conflict-backend "$(CONFLICT_BACKEND)"); fi; \
+	if [ -n "$(CONFLICT_BASE_URL)" ]; then args+=(--conflict-base-url "$(CONFLICT_BASE_URL)"); fi; \
+	if [ -n "$(CONFLICT_TEMPERATURE)" ]; then args+=(--conflict-temperature "$(CONFLICT_TEMPERATURE)"); fi; \
+	if [ -n "$(NULL_SEED)" ]; then args+=(--null-seed "$(NULL_SEED)"); fi; \
+	if [ -n "$(CALIBRATION_PROBE)" ]; then args+=(--calibration-probe "$(CALIBRATION_PROBE)"); fi; \
+	if [ -n "$(PROBE_TIERS)" ]; then args+=(--probe-tiers "$(PROBE_TIERS)"); fi; \
+	if [ -n "$(CALIBRATION_OUT)" ]; then args+=(--out "$(CALIBRATION_OUT)"); fi; \
+	set -a; [ -f "$(PROJECT_ROOT)/.env" ] && . "$(PROJECT_ROOT)/.env"; set +a; \
+	export DATA_DIR="$(DATA_DIR)"; \
+	$(PY) -m llb.main calibrate-conflict-adjudicator "$${args[@]}"
+
 compare-conflict-granularity: ## Recompute both decision-grouping rules (transitive closure vs shared unit) over audited runs (GRANULARITY_RUNS="<run-dir> <run-dir>", GRANULARITY_OUT=); reads findings.jsonl only -- no model, no store
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(GRANULARITY_RUNS)" || { echo "ERROR: set GRANULARITY_RUNS=\"<audit-run-dir> ...\""; exit 1; }
@@ -137,7 +161,7 @@ compare-conflict-granularity: ## Recompute both decision-grouping rules (transit
 	export DATA_DIR="$(DATA_DIR)"; \
 	$(PY) -m llb.main compare-conflict-granularity "$${args[@]}"
 
-recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_STORE=, STAGE_OUT=); reads summary.json + findings.jsonl only -- no model, no corpus, and no store unless STAGE_STORE asks which bundles were taken over it
+recompute-conflict-stage: ## Re-read which stage each audited run lost an orderable document pair at (STAGE_RUNS="<run-dir> <run-dir>", STAGE_BUDGET=, STAGE_STORE= explicit store override/fallback, STAGE_OUT=); reads summary.json + findings.jsonl and each current bundle's recorded store metadata -- no model or corpus
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(STAGE_RUNS)" || { echo "ERROR: set STAGE_RUNS=\"<audit-run-dir> ...\""; exit 1; }
 	@args=(); \

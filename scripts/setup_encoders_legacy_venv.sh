@@ -18,7 +18,9 @@ llb_load_env
 
 # Match the shipped venv's interpreter: the two passes are compared row by row, so the only
 # declared difference between them is the transformers major.
-LLB_LEGACY_PYTHON_VERSION="${LLB_LEGACY_PYTHON_VERSION:-3.13}"
+LLB_LEGACY_PYTHON_VERSION="${LLB_LEGACY_PYTHON_VERSION:-$(
+  PYTHONPATH="$PROJECT_ROOT/src" python3 -m llb.build.toolchain python-version
+)}"
 
 llb_encoders_legacy_venv() {
   printf '%s' "$DATA_DIR/venvs/encoders-legacy"

@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The corpus and PDF manifests and the citation sidecars are registered artifact contracts, and
+`make check-bundle BUNDLE=<corpus-dir> BUNDLE_KIND=corpus` validates a staged corpus member by
+member. See [data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## Mixed txt/md/pdf ingestion
 
 `make ingest-corpus` / `llb ingest-corpus` turns ONE mixed `txt`/`md`/`pdf` directory into the
@@ -17,17 +21,62 @@ the output subtree, so the default `<root>/_md` output is never re-ingested as n
 
 Governance metadata is part of the same manifest contract. Every manifest item records
 `language`, `ingestion_time`, `source_system`, optional `version`, optional `effective_date`, and
-optional `acl_label`. Text sources can provide per-document values in `<source>.metadata.json` or
-markdown front matter; otherwise `--default-language` is used, then a cheap deterministic detector.
+optional `acl_label`, plus the seven acquisition fields an upstream service renders into the
+projection sidecar ([acquired-corpus provenance](acquired-provenance.md)). Text sources can provide
+per-document values in `<source>.metadata.json` or markdown front matter; otherwise
+`--default-language` is used, then a cheap deterministic detector.
 `--source-system` and `--acl-label` set defaults for sources that do not provide their own values.
 PDF rows inherit any conversion-manifest governance fields when present and otherwise use the same
 operator defaults. Re-ingesting an unchanged source keeps the previous `ingestion_time` when its
 non-time governance fields are unchanged.
 
-Deletion propagation is explicit: a source removed from the input root is removed from the next
-`corpus_manifest.json`, its staged output file is deleted from the canonical corpus, and the
-manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also clean up stale
-old staged outputs. The rollback unit is the immutable store directory built from a manifest
+### Governance coverage at ingestion
+
+Ingestion reports whether those fields can support a later dated supersession, before an operator
+builds a store or runs the conflict audit. `src/llb/prep/corpus/governance_report.py` reuses the
+audit's `document_coverage` and `document_pair_orderability` functions, so both stages count the
+same admitted documents with the same `compare_editions` ordering rule. The command's second
+summary line reports:
+
+- documents carrying either ordering field, plus separate `effective_date` and `version` counts;
+- corpus document pairs with distinct comparable editions; and
+- the consequence when that pair count is zero: no supersession can ever be derived on this
+  corpus, including when every document carries one shared edition.
+
+The same values are persisted under `governance_coverage` in `corpus_manifest.json` (schema version
+1), together with the consequence sentence. This remains a report: zero coverage does not fail the
+command, fill a date from document text or file time, or exclude an otherwise valid document. A
+positive pair count is only a precondition; the conflict audit must still find a contradiction
+before it can derive `superseded_by`.
+
+`tests/llb/prep/test_corpus_ingest_governance_report.py` pins the undated, per-field dated, and
+single-shared-edition cases, manifest round-tripping, successful zero-coverage ingestion, and exact
+agreement with the audit-side coverage over the same staged corpus. On 2026-08-31, the CPU-only
+`make ingest-corpus CORPUS_ROOT=samples/corpus CORPUS_OUT_DIR=<out-dir> CORPUS_MIN_CHARS=1` path on
+this CUDA host ingested both committed fixture documents and reported 0 of 2 documents carrying an
+ordering field and 0 of 1 orderable document pairs in both the CLI and manifest, with the
+no-supersession consequence. This checks the real Make/CLI/persistence path, not external-corpus
+prevalence; adding governance metadata to that fixture would intentionally overturn those fixture
+counts. Acquisition provenance is reported nowhere here: `source_uri`, `capture_time`,
+`capture_id`, `payload_digest`, `licence`, `acquisition_run_id` and `revision_of` are read into the
+same manifest item and carried onward, but this coverage report counts only the two ordering fields
+supersession needs. What reads the other seven is in
+[acquired-corpus provenance](acquired-provenance.md).
+
+### Refresh and downstream workflows
+
+Deletion propagation is explicit for the local lane: a source removed from the input root is
+removed from the next `corpus_manifest.json`, its staged output file is deleted from the canonical
+corpus, and the manifest records `removed_sources` plus `n_removed_sources`. Changed PDF ids also
+clean up stale old staged outputs. An acquired document is different: non-local `source_system`
+marks it append-only, an in-place text change is refused, and a new document whose `revision_of`
+names a previously staged version retains that version's file and manifest row instead of reporting
+it removed. `src/llb/prep/corpus/revisions.py` follows the full known ancestry, including during a
+forced refresh; references that predate the local manifest remain provenance-only. Both old and new
+rows therefore enter the normal corpus and per-document fingerprints, so stores see an added
+revision rather than a modified document whose offsets moved. Details and the fixture result are in
+[acquired-corpus provenance](acquired-provenance.md#append-only-document-revisions). The rollback
+unit is the immutable store directory built from a manifest
 fingerprint (`llb refresh-index` publishes each refresh as a new
 `$DATA_DIR/llb/rag/generations/<utc-ts>/` generation; deleting the newest one rolls back).
 

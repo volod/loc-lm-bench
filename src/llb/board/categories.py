@@ -1,6 +1,5 @@
 """Category board and guarded composite loading."""
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +9,7 @@ from llb.scoring.leaderboard import ModelResult
 from llb.scoring.composite.builder import build_category_composite_rows
 from llb.scoring.composite.types import CompositeComponent, CompositeIssue
 
-from llb.board.io import read_case_series
+from llb.board.io import admitted_manifest, read_case_series
 
 _LOG = logging.getLogger(__name__)
 
@@ -111,10 +110,12 @@ def _is_run_dir(manifest_path: Path) -> bool:
 
 
 def _read_category_record(manifest_path: Path) -> CategoryRunRecord | None:
+    manifest = admitted_manifest(manifest_path)
+    if manifest is None:
+        return None
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         return category_record_from_manifest(manifest, manifest_path.parent)
-    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         _LOG.warning("[board] unreadable category bundle %s: %s", manifest_path.parent, exc)
         return None
 

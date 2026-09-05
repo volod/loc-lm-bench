@@ -1,111 +1,41 @@
-"""Calibrate the claim-tier adjudicator against frozen labels before quoting its precision.
+"""Score an adjudicator against the frozen probe before quoting any precision it produced.
 
 A precision figure computed from a model's own verdicts is only as good as the model. The audit
-therefore adjudicates a COMMITTED probe -- section pairs of the planted fixture whose relation is
-fixed by construction, half actionable and half complementary -- with the same prompt and the same
-endpoint it uses on the operator's corpus, and reports precision only when the model agrees with
-those labels at a lower bound that clears `MIN_ADJUDICATOR_ACCURACY_LCB`.
+therefore adjudicates the COMMITTED probe (`probe.py`) with the same prompt and the same endpoint
+it uses on the operator's corpus, and reports precision only when the model agrees with the frozen
+labels at a lower bound that clears the gate for every GATING tier.
 
-The probe stores document ids and heading lines rather than passages, so the passages are the exact
-corpus bytes at run time: a fixture edit that moves the text cannot silently leave the probe
-asserting a label about a passage that no longer exists.
+Which tiers gate is a deliberate, narrow choice. `TIER_ACCURACY_GATES` holds the floor the audit
+refuses to publish below; a tier absent from it is scored, reported, and compared across models
+without deciding anything, because a probe tier earns the right to gate only once measurement
+shows it separates adjudicators an operator would actually choose between.
 """
 
-import json
-from dataclasses import dataclass
-from pathlib import Path
+import logging
 
+from llb.conflicts.claim.probe import BASE_TIER, CalibrationProbe, ProbePair
 from llb.conflicts.claim.prompt import AdjudicationError, adjudication_prompt, parse_adjudication
 from llb.conflicts.constants import REL_COMPLEMENTARY
-from llb.conflicts.corpus import load_corpus_docs
 from llb.conflicts.interval_stats import wilson_interval
 from llb.core.contracts.common import JsonObject
-from llb.core.paths import resolve_project_path
 from llb.prep.frontier.telemetry import LLMComplete
 
-DEFAULT_CALIBRATION_PROBE = "samples/corpora/conflicts_uk_v1/adjudicator_probe.json"
+_LOG = logging.getLogger(__name__)
+
 # The adjudicator must agree with the frozen labels at this Wilson 95% lower bound before any
 # precision measured with it is printed. Same gate the independent-null research lane applies.
 MIN_ADJUDICATOR_ACCURACY_LCB = 0.60
 
-
-@dataclass(frozen=True)
-class ProbePair:
-    """One frozen-label passage pair: what the adjudicator sees and what it should answer."""
-
-    pair_id: str
-    left_text: str
-    right_text: str
-    relation: str
-    actionable: bool
-
-
-@dataclass(frozen=True)
-class CalibrationProbe:
-    """The committed probe, resolved against the fixture corpus it addresses."""
-
-    probe_id: str
-    corpus_root: str
-    pairs: list[ProbePair]
-
-
-def _sections(text: str, body_offset: int) -> dict[str, str]:
-    """Split a document body into `heading line -> heading + section text`."""
-    sections: dict[str, str] = {}
-    heading = ""
-    buffer: list[str] = []
-    for line in text[body_offset:].splitlines():
-        if line.startswith("#"):
-            if heading:
-                sections[heading] = "\n".join([heading, *buffer]).strip()
-            if line.strip() in sections:
-                raise SystemExit(f"[conflicts] probe corpus repeats the heading {line.strip()!r}")
-            heading, buffer = line.strip(), []
-            continue
-        buffer.append(line)
-    if heading:
-        sections[heading] = "\n".join([heading, *buffer]).strip()
-    return sections
-
-
-def _passage(sections_by_doc: dict[str, dict[str, str]], side: JsonObject) -> str:
-    doc_id, heading = str(side["doc_id"]), str(side["heading"])
-    sections = sections_by_doc.get(doc_id)
-    if sections is None:
-        raise SystemExit(f"[conflicts] calibration probe names an unknown document {doc_id!r}")
-    if heading not in sections:
-        raise SystemExit(f"[conflicts] {doc_id} has no heading {heading!r} for the probe")
-    return sections[heading]
-
-
-def load_calibration_probe(path: Path | str | None = None) -> CalibrationProbe:
-    """Read the probe and resolve each side to the exact section bytes it names."""
-    probe_path = resolve_project_path(path if path is not None else DEFAULT_CALIBRATION_PROBE)
-    payload = json.loads(probe_path.read_text(encoding="utf-8"))
-    corpus_root = resolve_project_path(str(payload["corpus"]))
-    sections_by_doc = {
-        doc.doc_id: _sections(doc.text, doc.body_offset) for doc in load_corpus_docs(corpus_root)
-    }
-    pairs = [
-        ProbePair(
-            pair_id=str(entry["pair_id"]),
-            left_text=_passage(sections_by_doc, entry["a"]),
-            right_text=_passage(sections_by_doc, entry["b"]),
-            relation=str(entry["relation"]),
-            actionable=bool(entry["actionable"]),
-        )
-        for entry in payload["pairs"]
-    ]
-    if not pairs:
-        raise SystemExit(f"[conflicts] calibration probe {probe_path} has no pairs")
-    return CalibrationProbe(
-        probe_id=str(payload["probe_id"]), corpus_root=str(payload["corpus"]), pairs=pairs
-    )
+# The gate is a FLOOR, so only the floor tier carries one: the base tier's job is to reject an
+# adjudicator that is broken, and no measured hard-tier reading has yet earned the right to reject
+# one that is merely weaker than another. See the conflict-detection docs for the evidence.
+TIER_ACCURACY_GATES: dict[str, float] = {BASE_TIER: MIN_ADJUDICATOR_ACCURACY_LCB}
 
 
 def _probe_verdict(pair: ProbePair, complete: LLMComplete) -> JsonObject:
     record: JsonObject = {
         "pair_id": pair.pair_id,
+        "tier": pair.tier,
         "expected_relation": pair.relation,
         "expected_actionable": pair.actionable,
     }
@@ -123,27 +53,22 @@ def _probe_verdict(pair: ProbePair, complete: LLMComplete) -> JsonObject:
     }
 
 
-def calibrate_adjudicator(probe: CalibrationProbe, complete: LLMComplete) -> JsonObject:
-    """Agreement between this adjudicator and the probe's frozen actionable/complementary labels.
+def _agreement(verdicts: list[JsonObject]) -> JsonObject:
+    """Agreement over one slice of the probe, on the actionable binary and both sides of it.
 
     Agreement is measured on the ACTIONABLE binary rather than on the exact relation: a duplicate
     reported as `subsumes` still sends the operator to the same decision, while a conflict reported
     as `complementary` is the error a precision figure would hide.
     """
-    verdicts = [_probe_verdict(pair, complete) for pair in probe.pairs]
     parsed = [verdict for verdict in verdicts if verdict["parsed"]]
-    unparsed = len(verdicts) - len(parsed)
     agreements = sum(bool(verdict["agrees"]) for verdict in parsed)
     lower, upper = wilson_interval(agreements, len(parsed))
     positives = [verdict for verdict in parsed if verdict["expected_actionable"]]
     negatives = [verdict for verdict in parsed if not verdict["expected_actionable"]]
-    calibrated = bool(parsed) and not unparsed and lower >= MIN_ADJUDICATOR_ACCURACY_LCB
     return {
-        "probe_id": probe.probe_id,
-        "probe_corpus": probe.corpus_root,
         "probe_pairs": len(verdicts),
         "parsed_pairs": len(parsed),
-        "unparsed_pairs": unparsed,
+        "unparsed_pairs": len(verdicts) - len(parsed),
         "agreements": agreements,
         "accuracy": round(agreements / len(parsed), 6) if parsed else 0.0,
         "accuracy_wilson_95": [round(lower, 6), round(upper, 6)],
@@ -159,7 +84,106 @@ def calibrate_adjudicator(probe: CalibrationProbe, complete: LLMComplete) -> Jso
         )
         if negatives
         else None,
+    }
+
+
+def _tier_block(tier: str, verdicts: list[JsonObject]) -> JsonObject:
+    """One tier's agreement, plus the gate it carries and whether it cleared it."""
+    stats = _agreement(verdicts)
+    gate = TIER_ACCURACY_GATES.get(tier)
+    passed = None
+    if gate is not None:
+        passed = (
+            bool(stats["parsed_pairs"])
+            and not stats["unparsed_pairs"]
+            and float(stats["accuracy_wilson_95"][0]) >= gate
+        )
+    return {**stats, "min_accuracy_lcb": gate, "gates": gate is not None, "passed": passed}
+
+
+def _gate_failures(tiers: JsonObject) -> list[str]:
+    """Why the probe refuses this adjudicator, one stated reason per gating tier it missed."""
+    reasons = []
+    for name, block in tiers.items():
+        if not block["gates"] or block["passed"]:
+            continue
+        if block["unparsed_pairs"]:
+            reasons.append(
+                f"{block['unparsed_pairs']} of {block['probe_pairs']} {name}-tier probe pairs "
+                "returned an unparsable verdict"
+            )
+            continue
+        reasons.append(
+            f"{name}-tier accuracy {block['accuracy']} over {block['parsed_pairs']} parsed pairs, "
+            f"Wilson 95% lower bound {block['accuracy_wilson_95'][0]} against the "
+            f"{block['min_accuracy_lcb']} gate"
+        )
+    return reasons
+
+
+def _separation(tiers: JsonObject) -> JsonObject | None:
+    """How much harder the hard tier proved than the floor, for THIS adjudicator.
+
+    A ranking needs two models, which one run cannot supply; what one run can say is whether the
+    tiers read differently at all. A separation of zero on every model is what would license
+    retiring the hard tier, and a wide one is what would license promoting it to a gate.
+    """
+    gating = [name for name, block in tiers.items() if block["gates"]]
+    scored = [name for name, block in tiers.items() if not block["gates"]]
+    if len(gating) != 1 or not scored:
+        return None
+    floor, blocks = tiers[gating[0]], {name: tiers[name] for name in scored}
+    return {
+        "floor_tier": gating[0],
+        "floor_accuracy": floor["accuracy"],
+        "scored_tiers": {
+            name: {
+                "accuracy": block["accuracy"],
+                "delta_from_floor": round(float(block["accuracy"]) - float(floor["accuracy"]), 6),
+                "recall_on_actionable": block["recall_on_actionable"],
+                "specificity_on_complementary": block["specificity_on_complementary"],
+            }
+            for name, block in blocks.items()
+        },
+    }
+
+
+def calibrate_adjudicator(probe: CalibrationProbe, complete: LLMComplete) -> JsonObject:
+    """Agreement between this adjudicator and the probe's frozen labels, tier by tier."""
+    verdicts = [_probe_verdict(pair, complete) for pair in probe.pairs]
+    tiers = {
+        tier: _tier_block(tier, [v for v in verdicts if v["tier"] == tier]) for tier in probe.tiers
+    }
+    reasons = _gate_failures(tiers)
+    if not any(block["gates"] for block in tiers.values()):
+        reasons.append(
+            "the probe carried no gating tier, so nothing established that this adjudicator "
+            f"clears the floor (gating tiers: {', '.join(sorted(TIER_ACCURACY_GATES))})"
+        )
+    return {
+        "probe_id": probe.probe_id,
+        "probe_corpora": probe.corpora,
+        **_agreement(verdicts),
         "min_accuracy_lcb": MIN_ADJUDICATOR_ACCURACY_LCB,
-        "calibrated": calibrated,
+        "tiers": tiers,
+        "tier_separation": _separation(tiers),
+        "calibrated": not reasons,
+        "gate_failures": reasons,
         "verdicts": verdicts,
     }
+
+
+def log_calibration(calibration: JsonObject) -> None:
+    """One line per tier, so a long run says what the probe found while it is still running."""
+    for tier, block in calibration["tiers"].items():
+        gate = block["min_accuracy_lcb"]
+        _LOG.info(
+            "[conflicts] adjudicator calibration: %s of %s %s-tier probe pairs agree "
+            "(accuracy %s, Wilson 95%% lower bound %s, %s)",
+            block["agreements"],
+            block["parsed_pairs"],
+            tier,
+            block["accuracy"],
+            block["accuracy_wilson_95"][0],
+            f"gate {gate}" if gate is not None else "reported, does not gate",
+        )

@@ -1,0 +1,192 @@
+{
+  "$defs": {
+    "CompatibilityDeclaration": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "from_version": {
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "title": "From Version",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "migration",
+            "refusal"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "to_version": {
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "title": "To Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_version",
+        "to_version",
+        "kind",
+        "description"
+      ],
+      "title": "CompatibilityDeclaration",
+      "type": "object"
+    },
+    "ContractCatalogEntryV1": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "items": {
+            "$ref": "#/$defs/FormatBinding"
+          },
+          "title": "Bindings",
+          "type": "array"
+        },
+        "compatibility": {
+          "items": {
+            "$ref": "#/$defs/CompatibilityDeclaration"
+          },
+          "title": "Compatibility",
+          "type": "array"
+        },
+        "current_version": {
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "title": "Current Version",
+          "type": "string"
+        },
+        "deprecation_policy": {
+          "minLength": 1,
+          "title": "Deprecation Policy",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "extension_point": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extension Point"
+        },
+        "schema_id": {
+          "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+          "title": "Schema Id",
+          "type": "string"
+        },
+        "schema_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Schema Paths",
+          "type": "object"
+        },
+        "supported_read_versions": {
+          "items": {
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "title": "Supported Read Versions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_id",
+        "description",
+        "current_version",
+        "supported_read_versions",
+        "deprecation_policy",
+        "schema_paths",
+        "bindings",
+        "compatibility"
+      ],
+      "title": "ContractCatalogEntryV1",
+      "type": "object"
+    },
+    "FormatBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "enum": [
+            "json",
+            "jsonl",
+            "yaml",
+            "csv",
+            "parquet",
+            "opaque"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "granularity": {
+          "enum": [
+            "document",
+            "row",
+            "table",
+            "opaque"
+          ],
+          "title": "Granularity",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "media_type",
+        "granularity"
+      ],
+      "title": "FormatBinding",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.artifact-catalog:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contracts": {
+      "items": {
+        "$ref": "#/$defs/ContractCatalogEntryV1"
+      },
+      "title": "Contracts",
+      "type": "array"
+    },
+    "odcs_api_version": {
+      "const": "v3.1.0",
+      "title": "Odcs Api Version",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.artifact-catalog",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "odcs_api_version",
+    "contracts"
+  ],
+  "title": "ArtifactCatalogV1",
+  "type": "object"
+}

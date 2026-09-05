@@ -6,8 +6,9 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.cli.prep.conflicts_output import echo_summary, projected_policies
-from llb.conflicts.claim.calibration import DEFAULT_CALIBRATION_PROBE
+from llb.cli.prep.conflicts_output import echo_summary, parsed_probe_tiers, projected_policies
+from llb.conflicts.claim.adjudicator import DEFAULT_ADJUDICATOR_TEMPERATURE
+from llb.conflicts.claim.probe import DEFAULT_CALIBRATION_PROBE, PROBE_TIERS
 from llb.conflicts.constants import (
     CONFLICTS_METHOD,
     DEFAULT_CONTAINMENT_THRESHOLD,
@@ -55,6 +56,13 @@ def audit_corpus_conflicts_cmd(
     conflict_base_url: Optional[str] = typer.Option(
         None, help="OpenAI-compatible base URL for the claim tier"
     ),
+    conflict_temperature: float = typer.Option(
+        DEFAULT_ADJUDICATOR_TEMPERATURE,
+        min=0.0,
+        max=2.0,
+        help="claim-adjudicator sampling temperature; zero makes paired order comparisons "
+        "repeatable",
+    ),
     jaccard_threshold: float = typer.Option(
         DEFAULT_JACCARD_THRESHOLD, min=0.0, max=1.0, help="lexical near-duplicate cutoff"
     ),
@@ -99,7 +107,7 @@ def audit_corpus_conflicts_cmd(
     ),
     null_seed: int = typer.Option(
         DEFAULT_NULL_SEED,
-        help="seed for null-distribution sampling and the clustered precision bootstrap; "
+        help="seed for null sampling, the clustered precision bootstrap, and claim adjudication; "
         "fixed for reproducibility",
     ),
     leaf_size: int = typer.Option(
@@ -118,6 +126,24 @@ def audit_corpus_conflicts_cmd(
         None,
         help="frozen-label probe for adjudicator calibration "
         f"(default {DEFAULT_CALIBRATION_PROBE})",
+    ),
+    probe_tiers: Optional[str] = typer.Option(
+        None,
+        help="comma-separated probe tiers to adjudicate (default: every tier the probe declares, "
+        f"currently {','.join(PROBE_TIERS)}); the floor tier is what gates, so dropping it "
+        "suppresses the precision block",
+    ),
+    claim_prefilter: bool = typer.Option(
+        False,
+        "--claim-prefilter/--no-claim-prefilter",
+        help="score semantic candidates with the pinned multilingual cross-encoder; a reducing "
+        "--max-claim-pairs cap uses cross rank, while an uncapped evaluation or flat score "
+        "preserves cosine adjudication order",
+    ),
+    claim_prefilter_device: str = typer.Option(
+        "cpu",
+        help="device for the claim prefilter cross-encoder (default cpu, leaving CUDA to the "
+        "adjudicator)",
     ),
     min_claim_tokens: int = typer.Option(
         MIN_CLAIM_TOKENS,
@@ -164,6 +190,8 @@ def audit_corpus_conflicts_cmd(
         raise typer.BadParameter(f"unknown effort {effort!r}; choose one of {', '.join(TIERS)}")
     policies = projected_policies(project_policy)
     tiers = tiers_up_to(effort)
+    if claim_prefilter and TIER_CLAIM not in tiers:
+        raise typer.BadParameter("--claim-prefilter applies only to --effort claim")
 
     view = None
     if TIER_SEMANTIC in tiers:
@@ -171,12 +199,23 @@ def audit_corpus_conflicts_cmd(
         view = load_store_view(index_dir)
 
     complete = None
+    claim_scorer = None
     if TIER_CLAIM in tiers:
         if not conflict_model:
             raise typer.BadParameter(
                 "--effort claim needs --conflict-model (the local model adjudicating claim pairs)"
             )
-        complete = build_adjudicator(conflict_model, conflict_backend, conflict_base_url)
+        complete = build_adjudicator(
+            conflict_model,
+            conflict_backend,
+            conflict_base_url,
+            temperature=conflict_temperature,
+            seed=null_seed,
+        )
+        if claim_prefilter:
+            from llb.rag.rerank import CrossEncoderReranker
+
+            claim_scorer = CrossEncoderReranker(device=claim_prefilter_device)
 
     items = None
     if goldset is not None:
@@ -203,11 +242,16 @@ def audit_corpus_conflicts_cmd(
             project_dims=project_dims,
             calibrate_adjudicator=calibrate_adjudicator,
             calibration_probe=calibration_probe,
+            probe_tiers=parsed_probe_tiers(probe_tiers),
+            adjudicator_temperature=conflict_temperature,
+            claim_prefilter=claim_prefilter,
+            claim_prefilter_device=claim_prefilter_device,
             linkage=linkage,
         ),
         store=view,
         goldset=items,
         complete=complete,
+        claim_scorer=claim_scorer,
     )
 
     # The projection is composed HERE, above both layers: it needs the resolution vocabulary, and

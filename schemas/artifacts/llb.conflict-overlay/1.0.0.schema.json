@@ -1,0 +1,56 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.conflict-overlay:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`conflict_overlay.json`: the additive resolution overlay corpus chunking reads.\n\nThe overlay is folded into each document's fingerprint, so its shape is load-bearing for store\nidentity: a member that lost `documents` would silently republish a generation that changes\nnothing.",
+  "properties": {
+    "documents": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Documents",
+      "type": "object"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policy"
+    },
+    "schema_id": {
+      "const": "llb.conflict-overlay",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_findings_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Findings Sha256"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version"
+  ],
+  "title": "ConflictOverlay",
+  "type": "object"
+}

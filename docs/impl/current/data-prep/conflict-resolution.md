@@ -3,6 +3,10 @@
 Part of the [Data prep](../data-prep.md) area of the
 [current implementation index](../../current.md).
 
+The applied overlay is the registered `llb.conflict-overlay` contract, written in the compact
+integer-versioned form its corpus fingerprint hashes. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 `llb resolve-corpus-conflicts` and the `make resolve-corpus-conflicts` alias turn an audit
 `findings.jsonl` into `plan.json`, `conflict_overlay.json`, `resolution_review.jsonl`, and
 `effect.md`. The implementation is split across `src/llb/conflicts/resolution/policy.py`,
@@ -27,23 +31,25 @@ convert similarity rank into destructive policy.
 ## Decision groups in the plan and the review ledger
 
 A plan that lists one escalation per ROW asks for the review the audit report was changed to stop
-asking for: six rows quoting one stale chunk are one call. `plan.json` (schema 3) therefore carries
+asking for: six rows quoting one stale chunk are one call. `plan.json` (schema 6) therefore carries
 both units.
 
 - **`items`** is unchanged -- one per finding row, and still the only thing the overlay and its
   rollback are built from. Each item now names its `group_id`.
 - **`decisions`** is one entry per [decision
-  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): `rows`, `finding_ids`,
-  `relations`, `documents`, `shared_units`, the `actions` its members resolved to, `decide_rows`,
-  `review_rows`, and a `status`. `action` is the action every member agreed on and is **null** when
-  they did not, so a mixed group reads as mixed. A decision never authorizes what no member row
-  already authorized -- it is a view over the per-row policy, not a second policy.
+  group](conflict-decision-groups.md#the-count-and-the-units-behind-it): positional `group_id`,
+  row-derived `group_key`, `rows`, `finding_ids`, `relations`, `documents`, `shared_units`, the
+  `actions` its members resolved to, `decide_rows`, the audit decision-table `chain_length` and
+  `rank`, `review_rows`, and a `status`. `action` is the action every member agreed on and is
+  **null** when they did not, so a mixed group reads as mixed. A decision never authorizes what no
+  member row already authorized -- it is a view over the per-row policy, not a second policy.
 - **Both counts of the work, in the one artifact that holds both.** `decide_rows` is the audit's
   relation-based count restated here; `review_rows` is this policy's count of rows still needing a
   human. They differ in both directions, so the plan is where they are reconciled rather than
   compared across two terminals -- see [to decide and to
   review](conflict-decision-groups.md#to-decide-and-to-review-are-two-counts-never-one). Schema 3 is
-  exactly that addition; schema 2 added `decisions` beside `items`.
+  exactly that addition; schema 2 added `decisions` beside `items`, schema 4 added `group_key`,
+  schema 5 copied the audit's `rank`, and schema 6 adds the chain length behind that rank.
 - **`resolution_review.jsonl`** keeps one record per open row -- a drop applies to one span, so the
   row stays the unit a reviewer decides on -- but every record carries `group_id`, `group_rows`,
   `group_decide_rows`, and `group_review_rows`. The records are ordered by **to review** first, then

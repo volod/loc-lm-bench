@@ -15,6 +15,12 @@ Part of the [RAG core](../rag-core.md) area of the
 The default backend is FAISS. Chroma, Qdrant, and LanceDB use the same `VectorIndex` protocol in
 `src/llb/rag/vector_store/vector_index.py`.
 
+Every member of a published generation is contract-checked: the chunk and parent rows against
+`llb.rag-chunk`, `store_meta.json` against `llb.rag-store-meta`, and the vector and lexical indexes
+against the owner and digest the store recorded for them. A load resolves the metadata and
+re-checks those digests before a vector backend is imported. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 Chunk-to-source linkage (audited 2026-07-04 against the Ukrainian-RAG production checklist): every
 chunk record in every strategy and both retrieval modes carries `doc_id`, a unique `chunk_id`, and
 exact `char_start`/`char_end` offsets, so any chunk resolves to its verbatim place in the source
@@ -37,7 +43,9 @@ carry these fields, so verify cards, cited answers, miss clustering, and metadat
 Governance metadata (`src/llb/prep/corpus/governance.py`, `src/llb/rag/chunking/corpus.py`, and
 `src/llb/rag/vector_store/store.py`) is joined from `corpus_manifest.json` onto every chunk as additive
 `metadata.language`, `metadata.ingestion_time`, `metadata.source_system`, optional
-`metadata.version`, optional `metadata.effective_date`, and optional `metadata.acl_label`.
+`metadata.version`, optional `metadata.effective_date`, optional `metadata.acl_label`, and the
+seven acquisition fields of
+[acquired-corpus provenance](../data-prep/acquired-provenance.md).
 The stored chunk text, ids, and offsets stay byte-identical. `store_meta.json` records the
 `corpus_fingerprint`, the manifest filename, and the governance field list. `run-eval` compares
 that fingerprint with the current corpus manifest before loading the vector store; a changed or

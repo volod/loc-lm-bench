@@ -19,8 +19,12 @@ retrieval repair, final evaluation, and renderers. `src/llb/cli/auto_rag.py` exp
 `make/eval/workflows.mk` exposes the standard Make target.
 
 Each run pins every score- or artifact-affecting setting in
-`$DATA_DIR/auto-rag/<run>/manifest.json`. A completed stage publishes
-`stages/<stage>/result.json` atomically, then appends a completion event to `journal.jsonl`.
+`$DATA_DIR/auto-rag/<run>/manifest.json`. The manifest, each stage result, each journal event, and
+the final `rag_recommendation.yaml` are registered contracts, so a resume compares against a record
+this build can still read rather than against whatever keys the file happens to hold; see
+[run, study, and board contracts](artifact-contracts/run-and-evaluation-contracts.md). A completed
+stage publishes `stages/<stage>/result.json` atomically, then appends a completion event to
+`journal.jsonl`.
 Reusing `--run-id` validates the settings fingerprint and skips every published stage. A truncated
 or missing result marker is incomplete and is rerun. The ontology stage also reuses its
 per-extraction-window journal when interruption happens inside drafting.

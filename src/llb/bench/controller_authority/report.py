@@ -45,6 +45,7 @@ def persist_channel_cell(
         },
         case_rows=cell.rows,
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "prompt-snapshots.json": json.dumps(
                 cell.snapshots, ensure_ascii=False, indent=2, sort_keys=True
@@ -124,6 +125,7 @@ def persist_channel_authority(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
+        study_id=cast(str, design["study_id"]),
         artifacts={
             "controller-channel-authority-design.json": (
                 json.dumps(design, indent=2, sort_keys=True) + "\n"

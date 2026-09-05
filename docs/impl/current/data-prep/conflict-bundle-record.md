@@ -10,6 +10,10 @@ This page is the verdict per question: which ones the bundle answers from its ow
 it refuses, and why the record stops where it does. The refusals are the point as much as the
 answers: "not recomputable" is correct, and a reading recomputed against a rebuilt store is not.
 
+The record's seven local forms are registered contract versions, and every earlier one migrates to
+the current form through the readers below rather than through a second implementation of them. See
+[data-prep contracts](../artifact-contracts/data-prep-contracts.md).
+
 ## The questions and their verdicts
 
 | question | answered from the bundle | what it costs to record |
@@ -475,28 +479,54 @@ make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." STAGE_BUDGET=2
 # -> $DATA_DIR/corpus-conflict-stage/<run>/{stage.md,stage.json}
 ```
 
-The reading reports TWO things, because the attribution alone under-reports the budget: it names one
-pair, and on a corpus whose corpus-first lost pair is lost at every budget the NAME never moves
-however many pairs the budget takes away. So the count comes with it -- how many document pairs
-would have returned, against how many the run returned.
+The reading reports THREE facts, because the attribution alone under-reports the budget: the named
+lost pair and stage; how many distinct DOCUMENT pairs return; and how many of the run's ORDERABLE
+returned pairs belong to those document pairs. The last count deliberately preserves
+`findings.jsonl` row multiplicity. Governance coverage counts returned passage-pair rows, while the
+candidate record collapses them to document pairs; treating both as sets can otherwise put a
+deduplicated numerator beside the run's row-count denominator. The recorded prefix decides which
+document pairs remain, hash and lexical document pairs remain budget-independent, and
+`compare_editions` over the bundle's recorded document governance counts the run's evidence
+attached to the retained pairs. It does not claim that every original chunk-pair row survives a
+smaller rank cutoff; the bundle deliberately records first appearance at document-pair granularity.
 
-**Measured, over the bundles on this host** (2026-08-15, RTX 4060 Ti 16 GB CUDA host, no model
-call; one `make recompute-conflict-stage` sweep at `STAGE_BUDGET=2` over all 24 recorded bundles):
+`budget_entry` in `src/llb/conflicts/bundle/stage_replay.py` records both counts and the run's own
+denominators. `pairs_phrase` in `src/llb/conflicts/report/stage_replay.py` states the orderable-pair
+cost in the CLI line and report table. The focused fixtures in
+`tests/llb/conflicts/bundle/test_bundle_record.py` pin row multiplicity, equality with recorded
+`orderable_pairs` at the run's own budget, and a cheaper budget that drops a document pair but
+costs zero orderable returned pairs.
 
-| bundle | run's document pairs | at budget 2 | attribution moves |
+**Measured on 2026-09-01 on the RTX 4060 Ti 16 GB CUDA host, with no model, store, corpus, or CUDA
+call.** One `make recompute-conflict-stage` replay at `STAGE_BUDGET=2` read four preserved audits:
+the committed 7-document, 19-chunk dated fixture at semantic and hash effort, and two semantic
+audits of the 250-document, 311-chunk SQuAD quickstart corpus at cosine thresholds 0.60 and 0.80.
+
+| audit input | document pairs, run -> budget 2 | orderable run rows on retained pairs | attribution moves |
 | --- | --- | --- | --- |
-| `20260815T-bundle-record-fixture-semantic` (7 docs, 19 chunks) | 8 | 5 | no |
-| `20260815T-bundle-record-squad-semantic-cos060` (250 docs, 311 chunks) | 36 | 2 | no |
-| `20260815T-bundle-record-squad-semantic-cos080` (250 docs) | 1 | 1 | no |
-| `20260815T-bundle-record-fixture-hash` (below the semantic tier) | -- | refused | -- |
+| dated fixture, semantic | 8 -> 5 | 16 -> 9 (cost 7) | no |
+| SQuAD, semantic, cosine 0.60 | 36 -> 2 | 0 -> 0 (cost 0) | no |
+| SQuAD, semantic, cosine 0.80 | 1 -> 1 | 0 -> 0 (cost 0) | no |
+| dated fixture, hash effort | refused | refused: no ranked candidate list | -- |
 
-At its own budget the record reproduces the run exactly: the recorded prefix at `total_pairs` equals
-the document pairs in `findings.jsonl`, checked directly on the fixture bundle (8 of 8) and pinned in
-CI. **The attribution moved on none of the measured bundles**, and the reason is the corpus rather
-than the reading: the fixture's corpus-first lost orderable pair is `archive-policy.md` +
-`deadline-note.md`, which no budget ever returned, so it is the named pair at every cutoff. That is
-precisely why the pair COUNT is reported beside the name -- on the fixture the budget silently costs
-three of eight document pairs while the sentence stays word for word identical.
+Separate own-budget replays at the semantic runs' recorded candidate totals -- ranks 14, 38, and 1
+in table order -- return 16 of 16, 0 of 0, and 0 of 0 orderable pairs. Each therefore equals its
+bundle's recorded `orderable_pairs`, which is the compatibility gate. The dated fixture shows the
+distinction the new count exists to make: three of eight document pairs disappear at budget 2, but
+the run attaches seven of its sixteen orderable returned rows to those excluded pairs, so the
+cheaper budget costs governance evidence rather than only noise. Both undated SQuAD audits exclude
+no orderable evidence even where the total falls from 36 document pairs to 2. The named attribution
+moves on none of the four inputs: the fixture's corpus-first lost orderable pair,
+`archive-policy.md` +
+`deadline-note.md`, is absent at every cutoff, so its sentence cannot reveal either cost. The prior
+2026-08-15 no-model archive sweep on the same host found the same fixed-attribution result across
+all 24 bundles; the replay above narrows to the four budget-answer shapes and adds their evidence
+cost.
+
+This reading would be overturned if the candidate ranking ceased to be prefix-stable, or if a
+replay at the run's own budget differed from its recorded `orderable_pairs`; both conditions are
+pinned in CI. It does not re-adjudicate a row or claim that an undated SQuAD pair is useful conflict
+evidence -- zero here means only that `compare_editions` cannot order it.
 
 ### How deep the prefix reaches, and what the depth costs
 
@@ -610,6 +640,57 @@ scattered corpus and the too-small one),
 `test_the_fold_never_takes_more_of_an_id_than_the_id_has`, and
 `test_an_id_the_corpus_never_carried_is_recorded_whole_rather_than_folded`.
 
+### The decision-range block records the reading, not every row behind it
+
+Once the store manifest left `tree`, `group_granularity` was the next avoidable cost in
+`summary.json`. Its schema-1 form repeated the unit prose and two rule descriptions in every run,
+then recorded BOTH the expanded group-size list and the histogram the report rendered. It also
+carried `quoted_group_split` for every transitive group although the report names only the three
+longest chains. None of those extra copies changed the decision range, partition/cover verdict, or
+operator prose.
+
+**Decision: schema 2 records rule names as the keys under `rules`, not as data plus prose.** It drops
+`unit`, each `description`, and the repeated inner `rule`; a consumer joins the rule key to
+`schema_version`. Each distribution keeps either `sizes` or `size_counts`, whichever is smaller in
+compact JSON, through the same `smaller_form` gate as the bundle record's other folds. Repeated
+sizes therefore collapse to a histogram while a short irregular list pays no histogram overhead.
+
+The per-group list becomes a bounded report record. Schema 2 keeps the three longest chains as
+`quoted_group_chains`, or the complete `quoted_group_split` when that smaller form already has no
+more than three entries. An empty chain record is omitted. The full split remains exactly
+recomputable from `findings.jsonl` with `make compare-conflict-granularity`; it is not copied into
+every summary for a consumer that does not exist. `reported_chains` and
+`distribution_size_counts` in `src/llb/conflicts/grouping/granularity.py` read schema 1 and both
+schema-2 folds, while `src/llb/conflicts/report/granularity.py` renders only those readers.
+
+**Measured 2026-09-01 on the RTX PRO 3000 Blackwell 12 GiB CUDA host.**
+`make compare-conflict-granularity` re-read four existing bundles from `findings.jsonl`; it made no
+model, encoder, store, or CUDA call. Bytes use compact `json.dumps`, the record's own fold unit.
+
+| audited corpus and setting | documents | rows | `group_granularity` schema 1 -> 2 | whole `summary.json` with schema 2 |
+| --- | --- | --- | --- | --- |
+| 250-document SQuAD corpus, cosine 0.060 | 250 | 38 | 2,537 -> 704 (-72.3%) | 13,409 -> 11,576 (-13.7%) |
+| committed conflict fixture, semantic tier | 7 | 17 | 1,398 -> 562 (-59.8%) | 12,656 -> 11,820 (-6.6%) |
+| 250-document SQuAD corpus, cosine 0.050 | 250 | 224 | 2,882 -> 816 (-71.7%) | 71,268 -> 69,202 (-2.9%) |
+| 250-document SQuAD corpus, cosine 0.025 | 250 | 3,127 | 2,777 -> 1,038 (-62.6%) | 233,935 -> 232,196 (-0.7%) |
+
+On the 2,537-byte target block, dropping constant prose and duplicate rule names saves 583 bytes;
+choosing one size form saves another 175; bounding the per-group chain record saves the remaining
+1,075. More rows therefore do not imply proportionally more summary bytes: the 224-row and
+3,127-row SQuAD blocks differ by only 222 bytes at schema 2. The adversarial fixture pins the same
+property without relying on that corpus shape: ten times as many disconnected singleton rows (100
+to 1,000) move the block from 479 to 490 bytes, not tenfold.
+
+Compatibility was replayed over all 44 conflict bundles readable on this host: the schema-1 block
+and a schema-2 recomputation produced identical **How many decisions the row count is** sections in
+every case. `tests/llb/conflicts/grouping/test_group_granularity_record.py` pins the schema fields,
+the per-form fold, the 100-to-1,000 growth bound, and exact old/new rendering; the existing grouping
+suite still pins the rules themselves. Run the focused artifact check or the full acceptance gate
+with `make ci`. A future report that needs more than three named chains, or a real consumer that
+needs every per-group chain length without reading `findings.jsonl`, would overturn the bounded
+record decision and require a newly priced schema. Until then, restoring a row-linear list adds no
+reading.
+
 ## The store the bundle does not copy
 
 Once the four folds finished, the per-document record was no longer what `summary.json` cost. On the
@@ -679,21 +760,55 @@ force every persisted tree on the host to rebuild, for a change that touches no 
 `stage_attribution_inputs.schema_version` stays at 7, because the `tree` block is not part of that
 record.
 
-**The consumer that asks the question** is the stage re-read, pointed at a store:
+**The bundle also records where to ask the question.** `tree.store_data_dir_relative` is the exact
+resolved `StoreView.index_dir` the semantic pass read, relative to the configured `DATA_DIR`. A
+generation-backed store therefore records its immutable generation directory, not the live base
+whose newest generation can later advance. A store outside `DATA_DIR` records no location and
+continues to need an explicit flag; an absolute host path never reaches `summary.json`.
+
+The re-read has three deliberate cases:
+
+1. An explicit `STAGE_STORE` / `--store` wins for every bundle. This preserves the existing
+   operator-directed comparison and supplies the location for an older bundle that has none.
+2. Without that flag, each current bundle resolves its own recorded location under the current
+   host's `DATA_DIR` and reads that exact directory's `store_meta.json`. A sweep can therefore span
+   stores and generations without being told which bundle belongs to which one.
+3. A recorded directory whose metadata is gone is `not comparable`: the detail names its portable
+   `$DATA_DIR/...` reference and says that no identity comparison was made. The reader neither
+   searches the host nor compares a convenient different store and calls that a mismatch. Invalid
+   absolute and parent-traversal references are refused on the same terms.
+
+The ordinary multi-store path needs no store flag:
 
 ```bash
+make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> <audit-run-dir>" \
+  STAGE_OUT=<report-dir>
+# [stage] <run>: the recorded store at `$DATA_DIR/<store-a>` is the one this run read
+# [stage] <run>: the recorded store at `$DATA_DIR/<store-b>` is the one this run read
+
+# Deliberate override, and the fallback for bundles without a recorded location:
 make recompute-conflict-stage STAGE_RUNS="<audit-run-dir> ..." \
   STAGE_STORE=<index-dir> STAGE_OUT=<report-dir>
-# [stage] <run>: the store is the one this run read (7 documents)
-# [stage] <run>: the store is NOT the one this run read: 250 documents recorded, 7 on disk now
-#   -- this bundle's readings are about the store it held, not this one
 ```
 
-It reads `store_meta.json` and nothing else -- no chunks, no vector index, no encoder -- so an
-archive sweep can place every bundle it holds against one store for the cost of one small JSON file.
-`STAGE_STORE` is opt-in and the sweep without it is exactly what it always was, which is the point:
-the re-read's own answers still come from the bundle alone, and this is the one question that
-genuinely needs the store.
+It reads `store_meta.json` and nothing else -- no chunks, vector index, encoder, corpus, or model.
+The command caches each resolved manifest within the sweep, so many bundles over one store pay for
+one small JSON read while bundles over different stores keep their own placement.
+
+**Acceptance run on 2026-09-01, RTX 4060 Ti 16 GB CUDA host, no model call.** Two semantic audits
+ran at explicit cosine 0.9: the committed seven-document Ukrainian conflict fixture and its
+one-sentence edited variant, each over its own 19-chunk FAISS store built with
+`intfloat/multilingual-e5-base` at heading/600 chunking. Each audit returned 17 findings over eight
+document pairs. Replaying both bundles together with no store flag resolved two of two distinct
+bundle-recorded locations, matched both identities, needed zero explicit fallbacks, produced zero
+unavailable placements, and preserved both recorded stage readings. Pointing the same sweep
+explicitly at the fixture store made the flag win: the fixture bundle matched and the edited bundle
+reported an identity mismatch even though both stores contain seven documents. The first reading
+shows that a mixed-store archive is self-placing; the second shows that the explicit precedence and
+content digest remain live rather than being inferred from the path or document count. Deleting or
+moving a recorded store overturns only its availability -- it must become `not comparable`, never
+`changed` -- while editing, adding, or removing a fingerprint at the same location must produce a
+real mismatch.
 
 **A store that genuinely changed is still detected as changed.** Measured on this host: the fixture
 corpus copied to `.data/store-identity-stores/edited-corpus/` with ONE document extended by one
@@ -716,7 +831,7 @@ ways a manifest changes (a document edited, added, and removed),
 `test_the_digest_is_a_property_of_the_mapping_and_not_of_the_order_it_was_written_in` pins the
 sorting, and `test_the_identity_costs_the_same_whatever_the_corpus_size_is` asserts the recorded
 size is constant in the corpus where the map it replaces was linear
-(`tests/llb/conflicts/test_store_identity.py`).
+(`tests/llb/conflicts/semantic_tree/test_store_identity.py`).
 
 ## Where it lives
 
@@ -728,10 +843,11 @@ size is constant in the corpus where the map it replaces was linear
 | the rule every fold obeys | `src/llb/conflicts/bundle/fold.py` (`json_bytes`, `smaller_form`) |
 | the count default a map is folded on | `src/llb/conflicts/bundle/document_index.py` (`interned_counts`, `named_counts`, `absent_is_zero`) |
 | the store identity the `tree` block records | `src/llb/conflicts/bundle/store_identity.py` (`fingerprint_digest`, `identity_payload`, `StoreIdentity.of`, `compare_store`), written by `tree_meta` (`semantic_tree/refresh.py`) |
-| the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints`, meta only -- no chunks, no vectors) |
+| the portable store location and placement precedence | `src/llb/conflicts/bundle/store_location.py` (`store_location_payload`, `recorded_store_location`, `resolve_store_placement`) |
+| the store manifest it is compared against | `src/llb/conflicts/store_access.py` (`store_doc_fingerprints` for the live explicit store, `store_doc_fingerprints_at` for an exact recorded directory; meta only -- no chunks or vectors) |
 | re-reading a bundle with it | `src/llb/conflicts/bundle/stage_replay.py` (`replay_attribution`, `replay_entry`, the budget prefix) |
 | per-document exclusions | `src/llb/conflicts/bundle/document_exclusions.py`, folded in `semantic_run.py` from `ContentSelection` |
 | the ranked candidate list | `src/llb/conflicts/bundle/candidate_record.py` |
 | the per-question verdicts | `src/llb/conflicts/bundle/readings.py` |
 | rendering | `src/llb/conflicts/report/stage_replay.py`, `src/llb/cli/prep/conflict_stage.py` |
-| tests | `tests/llb/conflicts/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/test_store_identity.py` (the store it was read over), `tests/llb/conflicts/test_stage_replay.py` |
+| tests | `tests/llb/conflicts/bundle/test_bundle_record.py` (what the record answers), `tests/llb/conflicts/bundle/test_bundle_id_table.py` (the shape it answers from), `tests/llb/conflicts/semantic_tree/test_store_identity.py` (identity, location, exact resolution, override, and gone-store refusal), `tests/llb/conflicts/bundle/test_stage_replay.py` (CLI auto-resolution), `tests/llb/conflicts/test_store_access_and_cli.py` (real FAISS-store recording) |

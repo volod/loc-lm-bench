@@ -5,7 +5,6 @@ what belongs here is that both document lanes read that window, and that the bin
 the run manifest, the comparison, and the report.
 """
 
-import json
 from pathlib import Path
 
 from llb.backends.prompt_window import PromptWindow
@@ -16,6 +15,7 @@ from llb.eval.context_ablation.models import LANE_LONG_CONTEXT, LANE_RETRIEVED_D
 from llb.eval.context_ablation.report import _window_note
 from llb.eval.context_ablation.run import lane_context_windows
 from llb.eval.context_ablation.sources import build_context_lane
+from tests.llb.bundle_fixtures import write_manifest
 
 # Big enough to overflow a 4096-token window (~10k usable chars) and small enough to fit a
 # 32768-token one, so ONE document separates the two binding directions.
@@ -84,7 +84,7 @@ def test_lane_context_windows_reads_the_binding_back_off_the_run_manifests(tmp_p
         "served_max_model_len": 4096,
         "budget_source": BUDGET_SOURCE_SERVED,
     }
-    (bundle / "manifest.json").write_text(json.dumps({"context_window": binding}), encoding="utf-8")
+    write_manifest(bundle, context_window=binding)
     missing = tmp_path / "closed_book"
     missing.mkdir()
 

@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from llb.artifacts.gates import refuse_unreadable_review
 from llb.review.adapters import (
     ConflictResolutionAdapter,
     DraftCompareAdapter,
@@ -14,6 +15,7 @@ from llb.review.adapters import (
     KnowledgeCutoffAdapter,
     PromptSystemAdapter,
 )
+from llb.core.contracts.retrieval_graph.prompt_system import CANDIDATES_SCHEMA_ID
 from llb.review.core import ReviewAdapter
 
 
@@ -64,8 +66,13 @@ def _open_review_file(path: Path) -> ReviewAdapter:
 
 
 def open_review(path: Path | str) -> ReviewAdapter:
-    """Open the one adapter whose existing ledger signature matches ``path``."""
+    """Open the one adapter whose existing ledger signature matches ``path``.
+
+    The compatibility gate runs first: a reviewer should meet a refusal naming the member this
+    build cannot read, not a session that opens and silently omits what a newer writer recorded.
+    """
     value = Path(path)
+    refuse_unreadable_review(value)
     if value.is_dir():
         return _open_review_directory(value)
     if not value.is_file():
@@ -85,12 +92,19 @@ def _translation_profile(path: Path) -> bool:
 
 
 def _is_candidate_json(path: Path) -> bool:
+    """Whether a `.json` ledger holds prompt-system candidates, in either published form.
+
+    A package written before the contract existed holds the bare list; one written since holds the
+    document that names `llb.prompt-system-candidates`. Both are the same ledger to a reviewer.
+    """
     if path.suffix.lower() != ".json":
         return False
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
+    if isinstance(payload, dict):
+        return payload.get("schema_id") == CANDIDATES_SCHEMA_ID
     return bool(
         isinstance(payload, list)
         and payload

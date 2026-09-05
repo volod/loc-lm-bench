@@ -16,6 +16,25 @@ the gap first: [Extending this specification](../design/spec.md#extending-this-s
 six-step lifecycle for turning a discovery into a registered capability with a declared evaluation,
 and only then into tasks here. `make lint-spec-plan` enforces the join in both directions.
 
+## Pre-release rule: no versioning, no backward compatibility
+
+Nothing this project writes has been released, so nothing on disk is a compatibility obligation.
+Until every task in this file is done, a task must NOT introduce a second schema version, a
+migration edge, a compatibility shim, a re-export alias, a deprecation window, or a "read the old
+form too" branch. When a durable form has to change, change it in place: update the model,
+regenerate the exports, update the fixtures, and rebuild whatever no longer parses. A run
+artifact an earlier build of our own code wrote is reproducible input, not a supported form.
+
+The standing exceptions are already declared and are not a licence to add more: the
+compatibility-probe family that keeps the migration mechanism exercised in CI, and the families
+whose older versions describe bundles this project actually wrote -- the data-prep, store-meta,
+and run-manifest families a registered migration already carries forward. See
+[compatibility behavior](current/artifact-contracts/foundation-and-evolution.md#compatibility-behavior).
+
+Backward compatibility and schema migration become real requirements at release, once this file is
+empty and the code is published; the mechanism is kept working for that day. A task written before
+that point does not get to spend it.
+
 ## Forward Tasks
 
 The forward work is split into two sections by **who must act to complete it**:
@@ -74,355 +93,197 @@ implementation line in the [capability registry](../design/spec.md#capability-re
 Take the first task of the earliest group that still has one; see
 [Adding Future Tasks](#adding-future-tasks) before adding one.
 
+### Versioned data and artifact contracts -- `artifact-contracts`
+
+#### artifact-contract-training-and-integration-migration
+
+The remaining durable surface covers model preparation, optimization, fine-tuning, screening,
+inference handoffs, and robotics integration. Several of these are exported directly to another
+runtime, while robotics already supplies strict Pydantic records that should join the shared
+registry instead of remaining a separate versioning island.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: [run, study, and board
+  contracts](current/artifact-contracts/run-and-evaluation-contracts.md) supply the run manifest,
+  score-row, and study records optimization and training consume and emit back to; none open.
+- User-visible outcome: model, training, and robotics handoffs expose the same inspectable identity,
+  validation, and compatibility behavior as corpus and run bundles.
+- Scope boundary: in scope -- durable producers and consumers under `src/llb/backends/`,
+  `src/llb/optimize/`, `src/llb/finetune/`, `src/llb/inference/`, `src/llb/screen/`,
+  `src/llb/judge/`, `src/llb/robotics/`, and `src/llb/standalone/`, plus their CLI entry points;
+  model and adapter manifests, training datasets and journals, search ledgers, compatibility
+  reports, recommendations, standalone answer exports, evidence and action records, and Parquet
+  projection schemas. Out of scope -- model weights, PEFT and tokenizer-native files,
+  Optuna/SQLite internals, MCAP payloads, hardware-driver protocols, and ML framework checkpoints.
+- Data and artifact paths: the current model, tuning, fine-tune, screen, inference, and robotics
+  `$DATA_DIR/<method>/<run>/` roots; exported adapter and recommendation metadata; robotics fixtures;
+  and compatibility fixtures under `samples/artifact_contracts/integrations/`.
+- Execution path: CPU-only contract and fake-adapter tests inside `make ci`; no training, model
+  download, GPU load, external API, device connection, or HFlow installation is required.
+- Acceptance gates: `make ci` green; current manifests and robotics exchanges round-trip through
+  the shared registry; cross-file digests and schema ids bind datasets to opaque
+  members; unsupported versions refuse before training, model load, external export, or device
+  proposal evaluation; the existing robotics safety invariants remain unchanged.
+- Documentation target:
+  `docs/impl/current/artifact-contracts/training-and-integration-contracts.md`, the
+  artifact-contracts area index, and links from model, optimization, fine-tuning, and robotics topic
+  pages.
+
+#### artifact-contract-boundary-enforcement
+
+Close the migration with one operator surface and one repository gate. A new serializer must not be
+able to bypass the registry, and an external application must not need producer-specific Python to
+discover, validate, or materialize a supported contract.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: `artifact-contract-training-and-integration-migration`; every in-scope producer must
+  have a contract before temporary migration exemptions can be removed.
+- User-visible outcome: `llb artifacts inspect`, `llb artifacts validate`, and
+  `llb artifacts migrate --out <target>` work consistently across datasets and run bundles, and CI
+  prevents new unregistered durable data from entering the repository.
+- Scope boundary: in scope -- CLI commands in `src/llb/cli/`, a machine-readable contract catalog,
+  consumer and producer inventory enforcement, explicit boundary exemptions, generated-schema drift
+  enforcement, and copy-only migration provenance. Out of scope -- in-place mutation, automatic
+  migration on write, remote schema registries, data discovery outside paths the operator supplies,
+  and indefinite support for every historical version.
+- Data and artifact paths: the registered `schemas/artifacts/` catalog, all compatibility fixtures,
+  operator-selected artifact paths, and a new target under `$DATA_DIR/artifact-migrations/<run>/` for
+  explicit materializations; the source path remains unchanged.
+- Execution path: add `make validate-artifacts PATH=<artifact-path>` with a `##` help description;
+  run the no-unregistered-producer check and external-consumer fixtures inside `make ci`.
+- Acceptance gates: `make ci` and `make lint-md` green; every in-scope producer and consumer is in
+  the registry and temporary migration exemptions are empty; every permanent exemption names the
+  boundary owner and reason; inspect and validate require no optional GPU stack; explicit migration
+  records source digest and the complete version path; an injected raw JSON writer makes the
+  repository gate fail.
+- Documentation target: `docs/impl/current/artifact-contracts/operator-workflow-and-coverage.md`,
+  the artifact-contracts area index, CLI reference, and the data egress boundary where exported
+  metadata is described.
+
+#### artifact-contract-retrieval-diagnostic-sidecars (optional)
+
+The retrieval comparison and routing-calibration sidecars are registered; the remaining
+`src/llb/cli/rag/` analysis bundles -- the embedding and reranker bake-offs, the multi-hop probe,
+duplicate residue, retrieval validation, and fusion evidence -- still write unvalidated report
+dictionaries. Bring them onto the same registered families so an archived diagnostic is readable
+by a build that has moved on.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: the paired-statistics rows these bundles share are already registered -- see
+  [retrieval and graph contracts](current/artifact-contracts/retrieval-and-graph-contracts.md);
+  none open.
+- User-visible outcome: an archived bake-off, probe, or residue report states which contract it is
+  and refuses rather than reading as an empty section when a field has moved.
+- Scope boundary: in scope -- the report writers under `src/llb/cli/rag/` and the models behind
+  them under `src/llb/rag/`; Pydantic contracts for each bundle, reusing the shared paired
+  statistics rows. Out of scope -- the rendered Markdown reports beside them, and any change to
+  what a bundle measures.
+- Data and artifact paths: the existing bake-off, probe, residue, and evidence roots under
+  `$DATA_DIR/<method>/<run>/`, plus fixtures under `samples/artifact_contracts/retrieval_graph/`.
+- Execution path: CPU-only fixture writes and reads inside `make ci`; no encoder, reranker, or
+  vector backend is loaded.
+- Acceptance gates: `make ci` green; each registered bundle reads back identically with and
+  without its identity; a report a producer can no longer state refuses before it is written.
+- Documentation target: the retrieval and graph contracts page and the RAG-core topic pages that
+  own each bundle.
+
+### Corpus provenance -- `corpus-provenance`
+
+#### export-redistribution-gate
+
+`acl_label` covers who may READ a document inside a run; nothing covers whether the material may be
+copied off the host. Corpus-derived text leaves through the fine-tune export
+(`src/llb/finetune/dataset.py`), the contrastive-pair export (`src/llb/finetune/embedder/pairs.py`),
+and every opt-in frontier path behind `egress_consent`, and none of them can currently refuse
+material acquired on terms that forbid redistribution.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: none. The check keys on `licence`, read at ingest today
+  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
+- User-visible outcome: an export refuses material whose recorded terms forbid redistribution, so
+  the producing side's local-only determination is enforced where the material could actually leave.
+- Scope boundary: in scope -- one shared redistribution check reused by every export and every
+  egress path, keyed on the `licence` field the projection carries, and a refusal that names the
+  offending document. Out of scope -- MAKING the determination, which is the producing service's
+  responsibility and is consumed here as a recorded fact; access control, which `acl_label` already
+  covers; and runtime guardrails in an application embedding a recommended model, which
+  [the egress boundary](../design/spec.md#data-egress-boundary) puts outside this project.
+- Data and artifact paths: `src/llb/finetune/dataset.py`, `src/llb/finetune/embedder/pairs.py`,
+  `src/llb/prep/ontology/endpoints/builder.py`, and the non-redistributable document in
+  `samples/corpora/acquired_projection_v1/`.
+- Execution path: CPU-only, inside `make ci`; no frontier call is made, the consent seam is
+  exercised with an injected fake.
+- Acceptance gates: `make ci` green. A fixture containing one non-redistributable document causes
+  each export path to REFUSE, naming that document, rather than to filter it -- a partial export
+  that looks complete is the failure this prevents. Removing the gate makes the test fail. A corpus
+  with no `licence` field exports exactly as it does today.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
+  [data egress](current/scope-boundaries.md#data-egress) boundary.
+
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
-#### corpus-ingestion-reports-the-governance-coverage-the-audit-blames-it-for (optional)
+#### conflict-adjudicator-think-control (optional)
 
-The audit tells an operator a zero policy delta is "fixable at INGESTION (record `effective_date`
-or `version`)", but ingestion itself never mentions it: `make ingest-corpus` writes a manifest whose
-governance fields are empty and reports success, so the gap is only ever discovered after a store
-build and an audit run
-([decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta)).
-Report the same document-side count at ingestion time -- documents carrying `effective_date` /
-`version`, per field -- in the ingest summary and in the corpus manifest, phrased as what it costs
-(no supersession can ever be derived on this corpus) rather than as a warning to scroll past. It
-must stay a REPORT: a corpus without governance dates is a legitimate corpus and ingestion must not
-fail, refuse, or invent a date for it.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `document_coverage` in `src/llb/conflicts/governance/coverage.py` is the
-  count and takes governance dicts rather than corpus objects, so the ingest path can reuse it as
-  is, and `document_pair_orderability` beside it is the same input again -- report both, since a
-  corpus dated end to end with one shared edition is orderable by neither;
-  `manifest_governance_by_doc` / `item_governance` in `src/llb/prep/corpus/governance.py` are
-  where ingestion already holds the same fields.
-- User-visible outcome: an operator learns their corpus cannot carry a dated supersession while
-  they are still ingesting it, not two commands and one GPU run later.
-- Scope boundary: in scope -- the count in the ingest summary and manifest, and the one-line
-  consequence. Out of scope -- failing or refusing an undated ingest, inferring dates from document
-  text or file mtime, and any change to the audit-side counts.
-- Data and artifact paths: the existing corpus manifest under the ingested corpus root.
-- Execution path: ingest-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; an undated corpus ingests successfully and reports zero
-  coverage with the consequence named; a dated corpus reports its per-field counts; the manifest
-  round-trips the counts and the audit's own coverage agrees with them on the same corpus.
-- Documentation target: the corpus-ingestion section of
-  [data prep](current/data-prep.md) plus a pointer from
-  [decision groups](current/data-prep/conflict-decision-groups.md#the-precondition-behind-a-zero-delta).
-
-#### conflict-tree-reuse-gate-is-not-the-function-that-claims-to-be-it (optional)
-
-`tree_is_reusable` (`src/llb/conflicts/semantic_tree/refresh.py`) documents itself as the rule that
-stops a tree built under one encoder from being queried under another, and nothing in `src/` calls
-it: the only caller is `tests/llb/conflicts/test_tree.py`. The gate that actually runs is
-`prepare_projected_index`'s `source_fingerprint`, which hashes the encoder, the dimension, the
-centering flag, the corpus fingerprint, the store manifest, and the whole chunk table into one
-value, so it is strictly stronger AND covers only the PROJECTED path -- the full-space path builds a
-fresh tree every run and reuses nothing. Two live functions describing one gate is how a later
-change gets made in the wrong place. Decide which it is: delete the unused one and say the
-fingerprint is the gate, or make it the cheap pre-check the full-space path is missing and give that
-path a persisted tree to reuse.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `tree_is_reusable` and `TREE_VERSION` (`semantic_tree/node.py`) are one side,
-  `_source_fingerprint` / `prepare_projected_index`
-  (`src/llb/conflicts/semantic_tree/projected_index.py`) the other, and `_active_tree`
-  (`semantic_run.py`) is the full-space path that persists nothing.
-- User-visible outcome: one documented rule for when a persisted tree may be reused, in the place
-  the reuse actually happens.
-- Scope boundary: in scope -- the verdict, the deletion or the wiring, and the test that follows it.
-  Out of scope -- changing the tree format, changing what the fingerprint covers, and adding
-  persistence to the full-space path unless the verdict picks that.
-- Execution path: source change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; every reuse decision in `src/` goes through exactly one
-  function; a tree built under a different encoder is still refused on both paths.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md).
-
-#### conflict-group-ids-that-survive-a-re-run (optional)
-
-A group id is `G<n>` from `findings.jsonl` file order, and that order is the score-ranked one -- so
-a group id is stable inside one run and NOT across two runs of the same corpus, because the claim
-adjudicator's scores are not bit-reproducible. Measured: two claim-tier runs of the committed
-fixture returned the same 17 rows, the same relations, and the same document pairs, yet the group
-holding the dated supersession was `G4` in one and `G3` in the other
-([decision groups](current/data-prep/conflict-decision-groups.md#what-the-policy-choice-costs-measured)).
-Nothing joins across runs today, so nothing is broken -- but an operator comparing this week's
-audit to last week's, or a dashboard keying a decision on `G3`, silently compares two different
-decisions. Give a group an identity derived from its ROWS (a digest over its member `finding_id`s,
-which are content hashes) carried beside the positional id, so a cross-run comparison joins on
-something the ordering cannot move.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `finding_id` (`src/llb/conflicts/tiers/hashing.py`) is already the content-addressed
-  row identity and `group_summaries` (`grouping/artifact.py`) is where a group's member list is built;
-  the positional `group_id` must stay exactly as it is, since `plan.json` and the review ledger
-  join on it within a run.
-- User-visible outcome: an operator can tell whether the decision they triaged last week is the
-  decision the audit is showing them today.
-- Scope boundary: in scope -- the row-derived group key, its appearance in `groups.json` and
-  `plan.json`, and a test that re-ordering the same rows preserves it. Out of scope -- replacing
-  the positional id, changing the grouping rule, and building a cross-run diff command.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: sidecar and plan change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a fixture whose rows are re-ordered so the positional ids move
-  keeps every row-derived key; two audits of the same corpus whose rows differ only in order agree
-  on the keys group for group.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
-
-#### conflict-groups-sidecar-carries-the-ranking-inputs (optional)
-
-The report ranks decision groups by stake, but `groups.json` does not carry what the ranking is
-computed from: its summaries hold `rows`, `relations`, and `top_score`, so a consumer wanting the
-same order must re-derive the to-decide count from the relation map and re-implement `stake_key`
-([decision groups](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar)). That is
-the same drift the shared `finding_id` was introduced to prevent, one level up. Add `decide_rows`
-and the rendered `rank` to each group summary, and the same `rank` to the plan's `decisions`, so a
-dashboard, a runtime, or a second report reads the audit's own ordering rather than an
-approximation of it.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking;
-  `group_summaries` in `grouping/artifact.py` builds the sidecar from `findings.jsonl` rows, so the
-  rank must be computable from rows alone to keep the sidecar derivable without the report.
-  `decide_count` (`src/llb/conflicts/constants.py`) is the count and the plan's `decisions` already
-  carry it, so the sidecar must reuse it rather than add a third implementation.
-- User-visible outcome: every consumer of the audit shows the operator the same first decision.
-- Scope boundary: in scope -- the two fields, the shared ranking helper, and its test against the
-  rendered table. Out of scope -- changing the ranking itself, group identity, and `findings.jsonl`.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: sidecar and rendering change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; the sidecar's rank order equals the report's decision table
-  order on a fixture whose stake ranking differs from its file order; group ids stay in file order.
-- Documentation target: [conflict
-  detection](current/data-prep/conflict-decision-groups.md#the-groupsjson-sidecar).
-
-#### conflict-decision-chain-length-in-the-stake-ranking (optional)
-
-The decision table ranks a group on `to decide` then rows, and both treat a group as flat -- but the
-audit now measures how many distinct pieces of shared evidence each group's chain runs through
-(`quoted_group_split` in
-[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is)),
-and on the measured bundles the spread inside one row count is large: a 6-row fan resting on ONE
-chunk is one decision, while goods G1's 51 rows run through 23. Two groups with the same row count
-therefore cost an operator very different amounts, and the ranking cannot see the difference. Fold
-the chain length into `stake_key` (or add it as a decision-table column and state why it is not
-ranked on), and measure how often the order actually changes on the committed bundles -- a signal
-that never reorders anything is not worth a column.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `stake_key` in `src/llb/conflicts/report/findings.py` is the ranking and
-  `shared_unit_indices` in `src/llb/conflicts/grouping/granularity.py` is the chain length; the
-  ranking must stay computable from `findings.jsonl` rows alone so `groups.json` can carry it.
-- User-visible outcome: the first decision the report offers is the one that actually costs the most,
-  not the one with the most rows.
-- Scope boundary: in scope -- the chain-length term, its effect measured on the committed bundles,
-  and the keep-or-drop verdict. Out of scope -- changing group identity, changing either grouping
-  rule, and ranking on a projected count.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: rendering change with fixture tests; recompute the order over committed bundles,
-  no GPU.
-- Acceptance gates: `make ci` green; group ids never move; the report states on how many of the
-  measured bundles the order changed, including the bundles where it did not.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
-
-#### conflict-stage-attribution-counts-the-pairs-each-knob-buys (optional)
-
-The attribution names ONE stage and one pair, and a run that loses pairs at three stages says
-nothing about how much of the corpus each knob would recover: the purpose-built chunking-gap run
-loses two of its three document pairs to the missing document and one to candidate selection, and
-the reading names only the first
-([decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair)).
-An operator sizing a fix wants the split -- turning this knob reaches N of the M orderable pairs
-the run lost, and the rest are elsewhere. Count the lost orderable pairs per stage (the census the
-one-pair scan already walks the classes for) and print it beside the named pair, keeping the single
-named pair as the headline so the reading does not turn back into a list of knobs. Cost is the
-constraint: a full census is the quadratic sweep the one-pair rule exists to avoid, so bound it by
-the per-document classes (a document lost at a stage bounds its own pairs) or cap the count and say
-it is a floor.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `document_stage` and `REPORT_STAGE_ORDER` in
-  `src/llb/conflicts/governance/stage_rule.py` are the classes and their order;
-  `orderable_document_pairs` in `governance/coverage.py` is the denominator and is already counted
-  without enumerating pairs.
-- User-visible outcome: an operator learns whether the named knob recovers most of what the run
-  lost or one pair of it.
-- Scope boundary: in scope -- the per-stage count, its cost bound, and one rendered line. Out of
-  scope -- naming a second pair, adding a stage, and re-running detection.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: audit-side reading with fixture tests; recompute over the bundles on disk, no GPU.
-- Acceptance gates: `make ci` green; the per-stage counts sum to the lost orderable pairs on a
-  fixture that loses pairs at three stages; the cost stays inside the stated bound on a corpus
-  large enough for the difference to show.
-- Documentation target:
-  [decision groups](current/data-prep/conflict-decision-groups.md#which-stage-lost-the-orderable-pair).
-
-#### conflict-budget-replay-counts-the-orderable-pairs-it-costs (optional)
-
-The budget re-read reports how many DOCUMENT pairs a smaller candidate budget would have returned
-(5 of 8 on the fixture at budget 2), but the coverage reading the whole page is about counts
-ORDERABLE pairs -- so an operator cannot tell whether a cheaper budget costs supersession evidence
-or only pairs the corpus could never order anyway
-([bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned)).
-The named-pair reading does not close the gap either: on every measured bundle the named pair was
-identical at every budget, because the corpus-first lost pair is lost at all of them. Report the
-orderable count beside the total -- the record already carries each document's ordering fields, so
-`compare_editions` over the recorded documents is the whole computation -- and state what a budget
-costs in the units the reading is quoted in.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `returned_pairs_at_budget` in `src/llb/conflicts/bundle/stage_replay.py` is
-  the set and `documents_of` beside it carries the ordering fields; `compare_editions`
-  (`governance.py`) is the orderability test the coverage already uses.
-- User-visible outcome: an operator lowering the candidate budget learns whether it costs evidence
-  or only noise.
-- Scope boundary: in scope -- the orderable count at a budget, beside the run's own, and its line in
-  the report. Out of scope -- re-adjudicating rows, a per-stage census, and changing the named pair.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: replay-side counting with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; at the run's own budget the orderable count equals the
-  bundle's recorded `orderable_pairs`; a fixture whose budget drops only unorderable pairs reports a
-  cost of zero orderable pairs while the total falls.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#what-a-smaller-candidate-budget-would-have-returned).
-
-#### conflict-bundle-records-the-store-it-read-but-not-where-it-was (optional)
-
-A bundle can now be PLACED against a store -- `recompute-conflict-stage --store <dir>` says whether
-the store on disk is the one that run read
-([bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy)) --
-but the operator has to supply the path, and a sweep can only be pointed at ONE store while its
-bundles were taken over many. The bundle records the store's identity and not its LOCATION, so
-"which of my stores is this bundle about" is unanswerable even when every candidate store is on the
-host. Record the store directory the run read (relative to `$DATA_DIR` where it sits under it, since
-an absolute path is host-specific and the repo forbids hardcoding one), and let the re-read resolve
-it -- falling back to the explicit flag, and saying plainly when the recorded location is gone
-rather than reporting a mismatch it did not test.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `StoreView.index_dir` is the resolved path the audit already holds,
-  `store_identity.py` is where the identity is recorded and compared, and `resolve_data_dir` /
-  `resolve_store_dir` (`src/llb/core/`) are how a recorded location must be re-resolved.
-- User-visible outcome: an archive sweep tells an operator which of their stores each bundle's
-  readings are about, without being told the answer first.
-- Scope boundary: in scope -- the recorded location, its resolution on re-read, the explicit-flag
-  precedence, and the "recorded store is gone" reading. Out of scope -- recording anything else
-  about the store, searching the host for a matching store, and changing the identity digest.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
-- Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; a bundle whose recorded store still exists is placed against it
-  with no flag; a bundle whose store has been deleted says so rather than reporting a mismatch; an
-  explicit `--store` still wins; no absolute host path reaches the artifact.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-store-the-bundle-does-not-copy).
-
-#### conflict-summary-group-granularity-repeats-its-own-prose-in-every-bundle (optional)
-
-With the store manifest gone from the `tree` block, the second-largest key in a 250-document
-`summary.json` is `group_granularity` at **2,537 of 13,409 bytes** (19%), and about a third of it is
-not data: `unit` (181 bytes) plus one `description` per grouping rule are BUILD constants -- the same
-sentences in every bundle every run ever wrote, explaining a rule whose prose already lives in
-[decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
-The rest is `rules.*.sizes` and `quoted_group_split`, which are linear in GROUPS and therefore in
-ROWS -- the one growth term in `summary.json` that the record's own size bound (linear in DOCUMENTS
-or bounded by a run parameter) does not cover, so a claim-tier run on a conflict-dense corpus grows
-it without limit. Price both halves against the bundles on disk: drop or version the prose (a rule
-name plus a schema version is what a consumer joins on), and decide whether `sizes` should stay a
-list or become the `size_counts` histogram it is already recorded beside.
-
-- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: CLEAR
-- Dependencies: none. `finding_granularity` and `quoted_group_split`
-  (`src/llb/conflicts/grouping/granularity.py`) build the block, `bundle/fold.py` is the gate every other
-  fold in the bundle is held to, and `schema_version` inside the block is the migration seam.
-- User-visible outcome: a bundle's size tracks its corpus and its run parameters, instead of the
-  number of rows the adjudicator happened to return.
-- Scope boundary: in scope -- the measured saving per half, a keep-or-change verdict, and the
-  schema bump if the form changes. Out of scope -- changing either grouping rule, the decision
-  range, and what the report renders from the block.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/summary.json`.
-- Execution path: artifact change with fixture tests; no GPU.
-- Acceptance gates: `make ci` green; every bundle reading replays identically through the old and
-  new forms; a corpus whose row count grows tenfold grows the block less than tenfold, or the
-  reading states why a list is kept.
-- Documentation target:
-  [bundle record](current/data-prep/conflict-bundle-record.md#the-size-the-record-actually-costs).
-
-#### conflict-claim-tier-cross-encoder-prefilter (optional)
-
-Spend the cross-encoder's ordering on adjudication COST instead of on a rate. Scoring a candidate
-pair with a cross-encoder orders the claim tier's own verdicts where cosine does not -- monotone
-score bins whose top bin is entirely conflicts on the planted fixture and the high-recall corpus
-([closure](current/data-prep/conflict-null-closure.md)) -- yet the claim tier still adjudicates the
-ranked list in cosine order, so it pays a model call for rows a 568M cross-encoder can already place
-at the bottom. Re-rank the candidate rows with the pinned cross-encoder before adjudication and
-measure what that buys: adjudicated rows needed to reach the same set of found conflicts, and the
-conflicts lost if any. The scorer must stay injectable, and a corpus where the ordering is flat
-(goods, four conflicts in fifty rows) must degrade to today's behavior rather than drop rows.
+`build_adjudicator` sets a model, a backend, a temperature, and a seed, and nothing else, so a
+reasoning model on the Ollama path spends its token budget on reasoning and emits no verdict:
+gemma4:12b returned 30 unparsable completions out of 40 probe pairs and the calibration gate
+correctly refused it ([measured claim-tier
+precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers)).
+`EndpointConfig` already carries `think` and `num_ctx`; the adjudicator never passes them, so one
+of the five registered families cannot serve as an adjudicator at all. Plumb a think control
+through the audit and the calibration command, and re-score that family against both probe tiers to
+say whether the refusal was plumbing or quality.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: reuse `controls/cross_encoder.py` (pair scoring batched by left passage,
-  calibration binning) and the `RerankScorer` seam in `src/llb/rag/rerank.py`; the claim tier and its
-  artifacts are current behavior in [conflict
-  detection](current/data-prep/conflict-detection.md#effort-tiers).
-- User-visible outcome: `audit-corpus-conflicts --effort claim` reaches the same conflicts for fewer
-  adjudication calls on corpora where the ordering is informative, with the saving recorded in the
-  run artifacts.
-- Scope boundary: in scope -- an optional pre-filter stage between candidate generation and
-  adjudication, its per-corpus flat-ordering fallback, and the cost/recall evidence. Out of scope --
-  quoting any cross-encoder score as a probability, rate, or confidence; changing the relation
-  vocabulary; and dropping a row the claim tier would have called a conflict without recording it.
-- Data and artifact paths: the existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts only.
-- Execution path: add the pre-filter behind an injected scorer with a deterministic fixture test,
-  then one CUDA-host claim run per quickstart corpus paired against the same run without it.
-- Acceptance gates: `make ci` green with the injected scorer; no conflict found by the unfiltered
-  run is missing from the filtered run on either quickstart corpus; and the recorded saving is stated
-  per corpus, including the corpus where it is zero.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md).
+- Dependencies: none. `EndpointConfig.think` and the Ollama native path already exist; the gap is
+  that `src/llb/conflicts/claim/adjudicator.py` does not expose them.
+- User-visible outcome: an operator can point the claim tier at a reasoning model without every
+  verdict coming back unparsable.
+- Scope boundary: in scope -- the think (and, if the same run shows it is needed, `num_ctx`)
+  control on both commands, and one calibration re-score of the refused family. Out of scope --
+  changing the prompt, the parser's strictness, and any default that would turn reasoning on for
+  the families that already work without it.
+- Data and artifact paths: `$DATA_DIR/corpus-conflict-calibration/<run>/` only.
+- Execution path: one calibration-only run for the re-scored family on the CUDA host; CI covers the
+  flag reaching the endpoint config with an injected fake.
+- Acceptance gates: `make ci` green; the re-scored family returns parsable verdicts on both tiers,
+  and the page records its agreement beside the other four.
+- Documentation target: [measured claim-tier precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers).
 
-#### conflict-adjudicator-probe-difficulty (optional)
+#### conflict-probe-hard-tier-promotion (optional)
 
-The frozen calibration probe is passed **24/24** by MamayLM-Gemma-3-12B, which means the gate is
-currently proving only that an adjudicator is not badly broken -- a probe nobody fails cannot
-separate a good adjudicator from an adequate one, and the audit will happily quote a precision
-figure from either
-([conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)). Add a
-harder frozen tier: pairs whose actionable/complementary split is genuinely arguable (a restated
-fact under a different heading, two numeric claims about different quantities in the same
-sentence shape, a partial supersession where only one clause changed), score two host-fit model
-families against both tiers, and either raise `MIN_ADJUDICATOR_ACCURACY_LCB` on the evidence or
-record that the gate's job is a floor rather than a ranking.
+The hard probe tier separates adjudicators the base tier cannot, but the gate still reads only the
+base tier: at 16 pairs the same 0.60 Wilson bound means `>= 14/16`, so one relabelled pair moves a
+family across it, and the ordering rests on one host, one seed, and one model per family
+([measured claim-tier
+precision](current/data-prep/conflict-claim-precision.md#measured-five-model-families-against-both-tiers)).
+Reproduce the ordering on a second seed and widen the hard tier until its pass mark does not turn
+on a single pair, then either add `hard` to `TIER_ACCURACY_GATES` or record that the separation is
+a ranking an operator reads rather than a bar the audit enforces.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: RUN NEEDED
-- Dependencies: none. Reuse `src/llb/conflicts/claim/calibration.py`, its heading-addressed probe
-  format, and the planted fixture; a new hard tier may need new fixture sections, which must stay
-  offset-exact and pass the existing corpus-unchanged assertion.
-- User-visible outcome: the calibration gate distinguishes adjudicators an operator would actually
-  choose between, instead of only rejecting a broken one.
-- Scope boundary: in scope -- the harder probe tier, its frozen labels and rationale, a two-family
-  comparison, and a gate-threshold decision. Out of scope -- changing the adjudication prompt, the
-  relation vocabulary, and scoring agreement on anything but the actionable binary before the
-  comparison supports it.
-- Data and artifact paths: `samples/corpora/conflicts_uk_v1/adjudicator_probe.json` and the
-  existing `$DATA_DIR/corpus-conflicts/<run>/` artifacts.
-- Execution path: one calibration-only run per model family on the CUDA host; CI covers the new
-  tier's passage resolution and label balance.
-- Acceptance gates: `make ci` green; both families score both tiers; the report states whether the
-  hard tier separates them and either raises the gate or records why it stays a floor.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe).
+- Dependencies: the tiered probe and the per-tier gate map are current behavior ([measured
+  claim-tier precision](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe));
+  promoting a tier is one entry in `TIER_ACCURACY_GATES`.
+- User-visible outcome: an adjudicator whose specificity collapses on arguable pairs either cannot
+  publish a precision figure, or is documented as an operator's own call -- not left undecided.
+- Scope boundary: in scope -- more hard pairs in the same corpus, a second-seed re-score of the
+  families already measured, and the promotion decision. Out of scope -- a third tier, a second
+  hard corpus, and changing what the base tier contains.
+- Data and artifact paths: `samples/corpora/conflicts_uk_v1/probe_hard/`,
+  `samples/corpora/conflicts_uk_v1/adjudicator_probe.json`, and
+  `$DATA_DIR/corpus-conflict-calibration/<run>/`.
+- Execution path: one calibration-only run per family per seed on the CUDA host; CI covers the
+  widened tier's passage resolution and label balance.
+- Acceptance gates: `make ci` green; the widened tier's pass mark does not turn on one pair, the
+  measured ordering holds across seeds, and the page states whether `hard` gates.
+- Documentation target: [measured claim-tier precision](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe).
 
 #### conflict-precision-bound-at-document-clustering (optional)
 
@@ -430,7 +291,7 @@ The clustered bound treats a CHUNK as the independent unit, and on a concentrate
 still too generous. Measured: every one of the goods corpus's 8 actionable rows at budget 100 points
 at the same right document, so at the document level the corpus supplies one observation, not eight
 -- yet the chunk-level bound resamples 42 left and 51 right chunks
-([conflict detection](current/data-prep/conflict-detection.md#measured-both-quickstart-corpora)).
+([conflict detection](current/data-prep/conflict-claim-precision.md#measured-both-quickstart-corpora)).
 The bound refused a floor there anyway, which is why this is a sharpening rather than a correction,
 but nothing establishes which unit the audit should quote when the two disagree. Compute the bound
 at both clusterings on the same rows, report them side by side on both quickstart corpora, and state
@@ -453,7 +314,7 @@ its conflicts, or quote both.
 - Acceptance gates: `make ci` green; both corpora report both bounds at every measured budget; the
   report names which bound the audit quotes and why, and the chunk-level bound never reads lower
   than the document-level one on the same rows.
-- Documentation target: [conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+- Documentation target: [conflict detection](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision).
 
 #### conflict-candidate-record-cap-on-a-natively-dense-corpus (optional)
 
@@ -522,7 +383,7 @@ chunk size, budget) on the same corpus and record which one the yield tracks.
   with the baseline variant; the reading names the factor the yield tracks, or records that the
   variants do not separate.
 - Documentation target: [conflict
-  detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision).
+  detection](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision).
 
 #### conflict-policy-delta-on-an-operator-corpus-with-dated-revisions (optional)
 
@@ -625,6 +486,113 @@ outcome and closes the question.
   partition lands strictly inside the range, or records that it does not and why.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
+
+### Simulated-user dual-control workloads -- `simulated-user-dialogue`
+
+#### dual-control-suite-seam
+
+Nothing in this repo drives a conversation with a second actor. `bench-agentic` runs one model
+against a `ToolWorld` and reads planted assertions off it ([category
+suite](current/category-benchmark-suite.md)); there is no user simulator, no written policy the
+agent must obey, and no reward that decomposes into world end state versus what the agent had to
+say. Build that seam once, over tau2-bench's orchestrator rather than a second one of our own:
+it already carries the domain/policy/tool/task contracts, the end-state reward, and a task set the
+external-suite lane can screen against. This task is the seam and its artifact -- no Ukrainian
+domain yet, no headline number.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR
+- Dependencies: none. The tier reuses the existing backend launcher and isolation contract
+  ([host validation](current/host-validation.md)) and the category-run bundle writer
+  (`persist_category_run`); neither has open work that blocks it.
+- User-visible outcome: `llb bench dual-control --domain <id> --model <id>` runs a dual-control
+  case set against a local endpoint for BOTH the agent and the user simulator, and writes a run
+  bundle whose reward decomposition, per-trial outcomes, pinned suite tag, domain digest, and
+  user-simulator identity can be re-read without rerunning the models.
+- Scope boundary: in scope -- a `tau2` optional extra pinned to a git tag; a lazy-imported adapter
+  under `src/llb/bench/dual_control/` that registers our agent/user construction against the suite
+  registry and passes `api_base` through `llm_args` so `openai/<model>` resolves to a local vLLM or
+  Ollama endpoint; a `TAU2_DATA_DIR` binding to `$DATA_DIR`; a registered artifact contract for the
+  run bundle carrying `suite_tag`, `domain_id`, `domain_digest`, `agent_model`, `user_model`,
+  `user_endpoint`, `num_trials`, and the per-case component rewards; and the throughput meter every
+  other category runner threads. Out of scope -- voice, audio, and full-duplex paths; the gym/RL
+  interface; the suite's own knowledge-retrieval pipeline (disabled, our retrieval stack is
+  unaffected); leaderboard submission; and any Ukrainian domain, which is
+  `ua-dual-control-domain`.
+- Data and artifact paths: `$DATA_DIR/dual-control/<run_timestamp>/`; a committed miniature domain
+  fixture under `samples/benchmarks/dual_control/` (policy, world, two cases, one reference
+  trajectory) so CI never depends on the suite's bundled data; the pinned tag recorded in
+  `pyproject.toml` and echoed into every bundle.
+- Execution path: `make bench-dual-control` with a `##` help description. CI runs the fixture domain
+  with an injected fake completion for both actors -- no network, no GPU, no suite data download.
+  The real-endpoint path is a separate heavy invocation on the CUDA host.
+- Acceptance gates: `make ci` green with the suite absent from the base install (the import is lazy
+  and its absence produces a named refusal, not a traceback); a fixture run's reward recomputes from
+  the saved bundle alone and equals the value the run reported; a bundle whose `user_model` differs
+  from another's makes a comparison REFUSE rather than average the two; removing `suite_tag` from
+  the bundle makes a test fail.
+- Documentation target: a new `docs/impl/current/extended-workflows/dual-control-tier.md`, its row
+  in the [extended workflows](current/extended-workflows.md) area index, and the reuse note in
+  [product decisions](current/scope-boundaries.md).
+
+#### dual-control-screen-discrimination
+
+Once the seam exists, the first question is whether the tier buys anything. The external-suite lane
+runs the suite's English domains unmodified as a candidate screen; the honest test is whether it
+SEPARATES roster models that `bench-agentic` already ranks as tied. If it does not, the tier is a
+screen and nothing more, and that is the result to record rather than a lane to keep feeding.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR -- the run is deterministic at fixed seeds and executes on the CUDA host with
+  no human judgment.
+- Dependencies: `dual-control-suite-seam`.
+- User-visible outcome: a recorded verdict on whether dual-control screening adds ranking
+  information over the single-actor agentic tier, and a per-model reliability number an operator can
+  read as "succeeds k times out of n" rather than as a mean.
+- Scope boundary: in scope -- the English suite lane over the roster finalists at fixed seeds and a
+  pinned user-simulator model; success-across-trials reported with its uncertainty width under the
+  [published-number rule](current/extended-workflows/published-values.md); a paired reading against
+  the `bench-agentic` ranking on the commonly-run models, under the existing minimum-evidence gate
+  ([paired verdicts](current/rag-core/paired-verdicts.md)). Out of scope -- any localized domain;
+  changing the agentic tier's ranking; a board row (the external lane never enters one); and tuning
+  the agent prompt to lift the suite score, which would make the screen ours rather than the
+  suite's.
+- Data and artifact paths: `$DATA_DIR/dual-control/<run_timestamp>/` per model; the committed run
+  aggregate the reading cites, under the same content pin every other published aggregate carries.
+- Execution path: heavy, sequential, one backend process per model under the GPU isolation contract
+  ([heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md)); the analysis
+  recomputes from the saved bundles with no GPU.
+- Acceptance gates: `make ci` green; the reading states the model count, the predeclared effect it
+  could detect, and either the separation it found or a plain statement that the lane buys nothing
+  over the agentic tier on this roster; a null outcome is written up in
+  [future research](future-research.md) with what would reopen it, and the lane stays a screen.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md` and, if the
+  outcome is null, [future research](future-research.md).
+
+#### dual-control-tool-protocol-conformance (optional)
+
+The suite's orchestrator speaks native OpenAI `tools=`; `bench-tooling` already carries the finding
+that local models differ in how well they do ([category
+suite](current/category-benchmark-suite.md)). A roster model that cannot emit a well-formed tool
+call through its serving backend will score zero on every dual-control case for a reason that has
+nothing to do with conversation, and reporting that as a conversational failure would be wrong.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR
+- Dependencies: `dual-control-suite-seam`.
+- User-visible outcome: a per-model, per-backend statement of whether native tool calling is
+  available at all for the dual-control tier, so a zero is attributable to the protocol rather than
+  read as conversational incapacity.
+- Scope boundary: in scope -- a conformance probe over the roster on each serving backend, its
+  malformed-call rate, and a refusal that names the model/backend pair when the protocol is
+  unavailable. Out of scope -- writing a text-protocol shim into the suite's orchestrator, teaching
+  a model to call tools, and any change to `bench-tooling`'s own protocol axis.
+- Data and artifact paths: the conformance record inside the dual-control run bundle; no new root.
+- Execution path: a short probe against a live endpoint on the CUDA host; the fixture path in CI
+  uses an injected fake that emits one well-formed and one malformed call.
+- Acceptance gates: `make ci` green; a model/backend pair with no native tool support produces a
+  named refusal rather than a zero-scored run.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md`.
 
 ### Documentation integrity -- `documentation-integrity`
 
@@ -1396,13 +1364,14 @@ Produce frozen human labels for real candidate rows so the audit's measured clai
 be trusted off the planted fixture. The shipped calibration gate scores the adjudicator only against
 the seven-document planted probe, whose relations are synthetic by construction and which the
 current host model passes 24/24 ([conflict
-detection](current/data-prep/conflict-detection.md#the-frozen-calibration-probe)); nothing measures
+detection](current/data-prep/conflict-claim-precision.md#the-frozen-calibration-probe)); nothing measures
 whether the model agrees with a human on HR or goods rows.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
 - Agent status: HUMAN-GATED
 - Dependencies: the audit's precision block and its calibration gate are current behavior
-  ([conflict detection](current/data-prep/conflict-detection.md#measured-claim-tier-precision)) and
+  ([measured claim-tier
+  precision](current/data-prep/conflict-claim-precision.md#measured-claim-tier-precision)) and
   consume the resulting bound; candidate ranking and claim adjudication are current behavior too.
   Human step that gates completion: an authorized reviewer assigns one relation from the claim
   vocabulary to every row of the frozen slice without seeing the model's verdict.
@@ -1515,9 +1484,53 @@ the fitted cost -- or record that the linear rank is within the measurement's ow
 - Documentation target: [conflict
   resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
 
+### Simulated-user dual-control workloads -- `simulated-user-dialogue`
+
+#### ua-dual-control-domain
+
+The external-suite lane screens candidates in English; only a Ukrainian domain can inform the local
+choice this project exists to make. Build one on material this repo already owns -- a written policy
+in Ukrainian, a small tool-backed world, and cases whose user-side scenario is written the way a
+Ukrainian speaker would actually state a half-formed request. This is human-gated for one reason:
+whether a case's Ukrainian scenario states the same task, under the same policy, with the same
+missing information, is a judgment no fixture can make, and a mistranslated scenario silently
+becomes a different benchmark.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: HUMAN-GATED -- an agent can build the domain, the tools, the world, the reference
+  trajectories, and the replay check; a Ukrainian reviewer must accept the policy and each case's
+  scenario before any number from the lane is published.
+- Dependencies: `dual-control-suite-seam` (agent section) for the seam the domain registers into;
+  no cross-section block beyond it.
+- User-visible outcome: a Ukrainian dual-control domain a local model can be scored on, whose
+  numbers may inform a model choice because the language, the policy, and the world are the ones
+  the operator would deploy.
+- Scope boundary: in scope -- one domain: a Ukrainian policy document, its tool set and world
+  schema, a seeded world, the case set with user-side scenarios and reference trajectories, and the
+  reviewer pass that accepts them. Out of scope -- translating the suite's bundled English domains
+  (an airline reservation policy is not the operator's workload); a second domain before the first
+  one has a reading; voice; and any blending of this lane's row with the English screen's.
+- Data and artifact paths: the domain under `samples/benchmarks/dual_control/uk/` (policy, world
+  seed, tools schema, cases); the reviewer ledger through the existing
+  [review workbench](current/review-workbench.md) adapter seam; runs under
+  `$DATA_DIR/dual-control/<run_timestamp>/`.
+- Execution path: domain construction and the replay check are CPU-only inside `make ci`; the
+  reviewer pass runs through the review workbench; the scored run is heavy and sequential on the
+  CUDA host.
+- Human step: a Ukrainian reviewer accepts (or rejects, with a reason) the policy text and each
+  case's scenario as stating the intended task; the lane publishes nothing until that ledger is
+  complete.
+- Acceptance gates: `make ci` green; replaying every case's reference trajectory on a fresh world
+  reproduces that case's target end state, and a deliberately altered translation that moves the
+  target makes the check FAIL rather than silently rebase it; the reviewer ledger records an
+  accept/reject per case with its reason; the lane's row is refused on any board that also carries
+  the English screen.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md` and the
+  [review workbench](current/review-workbench.md) adapter list.
+
 ## Adding Future Tasks
 
-**First decide whether the work is a task at all.** Three kinds of finding look like forward work
+**First decide whether the work is a task at all.** Four kinds of finding look like forward work
 and are not:
 
 - A **chore**: a source file over the soft line limit, or a run artifact already inside its size
@@ -1526,6 +1539,9 @@ and are not:
   the next round.
 - An **audit of our own output**: an artifact's field layout, an artifact's byte count. The measure
   of an audit is a decision it changes, not a byte it saves.
+- A **migration, compatibility shim, or second schema version** for a form only our own code has
+  written. Change the form in place and rebuild the data; see
+  [Pre-release rule](#pre-release-rule-no-versioning-no-backward-compatibility).
 - A **new domain capability** the spec does not describe. This one IS worth doing, and it is not a
   plan task yet: run the six steps of
   [Extending this specification](../design/spec.md#extending-this-specification) first -- state the
@@ -1559,9 +1575,10 @@ Each task entry must include:
 - Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
   the resulting behavior and run notes.
 
-When a task surfaces new future work, route it by the three kinds above: handle a chore inline or
-dropped, a self-audit gets dropped, and a genuine capability goes through the spec lifecycle before
-it becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
+When a task surfaces new future work, route it by the four kinds above: handle a chore inline or
+dropped, a self-audit gets dropped, a compatibility layer for our own unreleased output gets
+replaced by an in-place change, and a genuine capability goes through the spec lifecycle before it
+becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
 what is not normal is a task quietly appearing under a capability nobody amended the spec for. Put
 current behavior and durable decisions in current docs, never in this plan.
 

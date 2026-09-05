@@ -1,0 +1,55 @@
+{
+  "schema_id": "llb.ontology-provenance",
+  "schema_version": "2.0.0",
+  "kind": "ontology-drafted",
+  "synthetic": false,
+  "endpoint": {
+    "lane": "local",
+    "model": "<drafting-model>"
+  },
+  "prompts": {
+    "extraction": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "draft": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "multi_hop": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "seed": 7,
+  "settings": {
+    "max_items": 60
+  },
+  "elapsed_s": 12.5,
+  "cost": {
+    "calls": 3
+  },
+  "corpus_version": {
+    "corpus_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "acquisition_run_ids": []
+  },
+  "documents": [
+    {
+      "doc_id": "poryadok.md",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "n_chars": 114,
+      "source_uri": null,
+      "capture_time": null,
+      "capture_id": null,
+      "payload_digest": null,
+      "licence": null,
+      "acquisition_run_id": null,
+      "revision_of": null
+    }
+  ],
+  "stages": {
+    "documents": 1,
+    "items": 1
+  },
+  "labels": {
+    "question_type_distribution": {
+      "factoid": 1
+    }
+  },
+  "ontology": {
+    "entity_types": [],
+    "relation_types": []
+  },
+  "n_items": 1
+}

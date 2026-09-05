@@ -7,6 +7,15 @@ each rendered page's char offsets so span validation can cite the originating PD
 
 import json
 from pathlib import Path
+from typing import Literal
+
+from llb.core.contracts.artifacts import ArtifactContract
+from llb.core.contracts.data_prep.corpus import (
+    PdfCitations,
+    PdfCorpusManifest,
+    PdfItemRecord,
+    PdfPageCitationRecord,
+)
 
 from llb.prep.pdf.model import (
     PDF_CITATION_SUFFIX,
@@ -19,43 +28,40 @@ from llb.prep.pdf.model import (
 )
 from dataclasses import asdict
 
-
-def _manifest(result: PdfCorpusResult) -> dict[str, object]:
-    return {
-        "kind": "pdf-corpus",
-        "pdf_root": str(result.pdf_root),
-        "corpus_root": str(result.out_dir),
-        "n_pdfs": len(result.items),
-        "n_docs": result.n_docs,
-        "n_skipped": result.n_skipped,
-        "items": [asdict(item) for item in result.items],
-    }
+PdfManifestKind = Literal["pdf-corpus", "pdf-corpus-quality"]
 
 
-def _quality_report(result: PdfCorpusResult) -> dict[str, object]:
-    return {
-        "kind": "pdf-corpus-quality",
-        "pdf_root": str(result.pdf_root),
-        "corpus_root": str(result.out_dir),
-        "n_pdfs": len(result.items),
-        "n_docs": result.n_docs,
-        "n_skipped": result.n_skipped,
-        "items": [asdict(item) for item in result.items],
-    }
+def _pdf_items(result: PdfCorpusResult) -> list[PdfItemRecord]:
+    return [PdfItemRecord.model_validate(asdict(item)) for item in result.items]
+
+
+def _manifest(result: PdfCorpusResult, kind: PdfManifestKind) -> PdfCorpusManifest:
+    """The conversion manifest and its quality report, which differ only in `kind`."""
+    return PdfCorpusManifest(
+        schema_id="llb.pdf-corpus-manifest",
+        schema_version="1.0.0",
+        kind=kind,
+        pdf_root=str(result.pdf_root),
+        corpus_root=str(result.out_dir),
+        n_pdfs=len(result.items),
+        n_docs=result.n_docs,
+        n_skipped=result.n_skipped,
+        items=_pdf_items(result),
+    )
+
+
+def _write_contract(path: Path, record: ArtifactContract) -> None:
+    path.write_text(
+        json.dumps(record.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _write_manifest(result: PdfCorpusResult) -> None:
-    (result.out_dir / PDF_CORPUS_MANIFEST).write_text(
-        json.dumps(_manifest(result), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_contract(result.out_dir / PDF_CORPUS_MANIFEST, _manifest(result, "pdf-corpus"))
 
 
 def _write_quality_report(result: PdfCorpusResult) -> None:
-    (result.out_dir / PDF_CORPUS_QUALITY).write_text(
-        json.dumps(_quality_report(result), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_contract(result.out_dir / PDF_CORPUS_QUALITY, _manifest(result, "pdf-corpus-quality"))
 
 
 def _citation_path(doc_id: str) -> str:
@@ -71,13 +77,15 @@ def _write_citations(
     diagnostics: PdfDiagnostics,
 ) -> str:
     rel = _citation_path(doc_id)
-    payload = {
-        "kind": "pdf-citations",
-        "source": source,
-        "doc_id": doc_id,
-        "parser": extraction.parser,
-        "diagnostics": asdict(diagnostics),
-        "pages": [asdict(page) for page in rendered.citations],
-    }
-    (out_dir / rel).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    record = PdfCitations(
+        schema_id="llb.pdf-citations",
+        schema_version="1.0.0",
+        kind="pdf-citations",
+        source=source,
+        doc_id=doc_id,
+        parser=extraction.parser,
+        diagnostics=asdict(diagnostics),
+        pages=[PdfPageCitationRecord.model_validate(asdict(page)) for page in rendered.citations],
+    )
+    _write_contract(out_dir / rel, record)
     return rel

@@ -2,11 +2,14 @@
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import typer
 
+from llb.artifacts.retrieval_graph.sidecars import write_sidecar
 from llb.cli.app import app
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.retrieval_graph.calibration import ROUTING_CALIBRATION_SCHEMA_ID
 from llb.cli.helpers import load_config
 from llb.cli.rag import fusion_inputs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
@@ -96,8 +99,10 @@ def calibrate_fusion_routing_cmd(
     )
     target = Path(out_dir) if out_dir is not None else default
     target.mkdir(parents=True, exist_ok=True)
-    (target / "calibration.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    write_sidecar(
+        target / "calibration.json",
+        ROUTING_CALIBRATION_SCHEMA_ID,
+        cast(JsonObject, report),
     )
     (target / "report.md").write_text(format_report(report), encoding="utf-8")
     (target / "run_config.json").write_text(

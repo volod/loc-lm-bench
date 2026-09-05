@@ -1,5 +1,7 @@
 """Artifact names, defaults, and the comparison vocabulary of the record-linkage seam."""
 
+from typing import Final, Literal
+
 METHOD = "link-records"
 LINKAGE_SUBDIR = "linkage"
 
@@ -124,3 +126,7 @@ ACCURACY_WEIGHT_ROUNDING = 0.5
 # of these names produces an ambiguous-reference binder error deep inside the clustering step,
 # long after the fit succeeded. The seam refuses them up front instead.
 RESERVED_COLUMNS = ("cluster_id", "node_id", "representative")
+
+# Registered contract identity of the bundle settings; see `llb.artifacts.data_prep.families`.
+LINKAGE_SETTINGS_SCHEMA_ID: Final[Literal["llb.linkage-settings"]] = "llb.linkage-settings"
+LINKAGE_SETTINGS_SCHEMA_VERSION: Final[Literal["2.0.0"]] = "2.0.0"
