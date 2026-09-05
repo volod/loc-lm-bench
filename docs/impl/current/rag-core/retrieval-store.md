@@ -15,11 +15,10 @@ Part of the [RAG core](../rag-core.md) area of the
 The default backend is FAISS. Chroma, Qdrant, and LanceDB use the same `VectorIndex` protocol in
 `src/llb/rag/vector_store/vector_index.py`.
 
-Every project-owned member of a store -- the chunk rows, the parent docstore, `store_meta.json` --
-is a registered artifact contract, and the index and postings files are bound opaquely by the
-`dataset_manifest.json` a build publishes beside them. A store whose metadata this build cannot
-read, or whose members no longer match that manifest, refuses before a query runs, and
-`make check-store STORE=<index-dir>` inspects one without loading FAISS or an encoder. See
+Every member of a published generation is contract-checked: the chunk and parent rows against
+`llb.rag-chunk`, `store_meta.json` against `llb.rag-store-meta`, and the vector and lexical indexes
+against the owner and digest the store recorded for them. A load resolves the metadata and
+re-checks those digests before a vector backend is imported. See
 [retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
 
 Chunk-to-source linkage (audited 2026-07-04 against the Ukrainian-RAG production checklist): every

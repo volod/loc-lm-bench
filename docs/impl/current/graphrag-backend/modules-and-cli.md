@@ -11,6 +11,11 @@ keeps the graph runtime local without introducing a separate graph database serv
 
 Community ids are computed offline and stored. Query time only needs DuckDB table queries.
 
+The persisted node rows, edge rows, metadata, and community summaries are registered contracts
+(`llb.graph-node`, `llb.graph-edge`, `llb.graph-meta`, `llb.graph-community-summaries`), validated
+on save and resolved on load; a generation written before the registry existed still opens. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 ## Modules
 
 `src/llb/graph/model.py`
@@ -109,12 +114,6 @@ provenance, and the candidate is evaluated against its exact no-tree control bef
   price. `bundles.py` / `bundle_match.py` / `rerender.py` re-read a RECORDED comparison from the
   run bundles it named -- no model call -- and refuse a bundle set whose manifests no longer
   describe those lanes ([re-rendering a recorded comparison](answer-quality-rerender.md)).
-
-The persisted graph is a registered artifact surface: node and edge rows, `graph_meta.json`, the
-diagnostic community summaries, and the extraction and ontology inputs a refresh chains from each
-carry contract identity, and `graph.duckdb` is bound opaquely when present. `make check-store
-STORE=<graph-dir> STORE_KIND=graph` reports every member without importing DuckDB. See
-[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
 
 ## Retrieval Strategies
 

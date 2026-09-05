@@ -2,14 +2,8 @@
   "$id": "urn:llb:artifact-contract:llb.graph-community-summaries:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`community_summaries.json`: community id -> narrative summary.\n\nTagged DIAGNOSTIC everywhere it is produced -- a summary is never returned by `retrieve` and\nnever span-scored -- so the contract records what it is rather than promoting it to evidence.",
+  "description": "`community_summaries.json`: one narrative summary per detected community.\n\nThe summaries are tagged DIAGNOSTIC -- they are never returned by `retrieve` and never\nspan-scored -- so the contract keeps them in their own member rather than folding them into\nthe node rows, where a reader could mistake generated prose for evidence.",
   "properties": {
-    "role": {
-      "const": "diagnostic",
-      "default": "diagnostic",
-      "title": "Role",
-      "type": "string"
-    },
     "schema_id": {
       "const": "llb.graph-community-summaries",
       "title": "Schema Id",
@@ -32,6 +26,6 @@
     "schema_id",
     "schema_version"
   ],
-  "title": "GraphCommunitySummaries",
+  "title": "CommunitySummariesDocument",
   "type": "object"
 }

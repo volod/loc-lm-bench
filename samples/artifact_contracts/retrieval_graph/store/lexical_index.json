@@ -1,2 +1,0 @@
-This file stands in for a BM25 postings index in the artifact-contract fixtures.
-Its bytes are never parsed: the manifest binds it opaquely and checks its digest.

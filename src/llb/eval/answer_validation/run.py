@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from llb.artifacts.runs.bundle import read_case_rows
+from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval.answer_validation.constants import (
     COMPARISON_FILENAME,

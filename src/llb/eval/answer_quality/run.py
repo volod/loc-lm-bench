@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.artifacts.runs.bundle import read_case_rows
+from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval.answer_quality.budgets import conversion_baselines, expand_budget_lanes
 from llb.eval.answer_quality.bundle_match import RUN_NAME_PREFIX

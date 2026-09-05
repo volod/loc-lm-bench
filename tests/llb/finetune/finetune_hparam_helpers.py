@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 
-from llb.artifacts.runs.fixture import case_score_row, run_manifest_payload, run_metrics
 from llb.core.config import RunConfig
 from llb.core.contracts.common import JsonObject
 from llb.finetune.hparam_search.model import (
@@ -14,6 +13,7 @@ from llb.finetune.hparam_search.model import (
 from llb.finetune.naming import model_slug
 from llb.finetune.trainer import fake_train_adapter
 from llb.goldset.schema import GoldItem, dump_goldset
+from tests.llb.bundle_fixtures import write_manifest
 
 MODEL = "base-model"
 TUNING_IDS = [f"tune-{index}" for index in range(8)]
@@ -129,28 +129,23 @@ def _write_bundle(
 ) -> Path:
     run = root / "runs" / name
     run.mkdir(parents=True, exist_ok=True)
-    (run / "manifest.json").write_text(
-        json.dumps(
-            run_manifest_payload(
-                run_id=name,
-                run_name=name,
-                split=split,
-                config={"model": MODEL, "backend": "vllm", "goldset_path": str(root)},
-                metrics=run_metrics(objective_score=objective, tokens_per_s=1.0),
-                n_cases=len(items),
-            )
-        ),
-        encoding="utf-8",
+    write_manifest(
+        run,
+        split=split,
+        config={"model": MODEL, "backend": "vllm", "goldset_path": str(root)},
+        metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": 1.0},
+        n_cases=len(items),
     )
     (run / "scores.jsonl").write_text(
         "".join(
             json.dumps(
-                case_score_row(
-                    item.id,
-                    split=item.split,
-                    objective_score=objective,
-                    answer_preview="wrong answer",
-                )
+                {
+                    "item_id": item.id,
+                    "split": item.split,
+                    "status": "ok",
+                    "objective_score": objective,
+                    "answer_preview": "wrong answer",
+                }
             )
             + "\n"
             for item in items

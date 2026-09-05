@@ -1,9 +1,9 @@
 """Rendering and persistence for the two-family repeated-fold replication."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.context_policy.compact_vs_cap_report import METHOD
 from llb.bench.memory.repeated_fold.replication import ReplicationFamilyRun
 from llb.bench.memory.repeated_fold.report import (
@@ -184,11 +184,16 @@ def persist_replication_run(
             for run in runs
         ],
         mirror=mirror,
-        artifacts=[
-            study_design("repeated-fold-replication-design.json", design),
-            study_analysis("repeated-fold-replication-analysis.json", analysis),
-            table_report(
-                "repeated-fold-replication.md", "Repeated-fold completion replication", table
-            ),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "repeated-fold-replication-design.json": json.dumps(design, indent=2, sort_keys=True)
+            + "\n",
+            "repeated-fold-replication-analysis.json": json.dumps(
+                analysis, indent=2, sort_keys=True
+            )
+            + "\n",
+            "repeated-fold-replication.md": "# Repeated-fold completion replication\n\n```text\n"
+            + table
+            + "\n```\n",
+        },
     )

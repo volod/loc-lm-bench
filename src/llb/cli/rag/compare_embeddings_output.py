@@ -1,5 +1,6 @@
 """Validation, consent, and report persistence for the embedding bake-off CLI."""
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -7,8 +8,6 @@ from typing import TYPE_CHECKING, Any, cast
 import typer
 
 from llb.rag.embedding_bakeoff.verdict import resolve_bars
-from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_COMPARISON
-from llb.rag.comparison.sidecar import write_sidecar
 
 if TYPE_CHECKING:
     from llb.rag.encoders.throughput import ThroughputProfile
@@ -49,8 +48,8 @@ def write_throughput_summary(
     throughput_dir = data_dir / "encoder-throughput" / run_ts
     throughput_dir.mkdir(parents=True, exist_ok=True)
     (throughput_dir / "report.md").write_text(render_host_markdown(summary), encoding="utf-8")
-    write_sidecar(
-        throughput_dir / "report.json", SIDECAR_KIND_COMPARISON, "encoder-throughput", summary
+    (throughput_dir / "report.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
     )
     typer.echo(format_host_summary(summary))
     typer.echo(f"[encoder-throughput] wrote summary -> {throughput_dir}")
@@ -64,5 +63,5 @@ def write_bakeoff_report(report: Any, report_path: Path) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(render_markdown(report), encoding="utf-8")
     json_path = report_path.with_suffix(".json")
-    write_sidecar(json_path, SIDECAR_KIND_COMPARISON, "compare-embeddings", report)
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     typer.echo(f"[compare-embeddings] wrote report -> {report_path} ; {json_path}")

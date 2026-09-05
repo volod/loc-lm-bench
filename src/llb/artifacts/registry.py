@@ -96,24 +96,6 @@ class ContractRegistry:
             tuple(step.to_version for step in paths[0]),
         )
 
-    def normalize(self, schema_id: str, value: object) -> Mapping[str, object]:
-        """A parsed pre-contract file as a record of `schema_id`, ready for `read_as`.
-
-        A value carrying an identity is already a record and is returned untouched. One without
-        an identity is a pre-contract file: when the family declares which field of the current
-        record such a file's whole content became, it is wrapped in exactly that field, and
-        otherwise it is passed through and meets the ordinary missing-identity path.
-        """
-        definition = self.definition(schema_id)
-        identified = isinstance(value, Mapping) and value.get("schema_id") is not None
-        if not identified and definition.legacy_document_field is not None:
-            return {definition.legacy_document_field: value}
-        if isinstance(value, Mapping):
-            return value
-        raise InvalidSourceRecordError(
-            f"{schema_id}: expected one object record, observed {type(value).__name__}"
-        )
-
     def read_as(
         self,
         schema_id: str,

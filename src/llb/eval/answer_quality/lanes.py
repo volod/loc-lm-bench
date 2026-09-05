@@ -9,6 +9,7 @@ row the retrieval sweep recommended instead of a hand-copied approximation of it
 pin both fixed and routed parsers to the sweep's own formatters.
 """
 
+import json
 from pathlib import Path
 
 from llb.core.config import RunConfig
@@ -29,7 +30,6 @@ from llb.rag.fusion.spans import (
     resolve_merge_ratio,
     resolve_span_identity,
 )
-from llb.rag.comparison.sidecar import sidecar_report
 from llb.rag.fusion.routing import ROUTER_QUESTION_TYPE
 
 BACKEND_VECTOR = "faiss"
@@ -143,8 +143,8 @@ def lane_labels_from_comparison(path: Path) -> list[str]:
     Scoring answers under the row the retrieval sweep actually recommended is the whole point of
     the comparison, so the two lanes are read from its verdict rather than retyped.
     """
-    report = sidecar_report(path)
-    verdict = report.get("verdict")
+    report = json.loads(Path(path).read_text(encoding="utf-8"))
+    verdict = report.get("verdict") if isinstance(report, dict) else None
     if not isinstance(verdict, dict):
         raise ValueError(f"{path}: not a compare-graph-fusion comparison (no verdict)")
     baseline = str(verdict.get("baseline") or VECTOR_ROW)

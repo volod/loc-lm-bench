@@ -13,14 +13,21 @@ from llb.rag.duplicates.collapse import (
     duplicate_stats,
 )
 from llb.rag.duplicates.models import DuplicateStats
+from llb.rag.vector_store.layout import (  # re-exported: every store importer names them here
+    CHUNKS_FILE,
+    LEXICAL_FILE,
+    META_FILE,
+    PARENTS_FILE,
+)
 
-CHUNKS_FILE = "chunks.jsonl"  # the INDEXED units (children in parent_child mode)
-
-PARENTS_FILE = "parents.jsonl"  # the parent docstore (parent_child mode only)
-
-META_FILE = "store_meta.json"
-
-LEXICAL_FILE = "lexical_index.json"  # BM25 postings beside the vector index (hybrid mode)
+__all__ = [
+    "CHUNKS_FILE",
+    "LEXICAL_FILE",
+    "META_FILE",
+    "MODE_HYBRID",
+    "PARENTS_FILE",
+    "order_by_score",
+]
 
 MODE_HYBRID = "hybrid"
 

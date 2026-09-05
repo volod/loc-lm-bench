@@ -1,9 +1,9 @@
 """Rendering and persistence for compact-memory second-family replication."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.replication.run import METHOD, STUDY_KIND
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -81,9 +81,12 @@ def persist_replication(
         },
         case_rows=rows,
         mirror=mirror,
-        artifacts=[
-            study_design("replication-design.json", design),
-            study_analysis("replication-analysis.json", analysis),
-            table_report("replication-comparison.md", "Compact-memory transfer replication", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "replication-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "replication-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+            "replication-comparison.md": (
+                "# Compact-memory transfer replication\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

@@ -6,8 +6,6 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_COMPARISON
-from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 from llb.rag.fusion_evidence.stats import (
@@ -115,7 +113,11 @@ def compare_retrieval_cmd(
     Every row is priced in the `chars@k` served-context column. Answer-quality comparison rides
     `run-eval --retrieval-backend ...` (it needs a model).
     """
+    from typing import cast
 
+    from llb.artifacts.retrieval_graph.sidecars import write_sidecar
+    from llb.core.contracts.common import JsonObject
+    from llb.core.contracts.retrieval_graph.comparison import RETRIEVAL_COMPARISON_SCHEMA_ID
     from llb.cli.rag.compare_retrieval_lanes import (
         add_twin_rows,
         attach_diagnostics,
@@ -177,5 +179,5 @@ def compare_retrieval_cmd(
     echo_stage_latencies(stores)
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        write_sidecar(out, SIDECAR_KIND_COMPARISON, "compare-retrieval", report)
+        write_sidecar(out, RETRIEVAL_COMPARISON_SCHEMA_ID, cast(JsonObject, report))
         typer.echo(f"[compare-retrieval] wrote report -> {out}")

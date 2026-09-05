@@ -2,7 +2,6 @@ import json
 
 import pytest
 
-from llb.artifacts.runs.fixture import agent_profile_payload
 from llb.robotics.benchmark.parser import parse_model_decision
 from llb.robotics.benchmark.profile import load_measured_profile
 
@@ -24,7 +23,7 @@ def test_profile_consumes_only_measured_fields_and_refuses_measured_model_mixing
         "top_k": {"state": "demoted", "value": 99},
         "context_budget": {"state": "measured", "value": 8192},
     }
-    path.write_text(json.dumps(agent_profile_payload(fields)), encoding="utf-8")
+    path.write_text(json.dumps({"generated_at": "now", "fields": fields}), encoding="utf-8")
 
     loaded = load_measured_profile(path, model="model-a", backend="ollama")
     assert loaded["measured_fields"] == {

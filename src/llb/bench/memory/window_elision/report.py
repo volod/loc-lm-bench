@@ -1,9 +1,9 @@
 """Rendering and persistence for window-bound summary elision evidence."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.window_elision.run import WindowElisionRun
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -91,9 +91,11 @@ def persist_window_elision_run(
         metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": tokens_per_s},
         case_rows=rows,
         mirror=mirror,
-        artifacts=[
-            study_design("window-elision-design.json", design),
-            study_analysis("window-elision-analysis.json", run.analysis),
-            table_report("window-elision.md", "Window-bound summary elision", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "window-elision-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "window-elision-analysis.json": json.dumps(run.analysis, indent=2, sort_keys=True)
+            + "\n",
+            "window-elision.md": "# Window-bound summary elision\n\n```text\n" + table + "\n```\n",
+        },
     )

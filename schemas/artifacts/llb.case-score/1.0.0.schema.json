@@ -2,7 +2,7 @@
   "$id": "urn:llb:artifact-contract:llb.case-score:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One row of `scores.jsonl` from an evaluation run: how one case scored.\n\nThe required columns are the ones `score_case` writes on every case, whatever lane ran. Every\noptional column belongs to a lane that may not have run -- query preparation, the declared\nanswer envelope, the ontology gate, the answer-side citation metrics -- so an absent column\nmeans the lane did not run, never a defaulted value.",
+  "description": "One scored RAG evaluation case: its correctness, retrieval, and delivery columns.",
   "properties": {
     "answer_all_spans": {
       "anyOf": [
@@ -125,7 +125,6 @@
           "type": "null"
         }
       ],
-      "default": null,
       "title": "First Hit Rank"
     },
     "groundedness": {
@@ -153,7 +152,6 @@
       "title": "Hallucinated Citation Rate"
     },
     "item_id": {
-      "minLength": 1,
       "title": "Item Id",
       "type": "string"
     },
@@ -301,16 +299,8 @@
       "title": "Query Subqueries"
     },
     "ranking_score": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Ranking Score"
+      "title": "Ranking Score",
+      "type": "number"
     },
     "reasoning_leak": {
       "anyOf": [
@@ -447,28 +437,12 @@
       "type": "number"
     },
     "token_precision": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Token Precision"
+      "title": "Token Precision",
+      "type": "number"
     },
     "token_recall": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Token Recall"
+      "title": "Token Recall",
+      "type": "number"
     },
     "tokens_per_s": {
       "title": "Tokens Per S",
@@ -549,9 +523,13 @@
     "status",
     "objective_score",
     "token_f1",
+    "token_precision",
+    "token_recall",
+    "ranking_score",
     "exact",
     "contains",
     "retrieval_hit",
+    "first_hit_rank",
     "tokens_per_s",
     "latency_s",
     "completion_tokens",

@@ -1,0 +1,33 @@
+[
+  {
+    "prompt_system_id": "a1b2c3d4e5f6",
+    "fields": {
+      "role": "Ти асистент з питань соціального захисту.",
+      "instruction": "Відповідай державною мовою, спираючись лише на надані уривки.",
+      "metadata_density": "compact",
+      "graph_reference_style": "inline",
+      "anthology_size": 8,
+      "knowledge_tree_depth": 0,
+      "knowledge_tree_budget": 0
+    },
+    "system_prompt": "Ти асистент з питань соціального захисту.",
+    "additional_prompt": "Уривки:\n- Порядок надання соціальної допомоги...",
+    "dropped_context": {
+      "budget_tokens": 2048,
+      "used_tokens": 96,
+      "sections": [
+        {
+          "section": "anthology",
+          "n_kept": 1,
+          "n_dropped": 0,
+          "dropped_ids": [],
+          "dropped_tokens": 0
+        }
+      ]
+    },
+    "used_tokens": 96,
+    "status": "pinned",
+    "note": "",
+    "knowledge_tree": null
+  }
+]

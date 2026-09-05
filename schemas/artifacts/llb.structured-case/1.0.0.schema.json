@@ -1,0 +1,49 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.structured-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One structured-output case: schema conformance and per-field accuracy.",
+  "properties": {
+    "conformant": {
+      "title": "Conformant",
+      "type": "number"
+    },
+    "field_accuracy": {
+      "title": "Field Accuracy",
+      "type": "number"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "schema_id": {
+      "const": "llb.structured-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score": {
+      "title": "Score",
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "conformant",
+    "field_accuracy",
+    "score",
+    "objective_score"
+  ],
+  "title": "StructuredCaseRecord",
+  "type": "object"
+}

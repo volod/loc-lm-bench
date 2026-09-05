@@ -38,15 +38,7 @@ class CompatibilityDeclaration(BaseModel):
     description: str = Field(min_length=1)
 
 
-class ContractCatalogEntry(BaseModel):
-    """One family as an outside reader sees it.
-
-    `legacy_read_version` is the version to assume for a file this project wrote before the family
-    joined the registry, and `legacy_document_field` -- present only where such a file was not a
-    record at all, but a bare array or map -- names the field of the current record that whole file
-    became. Those two are the only things about reading an artifact that its own bytes cannot say.
-    """
-
+class ContractCatalogEntryV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_id: str = Field(pattern=SCHEMA_ID_PATTERN)
@@ -58,12 +50,27 @@ class ContractCatalogEntry(BaseModel):
     bindings: list[FormatBinding]
     compatibility: list[CompatibilityDeclaration]
     extension_point: str | None = None
+
+
+class ContractCatalogEntry(ContractCatalogEntryV1):
+    """Catalog entry at version 1.1.
+
+    ``legacy_read_version`` is the version an external reader must assume for a file this project
+    wrote before the family joined the registry -- the one case where the file itself cannot say.
+    """
+
     legacy_read_version: SemanticVersionString | None = None
-    legacy_document_field: str | None = None
+
+
+class ArtifactCatalogV1(ArtifactContract):
+    schema_id: Literal["llb.artifact-catalog"]
+    schema_version: Literal["1.0.0"]
+    odcs_api_version: Literal["v3.1.0"]
+    contracts: list[ContractCatalogEntryV1]
 
 
 class ArtifactCatalog(ArtifactContract):
     schema_id: Literal["llb.artifact-catalog"]
-    schema_version: Literal["1.0.0"]
+    schema_version: Literal["1.1.0"]
     odcs_api_version: Literal["v3.1.0"]
     contracts: list[ContractCatalogEntry]

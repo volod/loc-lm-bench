@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, Optional
 import typer
 
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_COMPARISON
-from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.helpers import load_config
 from llb.cli.rag.compare_stores import _compare_vector_corpus_root
 
@@ -159,6 +157,7 @@ def compare_rerankers_cmd(
     along, each row carries its paired delta against the incumbent, and the run ends in a
     keep-or-swap verdict beside the cost the swap is paid in. Heavy loads stay outside quick CI.
     """
+    import json
 
     from llb.bench.common import new_run_timestamp
     from llb.cli.helpers import best_effort_gpu_readers
@@ -240,5 +239,5 @@ def compare_rerankers_cmd(
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(render_markdown(report), encoding="utf-8")
     json_path = report_path.with_suffix(".json")
-    write_sidecar(json_path, SIDECAR_KIND_COMPARISON, "compare-rerankers", report)
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     typer.echo(f"[compare-rerankers] wrote report -> {report_path} ; {json_path}")

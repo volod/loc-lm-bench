@@ -1,8 +1,8 @@
 {
   "$defs": {
-    "CandidateSummaryRecord": {
+    "CandidateSummaryRow": {
       "additionalProperties": false,
-      "description": "The manifest's one-line view of a candidate, the row a board groups scores by.",
+      "description": "The manifest's index line for one candidate: enough to pick one without opening it.",
       "properties": {
         "anthology_size": {
           "minimum": 0,
@@ -33,12 +33,10 @@
           "type": "string"
         },
         "prompt_system_id": {
-          "minLength": 1,
           "title": "Prompt System Id",
           "type": "string"
         },
         "status": {
-          "minLength": 1,
           "title": "Status",
           "type": "string"
         },
@@ -59,20 +57,18 @@
         "knowledge_tree_used_tokens",
         "status"
       ],
-      "title": "CandidateSummaryRecord",
+      "title": "CandidateSummaryRow",
       "type": "object"
     },
-    "KnowledgeTreeSourceRecord": {
+    "KnowledgeTreeSourceRow": {
       "additionalProperties": false,
-      "description": "Which knowledge-tree source the package's candidates were rendered from.",
+      "description": "Which artifact the knowledge tree was rendered from, and its digest.",
       "properties": {
         "digest": {
-          "minLength": 1,
           "title": "Digest",
           "type": "string"
         },
         "kind": {
-          "minLength": 1,
           "title": "Kind",
           "type": "string"
         }
@@ -81,18 +77,18 @@
         "kind",
         "digest"
       ],
-      "title": "KnowledgeTreeSourceRecord",
+      "title": "KnowledgeTreeSourceRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.prompt-system-manifest:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`manifest.json`: the package's identity, its budget, and its candidate roll-up.",
+  "description": "`manifest.json`: the digests and budget that make every run of this package addressable.",
   "properties": {
     "candidates": {
       "items": {
-        "$ref": "#/$defs/CandidateSummaryRecord"
+        "$ref": "#/$defs/CandidateSummaryRow"
       },
       "title": "Candidates",
       "type": "array"
@@ -103,14 +99,13 @@
       "type": "integer"
     },
     "corpus_digest": {
-      "minLength": 1,
       "title": "Corpus Digest",
       "type": "string"
     },
     "knowledge_tree_source": {
       "anyOf": [
         {
-          "$ref": "#/$defs/KnowledgeTreeSourceRecord"
+          "$ref": "#/$defs/KnowledgeTreeSourceRow"
         },
         {
           "type": "null"
@@ -119,12 +114,10 @@
       "default": null
     },
     "mapping_digest": {
-      "minLength": 1,
       "title": "Mapping Digest",
       "type": "string"
     },
     "method": {
-      "minLength": 1,
       "title": "Method",
       "type": "string"
     },
@@ -154,7 +147,6 @@
       "type": "string"
     },
     "tokenizer": {
-      "minLength": 1,
       "title": "Tokenizer",
       "type": "string"
     }
@@ -171,6 +163,6 @@
     "reserved_tokens",
     "n_candidates"
   ],
-  "title": "PromptSystemManifest",
+  "title": "PromptSystemManifestDocument",
   "type": "object"
 }

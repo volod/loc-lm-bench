@@ -2,20 +2,53 @@
   "$id": "urn:llb:artifact-contract:llb.auto-rag-journal-event:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One appended line of `journal.jsonl`: a stage changed state at a time.\n\n`fields` carries whatever the event reported -- a pause reason, an error type, a result digest\n-- which is the event's own, not a fixed column roster.",
+  "description": "One append-only line of `journal.jsonl`: what happened to a stage and when.",
   "properties": {
-    "fields": {
-      "additionalProperties": true,
-      "title": "Fields",
-      "type": "object"
+    "error_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Type"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "result_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Digest"
     },
     "schema_id": {
       "const": "llb.auto-rag-journal-event",
+      "default": "llb.auto-rag-journal-event",
       "title": "Schema Id",
       "type": "string"
     },
     "schema_version": {
       "const": "1.0.0",
+      "default": "1.0.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -36,8 +69,6 @@
     }
   },
   "required": [
-    "schema_id",
-    "schema_version",
     "time",
     "stage",
     "status"

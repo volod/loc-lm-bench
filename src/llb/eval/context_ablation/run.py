@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.bundle import read_case_rows
+from llb.board.io import read_case_rows
 from llb.core.config import RunConfig
 from llb.eval.answer_quality.models import GROUNDING_DRAFTED, GROUNDING_VERIFIED
 from llb.eval.answer_quality.run import select_items
@@ -45,6 +45,7 @@ from llb.eval.paired_cases import CaseRows
 from llb.goldset.schema import GoldItem
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
 from llb.rag.question_types import load_question_types
+from llb.artifacts.run_bundle.manifests import read_run_manifest
 
 METHOD = "context-ablation"
 RUN_NAME_PREFIX = "context-ablation"
@@ -123,12 +124,10 @@ def lane_context_windows(
 
 
 def _manifest_context_window(run_dir: Path) -> ContextWindowBinding | None:
-    manifest = run_dir / "manifest.json"
     try:
-        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        binding = read_run_manifest(run_dir / "manifest.json").context_window
     except (OSError, ValueError):
         return None
-    binding = payload.get("context_window") if isinstance(payload, dict) else None
     return cast(ContextWindowBinding, binding) if isinstance(binding, dict) else None
 
 

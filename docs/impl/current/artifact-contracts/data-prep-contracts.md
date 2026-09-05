@@ -33,9 +33,8 @@ version a caller that knows WHICH family it opened may assume, and
 - A caller that does NOT know what it opened still meets the missing-identity refusal, so the
   foundation's dispatch behavior is unchanged.
 
-The catalog publishes the same key: `legacy_read_version` is a field on each entry. The catalog is
-regenerated from the registry on every check, so it stays at one version rather than migrating. The
-external validator
+The catalog publishes the same key: `legacy_read_version` is a new field on each entry, which is
+why `llb.artifact-catalog` is now at `1.1.0` with `1.0.0` read-and-migrate. The external validator
 uses that field exactly as an outside reader must -- it stamps the declared version onto a
 pre-contract fixture and validates it against the generated schema, importing no `llb` module.
 
@@ -56,16 +55,13 @@ and the reader stamps the mapped version before dispatch.
 
 ## Migrations that preserve the reading
 
-These four families are the only ones that carry more than one version, because their older forms
-describe bundles this project has actually written. Every other family is at its initial version;
-see [every family starts at one version](foundation-and-evolution.md#every-family-starts-at-one-version).
-
 | Family | Old form | What the migration states |
 | --- | --- | --- |
 | `llb.gold-item` | `1.0.0`: `lang` and `verified` absent | Both stated, at the same defaults `load_goldset` applied |
 | `llb.ontology-provenance` | `1.0.0`: no corpus binding, document rows without acquisition | `corpus_version: null` and every acquired field present as `null` |
 | `llb.linkage-settings` | `1.0.0`: tuning knobs absent | Every knob stated, from the same constants `LinkageSpec.from_payload` used |
 | `llb.conflict-stage-inputs` | `1.0.0`-`6.0.0`: six earlier record forms | Re-encoded at the current form through `documents_of` / `recorded_inputs`, the readers that already understood each form |
+| `llb.artifact-catalog` | `1.0.0`: no legacy read version | `legacy_read_version` published per entry, absent by default |
 
 The conflict migration is deliberately not a second implementation of the seven forms: it decodes
 with the bundle's own reader and re-encodes with `stage_attribution_inputs`, so the readings a
@@ -76,13 +72,11 @@ empty record.
 
 ## Bundles as datasets
 
-`src/llb/artifacts/bundles.py` names the members of a staged corpus and of a draft bundle, and
-`src/llb/artifacts/datasets.py` binds them into an `llb.dataset-manifest` record: every present
-project-owned member is bound by contract identity, version, media type, granularity, relative
-path, and SHA-256 digest. Members are DISCOVERED, so a bundle drafted without chains simply has no
-chains member, while a member that is present and unreadable is a refusal. The same two modules,
-plus `dataset_reading.py`, serve `check-store`
-([retrieval and graph contracts](retrieval-and-graph-contracts.md)).
+`src/llb/artifacts/bundles.py` describes a staged corpus and a draft bundle as
+`llb.dataset-manifest` records: every present project-owned member is bound by contract identity,
+version, media type, granularity, relative path, and SHA-256 digest. Members are DISCOVERED, so a
+bundle drafted without chains simply has no chains member, while a member that is present and
+unreadable is a refusal.
 
 ```bash
 make check-bundle BUNDLE=<draft-bundle-dir>
@@ -132,7 +126,7 @@ leaves byte-for-byte alone, and the two exit codes a refusal uses.
 
 On 2026-09-03 on the CUDA host, `make ci` passed 4837 tests with 50 deselected, including the 16
 data-prep contract tests and the 5 `check-bundle` CLI tests, and `make check-artifact-contracts`
-validated the regenerated schemas, the catalog, the ODCS projection, and the external
+validated the regenerated schemas, the 1.1.0 catalog, the ODCS projection, and the external
 process. The registry now generates 29 schema files across 18 families. This capability is
 deterministic and service-free, so no model was loaded and no GPU memory was allocated for it.
 What would overturn it: a data-prep producer added without a registered contract, which

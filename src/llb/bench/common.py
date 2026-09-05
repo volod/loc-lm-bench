@@ -27,10 +27,8 @@ from llb.scoring.aggregate import rank_board
 from llb.scoring.board_format import format_board, ranking_policy_note
 from llb.scoring.leaderboard import ModelResult
 from llb.scoring.judge.model import DEFAULT_THRESHOLD, JudgeOutcome, run_judge
-from llb.artifacts.runs.datasets import KIND_BENCHMARK
-from llb.artifacts.runs.members import RunMember
-from llb.core.contracts.runs import RunManifest
-from llb.tracking.manifest import persist_run
+from llb.bench.artifacts import declared_artifacts
+from llb.tracking.manifest import RunManifest, persist_run
 
 LLMComplete = Callable[[str], str]  # prompt -> raw completion text
 LLMChat = Callable[[list[ChatMessage]], str]  # typed transcript -> raw completion text
@@ -172,14 +170,18 @@ def persist_category_run(
     case_rows: Sequence[Mapping[str, object]],
     judge: JudgeStatus | None = None,
     mirror: Mirror | None = None,
-    artifacts: Sequence[RunMember] | None = None,
+    artifacts: Mapping[str, str] | None = None,
+    study_id: str | None = None,
+    score_contract: str | None = None,
 ) -> RunPaths:
     """Write one category bundle under `$DATA_DIR/<method>/<timestamp>/` atomically.
 
-    The manifest and scores are mandatory; `artifacts` adds declared members -- a study design, its
-    analysis, the rendered table a person reads -- to the same transaction. `config` carries the
-    category and tier provenance. The rows are `llb.benchmark-cell`: their columns are this lane's
-    own, so the contract owns the identity around them rather than the cell itself.
+    The manifest and scores are mandatory; `artifacts` adds declared records to the same
+    transaction. `config` carries the category and tier provenance.
+
+    `score_contract` names the registered row family a category's per-case rows satisfy. A STUDY
+    passes none: its rows are one per grid cell, seed, or crossover, with the columns that study
+    chose, so the bundle declares the method as their owner and publishes the column set instead.
     """
     run_id, run_timestamp = new_run_timestamp()
     out_dir = Path(data_dir) / method / run_timestamp
@@ -199,6 +201,7 @@ def persist_category_run(
         out_dir,
         mirror=mirror,
         staging_dir=staging,
-        artifacts=artifacts,
-        kind=KIND_BENCHMARK,
+        artifacts=declared_artifacts(artifacts, study_id=study_id),
+        score_contract=score_contract,
+        score_owner=None if score_contract else method,
     )

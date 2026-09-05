@@ -1,6 +1,5 @@
 """Category board and guarded composite loading."""
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,8 +9,7 @@ from llb.scoring.leaderboard import ModelResult
 from llb.scoring.composite.builder import build_category_composite_rows
 from llb.scoring.composite.types import CompositeComponent, CompositeIssue
 
-from llb.artifacts.errors import ArtifactContractError
-from llb.artifacts.runs.bundle import read_case_series, read_run_manifest
+from llb.board.io import admitted_manifest, read_case_series
 
 _LOG = logging.getLogger(__name__)
 
@@ -112,14 +110,12 @@ def _is_run_dir(manifest_path: Path) -> bool:
 
 
 def _read_category_record(manifest_path: Path) -> CategoryRunRecord | None:
+    manifest = admitted_manifest(manifest_path)
+    if manifest is None:
+        return None
     try:
-        manifest = read_run_manifest(manifest_path)
         return category_record_from_manifest(manifest, manifest_path.parent)
-    except ArtifactContractError:
-        # Refused rather than skipped, for the same reason as a run bundle: a category board that
-        # silently dropped a newer bundle would read as a complete comparison of what is on disk.
-        raise
-    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         _LOG.warning("[board] unreadable category bundle %s: %s", manifest_path.parent, exc)
         return None
 

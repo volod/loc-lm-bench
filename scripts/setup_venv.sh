@@ -11,12 +11,17 @@ llb_load_env  # also resolves UV_LINK_MODE for the sync below
 export PROJECT_ROOT
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-# Defaults match [tool.llb.toolchain]; Make already exports both for `make venv`.
+# Defaults match [tool.llb.toolchain]; Make already exports both for `make venv`. The reader is
+# repo code reading the repo's own pyproject.toml, so it resolves against this script's checkout
+# rather than PROJECT_ROOT, which a caller may point at the tree being provisioned.
+llb_toolchain() {
+  PYTHONPATH="$SCRIPT_DIR/../src" python3 -m llb.build.toolchain "$1"
+}
 if [ -z "${VENV:-}" ]; then
-  VENV="$PROJECT_ROOT/$(PYTHONPATH="$PROJECT_ROOT/src" python3 -m llb.build.toolchain venv)"
+  VENV="$PROJECT_ROOT/$(llb_toolchain venv)"
 fi
 if [ -z "${PYTHON_VERSION:-}" ]; then
-  PYTHON_VERSION="$(PYTHONPATH="$PROJECT_ROOT/src" python3 -m llb.build.toolchain python-version)"
+  PYTHON_VERSION="$(llb_toolchain python-version)"
 fi
 VENV_INSTALL_VLLM="${VENV_INSTALL_VLLM:-auto}"
 RECREATE_VENV="${RECREATE_VENV:-}"

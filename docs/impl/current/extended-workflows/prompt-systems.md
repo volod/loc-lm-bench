@@ -21,6 +21,10 @@ Important modules:
 - `manifest.py`: corpus, mapping, template digests, and stable prompt-system ids;
 - `selection.py`: resolves a selected package for `run-eval`.
 
+Each of the package's five members is a registered contract, so a package can be validated whole
+before `run-eval` reads it and a package prepared before the registry existed still opens. See
+[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
+
 ```bash
 llb prompt-system-prepare --corpus-root <dir> --out-dir <review-dir>
 llb prompt-system-review --run-dir <review-dir> --action summary
@@ -28,12 +32,6 @@ llb prompt-system-review --run-dir <review-dir> --action pin --id <prompt-id>
 llb run-eval --prompt-system <prompt-id> --prompt-package <review-dir> ...
 llb prompt-system-compare --lane rag --model <model>
 ```
-
-Each of the five written members -- the anthology, the document metadata, the graph-RAG mapping,
-the candidates, and the manifest -- is a registered artifact contract, and a package this build
-cannot read is refused before one candidate is selected out of it. `make check-store STORE=<review-dir>
-STORE_KIND=prompt-system` reports every member. See
-[retrieval and graph contracts](../artifact-contracts/retrieval-and-graph-contracts.md).
 
 `run-eval` prepends the selected prompt package to the normal RAG generation prompt and records
 `prompt_system_provenance` in the manifest. Board loaders can rank one model across prompt-system

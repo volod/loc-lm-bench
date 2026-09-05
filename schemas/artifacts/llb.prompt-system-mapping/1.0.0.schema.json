@@ -2,7 +2,7 @@
   "$id": "urn:llb:artifact-contract:llb.prompt-system-mapping:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`graph_rag_mapping.json`: salient term -> the anthology passages that ground it.",
+  "description": "`graph_rag_mapping.json`: each salient term and the passage ids that ground it.",
   "properties": {
     "mapping": {
       "additionalProperties": {
@@ -29,6 +29,6 @@
     "schema_id",
     "schema_version"
   ],
-  "title": "PromptSystemMapping",
+  "title": "GraphRagMappingDocument",
   "type": "object"
 }

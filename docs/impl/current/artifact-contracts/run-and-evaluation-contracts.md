@@ -1,233 +1,228 @@
-# Run, Board, And Orchestration Contracts
+# Run, Study, And Board Artifact Contracts
 
-Part of the [Artifact contracts](../artifact-contracts.md) area of the
-[current implementation index](../../current.md).
+Part of the [artifact contracts](../artifact-contracts.md) area of the
+[current implementation index](../../current.md). The mechanism these families use is recorded in
+[foundation and evolution](foundation-and-evolution.md); the store, graph, and prompt-system
+families a run bundle is measured against are in
+[retrieval and graph contracts](retrieval-and-graph-contracts.md).
 
 ## Delivered boundary
 
-A run bundle is the project's primary downstream API, and every machine-readable file one is made
-of is now a registered contract family: the run manifest, the per-case score row, the benchmark
-cell, the retrieved-span record, the withheld-context probe row, the budget-abort record, the
-resume journal row and its identity meta, and the design and analysis sidecars a study writes. The
-board and orchestration records that read those bundles joined the same registry: the miss analysis
-and its miss rows, the composed agent operating profile, and the auto-RAG manifest, journal event,
-stage result, stage links, and recommendation. Each names a `schema_id`, one current
-`schema_version`, and a strict Pydantic model, and each producer builds that model instead of
-handing a `dict[str, object]` to `json.dumps`.
+A run bundle is the primary downstream API of this project: a board ranks out of one, a study
+cites one, and an external consumer validates one. It is a SET of files that only mean something
+together, and the manifest is now what makes the set self-describing rather than a directory a
+reader guesses at from filenames.
 
-Out of scope and deliberately unregistered: model response text before parsing, backend logs,
-rendered Markdown, and MLflow's own database schema. MLflow remains an injected best-effort mirror
-that starts only after the canonical bundle is on disk.
-
-Every family here is at its INITIAL version, `1.0.0`, with no migration: nothing has been released,
-so a second version would describe a form nobody ever wrote. Where an older writer simply recorded
-less, the single model says so with an optional field. The recipe for adding a version when one is
-finally needed is in
-[foundation and evolution](foundation-and-evolution.md#adding-a-version-when-one-is-finally-needed).
-
-The models live in `src/llb/core/contracts/runs.py` (the manifest), `run_bundle.py` (the rows and
-sidecars), and `orchestration.py` (the board and auto-RAG records). The declarations live in
-`src/llb/artifacts/runs/families.py`, the directory description in `datasets.py`, the row seam in
-`rows.py`, the additional-member vocabulary in `members.py`, and the readers every consumer shares
-in `bundle.py`.
-
-`RunManifest` moved out of `llb.tracking.manifest` into `llb.core.contracts.runs`, where the other
-run contracts live: a family module that had to import the writer to reach its model would close a
-cycle through `llb.artifacts`. `llb.tracking.manifest` now owns publication alone.
-
-## Two shapes, and why the difference is deliberate
-
-A record whose columns are the SAME for every producer is modelled column by column: the evaluation
-case score, the retrieved-span record, the resume journal row, the abort record, the probe row.
-
-A record whose body is the LANE'S OWN is an envelope -- identity around a body under one named
-field, the same split the retrieval comparison sidecar already draws between its envelope and its
-report:
-
-| Family | Body field | Why the body is not modelled |
+| Family | Member | Current version |
 | --- | --- | --- |
-| `llb.benchmark-cell` | `cell` | A memory-fold lane's cell is a ladder level and its band, a tool lane's is an episode and its calls, a seed row is a seed and its verdict. Naming those columns would make the contract a union of every benchmark this project will ever add |
-| `llb.study-design` | `design` | A design grows a factor per added condition |
-| `llb.study-analysis` | `analysis` | An analysis grows a section per added measurement, so freezing it would make every added reading a contract change |
-| `llb.auto-rag-stage-result` | `result` | Each stage owns what it measured |
-| `llb.auto-rag-stage-links` | `stages` | The map of stage to result, which was a bare map on disk |
+| `llb.run-manifest` | `manifest.json` | 2.0.0 |
+| `llb.case-score` | `scores.jsonl` of a RAG evaluation | 1.0.0 |
+| `llb.retrieval-case` | `retrieval.jsonl` | 1.0.0 |
+| `llb.agentic-case` | `scores.jsonl` of the agentic category | 1.0.0 |
+| `llb.security-case` | `scores.jsonl` of the security category | 1.0.0 |
+| `llb.structured-case` | `scores.jsonl` of the structured category | 1.0.0 |
+| `llb.summarization-case` | `scores.jsonl` of the summarization category | 1.0.0 |
+| `llb.text-analysis-case` | `scores.jsonl` of the text-analysis category | 1.0.0 |
+| `llb.tooling-case` | `scores.jsonl` of the tooling category | 1.0.0 |
+| `llb.study-design` | a benchmark study's `*-design.json` | 1.0.0 |
+| `llb.study-analysis` | a benchmark study's `*-analysis.json` and its other readings | 1.0.0 |
+| `llb.run-progress` | `cases.progress.jsonl` | 1.0.0 |
+| `llb.run-progress-meta` | `cases.progress.meta.json` | 1.0.0 |
+| `llb.judge-budget-abort` | `scorer/abort.json` | 1.0.0 |
+| `llb.miss-analysis` | `analysis.json` | 1.0.0 |
+| `llb.miss-case` | `misses.jsonl` | 1.0.0 |
+| `llb.auto-rag-manifest` | auto-RAG `manifest.json` | 1.0.0 |
+| `llb.auto-rag-stage-result` | `stages/<stage>/result.json` | 1.0.0 |
+| `llb.auto-rag-journal-event` | auto-RAG `journal.jsonl` | 1.0.0 |
+| `llb.rag-recommendation` | `rag_recommendation.yaml` | 1.0.0 |
 
-The body field is also `legacy_document_field` -- the field a pre-contract file's whole content
-became -- so one declaration serves the writer, the reader, and an outside consumer working from
-the published catalog. A benchmark row was written flat before the envelope existed, and reads back
-flat now.
+The models live under `src/llb/core/contracts/run_bundle/` (`manifest.py`, `rows.py`,
+`journals.py`, `studies.py`, `board.py`, `auto_rag.py`); the declarations, the readers and writers,
+the dataset descriptor, the publication gate, and the survey live under
+`src/llb/artifacts/run_bundle/`. `RunManifest` in `src/llb/tracking/manifest.py` IS the contract
+model now -- it adds no field and changes no meaning, only the two defaults (`created_at`, `env`)
+no producer should have to state by hand.
 
-## Identity lives on disk, not in a row
+Deliberately unregistered and out of scope: model response text before it is parsed into a score
+column, backend and server logs staged beside a bundle, rendered Markdown reports, and MLflow's
+own database schema. The mirror stays a best-effort projection of the canonical record and is
+never read back as one.
 
-`llb.artifacts.runs.rows` puts identity on the FILE and takes it off as the record enters the
-process, exactly as `llb.artifacts.records` already does for chunk rows and for the same reason:
-every consumer of a score row keys on `objective_score`, `status`, and `item_id`, and adding two
-keys to each in-memory row would change what a few hundred assertions, aggregations, and DataFrame
-projections see for no reading anyone takes.
+## Deriving a row contract instead of restating one
 
-`encode_record` writes `{schema_id, schema_version, ...record}` -- or `{identity, <body field>:
-record}` for an envelope family -- and VALIDATES before returning, so a producer that grew a column
-its contract does not declare fails at the write rather than leaving a bundle nobody can read back.
-`decode_record` validates through the registry and returns the logical record without its identity
-and with the body unwrapped.
+Every per-case row already had a `TypedDict` the producers build directly, and those declarations
+are where the columns and their readings are documented -- `CaseScoreRow` alone carries fifty of
+them. Restating that list a second time as a Pydantic model would put the two copies one release
+apart the first time a metric is added, and the copy the registry validated would be the stale one.
 
-A stated `null` is dropped, at every level a contract models and inside an envelope's body. `null`
-here means "this producer recorded no such thing", which is what an absent key already means to
-every consumer -- `row.get("first_hit_rank")` answers `None` either way -- so a row reads the same
-whether an old writer omitted the column or a current one wrote it out.
+So `row_contract` in `src/llb/core/contracts/run_bundle/rows.py` DERIVES the contract from the
+`TypedDict`: a required key becomes a required field, a `NotRequired` key becomes an optional one
+(a column a run did not measure is absent, never zero), and the identity fields are added on top.
+The derivation is deterministic, so the generated JSON Schema is stable, and a column added to the
+row reaches the schema and the registry in the same change that adds it.
 
-## One reader per member
+## What a bundle says about its own members
 
-Every lane that ranks a board, compares two runs item by item, exports a fine-tuning set, or
-analyses misses used to open `scores.jsonl` with its own `json.loads` loop. `llb.artifacts.runs.
-bundle` is now the single reader: `read_run_manifest`, `read_score_rows`, `read_retrieval_rows`,
-`read_case_rows`, `read_case_series`, `read_study_design`, `read_study_analysis`. That is what
-makes a refusal mean something -- a bundle from a build this one cannot read is named at the door
-instead of being aggregated with the half of it this reader understands.
+Version 2 of the manifest adds the two declarations version 1 could not carry.
 
-`read_score_rows` answers the same flat rows for an evaluation bundle and a benchmark bundle, so a
-caller that only wants `objective_score` never has to know which kind it opened. `llb/board/io.py`
-is gone: its readers moved to the bundle module and `mean_or_none` moved to its one caller.
+- **`score_rows`** says what the rows of `scores.jsonl` answer to. A run evaluation and the six
+  category benchmarks name a registered contract, and every row is validated against it BEFORE
+  publication. A benchmark study names itself instead, with the exact column set it published --
+  a weaker claim than a contract and still a checkable one, because a reader can ask whether the
+  rows it opened are the rows the run said it wrote.
+- **`artifacts`** declares every additional file, with its media type, its byte count, and the
+  digest it was published at. Each entry names either a record contract or a `human_report`
+  reason. There is no third form.
 
-## What an older bundle is missing, and who supplies it
+`persist_run` therefore no longer accepts a `name -> text` mapping. It takes already-declared
+`RunArtifact` values, and it requires exactly one of `score_contract` or `score_owner`: a bundle
+that cannot say what its rows are is a bundle a later reader has to guess about.
 
-| Family | What a bundle written earlier omits | How it reads |
+## Naming what a study owns
+
+Twenty-odd benchmark studies publish a cell, seed, or crossover table rather than per-case rows,
+with the columns that study measured. Those columns are not a family a cross-cutting reader could
+know ahead of time, so the bundle binds `scores.jsonl` as an OPAQUE member owned by the method,
+for the same reason a store binds its FAISS index that way: the dataset manifest can only bind a
+structured member to a record contract, and this table has none. What it does have is the column
+set the run published, and the survey checks the rows against exactly that -- a row carrying a
+column the run never declared is a different table under the same name.
+
+A pre-contract bundle is bound the same way and says so: its owner reads `unstated`, because an
+older run never recorded what its rows answered to.
+
+## Study records that must not move
+
+A prospective design is the point of these studies -- the sample, the families, the effect the run
+must reach, and the adoption gates are fixed BEFORE the run, and a design edited afterwards is not
+a design. Both the design and the analysis are also cited by DIGEST by
+[published-value evidence](../extended-workflows/published-values.md), so re-encoding an archived
+record to carry an identity would break the citation that points at it.
+
+So identity is STAMPED rather than stored, exactly as `llb.conflict-stage-inputs` maps its integer
+version in [data-prep contracts](data-prep-contracts.md#two-encodings-that-stay-as-they-are). The
+producer builds `llb.study-design` or `llb.study-analysis` from the local form and validates it
+before publication; a reader rebuilds the same record from the file plus the study id the bundle
+declared. What the contract adds over an unread JSON blob is the part a cross-cutting reader needs:
+which study a record belongs to, which of the two records it is, and that the body is an object (or
+a table of them) at all. The body's own keys stay the study's.
+
+`src/llb/bench/artifacts.py` makes that declaration once for every category and study, rather than
+at each of the twenty-odd call sites, and it decides on the CONTENT rather than the filename: a
+`.md` file is a rendered report and is declared exempt with its reason, a `.json` file is a design
+when it predeclares itself -- naming its study and stating the integer version its own validator
+checks -- and a reading the study took otherwise. Anything else refuses, which is what keeps a
+third shape from quietly appearing.
+
+An analysis states no study id of its own, so `RunArtifactDeclaration` carries one. Without it the
+bundle would hold a reading nobody could attribute, and attribution is the whole value of an
+archived one.
+
+## The one migration that preserves a reading
+
+| Family | Old form | What the migration states |
 | --- | --- | --- |
-| `llb.case-score` | `token_precision`, `token_recall`, `ranking_score` -- 244 of the 340 evaluation bundles on this host predate the pair-based ranking score | Optional in the model; a reader that needs one reads the absence, never a default |
-| `llb.case-score` | every lane column -- query preparation, the declared envelope, the ontology gate, the citation metrics | Optional; an absent column says the lane did not run |
-| `llb.case-retrieval` | `duplicate_count` / `duplicate_occurrences` on an uncollapsed chunk | Optional; their absence says the chunk collapsed nothing |
-| every family | the identity itself | `legacy_version` names the version to assume, which for all of these is the only version |
+| `llb.run-manifest` | `1.0.0`: no `score_rows`, no `artifacts` | Neither is invented: the score-row contract stays absent and the artifact list stays empty |
 
-## Publication is behind a read-back
+`score_rows` absent means "this bundle does not state what its rows answer to", never "its rows
+have none", and an empty `artifacts` list means the same about its additional files. Everything a
+version 1 manifest DID carry -- the run identity, the config, the environment, the metrics, and the
+judge, telemetry, contention, and durability records -- is the same field at the same meaning in
+version 2 and is carried through untouched.
 
-`persist_run` writes the manifest, the score rows, the retrieval rows, and every declared member
-into the staging directory, then DESCRIBES the staged bundle, reads every member back through its
-binding, and publishes `dataset_manifest.json` -- all before `staging.replace(out_dir)`. A member
-that cannot be read at the current contract refuses there, while the only thing that exists is a
-staging directory the caller is about to delete. A bundle that reaches `$DATA_DIR` is one this
-build could read again.
+## Refusing before the board ranks
 
-The published description is also what makes a bundle self-describing: it records which score
-contract the rows are bound to, which no inspection of a legacy bundle's columns can tell reliably.
-A bundle written before descriptions existed states its kind in its manifest instead -- a benchmark
-category run records the `category` it is a cell of and an evaluation run has none -- which
-`run_bundle_kind` reads.
+`admitted_manifest` in `src/llb/board/io.py` is what every board loader now reads a run head
+through -- the RAG board, the category board, the harness and context-policy comparisons, the
+prompt-system board, and the miss probe. It refuses two things and drops them with their reason:
 
-## No arbitrary bytes enter a bundle
+- a manifest naming a family this build does not know, or a version it cannot read (a future major
+  validates as JSON and hides every field a newer writer added);
+- rows whose stamped identity contradicts what the manifest declared they were.
 
-`persist_run(artifacts=...)` used to take `Mapping[str, str]`: any name, any content. It now takes
-`RunMember`s, and each says which registered contract validates it or that it is the one declared
-exemption:
+Only the first stamped row is read for the second check. A score file is written in one pass by one
+producer, so a single row separates a bundle whose members agree from one whose members were mixed,
+and the board pays one line rather than one validation per case.
 
-```python
-artifacts=[
-    study_design("second-fold-design.json", design),
-    study_analysis("second-fold-analysis.json", analysis),
-    table_report("second-fold.md", "Compact trigger rule through a second fold", table),
-]
-```
+A pre-contract bundle is not such a case: it is read at the version the family declares its history
+to be, migrated forward, and admitted like any other.
 
-`human_report` / `table_report` are the exemption: Markdown written for a person has no machine
-consumer to protect, and `table_report` also owns the fenced-table rendering every benchmark lane
-was repeating inline. `member_problems` refuses an unregistered contract, a non-Markdown human
-report, a path that is not a plain file name, and a duplicate name -- all of them before anything
-is written.
+## Refusing before the rename
 
-## Refusing before the expensive step
+Publication is a rename, and a rename is not reversible from the outside: the moment a staging
+directory becomes `$DATA_DIR/<method>/<run>/`, a board may read it and a study may cite it. So
+`validate_staged_bundle` reads every member back from the STAGED bytes first -- the manifest
+through its contract, the score rows through what the run declared, the retrieval sidecar through
+its row family, and each additional artifact through its contract or its exemption -- and reports
+every refusal rather than the first. A refusal there costs a run that was never published, which is
+the cheap end of the trade against a board reading nobody can trust.
 
-- A bundle whose manifest this build cannot read refuses inside `read_run_manifest`, which every
-  board loader, recommendation builder, fine-tuning export, and paired comparison passes through.
-- `load_run_records` and `load_category_run_records` RE-RAISE an `ArtifactContractError` rather
-  than logging and skipping. A board that quietly dropped a bundle a newer build wrote would rank a
-  roster missing exactly those runs and read as complete.
-- `refuse_unreadable_run_bundle` is the whole-bundle gate: every member read at the current
-  contract AND checked against the description published with it. `load_scored_bundle` calls it
-  before a miss analysis reads anything, so an analysis never mixes rows from a rewritten file.
+## Resume records are durable too
 
-## Inspecting a bundle without a model
+None of the resume records is published inside a bundle: the journal and its meta are dropped from
+staging before the rename, and the budget abort is written beside a scorer's resumable state. They
+are durable all the same, because a resume READS them and a resumed bundle must score to the same
+rows an uninterrupted one would.
+
+`JournaledCaseState` is deliberately narrower than the in-memory `RagState`: the question, the gold
+spans, and the assembled context are inputs a resume rebuilds, while everything it names is an
+output that cannot be recomputed without calling the model again. `_JOURNALED_STATE_KEYS` is now
+DERIVED from that contract, so the set the journal trims to and the set the contract validates
+cannot drift -- a column added to a score row without being added there is a column a resumed case
+would silently lose. Each journal line is validated as the LINE about to be written, because a
+numpy score coerced on the way out is what a resume will actually read back.
+
+## Checking one bundle
 
 ```bash
-llb check-run <run-dir>
-llb check-run <run-dir> --kind benchmark
-llb check-run <run-dir> --upgrade
+make check-run-bundle RUN_BUNDLE=<run-dir>
 ```
 
-`check-run` surveys every member -- reporting all refusals rather than stopping at the first -- and
-imports no backend, no store, and no encoder. A bundle this build published is checked against
-exactly the members it declared; one written earlier is described at the kind its own manifest
-states, which `--kind` overrides. `--upgrade` rewrites the members an older writer produced at the
-current contract; while every family here is at its initial version it therefore rewrites nothing,
-and the flag is the same one `check-bundle` and `check-store` carry rather than a second
-implementation of it.
-
-The command shares its whole implementation with those two: `llb.artifacts.runs.datasets` describes
-the directory, `llb.artifacts.dataset_reading` reads and surveys it, and `llb.cli.artifact_survey`
-renders the report, so a run bundle's output reads exactly like a store's.
-
-## A row member can be a bare body too
-
-Registering the benchmark cell found a real gap in the foundation. `llb.artifacts.io` normalized a
-pre-contract file only for `json` and `yaml` members, on the reasoning that "a row member is one
-object per line by construction". That held while every row family's old form was already a record.
-A benchmark cell's old form is the bare body, so every parsed record -- row members included --
-now passes through `ContractRegistry.normalize`, which wraps only when the family declares a body
-field and the value carries no identity.
+`check-run-bundle` resolves the manifest first, then reads every member through what THAT manifest
+declares, reporting all refusals rather than stopping at the first. It exits 1 when any member
+refuses and 2 when the head itself cannot be read. The underlying command is
+`llb check-run-bundle <run-dir>`.
 
 ## Fixtures and the gates over them
 
-`samples/artifact_contracts/run_bundles/` holds an evaluation bundle and a benchmark bundle at the
-current contracts, the pre-contract form of each under `legacy/`, and a manifest from an
-unsupported future major. The pre-contract twins differ in exactly what a real older bundle differs
-in: no identity anywhere, no published description, bare cells where the benchmark bundle now
-writes an envelope, and bare bodies where the study sidecars now write one.
+`samples/artifact_contracts/run_bundles/` holds the same run written twice -- `current/` as this
+build publishes it and `legacy/` as this project wrote it before the registry existed -- plus a
+manifest from an unsupported future major and a bundle whose rows stamp a family its manifest did
+not declare.
 
-`src/llb/artifacts/runs/fixture.py` builds a complete score row, retrieval row, manifest, metrics,
-telemetry report, and agent profile, so a test states only what it is about and a fixture cannot
-drift away from the contract when a column joins it.
+`tests/llb/artifacts/test_run_bundle_contracts.py` asserts that the pre-contract manifest reads
+back as the record a current writer produces (differing only in the two absences it could not
+record), that the migrated bundle yields the SAME board reading as the current one, that a future
+major and mixed-version rows each refuse before board admission, that an invalid score row and an
+undeclared artifact each refuse before publication, that a study record round-trips to the bytes it
+was written as, and that an artifact whose bytes changed after publication refuses on its digest.
+`tests/llb/cli/test_cli_check_run_bundle.py` covers the operator command and its two exit codes.
 
-`tests/llb/artifacts/test_run_bundle_contracts.py` asserts that the current and pre-contract
-bundles load to identical logical records, that a benchmark cell reads flat in both forms, that a
-loaded record carries no identity, that every family is at one initial version with no migration
-and no refusal, that a case row missing a required column never reaches disk, that a staged member
-that cannot be read back refuses before the rename and leaves nothing behind, that a published
-bundle names its own score contract, that an additional member without a registered contract or the
-human-report exemption is refused, that a future major refuses at the reader and at the board, that
-the whole-bundle gate reports every unreadable member at once, that a bundle published without a
-description still reads, and that the resume journal and its meta read back in both forms.
-`tests/llb/cli/test_cli_check_run.py` covers the operator command: what each kind reports, that a
-pre-contract benchmark bundle needs no `--kind` flag, that `--upgrade` leaves a pre-contract bundle
-byte-for-byte alone, the two exit codes a refusal uses, and the digest refusal on a tampered member.
-`samples/artifact_contracts/external_validate.py` repeats the current-form and pre-contract
-validations against the generated JSON Schemas without importing `llb`, including the bundle's own
-dataset manifest, and runs inside `make check-artifact-contracts`.
+`samples/artifact_contracts/external_validate.py` repeats the current, bound-row, pre-contract, and
+future-refusal validations against the generated JSON Schemas without importing `llb`, and runs
+inside `make check-artifact-contracts`. The study record beside them is deliberately not validated
+there: its file is the study's own local form, and the mapping onto `llb.study-design` is this
+project's, exactly as the conflict bundle's integer version is.
 
 ## Validation result
 
-On 2026-09-03 on the RTX 4060 Ti 16 GB CUDA host, `make ci` passed 4894 tests with 50 deselected in
-241 s, including the 16 run-bundle contract tests and the 7 `check-run` CLI tests, and
-`make check-artifact-contracts` validated the regenerated schemas, the catalog, the ODCS
-projection, and the external process. The registry generates 59 schema files across 49 families,
-18 of them added here and every one of the 18 at a single initial version.
+On 2026-09-04 on the CUDA host (RTX PRO 3000 Blackwell Laptop, 12 GiB, driver 610.57.04), `make ci`
+passed 4881 tests with 2 skipped and 50 deselected, including the 17 run-bundle contract tests and
+the 4 `check-run-bundle` CLI tests, and `make check-artifact-contracts` validated the regenerated
+schemas, the catalog, the ODCS projection, and the external process. The registry now generates 65
+schema files across 51 families.
 
-The migration was read against the artifacts this host already held, which is the reading that
-matters most. All 1017 run bundles under `$DATA_DIR` -- 340 evaluation bundles and 677 benchmark
-category bundles across 17 method roots -- read at the current contracts through the whole-bundle gate,
-with no rewrite; the remaining 8 `*/*/manifest.json` files under those roots are the auto-RAG and
-joint-search study manifests, which are different families and are named as such rather than read
-as run manifests. The single auto-RAG run on this host round-tripped its manifest, its 8 stage
-results, its stage links, and its recommendation YAML; all 4 composed agent profiles round-tripped.
+The migration was also read against the runs this host already holds rather than against fixtures
+alone: 109 of the 110 archived `manifest.json` files under the host's run roots resolved through
+`llb.run-manifest`, every one of them at version 1.0.0 migrated forward to 2.0.0, and
+`check-run-bundle` read all three members of a real 66-case bundle back. The single refusal is a
+`joint-search` manifest -- a search ledger, not a run bundle, sharing the filename -- which belongs
+to the model and training surface the remaining `artifact-contracts` plan task covers.
 
-Reading the real bundles is what shaped three parts of the contract. `token_precision`,
-`token_recall`, and `ranking_score` are optional because 244 evaluation bundles predate them. The
-profile anchor's `retrieval_fingerprint` is an open KNOB MAP, not a string, because that is what
-every profile on this host records and what the drift report names a moved knob out of. And the
-benchmark-cell normalization gap above surfaced only when 677 real benchmark bundles were read
-through the dataset reader rather than through a fixture.
-
-This capability is deterministic and service-free, so no model was loaded and no GPU memory was
-allocated for the result. What would overturn it: a run, board, or orchestration producer added
-without a registered contract, which `make check-artifact-contracts` cannot see -- the producer-side
-discipline is carried by review until the repository gate lands. Two families also have no real
-artifact on this host to read against: `llb.miss-analysis` / `llb.miss-record` (no miss analysis has
-been run here) and `llb.context-probe` (no bundle carries `probes.jsonl`), so both stand on fixtures
-alone.
+The reading: no supported historical bundle on this host needs a fixture to be readable, and the
+one file the contract refuses is one it is right to refuse, because it is not the record it names.
+What would overturn it: a producer under the migrated surface that writes a durable record without
+a registered contract. `make check-artifact-contracts` cannot see that -- the producer-side
+discipline is carried by review, not by a gate, until
+`artifact-contract-boundary-enforcement` lands. This capability is deterministic and service-free,
+so no model was loaded and no GPU memory was allocated for the result.

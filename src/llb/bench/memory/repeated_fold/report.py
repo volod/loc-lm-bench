@@ -1,9 +1,9 @@
 """Rendering and persistence for repeated-fold completion evidence."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.context_policy.compact_vs_cap_report import METHOD
 from llb.bench.memory.repeated_fold.completion import RepeatedFoldRun
 from llb.bench.common import Mirror, persist_category_run
@@ -123,9 +123,13 @@ def persist_repeated_fold_run(
         },
         case_rows=rows,
         mirror=mirror,
-        artifacts=[
-            study_design("repeated-fold-design.json", design),
-            study_analysis("repeated-fold-analysis.json", run.analysis),
-            table_report("repeated-fold-completion.md", "Repeated-fold completion", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "repeated-fold-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "repeated-fold-analysis.json": json.dumps(run.analysis, indent=2, sort_keys=True)
+            + "\n",
+            "repeated-fold-completion.md": "# Repeated-fold completion\n\n```text\n"
+            + table
+            + "\n```\n",
+        },
     )

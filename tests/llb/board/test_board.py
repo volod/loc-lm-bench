@@ -2,8 +2,7 @@
 
 import json
 
-from llb.artifacts.runs.fixture import run_manifest_payload, telemetry_report
-from llb.artifacts.runs.bundle import read_case_series
+from llb.board.io import read_case_objectives
 from llb.board.prompt_systems import (
     knowledge_tree_ab_comparison,
     load_rag_prompt_system_records,
@@ -23,6 +22,7 @@ from llb.scoring.aggregate import (
     TIER_TEXT_ANALYSIS,
     TIER_TOOLING,
 )
+from tests.llb.bundle_fixtures import telemetry, write_manifest
 
 
 def _write_run(
@@ -41,16 +41,13 @@ def _write_run(
 ):
     run_dir = root / name
     run_dir.mkdir(parents=True)
-    manifest = run_manifest_payload(
-        run_id=name,
-        run_name=name,
-        split=split,
-        created_at="2026-06-21T00:00:00Z",
-        config={"model": model, "backend": backend, "strategy": strategy, "top_k": 6},
-        metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": 50.0},
-        telemetry=telemetry_report(peak_vram_mb=5500),
-        n_cases=len(cases),
-    )
+    manifest = {
+        "split": split,
+        "config": {"model": model, "backend": backend, "strategy": strategy, "top_k": 6},
+        "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 50.0},
+        "telemetry": telemetry(peak_vram_mb=5500),
+        "n_cases": len(cases),
+    }
     if prompt_system is not None:
         manifest["config"]["prompt_system"] = prompt_system
         manifest["prompt_system_provenance"] = {
@@ -64,7 +61,7 @@ def _write_run(
         }
         if knowledge_tree is not None:
             manifest["prompt_system_provenance"]["knowledge_tree"] = knowledge_tree
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    write_manifest(run_dir, **manifest)
     rows = []
     for i, c in enumerate(cases):
         row = {"objective_score": c, "split": split}
@@ -79,7 +76,7 @@ def _write_run(
 
 def test_read_case_objectives_jsonl(tmp_path):
     run = _write_run(tmp_path, "20260101T000000Z-aaa", "m:1", 0.7, [1.0, 0.0, 1.0])
-    assert read_case_series(run, "objective_score") == [1.0, 0.0, 1.0]
+    assert read_case_objectives(run) == [1.0, 0.0, 1.0]
 
 
 def test_record_from_manifest_builds_model_result(tmp_path):
@@ -197,12 +194,9 @@ def _write_category_run(
     scores = scores if scores is not None else []
     if data_verified and verification_ref is None:
         verification_ref = _write_verification_ref(data_dir)
-    manifest = run_manifest_payload(
-        run_id=f"{method}-{model}",
-        run_name=f"{method}-{model}",
-        split="final",
-        created_at="2026-06-21T00:00:00Z",
-        config={
+    manifest = {
+        "split": "final",
+        "config": {
             "model": model,
             "backend": "ollama",
             "tier": tier,
@@ -210,10 +204,10 @@ def _write_category_run(
             "data_verified": data_verified,
             "verification_ref": str(verification_ref) if verification_ref else None,
         },
-        metrics={"objective_score": objective, "reliability": 1.0, "tokens_per_s": 0.0},
-        n_cases=n_cases,
-    )
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        "metrics": {"objective_score": objective, "reliability": 1.0, "tokens_per_s": 0.0},
+        "n_cases": n_cases,
+    }
+    write_manifest(run_dir, run_id=f"{method}-{model}", **manifest)
     rows = [json.dumps({"objective_score": score}) for score in scores]
     (run_dir / "scores.jsonl").write_text("\n".join(rows), encoding="utf-8")
     return run_dir

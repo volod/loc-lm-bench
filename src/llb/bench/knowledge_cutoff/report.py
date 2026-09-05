@@ -1,8 +1,7 @@
 """Machine-readable and Markdown report rendering."""
 
+import json
 from typing import Any
-
-from llb.artifacts.runs.members import RunMember, human_report, study_analysis
 
 
 def build_report(
@@ -118,9 +117,8 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def report_artifacts(report: dict[str, object]) -> list[RunMember]:
-    """The cutoff probe's reading, as the structured record and the rendering beside it."""
-    return [
-        study_analysis("report.json", report),
-        human_report("report.md", render_markdown(report)),
-    ]
+def report_artifacts(report: dict[str, object]) -> dict[str, str]:
+    return {
+        "report.json": json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        "report.md": render_markdown(report),
+    }

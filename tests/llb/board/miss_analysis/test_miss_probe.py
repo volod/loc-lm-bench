@@ -12,8 +12,8 @@ from llb.board.miss_analysis.recommendations import refresh_recommendations
 from llb.board import miss_probe as mp
 from llb.executor import durability_journal
 from llb.executor.cases import CaseBatch, batch_retrieval_records
-from llb.core.contracts.runs import RunManifest
-from llb.tracking.manifest import persist_run
+from llb.core.contracts.run_bundle.rows import CASE_SCORE_SCHEMA_ID
+from llb.tracking.manifest import RunManifest, persist_run
 from tests.llb.board.miss_analysis_helpers import DOC_A, RUN_ID, _analyze, _goldset, _score_row
 from tests.llb.board.miss_probe_helpers import _probe_manifest, _probe_subset, _write_probe_bundle
 
@@ -43,7 +43,12 @@ def test_persist_run_writes_additive_retrieval_records(tmp_path):
     manifest = RunManifest(run_id="r1", run_name="t", split="final", config={}, n_cases=2)
     out_dir = tmp_path / "run-eval" / "bundle"
     paths = persist_run(
-        manifest, batch.rows, out_dir, mirror=lambda *a: None, retrieval_rows=records
+        manifest,
+        batch.rows,
+        out_dir,
+        mirror=lambda *a: None,
+        retrieval_rows=records,
+        score_contract=CASE_SCORE_SCHEMA_ID,
     )
     lines = [json.loads(line) for line in Path(paths["retrieval"]).read_text().splitlines()]
     assert [rec["item_id"] for rec in lines] == [items[0].id, items[1].id]

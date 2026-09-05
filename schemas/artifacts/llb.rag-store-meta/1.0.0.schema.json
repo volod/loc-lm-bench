@@ -1,8 +1,106 @@
 {
+  "$defs": {
+    "DuplicateCensus": {
+      "additionalProperties": false,
+      "description": "The duplicate rate of a chunk set at one tier (`llb.rag.duplicates.collapse`).",
+      "properties": {
+        "collapsed": {
+          "minimum": 0,
+          "title": "Collapsed",
+          "type": "integer"
+        },
+        "cross_document_groups": {
+          "minimum": 0,
+          "title": "Cross Document Groups",
+          "type": "integer"
+        },
+        "duplicate_chunks": {
+          "minimum": 0,
+          "title": "Duplicate Chunks",
+          "type": "integer"
+        },
+        "duplicate_share": {
+          "title": "Duplicate Share",
+          "type": "number"
+        },
+        "groups": {
+          "minimum": 0,
+          "title": "Groups",
+          "type": "integer"
+        },
+        "intra_document_groups": {
+          "minimum": 0,
+          "title": "Intra Document Groups",
+          "type": "integer"
+        },
+        "largest_group": {
+          "minimum": 0,
+          "title": "Largest Group",
+          "type": "integer"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tier"
+        },
+        "unique": {
+          "minimum": 0,
+          "title": "Unique",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "unique",
+        "collapsed",
+        "duplicate_chunks",
+        "duplicate_share",
+        "groups",
+        "largest_group",
+        "intra_document_groups",
+        "cross_document_groups"
+      ],
+      "title": "DuplicateCensus",
+      "type": "object"
+    },
+    "LexicalSummary": {
+      "additionalProperties": false,
+      "description": "What the BM25 side of a hybrid store holds, stated without loading its postings.",
+      "properties": {
+        "lemmatize": {
+          "title": "Lemmatize",
+          "type": "boolean"
+        },
+        "n_terms": {
+          "minimum": 0,
+          "title": "N Terms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lemmatize",
+        "n_terms"
+      ],
+      "title": "LexicalSummary",
+      "type": "object"
+    }
+  },
   "$id": "urn:llb:artifact-contract:llb.rag-store-meta:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`store_meta.json`: what a store is, and every knob a query applies to it.\n\n`backend`, `collapse_duplicates`, and `duplicate_tier` are optional because a store built\nbefore each knob existed recorded nothing, and stores in exactly that state are still on disk.\nThe reader that needs one applies its documented default (`faiss`, collapse on, the `exact`\ntier); the contract says the store did not record it rather than inventing a value for it.",
+  "description": "`store_meta.json` as written before a store recorded its opaque index members.\n\nThe duplicate-collapse knobs are optional here for one reason: this single version covers\nevery store this project wrote before the registry existed, and those span the release where\ncollapse shipped. A meta that states them is carried through; one that does not has them\nsupplied by the migration from the same constants its readers were already defaulting to.",
   "properties": {
     "backend": {
       "anyOf": [
@@ -92,15 +190,13 @@
     "duplicates": {
       "anyOf": [
         {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/DuplicateCensus"
         },
         {
           "type": "null"
         }
       ],
-      "default": null,
-      "title": "Duplicates"
+      "default": null
     },
     "embedder_fingerprint": {
       "anyOf": [
@@ -115,7 +211,6 @@
       "title": "Embedder Fingerprint"
     },
     "embedding_model": {
-      "minLength": 1,
       "title": "Embedding Model",
       "type": "string"
     },
@@ -137,18 +232,15 @@
     "lexical": {
       "anyOf": [
         {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/LexicalSummary"
         },
         {
           "type": "null"
         }
       ],
-      "default": null,
-      "title": "Lexical"
+      "default": null
     },
     "mode": {
-      "minLength": 1,
       "title": "Mode",
       "type": "string"
     },
@@ -207,7 +299,6 @@
       "type": "integer"
     },
     "strategy": {
-      "minLength": 1,
       "title": "Strategy",
       "type": "string"
     }
@@ -225,6 +316,6 @@
     "n_parents",
     "dim"
   ],
-  "title": "RagStoreMetaRecord",
+  "title": "RagStoreMetaDocumentV1",
   "type": "object"
 }

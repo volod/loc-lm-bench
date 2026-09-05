@@ -1,16 +1,15 @@
 """Held-out threshold calibration for the sidecar-free graph-fusion router."""
 
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import typer
 
+from llb.artifacts.retrieval_graph.sidecars import write_sidecar
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import (
-    SIDECAR_KIND_CALIBRATION,
-    SIDECAR_KIND_RUN_CONFIG,
-)
-from llb.rag.comparison.sidecar import write_sidecar
+from llb.core.contracts.common import JsonObject
+from llb.core.contracts.retrieval_graph.calibration import ROUTING_CALIBRATION_SCHEMA_ID
 from llb.cli.helpers import load_config
 from llb.cli.rag import fusion_inputs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
@@ -102,16 +101,12 @@ def calibrate_fusion_routing_cmd(
     target.mkdir(parents=True, exist_ok=True)
     write_sidecar(
         target / "calibration.json",
-        SIDECAR_KIND_CALIBRATION,
-        "calibrate-fusion-routing",
-        report,
+        ROUTING_CALIBRATION_SCHEMA_ID,
+        cast(JsonObject, report),
     )
     (target / "report.md").write_text(format_report(report), encoding="utf-8")
-    write_sidecar(
-        target / "run_config.json",
-        SIDECAR_KIND_RUN_CONFIG,
-        "calibrate-fusion-routing",
-        cfg.fingerprint(),
+    (target / "run_config.json").write_text(
+        json.dumps(cfg.fingerprint(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     typer.echo(f"[calibrate-fusion-routing] {report['decision']}: {report['reason']}")
     typer.echo(f"[calibrate-fusion-routing] report -> {target / 'report.md'}")

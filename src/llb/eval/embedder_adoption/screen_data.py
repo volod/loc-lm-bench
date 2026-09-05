@@ -54,7 +54,7 @@ def _value(row: Mapping[str, object], metric: str) -> float:
 
 
 def _bundle_rows(run_dirs: Sequence[str]) -> dict[str, Mapping[str, object]]:
-    from llb.artifacts.runs.bundle import read_case_rows
+    from llb.board.io import read_case_rows
 
     rows: dict[str, Mapping[str, object]] = {}
     for run_dir in run_dirs:

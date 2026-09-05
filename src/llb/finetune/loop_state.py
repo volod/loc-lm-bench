@@ -3,7 +3,6 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from llb.artifacts.runs.bundle import read_run_manifest
 from llb.bench.common import new_run_timestamp
 from llb.core.config import RunConfig
 from llb.core.contracts.common import JsonObject
@@ -61,7 +60,7 @@ def _write_state(root: Path, state: JsonObject) -> None:
 
 
 def _objective_from_run(run_dir: Path) -> float:
-    manifest = read_run_manifest(run_dir)
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     return float((manifest.get("metrics") or {}).get("objective_score", 0.0))
 
 

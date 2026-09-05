@@ -8,8 +8,6 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llb.artifacts.runs.rows import encode_record, write_rows
-from llb.core.contracts.orchestration import MISS_ANALYSIS_SCHEMA_ID, MISS_RECORD_SCHEMA_ID
 from llb.board.miss_analysis.model import (
     ANALYSIS_FILENAME,
     CLUSTER_DIMENSIONS,
@@ -22,6 +20,9 @@ from llb.board.miss_analysis.model import (
     _t,
 )
 from llb.core.contracts.common import JsonObject
+from llb.artifacts.errors import ArtifactContractError
+from llb.artifacts.run_bundle.board import read_miss_analysis
+from llb.core.contracts.run_bundle.board import MissAnalysisDocument, MissCaseRow
 
 
 def _fmt_rate(value: float) -> str:
@@ -122,6 +123,11 @@ def format_report_md(analysis: MissAnalysis) -> str:
     return "\n".join(lines)
 
 
+def analysis_document(analysis: MissAnalysis) -> MissAnalysisDocument:
+    """The `llb.miss-analysis` record `llb recommend` reads, built before it is written."""
+    return MissAnalysisDocument.model_validate(analysis_payload(analysis))
+
+
 def analysis_payload(analysis: MissAnalysis) -> JsonObject:
     """Machine-readable summary (`analysis.json`) consumed by `llb recommend`."""
     return {
@@ -150,15 +156,21 @@ def write_analysis(analysis: MissAnalysis, out_dir: Path | str) -> dict[str, str
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / REPORT_FILENAME
     report_path.write_text(format_report_md(analysis) + "\n", encoding="utf-8")
-    misses_path = write_rows(
-        out_dir / MISSES_FILENAME, MISS_RECORD_SCHEMA_ID, [m.as_dict() for m in analysis.misses]
+    misses_path = out_dir / MISSES_FILENAME
+    misses_path.write_text(
+        "".join(
+            json.dumps(
+                MissCaseRow.model_validate(m.as_dict()).model_dump(mode="json"), ensure_ascii=False
+            )
+            + "\n"
+            for m in analysis.misses
+        ),
+        encoding="utf-8",
     )
     analysis_path = out_dir / ANALYSIS_FILENAME
     analysis_path.write_text(
         json.dumps(
-            encode_record(MISS_ANALYSIS_SCHEMA_ID, analysis_payload(analysis)),
-            ensure_ascii=False,
-            indent=2,
+            analysis_document(analysis).model_dump(mode="json"), ensure_ascii=False, indent=2
         )
         + "\n",
         encoding="utf-8",
@@ -186,8 +198,8 @@ def latest_analysis(data_dir: Path | str) -> JsonObject | None:
         payload_path = candidate / ANALYSIS_FILENAME
         if payload_path.is_file():
             try:
-                payload: JsonObject = json.loads(payload_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+                payload: JsonObject = read_miss_analysis(payload_path).model_dump(mode="json")
+            except (OSError, ArtifactContractError):
                 continue
             payload["report_path"] = str(candidate / REPORT_FILENAME)
             return payload

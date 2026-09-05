@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from llb.artifacts.runs.fixture import run_manifest_payload, run_metrics
 from llb.board.miss_analysis.model import (
     MissRecord,
 )
@@ -13,6 +12,7 @@ from tests.llb.board.miss_analysis_helpers import (
     _score_row,
     _write_bundle,
 )
+from tests.llb.bundle_fixtures import write_manifest
 
 
 def _probe_manifest(tmp_path: Path) -> dict:
@@ -30,14 +30,14 @@ def _write_probe_bundle(tmp_path: Path, name: str, run_name: str, subset: list[G
     run_dir = tmp_path / "run-eval" / name
     run_dir.mkdir(parents=True)
     rows = [_score_row(item.id, "ok", 0.8, 1.0) for item in subset]
-    manifest = run_manifest_payload(
+    write_manifest(
+        run_dir,
         run_id="probe" + name[-4:],
         run_name=run_name,
         split="final",
         n_cases=len(rows),
-        metrics=run_metrics(objective_score=0.8),
+        metrics={"objective_score": 0.8, "reliability": 1.0, "tokens_per_s": 10.0},
     )
-    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (run_dir / "scores.jsonl").write_text(
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )

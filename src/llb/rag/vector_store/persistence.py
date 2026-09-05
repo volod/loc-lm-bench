@@ -1,26 +1,29 @@
 """Persistence for RAG store chunks, indexes, metadata, and lexical sidecars.
 
-Every project-owned member is written through its registered artifact contract, so a store carries
-its own identity and a store written by a newer build refuses here instead of retrieving with
-fields this reader cannot see. The vector index and the lexical postings are NOT modelled: they
-belong to their own formats and are bound opaquely by the store's dataset manifest
-(`llb.artifacts.retrieval.datasets`).
+Publication is contract-checked in both directions: every chunk and parent row is validated
+against `llb.rag-chunk` before it is written, the metadata is published with its own identity and
+with a digest of each opaque index member beside it, and a load resolves that metadata -- and
+re-checks those digests -- before a vector backend is imported.
 """
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.datasets import publish_dataset_manifest
-from llb.artifacts.gates import refuse_tampered_dataset
-from llb.artifacts.retrieval.datasets import store_dataset_manifest
-from llb.artifacts.records import decode, encode
+from llb.artifacts.retrieval_graph.opaque import describe_member
+from llb.artifacts.retrieval_graph.stores import (
+    readable_store_meta,
+    refuse_unreadable_store,
+    validated_chunk_rows,
+    write_store_meta,
+)
 from llb.core.config_validation import DEFAULT_EMBEDDING_MODEL
+from llb.core.contracts.common import JsonObject
 from llb.core.contracts.rag import ChunkRecord, RagStoreMeta
-from llb.core.contracts.retrieval.store import RAG_CHUNK_SCHEMA_ID, RAG_STORE_META_SCHEMA_ID
+from llb.core.contracts.retrieval_graph.common import OpaqueIndexMember
 from llb.core.store_generations import resolve_store_dir
 from llb.rag.encoders.embedder import Embedder
+from llb.rag.vector_store.lexical import LEXICAL_INDEX_VERSION
 from llb.rag.vector_store.lexical_index import LexicalIndex
 from llb.rag.vector_store.build import (
     CHUNKS_FILE,
@@ -32,13 +35,16 @@ from llb.rag.vector_store.build import (
 from llb.rag.vector_store.io import _read_jsonl, _write_jsonl
 from llb.rag.vector_store.vector_index import (
     RAG_BACKEND_FAISS,
+    VECTOR_INDEX_OWNERS,
     VectorIndex,
     load_vector_index,
     save_vector_index,
+    vector_index_format_version,
+    vector_index_relative_path,
 )
 
-CHUNK_CONTRACT_VERSION = "1.0.0"
-STORE_META_CONTRACT_VERSION = "1.0.0"
+VECTOR_INDEX_MEMBER_ID = "vector-index"
+LEXICAL_INDEX_MEMBER_ID = "lexical-index"
 
 
 @dataclass(frozen=True)
@@ -62,35 +68,20 @@ def save_store(
 ) -> None:
     target = Path(index_dir)
     target.mkdir(parents=True, exist_ok=True)
-    _write_jsonl(_encoded_chunks(chunks), target / CHUNKS_FILE)
+    _write_jsonl(_contract_rows(chunks), target / CHUNKS_FILE)
     if parents is not None:
-        _write_jsonl(_encoded_chunks(parents), target / PARENTS_FILE)
+        _write_jsonl(_contract_rows(parents), target / PARENTS_FILE)
     if lexical is not None:
         lexical.save(target / LEXICAL_FILE)
     save_vector_index(index, backend, target)
-    (target / META_FILE).write_text(
-        json.dumps(_encoded_meta(meta), ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    # Published last: the manifest binds every member that now exists, including the index and
-    # postings files whose bytes no contract describes.
-    publish_dataset_manifest(target, store_dataset_manifest(target, resolve_live=False))
-
-
-def read_store_chunks(path: Path | str) -> list[ChunkRecord]:
-    """The chunk rows of one store file at the current contract, identity removed.
-
-    Every consumer that opens `chunks.jsonl` or `parents.jsonl` outside `RagStore.load` -- the
-    incremental refresh, the conflict tiers, the duplicate-residue report -- reads it here, so
-    exactly one place knows that the rows on disk carry identity and the records in memory do not.
-    """
-    return _decoded_chunks(Path(path))
+    write_store_meta(target / META_FILE, dict(meta), _index_members(target, backend, lexical))
 
 
 def load_store(index_dir: Path | str) -> LoadedStore:
     target = resolve_store_dir(index_dir, META_FILE)
-    refuse_tampered_dataset(target)
-    chunks = read_store_chunks(target / CHUNKS_FILE)
-    meta = read_store_meta(target / META_FILE)
+    refuse_unreadable_store(target)
+    meta = cast(RagStoreMeta, readable_store_meta(target / META_FILE))
+    chunks = _read_jsonl(target / CHUNKS_FILE)
     lexical = None
     if meta.get("mode") == MODE_HYBRID:
         lexical_path = target / LEXICAL_FILE
@@ -102,35 +93,44 @@ def load_store(index_dir: Path | str) -> LoadedStore:
         lexical = LexicalIndex.load(lexical_path)
     index = load_vector_index(meta.get("backend", RAG_BACKEND_FAISS), target)
     embedder = Embedder(meta.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
-    parents = (
-        read_store_chunks(target / PARENTS_FILE) if meta.get("mode") == "parent_child" else None
-    )
+    parents = _read_jsonl(target / PARENTS_FILE) if meta.get("mode") == "parent_child" else None
     return LoadedStore(chunks, index, embedder, meta, parents, lexical)
 
 
-def read_store_meta(path: Path) -> RagStoreMeta:
-    """The store metadata at the current contract, migrating a pre-contract file forward."""
-    record = json.loads(path.read_text(encoding="utf-8"))
-    return cast(RagStoreMeta, decode(RAG_STORE_META_SCHEMA_ID, record, source=str(path)))
+def _contract_rows(rows: list[ChunkRecord]) -> list[ChunkRecord]:
+    """Every row, validated against `llb.rag-chunk` and written in the compact store form."""
+    return cast(list[ChunkRecord], list(validated_chunk_rows(cast(list[JsonObject], rows))))
 
 
-def _encoded_meta(meta: RagStoreMeta) -> dict[str, object]:
-    return encode(RAG_STORE_META_SCHEMA_ID, STORE_META_CONTRACT_VERSION, meta)
-
-
-def _encoded_chunks(chunks: list[ChunkRecord]) -> list[ChunkRecord]:
-    return [
-        cast(ChunkRecord, encode(RAG_CHUNK_SCHEMA_ID, CHUNK_CONTRACT_VERSION, chunk))
-        for chunk in chunks
-    ]
-
-
-def _decoded_chunks(path: Path) -> list[ChunkRecord]:
-    rows = _read_jsonl(path)
-    return [
-        cast(
-            ChunkRecord,
-            decode(RAG_CHUNK_SCHEMA_ID, row, source=f"{path}#record-{index}"),
+def _index_members(
+    target: Path, backend: str, lexical: LexicalIndex | None
+) -> list[OpaqueIndexMember]:
+    """The opaque files this generation was just published with, digested as written."""
+    owner, artifact_format, description = VECTOR_INDEX_OWNERS[backend]
+    members = [
+        describe_member(
+            target,
+            VECTOR_INDEX_MEMBER_ID,
+            vector_index_relative_path(backend),
+            owner=owner,
+            artifact_format=artifact_format,
+            format_version=vector_index_format_version(backend),
+            description=description,
         )
-        for index, row in enumerate(rows, start=1)
     ]
+    if lexical is not None:
+        members.append(
+            describe_member(
+                target,
+                LEXICAL_INDEX_MEMBER_ID,
+                LEXICAL_FILE,
+                owner="llb.rag.vector_store.lexical",
+                artifact_format="bm25-postings",
+                format_version=LEXICAL_INDEX_VERSION,
+                description=(
+                    "BM25 postings over this build's tokenizer output; a different tokenizer "
+                    "version would not match the queries."
+                ),
+            )
+        )
+    return members

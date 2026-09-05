@@ -1,0 +1,373 @@
+{
+  "$defs": {
+    "DuplicateCensus": {
+      "additionalProperties": false,
+      "description": "The duplicate rate of a chunk set at one tier (`llb.rag.duplicates.collapse`).",
+      "properties": {
+        "collapsed": {
+          "minimum": 0,
+          "title": "Collapsed",
+          "type": "integer"
+        },
+        "cross_document_groups": {
+          "minimum": 0,
+          "title": "Cross Document Groups",
+          "type": "integer"
+        },
+        "duplicate_chunks": {
+          "minimum": 0,
+          "title": "Duplicate Chunks",
+          "type": "integer"
+        },
+        "duplicate_share": {
+          "title": "Duplicate Share",
+          "type": "number"
+        },
+        "groups": {
+          "minimum": 0,
+          "title": "Groups",
+          "type": "integer"
+        },
+        "intra_document_groups": {
+          "minimum": 0,
+          "title": "Intra Document Groups",
+          "type": "integer"
+        },
+        "largest_group": {
+          "minimum": 0,
+          "title": "Largest Group",
+          "type": "integer"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tier"
+        },
+        "unique": {
+          "minimum": 0,
+          "title": "Unique",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "unique",
+        "collapsed",
+        "duplicate_chunks",
+        "duplicate_share",
+        "groups",
+        "largest_group",
+        "intra_document_groups",
+        "cross_document_groups"
+      ],
+      "title": "DuplicateCensus",
+      "type": "object"
+    },
+    "LexicalSummary": {
+      "additionalProperties": false,
+      "description": "What the BM25 side of a hybrid store holds, stated without loading its postings.",
+      "properties": {
+        "lemmatize": {
+          "title": "Lemmatize",
+          "type": "boolean"
+        },
+        "n_terms": {
+          "minimum": 0,
+          "title": "N Terms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lemmatize",
+        "n_terms"
+      ],
+      "title": "LexicalSummary",
+      "type": "object"
+    },
+    "OpaqueIndexMember": {
+      "additionalProperties": false,
+      "description": "One file a store cannot be queried without whose bytes belong to another library.\n\nA FAISS index, a per-backend vector directory, a BM25 posting list, and a DuckDB database are\nall in this class. The store owns WHICH members exist and what they weigh; the format itself\nstays the owner's, so the record names the owner and its format version instead of describing\na layout this project does not control.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "format": {
+          "minLength": 1,
+          "title": "Format",
+          "type": "string"
+        },
+        "format_version": {
+          "minLength": 1,
+          "title": "Format Version",
+          "type": "string"
+        },
+        "member_id": {
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "title": "Member Id",
+          "type": "string"
+        },
+        "n_bytes": {
+          "minimum": 0,
+          "title": "N Bytes",
+          "type": "integer"
+        },
+        "owner": {
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "member_id",
+        "path",
+        "owner",
+        "format",
+        "format_version",
+        "description",
+        "digest",
+        "n_bytes"
+      ],
+      "title": "OpaqueIndexMember",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.rag-store-meta:2.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`store_meta.json`: what a store was built from, by which encoder, over which corpus.\n\nEverything a caller must agree with before it may query the store lives here, which is why\nthis is the member the load-time gate reads first: a mismatched encoder identity, a moved\ncorpus fingerprint, or an index member whose bytes changed are all decided from this record\nalone, before an embedding stack or a vector backend is imported.",
+  "properties": {
+    "backend": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Backend"
+    },
+    "child_size": {
+      "minimum": 0,
+      "title": "Child Size",
+      "type": "integer"
+    },
+    "collapse_duplicates": {
+      "title": "Collapse Duplicates",
+      "type": "boolean"
+    },
+    "corpus_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corpus Fingerprint"
+    },
+    "corpus_manifest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corpus Manifest"
+    },
+    "dim": {
+      "minimum": 0,
+      "title": "Dim",
+      "type": "integer"
+    },
+    "doc_fingerprints": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Doc Fingerprints"
+    },
+    "duplicate_tier": {
+      "title": "Duplicate Tier",
+      "type": "string"
+    },
+    "duplicates": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DuplicateCensus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "embedder_fingerprint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedder Fingerprint"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "governance_fields": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Governance Fields"
+    },
+    "index_members": {
+      "items": {
+        "$ref": "#/$defs/OpaqueIndexMember"
+      },
+      "title": "Index Members",
+      "type": "array"
+    },
+    "lexical": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LexicalSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "mode": {
+      "title": "Mode",
+      "type": "string"
+    },
+    "n_indexed": {
+      "minimum": 0,
+      "title": "N Indexed",
+      "type": "integer"
+    },
+    "n_parents": {
+      "minimum": 0,
+      "title": "N Parents",
+      "type": "integer"
+    },
+    "overlap": {
+      "minimum": 0,
+      "title": "Overlap",
+      "type": "integer"
+    },
+    "page_annotation_coverage": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Page Annotation Coverage"
+    },
+    "refreshed_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Refreshed From"
+    },
+    "schema_id": {
+      "const": "llb.rag-store-meta",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "size": {
+      "minimum": 0,
+      "title": "Size",
+      "type": "integer"
+    },
+    "strategy": {
+      "title": "Strategy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "mode",
+    "strategy",
+    "size",
+    "overlap",
+    "child_size",
+    "embedding_model",
+    "n_indexed",
+    "n_parents",
+    "dim",
+    "collapse_duplicates",
+    "duplicate_tier"
+  ],
+  "title": "RagStoreMetaDocument",
+  "type": "object"
+}

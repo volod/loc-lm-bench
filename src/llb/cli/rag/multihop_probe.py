@@ -7,11 +7,6 @@ from typing import Any, Optional
 import typer
 
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import (
-    SIDECAR_KIND_PROBE,
-    SIDECAR_KIND_RUN_CONFIG,
-)
-from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.helpers import load_config
 from llb.cli.rag import fusion_inputs
 from llb.cli.rag.query_prep_endpoint import (
@@ -87,6 +82,7 @@ def probe_multihop_hops_cmd(
     its own text reaches is a QUERY problem (decomposition is the lead); a hop neither reaches is
     neither, and is reported as such.
     """
+    import json
 
     from llb.core.store_generations import generation_timestamp
     from llb.executor.runner_retrieval import _load_store
@@ -177,13 +173,12 @@ def probe_multihop_hops_cmd(
     )
     target = Path(out_dir) if out_dir else default_dir
     target.mkdir(parents=True, exist_ok=True)
-    write_sidecar(target / "probe.json", SIDECAR_KIND_PROBE, "multihop-probe", report)
+    (target / "probe.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     (target / "report.md").write_text(rendered, encoding="utf-8")
-    write_sidecar(
-        target / "run_config.json",
-        SIDECAR_KIND_RUN_CONFIG,
-        "multihop-probe",
-        endpoint_cfg.fingerprint(),
+    (target / "run_config.json").write_text(
+        json.dumps(endpoint_cfg.fingerprint(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     if steps:
         query_cohort = report["conversion"]["cohorts"]["query"]

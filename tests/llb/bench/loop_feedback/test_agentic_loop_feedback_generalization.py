@@ -1,10 +1,10 @@
 """Cross-family and cross-seed repeat-feedback aggregation."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import REPEAT_FEEDBACK_BILINGUAL
 from llb.bench.agentic.model import AgenticTask
 from llb.bench.context_policy.run import task_set_digest
@@ -154,7 +154,7 @@ def test_generalization_aggregates_stable_seed_support_and_persists(tmp_path: Pa
         mirror=lambda *_args: None,
     )
     run_dir = Path(paths["manifest"]).parent
-    persisted = read_study_analysis(run_dir / "generalization-analysis.json")
+    persisted = json.loads((run_dir / "generalization-analysis.json").read_text())
     assert persisted["supported_family_fraction"] == 0.75
     assert persisted["seed_rows"][0]["coverage_passed"] is True
     assert persisted["seed_rows"][0]["variant_activation_rate"] == 0.75

@@ -120,6 +120,7 @@ def run_knowledge_cutoff(
             metrics=metrics,
             case_rows=rows,
             mirror=mirror,
+            study_id=METHOD,
             artifacts=report_artifacts(report),
         )
         out_dir = Path(paths["manifest"]).parent

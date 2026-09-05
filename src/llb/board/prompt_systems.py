@@ -1,11 +1,9 @@
 """Prompt-system comparison loading for the board."""
 
-import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from llb.artifacts.runs.bundle import read_run_manifest
 from llb.core.contracts.results import BoardRow
 from llb.scoring.aggregate import rank_board
 from llb.scoring.board_format import format_board, ranking_policy_note
@@ -14,6 +12,7 @@ from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
 from llb.board.categories import AGENTIC_METHOD
 from llb.board.harnesses import harness_record_from_manifest
 from llb.board.runs import record_from_manifest
+from llb.board.io import admitted_manifest
 
 
 @dataclass
@@ -60,9 +59,8 @@ def load_prompt_system_records(data_dir: Path | str) -> list[PromptSystemRunReco
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = read_run_manifest(manifest_path)
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         config = manifest.get("config") or {}
         prompt_system = config.get("prompt_system")
@@ -130,9 +128,8 @@ def _add_best_rag_prompt_system(
     for manifest_path in sorted(root.glob("*/manifest.json")):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = read_run_manifest(manifest_path)
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         provenance = manifest.get("prompt_system_provenance") or {}
         if not isinstance(provenance, dict):

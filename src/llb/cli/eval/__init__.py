@@ -9,7 +9,6 @@ from llb.cli.eval import (  # noqa: F401
     answer_envelope,
     answer_quality,
     answer_validation,
-    check_run,
     context_ablation,
     embedder_adoption,
     frontier_judge,
@@ -18,6 +17,7 @@ from llb.cli.eval import (  # noqa: F401
     query_robustness,
     restoration_sweep,
     run,
+    run_bundles,
     screen,
     verbosity,
 )

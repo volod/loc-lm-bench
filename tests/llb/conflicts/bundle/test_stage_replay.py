@@ -57,7 +57,7 @@ from llb.conflicts.bundle.stage_replay import (
     replay_attribution,
     replay_entry,
 )
-from tests.llb.store_meta_helpers import write_store_meta
+from llb.rag.vector_store.build import META_FILE
 
 from tests.llb.conflicts.conflict_helpers import (
     BODY_TOKENS,
@@ -341,8 +341,11 @@ def test_the_cli_resolves_a_bundle_recorded_store_without_an_explicit_flag(tmp_p
 
     data_dir = tmp_path / "data"
     store_dir = data_dir / "stores" / "for-this-bundle"
+    store_dir.mkdir(parents=True)
     fingerprints = {"old.md": "a" * 64, "new.md": "b" * 64}
-    write_store_meta(store_dir, doc_fingerprints=fingerprints)
+    (store_dir / META_FILE).write_text(
+        json.dumps({"doc_fingerprints": fingerprints}), encoding="utf-8"
+    )
     monkeypatch.setenv("DATA_DIR", str(data_dir))
 
     run_dir = tmp_path / "audit"

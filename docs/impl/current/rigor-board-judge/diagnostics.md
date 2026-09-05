@@ -47,10 +47,7 @@ interrupted probe's staging is found by its pinned config + goldset digests and 
 durable-eval-runner journal, and only then does a fresh probe start. Off-cohort probe bundles
 never pollute the board headline (tiny `n_cases` -> cohort exclusion).
 
-Artifacts land at `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`,
-the last two as the registered `llb.miss-record` and `llb.miss-analysis` contracts; the analysed
-bundle passes the whole-bundle gate first, so an analysis never mixes rows from a rewritten file
-([run, board, and orchestration contracts](../artifact-contracts/run-and-evaluation-contracts.md)).
+Artifacts land at `$DATA_DIR/miss-analysis/<timestamp>/{report.md,misses.jsonl,analysis.json}`;
 `llb recommend` appends a `## Miss analysis` section (intro + top 5 ranked lines) from the
 latest `analysis.json` when one exists (`format_miss_section_md` in
 `src/llb/board/recommend/sections.py`). Run bundles are never mutated. Automatic re-tuning stays

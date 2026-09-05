@@ -11,8 +11,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from llb.artifacts.runs.rows import encode_record
-from llb.core.contracts.run_bundle import RUN_ABORT_SCHEMA_ID
 from llb.core.config import RunConfig
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
@@ -26,6 +24,7 @@ from llb.scoring.policy import (
     scorer_dir,
 )
 from llb.scoring.policy.lanes import ScorerLane
+from llb.core.contracts.run_bundle.journals import JudgeBudgetAbort
 
 JudgeScorer = Callable[[list[JudgeInputRecord], str], list[JudgeScore]]
 _LOG = logging.getLogger(__name__)
@@ -212,17 +211,15 @@ def _write_budget_abort(staging_dir: Path | None, exc: BudgetExceeded) -> None:
         return
     root = scorer_dir(staging_dir)
     root.mkdir(parents=True, exist_ok=True)
-    payload = encode_record(
-        RUN_ABORT_SCHEMA_ID,
-        {
-            "status": "aborted",
-            "resumable": True,
-            "reason": exc.reason,
-            "calls": exc.calls,
-            "cost_usd": round(exc.cost_usd, 6),
-        },
+    record = JudgeBudgetAbort(
+        resumable=True,
+        reason=exc.reason,
+        calls=exc.calls,
+        cost_usd=round(exc.cost_usd, 6),
     )
-    (root / "abort.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    (root / "abort.json").write_text(
+        json.dumps(record.model_dump(mode="json"), indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _publish_scorer_artifacts(staging_dir: Path, run_dir: Path) -> None:

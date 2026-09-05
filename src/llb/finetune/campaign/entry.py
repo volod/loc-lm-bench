@@ -4,7 +4,6 @@ import json
 import time
 from pathlib import Path
 
-from llb.artifacts.runs.bundle import read_run_manifest
 from llb.backends.planner.constants import VERDICT_NO
 from llb.board.miss_analysis.classify import analyze_run
 from llb.board.miss_analysis.load import load_item_provenance
@@ -222,7 +221,7 @@ def _dataset_digest(dataset_dir: Path) -> str:
 
 def _peak_vram(run_dir: Path) -> float | None:
     try:
-        manifest = read_run_manifest(run_dir)
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     telemetry = manifest.get("telemetry") or {}

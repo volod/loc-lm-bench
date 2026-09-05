@@ -25,10 +25,11 @@ form too" branch. When a durable form has to change, change it in place: update 
 regenerate the exports, update the fixtures, and rebuild whatever no longer parses. A run
 artifact an earlier build of our own code wrote is reproducible input, not a supported form.
 
-The two standing exceptions are already declared and are not a licence to add more: the
-compatibility-probe family that keeps the migration mechanism exercised in CI, and the data-prep
-families whose older versions describe bundles this project actually wrote. See
-[every family starts at one version](current/artifact-contracts/foundation-and-evolution.md#every-family-starts-at-one-version).
+The standing exceptions are already declared and are not a licence to add more: the
+compatibility-probe family that keeps the migration mechanism exercised in CI, and the families
+whose older versions describe bundles this project actually wrote -- the data-prep, store-meta,
+and run-manifest families a registered migration already carries forward. See
+[compatibility behavior](current/artifact-contracts/foundation-and-evolution.md#compatibility-behavior).
 
 Backward compatibility and schema migration become real requirements at release, once this file is
 empty and the code is published; the mechanism is kept working for that day. A task written before
@@ -103,9 +104,9 @@ registry instead of remaining a separate versioning island.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: the run, board, and orchestration contracts optimization and training consume and
-  emit recommendations or adapters back to ([run, board, and orchestration
-  contracts](current/artifact-contracts/run-and-evaluation-contracts.md)); none open.
+- Dependencies: [run, study, and board
+  contracts](current/artifact-contracts/run-and-evaluation-contracts.md) supply the run manifest,
+  score-row, and study records optimization and training consume and emit back to; none open.
 - User-visible outcome: model, training, and robotics handoffs expose the same inspectable identity,
   validation, and compatibility behavior as corpus and run bundles.
 - Scope boundary: in scope -- durable producers and consumers under `src/llb/backends/`,
@@ -160,6 +161,34 @@ discover, validate, or materialize a supported contract.
 - Documentation target: `docs/impl/current/artifact-contracts/operator-workflow-and-coverage.md`,
   the artifact-contracts area index, CLI reference, and the data egress boundary where exported
   metadata is described.
+
+#### artifact-contract-retrieval-diagnostic-sidecars (optional)
+
+The retrieval comparison and routing-calibration sidecars are registered; the remaining
+`src/llb/cli/rag/` analysis bundles -- the embedding and reranker bake-offs, the multi-hop probe,
+duplicate residue, retrieval validation, and fusion evidence -- still write unvalidated report
+dictionaries. Bring them onto the same registered families so an archived diagnostic is readable
+by a build that has moved on.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR
+- Dependencies: the paired-statistics rows these bundles share are already registered -- see
+  [retrieval and graph contracts](current/artifact-contracts/retrieval-and-graph-contracts.md);
+  none open.
+- User-visible outcome: an archived bake-off, probe, or residue report states which contract it is
+  and refuses rather than reading as an empty section when a field has moved.
+- Scope boundary: in scope -- the report writers under `src/llb/cli/rag/` and the models behind
+  them under `src/llb/rag/`; Pydantic contracts for each bundle, reusing the shared paired
+  statistics rows. Out of scope -- the rendered Markdown reports beside them, and any change to
+  what a bundle measures.
+- Data and artifact paths: the existing bake-off, probe, residue, and evidence roots under
+  `$DATA_DIR/<method>/<run>/`, plus fixtures under `samples/artifact_contracts/retrieval_graph/`.
+- Execution path: CPU-only fixture writes and reads inside `make ci`; no encoder, reranker, or
+  vector backend is loaded.
+- Acceptance gates: `make ci` green; each registered bundle reads back identically with and
+  without its identity; a report a producer can no longer state refuses before it is written.
+- Documentation target: the retrieval and graph contracts page and the RAG-core topic pages that
+  own each bundle.
 
 ### Corpus provenance -- `corpus-provenance`
 

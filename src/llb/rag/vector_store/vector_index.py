@@ -30,6 +30,52 @@ RAG_BACKENDS = (
 # FAISS persists a single file; the adapter backends persist a subdirectory (vectors.npy).
 FAISS_INDEX_FILE = "index.faiss"
 
+# Who owns each persisted vector index, and what it is. The bytes belong to the named library, so
+# a store BINDS the member rather than modelling it: enough for a reader to say "this is a FAISS
+# index written by faiss 1.x, and I do not have faiss" instead of guessing from a file extension.
+VECTOR_INDEX_OWNERS: dict[str, tuple[str, str, str]] = {
+    RAG_BACKEND_FAISS: (
+        "faiss",
+        "faiss-index",
+        "FAISS inner-product index over the store's normalized embeddings.",
+    ),
+    RAG_BACKEND_CHROMA: (
+        "numpy",
+        "npy",
+        "Float32 vector matrix a Chroma collection is rebuilt from on load.",
+    ),
+    RAG_BACKEND_QDRANT: (
+        "numpy",
+        "npy",
+        "Float32 vector matrix a Qdrant collection is rebuilt from on load.",
+    ),
+    RAG_BACKEND_LANCEDB: (
+        "numpy",
+        "npy",
+        "Float32 vector matrix a LanceDB table is rebuilt from on load.",
+    ),
+}
+
+
+def vector_index_relative_path(backend: str) -> str:
+    """Where `save_vector_index` puts this backend's persisted index, relative to the store."""
+    if backend == RAG_BACKEND_FAISS:
+        return FAISS_INDEX_FILE
+    from llb.rag.stores.base import VECTORS_FILE
+
+    return f"{backend}/{VECTORS_FILE}"
+
+
+def vector_index_format_version(backend: str) -> str:
+    """The owning library's version, read from the library that just wrote the file."""
+    if backend == RAG_BACKEND_FAISS:
+        import faiss
+
+        return str(getattr(faiss, "__version__", "unversioned"))
+    import numpy
+
+    return str(numpy.__version__)
+
 
 class VectorIndex(Protocol):
     """The minimal ANN-index seam `RagStore` depends on (FAISS + every platform matrix adapter satisfy it)."""

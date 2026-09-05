@@ -1,61 +1,70 @@
 {
   "schema_id": "llb.run-manifest",
-  "schema_version": "2.0.0",
-  "run_id": "20260901T101010Z-fixture01",
-  "run_name": "fixture-eval",
+  "schema_version": "3.0.0",
+  "run_id": "sample000run",
+  "run_name": "artifact-contract-sample",
   "split": "final",
-  "created_at": "2026-09-01T10:10:10Z",
+  "created_at": "2026-09-04T00:00:00Z",
   "config": {
-    "model": "fixture-model",
+    "model": "sample-model",
     "backend": "ollama",
-    "strategy": "semantic",
-    "top_k": 5
+    "top_k": 5,
+    "retrieval_mode": "hybrid"
   },
   "env": {
     "python": "3.13.0",
-    "platform": "fixture"
+    "platform": "Linux-sample"
   },
   "metrics": {
-    "objective_score": 0.75,
-    "ranking_score": 0.7,
+    "objective_score": 0.5,
     "reliability": 1.0,
-    "tokens_per_s": 12.5
+    "tokens_per_s": 42.5
   },
   "retrieval": {
     "n": 2,
     "k": 5,
-    "recall_at_k": 1.0,
-    "mrr": 0.75
+    "recall_at_k": 0.5,
+    "mrr": 0.5
   },
-  "judge": {
-    "calibration_rho": null,
-    "threshold": 0.6,
-    "trusted": false
-  },
-  "telemetry": {
-    "steady_tokens_per_s": 0.0,
-    "mean_completion_tokens": 0.0,
-    "tokens_per_char": 0.0,
-    "max_new_tokens": 0,
-    "n_warmup": 0,
-    "n_measured": 0,
-    "n_failed": 0,
-    "load_time_s": null,
-    "peak_vram_mb": 9000,
-    "requested_context": null,
-    "served_context": null,
-    "backend": "ollama",
-    "gpu_memory_utilization": null,
-    "n_gpu_layers": null,
-    "gpus": []
-  },
+  "judge": null,
+  "telemetry": null,
   "contention": null,
-  "durability": {
-    "case_retries": 0,
-    "backend_relaunches": 0,
-    "resumed_cases": 0
-  },
+  "durability": null,
   "prompt_system_provenance": null,
   "context_window": null,
-  "n_cases": 2
+  "n_cases": 2,
+  "score_rows": {
+    "record_contract": {
+      "schema_id": "llb.case-score",
+      "schema_version": "1.0.0"
+    },
+    "owner": null,
+    "columns": null
+  },
+  "artifacts": [
+    {
+      "name": "study-design.json",
+      "media_type": "application/json",
+      "digest": "sha256:c4eedd3892d2d4e4fa3742d52dbd9b99d30a769a8ecf04db48d8cf73939d1982",
+      "n_bytes": 200,
+      "record_contract": {
+        "schema_id": "llb.study-design",
+        "schema_version": "1.0.0"
+      },
+      "human_report": null,
+      "study_id": "artifact-contract-sample-study-v1"
+    },
+    {
+      "name": "comparison.md",
+      "media_type": "text/markdown",
+      "digest": "sha256:70ce05c771eaef1dc4bcdafde1ccb6e201825d87b687ec72cb715dd058e7761e",
+      "n_bytes": 43,
+      "record_contract": null,
+      "human_report": "Rendered human-readable report; no consumer parses it.",
+      "study_id": null
+    }
+  ],
+  "adaptive_budget": {
+    "floor": 4
+  }
 }

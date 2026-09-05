@@ -1,8 +1,8 @@
 {
   "$defs": {
-    "PassageRecord": {
+    "PassageRow": {
       "additionalProperties": false,
-      "description": "One selected anthology passage, with the exact source span it was cut from.",
+      "description": "One selected anthology passage, its source span preserved exactly.",
       "properties": {
         "char_end": {
           "minimum": 0,
@@ -15,12 +15,10 @@
           "type": "integer"
         },
         "doc_id": {
-          "minLength": 1,
           "title": "Doc Id",
           "type": "string"
         },
         "passage_id": {
-          "minLength": 1,
           "title": "Passage Id",
           "type": "string"
         },
@@ -36,18 +34,18 @@
         "char_end",
         "text"
       ],
-      "title": "PassageRecord",
+      "title": "PassageRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.prompt-system-anthology:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`anthology.json`: the selected passages, in selection order.",
+  "description": "`anthology.json`: the passages a candidate prompt may attach, in selection order.",
   "properties": {
     "passages": {
       "items": {
-        "$ref": "#/$defs/PassageRecord"
+        "$ref": "#/$defs/PassageRow"
       },
       "title": "Passages",
       "type": "array"
@@ -67,6 +65,6 @@
     "schema_id",
     "schema_version"
   ],
-  "title": "PromptSystemAnthology",
+  "title": "AnthologyDocument",
   "type": "object"
 }

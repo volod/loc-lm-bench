@@ -9,11 +9,10 @@ Pure + deterministic -- the rendering it calls is the same the benchmark uses.
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
-import json
+from typing import Any, cast
 
-from llb.artifacts.records import decode, encode
-from llb.core.contracts.retrieval.prompt_system import PROMPT_SYSTEM_CANDIDATES_SCHEMA_ID
+from llb.artifacts.retrieval_graph.prompt_systems import read_member, write_member
+from llb.core.contracts.retrieval_graph.prompt_system import CANDIDATES_SCHEMA_ID
 from llb.prompt_system.budget import ContextBudget, DroppedContextReport, Tokenizer
 from llb.prompt_system.corpus import CorpusPackage
 from llb.prompt_system.manifest import prompt_system_id
@@ -24,8 +23,6 @@ STATUS_APPROVED = "approved"
 STATUS_REVISED = "revised"
 STATUS_PINNED = "pinned"
 STATUS_REJECTED = "rejected"
-CANDIDATES_CONTRACT_VERSION = "1.0.0"
-
 REVIEW_STATUSES = (
     STATUS_PENDING,
     STATUS_APPROVED,
@@ -122,9 +119,9 @@ def revise(
 
 
 def candidate_to_dict(candidate: PromptCandidate) -> dict[str, object]:
-    """The candidate as its contract row: a candidate with no tree states its absence."""
+    """The candidate as its contract states it: an unrendered knowledge tree is absent, not empty."""
     data = asdict(candidate)
-    data["knowledge_tree"] = data["knowledge_tree"] or None
+    data["knowledge_tree"] = candidate.knowledge_tree or None
     return data
 
 
@@ -143,25 +140,13 @@ def candidate_from_dict(data: dict[str, Any]) -> PromptCandidate:
 
 
 def save_candidates(candidates: list[PromptCandidate], path: Path | str) -> None:
-    """Write the review surface as its registered contract."""
-    record = encode(
-        PROMPT_SYSTEM_CANDIDATES_SCHEMA_ID,
-        CANDIDATES_CONTRACT_VERSION,
-        {"candidates": [candidate_to_dict(c) for c in candidates]},
-    )
-    Path(path).write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = [candidate_to_dict(c) for c in candidates]
+    write_member(Path(path), CANDIDATES_SCHEMA_ID, payload)
 
 
 def load_candidates(path: Path | str) -> list[PromptCandidate]:
-    """Read a review surface at the current contract, current or pre-contract.
-
-    A package written before the family was registered holds the bare candidate array, which has
-    nowhere to carry an identity; the family's declared normalizer says that array became the
-    `candidates` field, so this reader and the dataset reader wrap it the same way.
-    """
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    decoded = decode(PROMPT_SYSTEM_CANDIDATES_SCHEMA_ID, raw, source=str(path))
-    return [candidate_from_dict(item) for item in decoded.get("candidates", [])]
+    rows = read_member(Path(path), CANDIDATES_SCHEMA_ID)
+    return [candidate_from_dict(item) for item in cast(list[dict[str, Any]], rows)]
 
 
 @dataclass(slots=True)

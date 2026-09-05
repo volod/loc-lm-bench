@@ -615,7 +615,7 @@
   "$id": "urn:llb:artifact-contract:llb.run-manifest:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`manifest.json`: the immutable per-run record -- config, environment, headline metrics.\n\nEvery optional block is a lane that may not have run (telemetry, contention, a judge, a\nprompt-system package, a document-lane context window), not a field a reader defaults.",
+  "description": "`manifest.json` as this project wrote it before the registry existed.\n\nEvery field here is exactly what a pre-contract bundle carries, which is why version 1 is the\nversion a bundle with no identity is read at. What it could NOT say is what the rest of its\nown directory is: the score rows had no declared contract and an additional artifact was any\nname with any content.",
   "properties": {
     "config": {
       "additionalProperties": true,
@@ -647,6 +647,7 @@
       "title": "Context Window"
     },
     "created_at": {
+      "minLength": 1,
       "title": "Created At",
       "type": "string"
     },
@@ -765,8 +766,10 @@
   "required": [
     "run_id",
     "run_name",
-    "config"
+    "created_at",
+    "config",
+    "env"
   ],
-  "title": "RunManifest",
+  "title": "RunManifestV1",
   "type": "object"
 }

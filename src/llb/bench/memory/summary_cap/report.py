@@ -1,9 +1,9 @@
 """Rendering and persistence for the summarize-input-cap study."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.summary_cap.reading import METHOD, READING_EXACT, STUDY_KIND
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -174,9 +174,14 @@ def persist_summary_cap(
         },
         case_rows=cells,
         mirror=mirror,
-        artifacts=[
-            study_design("summary-input-cap-design.json", design),
-            study_analysis("summary-input-cap-analysis.json", analysis),
-            table_report("summary-input-cap.md", "Compact summarize-input cap", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "summary-input-cap-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "summary-input-cap-analysis.json": (
+                json.dumps(analysis, indent=2, sort_keys=True) + "\n"
+            ),
+            "summary-input-cap.md": (
+                "# Compact summarize-input cap\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

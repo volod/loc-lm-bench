@@ -4,18 +4,15 @@ The prepare/review CLI writes one `candidates.json` plus a run manifest. `run-ev
 selected candidate's rendered prompts and the provenance block that makes the score traceable.
 """
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 
-from llb.prompt_system.manifest import PromptSystemProvenance, template_digest
 from llb.artifacts.errors import ArtifactContractError
-from llb.artifacts.gates import refuse_unreadable_prompt_system
-from llb.artifacts.records import decode
-from llb.core.contracts.retrieval.prompt_system import PROMPT_SYSTEM_MANIFEST_SCHEMA_ID
+from llb.artifacts.retrieval_graph.prompt_systems import read_prompt_system_manifest
+from llb.prompt_system.manifest import PromptSystemProvenance, template_digest
 from llb.prompt_system.pipeline import CANDIDATES_FILE, MANIFEST_FILE, METHOD
 from llb.prompt_system.review import PromptCandidate, load_candidates
+from llb.core.contracts.retrieval_graph.prompt_system import PromptSystemManifestDocument
 from llb.prompt_system.template import PromptPackage
 
 
@@ -37,10 +34,6 @@ def resolve_prompt_package(
     for run_dir, candidates_path in _candidate_locations(
         data_dir, prompt_system_id, prompt_package
     ):
-        # The whole package is checked before one candidate is taken out of it: a manifest this
-        # build cannot read makes the provenance below unreadable too, and the benchmark records
-        # that provenance per run.
-        refuse_unreadable_prompt_system(run_dir)
         candidates = load_candidates(candidates_path)
         candidate = next((c for c in candidates if c.prompt_system_id == prompt_system_id), None)
         if candidate is None:
@@ -86,46 +79,27 @@ def _provenance(run_dir: Path, candidate: PromptCandidate) -> PromptSystemProven
     manifest = _read_manifest(run_dir)
     provenance: PromptSystemProvenance = {
         "prompt_system_id": candidate.prompt_system_id,
-        "corpus_digest": str(manifest["corpus_digest"]),
-        "mapping_digest": str(manifest["mapping_digest"]),
+        "corpus_digest": manifest.corpus_digest,
+        "mapping_digest": manifest.mapping_digest,
         "template_revision": template_digest(candidate.fields),
-        "tokenizer": str(manifest["tokenizer"]),
-        "context_window": _int_value(manifest["context_window"]),
-        "prompt_budget_tokens": _int_value(manifest["prompt_budget_tokens"]),
+        "tokenizer": manifest.tokenizer,
+        "context_window": manifest.context_window,
+        "prompt_budget_tokens": manifest.prompt_budget_tokens,
     }
     if candidate.knowledge_tree:
         provenance["knowledge_tree"] = candidate.knowledge_tree
     return provenance
 
 
-def _read_manifest(run_dir: Path) -> dict[str, Any]:
+def _read_manifest(run_dir: Path) -> PromptSystemManifestDocument:
+    """The run's manifest at the current contract; a member it cannot state is a refusal.
+
+    Every provenance field this returns is required by the contract, so the reader no longer
+    checks for missing keys itself: an incomplete or unreadable manifest refuses at the contract
+    with the reason, rather than raising a KeyError at whichever line touched the field first.
+    """
     path = run_dir / MANIFEST_FILE
     try:
-        payload = decode(
-            PROMPT_SYSTEM_MANIFEST_SCHEMA_ID,
-            json.loads(path.read_text(encoding="utf-8")),
-            source=str(path),
-        )
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"cannot load prompt-system manifest: {path}") from exc
+        return read_prompt_system_manifest(path)
     except ArtifactContractError as exc:
-        raise ValueError(f"cannot read prompt-system manifest: {exc}") from exc
-    required = (
-        "corpus_digest",
-        "mapping_digest",
-        "tokenizer",
-        "context_window",
-        "prompt_budget_tokens",
-    )
-    missing = [key for key in required if key not in payload]
-    if missing:
-        raise ValueError(f"prompt-system manifest missing keys {missing}: {path}")
-    return cast(dict[str, Any], payload)
-
-
-def _int_value(value: object) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        return int(value)
-    raise TypeError(f"expected int-compatible value, got {type(value).__name__}")
+        raise ValueError(f"cannot load prompt-system manifest: {path}: {exc}") from exc

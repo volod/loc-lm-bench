@@ -1,9 +1,9 @@
 """Rendering and persistence for the fold-step crossover study."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.fold_step.reading import (
     METHOD,
     READING_CONFIRMED,
@@ -166,9 +166,12 @@ def persist_fold_steps(
         },
         case_rows=cells,
         mirror=mirror,
-        artifacts=[
-            study_design("fold-step-design.json", design),
-            study_analysis("fold-step-analysis.json", analysis),
-            table_report("fold-step-crossover.md", "Compact fold-step crossover", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "fold-step-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "fold-step-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+            "fold-step-crossover.md": (
+                "# Compact fold-step crossover\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

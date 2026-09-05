@@ -1,8 +1,8 @@
 {
   "$defs": {
-    "DroppedContextRecord": {
+    "DroppedContextRow": {
       "additionalProperties": false,
-      "description": "The whole budget fit for one candidate.",
+      "description": "The budget the candidate was fitted to and everything it could not carry.",
       "properties": {
         "budget_tokens": {
           "minimum": 0,
@@ -11,7 +11,7 @@
         },
         "sections": {
           "items": {
-            "$ref": "#/$defs/DroppedSectionRecord"
+            "$ref": "#/$defs/DroppedSectionRow"
           },
           "title": "Sections",
           "type": "array"
@@ -26,12 +26,12 @@
         "budget_tokens",
         "used_tokens"
       ],
-      "title": "DroppedContextRecord",
+      "title": "DroppedContextRow",
       "type": "object"
     },
-    "DroppedSectionRecord": {
+    "DroppedSectionRow": {
       "additionalProperties": false,
-      "description": "One section of the budget fit: what it kept and what did not fit.",
+      "description": "What one attached-context section lost when it was fitted to the budget.",
       "properties": {
         "dropped_ids": {
           "items": {
@@ -66,24 +66,16 @@
         "n_dropped",
         "dropped_tokens"
       ],
-      "title": "DroppedSectionRecord",
+      "title": "DroppedSectionRow",
       "type": "object"
     },
-    "KnowledgeTreeRecord": {
+    "KnowledgeTreeRow": {
       "additionalProperties": false,
-      "description": "The knowledge-tree block a candidate carried, and where it came from.\n\n`baseline_prompt_system_id` names the no-tree control this candidate is read against; it is\nabsent for a candidate the tuning grid did not pair with one.",
+      "description": "The knowledge-tree block a candidate carried, and where its lines came from.\n\n`budget_tokens` is what the render was actually given -- the requested budget capped by the\nprompt budget -- so `requested_budget_tokens` states the ask beside it. Every tree candidate\nalso names the no-tree control it varies (`baseline_prompt_system_id`), which is what makes it\nreadable as a comparison rather than as a lone candidate.",
       "properties": {
         "baseline_prompt_system_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Baseline Prompt System Id"
+          "title": "Baseline Prompt System Id",
+          "type": "string"
         },
         "budget_tokens": {
           "minimum": 0,
@@ -103,6 +95,11 @@
         "kept_lines": {
           "minimum": 0,
           "title": "Kept Lines",
+          "type": "integer"
+        },
+        "requested_budget_tokens": {
+          "minimum": 0,
+          "title": "Requested Budget Tokens",
           "type": "integer"
         },
         "source_digest": {
@@ -126,46 +123,37 @@
         "kept_lines",
         "dropped_lines",
         "source_kind",
-        "source_digest"
+        "source_digest",
+        "requested_budget_tokens",
+        "baseline_prompt_system_id"
       ],
-      "title": "KnowledgeTreeRecord",
+      "title": "KnowledgeTreeRow",
       "type": "object"
     },
-    "NoKnowledgeTreeRecord": {
+    "PromptCandidateRow": {
       "additionalProperties": false,
-      "description": "The EMPTY object a candidate with no knowledge tree has always written.\n\nEvery tree-enabled grid renders no-tree controls, so this is the common form in every package\nwritten before this contract, not an edge case. It is a declared alternative rather than a\nreader's fixup, so the generated JSON Schema accepts it too and an outside reader needs no\nPython of ours to validate an archived package.",
-      "properties": {},
-      "title": "NoKnowledgeTreeRecord",
-      "type": "object"
-    },
-    "PromptCandidateRecord": {
-      "additionalProperties": false,
-      "description": "One reviewable candidate: its id, its knobs, its rendered prompts, and its status.",
+      "description": "One reviewable candidate: its rendered prompts, its budget accounting, its status.",
       "properties": {
         "additional_prompt": {
           "title": "Additional Prompt",
           "type": "string"
         },
         "dropped_context": {
-          "$ref": "#/$defs/DroppedContextRecord"
+          "$ref": "#/$defs/DroppedContextRow"
         },
         "fields": {
-          "$ref": "#/$defs/TemplateFieldsRecord"
+          "$ref": "#/$defs/TemplateFieldsRow"
         },
         "knowledge_tree": {
           "anyOf": [
             {
-              "$ref": "#/$defs/KnowledgeTreeRecord"
-            },
-            {
-              "$ref": "#/$defs/NoKnowledgeTreeRecord"
+              "$ref": "#/$defs/KnowledgeTreeRow"
             },
             {
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Knowledge Tree"
+          "default": null
         },
         "note": {
           "default": "",
@@ -173,12 +161,10 @@
           "type": "string"
         },
         "prompt_system_id": {
-          "minLength": 1,
           "title": "Prompt System Id",
           "type": "string"
         },
         "status": {
-          "minLength": 1,
           "title": "Status",
           "type": "string"
         },
@@ -201,10 +187,10 @@
         "used_tokens",
         "status"
       ],
-      "title": "PromptCandidateRecord",
+      "title": "PromptCandidateRow",
       "type": "object"
     },
-    "TemplateFieldsRecord": {
+    "TemplateFieldsRow": {
       "additionalProperties": false,
       "description": "The operator-editable knobs one candidate was rendered from.",
       "properties": {
@@ -222,11 +208,13 @@
           "type": "string"
         },
         "knowledge_tree_budget": {
+          "default": 0,
           "minimum": 0,
           "title": "Knowledge Tree Budget",
           "type": "integer"
         },
         "knowledge_tree_depth": {
+          "default": 0,
           "minimum": 0,
           "title": "Knowledge Tree Depth",
           "type": "integer"
@@ -245,22 +233,20 @@
         "instruction",
         "metadata_density",
         "graph_reference_style",
-        "anthology_size",
-        "knowledge_tree_depth",
-        "knowledge_tree_budget"
+        "anthology_size"
       ],
-      "title": "TemplateFieldsRecord",
+      "title": "TemplateFieldsRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.prompt-system-candidates:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`candidates.json`: the review surface, and the file a review session writes back.",
+  "description": "`candidates.json`: every generated candidate and the review status it carries.",
   "properties": {
     "candidates": {
       "items": {
-        "$ref": "#/$defs/PromptCandidateRecord"
+        "$ref": "#/$defs/PromptCandidateRow"
       },
       "title": "Candidates",
       "type": "array"
@@ -280,6 +266,6 @@
     "schema_id",
     "schema_version"
   ],
-  "title": "PromptSystemCandidates",
+  "title": "PromptCandidatesDocument",
   "type": "object"
 }

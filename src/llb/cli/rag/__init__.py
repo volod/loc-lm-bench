@@ -4,11 +4,11 @@ Importing each submodule registers its @app.command handlers on the shared Typer
 """
 
 from llb.cli.rag import (  # noqa: F401
+    artifact_generations,
     compare_embeddings,
     compare_rerankers,
     compare_retrieval,
     compare_stores,
-    check_store,
     duplicate_residue,
     fusion_calibration,
     fusion_evidence,

@@ -34,6 +34,7 @@ from llb.scoring.tooling import run as tooling
 from llb.scoring.aggregate import TIER_TOOLING
 from llb.scoring.leaderboard import ModelResult, bootstrap_mean_ci
 from llb.bench.tooling.protocol import TOOL_PROTOCOL_TEXT, ToolCaller, text_tool_caller
+from llb.core.contracts.run_bundle.rows import TOOLING_CASE_SCHEMA_ID
 
 _LOG = logging.getLogger(__name__)
 
@@ -154,6 +155,7 @@ def run_tooling(
             config=config,
             metrics=metrics,
             case_rows=rows,
+            score_contract=TOOLING_CASE_SCHEMA_ID,
             mirror=mirror,
         )
         _LOG.info(

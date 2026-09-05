@@ -113,12 +113,11 @@ def _build_catalog(registry: ContractRegistry) -> ArtifactCatalog:
                 compatibility=declarations,
                 extension_point=definition.extension_point,
                 legacy_read_version=definition.legacy_version,
-                legacy_document_field=definition.legacy_document_field,
             )
         )
     return ArtifactCatalog(
         schema_id="llb.artifact-catalog",
-        schema_version="1.0.0",
+        schema_version="1.1.0",
         odcs_api_version=ODCS_API_VERSION,
         contracts=entries,
     )

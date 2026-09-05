@@ -1,11 +1,10 @@
 {
   "$defs": {
-    "DocMetadataRecord": {
+    "DocMetadataRow": {
       "additionalProperties": false,
-      "description": "What the package says about one source document.",
+      "description": "One document's summary as the prompt template surfaces it.",
       "properties": {
         "doc_id": {
-          "minLength": 1,
           "title": "Doc Id",
           "type": "string"
         },
@@ -37,18 +36,18 @@
         "n_chars",
         "n_paragraphs"
       ],
-      "title": "DocMetadataRecord",
+      "title": "DocMetadataRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.prompt-system-doc-metadata:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`doc_metadata.json`: one row per source document.",
+  "description": "`doc_metadata.json`: the per-document summary block, in corpus order.",
   "properties": {
     "documents": {
       "items": {
-        "$ref": "#/$defs/DocMetadataRecord"
+        "$ref": "#/$defs/DocMetadataRow"
       },
       "title": "Documents",
       "type": "array"
@@ -68,6 +67,6 @@
     "schema_id",
     "schema_version"
   ],
-  "title": "PromptSystemDocMetadata",
+  "title": "DocMetadataDocument",
   "type": "object"
 }

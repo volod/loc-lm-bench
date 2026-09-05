@@ -1,5 +1,6 @@
 """Frozen bilingual bundle, paired report, and CLI registration tests."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,6 @@ from tests.llb.bench.knowledge_cutoff.bilingual_cutoff_helpers import (
     loaded_events,
     translation,
 )
-from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.knowledge_cutoff.paired import load_reviewed_lanes, run_bilingual_cutoff
 from llb.bench.knowledge_cutoff.paired_report import paired_statistics
 from llb.bench.knowledge_cutoff.translation_workflow import draft_translation_bundle
@@ -51,7 +51,7 @@ def test_frozen_bundle_runs_aligned_paired_report(tmp_path):
     assert result.paired["accuracy_delta"] == 0.0
     assert result.paths is not None
     report_dir = Path(result.paths["manifest"]).parent
-    report = read_study_analysis(report_dir / "report.json")
+    report = json.loads((report_dir / "report.json").read_text(encoding="utf-8"))
     assert report["paired"]["bootstrap"]["samples"] == 2000
     assert "Monthly Language Deltas" in (report_dir / "report.md").read_text(encoding="utf-8")
     assert (bundle / REVIEW_SUMMARY_FILENAME).is_file()

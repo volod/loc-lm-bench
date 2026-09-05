@@ -23,12 +23,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llb.artifacts.runs.bundle import read_run_manifest, read_score_rows
 from llb.board.miss_analysis.model import MISS_RETRIEVAL, MissRecord
 from llb.core.config import RUN_EVAL_METHOD, RunConfig
 from llb.core.contracts.common import JsonObject
 from llb.executor import durability_journal as durability
 from llb.goldset.schema import GoldItem
+from llb.board.io import admitted_manifest
 
 _LOG = logging.getLogger(__name__)
 
@@ -69,9 +69,8 @@ def _find_finalized(run_root: Path, name: str, n_items: int) -> Path | None:
     for manifest_path in sorted(run_root.glob("*/manifest.json"), reverse=True):
         if manifest_path.parent.name.startswith("."):
             continue
-        try:
-            manifest = read_run_manifest(manifest_path)
-        except (OSError, json.JSONDecodeError):
+        manifest = admitted_manifest(manifest_path)
+        if manifest is None:
             continue
         if manifest.get("run_name") == name and int(manifest.get("n_cases", -1)) == n_items:
             return manifest_path.parent
@@ -111,7 +110,7 @@ def _probe_outcome(
 ) -> JsonObject:
     """Measured probe evidence from the probe bundle's scores: subset mean objective at depth k
     plus how many of the source run's retrieval misses the deeper/shallower context recovered."""
-    rows = read_score_rows(probe_dir)
+    rows = _read_jsonl(probe_dir / "scores.jsonl")
     objectives = [float(row.get("objective_score", 0.0)) for row in rows]
     recovered = sum(
         1

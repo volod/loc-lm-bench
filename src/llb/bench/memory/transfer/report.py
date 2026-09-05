@@ -1,9 +1,9 @@
 """Aggregate rendering and persistence for compact-memory transfer."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.memory.transfer.run import METHOD, STUDY_KIND
 from llb.bench.common import Mirror, persist_category_run
 from llb.core.contracts.runs import RunPaths
@@ -86,9 +86,12 @@ def persist_transfer(
         },
         case_rows=matrix,
         mirror=mirror,
-        artifacts=[
-            study_design("transfer-design.json", design),
-            study_analysis("transfer-analysis.json", analysis),
-            table_report("transfer-comparison.md", "Compact-memory cross-model transfer", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "transfer-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "transfer-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+            "transfer-comparison.md": (
+                "# Compact-memory cross-model transfer\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

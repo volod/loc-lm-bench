@@ -4,9 +4,7 @@ import pytest
 
 from llb.tracking import manifest as manifest_module
 from llb.tracking import mlflow as mlflow_module
-from llb.artifacts.runs.fixture import case_score_row
-from llb.core.contracts.runs import RunManifest
-from llb.tracking.manifest import persist_run
+from llb.tracking.manifest import RunManifest, persist_run
 from llb.tracking.server import build_mlflow_command
 
 
@@ -29,7 +27,9 @@ def test_manifest_written_before_mirror(tmp_path):
         seen["manifest_exists"] = (out_dir / "manifest.json").exists()
         seen["scores_exists"] = any(out_dir.glob("scores.*"))
 
-    paths = persist_run(make_manifest(), [case_score_row("x")], out_dir, mirror=mirror)
+    paths = persist_run(
+        make_manifest(), [{"item_id": "x"}], out_dir, mirror=mirror, score_owner="test"
+    )
     assert seen["manifest_exists"] is True
     assert seen["scores_exists"] is True
     assert paths["mirror"] == "ok"
@@ -93,7 +93,9 @@ def test_mirror_failure_does_not_lose_run(tmp_path):
     def boom(manifest, out_dir):
         raise RuntimeError("mlflow down")
 
-    paths = persist_run(make_manifest(), [case_score_row("x")], out_dir, mirror=boom)
+    paths = persist_run(
+        make_manifest(), [{"item_id": "x"}], out_dir, mirror=boom, score_owner="test"
+    )
     assert (out_dir / "manifest.json").exists()
     assert paths["mirror"].startswith("failed")
     data = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -102,9 +104,17 @@ def test_mirror_failure_does_not_lose_run(tmp_path):
 
 def test_existing_canonical_run_is_not_overwritten(tmp_path):
     out_dir = tmp_path / "run"
-    persist_run(make_manifest(), [case_score_row("x")], out_dir, mirror=lambda *args: None)
+    persist_run(
+        make_manifest(), [{"item_id": "x"}], out_dir, mirror=lambda *args: None, score_owner="test"
+    )
     with pytest.raises(FileExistsError, match="already exist"):
-        persist_run(make_manifest(), [case_score_row("y")], out_dir, mirror=lambda *args: None)
+        persist_run(
+            make_manifest(),
+            [{"item_id": "y"}],
+            out_dir,
+            mirror=lambda *args: None,
+            score_owner="test",
+        )
 
 
 def test_canonical_bundle_is_not_published_when_score_write_fails(tmp_path, monkeypatch):
@@ -113,17 +123,18 @@ def test_canonical_bundle_is_not_published_when_score_write_fails(tmp_path, monk
     (staging_dir / "vllm").mkdir(parents=True)
     (staging_dir / "vllm" / "server.log").write_text("log", encoding="utf-8")
 
-    def fail_scores(rows, path, schema_id):
+    def fail_scores(rows, path):
         raise OSError("disk full")
 
     monkeypatch.setattr(manifest_module, "write_scores", fail_scores)
     with pytest.raises(OSError, match="disk full"):
         persist_run(
             make_manifest(),
-            [case_score_row("x")],
+            [{"item_id": "x"}],
             out_dir,
             mirror=lambda *args: None,
             staging_dir=staging_dir,
+            score_owner="test",
         )
 
     assert not out_dir.exists()
@@ -138,10 +149,11 @@ def test_staged_backend_logs_publish_with_canonical_bundle(tmp_path):
 
     persist_run(
         make_manifest(),
-        [case_score_row("x")],
+        [{"item_id": "x"}],
         out_dir,
         mirror=lambda *args: None,
         staging_dir=staging_dir,
+        score_owner="test",
     )
 
     assert (out_dir / "manifest.json").exists()

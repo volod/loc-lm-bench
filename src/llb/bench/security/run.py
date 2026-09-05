@@ -37,6 +37,7 @@ from llb.bench.security.scoring import (
     _run_refusal_judge,
     _score_cases,
 )
+from llb.core.contracts.run_bundle.rows import SECURITY_CASE_SCHEMA_ID
 from llb.bench.security.persistence import (
     _judge_config,
     _judge_status,
@@ -130,6 +131,7 @@ def run_security(
             config=config,
             metrics=_security_metrics(result, scored.reliability, tokens_per_s),
             case_rows=scored.rows,
+            score_contract=SECURITY_CASE_SCHEMA_ID,
             judge=_judge_status(judge_cfg, judge),
             mirror=mirror,
         )

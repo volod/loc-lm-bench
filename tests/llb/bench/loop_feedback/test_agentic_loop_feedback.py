@@ -1,8 +1,8 @@
 """Localized repeat-feedback variants, redirect telemetry, and paired gates."""
 
+import json
 from pathlib import Path
 
-from llb.artifacts.runs.bundle import read_study_analysis
 from llb.bench.agentic.loop_policy import (
     MALFORMED_ANSWER,
     REPEATED_ALLOW,
@@ -131,7 +131,7 @@ def test_localized_feedback_redirects_and_clears_paired_gates(tmp_path: Path, ep
     for report in run.reports:
         assert report.paths is not None
         run_dir = Path(report.paths["manifest"]).parent
-        persisted = read_study_analysis(run_dir / "feedback-analysis.json")
+        persisted = json.loads((run_dir / "feedback-analysis.json").read_text())
         assert persisted["task_family_counts"] == {"mutation": 4, "read": 4}
 
 

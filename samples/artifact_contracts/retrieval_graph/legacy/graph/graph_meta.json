@@ -1,9 +1,0 @@
-{
-  "backend": "graph",
-  "n_nodes": 2,
-  "n_edges": 1,
-  "n_communities": 1,
-  "n_documents": 1,
-  "khop_depth": 2,
-  "doc_fingerprints": {}
-}

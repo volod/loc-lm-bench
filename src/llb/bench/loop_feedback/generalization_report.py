@@ -1,9 +1,9 @@
 """Rendering and persistence for repeat-feedback generalization evidence."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.loop_feedback.generalization import STUDY_KIND
 from llb.bench.loop_policy.report import METHOD
 from llb.bench.common import Mirror, persist_category_run
@@ -64,9 +64,12 @@ def persist_feedback_generalization(
         },
         case_rows=cast(list[dict[str, object]], analysis["seed_rows"]),
         mirror=mirror,
-        artifacts=[
-            study_design("generalization-design.json", design),
-            study_analysis("generalization-analysis.json", analysis),
-            table_report("generalization-comparison.md", "Repeat-feedback generalization", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "generalization-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "generalization-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+            "generalization-comparison.md": (
+                "# Repeat-feedback generalization\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

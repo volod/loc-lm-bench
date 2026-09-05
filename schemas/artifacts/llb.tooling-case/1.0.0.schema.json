@@ -1,0 +1,93 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.tooling-case:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One tooling case: which tool was selected and whether its arguments held.",
+  "properties": {
+    "arguments_exact": {
+      "title": "Arguments Exact",
+      "type": "number"
+    },
+    "attempted": {
+      "title": "Attempted",
+      "type": "boolean"
+    },
+    "called_tool": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Called Tool"
+    },
+    "correct": {
+      "title": "Correct",
+      "type": "number"
+    },
+    "expected_tool": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Expected Tool"
+    },
+    "item_id": {
+      "title": "Item Id",
+      "type": "string"
+    },
+    "no_hallucinated_tool": {
+      "title": "No Hallucinated Tool",
+      "type": "number"
+    },
+    "objective_score": {
+      "title": "Objective Score",
+      "type": "number"
+    },
+    "schema_id": {
+      "const": "llb.tooling-case",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_valid": {
+      "title": "Schema Valid",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tool_selected": {
+      "title": "Tool Selected",
+      "type": "number"
+    },
+    "well_formed": {
+      "title": "Well Formed",
+      "type": "number"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "item_id",
+    "expected_tool",
+    "called_tool",
+    "attempted",
+    "tool_selected",
+    "schema_valid",
+    "arguments_exact",
+    "no_hallucinated_tool",
+    "well_formed",
+    "correct",
+    "objective_score"
+  ],
+  "title": "ToolingCaseRecord",
+  "type": "object"
+}

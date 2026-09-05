@@ -1,31 +1,1016 @@
 {
+  "$defs": {
+    "ComparisonItemOutcomeRow": {
+      "additionalProperties": false,
+      "description": "One item's per-lane metric values, the draw every paired interval is resampled from.",
+      "properties": {
+        "item_id": {
+          "title": "Item Id",
+          "type": "string"
+        },
+        "lanes": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "Lanes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "item_id"
+      ],
+      "title": "ComparisonItemOutcomeRow",
+      "type": "object"
+    },
+    "ComparisonLaneRow": {
+      "additionalProperties": false,
+      "description": "One lane's span metrics, with the paired reading that says whether it separates.",
+      "properties": {
+        "k": {
+          "minimum": 0,
+          "title": "K",
+          "type": "integer"
+        },
+        "mrr": {
+          "title": "Mrr",
+          "type": "number"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "paired_vs_baseline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PairedRow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recall_at_k": {
+          "title": "Recall At K",
+          "type": "number"
+        },
+        "served_chars_at_k": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Served Chars At K"
+        },
+        "span_char_coverage_at_k": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span Char Coverage At K"
+        },
+        "span_intact_at_k": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span Intact At K"
+        }
+      },
+      "required": [
+        "n",
+        "k",
+        "recall_at_k",
+        "mrr"
+      ],
+      "title": "ComparisonLaneRow",
+      "type": "object"
+    },
+    "ComparisonSliceRow": {
+      "additionalProperties": false,
+      "description": "One question-type slice: its item count and every lane scored on those items alone.",
+      "properties": {
+        "backends": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComparisonLaneRow"
+          },
+          "title": "Backends",
+          "type": "object"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n"
+      ],
+      "title": "ComparisonSliceRow",
+      "type": "object"
+    },
+    "ComparisonUncertaintyRow": {
+      "additionalProperties": false,
+      "description": "What the intervals were drawn with, so a report is reproducible from its own header.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "eligible_lanes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Eligible Lanes",
+          "type": "array"
+        },
+        "resamples": {
+          "minimum": 0,
+          "title": "Resamples",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "resamples",
+        "confidence",
+        "seed"
+      ],
+      "title": "ComparisonUncertaintyRow",
+      "type": "object"
+    },
+    "ComparisonVerdictRow": {
+      "additionalProperties": false,
+      "description": "Adopt-or-retain against the declared baseline, and why it says that.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "decision": {
+          "title": "Decision",
+          "type": "string"
+        },
+        "lane": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lane"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "selection_adjustment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SelectionAdjustmentRow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "decision",
+        "reason"
+      ],
+      "title": "ComparisonVerdictRow",
+      "type": "object"
+    },
+    "DuplicateCensus": {
+      "additionalProperties": false,
+      "description": "The duplicate rate of a chunk set at one tier (`llb.rag.duplicates.collapse`).",
+      "properties": {
+        "collapsed": {
+          "minimum": 0,
+          "title": "Collapsed",
+          "type": "integer"
+        },
+        "cross_document_groups": {
+          "minimum": 0,
+          "title": "Cross Document Groups",
+          "type": "integer"
+        },
+        "duplicate_chunks": {
+          "minimum": 0,
+          "title": "Duplicate Chunks",
+          "type": "integer"
+        },
+        "duplicate_share": {
+          "title": "Duplicate Share",
+          "type": "number"
+        },
+        "groups": {
+          "minimum": 0,
+          "title": "Groups",
+          "type": "integer"
+        },
+        "intra_document_groups": {
+          "minimum": 0,
+          "title": "Intra Document Groups",
+          "type": "integer"
+        },
+        "largest_group": {
+          "minimum": 0,
+          "title": "Largest Group",
+          "type": "integer"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tier"
+        },
+        "unique": {
+          "minimum": 0,
+          "title": "Unique",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "unique",
+        "collapsed",
+        "duplicate_chunks",
+        "duplicate_share",
+        "groups",
+        "largest_group",
+        "intra_document_groups",
+        "cross_document_groups"
+      ],
+      "title": "DuplicateCensus",
+      "type": "object"
+    },
+    "FloorMarginRow": {
+      "additionalProperties": false,
+      "description": "The reading a recommendation rests on: the top two lanes and their gap versus the floor.",
+      "properties": {
+        "clearance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clearance"
+        },
+        "clears_floor": {
+          "title": "Clears Floor",
+          "type": "boolean"
+        },
+        "delta": {
+          "title": "Delta",
+          "type": "number"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "number"
+        },
+        "floor_multiple": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Floor Multiple"
+        },
+        "leader": {
+          "title": "Leader",
+          "type": "string"
+        },
+        "runner_up": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runner Up"
+        }
+      },
+      "required": [
+        "leader",
+        "delta",
+        "floor",
+        "clears_floor"
+      ],
+      "title": "FloorMarginRow",
+      "type": "object"
+    },
+    "IntervalRow": {
+      "additionalProperties": false,
+      "description": "A point estimate with its percentile-bootstrap confidence bounds.",
+      "properties": {
+        "hi": {
+          "title": "Hi",
+          "type": "number"
+        },
+        "lo": {
+          "title": "Lo",
+          "type": "number"
+        },
+        "mean": {
+          "title": "Mean",
+          "type": "number"
+        }
+      },
+      "required": [
+        "mean",
+        "lo",
+        "hi"
+      ],
+      "title": "IntervalRow",
+      "type": "object"
+    },
+    "LaneFloorRow": {
+      "additionalProperties": false,
+      "description": "One lane's metric bands plus the fragility that explains how wide they are.",
+      "properties": {
+        "cut_block": {
+          "title": "Cut Block",
+          "type": "number"
+        },
+        "fragile_items": {
+          "minimum": 0,
+          "title": "Fragile Items",
+          "type": "integer"
+        },
+        "mrr": {
+          "$ref": "#/$defs/ValueSpreadRow"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "recall_at_k": {
+          "$ref": "#/$defs/ValueSpreadRow"
+        },
+        "tie_items": {
+          "minimum": 0,
+          "title": "Tie Items",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recall_at_k",
+        "mrr",
+        "n",
+        "fragile_items",
+        "tie_items",
+        "cut_block"
+      ],
+      "title": "LaneFloorRow",
+      "type": "object"
+    },
+    "NoiseFloorRow": {
+      "additionalProperties": false,
+      "description": "Per-lane metric spread under score noise, plus the worst-lane floor per metric.",
+      "properties": {
+        "candidates": {
+          "minimum": 0,
+          "title": "Candidates",
+          "type": "integer"
+        },
+        "floor_mrr": {
+          "title": "Floor Mrr",
+          "type": "number"
+        },
+        "floor_recall_at_k": {
+          "title": "Floor Recall At K",
+          "type": "number"
+        },
+        "jitter": {
+          "title": "Jitter",
+          "type": "number"
+        },
+        "jitter_by_lane": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Jitter By Lane"
+        },
+        "lanes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LaneFloorRow"
+          },
+          "title": "Lanes",
+          "type": "object"
+        },
+        "margin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FloorMarginRow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "replicates": {
+          "minimum": 0,
+          "title": "Replicates",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "unscored": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unscored",
+          "type": "array"
+        }
+      },
+      "required": [
+        "replicates",
+        "jitter",
+        "candidates",
+        "seed",
+        "floor_recall_at_k",
+        "floor_mrr"
+      ],
+      "title": "NoiseFloorRow",
+      "type": "object"
+    },
+    "PairedComparisonRow": {
+      "additionalProperties": false,
+      "description": "A candidate-minus-baseline delta plus the item-level win/loss/tie ledger.",
+      "properties": {
+        "delta": {
+          "$ref": "#/$defs/IntervalRow"
+        },
+        "losses": {
+          "minimum": 0,
+          "title": "Losses",
+          "type": "integer"
+        },
+        "randomization_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization Method"
+        },
+        "randomization_p": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization P"
+        },
+        "randomization_samples": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization Samples"
+        },
+        "sign_test_p": {
+          "title": "Sign Test P",
+          "type": "number"
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadingStabilityRow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ties": {
+          "minimum": 0,
+          "title": "Ties",
+          "type": "integer"
+        },
+        "wins": {
+          "minimum": 0,
+          "title": "Wins",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "delta",
+        "wins",
+        "losses",
+        "ties",
+        "sign_test_p"
+      ],
+      "title": "PairedComparisonRow",
+      "type": "object"
+    },
+    "PairedRow": {
+      "additionalProperties": false,
+      "description": "One lane's paired delta against the baseline, keyed by metric.",
+      "properties": {
+        "baseline": {
+          "title": "Baseline",
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PairedComparisonRow"
+          },
+          "title": "Metrics",
+          "type": "object"
+        }
+      },
+      "required": [
+        "baseline"
+      ],
+      "title": "PairedRow",
+      "type": "object"
+    },
+    "ReadingStabilityRow": {
+      "additionalProperties": false,
+      "description": "One row's reading plus how close it sits to the cut that produced it.\n\n`looser_reading` / `tighter_reading` are what the neighbouring confidence conventions read, so\na `borderline` row is one whose reading is the convention's rather than the data's; `side`\nsays which way. `discordant` and `pairs` are absent on an artifact recorded before the\nevidence gate existed.",
+      "properties": {
+        "borderline": {
+          "title": "Borderline",
+          "type": "boolean"
+        },
+        "discordant": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discordant"
+        },
+        "looser_reading": {
+          "title": "Looser Reading",
+          "type": "string"
+        },
+        "p_positive": {
+          "title": "P Positive",
+          "type": "number"
+        },
+        "pairs": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pairs"
+        },
+        "randomization_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization Method"
+        },
+        "randomization_p": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization P"
+        },
+        "randomization_samples": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Randomization Samples"
+        },
+        "reading": {
+          "title": "Reading",
+          "type": "string"
+        },
+        "side": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Side"
+        },
+        "tighter_reading": {
+          "title": "Tighter Reading",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reading",
+        "p_positive",
+        "looser_reading",
+        "tighter_reading",
+        "borderline"
+      ],
+      "title": "ReadingStabilityRow",
+      "type": "object"
+    },
+    "SelectionAdjustmentRow": {
+      "additionalProperties": false,
+      "description": "Reproducible Westfall-Young reading over one declared hypothesis family.",
+      "properties": {
+        "family_size": {
+          "minimum": 0,
+          "title": "Family Size",
+          "type": "integer"
+        },
+        "items": {
+          "minimum": 0,
+          "title": "Items",
+          "type": "integer"
+        },
+        "method": {
+          "const": "westfall_young_step_down_max_t",
+          "title": "Method",
+          "type": "string"
+        },
+        "p_values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SelectionPValueRow"
+          },
+          "title": "P Values",
+          "type": "object"
+        },
+        "randomization_method": {
+          "enum": [
+            "exact",
+            "monte_carlo"
+          ],
+          "title": "Randomization Method",
+          "type": "string"
+        },
+        "samples": {
+          "minimum": 0,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "statistic": {
+          "const": "studentized_mean",
+          "title": "Statistic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "statistic",
+        "randomization_method",
+        "samples",
+        "seed",
+        "items",
+        "family_size"
+      ],
+      "title": "SelectionAdjustmentRow",
+      "type": "object"
+    },
+    "SelectionPValueRow": {
+      "additionalProperties": false,
+      "description": "Observed statistic plus its per-test and family-adjusted randomization p-values.",
+      "properties": {
+        "adjusted_p": {
+          "title": "Adjusted P",
+          "type": "number"
+        },
+        "statistic": {
+          "title": "Statistic",
+          "type": "number"
+        },
+        "unadjusted_p": {
+          "title": "Unadjusted P",
+          "type": "number"
+        }
+      },
+      "required": [
+        "statistic",
+        "unadjusted_p",
+        "adjusted_p"
+      ],
+      "title": "SelectionPValueRow",
+      "type": "object"
+    },
+    "StitchCensusRow": {
+      "additionalProperties": false,
+      "description": "Per-query stitching accounting: how much merged, and what it cost in served characters.",
+      "properties": {
+        "blocks_per_query": {
+          "title": "Blocks Per Query",
+          "type": "number"
+        },
+        "chars_delta_per_query": {
+          "title": "Chars Delta Per Query",
+          "type": "number"
+        },
+        "chars_per_query": {
+          "title": "Chars Per Query",
+          "type": "number"
+        },
+        "merged_per_query": {
+          "title": "Merged Per Query",
+          "type": "number"
+        },
+        "parts_per_query": {
+          "title": "Parts Per Query",
+          "type": "number"
+        },
+        "queries": {
+          "title": "Queries",
+          "type": "number"
+        },
+        "stitch_ms_per_query": {
+          "title": "Stitch Ms Per Query",
+          "type": "number"
+        }
+      },
+      "required": [
+        "queries",
+        "parts_per_query",
+        "blocks_per_query",
+        "merged_per_query",
+        "chars_per_query",
+        "chars_delta_per_query",
+        "stitch_ms_per_query"
+      ],
+      "title": "StitchCensusRow",
+      "type": "object"
+    },
+    "StitchLaneRow": {
+      "additionalProperties": false,
+      "description": "One stitched twin's accounting, plus the invariance its reading depends on.",
+      "properties": {
+        "base": {
+          "title": "Base",
+          "type": "string"
+        },
+        "census": {
+          "$ref": "#/$defs/StitchCensusRow"
+        },
+        "coverage_invariant": {
+          "title": "Coverage Invariant",
+          "type": "boolean"
+        },
+        "recall_invariant": {
+          "title": "Recall Invariant",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "base",
+        "census",
+        "recall_invariant",
+        "coverage_invariant"
+      ],
+      "title": "StitchLaneRow",
+      "type": "object"
+    },
+    "ValueSpreadRow": {
+      "additionalProperties": false,
+      "description": "Band of one number across replicate measurements, beside the value the report quotes.",
+      "properties": {
+        "base": {
+          "title": "Base",
+          "type": "number"
+        },
+        "half_width": {
+          "title": "Half Width",
+          "type": "number"
+        },
+        "max": {
+          "title": "Max",
+          "type": "number"
+        },
+        "mean": {
+          "title": "Mean",
+          "type": "number"
+        },
+        "min": {
+          "title": "Min",
+          "type": "number"
+        },
+        "std": {
+          "title": "Std",
+          "type": "number"
+        }
+      },
+      "required": [
+        "base",
+        "min",
+        "max",
+        "mean",
+        "std",
+        "half_width"
+      ],
+      "title": "ValueSpreadRow",
+      "type": "object"
+    }
+  },
   "$id": "urn:llb:artifact-contract:llb.retrieval-comparison:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One machine-readable retrieval-comparison sidecar and what produced it.",
+  "description": "The `compare-retrieval` sidecar: every lane, its paired reading, and the verdict.",
   "properties": {
-    "kind": {
-      "default": "comparison",
-      "enum": [
-        "comparison",
-        "calibration",
-        "probe",
-        "validation",
-        "run-config"
-      ],
-      "title": "Kind",
-      "type": "string"
-    },
-    "produced_by": {
-      "default": "unrecorded",
-      "minLength": 1,
-      "title": "Produced By",
-      "type": "string"
-    },
-    "report": {
-      "additionalProperties": true,
-      "title": "Report",
+    "backends": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ComparisonLaneRow"
+      },
+      "title": "Backends",
       "type": "object"
+    },
+    "best_recall": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Best Recall"
+    },
+    "duplicates": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/DuplicateCensus"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicates"
+    },
+    "duplicates_kept": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicates Kept"
+    },
+    "k": {
+      "minimum": 0,
+      "title": "K",
+      "type": "integer"
+    },
+    "n": {
+      "minimum": 0,
+      "title": "N",
+      "type": "integer"
+    },
+    "noise_floor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NoiseFloorRow"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "paired_items": {
+      "items": {
+        "$ref": "#/$defs/ComparisonItemOutcomeRow"
+      },
+      "title": "Paired Items",
+      "type": "array"
     },
     "schema_id": {
       "const": "llb.retrieval-comparison",
@@ -36,12 +1021,52 @@
       "const": "1.0.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "slices": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComparisonSliceRow"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Slices"
+    },
+    "stitching": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/StitchLaneRow"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stitching"
+    },
+    "uncertainty": {
+      "$ref": "#/$defs/ComparisonUncertaintyRow"
+    },
+    "verdict": {
+      "$ref": "#/$defs/ComparisonVerdictRow"
     }
   },
   "required": [
     "schema_id",
-    "schema_version"
+    "schema_version",
+    "k",
+    "n",
+    "uncertainty",
+    "verdict"
   ],
-  "title": "RetrievalComparisonSidecar",
+  "title": "RetrievalComparisonReport",
   "type": "object"
 }

@@ -21,7 +21,6 @@ Two rules keep the check honest about the ARCHIVE it reads:
   asking for a non-default value (`/ioverlap` on a run older than span identity).
 """
 
-import json
 import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -29,6 +28,7 @@ from typing import Any
 
 from llb.eval.answer_quality.lanes import BACKEND_FUSED
 from llb.eval.answer_quality.models import GROUNDING_DRAFTED, LaneSpec
+from llb.artifacts.run_bundle.manifests import read_run_manifest
 
 MANIFEST_FILENAME = "manifest.json"
 
@@ -63,7 +63,7 @@ def _manifest(run_dir: str) -> Mapping[str, Any]:
     manifest = Path(run_dir) / MANIFEST_FILENAME
     if not manifest.is_file():
         raise BundleMismatch(f"recorded run bundle {run_dir} has no {MANIFEST_FILENAME}")
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload = read_run_manifest(manifest).model_dump(mode="json")
     config = payload.get("config")
     if not isinstance(config, dict):
         raise BundleMismatch(f"{manifest}: no run config recorded")

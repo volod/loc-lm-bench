@@ -5,7 +5,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from llb.artifacts.runs.bundle import read_run_manifest
 from llb.core.fsutil import atomic_write_text
 from llb.rag.refresh.drift import RetrievalDrift
 
@@ -15,7 +14,7 @@ def objective_from_manifest(path: Path | str | None) -> float | None:
         return None
     value = Path(path)
     manifest_path = value / "manifest.json" if value.is_dir() else value
-    payload = read_run_manifest(manifest_path)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     metrics = payload.get("metrics") if isinstance(payload, dict) else None
     objective = metrics.get("objective_score") if isinstance(metrics, dict) else None
     if not isinstance(objective, int | float):

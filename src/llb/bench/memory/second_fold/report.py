@@ -1,9 +1,9 @@
 """Rendering and persistence for the second-fold trigger restatement."""
 
+import json
 from pathlib import Path
 from typing import cast
 
-from llb.artifacts.runs.members import study_analysis, study_design, table_report
 from llb.bench.agentic.design_fields import as_mapping, as_str
 from llb.bench.common import Mirror, persist_category_run
 from llb.bench.context_policy.compact_vs_cap_report import METHOD
@@ -194,9 +194,12 @@ def persist_second_fold(
         },
         case_rows=cells,
         mirror=mirror,
-        artifacts=[
-            study_design("second-fold-design.json", design),
-            study_analysis("second-fold-analysis.json", analysis),
-            table_report("second-fold.md", "Compact trigger rule through a second fold", table),
-        ],
+        study_id=cast(str, design["study_id"]),
+        artifacts={
+            "second-fold-design.json": json.dumps(design, indent=2, sort_keys=True) + "\n",
+            "second-fold-analysis.json": json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+            "second-fold.md": (
+                "# Compact trigger rule through a second fold\n\n```text\n" + table + "\n```\n"
+            ),
+        },
     )

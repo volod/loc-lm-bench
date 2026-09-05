@@ -10,11 +10,6 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from llb.artifacts.runs.bundle import (
-    read_retrieval_rows,
-    read_run_manifest,
-    read_score_rows,
-)
 from llb.core.contracts.rag import ChunkRecord
 from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
@@ -26,6 +21,8 @@ from llb.finetune.dataset_io import (
     DPO_FILENAME,
     SFT_FILENAME,
     _miss_weights,
+    _read_json,
+    _read_jsonl,
     _read_jsonl_if_exists,
     _read_misses,
     _write_jsonl,
@@ -33,16 +30,8 @@ from llb.finetune.dataset_io import (
     load_dataset_manifest,
 )
 
-RETRIEVAL_FILENAME = "retrieval.jsonl"
 TUNING_SPLIT = "tuning"
 MISS_THRESHOLD = 0.5
-
-
-def _retrieval_by_item(run_dir: Path) -> dict[str, JsonObject]:
-    """The bundle's retrieved-span records keyed by item, empty when the run recorded none."""
-    if not (run_dir / RETRIEVAL_FILENAME).is_file():
-        return {}
-    return {str(row["item_id"]): row for row in read_retrieval_rows(run_dir)}
 
 
 def export_finetune_set(
@@ -55,9 +44,11 @@ def export_finetune_set(
     """Export SFT and optional DPO records from one finalized tuning run bundle."""
     run_dir = Path(run_dir)
     out_dir = Path(out_dir)
-    manifest = read_run_manifest(run_dir)
-    rows = read_score_rows(run_dir)
-    retrieval = _retrieval_by_item(run_dir)
+    manifest = _read_json(run_dir / "manifest.json", label="run manifest")
+    rows = _read_jsonl(run_dir / "scores.jsonl")
+    retrieval = {
+        str(row["item_id"]): row for row in _read_jsonl_if_exists(run_dir / "retrieval.jsonl")
+    }
     gold_by_id = {item.id: item for item in load_goldset(goldset_path)}
     misses = _read_misses(misses_path)
     miss_ids = set(misses)

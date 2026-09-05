@@ -2,7 +2,6 @@
 
 import json
 
-from llb.artifacts.runs.fixture import run_manifest_payload, run_metrics
 from llb.conflicts.resolution.effect import objective_from_manifest, render_effect, write_effect
 from llb.rag.refresh.drift import RetrievalDrift
 
@@ -26,8 +25,7 @@ def test_objective_reads_run_manifest(tmp_path):
     run = tmp_path / "run"
     run.mkdir()
     (run / "manifest.json").write_text(
-        json.dumps(run_manifest_payload(metrics=run_metrics(objective_score=0.625))),
-        encoding="utf-8",
+        json.dumps({"metrics": {"objective_score": 0.625}}), encoding="utf-8"
     )
     assert objective_from_manifest(run) == 0.625
 

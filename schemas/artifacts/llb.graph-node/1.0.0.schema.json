@@ -1,6 +1,6 @@
 {
   "$defs": {
-    "GraphMentionRecord": {
+    "GraphMentionRow": {
       "additionalProperties": false,
       "description": "An offset-bearing evidence span plus the section that contains it.",
       "properties": {
@@ -15,7 +15,6 @@
           "type": "integer"
         },
         "doc_id": {
-          "minLength": 1,
           "title": "Doc Id",
           "type": "string"
         },
@@ -35,14 +34,14 @@
         "text",
         "section_title"
       ],
-      "title": "GraphMentionRecord",
+      "title": "GraphMentionRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.graph-node:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One entity node: its ontology type, its aliases, and every mention that grounds it.",
+  "description": "`nodes.jsonl`: one ontology-typed entity with its exact-grounded mention spans.",
   "properties": {
     "aliases": {
       "items": {
@@ -52,6 +51,7 @@
       "type": "array"
     },
     "community_id": {
+      "default": -1,
       "title": "Community Id",
       "type": "integer"
     },
@@ -61,7 +61,7 @@
     },
     "mentions": {
       "items": {
-        "$ref": "#/$defs/GraphMentionRecord"
+        "$ref": "#/$defs/GraphMentionRow"
       },
       "title": "Mentions",
       "type": "array"
@@ -71,7 +71,6 @@
       "type": "string"
     },
     "node_id": {
-      "minimum": 0,
       "title": "Node Id",
       "type": "integer"
     },
@@ -96,9 +95,8 @@
     "node_id",
     "name",
     "type",
-    "confidence",
-    "community_id"
+    "confidence"
   ],
-  "title": "GraphNodeRecord",
+  "title": "GraphNodeRow",
   "type": "object"
 }

@@ -6,6 +6,7 @@ BM25 side is the real `LexicalIndex`, so the whole hybrid path runs in the light
 install (no GPU, no [rag] extra).
 """
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,8 +20,7 @@ from llb.rag.filters import metadata_filter
 from llb.rag.vector_store.lexical_index import LexicalIndex
 from llb.rag.retrieval import evaluate_retrieval
 from llb.rag.vector_store.store import RagStore
-from llb.rag.vector_store.build import LEXICAL_FILE, MODE_HYBRID
-from tests.llb.store_meta_helpers import write_store_meta
+from llb.rag.vector_store.build import LEXICAL_FILE, META_FILE, MODE_HYBRID
 
 FIXTURE = Path("samples/goldsets/exact_terms_uk")
 
@@ -117,9 +117,24 @@ def test_flat_store_applies_chunk_filter_and_renumbers_ranks():
 
 def test_load_refuses_hybrid_store_without_lexical_file(tmp_path):
     (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
-    write_store_meta(tmp_path, mode=MODE_HYBRID)
+    (tmp_path / META_FILE).write_text(json.dumps(_hybrid_meta()), encoding="utf-8")
     with pytest.raises(SystemExit, match="missing its lexical index"):
         RagStore.load(tmp_path)
+
+
+def _hybrid_meta() -> dict[str, object]:
+    """The smallest store metadata the `llb.rag-store-meta` contract accepts."""
+    return {
+        "mode": MODE_HYBRID,
+        "strategy": "recursive",
+        "size": 800,
+        "overlap": 120,
+        "child_size": 400,
+        "embedding_model": "fake",
+        "n_indexed": 0,
+        "n_parents": 0,
+        "dim": 4,
+    }
 
 
 def test_run_eval_refuses_hybrid_config_over_dense_store(monkeypatch, tmp_path):

@@ -492,7 +492,7 @@ Generated artifacts must stay under `DATA_DIR`.
 
 | Area | Commands |
 | --- | --- |
-| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts`, `make check-bundle`, `make check-store`, `make check-run` |
+| Artifact contracts | `make check-artifact-contracts`, `make generate-artifact-contracts`, `make check-bundle` |
 | Corpus prep and hygiene | `pdf-to-markdown`, `ingest-corpus`, `strip-corpus-repeats`, `audit-repeat-yield`, `audit-corpus-conflicts`, `resolve-corpus-conflicts`, `compare-conflict-granularity`,
 `recompute-conflict-stage`, `calibrate-conflict-adjudicator`, `measure-duplicate-residue` |
 | Gold data | `prepare-goldset-draft`, `validate-goldset`, `ingest-squad`, `ingest-uk-squad`, `curate-drafts`, `import-external-draft` |

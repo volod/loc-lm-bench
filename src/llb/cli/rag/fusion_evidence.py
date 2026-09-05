@@ -6,11 +6,6 @@ from typing import Optional
 import typer
 
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import (
-    SIDECAR_KIND_COMPARISON,
-    SIDECAR_KIND_RUN_CONFIG,
-)
-from llb.rag.comparison.sidecar import write_sidecar
 from llb.cli.helpers import load_config
 from llb.cli.rag import fusion_inputs
 from llb.rag.fusion_evidence.stats import DEFAULT_CONFIDENCE, DEFAULT_RESAMPLES, DEFAULT_SEED
@@ -131,6 +126,7 @@ def compare_graph_fusion_cmd(
     Each physical lane is retrieved once per question and re-fused at every fixed or routed row,
     so the comparison costs one vector pass plus one pass per graph strategy.
     """
+    import json
 
     from llb.core.store_generations import generation_timestamp
     from llb.rag.fusion_evidence import (
@@ -215,15 +211,12 @@ def compare_graph_fusion_cmd(
             typer.echo(f"[error] {exc}", err=True)
             raise typer.Exit(code=2) from None
     target.mkdir(parents=True, exist_ok=True)
-    write_sidecar(
-        target / "comparison.json", SIDECAR_KIND_COMPARISON, "compare-graph-fusion", report
+    (target / "comparison.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (target / "report.md").write_text(format_report(report), encoding="utf-8")
-    write_sidecar(
-        target / "run_config.json",
-        SIDECAR_KIND_RUN_CONFIG,
-        "compare-graph-fusion",
-        cfg.fingerprint(),
+    (target / "run_config.json").write_text(
+        json.dumps(cfg.fingerprint(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     verdict = report["verdict"]
     typer.echo(

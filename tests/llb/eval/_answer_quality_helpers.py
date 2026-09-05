@@ -11,6 +11,7 @@ from pathlib import Path
 from llb.core.config import RunConfig
 from llb.eval.answer_quality import compare_answer_quality
 from llb.goldset.schema import GoldItem
+from tests.llb.bundle_fixtures import write_manifest
 
 VECTOR = "vector"
 
@@ -126,16 +127,12 @@ def _bundle_lane(tmp_path: Path, *, covered: int = 2):
         (run_dir / "retrieval.jsonl").write_text(
             "".join(_retrieval_record(item.id, hops) for item in items), encoding="utf-8"
         )
-        (run_dir / "manifest.json").write_text(
-            json.dumps(
-                {
-                    "run_id": config.run_name,
-                    "run_name": config.run_name,
-                    "split": split,
-                    "config": config.fingerprint(),
-                }
-            ),
-            encoding="utf-8",
+        write_manifest(
+            run_dir,
+            run_id=config.run_name,
+            run_name=config.run_name,
+            split=split,
+            config=config.fingerprint(),
         )
         return run_dir / "scores.jsonl"
 

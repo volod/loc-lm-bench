@@ -10,13 +10,10 @@ import json
 import logging
 from pathlib import Path
 
-from llb.artifacts.records import decode
 from llb.prep.ontology.constants import (
     CORPUS_DIRNAME,
     EXTRACTION_FILENAME,
-    EXTRACTION_SCHEMA_ID,
     ONTOLOGY_FILENAME,
-    ONTOLOGY_SCHEMA_ID,
 )
 from llb.prep.ontology.coverage.inventory import inventory_corpus
 from llb.prep.ontology.models import DocExtraction, DocRecord, OntologyCandidate
@@ -25,20 +22,14 @@ _LOG = logging.getLogger(__name__)
 
 
 def load_extractions(path: Path | str) -> list[DocExtraction]:
-    """Read an `extraction.jsonl` back into typed records, through its registered contract.
-
-    A bundle drafted by a newer build is refused here rather than silently dropping the fields
-    this build's `DocExtraction` does not name -- which is exactly what ignoring extras would do.
-    """
+    """Read an `extraction.jsonl` (one `DocExtraction` per line) back into typed records."""
     path = Path(path)
     if not path.exists():
         raise SystemExit(f"extraction file not found: {path}")
-    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     extractions = [
-        DocExtraction.model_validate(
-            decode(EXTRACTION_SCHEMA_ID, json.loads(line), source=f"{path}#record-{index}")
-        )
-        for index, line in enumerate(lines, start=1)
+        DocExtraction.model_validate(json.loads(line))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
     ]
     if not extractions:
         raise SystemExit(f"no extractions in {path}")
@@ -50,10 +41,7 @@ def load_ontology(path: Path | str) -> OntologyCandidate | None:
     path = Path(path)
     if not path.exists():
         return None
-    record = decode(
-        ONTOLOGY_SCHEMA_ID, json.loads(path.read_text(encoding="utf-8")), source=str(path)
-    )
-    return OntologyCandidate.model_validate(record)
+    return OntologyCandidate.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
 def load_bundle(

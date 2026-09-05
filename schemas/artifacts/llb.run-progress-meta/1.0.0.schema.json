@@ -2,7 +2,7 @@
   "$id": "urn:llb:artifact-contract:llb.run-progress-meta:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The determinism-critical identity a `--resume` is checked against.",
+  "description": "`cases.progress.meta.json`: the identity a resume must still match to be the same run.\n\nThe retry budget is deliberately not part of it -- a run may be resumed with a different one\n-- so a mismatch here is always a difference that would change the scored result.",
   "properties": {
     "config_digest": {
       "minLength": 1,
@@ -26,11 +26,13 @@
     },
     "schema_id": {
       "const": "llb.run-progress-meta",
+      "default": "llb.run-progress-meta",
       "title": "Schema Id",
       "type": "string"
     },
     "schema_version": {
       "const": "1.0.0",
+      "default": "1.0.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -40,14 +42,12 @@
     }
   },
   "required": [
-    "schema_id",
-    "schema_version",
     "run_id",
     "split",
     "config_digest",
     "goldset_digest",
     "n_items"
   ],
-  "title": "RunProgressMeta",
+  "title": "CaseProgressMeta",
   "type": "object"
 }

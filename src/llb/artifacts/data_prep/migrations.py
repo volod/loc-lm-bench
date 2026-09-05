@@ -125,3 +125,18 @@ def stage_inputs_to_current(record: dict[str, object]) -> dict[str, object]:
         "schema_version": contract_version(STAGE_INPUTS_SCHEMA_VERSION),
         **current,
     }
+
+
+def catalog_v1_to_v1_1(record: dict[str, object]) -> dict[str, object]:
+    """Add the legacy read version each catalog entry now publishes, absent by default."""
+    contracts = record.get("contracts")
+    entries = contracts if isinstance(contracts, list) else []
+    return {
+        **record,
+        "schema_version": "1.1.0",
+        "contracts": [
+            {**entry, "legacy_read_version": entry.get("legacy_read_version")}
+            for entry in entries
+            if isinstance(entry, dict)
+        ],
+    }

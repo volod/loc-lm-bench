@@ -37,7 +37,7 @@ closed each one and what would make it worth reopening.
 | Area | Owns | Shape |
 | --- | --- | --- |
 | [Overview](current/overview.md) | System shape, setup, repo layout, artifact roots | page |
-| [Artifact contracts](current/artifact-contracts.md) | Versioned record identity, compatibility dispatch, dataset bindings, generated schemas and catalog, and the data-prep, retrieval, graph, and prompt-system families on them | 3 pages |
+| [Artifact contracts](current/artifact-contracts.md) | Versioned record identity, compatibility dispatch, dataset bindings, generated schemas and catalog, and the data-prep, retrieval, and run-bundle families on them | 4 pages |
 | [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 10 pages |
 | [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 14 pages |
 | [Entity resolution](current/entity-resolution.md) | Probabilistic record linkage: the shared identity seam and the gold-item, graph-node, and document-edition lanes on it | page |

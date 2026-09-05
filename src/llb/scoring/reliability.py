@@ -8,10 +8,10 @@ per-case statuses up into a reliability score (fraction ok) + a per-failure-type
 the per-case scores of ANY run (RAG board or a category). Pure + unit-tested.
 """
 
+import json
 from collections import Counter
 from pathlib import Path
 
-from llb.artifacts.runs.bundle import read_score_rows
 from llb.core.contracts.benchmarks import ReliabilityReport
 from llb.eval.common import OK
 
@@ -50,4 +50,9 @@ def read_case_statuses(run_dir: Path | str) -> list[str]:
     jsonl = run_dir / "scores.jsonl"
     if not jsonl.exists():
         raise FileNotFoundError(f"no scores.jsonl under {run_dir}")
-    return [str(row.get("status", "")) for row in read_score_rows(jsonl)]
+    statuses: list[str] = []
+    for line in jsonl.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            statuses.append(str(json.loads(line).get("status", "")))
+    return statuses

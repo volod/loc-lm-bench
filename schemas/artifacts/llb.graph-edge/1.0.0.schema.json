@@ -1,6 +1,6 @@
 {
   "$defs": {
-    "GraphMentionRecord": {
+    "GraphMentionRow": {
       "additionalProperties": false,
       "description": "An offset-bearing evidence span plus the section that contains it.",
       "properties": {
@@ -15,7 +15,6 @@
           "type": "integer"
         },
         "doc_id": {
-          "minLength": 1,
           "title": "Doc Id",
           "type": "string"
         },
@@ -35,27 +34,25 @@
         "text",
         "section_title"
       ],
-      "title": "GraphMentionRecord",
+      "title": "GraphMentionRow",
       "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.graph-edge:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One subject-relation-object fact, with the span that evidences it.",
+  "description": "`edges.jsonl`: one subject-relation-object fact with the span that evidences it.",
   "properties": {
     "dst": {
-      "minimum": 0,
       "title": "Dst",
       "type": "integer"
     },
     "edge_id": {
-      "minimum": 0,
       "title": "Edge Id",
       "type": "integer"
     },
     "evidence": {
-      "$ref": "#/$defs/GraphMentionRecord"
+      "$ref": "#/$defs/GraphMentionRow"
     },
     "relation": {
       "title": "Relation",
@@ -72,7 +69,6 @@
       "type": "string"
     },
     "src": {
-      "minimum": 0,
       "title": "Src",
       "type": "integer"
     }
@@ -86,6 +82,6 @@
     "relation",
     "evidence"
   ],
-  "title": "GraphEdgeRecord",
+  "title": "GraphEdgeRow",
   "type": "object"
 }

@@ -14,11 +14,10 @@ fail an audit whose whole point is running with no run root, so an unreadable bu
 as unread and the margin the probe measured stands on its own.
 """
 
+import json
 from pathlib import Path
 from statistics import fmean
 from typing import cast
-
-from llb.artifacts.runs.bundle import read_score_rows
 
 # Why a bundle could not be read, so an absent number is never mistaken for a measured zero.
 UNREAD_NO_PATH = "the cell recorded no manifest for this arm"
@@ -35,11 +34,14 @@ def bundle_step_counts(manifest: Path | str) -> list[int]:
     scores = Path(manifest).parent / "scores.jsonl"
     if not scores.is_file():
         return []
-    return [
-        int(cast(int, row["n_steps"]))
-        for row in read_score_rows(scores)
-        if isinstance(row.get("n_steps"), int)
-    ]
+    steps: list[int] = []
+    for line in scores.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, dict) and isinstance(row.get("n_steps"), int):
+            steps.append(int(cast(int, row["n_steps"])))
+    return steps
 
 
 def observed_extra_steps(

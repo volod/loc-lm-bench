@@ -1,13 +1,12 @@
 """Post-collapse duplicate-residue measurement over a built RAG store."""
 
+import json
 from pathlib import Path
 from typing import Optional
 
 import typer
 
 from llb.cli.app import app
-from llb.core.contracts.retrieval.comparison import SIDECAR_KIND_COMPARISON
-from llb.rag.comparison.sidecar import write_sidecar
 
 
 @app.command("measure-duplicate-residue")
@@ -32,7 +31,7 @@ def measure_duplicate_residue_cmd(
     from llb.cli.helpers import load_config
     from llb.rag.duplicates.residue import format_residue_report, measure_duplicate_residue
     from llb.rag.vector_store.build import CHUNKS_FILE, META_FILE
-    from llb.rag.vector_store.persistence import read_store_chunks, read_store_meta
+    from llb.rag.vector_store.io import _read_jsonl
     from llb.rag.vector_store.vector_index import RAG_BACKEND_FAISS, load_vector_index
     from llb.core.store_generations import resolve_store_dir
 
@@ -44,8 +43,8 @@ def measure_duplicate_residue_cmd(
         typer.echo(f"[error] no built store at {store_dir} (run build-index first)", err=True)
         raise typer.Exit(code=2)
     store_dir = resolve_store_dir(store_dir, META_FILE)
-    meta = read_store_meta(store_dir / META_FILE)
-    chunks = read_store_chunks(store_dir / CHUNKS_FILE)
+    meta = json.loads((store_dir / META_FILE).read_text(encoding="utf-8"))
+    chunks = _read_jsonl(store_dir / CHUNKS_FILE)
     index = load_vector_index(meta.get("backend", RAG_BACKEND_FAISS), store_dir)
     vectors = getattr(index, "vectors", None)
     if vectors is None:
@@ -65,5 +64,5 @@ def measure_duplicate_residue_cmd(
     typer.echo(format_residue_report(report))
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        write_sidecar(out, SIDECAR_KIND_COMPARISON, "duplicate-residue", report)
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         typer.echo(f"[duplicate-residue] wrote report -> {out}")
