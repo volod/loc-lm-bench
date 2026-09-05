@@ -64,6 +64,8 @@ The primary decision loop covers:
   same thing;
 - robotics RAG over approved manuals and curated multimodal episode evidence, followed by
   policy-gated operation in an emulator or explicitly authorized device canary;
+- dual-control conversation: whether a model still completes a task when a simulated user holds
+  half of it, and whether it obeys the written domain policy while doing so;
 - reproducible sweep, recommendation, and board artifacts.
 
 The project does not try to be a hosted benchmark service, scheduler, model registry, generic agent
@@ -78,6 +80,13 @@ meaning only within the task and data contract that produced it.
 Tier mixing is out of scope for a single board. Public screens, private RAG results, and each
 category suite have separate metric semantics; a comparison presents them side by side or hands off
 explicitly, never blended into one leaderboard row.
+
+A tier may be SOURCED from an external suite. Such a lane runs that suite's own task set unmodified
+under a pinned version, in that suite's own language, and reports its numbers as that suite's
+numbers: comparable to what the suite publishes and to nothing of ours. What it buys is a
+candidate screen, never a local decision, so its row is never merged with a localized lane and
+never enters the private board. When an external lane and a localized lane disagree, both are
+reported and neither is reweighted to close the gap.
 
 ## Architecture
 
@@ -622,6 +631,50 @@ parts were never measured together describes a configuration nobody ran. The bou
 runs no lane on the operator's behalf, invents no value for a field nobody measured, decides no
 ranking policy of its own, and ships no runtime that consumes the profile.
 
+## Simulated-User Dual-Control Workloads
+
+The agentic tier drives one actor: a model reads a task statement, calls tools, and finishes. A
+large class of deployments does not look like that. A support, intake, or dispatch agent shares
+control of the task with a person who holds information the agent cannot read, performs steps the
+agent cannot perform, and states the goal incompletely and out of order. Two failures are invisible
+to a single-actor task set: an agent that only solves the task when the whole goal is handed to it
+up front, and an agent that satisfies the user by breaking the written policy it was told to
+follow. An operator choosing a local model for a conversational Ukrainian workload has no evidence
+about either today.
+
+This capability adds a benchmark tier in which a SECOND simulated actor holds part of the task. A
+case supplies a domain policy the agent must obey, a tool-backed world with an inspectable end
+state, a user-side scenario the agent never sees, and a success criterion read off the world after
+the conversation rather than off the agent's own claim about it. The user simulator is itself a
+model under a recorded configuration, so it belongs to the configuration under test exactly as the
+context policy does: a run records which model played the user and on which endpoint, and cases
+answered against different user-simulator configurations are refused rather than mixed, under the
+same rule [agentic workloads](#agentic-and-context-policy-workloads) applies to a composed profile.
+
+Scoring is END-STATE first. A case declares which components gate its reward -- world end state,
+information the agent was required to communicate, and, only where a path is genuinely unique, the
+tool trajectory -- and the reward is their product. A reference trajectory exists to DERIVE the
+target end state, not to constrain the agent: any sequence of calls reaching an equivalent end
+state passes, and a trajectory match is a diagnostic beside the reward, never the reward itself.
+Reliability across repeated trials is a separate published number rather than a mean, because an
+agent that succeeds once in five attempts is a different product decision from one that succeeds
+every time, and it carries its uncertainty width like every other published number.
+
+Two lanes stay apart under the [benchmark tier](#benchmark-tiers) rule. The EXTERNAL SUITE lane
+runs a published third-party task set unmodified as a candidate screen. The LOCALIZED lane runs
+Ukrainian domains whose policy, world, and cases this project owns, and only that lane can inform a
+local model choice. A localization is correct when replaying each case's reference trajectory still
+produces that case's target end state; a translation that moves the target has changed the task,
+not translated it.
+
+The boundary. This capability ships no conversational runtime, no customer-service product, and no
+user simulator anyone should deploy. It adds no voice, audio, or full-duplex evaluation and no
+reinforcement-learning training loop over the environment. It does not replace this project's
+retrieval stack with an external suite's: a suite's own retrieval pipeline is disabled or ignored,
+and retrieval questions stay in [retrieval before generation](#retrieval-before-generation). It
+submits nothing to an external leaderboard. And it does not repair, reweight, or blend an external
+suite's score into ours.
+
 ## Autonomous Orchestration
 
 The corpus-to-recommendation path can run end to end without a human at each step: ingest, draft,
@@ -833,10 +886,21 @@ The implementation favors maintained Python-native components and small project-
 - Optuna for bounded tuning;
 - MLflow for experiment analysis;
 - DeepEval for calibrated judge execution;
+- tau2-bench for the dual-control orchestrator, its domain/task/reward contracts, and the published
+  English task sets the external-suite lane screens against;
 - NVML, `nvidia-smi`, and process telemetry for runtime evidence.
 
 Heavy or backend-specific dependencies stay behind optional extras and lazy imports. A base install
 can inspect data, plans, and artifacts without importing GPU stacks.
+
+One reused component carries an acquisition constraint the others do not, and the constraint is part
+of the contract rather than a packaging detail. tau2-bench publishes no package to an index, so it
+is pinned by git tag rather than by version range; its grading has changed results within a major
+version, so a run scored under one tag is not comparable to a run scored under another. The pinned
+tag is therefore recorded on every run bundle the tier writes and is part of what a comparison must
+match, and a tag bump names every published number it invalidates under the same rule a pinned
+policy constant follows. Its transitive LLM-client pin is narrower than this project's, so it lives
+behind its own optional extra and never enters a base install.
 
 ## Data Egress Boundary
 
@@ -846,6 +910,12 @@ text-analysis corpora may use a frontier cross-check when the operator explicitl
 every drafted bundle still needs human verification before headline scoring. Frontier scoring is a
 separate opt-in with one upfront consent plus a hard per-run budget enforced by a cost ledger;
 over-cap aborts are resumable and never silent.
+
+A simulated user is a model call like any other. The dual-control tier defaults to a local endpoint
+for BOTH the agent and the user simulator; a frontier user simulator is the same opt-in as frontier
+scoring -- one upfront consent plus the per-run budget -- and either way the model that played the
+user is recorded on the run, because a task statement that a frontier model paraphrased into the
+conversation has left the host.
 
 loc-lm-bench measures model security behavior; it is a benchmark, not a production RAG service.
 Runtime guardrails -- prompt-injection filtering of retrieved content, output PII/secret filters,
@@ -910,7 +980,8 @@ Four rules settle it, in order:
 | 17 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
 | 18 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
 | 19 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 20 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 20 | `simulated-user-dialogue` | planned | A case's reward decomposes into the components it declares as gating and recomputes from the saved simulation bundle alone; the user-simulator model and endpoint are recorded per run and a comparison whose cases were answered against different ones is refused rather than mixed; success across repeated trials is published as an interval, never a point estimate; the external-suite lane reproduces the suite's published numbers under its pinned tag and appears in no localized or private board row; a localized Ukrainian domain preserves every case's target end state under replay of its reference trajectory; and a lane that separates no models the single-actor agentic tier already ranks apart is recorded as buying nothing there rather than adopted | [Simulated-user dual-control workloads](#simulated-user-dual-control-workloads) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 21 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -987,6 +1058,8 @@ The system succeeds when an operator can:
 - execute comparable final-split runs without manual artifact repair;
 - explain misses as retrieval, generation, refusal, artifact, or judge disagreement;
 - choose a model from recorded quality and resource evidence;
+- learn whether a model still finishes a task when a simulated user holds half of it, and whether it
+  obeys the written domain policy while doing so;
 - reproduce the decision from the saved inputs and manifest.
 
 Current implementation detail is indexed in [../impl/current.md](../impl/current.md). Operator

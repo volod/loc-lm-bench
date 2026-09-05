@@ -458,6 +458,113 @@ outcome and closes the question.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
 
+### Simulated-user dual-control workloads -- `simulated-user-dialogue`
+
+#### dual-control-suite-seam
+
+Nothing in this repo drives a conversation with a second actor. `bench-agentic` runs one model
+against a `ToolWorld` and reads planted assertions off it ([category
+suite](current/category-benchmark-suite.md)); there is no user simulator, no written policy the
+agent must obey, and no reward that decomposes into world end state versus what the agent had to
+say. Build that seam once, over tau2-bench's orchestrator rather than a second one of our own:
+it already carries the domain/policy/tool/task contracts, the end-state reward, and a task set the
+external-suite lane can screen against. This task is the seam and its artifact -- no Ukrainian
+domain yet, no headline number.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR
+- Dependencies: none. The tier reuses the existing backend launcher and isolation contract
+  ([host validation](current/host-validation.md)) and the category-run bundle writer
+  (`persist_category_run`); neither has open work that blocks it.
+- User-visible outcome: `llb bench dual-control --domain <id> --model <id>` runs a dual-control
+  case set against a local endpoint for BOTH the agent and the user simulator, and writes a run
+  bundle whose reward decomposition, per-trial outcomes, pinned suite tag, domain digest, and
+  user-simulator identity can be re-read without rerunning the models.
+- Scope boundary: in scope -- a `tau2` optional extra pinned to a git tag; a lazy-imported adapter
+  under `src/llb/bench/dual_control/` that registers our agent/user construction against the suite
+  registry and passes `api_base` through `llm_args` so `openai/<model>` resolves to a local vLLM or
+  Ollama endpoint; a `TAU2_DATA_DIR` binding to `$DATA_DIR`; a registered artifact contract for the
+  run bundle carrying `suite_tag`, `domain_id`, `domain_digest`, `agent_model`, `user_model`,
+  `user_endpoint`, `num_trials`, and the per-case component rewards; and the throughput meter every
+  other category runner threads. Out of scope -- voice, audio, and full-duplex paths; the gym/RL
+  interface; the suite's own knowledge-retrieval pipeline (disabled, our retrieval stack is
+  unaffected); leaderboard submission; and any Ukrainian domain, which is
+  `ua-dual-control-domain`.
+- Data and artifact paths: `$DATA_DIR/dual-control/<run_timestamp>/`; a committed miniature domain
+  fixture under `samples/benchmarks/dual_control/` (policy, world, two cases, one reference
+  trajectory) so CI never depends on the suite's bundled data; the pinned tag recorded in
+  `pyproject.toml` and echoed into every bundle.
+- Execution path: `make bench-dual-control` with a `##` help description. CI runs the fixture domain
+  with an injected fake completion for both actors -- no network, no GPU, no suite data download.
+  The real-endpoint path is a separate heavy invocation on the CUDA host.
+- Acceptance gates: `make ci` green with the suite absent from the base install (the import is lazy
+  and its absence produces a named refusal, not a traceback); a fixture run's reward recomputes from
+  the saved bundle alone and equals the value the run reported; a bundle whose `user_model` differs
+  from another's makes a comparison REFUSE rather than average the two; removing `suite_tag` from
+  the bundle makes a test fail.
+- Documentation target: a new `docs/impl/current/extended-workflows/dual-control-tier.md`, its row
+  in the [extended workflows](current/extended-workflows.md) area index, and the reuse note in
+  [product decisions](current/scope-boundaries.md).
+
+#### dual-control-screen-discrimination
+
+Once the seam exists, the first question is whether the tier buys anything. The external-suite lane
+runs the suite's English domains unmodified as a candidate screen; the honest test is whether it
+SEPARATES roster models that `bench-agentic` already ranks as tied. If it does not, the tier is a
+screen and nothing more, and that is the result to record rather than a lane to keep feeding.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR -- the run is deterministic at fixed seeds and executes on the CUDA host with
+  no human judgment.
+- Dependencies: `dual-control-suite-seam`.
+- User-visible outcome: a recorded verdict on whether dual-control screening adds ranking
+  information over the single-actor agentic tier, and a per-model reliability number an operator can
+  read as "succeeds k times out of n" rather than as a mean.
+- Scope boundary: in scope -- the English suite lane over the roster finalists at fixed seeds and a
+  pinned user-simulator model; success-across-trials reported with its uncertainty width under the
+  [published-number rule](current/extended-workflows/published-values.md); a paired reading against
+  the `bench-agentic` ranking on the commonly-run models, under the existing minimum-evidence gate
+  ([paired verdicts](current/rag-core/paired-verdicts.md)). Out of scope -- any localized domain;
+  changing the agentic tier's ranking; a board row (the external lane never enters one); and tuning
+  the agent prompt to lift the suite score, which would make the screen ours rather than the
+  suite's.
+- Data and artifact paths: `$DATA_DIR/dual-control/<run_timestamp>/` per model; the committed run
+  aggregate the reading cites, under the same content pin every other published aggregate carries.
+- Execution path: heavy, sequential, one backend process per model under the GPU isolation contract
+  ([heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md)); the analysis
+  recomputes from the saved bundles with no GPU.
+- Acceptance gates: `make ci` green; the reading states the model count, the predeclared effect it
+  could detect, and either the separation it found or a plain statement that the lane buys nothing
+  over the agentic tier on this roster; a null outcome is written up in
+  [future research](future-research.md) with what would reopen it, and the lane stays a screen.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md` and, if the
+  outcome is null, [future research](future-research.md).
+
+#### dual-control-tool-protocol-conformance (optional)
+
+The suite's orchestrator speaks native OpenAI `tools=`; `bench-tooling` already carries the finding
+that local models differ in how well they do ([category
+suite](current/category-benchmark-suite.md)). A roster model that cannot emit a well-formed tool
+call through its serving backend will score zero on every dual-control case for a reason that has
+nothing to do with conversation, and reporting that as a conversational failure would be wrong.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR
+- Dependencies: `dual-control-suite-seam`.
+- User-visible outcome: a per-model, per-backend statement of whether native tool calling is
+  available at all for the dual-control tier, so a zero is attributable to the protocol rather than
+  read as conversational incapacity.
+- Scope boundary: in scope -- a conformance probe over the roster on each serving backend, its
+  malformed-call rate, and a refusal that names the model/backend pair when the protocol is
+  unavailable. Out of scope -- writing a text-protocol shim into the suite's orchestrator, teaching
+  a model to call tools, and any change to `bench-tooling`'s own protocol axis.
+- Data and artifact paths: the conformance record inside the dual-control run bundle; no new root.
+- Execution path: a short probe against a live endpoint on the CUDA host; the fixture path in CI
+  uses an injected fake that emits one well-formed and one malformed call.
+- Acceptance gates: `make ci` green; a model/backend pair with no native tool support produces a
+  named refusal rather than a zero-scored run.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md`.
+
 ### Documentation integrity -- `documentation-integrity`
 
 #### conflict-bundle-record-page-is-past-the-split-threshold (optional)
@@ -1347,6 +1454,50 @@ the fitted cost -- or record that the linear rank is within the measurement's ow
   their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
 - Documentation target: [conflict
   resolution](current/data-prep/conflict-resolution.md#decision-groups-in-the-plan-and-the-review-ledger).
+
+### Simulated-user dual-control workloads -- `simulated-user-dialogue`
+
+#### ua-dual-control-domain
+
+The external-suite lane screens candidates in English; only a Ukrainian domain can inform the local
+choice this project exists to make. Build one on material this repo already owns -- a written policy
+in Ukrainian, a small tool-backed world, and cases whose user-side scenario is written the way a
+Ukrainian speaker would actually state a half-formed request. This is human-gated for one reason:
+whether a case's Ukrainian scenario states the same task, under the same policy, with the same
+missing information, is a judgment no fixture can make, and a mistranslated scenario silently
+becomes a different benchmark.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: HUMAN-GATED -- an agent can build the domain, the tools, the world, the reference
+  trajectories, and the replay check; a Ukrainian reviewer must accept the policy and each case's
+  scenario before any number from the lane is published.
+- Dependencies: `dual-control-suite-seam` (agent section) for the seam the domain registers into;
+  no cross-section block beyond it.
+- User-visible outcome: a Ukrainian dual-control domain a local model can be scored on, whose
+  numbers may inform a model choice because the language, the policy, and the world are the ones
+  the operator would deploy.
+- Scope boundary: in scope -- one domain: a Ukrainian policy document, its tool set and world
+  schema, a seeded world, the case set with user-side scenarios and reference trajectories, and the
+  reviewer pass that accepts them. Out of scope -- translating the suite's bundled English domains
+  (an airline reservation policy is not the operator's workload); a second domain before the first
+  one has a reading; voice; and any blending of this lane's row with the English screen's.
+- Data and artifact paths: the domain under `samples/benchmarks/dual_control/uk/` (policy, world
+  seed, tools schema, cases); the reviewer ledger through the existing
+  [review workbench](current/review-workbench.md) adapter seam; runs under
+  `$DATA_DIR/dual-control/<run_timestamp>/`.
+- Execution path: domain construction and the replay check are CPU-only inside `make ci`; the
+  reviewer pass runs through the review workbench; the scored run is heavy and sequential on the
+  CUDA host.
+- Human step: a Ukrainian reviewer accepts (or rejects, with a reason) the policy text and each
+  case's scenario as stating the intended task; the lane publishes nothing until that ledger is
+  complete.
+- Acceptance gates: `make ci` green; replaying every case's reference trajectory on a fresh world
+  reproduces that case's target end state, and a deliberately altered translation that moves the
+  target makes the check FAIL rather than silently rebase it; the reviewer ledger records an
+  accept/reject per case with its reason; the lane's row is refused on any board that also carries
+  the English screen.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md` and the
+  [review workbench](current/review-workbench.md) adapter list.
 
 ## Adding Future Tasks
 
