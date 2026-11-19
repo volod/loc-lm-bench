@@ -36,6 +36,13 @@ The output contains:
 
 Only verified tuning-split items are exported.
 
+The export also refuses, as a whole, when any record would carry text from a document whose
+recorded `licence` forbids redistribution; the error names each such document. It reads the terms
+from the corpus the run manifest records (`config.corpus_root`), refuses if that corpus is no longer
+on the host, and takes `--corpus <corpus-dir>` to check a relocated copy. A corpus carrying no
+`licence` field exports as before. See
+[the redistribution gate](../../impl/current/data-prep/acquired-provenance.md#redistribution-gate).
+
 ## Train An Adapter
 
 For CI or a dry run:

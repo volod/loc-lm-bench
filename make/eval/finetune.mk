@@ -3,12 +3,13 @@
 .PHONY: export-finetune-set finetune-adapter finetune-embedder finetune-hparams self-improve \
 	finetune-campaign distill register-adapter list-adapters serve-adapter gc-adapters
 
-export-finetune-set: ## Export tuning-split SFT/DPO records (RUN_DIR=<tuning-run> GOLDSET= OUT_DIR= MISSES=)
+export-finetune-set: ## Export tuning-split SFT/DPO records, refused for non-redistributable material (RUN_DIR=<tuning-run> GOLDSET= OUT_DIR= MISSES= LICENCE_CORPUS=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(RUN_DIR)" || { echo "ERROR: set RUN_DIR=<tuning run-eval bundle dir>"; exit 1; }
 	@test -n "$(OUT_DIR)" || { echo "ERROR: set OUT_DIR=<dataset dir>"; exit 1; }
 	$(PY) -m llb.main export-finetune-set --run-dir "$(RUN_DIR)" --goldset "$(GOLDSET)" \
-		--out "$(OUT_DIR)" $(if $(MISSES),--misses "$(MISSES)",)
+		--out "$(OUT_DIR)" $(if $(MISSES),--misses "$(MISSES)",) \
+		$(if $(LICENCE_CORPUS),--corpus "$(LICENCE_CORPUS)",)
 
 finetune-adapter: ## Train a LoRA/QLoRA adapter (DATASET=<export dir> MODEL=<base> ADAPTER_OUT= TRAINER=auto|fake)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -1,15 +1,15 @@
 # Acquired-Corpus Projection
 
-Status: **PARTLY IMPLEMENTED data contract**. It describes the shape an upstream acquisition
-service renders into, and what this project reads back from it. Every sidecar field below is read
-at ingestion today and carried into the manifest item, chunk metadata, and the gold-set provenance
-record; acquired revisions are append-only and retain their superseded versions
+Status: **IMPLEMENTED data contract**. It describes the shape an upstream acquisition service
+renders into, and what this project reads back from it. Every sidecar field below is read at
+ingestion and carried into the manifest item, chunk metadata, and the gold-set provenance record;
+acquired revisions are append-only and retain their superseded versions; gold-set bundles bind their
+corpus fingerprint to every acquisition run represented in that version; and every export and
+frontier egress path refuses material whose `licence` forbids redistribution
 ([acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md)). The round-trip
-fixture checks both the projection shape and that revision lifecycle. Gold-set bundles also bind
-their corpus fingerprint to every acquisition run represented in that version. What is still open
-in [the plan](../impl/plan.md) is enforcing the redistribution gate. The capability itself, its
-boundary, and why the seam is shaped this way are in the
-[spec section that owns it](spec.md#corpus-provenance-and-acquisition-boundary).
+fixture checks the projection shape and the revision lifecycle, and its one `local-only` document
+drives the redistribution refusals. The capability itself, its boundary, and why the seam is shaped
+this way are in the [spec section that owns it](spec.md#corpus-provenance-and-acquisition-boundary).
 
 This is the sibling of the [external-service draft contract](external-draft-contract.md). That one
 governs artifacts an operator obtains by hand from a chat provider; this one governs a corpus a
@@ -102,6 +102,12 @@ absence explicitly rather than omitting the keys:
 | `licence` | `Determination.redistribution_class` | whether the material may leave the host |
 | `acquisition_run_id` | `AcquisitionRun` identity | which run produced this corpus version |
 | `revision_of` | the earlier `Document` identity, when this document revises one | which document this supersedes |
+
+`licence` is a closed vocabulary on this side. A producer renders `redistributable` for material
+that may leave the host and `local-only` for material that may be processed here but not copied
+off it. Any other value is refused exactly like `local-only`: a class the consumer cannot read is
+not a permission, so a producer that introduces a new permitting class agrees it with this side
+before rendering it. An absent `licence` means no recorded terms and is not gated.
 
 Extra fields are additive by construction: none of them alters document text, a `doc_id`, or a
 character offset, so adding one can never move a label. A consumer that does not know a field

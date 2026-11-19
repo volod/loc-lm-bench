@@ -22,7 +22,17 @@ from llb.scoring.frontier_agreement.agreement import (
     build_agreement,
     metric_value,
 )
-from llb.scoring.frontier_agreement.items import AgreementItem, load_agreement_items
+from llb.prep.corpus.redistribution import (
+    bundle_licences,
+    corpus_licences,
+    merge_licences,
+    refuse_non_redistributable,
+)
+from llb.scoring.frontier_agreement.items import (
+    AgreementItem,
+    load_agreement_items,
+    resolve_corpus_root,
+)
 from llb.scoring.frontier_agreement.provider import (
     ProviderResult,
     provider_slug,
@@ -37,6 +47,7 @@ ARTIFACT_ROOT = "frontier-judge"
 REPORT_FILENAME = "report.md"
 AGREEMENT_FILENAME = "agreement.json"
 SCORES_FILENAME = "scores.jsonl"
+AGREEMENT_EGRESS = "frontier-judge agreement"
 
 CompleteFactory = Callable[[str], Any]
 """Given a model id, return a `FrontierComplete`; injected by tests, else litellm's default."""
@@ -111,6 +122,24 @@ def _score_one(
     return agreement, None
 
 
+def _refuse_unredistributable(
+    items: list[AgreementItem], goldset: Path | None, corpus_root: Path | None
+) -> None:
+    """Refuse before any provider call when a judged context cites a non-redistributable doc.
+
+    The terms come from the staged corpus the contexts are read from and, for a drafted bundle's
+    gold set, from the bundle's provenance record beside it (its corpus copy has no manifest).
+    """
+    if goldset is None:
+        return
+    root = resolve_corpus_root(Path(goldset), corpus_root)
+    licences = merge_licences(
+        bundle_licences(Path(goldset).parent), corpus_licences(root) if root is not None else {}
+    )
+    doc_ids = {doc_id for item in items for doc_id in item.doc_ids}
+    refuse_non_redistributable(licences, egress=AGREEMENT_EGRESS, doc_ids=doc_ids)
+
+
 def run_frontier_agreement(
     worksheet: Path,
     models: list[str],
@@ -131,6 +160,7 @@ def run_frontier_agreement(
     )
     if not items:
         raise ScorerPolicyError(f"no judgeable rows (with a model_answer) in {worksheet}")
+    _refuse_unredistributable(items, goldset, corpus_root)
     destination = Path(out_dir) if out_dir is not None else default_out_dir(data_dir)
     destination.mkdir(parents=True, exist_ok=True)
 

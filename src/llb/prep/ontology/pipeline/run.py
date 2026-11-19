@@ -20,6 +20,7 @@ from llb.prep.ontology.constants import (
 from llb.prep.ontology.extraction.dedup import QuestionEmbedder
 from llb.prep.ontology.endpoints.client import build_completers
 from llb.prep.ontology.endpoints.config import EndpointCompleters, EndpointLogs, EndpointPlan
+from llb.prep.ontology.endpoints.egress import refuse_frontier_corpus_egress
 from llb.prep.ontology.extraction.run import (
     ExtractionAdapter,
     LLMExtractionAdapter,
@@ -120,6 +121,7 @@ def draft_goldset(
             raise ValueError("resume requires write=True (it re-enters an existing bundle)")
         settings.apply_resume_meta(cast(dict[str, Any], load_journal_meta(resolved_out)))
     settings.validate()
+    refuse_frontier_corpus_egress(endpoints, settings.corpus_root, doc_limit=settings.doc_limit)
 
     journal: ExtractionJournal | None = None
     if write:

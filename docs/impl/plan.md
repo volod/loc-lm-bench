@@ -57,40 +57,6 @@ Work an agent can take to acceptance on its own: `make ci` green with committed 
 fakes, and deterministic harnesses (`CLEAR`), or that plus a heavy deterministic run the agent
 executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry order.
 
-### Corpus provenance -- `corpus-provenance`
-
-#### export-redistribution-gate
-
-`acl_label` covers who may READ a document inside a run; nothing covers whether the material may be
-copied off the host. Corpus-derived text leaves through the fine-tune export
-(`src/llb/finetune/dataset.py`), the contrastive-pair export (`src/llb/finetune/embedder/pairs.py`),
-and every opt-in frontier path behind `egress_consent`, and none of them can currently refuse
-material acquired on terms that forbid redistribution.
-
-- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
-- Agent status: CLEAR
-- Dependencies: none. The check keys on `licence`, read at ingest today
-  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
-- User-visible outcome: an export refuses material whose recorded terms forbid redistribution, so
-  the producing side's local-only determination is enforced where the material could actually leave.
-- Scope boundary: in scope -- one shared redistribution check reused by every export and every
-  egress path, keyed on the `licence` field the projection carries, and a refusal that names the
-  offending document. Out of scope -- MAKING the determination, which is the producing service's
-  responsibility and is consumed here as a recorded fact; access control, which `acl_label` already
-  covers; and runtime guardrails in an application embedding a recommended model, which
-  [the egress boundary](../design/spec.md#data-egress-boundary) puts outside this project.
-- Data and artifact paths: `src/llb/finetune/dataset.py`, `src/llb/finetune/embedder/pairs.py`,
-  `src/llb/prep/ontology/endpoints/builder.py`, and the non-redistributable document in
-  `samples/corpora/acquired_projection_v1/`.
-- Execution path: CPU-only, inside `make ci`; no frontier call is made, the consent seam is
-  exercised with an injected fake.
-- Acceptance gates: `make ci` green. A fixture containing one non-redistributable document causes
-  each export path to REFUSE, naming that document, rather than to filter it -- a partial export
-  that looks complete is the failure this prevents. Removing the gate makes the test fail. A corpus
-  with no `licence` field exports exactly as it does today.
-- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
-  [data egress](current/scope-boundaries.md#data-egress) boundary.
-
 ### Scanned book recovery -- `scanned-book-recovery`
 
 #### book-recovery-tool-survey
@@ -418,10 +384,11 @@ project already reads.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-vault-rendering-and-navigation`, `export-redistribution-gate`
+- Requires: `book-vault-rendering-and-navigation`
 - Dependencies: the citation sidecar and chunk page metadata already carry PDF pages into retrieval
-  ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md)); the redistribution class is
-  enforced by the export gate this task requires.
+  ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md)); every export refuses a
+  `licence` other than `redistributable` or absent
+  ([redistribution gate](current/data-prep/acquired-provenance.md#redistribution-gate)).
 - User-visible outcome: `llb book-ocr project <run-dir> --out <corpus-dir>` writes one corpus
   document per content file -- content only, formulas as LaTeX, tables as rendered, markers in a
   machine form -- with a `*.citations.json` sidecar (PDF page to character spans, block ids and

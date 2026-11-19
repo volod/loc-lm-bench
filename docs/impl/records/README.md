@@ -25,3 +25,4 @@ completion transition is in the
 | --- | --- |
 | [Agent workflow template sync](agent-workflow-template-sync.md) | Adopting the upstream agent template's adapters, task records, `Requires`, and stricter plan gate |
 | [book-ocr-run-ledger-and-resume](book-ocr-run-ledger-and-resume.md) | The resumable `book-ocr` run skeleton: page inventory, stage registry, per-page ledger, content-addressed stage cache |
+| [export-redistribution-gate](export-redistribution-gate.md) | The shared redistribution check every export and frontier egress path calls: refuse, never filter, material whose recorded `licence` forbids it |

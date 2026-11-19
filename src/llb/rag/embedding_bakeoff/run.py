@@ -21,8 +21,10 @@ consent gate are unit-tested with fake stores/embedders -- no GPU, no FAISS, no 
 
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Callable
 
+from llb.prep.corpus.redistribution import refuse_corpus_egress
 from llb.rag.encoders.candidate_screen import SkippedCandidate
 from llb.rag.encoders.card_parity import (
     CardParityResult,
@@ -62,12 +64,16 @@ def api_lane_enabled(
     api_model: str | None,
     data_classification: str | None,
     consent: Callable[[], bool],
+    corpus_root: Path | str | None = None,
 ) -> bool:
     """Decide whether the API row runs. Refuse a non-open corpus outright; skip on declined consent.
 
     A truthy `api_model` over a corpus that is not explicitly `open` is a hard refusal (corpus
-    egress policy). Over an open corpus the operator's `consent()` must return True; a decline
-    skips the row (the local bake-off still reports) and never touches the network.
+    egress policy). The operator's `open` classification is not a licence determination either:
+    a corpus holding a document whose recorded licence forbids redistribution is refused next
+    (`llb.prep.corpus.redistribution`), before consent is asked, because the API row embeds
+    every chunk. Over an open, redistributable corpus the operator's `consent()` must return True;
+    a decline skips the row (the local bake-off still reports) and never touches the network.
     """
     if not api_model:
         return False
@@ -76,6 +82,8 @@ def api_lane_enabled(
             "[compare-embeddings] --api-model embeds the whole corpus through a hosted API "
             "(full egress); it is refused unless --data-classification open is set explicitly."
         )
+    if corpus_root is not None:
+        refuse_corpus_egress(corpus_root, egress=f"compare-embeddings API embedder ({api_model})")
     if not consent():
         _LOG.warning(
             "[compare-embeddings] corpus egress declined; skipping the API row (%s)", api_model
@@ -144,7 +152,7 @@ def run_bakeoff(
             continue
         _LOG.info("[compare-embeddings] building candidate store: %s", model)
         scored.score(model, build_local(model), parity)
-    if api_lane_enabled(api_model, data_classification, consent):
+    if api_lane_enabled(api_model, data_classification, consent, corpus_root):
         assert api_model is not None and build_api is not None  # narrowed by the gate
         _LOG.info("[compare-embeddings] building API candidate (CORPUS EGRESS): %s", api_model)
         scored.score(api_model, build_api(api_model))

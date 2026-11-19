@@ -34,6 +34,8 @@ class AgreementItem:
     contexts: list[str]
     human_rating: float | None
     local_rating: float | None
+    doc_ids: tuple[str, ...] = ()
+    """The gold documents whose text grounds `contexts` (empty without a gold item)."""
 
     def judge_record(self) -> JudgeInputRecord:
         """The record handed to any judge lane (frontier or local)."""
@@ -133,6 +135,7 @@ def _agreement_item(
         contexts=contexts,
         human_rating=_optional_float(row.get("human_rating", "")),
         local_rating=_optional_float(row.get("judge_rating", "")),
+        doc_ids=() if gold is None else tuple(dict.fromkeys(s.doc_id for s in gold.source_spans)),
     )
 
 

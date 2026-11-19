@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from llb.auto_rag.verification_egress import refuse_frontier_verify_egress
 from llb.auto_rag.verification_auto import (
     _require_eval_splits,
     _structurally_grounded as _auto_structurally_grounded,
@@ -55,6 +56,8 @@ def verify_bundle(
     if policy == "human":
         return _human_gate(rows, fields, worksheet, bundle, accepted_dir)
     lane = "frontier" if policy == "frontier" else "local"
+    if lane == "frontier":
+        refuse_frontier_verify_egress(bundle, items)
     return run_autonomous_gate(
         rows,
         fields,

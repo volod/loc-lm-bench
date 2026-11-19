@@ -14,9 +14,9 @@ what is read, from where, and what each downstream artifact does with them.
 
 Ingestion also acts on document identity and `revision_of`: the acquired lane is append-only, so a
 revision retains the text and manifest row its predecessor's offsets name. A gold-set bundle binds
-its corpus fingerprint to the acquisition runs represented in that version. Enforcing the
-redistribution gate remains separate open work under the same capability. The contract these fields
-are read against is
+its corpus fingerprint to the acquisition runs represented in that version, and every export and
+frontier egress path refuses material whose recorded `licence` forbids redistribution -- see
+[the redistribution gate](#redistribution-gate). The contract these fields are read against is
 [the acquired-corpus projection](../../../design/acquired-corpus-projection.md).
 
 ## The seven fields and where they come from
@@ -130,6 +130,75 @@ second identity mechanism. Gold spans continue to resolve as `(doc_id, char_star
 against the preserved predecessor text; choosing which version a new gold item should cite remains
 a review decision.
 
+## Redistribution gate
+
+`acl_label` says who may READ a document inside a run; `licence` says whether its text may be copied
+off the host. `src/llb/prep/corpus/redistribution.py` is the one check that enforces the second, and
+every path where corpus-derived text leaves calls it. It makes no determination of its own: the
+producing service decides, and this side enforces the recorded value.
+
+| Recorded `licence` | Egress |
+| --- | --- |
+| absent (`None`) | not gated -- an operator's own corpus, or one carrying no provenance |
+| `redistributable` | permitted |
+| `local-only` | refused |
+| any other value | refused -- a class this side cannot read is not a "yes" |
+
+The comparison is exact (`Redistributable` and the empty string refuse). The vocabulary is
+`REDISTRIBUTION_CLASSES`; a producer that needs a third permitting class widens it here first.
+
+**A refusal, not a filter.** `refuse_non_redistributable` raises `RedistributionRefused` (a
+`ValueError`) naming EVERY offending document in sorted order with its licence and the egress path,
+before the path writes a file, records consent, or makes a call. Dropping the offending rows instead
+would leave a partial export that reads as complete. At the CLI boundary `run_typer` prints that one
+`[error] [redistribution] ...` line and exits 2 rather than reporting a crash.
+
+**Where the recorded terms are read from.** Three readers feed the check, and `merge_licences` keeps
+the strictest value when two sources disagree, so a store and a corpus that differ cannot turn a
+`local-only` passage into a permitted one:
+
+- `corpus_licences` -- the staged `corpus_manifest.json` (`ok` items);
+- `chunk_licences` -- the `licence` each chunk carried into the store's chunk metadata;
+- `bundle_licences` -- a drafted bundle's `provenance.json` document rows, because the bundle's
+  corpus copy carries no manifest.
+
+**The paths it guards.** Each checks only the documents it would actually carry, so a corpus that
+holds a `local-only` document can still feed a path that never touches it:
+
+| Path | Wiring | Documents checked | Terms read from |
+| --- | --- | --- | --- |
+| `export-finetune-set` (and the self-improvement loop and campaign that call it) | `src/llb/finetune/export_gate.py` | each selected item's source and gold-span documents, and every document its persisted retrieved spans stand for, collapsed duplicate occurrences included | the corpus `--corpus` names, else the run manifest's `config.corpus_root` |
+| Contrastive-pair export (`finetune-embedder`) | `exported_chunks` in `src/llb/finetune/embedder/pairs.py` | every positive and every kept negative chunk | chunk metadata |
+| Ontology drafting with a frontier endpoint on either stage | `src/llb/prep/ontology/endpoints/egress.py`, from `draft_goldset` and from the CLI before the consent prompt | every inventoried document after `--doc-limit` | corpus manifest |
+| `run-eval` with `scorer_policy=frontier`, including worksheet ratings | `src/llb/executor/runner_egress.py` | retrieved-chunk and gold-item documents of the judged batch | chunk metadata merged with the `corpus_root` manifest |
+| Auto-RAG verification with the frontier policy | `src/llb/auto_rag/verification_egress.py` | drafted items' source and span documents | bundle `provenance.json` |
+| `frontier-judge` agreement | `_refuse_unredistributable` in `src/llb/scoring/frontier_agreement/run.py` | gold-span documents of the judged rows | corpus manifest merged with the bundle provenance beside the gold set |
+| `compare-embeddings --api-model` | `api_lane_enabled` in `src/llb/rag/embedding_bakeoff/run.py`, after the `open`-classification check and before consent | the whole corpus (every chunk is embedded) | corpus manifest |
+| `prepare-goldset` (frontier drafting) | `prepare_goldset` in `src/llb/prep/frontier/client.py` | every corpus document | corpus manifest |
+| `cross-check-goldset` | `cross_check_corpus_goldset` in `src/llb/prep/goldset/cross_check.py` | items' documents, a bare stem resolved to the staged path | corpus manifest |
+
+Consent and the gate are separate questions. Every frontier path is refused BEFORE it records or
+asks for consent, so no consent entitles material whose terms refuse it.
+
+**The fine-tune export's corpus.** That export reads a run bundle rather than a corpus. A run that
+names no corpus has no recorded terms and exports as before. A run that NAMES a corpus this host no
+longer holds is refused with "is not on this host" rather than exported unchecked, because a
+missing corpus cannot be told apart from a permitted one; `--corpus` (`LICENCE_CORPUS=` on the make
+target) checks a relocated copy instead.
+
+**Where the gate does not reach, and why:**
+
+- `subset_dataset` re-slices a dataset that already passed the gate, so it carries no new material.
+- The external-draft import records an upload the operator made OUTSIDE this project; its own
+  `data_classification: open` refusal stays the control for that lane.
+- `prepare-synthetic-corpus` reads no corpus, and the local graph-extraction and conflict-claim
+  lanes send nothing off the host.
+- The `run-eval` frontier lane learns its retrieved documents only by retrieving, so it refuses at
+  the judging stage, after local generation and before any frontier call.
+- A `frontier-judge` run without a gold set grounds on the reference answer alone and names no
+  document; with a gold set but neither a staged manifest nor a bundle provenance record, there are
+  no recorded terms to read.
+
 ## How to run it
 
 ```bash
@@ -140,13 +209,22 @@ make build-index CORPUS=<out-dir>
 Nothing new is passed on the command line: the sidecar is the only input, and a corpus carrying no
 sidecar takes exactly the path it did before.
 
+The gate needs no flag either: every guarded path reads the recorded terms itself. The fine-tune
+export alone can be pointed at a relocated corpus:
+
+```bash
+make export-finetune-set RUN_DIR=<tuning-run> GOLDSET=<goldset> OUT_DIR=<dataset-dir> \
+  LICENCE_CORPUS=<corpus-dir>
+```
+
 ## Projection conformance fixture
 
 `samples/corpora/acquired_projection_v1/` is the committed consuming-side fixture for the
 [projection contract](../../../design/acquired-corpus-projection.md). It contains twenty synthetic
 documents and one complete sidecar per document. The plant includes one revision pair
-(`fixture-doc-02.md` revises `fixture-doc-01.md`) and one document whose `licence` is `local-only`,
-so later revision and redistribution work can use the same seam without inventing another corpus.
+(`fixture-doc-02.md` revises `fixture-doc-01.md`) and one document whose `licence` is `local-only`
+(`fixture-doc-07.md`), which the revision and redistribution tests use rather than inventing
+another corpus.
 Source URIs, capture ids, and payload digests are unique per document.
 
 `tests/llb/prep/test_acquired_projection_roundtrip.py` enforces both halves of the consuming
@@ -187,9 +265,26 @@ checks both per-document fingerprints and manifest rows, and proves that an in-p
 fails with the document named. The existing mixed-ingest changed-text test remains the local-lane
 control.
 
+`tests/llb/prep/test_redistribution_gate.py` pins the shared check: only an absent licence and the
+exact `redistributable` class permit (`local-only`, an unrecognised class, the empty string, and a
+case variant refuse); a refusal names every offending document in sorted order; the check is scoped
+to the documents a path carries; a merge keeps the strictest terms; each of the three readers; the
+staged projection records exactly one refused document while a plain corpus records none; and the
+CLI boundary turns a refusal into one `[error]` line with exit 2 and no traceback.
+`tests/llb/prep/test_redistribution_egress_paths.py` drives each guarded path over the projection
+staged through real ingestion (`tests/llb/prep/redistribution_fixtures.py`) with material that
+includes `fixture-doc-07.md`. Each path must refuse naming exactly that document, with no output
+file, no consent record, and an injected provider that fails the test if called; its control
+stages the same fixture with that one sidecar set to `redistributable` and must complete with the
+document's text in the payload. The fine-tune export also has tests for the explicit `--corpus`
+override, the refusal when a named corpus is gone, and an unchanged export for a run that names no
+corpus; ontology drafting has tests for a local plan passing and `--doc-limit` excluding the
+document; the draft CLI refuses before its consent prompt.
+
 ## Evidence
 
-On 2026-09-02 on this RTX 4060 Ti 16 GB CUDA host, all CPU-only and model-free:
+Field path, revisions, and bundle binding, on 2026-09-02 on an RTX 4060 Ti 16 GB CUDA host, all
+CPU-only and model-free:
 
 - `make ci` completed with 4,798 tests passed and 50 deselected. Within it, the
   acquired-projection conformance check ingested all 20 committed documents with status `ok` and
@@ -228,3 +323,39 @@ revision run dropping either manifested ancestor, a bundle omitting or choosing 
 manifested acquisition runs, or a consumer reading `ChunkRecord.metadata` positionally rather than
 by key. The fixture deliberately does not establish that an upstream producer derived any projected
 value correctly, and the finite two-version sequence does not prove producer-side immutability.
+
+Redistribution gate, on 2026-11-19 on an RTX PRO 3000 Blackwell laptop host, all CPU-only,
+model-free, and network-free:
+
+- The 36 gate tests passed. Every guarded path (the two exports, ontology drafting through a
+  frontier endpoint, the `run-eval` frontier scorer, auto-RAG frontier verification, `frontier-judge`
+  agreement, the `compare-embeddings` API row, `prepare-goldset`, `cross-check-goldset`, and the
+  draft CLI's pre-consent check) refused the staged projection naming exactly `fixture-doc-07.md`,
+  wrote no output, and never reached its injected provider; each control over the same fixture with
+  that sidecar set to `redistributable` completed with the document's text in the payload. The
+  reading: each refusal comes from the recorded licence alone and stands between real material and
+  a real export, not in front of a path that would have carried nothing.
+- Removing the gate makes the tests fail. Each of the ten call sites was disabled in turn: every
+  mutation failed that path's own refusal test and no other path's (the fine-tune site also failed
+  its relocated-corpus and missing-corpus tests), and making the shared predicate permit everything
+  failed 21 of the 35 tests then in the two files. The reading: no path is guarded by accident of
+  another's wiring.
+- `make export-finetune-set` over a run bundle whose `corpus_root` named the staged projection
+  exited 2 with the single `[error] [redistribution] fine-tune dataset export refused` line naming
+  `fixture-doc-07.md (licence=local-only)`, and no dataset directory existed afterwards. The
+  identical bundle over the redistributable control exported `sft=2 dpo=0`.
+- `make ci-github` (the base-environment gate) passed 4,887 tests with 6 skipped and 161
+  deselected, and `make ci-checks` reported zero lint, type, complexity, spec-plan, and contract
+  findings. The 229 existing tests of the touched lanes (fine-tune, auto-RAG, frontier agreement,
+  embedding bake-off, cross-check, frontier drafting, scorer policy, and the projection round-trip)
+  passed unchanged, which is the "a corpus with no `licence` field exports as it does today" reading:
+  none of their fixtures carries the field, and none needed editing. Full `make ci` on this host's
+  base install reported 4,898 passed with 49 failed and 4 errors; the same 53 tests fail
+  identically with this change stashed, all on optional extras this venv lacks (`faiss`,
+  `langgraph`, `rdflib`, `splink`).
+
+What would overturn the gate: a new path that sends corpus text off the host without calling the
+shared check; a producer rendering a permitting class other than `redistributable` (it refuses
+until the vocabulary is widened); a store whose chunks lost their `licence` metadata over a corpus
+whose manifest is also gone; or a run-eval frontier refusal that arrives after a call because the
+judge stage stopped being the first frontier contact.

@@ -14,6 +14,10 @@ like they do and do not, and a guarantee that neither came from data the final v
     EVERY row, the width drops to what the corpus can supply for all of them rather than leaving a
     ragged set no batch can hold. The manifest records the requested count, the width actually
     used, and how many rows needed the fill, so a thin corpus reads as thin rather than as hard.
+  - **Recorded terms are enforced.** Every chunk the export would write is checked against the
+    licence its document carried into the corpus (`llb.prep.corpus.redistribution`); one chunk
+    of a document that may not leave the host refuses the WHOLE export, naming the document,
+    before `pairs.jsonl` is written.
   - **The split is the boundary.** Only verified TUNING items are read here, and the manifest
     carries the item ids and split counts the guard re-checks against the gold set itself
     (`llb.finetune.guard.assert_tuning_only`).
@@ -45,6 +49,7 @@ from llb.finetune.embedder.negatives import (
 )
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.prep.corpus.fingerprints import corpus_fingerprint
+from llb.prep.corpus.redistribution import refuse_chunk_egress
 from llb.rag.chunking.corpus import chunk_corpus
 from llb.rag.retrieval import chunk_hits_any, span_char_coverage
 from llb.rag.vector_store.lexical import Lemmatizer
@@ -53,6 +58,7 @@ from llb.rag.vector_store.lexical_index import LexicalIndex
 _LOG = logging.getLogger(__name__)
 
 PAIRS_FILENAME = "pairs.jsonl"
+PAIRS_EGRESS = "contrastive-pair export"
 
 # How many gold chunks per question become anchors (the negatives ride in `negatives.py`).
 DEFAULT_MAX_POSITIVES = 2
@@ -92,6 +98,7 @@ def export_contrastive_pairs(
     rng = random.Random(seed)
 
     draft = _draft_rows(items, chunks, lexical, max_positives, negatives, rng)
+    refuse_chunk_egress(draft.exported_chunks(), egress=PAIRS_EGRESS)
     records = [
         _pair_record(item, positive, candidates[: draft.width])
         for item, positive, candidates, _n_hard in draft.rows
@@ -138,6 +145,14 @@ class PairDraft:
     def width(self) -> int:
         """Negatives per row: what the THINNEST row can supply, so no row goes ragged."""
         return min(len(candidates) for _i, _p, candidates, _h in self.rows)
+
+    def exported_chunks(self) -> list[ChunkRecord]:
+        """Every chunk whose text the export writes: each row's positive and its kept negatives."""
+        return [
+            chunk
+            for _item, positive, candidates, _n_hard in self.rows
+            for chunk in (positive, *candidates[: self.width])
+        ]
 
     @property
     def rows_needing_fill(self) -> int:

@@ -151,14 +151,10 @@ def cross_check_goldset_cmd(
     import json
 
     from llb.goldset.schema import load_goldset
-    from llb.prep.goldset.cross_check import (
-        cross_check_goldset,
-        load_doc_texts,
-        second_frontier_verify,
-    )
+    from llb.prep.goldset.cross_check import cross_check_corpus_goldset, second_frontier_verify
 
     items = load_goldset(goldset)
-    report = cross_check_goldset(items, load_doc_texts(corpus), second_frontier_verify(model))
+    report = cross_check_corpus_goldset(items, corpus, second_frontier_verify(model))
     out_path = out or goldset.with_name(f"{goldset.stem}.cross_check.json")
     out_path.write_text(
         json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
