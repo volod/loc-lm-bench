@@ -19,7 +19,7 @@ docs/guides/
 |-- data-prep/       create corpora, gold sets, and admitted robotics evidence
 |-- human-tooling/   the human gates: data verification, judge calibration, and the why
 |-- benchmarking/    run and compare model, retrieval, serving, and robotics lanes
-'-- development/     contributor setup, heavy runs, and evidence citation
+'-- development/     contributor setup, heavy runs, evidence citation, planning workflow
 ```
 
 ## Choose a scenario
@@ -150,6 +150,9 @@ provide granular commands and corpus-specific detail.
   troubleshooting, and the parallelism cap for source builds that compile C++/CUDA.
 - [Heavy runs and evidence](development/heavy-runs-and-evidence.md) -- choosing a model for a local
   run, citing a measured result in the delivered docs, and leaving the host clean afterwards.
+- [Planning workflow](development/planning-workflow.md) -- the work contract, task lanes and
+  statuses, `Requires` versus `Dependencies`, task records, closed research, and the completion
+  transition from plan to current docs.
 
 ## See also
 

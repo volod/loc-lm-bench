@@ -643,7 +643,11 @@ in the change that caused it rather than at the next doc lint.
 | Markdown style | `make lint-md` | pymarkdown findings; config in `pyproject.toml` `[tool.pymarkdown]`. Fix BY HAND -- `pymarkdown fix` corrupts prose on 0.9.38 |
 | Link landing | `make lint-doc-links` | A relative link whose file is missing or whose `#anchor` no heading produces (`llb.quality.doc_links`) |
 | Citation form | `make lint-doc-links` | A measured result cited by a run directory or a bare run label (`llb.quality.doc_citations`) |
-| Spec/plan integrity | `make lint-spec-plan` | A disagreement between the spec's capability registry and `plan.md` (`llb.quality.spec_plan_integrity`) |
+| Spec/plan integrity | `make lint-spec-plan` | A disagreement between the spec's capability registry and `plan.md`, a task missing a field or carrying a status its lane forbids, a bad `Requires` edge, or history in the plan (`llb.quality.spec_plan_integrity`) |
+
+`make plan-status` (`llb.quality.plan_summary`) is the read side of the last gate: lane and status
+counts, how many tasks wait on an open `Requires`, and each lane's priority task. It refuses to name
+a priority over a plan the gate rejects.
 
 ### Why a run path is not a citation
 
@@ -670,18 +674,29 @@ Blackwell host were in that state, chiefly older 16 GiB-host runs under `context
 `lint-spec-plan` is the join between three documents that are otherwise only related by convention:
 [the spec](../../design/spec.md) says what the product does, its
 [capability registry](../../design/spec.md#capability-registry) says how each capability is
-evaluated and where it is implemented, and [plan.md](../plan.md) holds the remaining work. It
-enforces four invariants:
+evaluated and where it is implemented, and [plan.md](../plan.md) holds the remaining work. Its
+registry invariants:
 
 - every plan task carries a `Serves` line naming a registered capability id, and sits in that
   capability's `###` group;
 - every `shipped` capability links to implementation docs; every `planned` one has at least one open
   task;
 - every capability declares a non-empty evaluation;
-- the plan's capability groups appear in the registry's row order, in both task sections.
+- the plan's capability groups appear in the registry's row order, in both task sections, and a
+  lane never returns to an earlier group.
 
-The last one is what keeps "what do I work on next" a position rather than an argument: the registry
-row order IS the implementation line, and it runs down the trust chain. The checker never judges
+The order is what keeps "what do I work on next" a position rather than an argument: the registry
+row order IS the implementation line, and it runs down the trust chain. Its task invariants keep
+each task executable without guessing: all nine fields of the
+[task shape](../../guides/development/planning-workflow.md#task-shape) present and non-empty
+(a value may wrap onto indented lines), a status the lane allows (`CLEAR` and `RUN NEEDED` in the
+agent lane, `BLOCKED BY HUMAN` and `HUMAN-GATED` in the human lane, with an optional
+`-- reason`), required tasks ahead of `(optional)` ones in each group, unique well-formed ids, and
+no `done`, `delivered`, `implemented`, or ISO date anywhere in the plan. The `Requires` field names
+open start prerequisites across both lanes; `llb.quality.plan_dependencies` refuses an unknown id,
+a cycle, and a required task waiting on an optional one. The parsers live in
+`llb.quality.plan_model`, and `tests/llb/quality/` drives every refused shape through a synthetic
+plan. The checker never judges
 whether a capability is worth having -- only whether both documents say the same thing about it. A
 capability found while implementing is added through
 [Extending this specification](../../design/spec.md#extending-this-specification) before it becomes

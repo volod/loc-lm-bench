@@ -981,7 +981,7 @@ Four rules settle it, in order:
 | 18 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
 | 19 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
 | 20 | `simulated-user-dialogue` | planned | A case's reward decomposes into the components it declares as gating and recomputes from the saved simulation bundle alone; the user-simulator model and endpoint are recorded per run and a comparison whose cases were answered against different ones is refused rather than mixed; success across repeated trials is published as an interval, never a point estimate; the external-suite lane reproduces the suite's published numbers under its pinned tag and appears in no localized or private board row; a localized Ukrainian domain preserves every case's target end state under replay of its reference trajectory; and a lane that separates no models the single-actor agentic tier already ranks apart is recorded as buying nothing there rather than adopted | [Simulated-user dual-control workloads](#simulated-user-dual-control-workloads) (the contract; the work is in [the plan](../impl/plan.md)) |
-| 21 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 21 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan, the task shape and lane statuses, `Requires` prerequisites, ordering, and forward-only plan wording), each refusing its synthetic fixtures while the shipped tree passes | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -1006,8 +1006,11 @@ The lifecycle for one is fixed, and its steps are in this order for a reason:
    `planned` and the evaluation from step 3.
 5. **Place it in the implementation line.** Add plan tasks under the capability, positioned by the
    trust chain rather than by when the idea arrived.
-6. **Implement, then close the loop.** Record delivered behavior in the current docs, remove the
-   task from the plan, and flip the registry row to `shipped` with the implementation link.
+6. **Implement, then close the loop.** Record delivered behavior in the current docs, keep the
+   task's contract and acceptance evidence in its task record, remove the task from the plan, and
+   flip the registry row to `shipped` with the implementation link. The
+   [completion transition](../guides/development/planning-workflow.md#completion-transition) is the
+   full sequence.
 
 Steps 2-4 are the cost that keeps this cheap to do and expensive to do carelessly. They are also
 what makes a discovered capability durable: a feature that entered the plan without them is a
@@ -1030,6 +1033,29 @@ that agreement is a build failure rather than a review opinion.
 - **The plan is ordered by the trust chain.** Tasks appear grouped by capability, and the capability
   groups appear in the declared implementation-line order. "What is next" is then a position, not a
   judgment call about which entry is best written.
+- **Every task is executable without guessing.** It carries all nine fields of the
+  [task shape](../guides/development/planning-workflow.md#task-shape), a status its lane allows,
+  and its required work ahead of its `(optional)` refinements within the group.
+- **Start prerequisites are explicit.** An optional `Requires` field names the open tasks, in either
+  lane, that must leave the plan before a task can start; each id is a real open task, the edges
+  form no cycle, and required work never waits on optional work. Everything else a task needs stays
+  in its prose `Dependencies`. `make plan-status` reads the plan back as lane counts and each lane's
+  priority task, skipping tasks still waiting on `Requires`, and refuses to schedule over a plan that
+  fails this gate.
+- **The plan holds only what remains.** History words and dates are refused in it. A finished
+  task's original contract and acceptance evidence move to its
+  [task record](../impl/records/README.md), and a research question closed negative moves to
+  [future research](../impl/future-research.md) with its reopening conditions.
+
+Boundary: the checks establish structural agreement. Whether a capability is worth having, whether
+an acceptance gate is strong enough, whether a record's evidence supports acceptance, and whether an
+external prerequisite holds remain contributor judgment.
+
+Evaluation: synthetic fixtures reproduce every refused shape -- an unregistered or misfiled task, a
+missing field, a status in the wrong lane, required work after optional work, an unknown, cyclic,
+or optional-on-required `Requires` edge, groups out of order, and history in the plan -- and the
+shipped tree passes the same checks. A negative result blocks the change and names the documents
+that disagree.
 
 Some things are deliberately NOT tracked as forward work, because tracking them creates more of
 them than it resolves:

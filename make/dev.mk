@@ -6,6 +6,7 @@
 	install-extras lock-drift \
 	apt-deps test test-fast format \
 	ci ci-checks ci-github complexity-gate shell-lint-gate lint-md lint-doc-links lint-spec-plan \
+	plan-status \
 	lint-toolchain check-artifact-contracts generate-artifact-contracts
 
 demo-eval: ## End-to-end: venv -> committed gold set -> index -> validate -> prep-models -> run-eval+telemetry
@@ -176,6 +177,10 @@ lint-doc-links: ## Check every relative docs link resolves and no result is cite
 lint-spec-plan: ## Check the spec's capability registry and plan.md agree (also runs in ci-checks)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.spec_plan_integrity
+
+plan-status: ## Count plan tasks by lane/status and name each lane's priority task (skips open Requires)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@$(PY) -m llb.quality.plan_summary
 
 lint-toolchain: ## Check mypy/ruff/basedpyright restatements match [tool.llb.toolchain]
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -20,7 +20,9 @@ routes you from a high-level topic to the specific document.
 | --- | --- | --- |
 | Design | [design/README.md](design/README.md) | Problem, wedge, architecture, decisions, prior art; [spec.md](design/spec.md) is the source of truth |
 | Implementation | [impl/current.md](impl/current.md) | Agent-facing map of current behavior under `impl/current/` |
-| Forward plan | [impl/plan.md](impl/plan.md) | Future engineering tasks only |
+| Forward plan | [impl/plan.md](impl/plan.md) | Future engineering tasks only; how work enters and leaves it is the [planning workflow](guides/development/planning-workflow.md) |
+| Task records | [impl/records/README.md](impl/records/README.md) | A finished task's original contract and the evidence that accepted it |
+| Future research | [impl/future-research.md](impl/future-research.md) | Research questions closed negative, and what would have to be true to reopen each |
 | Guides | [guides/README.md](guides/README.md) | Operator workflows and learning material, grouped by topic |
 | Robotics RAG | [impl/current/robotics-rag.md](impl/current/robotics-rag.md) | Pinned contracts and HFlow evidence, the action gate and emulator, paired operation evaluation, and the explicit hardware boundary |
 | Inference | [inference/config-example.md](inference/config-example.md) | GPU tier detection, automatic CUDA-host draft selection, and generated serve/run configs |

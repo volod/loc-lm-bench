@@ -1,25 +1,41 @@
 # loc-lm-bench -- Implementation Plan (forward work)
 
-Forward-only: every task line in this file must describe work that remains. Current behavior,
-operator workflows, durable evidence, and design decisions live in [`current.md`](current.md) and
-the topic files under [`current/`](current/). The product spec lives in
-[`docs/design/spec.md`](../design/spec.md).
+Forward-only: every line in this file describes work that remains. Current behavior, operator
+workflows, durable evidence, and design decisions live in [`current.md`](current.md) and the topic
+files under [`current/`](current/). A task that leaves this file keeps its original contract and
+acceptance evidence in its [task record](records/README.md); a research question that closed
+negative keeps its reopening conditions in [future research](future-research.md). The product spec
+lives in [`docs/design/spec.md`](../design/spec.md).
 
 Every task serves a capability registered in
 [the spec](../design/spec.md#capability-registry), and the capability groups below appear in the
 registry's row order -- the implementation line. That is the whole scheduling rule: **take the first
-task of the earliest group that still has one.** Which entry is best written, most recently added,
-or most sharply specified does not enter into it.
+task of the earliest group that still has one, skipping a task whose `Requires` names a task still
+in this file.** Which entry is best written, most recently added, or most sharply specified does not
+enter into it. `make plan-status` applies the rule and names each lane's priority task; read that
+task's `Dependencies` before starting it.
+
+Lanes, statuses, task fields, `Requires` versus `Dependencies`, ordering inside a group, and the
+completion transition are defined once, in the
+[planning workflow](../guides/development/planning-workflow.md). Read it before adding a task.
 
 Work that no registered capability covers is not blocked -- it is a signal the spec has a gap. Close
 the gap first: [Extending this specification](../design/spec.md#extending-this-specification) is the
 six-step lifecycle for turning a discovery into a registered capability with a declared evaluation,
-and only then into tasks here. `make lint-spec-plan` enforces the join in both directions.
+and only then into tasks here. `make lint-spec-plan` enforces the join in both directions, the
+task shape, and the forward-only wording of this file.
+
+For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
+[RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
+[data prep](current/data-prep.md). For tasks that depend on scoring or judging, the calibrated
+local-judge baseline and tuning/sweep behavior live in
+[evaluation rigor](current/rigor-board-judge.md); the prompt-system package flow and other
+extended workflows live in [extended workflows](current/extended-workflows.md).
 
 ## Pre-release rule: no versioning, no backward compatibility
 
 Nothing this project writes has been released, so nothing on disk is a compatibility obligation.
-Until every task in this file is done, a task must NOT introduce a second schema version, a
+Until this file holds no task, a task must NOT introduce a second schema version, a
 migration edge, a compatibility shim, a re-export alias, a deprecation window, or a "read the old
 form too" branch. When a durable form has to change, change it in place: update the model,
 regenerate the exports, update the fixtures, and rebuild whatever no longer parses. A run
@@ -35,63 +51,11 @@ Backward compatibility and schema migration become real requirements at release,
 empty and the code is published; the mechanism is kept working for that day. A task written before
 that point does not get to spend it.
 
-## Forward Tasks
-
-The forward work is split into two sections by **who must act to complete it**:
-
-- **[Agent Implementation Tasks](#agent-implementation-tasks)** land to `make ci` green with
-  committed fixtures, injected fakes, and deterministic harnesses. A few carry a heavy real-model
-  run for durable evidence; those runs are deterministic and execute on the CUDA host without any
-  human judgment, so they stay in this section.
-- **[Human-Assisted Tasks](#human-assisted-tasks)** cannot reach their stated acceptance without a
-  human in the loop: the deliverable *is* human judgment (verification-gate reviews, drafting
-  oversight, measured reviewer throughput) or requires a human authorization (egress consent +
-  API spend). An agent can still build the supporting code and unit tests; the marked **human
-  step** is what gates completion.
-
-Both sections carry the same capability groups in the same order, so the two run in parallel: an
-agent works its section's line while a human-gated item waits on its reviewer.
-
-Task ids are stable and never change. Every task carries a `Serves` line naming its capability and a
-`Dependencies` line. Within a group the same logic applies one level down:
-
-1. a task another task names as a prerequisite comes first;
-2. then work that changes what later tasks measure -- a chunker, an encoder roster, or a detector
-   change invalidates every reading taken against the old one;
-3. then required before `(optional)`;
-4. then cheap before expensive: a `CLEAR` task costs a fixture test, a `RUN NEEDED` task costs a GPU
-   run, so a run of CLEAR work lands as one pass rather than interleaved.
-
-For remaining tasks that depend on retrieval behavior, use the current RAG baseline documented in
-[RAG core](current/rag-core.md) and the mixed-corpus ingestion baseline documented in
-[data prep](current/data-prep.md). For tasks that depend on scoring or judging, the calibrated
-local-judge baseline and tuning/sweep behavior live in
-[evaluation rigor](current/rigor-board-judge.md); the prompt-system package flow and other
-extended workflows live in [extended workflows](current/extended-workflows.md).
-
-Every task below carries an explicit `Agent status` line with one of four markers:
-
-- **CLEAR** -- agent-buildable to `make ci` green with fixtures/fakes; no run evidence, no human
-  gate.
-- **RUN NEEDED** -- agent-buildable, but acceptance requires a heavy deterministic run; every dev
-  box is a proper CUDA host, so the agent executes these runs itself on the current machine.
-- **BLOCKED BY HUMAN** -- the acceptance gate consumes an artifact only a human step can produce.
-- **HUMAN-GATED** -- the deliverable itself is human judgment or authorization; supporting code and
-  unit tests are agent-buildable.
-- **RESEARCH** -- in addition to Agent status. It marks the task implementation as unknown in
-advance, and a negative result is a valid outcome that must be recorded rather than worked around.
-
-**`(optional)` is binding within a group.** It marks work already judged not to be the next thing
-worth doing for that capability, so it sorts behind every non-optional task in its own group. It
-does NOT reorder the line: an optional task of an earlier capability still precedes a required task
-of a later one, because the trust chain is what the order encodes.
-
 ## Agent Implementation Tasks
 
-Agent-buildable work, grouped by the capability it serves and ordered by the
-implementation line in the [capability registry](../design/spec.md#capability-registry).
-Take the first task of the earliest group that still has one; see
-[Adding Future Tasks](#adding-future-tasks) before adding one.
+Work an agent can take to acceptance on its own: `make ci` green with committed fixtures, injected
+fakes, and deterministic harnesses (`CLEAR`), or that plus a heavy deterministic run the agent
+executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry order.
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
@@ -138,8 +102,9 @@ discover, validate, or materialize a supported contract.
 
 - Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
 - Agent status: CLEAR
-- Dependencies: `artifact-contract-training-and-integration-migration`; every in-scope producer must
-  have a contract before temporary migration exemptions can be removed.
+- Requires: `artifact-contract-training-and-integration-migration`
+- Dependencies: every in-scope producer must have a contract before temporary migration exemptions
+  can be removed.
 - User-visible outcome: `llb artifacts inspect`, `llb artifacts validate`, and
   `llb artifacts migrate --out <target>` work consistently across datasets and run bundles, and CI
   prevents new unregistered durable data from entering the repository.
@@ -223,6 +188,42 @@ material acquired on terms that forbid redistribution.
   with no `licence` field exports exactly as it does today.
 - Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
   [data egress](current/scope-boundaries.md#data-egress) boundary.
+
+### Retrieval evidence -- `retrieval-evidence`
+
+#### reranker-end-to-end-crosscheck-on-an-evidence-model
+
+The off-by-default reranker verdict asks to be overturned with END-TO-END evidence, and the only
+end-to-end run behind it cannot supply that: it scored `llama3.2:3b` -- below the project's >=7B
+live-evidence floor -- on n=14, where the two arms' intervals overlap so widely that the reading is
+"no measured gain" rather than a measured loss, and its bundles are retained on no host
+([rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order)).
+The retrieval half still stands on its own at that small k. So the open question is narrow -- does
+that retrieval lift reach the ANSWER on a model the project accepts for evidence? Re-run the same
+`rerank_candidates=0,30` cross-check on a >=7B local model, at an n predeclared to separate the two
+recorded objectives, and restate the off-by-default verdict as reproduced, corrected, or retired. A
+negative result -- the lift still does not reach the answer -- is the valuable outcome, because it
+is what the shipped default rests on.
+
+- Serves: `retrieval-evidence` -- [RAG core](../design/spec.md#capability-registry)
+- Agent status: RUN NEEDED
+- Dependencies: none in code. `make sweep` already takes the grid, and the paired lane already
+  supplies the interval and the minimum-evidence gate
+  ([paired verdicts](current/rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading)).
+- User-visible outcome: an operator deciding whether to pay ~0.96 s/query for reranking gets an
+  answer measured on a model they would actually serve, instead of one bounded by a 3B smoke model.
+- Scope boundary: in scope -- the predeclared n, the two-arm run on a >=7B model, and the restated
+  verdict. Out of scope -- changing the shipped `rerank_candidates` default before the run supports
+  it, widening the pool grid, and swapping the reranker.
+- Data and artifact paths: one `$DATA_DIR/run-eval/<run>/` per arm under the sweep's own root.
+- Execution path: `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"
+  RERANKER=BAAI/bge-reranker-v2-m3` on a CUDA host with a >=7B model resident; CI is unchanged.
+- Acceptance gates: `make ci` green; the model is >=7B; the predeclared n is stated BEFORE the run
+  and met; both arms report objective with paired intervals and the win/loss/tie ledger; the reading
+  states whether the retrieval lift reaches the answer, and whether the minimum-evidence gate is
+  cleared.
+- Documentation target:
+  [rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
@@ -467,7 +468,8 @@ A negative result -- no cut rule lands inside without splitting a genuine decisi
 outcome and closes the question.
 
 - Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
-- Agent status: RUN NEEDED, RESEARCH
+- Agent status: RUN NEEDED
+- Research: yes
 - Dependencies: none. Reuse `granularity.py`'s two rules as the bracket the third must sit inside and
   `compare-conflict-granularity` to read the result over committed runs.
 - User-visible outcome: either one decision count an operator can fund directly, or a recorded reason
@@ -545,7 +547,8 @@ screen and nothing more, and that is the result to record rather than a lane to 
 - Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
 - Agent status: CLEAR -- the run is deterministic at fixed seeds and executes on the CUDA host with
   no human judgment.
-- Dependencies: `dual-control-suite-seam`.
+- Requires: `dual-control-suite-seam`
+- Dependencies: none.
 - User-visible outcome: a recorded verdict on whether dual-control screening adds ranking
   information over the single-actor agentic tier, and a per-model reliability number an operator can
   read as "succeeds k times out of n" rather than as a mean.
@@ -579,7 +582,8 @@ nothing to do with conversation, and reporting that as a conversational failure 
 
 - Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
 - Agent status: CLEAR
-- Dependencies: `dual-control-suite-seam`.
+- Requires: `dual-control-suite-seam`
+- Dependencies: none.
 - User-visible outcome: a per-model, per-backend statement of whether native tool calling is
   available at all for the dual-control tier, so a zero is attributable to the protocol rather than
   read as conversational incapacity.
@@ -619,6 +623,10 @@ Anchors keep their fragments, so only paths change and `make lint-doc-links` pro
   successive byte-accounting decisions to reach it.
 - Scope boundary: in scope -- the split, the area-page row, and the link repointing. Out of scope
   -- rewriting the moved text and changing any measured result.
+- Data and artifact paths: `docs/impl/current/data-prep/conflict-bundle-record.md`, the new
+  topic page beside it, and the [data prep](current/data-prep.md) area table; no run artifact.
+- Execution path: move the subsections along the heading seam, add the area-page row, repoint
+  the inbound links, and run `make lint-md`; no code change and no run.
 - Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
   no anchor text changes.
 - Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
@@ -642,6 +650,10 @@ Anchors keep their fragments, so only paths change and `make lint-doc-links` pro
   counting rules to reach it.
 - Scope boundary: in scope -- the split, the area-page row, and the link repointing. Out of scope
   -- rewriting the moved text and changing any measured result.
+- Data and artifact paths: `docs/impl/current/data-prep/conflict-decision-groups.md`, the new
+  topic page beside it, and the [data prep](current/data-prep.md) area table; no run artifact.
+- Execution path: move the subsections along the heading seam, add the area-page row, repoint
+  the inbound links, and run `make lint-md`; no code change and no run.
 - Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
   no anchor text changes.
 - Documentation target: [data prep](current/data-prep.md) and the two pages the split produces.
@@ -668,6 +680,11 @@ fragments, so only paths change and `make lint-doc-links` proves the move.
 - Scope boundary: in scope -- the split, the area-page table, and the link repointing. Out of scope
   -- rewriting the moved text, changing any measured result, and merging the per-lane test
   paragraphs.
+- Data and artifact paths: `docs/impl/current/entity-resolution.md`, the
+  `current/entity-resolution/` pages it becomes, and the inbound pages named under Dependencies;
+  no run artifact.
+- Execution path: move the subsections along the heading seam, add the area-page row, repoint
+  the inbound links, and run `make lint-md`; no code change and no run.
 - Acceptance gates: `make lint-md` green with zero broken links; no page past ~500 lines; no anchor
   text changes.
 - Documentation target: [entity resolution](current/entity-resolution.md) and the pages the split
@@ -696,6 +713,11 @@ area page, and repoint the inbound links. Anchors keep their fragments, so only 
   bound story and two study ladders to reach it.
 - Scope boundary: in scope -- the split, the area-page row, the `published_in` repointing, and the
   link repointing. Out of scope -- rewriting the moved text and changing any measured result.
+- Data and artifact paths: `docs/impl/current/extended-workflows/summary-input-elision.md`, the
+  new topic page beside it, the area table, and
+  `samples/benchmarks/agentic_context_policy_pins.json`; no run artifact.
+- Execution path: move the subsections along the heading seam, add the area-page row, repoint
+  the inbound links, and run `make lint-md`; no code change and no run.
 - Acceptance gates: `make lint-md` green with zero broken links; neither page is past ~500 lines;
   no anchor text changes; the pin gate's doc-anchor test still passes.
 - Documentation target: [extended workflows](current/extended-workflows.md) and the two pages the
@@ -703,9 +725,9 @@ area page, and repoint the inbound links. Anchors keep their fragments, so only 
 
 ## Human-Assisted Tasks
 
-Work whose acceptance needs human judgment or authorization, in the same capability
-order. An agent can build the supporting code and unit tests; the marked human step is
-what gates completion.
+Work whose acceptance needs human judgment or authorization (`BLOCKED BY HUMAN`, `HUMAN-GATED`), in
+the same capability order. An agent can build the supporting code and unit tests; the human step
+named in `Dependencies` is what gates completion.
 
 ### Gold data and ground truth -- `gold-data`
 
@@ -824,8 +846,9 @@ the move.
 - Serves: `entity-resolution` --
   [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
 - Agent status: BLOCKED BY HUMAN
-- Dependencies: the reviewer merge ledger from `entity-merge-labelled-set` under Human-Assisted
-  Tasks is the gate -- without it there is no curve to read a threshold off. The lane, its record
+- Requires: `entity-merge-labelled-set`
+- Dependencies: its reviewer merge ledger is the gate -- without it there is no curve to read a
+  threshold off. The lane, its record
   specification, and the shadow report already exist; the seam's label-fitted m estimation and
   labelled accuracy curve already exist.
 - User-visible outcome: a drafting run's suppression decision carries a threshold with a precision
@@ -932,40 +955,6 @@ its item set or of the drafting, which only an accepted ledger over that corpus 
 - Documentation target: the hybrid-retrieval evidence section of
   [RAG core](current/rag-core/hybrid-retrieval.md#hybrid-retrieval-dense--bm25--rrf).
 
-#### reranker-end-to-end-crosscheck-on-an-evidence-model
-
-The off-by-default reranker verdict asks to be overturned with END-TO-END evidence, and the only
-end-to-end run behind it cannot supply that: it scored `llama3.2:3b` -- below the project's >=7B
-live-evidence floor -- on n=14, where the two arms' intervals overlap so widely that the reading is
-"no measured gain" rather than a measured loss, and its bundles are retained on no host
-([rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order)).
-The retrieval half still stands on its own at that small k. So the open question is narrow -- does
-that retrieval lift reach the ANSWER on a model the project accepts for evidence? Re-run the same
-`rerank_candidates=0,30` cross-check on a >=7B local model, at an n predeclared to separate the two
-recorded objectives, and restate the off-by-default verdict as reproduced, corrected, or retired. A
-negative result -- the lift still does not reach the answer -- is the valuable outcome, because it
-is what the shipped default rests on.
-
-- Serves: `retrieval-evidence` -- [RAG core](../design/spec.md#capability-registry)
-- Agent status: RUN NEEDED
-- Dependencies: none in code. `make sweep` already takes the grid, and the paired lane already
-  supplies the interval and the minimum-evidence gate
-  ([paired verdicts](current/rag-core/paired-verdicts.md#the-minimum-evidence-gate-on-a-paired-reading)).
-- User-visible outcome: an operator deciding whether to pay ~0.96 s/query for reranking gets an
-  answer measured on a model they would actually serve, instead of one bounded by a 3B smoke model.
-- Scope boundary: in scope -- the predeclared n, the two-arm run on a >=7B model, and the restated
-  verdict. Out of scope -- changing the shipped `rerank_candidates` default before the run supports
-  it, widening the pool grid, and swapping the reranker.
-- Data and artifact paths: one `$DATA_DIR/run-eval/<run>/` per arm under the sweep's own root.
-- Execution path: `make sweep SWEEP_RAG_GRID="rerank_candidates=0,30"
-  RERANKER=BAAI/bge-reranker-v2-m3` on a CUDA host with a >=7B model resident; CI is unchanged.
-- Acceptance gates: `make ci` green; the model is >=7B; the predeclared n is stated BEFORE the run
-  and met; both arms report objective with paired intervals and the win/loss/tie ledger; the reading
-  states whether the retrieval lift reaches the answer, and whether the minimum-evidence gate is
-  cleared.
-- Documentation target:
-  [rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
-
 #### fusion-routing-calibration-power (optional)
 
 Increase the sidecar-free routing calibration's statistical power before reconsidering its
@@ -978,9 +967,10 @@ threshold grid.
 
 - Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
 - Agent status: BLOCKED BY HUMAN
+- Requires: `multihop-ledger-human-acceptance`
 - Dependencies: the [shared paired-power contract](current/rag-core/paired-verdicts.md#paired-power-contract-for-comparison-lanes)
-  supplies the predeclared split sizes, and `multihop-ledger-human-acceptance` must provide a
-  non-empty accepted multi-span ledger. Human
+  supplies the predeclared split sizes, and the required task must provide a non-empty accepted
+  multi-span ledger. Human
   step that gates completion: accept enough additional genuinely multi-span questions to meet the
   predeclared split sizes.
 - User-visible outcome: operators can distinguish a useful sidecar-free route from a sparse-win
@@ -1132,7 +1122,7 @@ Authorize the frontier scorer lane against real providers. The report tooling is
 what remains is entirely the human authorization and the judgment it produces.
 
 - Serves: `judge-calibration` -- [Judge calibration](../design/spec.md#judge-admission)
-- Agent status: HUMAN-GATED human_decision: panding
+- Agent status: HUMAN-GATED
 - Command: once a real Anthropic key is in `.env` (~$0.40, 86 items):
 
   ```bash
@@ -1177,8 +1167,9 @@ existing store, then report both grounding modes side by side so the gap is visi
 
 - Serves: `judge-calibration` -- [Judge calibration](../design/spec.md#judge-admission)
 - Agent status: HUMAN-GATED
-- Dependencies: blocked by `frontier-judge-authorization` (needs the same provider keys and
-  spend). Reuse the agreement lane in `src/llb/scoring/frontier_agreement/` and the store-loading
+- Requires: `frontier-judge-authorization`
+- Dependencies: the same provider keys and spend approval. Reuse the agreement lane in
+  `src/llb/scoring/frontier_agreement/` and the store-loading
   seam used by the context-position probe.
 - User-visible outcome: evidence for whether frontier-judge trust measured on oracle context
   transfers to the noisy contexts a real scored run produces.
@@ -1292,7 +1283,8 @@ unstable identity/state semantics, or transport that bypasses the external gate 
 result and must leave the project labelled protocol-neutral.
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
-- Agent status: HUMAN-GATED, RESEARCH
+- Agent status: HUMAN-GATED
+- Research: yes
 - Dependencies: the [robotics boundary contracts](current/robotics-rag/boundary-contracts.md) and
   the [action gate and emulator](current/robotics-rag/action-gate-and-emulator.md). Human step
   that gates completion: an authorized MHS preview participant accepts the applicable terms,
@@ -1330,8 +1322,9 @@ returns the capability to shadow mode; the canary never turns on unattended oper
 
 - Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
 - Agent status: HUMAN-GATED
-- Dependencies: the [held-out emulator benchmark](current/robotics-rag/benchmark.md) and
-  `robotics-mhs-preview-conformance`. Human step that gates completion: the hardware owner supplies
+- Requires: `robotics-mhs-preview-conformance`
+- Dependencies: the [held-out emulator benchmark](current/robotics-rag/benchmark.md). Human step
+  that gates completion: the hardware owner supplies
   the isolated device, approves the risk and rollback worksheet, verifies interlocks and an
   operator-controlled emergency stop, observes the entire run, grants the proposal-bound write
   approval, and signs the canary verdict.
@@ -1479,6 +1472,13 @@ the fitted cost -- or record that the linear rank is within the measurement's ow
   which has no policy to rank on.
 - Human step: a reviewer works both shapes under measurement; the fit cannot be produced from
   artifacts alone.
+- Data and artifact paths: the two goods bundles under `$DATA_DIR/corpus-conflicts/<run>/` as the
+  measured shapes; the timing capture and fitted-cost report under the measuring command's own
+  `$DATA_DIR/<method>/<run>/` root.
+- Execution path: the timing capture, the fit, and the ranking key are agent-buildable and covered
+  by fixture tests in `make ci`; the reviewer then works a concentrated and a scattered block in
+  the review TUI under that capture, and the result either changes `_stake_order` in
+  `src/llb/conflicts/resolution/review.py` or records that the linear rank survives.
 - Acceptance gates: `make ci` green; the report states the fitted per-group and per-row costs with
   their uncertainty, and either changes `_stake_order` or records that the linear rank survives.
 - Documentation target: [conflict
@@ -1500,8 +1500,9 @@ becomes a different benchmark.
 - Agent status: HUMAN-GATED -- an agent can build the domain, the tools, the world, the reference
   trajectories, and the replay check; a Ukrainian reviewer must accept the policy and each case's
   scenario before any number from the lane is published.
-- Dependencies: `dual-control-suite-seam` (agent section) for the seam the domain registers into;
-  no cross-section block beyond it.
+- Requires: `dual-control-suite-seam`
+- Dependencies: the agent-lane seam is the only cross-lane prerequisite; the domain registers into
+  it.
 - User-visible outcome: a Ukrainian dual-control domain a local model can be scored on, whose
   numbers may inform a model choice because the language, the policy, and the world are the ones
   the operator would deploy.
@@ -1527,63 +1528,3 @@ becomes a different benchmark.
   the English screen.
 - Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md` and the
   [review workbench](current/review-workbench.md) adapter list.
-
-## Adding Future Tasks
-
-**First decide whether the work is a task at all.** Four kinds of finding look like forward work
-and are not:
-
-- A **chore**: a source file over the soft line limit, or a run artifact already inside its size
-  bound that could still be smaller. Do it inline while editing the file, or leave it. Written up
-  with acceptance gates, a chore competes with the product on equal footing and each round produces
-  the next round.
-- An **audit of our own output**: an artifact's field layout, an artifact's byte count. The measure
-  of an audit is a decision it changes, not a byte it saves.
-- A **migration, compatibility shim, or second schema version** for a form only our own code has
-  written. Change the form in place and rebuild the data; see
-  [Pre-release rule](#pre-release-rule-no-versioning-no-backward-compatibility).
-- A **new domain capability** the spec does not describe. This one IS worth doing, and it is not a
-  plan task yet: run the six steps of
-  [Extending this specification](../design/spec.md#extending-this-specification) first -- state the
-  problem in operator terms, amend the spec, declare the evaluation, register the capability, and
-  only then write tasks under it. That order is what makes a discovery durable rather than a private
-  detour.
-
-**Then write the task.** It needs a stable descriptive id such as `platform-matrix-power` or
-`prompt-system-tuning`, kept only while work remains under it, and enough detail for an engineer or
-an agent to execute without guessing. File it under the `###` group of the capability it serves, in
-**Agent Implementation Tasks** if it can land to `make ci` green with fixtures/fakes (heavy
-deterministic runs on the CUDA host are fine), or under **Human-Assisted Tasks** if a human
-review/judgment or authorization gates completion; mark any cross-section block explicitly.
-
-Each task entry must include:
-
-- Serves: the capability id from the
-  [capability registry](../design/spec.md#capability-registry) this work advances, linked to the
-  spec section that owns it. Checked by `make lint-spec-plan`.
-- Dependencies: prerequisite tasks (by number/id), any cross-section block, and -- for
-  human-assisted tasks -- the specific human step that gates completion.
-- User-visible outcome: what new capability or decision the work should create.
-- Scope boundary: what is in scope, what is explicitly out of scope, and which existing modules or
-  commands should be reused.
-- Data and artifact paths: expected corpus, gold set, config, `$DATA_DIR/<method>/<run>/` outputs,
-  and any committed `samples/` outputs.
-- Execution path: commands, manual run steps, required local services, and any heavy/dependent steps
-  that must stay outside quick CI.
-- Acceptance gates: tests, lint/type checks, retrieval thresholds, score comparison method, or manual
-  evidence required before the item leaves this file.
-- Documentation target: the narrow `docs/impl/current/*.md` topic and any guide that should receive
-  the resulting behavior and run notes.
-
-When a task surfaces new future work, route it by the four kinds above: handle a chore inline or
-dropped, a self-audit gets dropped, a compatibility layer for our own unreleased output gets
-replaced by an in-place change, and a genuine capability goes through the spec lifecycle before it
-becomes tasks. Extension is welcome and finishing a task while adding nothing is equally normal --
-what is not normal is a task quietly appearing under a capability nobody amended the spec for. Put
-current behavior and durable decisions in current docs, never in this plan.
-
-A RESEARCH task whose answer comes back negative leaves this file too, but it is not simply deleted:
-move it to [future research](future-research.md) with what closed it and the conditions that would
-make it worth reopening. Its measurements belong in the current docs like every other finished piece
-of work; what future-research.md adds is the reasoning a later reader needs before spending the same
-effort again.
