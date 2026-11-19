@@ -24,6 +24,9 @@ build when the two disagree.
 - [Corpus provenance and acquisition boundary](spec.md#corpus-provenance-and-acquisition-boundary)
   -- what an acquired document must carry, why the seam is a projection rather than a format, and
   what this project refuses to do on a producer's behalf.
+- [Scanned book recovery](spec.md#scanned-book-recovery) -- a poorly scanned technical book
+  recovered into a page-traceable reading vault and a corpus projection from one block ledger, with
+  evidence-constrained correction and a pilot-measured tool choice.
 - [Corpus conflict and governance](spec.md#corpus-conflict-and-governance) -- contradiction and
   supersession auditing, and the confidence contract that bounds what it may claim.
 - [Retrieval before generation](spec.md#retrieval-before-generation) -- isolating evidence delivery
