@@ -24,3 +24,4 @@ completion transition is in the
 | Record | Work |
 | --- | --- |
 | [Agent workflow template sync](agent-workflow-template-sync.md) | Adopting the upstream agent template's adapters, task records, `Requires`, and stricter plan gate |
+| [book-ocr-run-ledger-and-resume](book-ocr-run-ledger-and-resume.md) | The resumable `book-ocr` run skeleton: page inventory, stage registry, per-page ledger, content-addressed stage cache |

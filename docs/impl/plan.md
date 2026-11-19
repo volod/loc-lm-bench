@@ -57,53 +57,41 @@ Work an agent can take to acceptance on its own: `make ci` green with committed 
 fakes, and deterministic harnesses (`CLEAR`), or that plus a heavy deterministic run the agent
 executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry order.
 
+### Corpus provenance -- `corpus-provenance`
+
+#### export-redistribution-gate
+
+`acl_label` covers who may READ a document inside a run; nothing covers whether the material may be
+copied off the host. Corpus-derived text leaves through the fine-tune export
+(`src/llb/finetune/dataset.py`), the contrastive-pair export (`src/llb/finetune/embedder/pairs.py`),
+and every opt-in frontier path behind `egress_consent`, and none of them can currently refuse
+material acquired on terms that forbid redistribution.
+
+- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
+- Agent status: CLEAR
+- Dependencies: none. The check keys on `licence`, read at ingest today
+  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
+- User-visible outcome: an export refuses material whose recorded terms forbid redistribution, so
+  the producing side's local-only determination is enforced where the material could actually leave.
+- Scope boundary: in scope -- one shared redistribution check reused by every export and every
+  egress path, keyed on the `licence` field the projection carries, and a refusal that names the
+  offending document. Out of scope -- MAKING the determination, which is the producing service's
+  responsibility and is consumed here as a recorded fact; access control, which `acl_label` already
+  covers; and runtime guardrails in an application embedding a recommended model, which
+  [the egress boundary](../design/spec.md#data-egress-boundary) puts outside this project.
+- Data and artifact paths: `src/llb/finetune/dataset.py`, `src/llb/finetune/embedder/pairs.py`,
+  `src/llb/prep/ontology/endpoints/builder.py`, and the non-redistributable document in
+  `samples/corpora/acquired_projection_v1/`.
+- Execution path: CPU-only, inside `make ci`; no frontier call is made, the consent seam is
+  exercised with an injected fake.
+- Acceptance gates: `make ci` green. A fixture containing one non-redistributable document causes
+  each export path to REFUSE, naming that document, rather than to filter it -- a partial export
+  that looks complete is the failure this prevents. Removing the gate makes the test fail. A corpus
+  with no `licence` field exports exactly as it does today.
+- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
+  [data egress](current/scope-boundaries.md#data-egress) boundary.
 
 ### Scanned book recovery -- `scanned-book-recovery`
-
-#### book-ocr-run-ledger-and-resume
-
-Nothing in this repo can carry a 1,000-page recovery job. The PDF lane converts a whole document per
-call, keeps no per-page state, and restarts from zero after an interruption. Before any OCR choice,
-the job needs its skeleton: the command, the source identity, a per-page inventory and status
-ledger, a stage cache keyed so a completed expensive stage is never repeated, and the run report --
-built against fake stages, so every later task plugs into it rather than reinventing it.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: none. Reuses the PDF lane's source fingerprinting and `inspect_pdf` diagnostics
-  ([ingestion](current/data-prep/ingestion-import.md)) and the artifact-contract registry for every
-  new durable file ([data-prep contracts](current/artifact-contracts/data-prep-contracts.md)).
-- User-visible outcome: `llb book-ocr run <pdf> --pages <ranges> --batch-pages <n>` inventories a
-  scanned PDF (checksum, page count, native image resolution, orientation, embedded-text presence),
-  renders each page at its native resolution, and drives a registry of stages page by page;
-  `llb book-ocr status <run-dir>` reports per-page, per-stage status; `--dry-run` validates the
-  source, ranges, configuration, and model availability without running a stage; killing the job
-  and rerunning with `--resume <run-dir>` repeats no completed stage.
-- Scope boundary: in scope -- the `book-ocr` Typer group under `src/llb/cli/book/` and its core under
-  `src/llb/prep/book/`; 1-based inclusive PDF page ranges and chapter-sized batches, with overlaps
-  and out-of-range pages refused by name; the source policy (copy, symlink, or reference) with
-  checksum verification and a refusal to write into the source; a content-addressed stage cache
-  (page-image digest, stage-parameter digest, tool and model identity) with atomic per-stage
-  writes; `--reuse-from <earlier-run-dir>` so a fresh run takes every stage whose key matches;
-  per-page failure isolation with a bounded retry and a recorded error; configurable models per
-  stage; structured JSON logs; `metadata/page_manifest.json` and the run config registered as
-  artifact contracts; a processing-report skeleton. Out of scope -- any real preprocessing, OCR,
-  structure, or rendering stage (fake stages only), and concurrent GPU stages.
-- Data and artifact paths: `$DATA_DIR/book-ocr/<run_timestamp>/` (`config.json`,
-  `pages/<pNNNN>/<stage>/`, `metadata/page_manifest.json`, `logs/`); a synthetic multi-page scanned
-  PDF generated by a deterministic fixture factory under `tests/llb/prep/book/`, so no page of a
-  real book enters git.
-- Execution path: `make book-ocr` and `make book-ocr-status` with `##` help descriptions in a new
-  `make/data-prep/book.mk` fragment; CPU-only fixture runs inside `make ci`.
-- Acceptance gates: `make ci` green; tests pin range parsing (single pages, ranges, open ends,
-  overlap, out-of-range refusal), deterministic page and stage naming, resume after a fake stage is
-  killed mid-page (completed stages not re-run, the partial stage re-run, no half-written output
-  visible), a forced stage failure that fails only its own page and is reported, a cache-key change
-  that re-runs only the affected stage, a source-checksum mismatch on resume that refuses, and the
-  source PDF byte-identical after a run.
-- Documentation target: a new `docs/impl/current/book-recovery.md` area page with its
-  `book-recovery/pipeline-and-resume.md` topic and its row in [current.md](current.md); a new
-  `docs/guides/data-prep/book-ocr.md` usage guide.
 
 #### book-recovery-tool-survey
 
@@ -153,8 +141,9 @@ engine and variant produced each reading.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-ocr-run-ledger-and-resume`, `book-recovery-tool-survey`
-- Dependencies: none.
+- Requires: `book-recovery-tool-survey`
+- Dependencies: engines register as stages behind the `book-ocr` stage seam, whose committed outputs
+  land in `pages/<pNNNN>/<stage>/` ([run ledger and resume](current/book-recovery/pipeline-and-resume.md)).
 - User-visible outcome: each page's blocks -- kind, region, reading-order index, raw text per
   (engine, image variant), confidence, engine and model identity -- persist per page and re-read
   without re-running an engine; the shortlisted engines are selectable by configuration per stage
@@ -186,8 +175,9 @@ with the original rendering always kept beside them.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-ocr-run-ledger-and-resume`, `book-recovery-tool-survey`
-- Dependencies: none.
+- Requires: `book-recovery-tool-survey`
+- Dependencies: the page inventory records each image's placement rotation, which does not give
+  content orientation ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#evidence)).
 - User-visible outcome: per page, a recorded signal vector -- skew, line curvature, background
   unevenness, contrast, blur, gutter-shadow side and width, neighbour-page bleed band, orientation --
   and the set of image variants generated for it with their parameters, the original among them.
@@ -726,40 +716,6 @@ by a build that has moved on.
   without its identity; a report a producer can no longer state refuses before it is written.
 - Documentation target: the retrieval and graph contracts page and the RAG-core topic pages that
   own each bundle.
-
-### Corpus provenance -- `corpus-provenance`
-
-#### export-redistribution-gate
-
-`acl_label` covers who may READ a document inside a run; nothing covers whether the material may be
-copied off the host. Corpus-derived text leaves through the fine-tune export
-(`src/llb/finetune/dataset.py`), the contrastive-pair export (`src/llb/finetune/embedder/pairs.py`),
-and every opt-in frontier path behind `egress_consent`, and none of them can currently refuse
-material acquired on terms that forbid redistribution.
-
-- Serves: `corpus-provenance` -- [Corpus provenance and acquisition boundary](../design/spec.md#corpus-provenance-and-acquisition-boundary)
-- Agent status: CLEAR
-- Dependencies: none. The check keys on `licence`, read at ingest today
-  ([acquired-corpus provenance](current/data-prep/acquired-provenance.md)).
-- User-visible outcome: an export refuses material whose recorded terms forbid redistribution, so
-  the producing side's local-only determination is enforced where the material could actually leave.
-- Scope boundary: in scope -- one shared redistribution check reused by every export and every
-  egress path, keyed on the `licence` field the projection carries, and a refusal that names the
-  offending document. Out of scope -- MAKING the determination, which is the producing service's
-  responsibility and is consumed here as a recorded fact; access control, which `acl_label` already
-  covers; and runtime guardrails in an application embedding a recommended model, which
-  [the egress boundary](../design/spec.md#data-egress-boundary) puts outside this project.
-- Data and artifact paths: `src/llb/finetune/dataset.py`, `src/llb/finetune/embedder/pairs.py`,
-  `src/llb/prep/ontology/endpoints/builder.py`, and the non-redistributable document in
-  `samples/corpora/acquired_projection_v1/`.
-- Execution path: CPU-only, inside `make ci`; no frontier call is made, the consent seam is
-  exercised with an injected fake.
-- Acceptance gates: `make ci` green. A fixture containing one non-redistributable document causes
-  each export path to REFUSE, naming that document, rather than to filter it -- a partial export
-  that looks complete is the failure this prevents. Removing the gate makes the test fail. A corpus
-  with no `licence` field exports exactly as it does today.
-- Documentation target: `docs/impl/current/data-prep/acquired-provenance.md` and the
-  [data egress](current/scope-boundaries.md#data-egress) boundary.
 
 ### Retrieval evidence -- `retrieval-evidence`
 
@@ -1335,6 +1291,37 @@ candidates and accepted unread would hand the pilot to whichever candidate draft
   format validation; its committed digest matches the file the comparison reads.
 - Documentation target: `docs/impl/current/book-recovery/tool-selection.md`.
 
+#### book-goldset-verification
+
+The recovered book becomes benchmark evidence only through the same gate as any other corpus: drafted
+questions over the projection, each verified by a person against its source span and, through the
+page provenance, against the scan itself.
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: HUMAN-GATED -- an agent drafts the items over the ingested projection; a person must
+  verify each one before any number from the book is published.
+- Requires: `book-full-run-on-the-target-scan`
+- Dependencies: the drafting lanes and the verification gate are reused unchanged
+  ([verification gate](current/data-prep/verification-gate.md)). Human step that gates completion:
+  a reviewer verifies grounding, answerability, and reference correctness of each drafted item,
+  opening the scanned page through the item's page provenance whenever the recovered text is in
+  doubt.
+- User-visible outcome: an accepted gold set over the recovered book that retrieval and model
+  scoring can use, with the question language recorded on the set.
+- Scope boundary: in scope -- drafting with `prepare-goldset-draft` over the projection, the
+  verification pass, and the accepted ledger. Out of scope -- deciding which decision lane uses the
+  set, and translating the book; a question set in another language than the book is the
+  cross-lingual case and is recorded as such.
+- Data and artifact paths: the draft bundle and accepted ledger under `$DATA_DIR`; no item text from
+  the book in git.
+- Execution path: `make prepare-goldset-draft` over the projected corpus, then
+  `make review-workbench REVIEW_PATH=<verification-csv>`, then `make validate-goldset`.
+- Human step: verify every drafted item; an item whose span overlaps an unresolved marker is
+  rejected rather than repaired from memory.
+- Acceptance gates: every item carries a verdict; `make validate-goldset` passes against the
+  projected corpus; no accepted span overlaps an unresolved marker.
+- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
+
 #### book-vault-obsidian-acceptance
 
 The validator proves links resolve on disk; only the Obsidian app shows whether a PDF page link
@@ -1366,37 +1353,6 @@ Those are judgments about the deliverable itself, and they belong to the person 
   every failed item is routed to a fix or a task.
 - Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md` and the usage guide
   `docs/guides/data-prep/book-ocr.md`.
-
-#### book-goldset-verification
-
-The recovered book becomes benchmark evidence only through the same gate as any other corpus: drafted
-questions over the projection, each verified by a person against its source span and, through the
-page provenance, against the scan itself.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: HUMAN-GATED -- an agent drafts the items over the ingested projection; a person must
-  verify each one before any number from the book is published.
-- Requires: `book-full-run-on-the-target-scan`
-- Dependencies: the drafting lanes and the verification gate are reused unchanged
-  ([verification gate](current/data-prep/verification-gate.md)). Human step that gates completion:
-  a reviewer verifies grounding, answerability, and reference correctness of each drafted item,
-  opening the scanned page through the item's page provenance whenever the recovered text is in
-  doubt.
-- User-visible outcome: an accepted gold set over the recovered book that retrieval and model
-  scoring can use, with the question language recorded on the set.
-- Scope boundary: in scope -- drafting with `prepare-goldset-draft` over the projection, the
-  verification pass, and the accepted ledger. Out of scope -- deciding which decision lane uses the
-  set, and translating the book; a question set in another language than the book is the
-  cross-lingual case and is recorded as such.
-- Data and artifact paths: the draft bundle and accepted ledger under `$DATA_DIR`; no item text from
-  the book in git.
-- Execution path: `make prepare-goldset-draft` over the projected corpus, then
-  `make review-workbench REVIEW_PATH=<verification-csv>`, then `make validate-goldset`.
-- Human step: verify every drafted item; an item whose span overlaps an unresolved marker is
-  rejected rather than repaired from memory.
-- Acceptance gates: every item carries a verdict; `make validate-goldset` passes against the
-  projected corpus; no accepted span overlaps an unresolved marker.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
 
 #### book-review-queue-resolution (optional)
 

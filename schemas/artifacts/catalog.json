@@ -178,6 +178,72 @@
     {
       "bindings": [
         {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Per-page, per-stage ledger of one scanned-book recovery run.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-page-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-page-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "What one scanned-book recovery run is: source, pages, stages, models.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-run-config",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-run-config/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "One stage's outcome on one page and the cache key it was produced under.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-stage-record",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-stage-record/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
           "format": "jsonl",
           "granularity": "row",
           "media_type": "application/x-ndjson"

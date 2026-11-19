@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "BookSourceRecord": {
+      "additionalProperties": false,
+      "description": "The source PDF's identity and how the run holds it.",
+      "properties": {
+        "original_path": {
+          "minLength": 1,
+          "title": "Original Path",
+          "type": "string"
+        },
+        "page_count": {
+          "minimum": 1,
+          "title": "Page Count",
+          "type": "integer"
+        },
+        "policy": {
+          "enum": [
+            "copy",
+            "symlink",
+            "reference"
+          ],
+          "title": "Policy",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "stored_path": {
+          "minLength": 1,
+          "title": "Stored Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "original_path",
+        "sha256",
+        "size_bytes",
+        "page_count",
+        "policy",
+        "stored_path"
+      ],
+      "title": "BookSourceRecord",
+      "type": "object"
+    },
+    "BookStageSpec": {
+      "additionalProperties": false,
+      "description": "One configured stage: its registered name, its parameters, and the model it runs.",
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "BookStageSpec",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-run-config:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`config.json`: what one `book-ocr` run is. A resume reads it instead of the command line.",
+  "properties": {
+    "batch_pages": {
+      "minimum": 1,
+      "title": "Batch Pages",
+      "type": "integer"
+    },
+    "created_at": {
+      "minLength": 1,
+      "title": "Created At",
+      "type": "string"
+    },
+    "kind": {
+      "const": "book-ocr-run-config",
+      "title": "Kind",
+      "type": "string"
+    },
+    "max_attempts": {
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "pages": {
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 1,
+      "title": "Pages",
+      "type": "array"
+    },
+    "pages_spec": {
+      "minLength": 1,
+      "title": "Pages Spec",
+      "type": "string"
+    },
+    "reuse_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reuse From"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-run-config",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/BookSourceRecord"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/BookStageSpec"
+      },
+      "minItems": 1,
+      "title": "Stages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "run_id",
+    "created_at",
+    "source",
+    "pages_spec",
+    "pages",
+    "batch_pages",
+    "max_attempts",
+    "stages"
+  ],
+  "title": "BookOcrRunConfig",
+  "type": "object"
+}
