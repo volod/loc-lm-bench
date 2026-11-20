@@ -162,9 +162,10 @@ A [task record](../../impl/records/README.md) preserves a task's work contract a
 evidence after the task leaves the plan, where its heading and id would otherwise disappear.
 
 - **Planned work always gets one.** Copy the [template](../../impl/records/template.md) to
-  `docs/impl/records/<task-id>.md` before editing, and paste the original task verbatim into it.
-  Explain any later scope change in the record rather than editing the pasted contract.
-- **A direct request gets one when it needs a durable handoff,** under a descriptive filename.
+  `docs/impl/records/NNNN-<group>-<task-id>.md` before editing, and paste the original task
+  verbatim into it. Explain any later scope change in the record rather than editing the pasted
+  contract.
+- **A direct request gets one when it needs a durable handoff,** named `NNNN-adhoc-<slug>.md`.
 - **A task spanning sessions keeps its record open,** naming the remaining gate and the next action.
 
 What goes where: the record holds the contract, the commands that ran and their outcomes, each
@@ -172,6 +173,23 @@ gate's result, the routing of what the work surfaced, and the before and after t
 narrowest current-docs topic holds the delivered behavior and the measured result that settles a
 decision. Both follow [citing a measured result](heavy-runs-and-evidence.md): no host-local run
 path, no bare run label. Link a record from its topic page when it explains a durable decision.
+
+### Record file naming
+
+Name a record `NNNN-<group>-<task-id>.md`:
+
+- `NNNN` is the next unused four-digit sequence in the
+  [records index](../../impl/records/README.md), so the directory lists records in the order work
+  started on them. Numbers run from `0001` without a gap and are never reused; a record is never
+  deleted or renumbered.
+- `<group>` is the capability id the task serves -- its `Serves` line -- or `adhoc` for work that
+  did not come from the plan.
+- `<task-id>` is the plan task id, unchanged; an `adhoc` record uses a short descriptive slug.
+
+Add the record's row (sequence, task, record link, one-line summary) to the index table in the same
+change. `make lint-doc-links` runs `llb.quality.record_names`, which refuses a record whose name
+breaks this shape, whose group is neither `adhoc` nor a registered capability, whose sequence
+repeats or leaves a gap, or which the index does not link.
 
 ## Completion transition
 

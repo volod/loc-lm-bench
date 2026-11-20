@@ -1,7 +1,9 @@
 # Task Record Template
 
-Copy this file to `<task-id>.md` (planned work) or a descriptive name (a direct request), and
-replace each section's guidance with the record.
+Copy this file to `NNNN-<group>-<task-id>.md` (planned work; `<group>` is the capability id the
+task serves) or `NNNN-adhoc-<slug>.md` (a direct request), where `NNNN` is the next unused sequence
+in the [records index](README.md); add its row there, and replace each section's guidance with the
+record.
 
 ## Work contract
 

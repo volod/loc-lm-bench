@@ -59,45 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-recovery-tool-survey
-
-The field for every recovery stage moves faster than any package description: page dewarping and
-illumination correction, layout and reading-order analysis, OCR, formula-to-LaTeX, table structure,
-document-to-Markdown converters, and the vision models Ollama serves. Pinning one by reputation would
-decide the pilot before running it. Survey current versions from official documentation, source
-repositories, current benchmarks, and papers, and prove which candidates actually install and run on
-the 16 GiB CUDA host without disturbing the project environment.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: RUN NEEDED -- each candidate's install and one-page smoke runs on the CUDA host.
-- Research: yes
-- Dependencies: none. The `pdf-quality` extra and the Marker isolation note in `pyproject.toml` are
-  the precedent for keeping a hardware-matched torch stack out of the base environment
-  ([dev setup](../guides/development/dev-setup.md)).
-- User-visible outcome: a recorded shortlist per stage -- candidate, version, licence, local or
-  external, measured VRAM and RAM on this host, the page classes it claims to handle, its install
-  route (optional extra, isolated environment, or Ollama model), and its one-page smoke result on a
-  synthetic scan -- so the pilot compares only tools that demonstrably run here.
-- Scope boundary: in scope -- the operator's indicative candidates (PaddleOCR and PaddleOCR-VL with
-  PP-Structure, MinerU, Marker, Docling, Surya, OCRmyPDF/Tesseract, ScanTailor-derived processing,
-  OpenCV preprocessing, dedicated formula recognisers, Ollama-served vision models) plus any
-  stronger current candidate the survey finds; an optional extra or isolated environment for each
-  shortlisted one; every external service listed with its privacy implication and the quality gain
-  that would justify it. Out of scope -- choosing the pipeline (`book-pilot-pipeline-comparison`),
-  wiring candidates into the ledger, and any candidate whose licence forbids local use.
-- Data and artifact paths: optional extras in `pyproject.toml`; smoke outputs under
-  `$DATA_DIR/book-ocr/<run_timestamp>/survey/`.
-- Execution path: install each candidate into its declared extra or environment, capping any source
-  build with `llb_max_jobs()`; a one-page smoke on a synthetic fixture page under the GPU isolation
-  contract of [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
-- Acceptance gates: `make ci` green with every candidate absent from the base install; each
-  shortlisted candidate has a reproducible install command and a smoke result on this host; a
-  candidate that fails to install or exceeds the VRAM budget is recorded with the failure rather
-  than dropped silently; a stage no local candidate serves is a negative result that names what
-  would reopen it.
-- Documentation target: `docs/impl/current/book-recovery/tool-selection.md`, and
-  [dev setup](../guides/development/dev-setup.md) for the install routes.
-
 #### book-block-ledger-and-engine-adapters
 
 Every later stage -- correction, structure, rendering, projection -- reads one thing: the block
@@ -107,9 +68,10 @@ engine and variant produced each reading.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-recovery-tool-survey`
 - Dependencies: engines register as stages behind the `book-ocr` stage seam, whose committed outputs
-  land in `pages/<pNNNN>/<stage>/` ([run ledger and resume](current/book-recovery/pipeline-and-resume.md)).
+  land in `pages/<pNNNN>/<stage>/` ([run ledger and resume](current/book-recovery/pipeline-and-resume.md));
+  the shortlist per stage, its isolated environments, and the output each adapter must drop or
+  normalise are in [tool selection](current/book-recovery/tool-selection.md).
 - User-visible outcome: each page's blocks -- kind, region, reading-order index, raw text per
   (engine, image variant), confidence, engine and model identity -- persist per page and re-read
   without re-running an engine; the shortlisted engines are selectable by configuration per stage
@@ -141,9 +103,10 @@ with the original rendering always kept beside them.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-recovery-tool-survey`
 - Dependencies: the page inventory records each image's placement rotation, which does not give
-  content orientation ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#evidence)).
+  content orientation ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#evidence));
+  the shortlisted dewarp and illumination methods and the content each was seen to lose are in
+  [tool selection](current/book-recovery/tool-selection.md#page-preprocessing-dewarp-deskew-illumination).
 - User-visible outcome: per page, a recorded signal vector -- skew, line curvature, background
   unevenness, contrast, blur, gutter-shadow side and width, neighbour-page bleed band, orientation --
   and the set of image variants generated for it with their parameters, the original among them.

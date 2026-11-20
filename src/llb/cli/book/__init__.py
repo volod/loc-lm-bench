@@ -1,4 +1,4 @@
-"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`)."""
+"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`, `survey`)."""
 
 import typer
 
@@ -14,3 +14,4 @@ app.add_typer(book_app, name="book-ocr")
 
 import llb.cli.book.run  # noqa: E402,F401
 import llb.cli.book.status  # noqa: E402,F401
+import llb.cli.book.survey  # noqa: E402,F401

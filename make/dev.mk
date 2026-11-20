@@ -173,6 +173,7 @@ lint-doc-links: ## Check every relative docs link resolves and no result is cite
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.quality.doc_links
 	$(PY) -m llb.quality.doc_citations
+	$(PY) -m llb.quality.record_names
 
 lint-spec-plan: ## Check the spec's capability registry and plan.md agree (also runs in ci-checks)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

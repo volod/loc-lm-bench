@@ -71,8 +71,10 @@ exempt. Before picking one, read the sizing order and the 12-16 GiB roster in [h
 
 `docs/impl/plan.md` is FORWARD-ONLY -- only work that remains. `docs/impl/current.md` indexes what
 is DELIVERED; the detail lives in `docs/impl/current/<area>/<topic>.md`. A finished task's original
-contract and acceptance evidence live in `docs/impl/records/<task-id>.md`, and a research question
-closed negative lives in `docs/impl/future-research.md` with what would reopen it.
+contract and acceptance evidence live in `docs/impl/records/NNNN-<group>-<task-id>.md` -- the next
+unused sequence, the served capability id or `adhoc`, the task id
+([record file naming](docs/guides/development/planning-workflow.md#record-file-naming)) -- and a
+research question closed negative lives in `docs/impl/future-research.md` with what would reopen it.
 
 **The delivered docs are a three-level tree** -- `current.md` (areas) -> `<area>.md` (orientation
 plus a table of its pages) -> `<area>/<topic>.md` (one subject). A large area owns a directory, a

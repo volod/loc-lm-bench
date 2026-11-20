@@ -107,3 +107,56 @@ $DATA_DIR/book-ocr/<run_timestamp>/
 
 `pNNNN` is the 1-based PDF page, zero-padded to four digits (wider for a longer document). A full
 render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
+
+## Recovery-tool survey
+
+Before any engine is wired into a run, `book-ocr survey` installs each candidate recovery tool into
+its own environment and runs it on one page, so the pilot compares only tools that demonstrably run
+on this host. The candidates, the shortlist per stage, and the smoke results are in
+[tool selection](../../impl/current/book-recovery/tool-selection.md).
+
+```sh
+make book-survey-list                                   # every candidate: stages, route, licence
+make book-survey-list BOOK_SURVEY_STAGE=formula         # only one stage's candidates
+make book-survey-install                                # every isolated environment
+make book-survey-install BOOK_SURVEY_ENVS=light,mineru  # just these
+make book-survey-smoke                                  # every candidate on the synthetic page
+make book-survey-smoke BOOK_SURVEY_CANDIDATES=tesseract,paddleocr-vl \
+  BOOK_SURVEY_PAGES="synthetic <scan.pdf>:<page>"
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_SURVEY_STAGE` | `preprocess`, `layout`, `ocr`, `formula`, `table`, `convert`, or `correct` | all |
+| `BOOK_SURVEY_ENVS` | Comma-separated survey environments (`light`, `mineru`, `docling`, `marker`, `paddle`, `paddle-fw`) | `all` |
+| `BOOK_SURVEY_CANDIDATES` | Comma-separated candidate ids from `make book-survey-list` | `all` |
+| `BOOK_SURVEY_PAGES` | Space-separated pages: `synthetic` and/or `<pdf>:<page>` (a 1-based PDF page of a real scan) | `synthetic` |
+
+**Install.** Each environment is a uv virtualenv under `$DATA_DIR/venvs/book-<env>/`, resolved
+from exact top-level pins as of the survey cutoff (`--exclude-newer`), with its full resolution
+frozen to `llb-freeze.txt` beside it. The shipped `.venv` is never touched. uv's download cache
+defaults to `$DATA_DIR/cache/uv` (an explicit `UV_CACHE_DIR` wins), so the several CUDA torch
+stacks land on the data volume rather than the home directory. Ollama candidates need their tag
+pulled (`ollama pull <tag>`); Tesseract comes from `make apt-deps`. The vLLM-served candidates
+(Marker `balanced`, dots.ocr, DeepSeek-OCR-2, olmOCR-2) need nothing installed beyond Docker with
+the NVIDIA Container Toolkit, which `make venv` requires on a CUDA host: the smoke pulls
+`vllm/vllm-openai:v0.25.1` (27.8 GB unpacked) on first use, starts its own container for the
+candidate as the invoking user, and stops and removes it afterwards, keeping its log as
+`server.log` in the candidate's directory. It refuses to pull onto a Docker data root with less
+than 30 GB free.
+
+**Smoke.** Candidates run one at a time; before each, the device's used VRAM is read as its
+baseline, and afterwards the survey waits for VRAM to return to it. Every model a tool downloads
+goes under `$DATA_DIR/cache/book-survey/` (Hugging Face, ModelScope, PaddleX, MinerU, and the XDG
+cache), and usage telemetry is switched off. A candidate that is not installed, fails, times out,
+runs out of GPU memory, or silently falls back to a weaker mode is recorded with that status, never
+dropped. Each candidate's own output, its log, and its text (`reading.txt`) stay under its directory.
+
+```sh
+make book-survey-rescore BOOK_SURVEY_DIR=<run-dir>/survey   # recompute scores, no re-run
+```
+
+The survey writes `$DATA_DIR/book-ocr/<run_timestamp>/survey/` with `host.json` (device, VRAM
+budget, cutoff), `pages/` (the smoke pages; a real page is rendered at its native resolution and
+never leaves the run directory), one directory per page and candidate, and `survey.json` /
+`survey.md`. These summaries are diagnostic outputs that nothing reads back.
