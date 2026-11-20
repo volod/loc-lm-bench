@@ -15,6 +15,7 @@ from llb.core import env
 from typing import Any, Callable, Optional
 
 INTERRUPT_EXIT = 130  # 128 + SIGINT -- the conventional exit code for Ctrl-C
+REFUSAL_EXIT = 2  # a deliberate policy refusal: the same code `cli_error` uses for bad input
 _LOG = logging.getLogger("llb")
 
 
@@ -60,6 +61,22 @@ def _report_crash() -> None:
     sys.stderr.flush()
 
 
+def _report_refusal(exc: Exception) -> bool:
+    """Report a redistribution refusal as one line, not a crash; False for any other error.
+
+    The gate (`llb.prep.corpus.redistribution`) raises from deep inside an export or a frontier
+    lane, so the CLI boundary is the one place every path's refusal reaches. Imported lazily:
+    the runtime must not load corpus code for every command.
+    """
+    from llb.prep.corpus.redistribution import RedistributionRefused
+
+    if not isinstance(exc, RedistributionRefused):
+        return False
+    sys.stderr.write(f"[error] {exc}\n")
+    sys.stderr.flush()
+    return True
+
+
 def run(entry: Callable[[], Optional[int]]) -> int:
     """Run an argparse-style `main() -> int|None` with shared Ctrl-C + crash handling."""
     configure_logging()
@@ -99,7 +116,9 @@ def run_typer(app: Any) -> None:
     except click.ClickException as exc:  # usage errors
         exc.show()
         raise SystemExit(exc.exit_code) from None
-    except Exception:
+    except Exception as exc:
+        if _report_refusal(exc):
+            raise SystemExit(REFUSAL_EXIT) from None
         _report_crash()
         raise SystemExit(1) from None
     if isinstance(code, int) and code != 0:

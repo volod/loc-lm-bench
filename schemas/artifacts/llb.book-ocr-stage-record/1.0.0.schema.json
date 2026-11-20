@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "StageOutputRecord": {
+      "additionalProperties": false,
+      "description": "One file a committed stage wrote, relative to its stage directory.",
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "StageOutputRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-stage-record:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`pages/<pNNNN>/<stage>/stage.json`: one stage's outcome on one page, and its cache key.\n\nThe key is the digest of every component listed beside it, so a reader can see WHY two\nrecords share a key rather than trusting the digest alone.",
+  "properties": {
+    "attempts": {
+      "minimum": 1,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "cache_key": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Cache Key",
+      "type": "string"
+    },
+    "duration_s": {
+      "minimum": 0,
+      "title": "Duration S",
+      "type": "number"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "input_digests": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Input Digests",
+      "type": "object"
+    },
+    "kind": {
+      "const": "book-ocr-stage-record",
+      "title": "Kind",
+      "type": "string"
+    },
+    "meta": {
+      "additionalProperties": true,
+      "title": "Meta",
+      "type": "object"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/StageOutputRecord"
+      },
+      "title": "Outputs",
+      "type": "array"
+    },
+    "page_id": {
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "params_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Params Digest",
+      "type": "string"
+    },
+    "pdf_page": {
+      "minimum": 1,
+      "title": "Pdf Page",
+      "type": "integer"
+    },
+    "reused_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reused From"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-stage-record",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "minLength": 1,
+      "title": "Stage",
+      "type": "string"
+    },
+    "stage_version": {
+      "minLength": 1,
+      "title": "Stage Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "done",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "tool": {
+      "minLength": 1,
+      "title": "Tool",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "page_id",
+    "pdf_page",
+    "stage",
+    "status",
+    "cache_key",
+    "stage_version",
+    "tool",
+    "params_digest",
+    "attempts",
+    "duration_s"
+  ],
+  "title": "BookStageRecord",
+  "type": "object"
+}

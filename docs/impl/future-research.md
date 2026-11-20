@@ -12,8 +12,10 @@ Rules for this file:
   attempted) for the question to be worth reopening -- a reopening condition is a number or a change
   in the world, never "try harder".
 - Directions already proven dead are listed explicitly, so a reopening does not re-run them.
-- Evidence lives in the delivered docs under [`current/`](current.md); this file links to it and does
-  not restate the measurements.
+- Evidence lives in the delivered docs under [`current/`](current.md) and in the closed task's
+  [record](records/README.md); this file links to it and does not restate the measurements.
+- A section is written in the same change that removes its `Research: yes` task from the plan, as
+  step 6 of the [completion transition](../guides/development/planning-workflow.md#completion-transition).
 
 ## robotics-boundary-contract-and-upstream-pins -- whether MHS has a public conformance contract
 

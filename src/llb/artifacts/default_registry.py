@@ -1,5 +1,6 @@
 """Built-in artifact contract declarations."""
 
+from llb.artifacts.data_prep.book import book_definitions
 from llb.artifacts.data_prep.families import data_prep_definitions
 from llb.artifacts.data_prep.migrations import catalog_v1_to_v1_1
 from llb.artifacts.definitions import ContractDefinition, MigrationStep
@@ -103,6 +104,7 @@ def build_default_registry() -> ContractRegistry:
                 extension_point="extensions: scalar values only",
             ),
             *data_prep_definitions(),
+            *book_definitions(),
             *retrieval_graph_definitions(),
             *run_bundle_definitions(),
         )

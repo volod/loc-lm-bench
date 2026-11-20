@@ -15,8 +15,20 @@ PDFs, and `external_provenance.json` -- the operator-supplied sidecar an externa
 authors, which this project reads for its data-classification declaration and never writes.
 
 The models live under `src/llb/core/contracts/data_prep/` (`corpus.py`, `goldset.py`,
-`ontology.py`, `external_draft.py`, `conflicts.py`, `linkage.py`, `review.py`); the declarations and
-their migrations live under `src/llb/artifacts/data_prep/` (`families.py`, `migrations.py`).
+`ontology.py`, `external_draft.py`, `conflicts.py`, `linkage.py`, `review.py`, `book.py`); the
+declarations and their migrations live under `src/llb/artifacts/data_prep/` (`families.py`,
+`migrations.py`, `book.py`).
+
+## Scanned-book run families
+
+A `book-ocr` run writes three registered families, all new with
+[scanned book recovery](../book-recovery.md) and so each at `1.0.0` with no legacy read form:
+`llb.book-ocr-run-config` (`config.json`, which a resume reads instead of the command line),
+`llb.book-ocr-stage-record` (`pages/<pNNNN>/<stage>/stage.json`, the outcome and cache key of one
+stage on one page), and `llb.book-ocr-page-manifest` (`metadata/page_manifest.json`, the per-page,
+per-stage ledger). The models live in `src/llb/core/contracts/data_prep/book.py` and the
+declarations in `src/llb/artifacts/data_prep/book.py`. The run's processing report and JSON-lines
+log stay unregistered, like every human or diagnostic report here.
 
 ## Reading what this project already wrote
 

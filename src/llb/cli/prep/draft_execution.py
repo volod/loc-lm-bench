@@ -13,6 +13,7 @@ from llb.cli.prep.draft_endpoints import (
     _endpoint_plan_setup,
 )
 from llb.cli.prep.draft_request import DraftRequest
+from llb.prep.ontology.endpoints.egress import FRONTIER_DRAFT_EGRESS, refuse_inventoried_egress
 from llb.cli.prep.draft_resume import DraftResumeBuilder
 from llb.cli.prep.draft_support import (
     _enforce_calibration_gates,
@@ -53,6 +54,10 @@ def _apply_egress_policy(resolved: _ResolvedDraft) -> None:
     """A frontier endpoint needs consent and a spend guard; a local one may not carry either."""
     request = resolved.request
     if request.endpoint == "frontier":
+        # Refuse non-redistributable material BEFORE asking for consent: no consent entitles it.
+        refuse_inventoried_egress(
+            resolved.corpus_root, egress=FRONTIER_DRAFT_EGRESS, doc_limit=request.doc_limit
+        )
         if not request.egress_consent:
             _confirm_frontier_egress(resolved.corpus_root, resolved.model)
             request.egress_consent = True

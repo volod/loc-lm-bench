@@ -118,6 +118,54 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-page-manifest
+  name: llb.book-ocr-page-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-page-manifest/1.0.0.schema.json
+  description: Per-page, per-stage ledger of one scanned-book recovery run.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-run-config
+  name: llb.book-ocr-run-config
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-run-config/1.0.0.schema.json
+  description: 'What one scanned-book recovery run is: source, pages, stages, models.'
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-stage-record
+  name: llb.book-ocr-stage-record
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-stage-record/1.0.0.schema.json
+  description: One stage's outcome on one page and the cache key it was produced under.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-case-score
   name: llb.case-score
   logicalType: object

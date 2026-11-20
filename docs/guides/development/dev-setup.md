@@ -66,6 +66,15 @@ uses uv's default. For one-off `uv` commands, load the same resolver first:
     llb_load_env
     uv run --extra dev python -m pytest
 
+**Every development host is a CUDA host, and must have the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)**:
+vLLM-in-Docker serving (Marker's VLM mode and the vLLM-served recovery candidates) needs Docker's
+`nvidia` runtime. `make venv` refuses a host with an NVIDIA GPU whose `docker info` lists no
+`nvidia` runtime (`LLB_REQUIRE_CONTAINER_TOOLKIT=0` skips the check); a host without a GPU, such as
+CI, is not checked. Docker's data root must also have room for vLLM images (`vllm/vllm-openai:v0.25.1`
+is 27.8 GB unpacked); the recovery-tool survey refuses to pull one onto a filesystem with less than
+30 GB free.
+
 Set `SKIP_APT=1` when apt is unavailable (macOS, minimal CI images) -- the Python venv still
 builds; only the OS package step is skipped.
 
@@ -178,8 +187,23 @@ and `tesseract-ocr-ukr`. Install the Python extra on transform hosts with:
 
     make install-extras EXTRAS=pdf-quality
 
-Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Install
-`marker-pdf` only in the dedicated CUDA transform environment when benchmarking it explicitly.
+Marker is not part of `pdf-quality` because it pulls a hardware-matched torch stack. Neither are
+the other scanned-book recovery candidates (MinerU, Docling's VLM pipeline, PaddleOCR on
+Transformers or on the PaddlePaddle framework, RapidOCR, OCRmyPDF, page-dewarp, OpenCV): each pins
+its own torch, ONNX Runtime, or PaddlePaddle build, and several would fight over one environment.
+They install as isolated uv virtualenvs under `$DATA_DIR/venvs/book-<env>/`, never into `.venv`:
+
+    make book-survey-install                          # light, mineru, docling, marker, paddle, paddle-fw
+    make book-survey-install BOOK_SURVEY_ENVS=light   # one environment
+
+Each resolves exact top-level pins as of the survey cutoff (`uv pip install --exclude-newer`), so a
+rerun installs the same set; a vendor index that publishes no upload dates (the PaddlePaddle CUDA
+wheels) is exempted per package, and its exact pin is what fixes it. The full resolution is frozen
+to `llb-freeze.txt` in each environment. uv's cache for these installs defaults to
+`$DATA_DIR/cache/uv` (an explicit `UV_CACHE_DIR` wins), and every model the tools download goes
+under `$DATA_DIR/cache/book-survey/` -- together they run to tens of gigabytes, which must not land
+on the home directory's filesystem. The environments, their pins, and what each candidate is for:
+[tool selection](../../impl/current/book-recovery/tool-selection.md).
 
 ## Heavy compilation (ninja / cmake / CUDA)
 

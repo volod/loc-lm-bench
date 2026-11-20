@@ -31,6 +31,11 @@ Current policy:
   upfront egress consent plus a hard per-run USD and/or call budget enforced by the scorer cost
   ledger under `$DATA_DIR/<method>/<run>/scorer/`. Over-cap aborts are resumable and never silent.
   See [evaluation rigor](rigor-board-judge/judging.md#scorer-policy-seam).
+- consent is not entitlement: every export (the fine-tune and contrastive-pair datasets) and every
+  frontier or hosted-API path refuses, before it asks for or records consent, material whose
+  recorded `licence` forbids redistribution, naming each document; the export is refused whole,
+  never filtered, and a corpus without the field is not gated. See
+  [the redistribution gate](data-prep/acquired-provenance.md#redistribution-gate).
 
 ## Closed Graph Ontology
 

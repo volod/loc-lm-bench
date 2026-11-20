@@ -3,7 +3,8 @@
 Exports only tuning-split, verified gold items. The SFT prompt is rendered through
 `eval.graph.build_messages`, so the training records use the same chat shape as `run-eval`.
 When miss analysis is present, missed tuning cases become the targeted export and carry cluster
-weights; otherwise every scored tuning case is exported with weight 1.
+weights; otherwise every scored tuning case is exported with weight 1. Material whose recorded
+licence forbids redistribution refuses the export as a whole (`llb.finetune.export_gate`).
 """
 
 import json
@@ -15,6 +16,7 @@ from llb.core.contracts.common import JsonObject
 from llb.core.fsutil import atomic_write_text
 from llb.eval import common as eval_common
 from llb.eval.graph import build_messages
+from llb.finetune.export_gate import refuse_unredistributable_export
 from llb.goldset.schema import GoldItem, load_goldset
 from llb.finetune.dataset_io import (
     DATASET_MANIFEST,
@@ -40,8 +42,14 @@ def export_finetune_set(
     goldset_path: Path | str,
     out_dir: Path | str,
     misses_path: Path | str | None = None,
+    corpus_root: Path | str | None = None,
 ) -> JsonObject:
-    """Export SFT and optional DPO records from one finalized tuning run bundle."""
+    """Export SFT and optional DPO records from one finalized tuning run bundle.
+
+    Refuses the whole export (`llb.finetune.export_gate`) when a selected record would carry text
+    from a document whose recorded licence forbids redistribution; `corpus_root` overrides the
+    corpus the run manifest names for that check.
+    """
     run_dir = Path(run_dir)
     out_dir = Path(out_dir)
     manifest = _read_json(run_dir / "manifest.json", label="run manifest")
@@ -51,19 +59,13 @@ def export_finetune_set(
     }
     gold_by_id = {item.id: item for item in load_goldset(goldset_path)}
     misses = _read_misses(misses_path)
-    miss_ids = set(misses)
-    scored_tuning = [
-        row
-        for row in rows
-        if (item := gold_by_id.get(str(row.get("item_id")))) is not None
-        and item.verified
-        and item.split == TUNING_SPLIT
-    ]
-    if not scored_tuning:
-        raise ValueError("fine-tune export found no scored, verified tuning-split items")
-    selected = [row for row in scored_tuning if str(row.get("item_id")) in miss_ids]
-    if not selected:
-        selected = scored_tuning
+    selected = _selected_rows(rows, gold_by_id, set(misses))
+    refuse_unredistributable_export(
+        manifest,
+        corpus_root,
+        [gold_by_id[str(row["item_id"])] for row in selected],
+        retrieval,
+    )
 
     weights = _miss_weights(misses)
     cited = bool((manifest.get("config") or {}).get("cited_answers", False))
@@ -101,6 +103,23 @@ def export_finetune_set(
         json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n",
     )
     return manifest_payload
+
+
+def _selected_rows(
+    rows: list[JsonObject], gold_by_id: dict[str, GoldItem], miss_ids: set[str]
+) -> list[JsonObject]:
+    """The scored, verified tuning rows to export: the missed ones when any, else all of them."""
+    scored_tuning = [
+        row
+        for row in rows
+        if (item := gold_by_id.get(str(row.get("item_id")))) is not None
+        and item.verified
+        and item.split == TUNING_SPLIT
+    ]
+    if not scored_tuning:
+        raise ValueError("fine-tune export found no scored, verified tuning-split items")
+    selected = [row for row in scored_tuning if str(row.get("item_id")) in miss_ids]
+    return selected or scored_tuning
 
 
 def _sft_record(item: GoldItem, messages: object, weight: float, run_dir: Path) -> JsonObject:

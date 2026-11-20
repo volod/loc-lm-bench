@@ -7,101 +7,61 @@ group drifts out of the implementation line and "what is next" quietly becomes a
 again. None of that breaks a test, so without this check the drift is found by a reader months
 later, if at all.
 
-The four invariants below are the join between what the product does (the spec), how we know it
-works (the registry's evaluation column), and where the remaining work sits (the plan). Each failure
-names the document to fix: the checker never has an opinion about which capability is worth having,
-only about whether both files say the same thing about it.
+The registry invariants join what the product does (the spec), how we know it works (the
+registry's evaluation column), and where the remaining work sits (the plan). The task invariants
+keep every task executable without guessing: all nine fields present, a status that matches its
+lane, required work ahead of optional work, `Requires` prerequisites that name open tasks and form
+no cycle, and plan text that describes only work that remains. Each failure names the document to
+fix: the checker never has an opinion about which capability is worth having, only about whether
+both files say the same thing about it.
 """
 
 import argparse
 import logging
 import re
+from collections import defaultdict
 from pathlib import Path
 
 from llb.core.paths import PROJECT_ROOT
+from llb.quality.plan_dependencies import dependency_findings
+from llb.quality.plan_model import (
+    AGENT_SECTION,
+    HUMAN_SECTION,
+    PLAN_SECTIONS,
+    REGISTRY_HEADING,
+    Capability,
+    Task,
+    read_registry,
+    read_tasks,
+)
 
 _LOG = logging.getLogger(__name__)
 
 SPEC_DOC = Path("docs/design/spec.md")
 PLAN_DOC = Path("docs/impl/plan.md")
 
-REGISTRY_HEADING = "## Capability Registry"
 SHIPPED = "shipped"
 PLANNED = "planned"
 STATUSES = (SHIPPED, PLANNED)
+AGENT_STATUSES = ("CLEAR", "RUN NEEDED")
+HUMAN_STATUSES = ("BLOCKED BY HUMAN", "HUMAN-GATED")
+REQUIRED_FIELDS = (
+    "serves",
+    "agent status",
+    "dependencies",
+    "user-visible outcome",
+    "scope boundary",
+    "data and artifact paths",
+    "execution path",
+    "acceptance gates",
+    "documentation target",
+)
 
-_ROW = re.compile(r"^\|(?P<cells>.+)\|\s*$")
-_CAPABILITY = re.compile(r"^`(?P<id>[a-z0-9-]+)`$")
-_GROUP = re.compile(r"^### .+ -- `(?P<id>[a-z0-9-]+)`\s*$")
-_TASK = re.compile(r"^#### (?P<id>\S.*?)(?: \(optional\))?\s*$")
-_SERVES = re.compile(r"^- Serves: `(?P<id>[a-z0-9-]+)`")
 _LINK = re.compile(r"\[[^\]]+\]\([^)]+\)")
-_SECTION = re.compile(r"^## (?P<title>.+?)\s*$")
-
-
-class Capability:
-    """One registry row: what the product does, how it is evaluated, and where it lives."""
-
-    def __init__(self, identifier: str, status: str, evaluation: str, implementation: str):
-        self.id = identifier
-        self.status = status
-        self.evaluation = evaluation
-        self.implementation = implementation
-
-
-class Task:
-    """One plan entry, with the group it sits under and the capability it declares."""
-
-    def __init__(self, identifier: str, section: str, group: str, serves: str | None):
-        self.id = identifier
-        self.section = section
-        self.group = group
-        self.serves = serves
-
-
-def _cells(line: str) -> list[str] | None:
-    matched = _ROW.match(line.strip())
-    return [cell.strip() for cell in matched.group("cells").split("|")] if matched else None
-
-
-def read_registry(spec: Path) -> list[Capability]:
-    """The capability rows, in the order the spec lists them -- which is the implementation line."""
-    found: list[Capability] = []
-    inside = False
-    for line in spec.read_text(encoding="utf-8").splitlines():
-        if line.startswith("## "):
-            inside = line.strip() == REGISTRY_HEADING
-            continue
-        cells = _cells(line) if inside else None
-        if not cells or len(cells) < 5:
-            continue
-        identified = _CAPABILITY.match(cells[1])
-        if identified:
-            found.append(Capability(identified.group("id"), cells[2], cells[3], cells[4]))
-    return found
-
-
-def read_tasks(plan: Path) -> list[Task]:
-    """Every plan task with its section, its capability group, and its declared `Serves` id."""
-    found: list[Task] = []
-    section = group = ""
-    for line in plan.read_text(encoding="utf-8").splitlines():
-        heading = _SECTION.match(line)
-        if heading and not line.startswith("###"):
-            section, group = heading.group("title"), ""
-            continue
-        grouped = _GROUP.match(line)
-        if grouped:
-            group = grouped.group("id")
-            continue
-        task = _TASK.match(line)
-        if task:
-            found.append(Task(task.group("id"), section, group, None))
-            continue
-        serves = _SERVES.match(line)
-        if serves and found:
-            found[-1].serves = found[-1].serves or serves.group("id")
-    return found
+_HISTORY_WORD = re.compile(r"\b(done|delivered|implemented)\b", re.IGNORECASE)
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_TASK_HEADING = re.compile(r"^#### ")
+_VALID_TASK_HEADING = re.compile(r"^#### [a-z0-9][a-z0-9-]*(?: \(optional\))?\s*$")
 
 
 def _registry_findings(registry: list[Capability], tasks: list[Task]) -> list[str]:
@@ -110,57 +70,132 @@ def _registry_findings(registry: list[Capability], tasks: list[Task]) -> list[st
     seen: set[str] = set()
     served = {task.serves for task in tasks}
     for capability in registry:
-        where = f"{SPEC_DOC}: `{capability.id}`"
-        if capability.id in seen:
+        where = f"{SPEC_DOC}: `{capability.identifier}`"
+        if capability.identifier in seen:
             findings.append(f"{where}: listed twice in the capability registry")
-        seen.add(capability.id)
+        seen.add(capability.identifier)
         if capability.status not in STATUSES:
             findings.append(f"{where}: status '{capability.status}' is not one of {STATUSES}")
         if not capability.evaluation:
             findings.append(f"{where}: no evaluation declared -- say how it is known to work")
         if capability.status == SHIPPED and not _LINK.search(capability.implementation):
             findings.append(f"{where}: shipped but links to no implementation docs")
-        if capability.status == PLANNED and capability.id not in served:
+        if capability.status == PLANNED and capability.identifier not in served:
             findings.append(f"{where}: planned but no plan task serves it")
     return findings
 
 
+def _identity_findings(task: Task, known: set[str], identifiers: set[str]) -> list[str]:
+    """The task is placed: a unique id, a lane, a group, and a registered capability it serves."""
+    where = f"{PLAN_DOC}: `{task.identifier}`"
+    findings: list[str] = []
+    if task.identifier in identifiers:
+        findings.append(f"{where}: task id is duplicated")
+    identifiers.add(task.identifier)
+    if task.section not in PLAN_SECTIONS:
+        findings.append(f"{where}: task sits outside both task lanes ('{task.section}')")
+    if not task.group:
+        findings.append(f"{where}: task has no capability group")
+    if task.serves is None:
+        findings.append(f"{where}: no `Serves` line -- name the capability it advances")
+    elif task.serves not in known:
+        findings.append(f"{where}: serves `{task.serves}`, which is not a registered capability")
+    elif task.group and task.serves != task.group:
+        findings.append(f"{where}: serves `{task.serves}` under the `{task.group}` group")
+    return findings
+
+
+def _metadata_findings(task: Task) -> list[str]:
+    where = f"{PLAN_DOC}: `{task.identifier}`"
+    return [
+        f"{where}: missing non-empty `{name.capitalize()}` field"
+        for name in REQUIRED_FIELDS
+        if name != "serves" and not task.fields.get(name)
+    ]
+
+
+def _status_findings(task: Task) -> list[str]:
+    """A status names who can finish the task, so it must agree with the lane it sits in."""
+    allowed = {AGENT_SECTION: AGENT_STATUSES, HUMAN_SECTION: HUMAN_STATUSES}.get(task.section, ())
+    if task.agent_status is None or task.agent_status in allowed:
+        return []
+    where = f"{PLAN_DOC}: `{task.identifier}`"
+    return [f"{where}: status '{task.agent_status}' is invalid in '{task.section}'"]
+
+
 def _task_findings(registry: list[Capability], tasks: list[Task]) -> list[str]:
-    """Each task declares a registered capability, and sits in that capability's group."""
-    known = {capability.id for capability in registry}
+    known = {capability.identifier for capability in registry}
+    identifiers: set[str] = set()
     findings: list[str] = []
     for task in tasks:
-        where = f"{PLAN_DOC}: `{task.id}`"
-        if task.serves is None:
-            findings.append(f"{where}: no `Serves` line -- name the capability it advances")
-        elif task.serves not in known:
-            findings.append(
-                f"{where}: serves `{task.serves}`, which is not a registered capability"
-            )
-        elif task.group and task.serves != task.group:
-            findings.append(f"{where}: serves `{task.serves}` under the `{task.group}` group")
+        findings.extend(_identity_findings(task, known, identifiers))
+        findings.extend(_metadata_findings(task))
+        findings.extend(_status_findings(task))
+    return findings
+
+
+def _line_order_findings(line: list[str], tasks: list[Task], section: str) -> list[str]:
+    """Groups run down the registry's order; returning to an earlier group breaks it too."""
+    ranks = {group: index for index, group in enumerate(line)}
+    groups = [task.group for task in tasks if task.section == section and task.group in ranks]
+    ranked = [ranks[group] for group in groups]
+    if ranked == sorted(ranked):
+        return []
+    return [
+        f"{PLAN_DOC}: capability groups under '{section}' are out of implementation-line "
+        f"order -- got {list(dict.fromkeys(groups))}"
+    ]
+
+
+def _optional_order_findings(tasks: list[Task], section: str) -> list[str]:
+    """`(optional)` sorts a task behind every required task of its own group."""
+    by_group: dict[str, list[Task]] = defaultdict(list)
+    for task in tasks:
+        if task.section == section:
+            by_group[task.group].append(task)
+    findings: list[str] = []
+    for group, group_tasks in by_group.items():
+        optional_seen = False
+        for task in group_tasks:
+            if optional_seen and not task.optional:
+                findings.append(
+                    f"{PLAN_DOC}: required task `{task.identifier}` follows optional work "
+                    f"in `{group}`"
+                )
+            optional_seen = optional_seen or task.optional
     return findings
 
 
 def _order_findings(registry: list[Capability], tasks: list[Task]) -> list[str]:
-    """The plan's groups run down the registry's order, so "what is next" stays a position."""
-    line = [capability.id for capability in registry]
+    """The plan's order is what makes "what is next" a position rather than an argument."""
+    line = [capability.identifier for capability in registry]
     findings: list[str] = []
-    for section in dict.fromkeys(task.section for task in tasks):
-        groups = dict.fromkeys(
-            task.group for task in tasks if task.section == section and task.group
-        )
-        ranked = [line.index(group) for group in groups if group in line]
-        if ranked != sorted(ranked):
-            findings.append(
-                f"{PLAN_DOC}: capability groups under '{section}' are out of implementation-line "
-                f"order -- got {list(groups)}"
-            )
+    for section in PLAN_SECTIONS:
+        findings.extend(_line_order_findings(line, tasks, section))
+        findings.extend(_optional_order_findings(tasks, section))
+    return findings
+
+
+def _plan_text_findings(plan: Path) -> list[str]:
+    """The plan states only what remains: no history words, no dates, both lanes present."""
+    text = plan.read_text(encoding="utf-8")
+    findings: list[str] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if _TASK_HEADING.match(line) and not _VALID_TASK_HEADING.match(line):
+            findings.append(f"{PLAN_DOC}:{number}: malformed task heading -- `#### <id>`")
+        if _HISTORY_WORD.search(line) or _ISO_DATE.search(line):
+            findings.append(f"{PLAN_DOC}:{number}: forward plan contains history or a date")
+    for section in PLAN_SECTIONS:
+        if f"\n## {section}\n" not in f"\n{text}":
+            findings.append(f"{PLAN_DOC}: missing required lane '## {section}'")
     return findings
 
 
 def integrity_findings(project_root: Path = PROJECT_ROOT) -> list[str]:
     """Every disagreement between the specification and the implementation plan."""
+    missing = [path for path in (SPEC_DOC, PLAN_DOC) if not (project_root / path).is_file()]
+    if missing:
+        return [f"missing required document: {path}" for path in missing]
     registry = read_registry(project_root / SPEC_DOC)
     if not registry:
         return [f"{SPEC_DOC}: no capability registry rows found under '{REGISTRY_HEADING}'"]
@@ -168,7 +203,9 @@ def integrity_findings(project_root: Path = PROJECT_ROOT) -> list[str]:
     return (
         _registry_findings(registry, tasks)
         + _task_findings(registry, tasks)
+        + [f"{PLAN_DOC}: {finding}" for finding in dependency_findings(tasks)]
         + _order_findings(registry, tasks)
+        + _plan_text_findings(project_root / PLAN_DOC)
     )
 
 

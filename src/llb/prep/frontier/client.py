@@ -29,10 +29,12 @@ from llb.goldset.schema import GoldItem, Provenance, SourceSpan, Split, dump_gol
 from llb.goldset.splits import assign_splits
 from llb.prep.frontier.telemetry import LLMComplete, ProvenanceLog
 from llb.prompts.registry import render_text
+from llb.prep.corpus.redistribution import refuse_corpus_egress
 from llb.rag.chunking.corpus import iter_docs
 from llb.prep.frontier.parsing import ground_span, parse_json_block
 
 _LOG = logging.getLogger(__name__)
+FRONTIER_GOLDSET_EGRESS = "frontier gold-set drafting (prepare-goldset)"
 
 PROVENANCE_DRAFTED: Provenance = "frontier-drafted"
 
@@ -166,12 +168,19 @@ def prepare_goldset(
     seed: int = 13,
     log: ProvenanceLog | None = None,
 ) -> list[GoldItem]:
-    """Draft a review-ready gold set from a corpus. Items are `verified=False` pending review."""
-    log = log if log is not None else ProvenanceLog()
-    complete = complete or litellm_complete(model, log=log)
+    """Draft a review-ready gold set from a corpus. Items are `verified=False` pending review.
+
+    Every document's text is sent to the frontier model, so a corpus holding one whose recorded
+    licence forbids redistribution is refused before the first call (`llb.prep.corpus.redistribution`).
+    """
     docs = list(iter_docs(Path(corpus_root)))
     if not docs:
         raise ValueError(f"no .md/.txt documents under {corpus_root}")
+    refuse_corpus_egress(
+        corpus_root, egress=FRONTIER_GOLDSET_EGRESS, doc_ids=[doc_id for doc_id, _ in docs]
+    )
+    log = log if log is not None else ProvenanceLog()
+    complete = complete or litellm_complete(model, log=log)
 
     drafted: list[GoldItem] = []
     for doc_id, text in docs:

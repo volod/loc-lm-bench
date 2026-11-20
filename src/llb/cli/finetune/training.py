@@ -21,6 +21,11 @@ def export_finetune_set_cmd(
         "--misses",
         help="optional miss-analysis misses.jsonl; targeted misses get exported/weighted",
     ),
+    corpus: Optional[Path] = typer.Option(
+        None,
+        "--corpus",
+        help="corpus whose recorded licences gate the export (default: the run's corpus_root)",
+    ),
 ) -> None:
     """Export contamination-guarded SFT/DPO records from the tuning split."""
     from llb.finetune.dataset import export_finetune_set
@@ -30,6 +35,7 @@ def export_finetune_set_cmd(
         goldset_path=goldset,
         out_dir=out,
         misses_path=misses,
+        corpus_root=corpus,
     )
     typer.echo(
         f"[export-finetune-set] sft={manifest['n_sft']} dpo={manifest['n_dpo']} "

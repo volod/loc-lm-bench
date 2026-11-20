@@ -62,6 +62,8 @@ The primary decision loop covers:
   command or application;
 - record identity: which entity nodes, drafted gold items, and document editions denote the
   same thing;
+- recovery of poorly scanned technical books into a page-traceable reading vault for a person and a
+  corpus projection for retrieval, both rendered from one page-and-block ledger;
 - robotics RAG over approved manuals and curated multimodal episode evidence, followed by
   policy-gated operation in an emulator or explicitly authorized device canary;
 - dual-control conversation: whether a model still completes a task when a simulated user holds
@@ -97,6 +99,7 @@ Typer CLI / Make workflows
           |      acquired projection -> ingest -> provenance-bound corpus
           |      corpus -> draft -> verify -> accepted ledger
           |      corpus -> conflict audit -> decision groups -> resolution overlay
+          |      scanned book -> page/block ledger -> reading vault + corpus projection
           |
           +-> retrieval
           |      chunk -> index -> validate recall/MRR
@@ -218,9 +221,9 @@ may be read; they do not record which source was observed, when, or on what term
 time is a local event, and the source hash covers the staged file rather than the bytes a publisher
 served. Ingestion now READS the acquisition fields beside them -- source URI, capture time and
 identity, captured-payload digest, redistribution class, acquisition run, revision link -- and
-carries them to the manifest item, chunk metadata, and the gold-set provenance record. What remains
-is enforcing the recorded redistribution class at every export and egress boundary. Acquired
-documents are append-only, and a gold-set bundle binds its corpus fingerprint to every acquisition
+carries them to the manifest item, chunk metadata, and the gold-set provenance record, and every
+export and egress boundary enforces the recorded redistribution class. Acquired documents are
+append-only, and a gold-set bundle binds its corpus fingerprint to every acquisition
 run represented in that corpus version; those records make the already-read provenance actionable
 without reaching back into a producer's store.
 
@@ -269,6 +272,115 @@ the producing side's judgement and are consumed here as a recorded fact; it does
 payloads, only their digests, URIs, offsets and terms; it does not chunk on a producer's behalf; and
 it adds no ability to acquire material by itself. Where a corpus carries no provenance, every
 existing behaviour is unchanged -- this capability adds a lane, it does not gate the local one.
+
+## Scanned Book Recovery
+
+An operator often holds the reference literature a workload depends on -- an engineering handbook,
+a design textbook -- only as a poor scan: a PDF of page photographs with no text layer, no outline,
+and no page labels. The first target is a 1,067-page English technical handbook whose every page is
+a greyscale JPEG at roughly 150 dpi, with lines curving toward the gutter, uneven grey backgrounds,
+shadowed and blurred regions, landscape pages, the neighbouring page bleeding into the margin,
+two-column layout, dense formulas with indices and Greek symbols, ruled tables, labelled graphs,
+and cross-references by printed page, figure, table, section, and equation number. Its printed page
+numbers are offset from its PDF page numbers, and nothing in the file records the offset.
+
+The existing PDF lane ([ingestion](../impl/current/data-prep/ingestion-import.md)) answers a
+different question. It turns a PDF into ONE flat corpus document with page-level citation spans,
+which is enough to chunk and retrieve, but a person can neither read nor audit it: formulas come out
+as character soup, figures are dropped, tables lose their structure, a misread digit is
+indistinguishable from a correct one, and nothing separates an unreadable passage from an absent
+one. A retrieval hit grounded in such text cannot be checked against the scan, and a gold item drawn
+from it can carry an OCR error as its reference answer.
+
+This capability recovers such a book into two renderings of ONE page-and-block ledger:
+
+- a **reading vault**: a self-contained, Obsidian-compatible Markdown book directory split by
+  chapter and section, with navigation at both ends of every file, a reconstructed table of
+  contents, figure and formula assets in reading order, the book's own cross-references resolved to
+  links, and every passage one click from the scanned page it came from;
+- a **corpus projection**: the same content rendered into the corpus shape this project already
+  ingests -- content-only text with the existing page-citation sidecar -- so the book enters
+  retrieval, drafting, and gold verification like any other document, and a chunk resolves back to
+  its PDF page, its block, and its place in the vault.
+
+Neither rendering is the source of truth; the ledger is. This is the projection principle the
+[acquired-corpus seam](#corpus-provenance-and-acquisition-boundary) follows: a field either consumer
+needs later is added to the ledger and rendered, never patched into one output.
+
+The load-bearing properties:
+
+- **Every block traces to its page.** The unit of recovery is a block: a page region with a kind
+  (body text, heading, formula, table, figure, caption, footnote, running header, page number,
+  ornament, neighbour-page bleed), a position in reading order, and the PDF page and region it came
+  from. No text reaches either rendering without one. Furniture, ornaments, and bleed are classified
+  and kept in the ledger rather than silently dropped, so what was excluded stays auditable.
+- **Raw recognition is immutable; correction is an overlay.** Each block retains the raw output of
+  every engine and image variant that read it, with engine, model, and parameter identity. A
+  correction -- by agreement across variants, by a model, or by a reviewer -- is a recorded edit over
+  that raw text together with its evidence. Both renderings show the corrected text; the ledger
+  keeps the diff.
+- **Model-assisted correction is evidence-constrained.** A language or vision model may propose
+  replacing a probable misreading where the scan and the surrounding text support it. It may not
+  rewrite, summarise, modernise, reorder, complete, or translate, and it may not supply a value,
+  symbol, caption, reference, or table cell the scan does not show. An edit that changes a digit, a
+  sign, a decimal point, a unit, an index, or a Latin/Greek letter is admitted only on visual
+  evidence from the page region, never on linguistic plausibility alone. A rewrite is detected
+  mechanically -- an edit outside the admitted substitution classes, or past a per-block edit budget
+  -- and refused, not reviewed after the fact.
+- **Uncertainty is shown, never concealed.** A passage the pipeline cannot read reliably is rendered
+  as an explicit uncertainty marker with a link to its PDF page and, where useful, a crop of the
+  region; it enters a page-level quality manifest and a review queue. A recognition confidence is
+  diagnostic evidence for routing to review, never reported as a probability of correctness.
+- **Hierarchy only where evidence holds.** Parts, chapters, sections, and subsections are inferred
+  globally after page-level recovery, from the printed table of contents, heading typography,
+  section numbering, running headers, and page sequence. Where the evidence does not support a
+  hierarchy, the vault falls back to clearly labelled page-range files rather than inventing one.
+  Printed page numbers are reconstructed as a monotone mapping from PDF pages, with gaps and
+  unnumbered pages recorded rather than interpolated silently, because the book's own
+  cross-references and index cite printed pages.
+- **Stable identity and resumability.** File names, asset names (PDF page, in-page ordinal in
+  reading order, and a slug only when one derives reliably), block ids, and link anchors are
+  functions of the ledger, so a rerun with the same inputs and parameters reproduces the book
+  directory byte for byte, and a parameter change re-renders only what it touches. Expensive stages
+  are cached per page under a key of the page-image digest, the stage parameters, and the tool and
+  model identity; an interrupted job resumes without repeating a completed stage, and one failed
+  page fails its own status rather than the job.
+- **The source is never modified.** The PDF is identified by its checksum and copied, linked, or
+  referenced into the book directory by configuration, and under whichever deployment is chosen
+  every page link in the vault resolves. The page-link form is the one the recorded target Obsidian
+  version actually honours, verified rather than assumed, with a rendered-page fallback.
+
+Tool selection is a MEASURED decision, not a property of this specification. Dewarping,
+illumination correction, layout and reading-order analysis, OCR, formula recognition, table
+reconstruction, and model-assisted correction are each served by several maintained local
+candidates whose relative quality on a given scan is not knowable from their documentation. A pilot
+set of 20-30 difficult pages -- chosen from measured page signals to cover curvature, gutter and
+corner text, shadowed backgrounds, dense formulas, irregular tables, multi-column layout, labelled
+diagrams, footnotes, and ordinary pages as a control -- carries a human-verified reference
+transcription. Candidate pipelines, including different pipelines per page class, are compared on
+it against the existing PDF lane, and the selection plus its rationale are recorded in the
+configuration every run echoes. Pilot numbers are selection-set numbers and are labelled as such;
+the review-queue rate of a full run is the out-of-sample reading. Preprocessing is adaptive per page
+and conservative: the original rendering is always retained, and no variant may erase the thin
+strokes that carry a minus sign, a decimal point, an index, or a drawing line.
+
+Recovery feeds the trust chain at its first link and bypasses none of the later ones. A gold item
+drafted over a recovered book is a draft like any other and passes the same human verification, and
+a source span overlapping an unresolved uncertainty marker is refused as gold evidence. The book's
+language is a recorded parameter of the run and of every projected document; whether a corpus in one
+language serves a decision lane in another is settled by the gold set built over it, under the same
+source-span rule, and not by this capability.
+
+The boundary. This capability does not acquire, purchase, or redistribute books, and it makes no
+licence determination: the operator DECLARES the redistribution class when recovering a book, the
+class is recorded on every projected document, and the [egress boundary](#data-egress-boundary)
+enforces it. It produces no searchable PDF, re-typeset edition, or visual imitation of the scan. It
+writes no description, interpretation, or invented caption for an illustration -- a figure is the
+image region the scan shows, with the caption the page prints. It does not translate, summarise, or
+annotate the book's content, and it adds no semantic or concept links beyond the references the book
+itself prints. It does not replace the existing lane for born-digital PDFs, and it does not read
+handwriting. It never commits a page image or recovered text of a copyrighted book to this
+repository: CI exercises the pipeline on synthetic pages with known ground truth.
 
 ## Corpus Conflict and Governance
 
@@ -888,10 +1000,19 @@ The implementation favors maintained Python-native components and small project-
 - DeepEval for calibrated judge execution;
 - tau2-bench for the dual-control orchestrator, its domain/task/reward contracts, and the published
   English task sets the external-suite lane screens against;
+- the dewarping, layout, OCR, formula, and table models that the scanned-book pilot selects, and an
+  Ollama-served vision model for evidence-constrained correction;
 - NVML, `nvidia-smi`, and process telemetry for runtime evidence.
 
 Heavy or backend-specific dependencies stay behind optional extras and lazy imports. A base install
 can inspect data, plans, and artifacts without importing GPU stacks.
+
+The scanned-book recovery stack is a set of CANDIDATES, not a pinned choice: which engine serves
+which stage and page class is the [pilot's](#scanned-book-recovery) recorded outcome, and a later
+pilot may change it. Each selected engine lives behind its own optional extra -- or, where it pins
+a hardware-matched torch stack the way Marker does, in its own environment -- and every run records
+the engine version and model-weight identity of each stage, because a block read by a different
+model is a different reading.
 
 One reused component carries an acquisition constraint the others do not, and the constraint is part
 of the contract rather than a packaging detail. tau2-bench publishes no package to an index, so it
@@ -916,6 +1037,15 @@ for BOTH the agent and the user simulator; a frontier user simulator is the same
 scoring -- one upfront consent plus the per-run budget -- and either way the model that played the
 user is recorded on the run, because a task statement that a frontier model paraphrased into the
 conversation has left the host.
+
+Scanned-book recovery is local by default: rendering, preprocessing, layout, OCR, formula and table
+recognition, and model-assisted correction all run on the host, the last through a local Ollama
+endpoint. An external recognition service -- a hosted formula or OCR API, or a frontier vision
+model -- can materially improve the hardest formula and table regions, and it is admitted only as
+the same opt-in as frontier scoring: one upfront consent plus a per-run budget, with every page
+region it received recorded. A page image sent to such a service is the book itself leaving the
+host, so the recorded redistribution class is checked first and refuses the call for material that
+may not leave, whatever consent was given.
 
 loc-lm-bench measures model security behavior; it is a benchmark, not a production RAG service.
 Runtime guardrails -- prompt-injection filtering of retrieved content, output PII/secret filters,
@@ -959,29 +1089,35 @@ Four rules settle it, in order:
    capability with only refinements left is not what blocks the product.
 4. **Then the trust chain,** upstream before downstream.
 
+An explicit operator priority may override rule 4, never rules 1-3. `scanned-book-recovery` sits
+above `artifact-contracts` on that basis: the operator made it the top priority, and none of the
+remaining contract work changes what a book task produces or measures. `corpus-provenance` sits
+above both and is shipped: `book-corpus-projection` builds on the redistribution gate it delivered.
+
 | # | Capability | Status | How it is evaluated | Implementation |
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
-| 2 | `artifact-contracts` | planned | Every in-scope durable producer and consumer resolves through a registered `schema_id` and semantic `schema_version`; current project-owned records round-trip through their Pydantic models and generated JSON Schema, registered older fixtures migrate to the same canonical meaning or their declared refusal, unsupported future versions fail before downstream action, schema drift without a version and migration declaration fails CI, and an external fixture validates the exported schema and dataset catalog without importing `llb` | [Versioned data and artifact contracts](#versioned-data-and-artifact-contracts) (the contract; the work is in [the plan](../impl/plan.md)) |
-| 3 | `corpus-provenance` | planned | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus projection](acquired-corpus-projection.md) (the contract it reads; the work is in [the plan](../impl/plan.md)) |
-| 4 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 5 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
-| 6 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
-| 7 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
-| 8 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 9 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
-| 10 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
-| 11 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
-| 12 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
-| 13 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
-| 14 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
-| 15 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
-| 16 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
-| 17 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
-| 18 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
-| 19 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
-| 20 | `simulated-user-dialogue` | planned | A case's reward decomposes into the components it declares as gating and recomputes from the saved simulation bundle alone; the user-simulator model and endpoint are recorded per run and a comparison whose cases were answered against different ones is refused rather than mixed; success across repeated trials is published as an interval, never a point estimate; the external-suite lane reproduces the suite's published numbers under its pinned tag and appears in no localized or private board row; a localized Ukrainian domain preserves every case's target end state under replay of its reference trajectory; and a lane that separates no models the single-actor agentic tier already ranks apart is recorded as buying nothing there rather than adopted | [Simulated-user dual-control workloads](#simulated-user-dual-control-workloads) (the contract; the work is in [the plan](../impl/plan.md)) |
-| 21 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan) | [Overview](../impl/current/overview.md) |
+| 2 | `corpus-provenance` | shipped | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md) (against the [acquired-corpus projection](acquired-corpus-projection.md) contract) |
+| 3 | `scanned-book-recovery` | planned | On a frozen pilot set of 20-30 difficult pages with a human-verified reference transcription: character and word error, missing and duplicated text, reading-order agreement, formula fidelity after LaTeX normalization with every rendered formula parsing, table-structure similarity, figure-boundary overlap and caption association, and printed-page mapping accuracy, each reported per page class beside the existing PDF lane on the same pages, with the dangerous-substitution rate (digit/letter, minus/dash, decimal point, Latin/Greek, index, unit, bracket, equation number) reported separately and never folded into an average; model-assisted correction adopted only when it lowers error on the pilot without raising the dangerous-substitution rate, with the correct raw tokens it made wrong counted apart from the errors it fixed; a full run accounts for every input page, reaches every content file from the table of contents, keeps every previous/next link reciprocal, resolves every link, anchor, and embed, renders no uncertain span without its marker and review-queue entry, and re-renders byte-identically after resuming from an interruption; the corpus projection ingests with source-PDF page provenance on every chunk, refuses a gold span over an unresolved marker, and its retrieval over verified book items is reported beside the existing lane's conversion of the same book; a pipeline that beats the existing lane on no page class is recorded as buying nothing there, and that lane stays the recovery engine | [Scanned book recovery](../impl/current/book-recovery.md) (the resumable run skeleton and the recovery-tool survey; the remaining work is in [the plan](../impl/plan.md)) |
+| 4 | `artifact-contracts` | planned | Every in-scope durable producer and consumer resolves through a registered `schema_id` and semantic `schema_version`; current project-owned records round-trip through their Pydantic models and generated JSON Schema, registered older fixtures migrate to the same canonical meaning or their declared refusal, unsupported future versions fail before downstream action, schema drift without a version and migration declaration fails CI, and an external fixture validates the exported schema and dataset catalog without importing `llb` | [Versioned data and artifact contracts](#versioned-data-and-artifact-contracts) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 5 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
+| 6 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
+| 7 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
+| 8 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
+| 9 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
+| 10 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 11 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
+| 12 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
+| 13 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |
+| 14 | `run-bundle-board` | shipped | Board admission refusal on incomplete, unverified, mixed-tier, or non-final records; a recommendation reproduced from the saved manifest | [Evaluation rigor](../impl/current/rigor-board-judge.md) |
+| 15 | `agentic-workloads` | shipped | Prompt-sequence replay of context policies at fixed seeds; published-number provenance resolved back to run artifacts; a CI gate pinning policy constants | [Extended workflows](../impl/current/extended-workflows.md) |
+| 16 | `autonomous-orchestration` | shipped | Resume-from-interrupt verification and post-run self-verification on the quickstart corpora | [Auto-RAG](../impl/current/auto-rag.md) |
+| 17 | `robotics-rag-operation` | shipped | HFlow evidence references round-trip to pinned MCAP intervals and producer versions; protocol-neutral and, when inspectable, MHS adapter conformance; paired RAG-vs-no-retrieval completion and appropriate-refusal verdicts on a held-out emulator ledger; zero executed out-of-policy actions and every planted stale-state, wrong-device, limit, approval, injection, emergency-stop, concurrency, and ambiguous-retry violation blocked before forbidden invocation; a negative result retains the read-only or non-RAG baseline | [Robotics RAG](../impl/current/robotics-rag.md) |
+| 18 | `corpus-conflict-audit` | shipped | Claim-tier precision against a frozen two-tier adjudicator probe with a clustered lower bound, the floor tier gating and the harder tier reported; stage attribution and budget replay recomputed from a bundle alone; overlay rollback contract | [Conflict detection](../impl/current/data-prep/conflict-detection.md) |
+| 19 | `operator-review-tooling` | shipped | Ledger compatibility across adapters; measured reviewer throughput per decision domain | [Review workbench](../impl/current/review-workbench.md) |
+| 20 | `category-suites` | shipped | Per-tier task and data contracts kept separate; no blended board row | [Category suite](../impl/current/category-benchmark-suite.md) |
+| 21 | `simulated-user-dialogue` | planned | A case's reward decomposes into the components it declares as gating and recomputes from the saved simulation bundle alone; the user-simulator model and endpoint are recorded per run and a comparison whose cases were answered against different ones is refused rather than mixed; success across repeated trials is published as an interval, never a point estimate; the external-suite lane reproduces the suite's published numbers under its pinned tag and appears in no localized or private board row; a localized Ukrainian domain preserves every case's target end state under replay of its reference trajectory; and a lane that separates no models the single-actor agentic tier already ranks apart is recorded as buying nothing there rather than adopted | [Simulated-user dual-control workloads](#simulated-user-dual-control-workloads) (the contract; the work is in [the plan](../impl/plan.md)) |
+| 22 | `documentation-integrity` | shipped | `make lint-md` (style plus every relative link and anchor landing) and `make lint-spec-plan` (this registry against the plan, the task shape and lane statuses, `Requires` prerequisites, ordering, and forward-only plan wording), each refusing its synthetic fixtures while the shipped tree passes | [Overview](../impl/current/overview.md) |
 
 ## Extending This Specification
 
@@ -1006,8 +1142,11 @@ The lifecycle for one is fixed, and its steps are in this order for a reason:
    `planned` and the evaluation from step 3.
 5. **Place it in the implementation line.** Add plan tasks under the capability, positioned by the
    trust chain rather than by when the idea arrived.
-6. **Implement, then close the loop.** Record delivered behavior in the current docs, remove the
-   task from the plan, and flip the registry row to `shipped` with the implementation link.
+6. **Implement, then close the loop.** Record delivered behavior in the current docs, keep the
+   task's contract and acceptance evidence in its task record, remove the task from the plan, and
+   flip the registry row to `shipped` with the implementation link. The
+   [completion transition](../guides/development/planning-workflow.md#completion-transition) is the
+   full sequence.
 
 Steps 2-4 are the cost that keeps this cheap to do and expensive to do carelessly. They are also
 what makes a discovered capability durable: a feature that entered the plan without them is a
@@ -1030,6 +1169,29 @@ that agreement is a build failure rather than a review opinion.
 - **The plan is ordered by the trust chain.** Tasks appear grouped by capability, and the capability
   groups appear in the declared implementation-line order. "What is next" is then a position, not a
   judgment call about which entry is best written.
+- **Every task is executable without guessing.** It carries all nine fields of the
+  [task shape](../guides/development/planning-workflow.md#task-shape), a status its lane allows,
+  and its required work ahead of its `(optional)` refinements within the group.
+- **Start prerequisites are explicit.** An optional `Requires` field names the open tasks, in either
+  lane, that must leave the plan before a task can start; each id is a real open task, the edges
+  form no cycle, and required work never waits on optional work. Everything else a task needs stays
+  in its prose `Dependencies`. `make plan-status` reads the plan back as lane counts and each lane's
+  priority task, skipping tasks still waiting on `Requires`, and refuses to schedule over a plan that
+  fails this gate.
+- **The plan holds only what remains.** History words and dates are refused in it. A finished
+  task's original contract and acceptance evidence move to its
+  [task record](../impl/records/README.md), and a research question closed negative moves to
+  [future research](../impl/future-research.md) with its reopening conditions.
+
+Boundary: the checks establish structural agreement. Whether a capability is worth having, whether
+an acceptance gate is strong enough, whether a record's evidence supports acceptance, and whether an
+external prerequisite holds remain contributor judgment.
+
+Evaluation: synthetic fixtures reproduce every refused shape -- an unregistered or misfiled task, a
+missing field, a status in the wrong lane, required work after optional work, an unknown, cyclic,
+or optional-on-required `Requires` edge, groups out of order, and history in the plan -- and the
+shipped tree passes the same checks. A negative result blocks the change and names the documents
+that disagree.
 
 Some things are deliberately NOT tracked as forward work, because tracking them creates more of
 them than it resolves:
@@ -1050,6 +1212,8 @@ The system succeeds when an operator can:
   supported older contract without changing its meaning or its source files;
 - trace a scored answer back to the capture of the source document behind it, and say whether that
   material may be redistributed;
+- read a poorly scanned technical book as a navigable knowledge base, audit any passage, formula,
+  table, or figure in it against the scanned page it came from, and reuse the same book as a corpus;
 - learn where their corpus contradicts itself, and which edition supersedes which;
 - learn which entity nodes, gold items, and document editions denote the same thing, and at
   what threshold that was decided;

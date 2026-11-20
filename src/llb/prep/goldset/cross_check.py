@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from llb.goldset.schema import GoldItem
+from llb.prep.corpus.redistribution import corpus_licences, refuse_non_redistributable
 from llb.prep.frontier.client import ground_span, litellm_complete, parse_json_block
 from llb.prep.frontier.telemetry import LLMComplete, ProvenanceLog
 from llb.prompts.registry import render_text
@@ -32,6 +33,8 @@ from llb.rag.chunking.corpus import iter_docs
 from llb.scoring.text_analysis.labels import normalize_surface
 
 _LOG = logging.getLogger(__name__)
+
+CROSS_CHECK_EGRESS = "second-frontier cross-check (cross-check-goldset)"
 
 # (supported, answerable, note) -- the second frontier's semantic verdict for one item.
 SecondFrontierVerify = Callable[[GoldItem, str], tuple[bool, bool, str]]
@@ -175,3 +178,27 @@ def cross_check_goldset(
         "[cross-check] %d/%d items passed the verified-data gate", report.n_passed, len(items)
     )
     return report
+
+
+def refuse_cross_check_egress(items: list[GoldItem], corpus_root: Path | str) -> None:
+    """Refuse when an item's source document may not leave the host for the second frontier.
+
+    Items may cite a document by its corpus-relative id or by its bare stem (`load_doc_texts`
+    accepts both), so a stem resolves to the staged document it names before the check.
+    """
+    licences = corpus_licences(corpus_root)
+    by_stem: dict[str, str] = {}
+    for doc_id in sorted(licences):
+        by_stem.setdefault(Path(doc_id).stem, doc_id)
+    cited = {item.source_doc_id for item in items}
+    cited.update(span.doc_id for item in items for span in item.source_spans)
+    doc_ids = {doc if doc in licences else by_stem.get(Path(doc).stem, doc) for doc in cited}
+    refuse_non_redistributable(licences, egress=CROSS_CHECK_EGRESS, doc_ids=doc_ids)
+
+
+def cross_check_corpus_goldset(
+    items: list[GoldItem], corpus_root: Path | str, verify: SecondFrontierVerify
+) -> CrossCheckReport:
+    """Gate the items' recorded terms, then cross-check them against the corpus documents."""
+    refuse_cross_check_egress(items, corpus_root)
+    return cross_check_goldset(items, load_doc_texts(corpus_root), verify)

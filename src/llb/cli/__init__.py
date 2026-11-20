@@ -7,6 +7,7 @@ from llb.cli.app import app
 
 import llb.cli.auto_rag  # noqa: F401
 import llb.cli.bench  # noqa: F401
+import llb.cli.book  # noqa: F401
 import llb.cli.eval  # noqa: F401
 import llb.cli.finetune  # noqa: F401
 import llb.cli.inference  # noqa: F401

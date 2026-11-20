@@ -78,6 +78,24 @@ llb_venv_sync() {
   echo "[venv] ready: $VENV ($LLB_VENV_ACTION; extras: $EXTRAS; versions pinned by uv.lock)"
 }
 
+# Every development host is a CUDA host, and several recovery candidates (and Marker's VLM mode)
+# serve their model from vLLM in Docker, which needs the NVIDIA Container Toolkit's `nvidia`
+# runtime. Refuse a CUDA host without it; a host with no NVIDIA GPU (CI) is not checked.
+# LLB_REQUIRE_CONTAINER_TOOLKIT=0 skips the check for a deliberate exception.
+llb_require_container_toolkit() {
+  [ "${LLB_REQUIRE_CONTAINER_TOOLKIT:-1}" = "0" ] && return 0
+  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1 || return 0
+  if command -v docker >/dev/null 2>&1 && docker info 2>/dev/null | grep -q "Runtimes:.*nvidia"; then
+    echo "[venv] NVIDIA Container Toolkit: docker 'nvidia' runtime present"
+    return 0
+  fi
+  echo "ERROR: CUDA host without the NVIDIA Container Toolkit (docker has no 'nvidia' runtime)." >&2
+  echo "  Install it: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/" >&2
+  echo "  then: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker" >&2
+  echo "  (LLB_REQUIRE_CONTAINER_TOOLKIT=0 skips this check.)" >&2
+  exit 2
+}
+
 # vLLM/torch/flash-attn are hardware-matched and live outside uv.lock, so a rebuild leaves the venv
 # holding the lock's torch with nothing to match it. That reinstall is not skippable.
 llb_venv_install_vllm() {
@@ -105,6 +123,7 @@ llb_venv_install_vllm() {
 }
 
 llb_require_vllm_mode
+llb_require_container_toolkit
 llb_venv_plan
 llb_venv_sync
 llb_venv_install_vllm

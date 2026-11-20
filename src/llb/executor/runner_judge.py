@@ -14,6 +14,8 @@ from pathlib import Path
 from llb.core.config import RunConfig
 from llb.core.contracts.judging import JudgeInputRecord, JudgeScore, JudgeStatus
 from llb.executor.cases import CaseBatch
+from llb.executor.runner_egress import refuse_frontier_judge_egress
+from llb.prep.corpus.redistribution import RedistributionRefused
 from llb.scoring.judge.model import judge_is_trusted, run_judge
 from llb.scoring.judge.scorer import judge_value
 from llb.scoring.policy import (
@@ -106,6 +108,7 @@ def _judge_cases(
         return JudgeCaseResult(None, {"scorer_policy": "human", "provider": "human"})
     if config.scorer_policy == "local" and config.judge_model is None:
         return JudgeCaseResult(None, {"scorer_policy": "local", "provider": "none"})
+    refuse_frontier_judge_egress(config, batch)
     score_fn, policy_meta = _configured_judge_scorer(config, scorer, staging_dir)
     try:
         outcome = run_judge(
@@ -142,6 +145,7 @@ def _judge_ratings(
         return None
     if config.judge_model is None:
         return None
+    refuse_frontier_judge_egress(config, batch)
     score_fn, _ = _configured_judge_scorer(config, scorer, staging_dir)
     scores = score_fn(_judge_records(batch), config.judge_model)
     return [judge_value(s) for s in scores]
@@ -197,6 +201,8 @@ def _write_calibration_worksheet(
     if config.judge_model is not None and config.scorer_policy != "human":
         try:
             judge_ratings = _judge_ratings(config, batch, judge_scorer, staging_dir)
+        except RedistributionRefused:
+            raise  # a policy refusal, not an unavailable judge: never degrade it to a warning
         except (Exception, SystemExit) as exc:
             _LOG.warning(
                 "[run-eval] judge unavailable for the worksheet (%s); judge_rating left blank "

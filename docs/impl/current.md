@@ -28,9 +28,11 @@ Three levels, so a search stops at the smallest page that answers the question:
 Evidence stays with the decision it supports rather than in an appendix, so a topic page ends in
 the runs behind it.
 
-Two neighbours sit outside this tree: [plan.md](plan.md) holds work that remains, and
-[future-research.md](future-research.md) holds questions investigated to a negative answer -- what
-closed each one and what would make it worth reopening.
+Three neighbours sit outside this tree: [plan.md](plan.md) holds work that remains,
+[task records](records/README.md) hold a finished task's original contract and the evidence that
+accepted it, and [future-research.md](future-research.md) holds questions investigated to a negative
+answer -- what closed each one and what would make it worth reopening. How work moves between them
+is the [planning workflow](../guides/development/planning-workflow.md).
 
 ## Areas
 
@@ -39,6 +41,7 @@ closed each one and what would make it worth reopening.
 | [Overview](current/overview.md) | System shape, setup, repo layout, artifact roots | page |
 | [Artifact contracts](current/artifact-contracts.md) | Versioned record identity, compatibility dispatch, dataset bindings, generated schemas and catalog, and the data-prep, retrieval, and run-bundle families on them | 4 pages |
 | [Data prep](current/data-prep.md) | Gold data, ingestion, drafting, verification, corpus hygiene | 10 pages |
+| [Scanned book recovery](current/book-recovery.md) | The resumable `book-ocr` run over a scanned PDF: page inventory, stage registry, per-page ledger, content-addressed stage cache; the recovery-tool survey and per-stage shortlist | 2 pages |
 | [RAG core](current/rag-core.md) | The retrieve -> generate -> score pipeline and every measured decision in it | 14 pages |
 | [Entity resolution](current/entity-resolution.md) | Probabilistic record linkage: the shared identity seam and the gold-item, graph-node, and document-edition lanes on it | page |
 | [GraphRAG](current/graphrag-backend.md) | Knowledge-graph retrieval and graph-vs-vector evidence | 5 pages |

@@ -1,5 +1,10 @@
 # AGENTS.md project rules
 
+This file is the canonical instruction source for every coding agent in this repository. Codex and
+Cursor read it directly; [CLAUDE.md](CLAUDE.md) imports it and [GEMINI.md](GEMINI.md) routes to it,
+and each keeps only its tool-specific routing. Procedures too long for this file live in the
+[planning workflow](docs/guides/development/planning-workflow.md) and the development guides.
+
 ## Development Guardrails
 
 - **Git:** Do not create git commits or revert user changes unless explicitly asked.
@@ -50,11 +55,26 @@ exempt. Before picking one, read the sizing order and the 12-16 GiB roster in [h
   it lives and dies in one `bash -c`. A fragment that is sourced by an entrypoint and calls a
   sibling declares it with `# llb-requires: <sibling>`.
 
+## Start Work
+
+- Inspect `git status --short`, then read the spec section, the current-docs topic, and the tests
+  the work touches.
+- **A named plan task:** confirm every id in its `Requires` has left `plan.md` and every input in
+  its `Dependencies` holds, then open its [task record](docs/impl/records/README.md) before editing.
+  Asked to pick work, run `make plan-status` and take the task it names in the right lane.
+- **A fix or maintenance request** starts directly: the request and the existing spec are the
+  contract.
+- **A new capability or a changed product promise** goes through the
+  [product feature lifecycle](#product-feature-lifecycle) before any code.
+
 ## Documentation
 
-`docs/impl/plan.md` is FORWARD-ONLY -- only work not yet implemented. `docs/impl/current.md` indexes
-what is DELIVERED; the detail lives in `docs/impl/current/<area>/<topic>.md`. Running the cycle
-below is part of "done" for any task, not an extra.
+`docs/impl/plan.md` is FORWARD-ONLY -- only work that remains. `docs/impl/current.md` indexes what
+is DELIVERED; the detail lives in `docs/impl/current/<area>/<topic>.md`. A finished task's original
+contract and acceptance evidence live in `docs/impl/records/NNNN-<group>-<task-id>.md` -- the next
+unused sequence, the served capability id or `adhoc`, the task id
+([record file naming](docs/guides/development/planning-workflow.md#record-file-naming)) -- and a
+research question closed negative lives in `docs/impl/future-research.md` with what would reopen it.
 
 **The delivered docs are a three-level tree** -- `current.md` (areas) -> `<area>.md` (orientation
 plus a table of its pages) -> `<area>/<topic>.md` (one subject). A large area owns a directory, a
@@ -68,19 +88,6 @@ small one stays one page.
 - **Links must land.** `make lint-doc-links` (inside `make lint-md`) checks every relative link and
   anchor. An anchor does not depend on heading level, so a moved section keeps its fragment.
 
-**The cycle, after every implemented feature and before reporting done:**
-
-1. **Record it** in the narrowest topic page: what was built, where it lives (modules, commands,
-   tests), how to run it, and the result. Results and history belong HERE, never in `plan.md`.
-2. **Delete it from `plan.md`** -- the whole item, unless open residual work remains under it.
-3. **Route what the work surfaced** to exactly one of four places: a **chore** -> do it now or drop
-   it; an **audit of our own output** -> drop it; **more work under an existing capability** -> a
-   task in that group, written as future work and flagged `(optional)` if it is; a **capability the
-   spec does not describe** -> the lifecycle below, never a task. Surfacing nothing is a normal,
-   good outcome.
-4. **Keep `plan.md` forward-actionable.** A task needing a delivered fact states it in ONE line and
-   links the current-docs topic; it never restates it.
-
 ### Citing a measured result
 
 Delivered docs must stay checkable on a machine that never held the run, so a page cites neither a
@@ -88,6 +95,36 @@ Delivered docs must stay checkable on a machine that never held the run, so a pa
 run label (a lookup key that identifies nothing). It states what ran on what, the date and host,
 every load-bearing number AND its reading, and what would overturn it. **Before writing any measured
 result into the docs, read [heavy runs and evidence](docs/guides/development/heavy-runs-and-evidence.md).**
+Task records follow the same rule.
+
+## Finish Work
+
+Running this cycle is part of "done" for any task, not an extra. The long form, with the reasons, is
+the [completion transition](docs/guides/development/planning-workflow.md#completion-transition).
+
+1. **Count first:** `make plan-status` before editing `plan.md`.
+2. **Accept it** by its declared gates, and write the commands, results, and any still-open gate
+   into its task record. Leave unaccepted work open rather than reporting it done.
+3. **Record it** in the narrowest topic page: what was built, where it lives (modules, commands,
+   tests), how to run it, and the result. Results and history belong THERE or in the record, never
+   in `plan.md`.
+4. **Delete it from `plan.md`** -- the whole item, unless open residual work remains under it -- and
+   drop its id from every downstream `Requires`.
+5. **Route what the work surfaced** to exactly one of four places: a **chore** -> do it now or drop
+   it; an **audit of our own output** -> drop it; **more work under an existing capability** -> a
+   task in that group, written as future work and flagged `(optional)` if it is; a **capability the
+   spec does not describe** -> the lifecycle below, never a task. Surfacing nothing is a normal,
+   good outcome. A `Research: yes` task that closed negative also gets its
+   [future research](docs/impl/future-research.md) section.
+6. **Keep `plan.md` forward-actionable.** A task needing a delivered fact states it in ONE line and
+   links the current-docs topic; it never restates it.
+7. **Gate and report.** Run `make ci` (plus `make lint-md` when docs changed) on the resulting tree
+   and report failures and skipped gates explicitly. Report the task count before and after and
+   which capabilities moved: growth is allowed -- that is what extensibility means -- but it is
+   REPORTED, never silent, and growth concentrated in the capability you happened to be working in
+   is the signal to stop and ask whether the line still reflects what matters.
+8. **Leave the host clean** ([below](#leaving-the-host-clean)), after `git diff --check` and
+   `git status --short`.
 
 ## Product Feature Lifecycle
 
@@ -107,34 +144,31 @@ the loop when it lands. Two rules that list does not carry:
 - **Wrong shape.** When an existing capability is the wrong shape, amend its spec section rather
   than working around it in the implementation: a spec that no longer describes the code is worse
   than none, because people trust it.
+
 ## Specification And Plan Integrity
 
-`make lint-spec-plan` (inside `make ci-checks`) makes spec/plan drift a build failure. It enforces
-that every task carries a `Serves` line naming a real capability id; that every `shipped` capability
-links its implementation docs and every `planned` one has an open task; that every capability
-declares a non-empty evaluation; and that capability groups appear in `plan.md` in registry row
-order, in both sections. When it fails, fix the DOCUMENTS -- it is reporting a real disagreement
-about what the product is, and the fix is never to loosen the check.
+`make lint-spec-plan` (inside `make ci-checks`) makes spec/plan drift a build failure: the registry
+and the plan agree, every task carries all nine fields and a status its lane allows, groups and
+`(optional)` tasks are in order, `Requires` names open tasks without a cycle, and the plan's wording
+is forward-only. [The full list](docs/guides/development/planning-workflow.md#what-the-gate-checks).
+When it fails, fix the DOCUMENTS -- it is reporting a real disagreement about what the product is,
+and the fix is never to loosen the check.
 
 **plan.md structure:** `## Agent Implementation Tasks` / `## Human-Assisted Tasks`, then a `###`
-group per capability (title, two hyphens, backticked id), then one `####` per task id. Count with
-`grep -c '^#### ' docs/impl/plan.md`.
+group per capability (title, two hyphens, backticked id), then one `####` per task id. Lanes,
+statuses, fields, and ordering are defined in the
+[planning workflow](docs/guides/development/planning-workflow.md); `make plan-status` counts the
+tasks and names each lane's priority.
 
 **Every line in `plan.md` answers "what remains to be done".** FORBIDDEN there: "DONE",
 "delivered", "implemented", an ISO date, "we/I did", check marks, result values, or any past-tense
-status -- all of it lives in the current docs.
+status -- all of it lives in the current docs or the task record. The gate catches the words and
+dates; the rest is the author's to catch.
 
 **Ordering.** `(optional)` sorts a task behind the non-optional tasks of its OWN group and never
 reorders the line: an optional task of an earlier capability still precedes a required task of a
 later one. A capability whose remaining work is entirely optional moves DOWN the line -- a shipped
 capability with only refinements left is not what blocks the product.
-
-**Self-check before reporting done.** The diff NET-REMOVES the implemented scope from `plan.md` and
-ADDS it to the current docs, and grepping `plan.md` for the forbidden words returns nothing left
-over. Report the task count before and after and say which capabilities moved: growth is allowed --
-that is what extensibility means -- but it is REPORTED, never silent, and growth concentrated in the
-capability you happened to be working in is the signal to stop and ask whether the line still
-reflects what matters.
 
 ## Leaving The Host Clean
 
