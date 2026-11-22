@@ -43,7 +43,10 @@ Four kinds of finding look like forward work and are not:
   with acceptance gates, a chore competes with the product on equal footing and each round produces
   the next round.
 - An **audit of our own output**: an artifact's field layout, an artifact's byte count. The measure
-  of an audit is a decision it changes, not a byte it saves.
+  of an audit is a decision it changes, not a byte it saves. (The
+  [closing implementation audit](#closing-implementation-audit) is not this: it measures a
+  capability against its spec, and every finding it makes changes code, a test, the plan, or the
+  spec.)
 - A **migration, compatibility shim, or second schema version** for a form only our own code has
   written. Change the form in place and rebuild the data; see the
   [pre-release rule](../../impl/plan.md#pre-release-rule-no-versioning-no-backward-compatibility).
@@ -155,6 +158,40 @@ what blocks the product.
 The scheduling rule follows: **take the first task of the earliest group that still has one,
 skipping a task still waiting on its `Requires`.** `make plan-status` prints exactly that, per lane,
 with the task and status counts.
+
+## Closing implementation audit
+
+Each task proves its own slice on its own fixtures, and the deep dive into one task is where its
+neighbours' assumptions first surface: a property two tasks each assumed the other owned, a seam
+whose fixture agreed with itself but not with the next stage, an identity or cache key one task
+derived and another rebuilt. No task's own gates can see those, so every capability with open work
+in the plan ends with one task whose whole job is to look.
+
+- **Shape.** One `#### <capability-id>-implementation-audit (optional)` per capability, in the
+  agent lane -- an agent performs the audit even when the capability's other work is human-gated --
+  as the LAST task of that capability's agent-lane group (a capability whose tasks are all
+  human-gated gets an agent-lane group holding only its audit). Its status is `CLEAR`: it works on
+  committed fixtures and injected fakes.
+- **Start.** Its `Requires` names every open required task of the capability, in either lane, so it
+  starts once the required line has landed. Optional tasks are not required: the audit covers the
+  ones that have left the plan by then, and its record names the ones still open.
+- **Four passes,** each against the capability's spec section and registry evaluation rather than
+  against the tasks' own gates:
+  1. design completeness -- every load-bearing property and every evaluation clause maps to the test
+     that pins it, or to a gap that is then routed;
+  2. logic review across task seams -- the seams the audit task names, plus any found on the way;
+  3. implementation improvement -- logic duplicated between the tasks' modules, a missing shared
+     helper, a module past the soft limit along a seam the work created;
+  4. system integration tests -- for each seam no test pins, a CI test that drives the capability
+     across it on fixtures, shown once in the record to FAIL with the seam broken on purpose.
+- **Routing** is the completion transition's: fix it in place, write a task in this group, or take
+  it through the spec lifecycle. A finding that needs a heavy run becomes a `RUN NEEDED` task rather
+  than widening the audit. An audit that finds nothing still records its property-to-test map: that
+  map is the evidence it looked.
+- **Upkeep.** Add the audit when a capability first gets open tasks. A new required task of the
+  capability joins the audit's `Requires`; a finished one leaves it like any downstream `Requires`.
+  The audit leaves the plan when it closes, and a capability that later receives new required work
+  gets a new audit with it.
 
 ## Task records
 

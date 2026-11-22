@@ -158,7 +158,10 @@ and the fix is never to loosen the check.
 group per capability (title, two hyphens, backticked id), then one `####` per task id. Lanes,
 statuses, fields, and ordering are defined in the
 [planning workflow](docs/guides/development/planning-workflow.md); `make plan-status` counts the
-tasks and names each lane's priority.
+tasks and names each lane's priority. Every capability with open work ends its agent-lane group
+with one `(optional)` `<capability-id>-implementation-audit` that `Requires` every open required
+task of the capability -- the
+[closing audit](docs/guides/development/planning-workflow.md#closing-implementation-audit).
 
 **Every line in `plan.md` answers "what remains to be done".** FORBIDDEN there: "DONE",
 "delivered", "implemented", an ISO date, "we/I did", check marks, result values, or any past-tense

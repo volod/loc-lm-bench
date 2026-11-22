@@ -63,31 +63,49 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 One preprocessing recipe either under-treats the curved, shadowed pages or destroys the thin strokes
 on the clean ones. Each page needs measured signals and only the corrections those signals call for,
-with the original rendering always kept beside them.
+with the original rendering always kept beside them. A geometric variant also moves every pixel:
+the ledger records a block's region in the original render's frame, while today an engine stage
+reads only that render and `variant` is a label, so a box read on a rotated or dewarped image has
+no way back to the page it came from.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
 - Dependencies: the page inventory records each image's placement rotation, which does not give
   content orientation ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#evidence));
   the shortlisted dewarp and illumination methods and the content each was seen to lose are in
-  [tool selection](current/book-recovery/tool-selection.md#page-preprocessing-dewarp-deskew-illumination).
+  [tool selection](current/book-recovery/tool-selection.md#page-preprocessing-dewarp-deskew-illumination);
+  the engine stages and their `variant` parameter are the [block ledger](current/book-recovery/block-ledger.md#engines)
+  seam.
 - User-visible outcome: per page, a recorded signal vector -- skew, line curvature, background
   unevenness, contrast, blur, gutter-shadow side and width, neighbour-page bleed band, orientation --
-  and the set of image variants generated for it with their parameters, the original among them.
+  and the set of image variants generated for it with their parameters, the original among them;
+  an engine stage reads any named variant, and every block it proposes lands in the ledger in the
+  original render's pixel frame.
 - Scope boundary: in scope -- signal measurement; deskew, dewarp (the survey's shortlisted method),
   illumination and background normalization, local contrast, gutter-shadow correction, gentle
   denoising, and rotation, each applied only where its signal calls for it; the bleed band recorded
   as a region rather than blindly cropped; a stroke-preservation guard that refuses a variant
-  erasing thin strokes measured on the original (minus signs, decimal points, rules); no global
-  binarization by default. Out of scope -- OCR, choosing the winning variant (reconciliation and the
-  pilot decide that), and super-resolution unless the survey shortlists it as one more variant.
-- Data and artifact paths: `src/llb/prep/book/preprocess/`; `pages/<pNNNN>/signals.json` and
-  `pages/<pNNNN>/variants/` inside the run directory.
+  erasing thin strokes measured on the original (minus signs, decimal points, rules), and a content
+  guard that refuses a geometric variant losing a text line or the page edge (the survey saw
+  dewarping cut both); no global binarization by default; for every geometric variant (rotation,
+  deskew, dewarp) its recorded transform with a point map back to the original render, a variant
+  whose map does not cover the page refused; the engine stages reading the image of the variant
+  their `variant` parameter names, with each proposed box mapped back before the ledger merge, so
+  regions, crops, and cross-variant reconciliation share one frame. Out of scope -- OCR, choosing the
+  winning variant (reconciliation and the pilot decide that), and super-resolution unless the survey
+  shortlists it as one more variant.
+- Data and artifact paths: `src/llb/prep/book/preprocess/` and `src/llb/prep/book/stages/`;
+  `pages/<pNNNN>/signals.json` and `pages/<pNNNN>/variants/` (each geometric variant with its
+  transform) inside the run directory.
 - Execution path: the OpenCV path runs inside `make ci` over synthetic pages with planted
   curvature, shadow, blur, bleed, and rotation; the GPU dewarp model is smoke-tested on the host.
 - Acceptance gates: `make ci` green; each planted defect is detected and a clean synthetic page
   triggers no correction; a variant that erases a planted decimal point or minus sign is refused by
-  the guard; variants are byte-identical on rerun; the original rendering is never altered.
+  the stroke guard, and a dewarp that drops a planted edge line by the content guard; a synthetic
+  page placed upside down is detected and read upright; a block read on a rotated and deskewed
+  variant lands within a stated pixel tolerance of the same block read on the original; the OpenCV
+  variants are byte-identical on rerun (a GPU variant is reproduced through the stage cache, not
+  recomputation); the original rendering is never altered.
 - Documentation target: `docs/impl/current/book-recovery/page-preprocessing.md`.
 
 #### book-recovery-quality-metrics
@@ -103,50 +121,112 @@ pilot number is taken.
 - User-visible outcome: `llb book-ocr score --reference <reference-dir> <run-dir>` reports, per page
   and per page class: character and word error, missing and duplicated text, reading-order
   agreement, the dangerous-substitution count per confusion class, formula fidelity, table-structure
-  similarity, figure-boundary overlap, caption association, and printed-page mapping accuracy.
+  similarity, figure-boundary overlap, caption association, and printed-page mapping accuracy; the
+  same report scores the existing PDF lane's conversion of the same pages.
 - Scope boundary: in scope -- the reference-transcription format (per-page blocks with kind, region,
   text, LaTeX for formulas, structure for tables, figure boxes with caption ids, reading order, and
   the printed page number); alignment; the confusion classes (`0/O`, `1/l/I`, `5/S`, minus versus
   hyphen versus en and em dash, decimal point versus comma, Latin versus Greek lookalikes, sub- and
   superscript, unit symbols, brackets, equation numbers); LaTeX normalization before comparison plus
-  a parse-validity check; tree-edit table similarity; box overlap; rank agreement on reading order.
-  The dangerous-substitution rates are reported apart and never folded into a single score. Out of
-  scope -- any reference content (that is `book-pilot-reference-transcription`) and a combined
-  headline score.
+  a parse-validity check; formula fidelity compared term by term, so an equation that parses but
+  lost a term scores as the loss (the survey's dropped `= v_E(t_0)`); tree-edit table similarity;
+  box overlap; rank agreement on reading order; scoring the existing lane from its page-level
+  citation spans as a text-only submission -- a formula it wrote as plain text is scored against the
+  reference LaTeX like any other reading, and a structure it cannot express (figure boxes, table
+  structure) is reported as absent, never dropped from the comparison. The dangerous-substitution
+  rates are reported apart and never folded into a single score. Out of scope -- any reference
+  content (that is `book-pilot-reference-transcription`) and a combined headline score.
 - Data and artifact paths: `src/llb/prep/book/metrics/`; synthetic reference fixtures under
   `tests/llb/prep/book/`.
-- Execution path: CPU-only inside `make ci`.
+- Execution path: CPU-only inside `make ci`; `make book-ocr-score` (with a `##` help description)
+  wraps the command.
 - Acceptance gates: `make ci` green; every metric is pinned by a hand-computed fixture; a planted
   `5`-for-`S` substitution in a table cell is counted in its class while barely moving the character
   error rate, and the fixture asserts both; equivalent LaTeX spellings score equal; invalid LaTeX is
-  flagged.
+  flagged; a parsing formula with one term removed scores below the complete one; a fixture
+  existing-lane conversion scores through the same harness with its absent structures reported as
+  absent.
 - Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
 
 #### book-pilot-page-selection
 
 Hand-picked pilot pages bias the pilot toward what someone happened to remember. Select them from
 measured page signals and cheap content signals, stratified by the page classes the pilot must
-cover, with ordinary pages kept as a control.
+cover, with ordinary pages kept as a control. The same classes are what a full run routes on, and
+nothing yet assigns one: `page_class` is a single parameter for the whole run, so `by_page_class`
+cannot fire on a real book, and the engine lease holds one engine at a time, so a batch whose pages
+alternate between two routed engines would restart a server -- minutes for a vLLM model -- at every
+switch.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- the selection over the target book is a CPU-only signal pass.
 - Requires: `book-page-signals-and-variants`
-- Dependencies: the target scan available locally under `DATA_DIR`.
+- Dependencies: the target scan available locally under `DATA_DIR`; per-class engine selection and
+  the batch-scoped server are the [block ledger](current/book-recovery/block-ledger.md#engines)
+  seam.
 - User-visible outcome: `llb book-ocr pilot-select <run-dir> --size <n>` writes a reproducible pilot
-  set of 20-30 PDF pages, each with the class it represents and the signal values that placed it.
+  set of 20-30 PDF pages, each with the class it represents and the signal values that placed it;
+  every page of a run carries its class set as a stage output, and an engine stage's
+  `by_page_class` routes on it.
 - Scope boundary: in scope -- stratified, seeded selection over the declared classes (severe
   curvature, gutter and corner text, grey or shadowed background, dense formulas, large or irregular
   tables, multi-column layout, labelled diagrams, small footnotes, landscape, normal); cheap content
   signals (formula density, ruling lines, figure area, column count, footnote band); a coverage
-  report naming any class with no qualifying page. Out of scope -- transcription and the comparison.
+  report naming any class with no qualifying page; a class stage over every page with a declared
+  precedence for a page in several classes; engine stages reading the class from that stage, so it
+  enters their cache key through the input digest; a routed stage running each batch's pages grouped
+  by selected engine, so each engine opens at most once per batch. Out of scope -- transcription,
+  the comparison, and which engine serves a class (the pilot decides it).
 - Data and artifact paths: the target book's pilot list committed at
   `samples/book_ocr/<book-slug>/pilot_pages.json` (source checksum, PDF page numbers, classes,
-  signals -- no page image and no recovered text); selection outputs inside the run directory.
-- Execution path: CPU-only fixture tests inside `make ci`; one signal pass over the target scan.
+  signals -- no page image and no recovered text); the per-page class and the selection outputs
+  inside the run directory.
+- Execution path: CPU-only fixture tests inside `make ci`; one signal pass over the target scan;
+  `make book-ocr-pilot-select` (with a `##` help description) wraps the command.
 - Acceptance gates: `make ci` green; the selection is deterministic under its seed; every declared
   class is covered or reported empty by name; the committed list for the target book carries the
-  source checksum it was selected from.
-- Documentation target: `docs/impl/current/book-recovery/tool-selection.md`.
+  source checksum it was selected from; a page whose class changes re-runs only the stages its class
+  routes; a fixture batch of alternating classes opens each routed engine once.
+- Documentation target: `docs/impl/current/book-recovery/tool-selection.md` and the routing section
+  of [block ledger](current/book-recovery/block-ledger.md#engines).
+
+#### book-reading-resolution-and-correction-overlay
+
+The ledger keeps every engine's raw reading and chooses none, and the spec puts every correction --
+by agreement, by a model, by a reviewer -- in an overlay over it. Neither half exists: no rule says
+which reading a rendering shows for a block, and there is no overlay for a decision to land in. The
+markers, both renderings, the correction stage, and the review queue all read this one seam, so it
+is built once, before any of them. An overlay keyed by block id alone would also attach a decision
+to the wrong block the first time a ledger is rebuilt under another engine, because ids follow
+geometry.
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and its uncertainty spans.
+- User-visible outcome: every block has one resolved text with its provenance -- the configured
+  primary reading, an overlay edit, or an unresolved span -- that both renderings read; each overlay
+  edit records its author kind (agreement, model, reviewer), raw text, replacement, and evidence;
+  an edit whose block changed under a ledger rebuild is reported as orphaned and re-queued, never
+  applied to another block.
+- Scope boundary: in scope -- the resolution rule (the primary reading per stage and page class from
+  the run configuration; agreement resolves only what every reading agrees on; an uncertainty span
+  stays unresolved unless an overlay edit covers it); the overlay as a registered artifact contract
+  with one precedence (reviewer over model over agreement); entries anchored by block id plus the
+  digest of the block's region and raw readings, so a changed block orphans its entries; model
+  edits arriving as a stage output and reviewer decisions as a run-level file outside the stage
+  cache, both entering the key of every stage that reads them, so a new decision re-runs exactly the
+  pages it touches. Out of scope -- producing edits (the review queue and the correction stage do),
+  and rendering.
+- Data and artifact paths: `src/llb/prep/book/resolve/`; the overlay and the resolved text per page
+  inside the run directory.
+- Execution path: CPU-only inside `make ci` over synthetic ledgers.
+- Acceptance gates: `make ci` green; a block with three readings and a digit span resolves to the
+  primary reading with the span left unresolved; agreement across every reading resolves; a reviewer
+  edit overrides a model edit on the same span; rebuilding a fixture ledger under a second fake
+  engine orphans and re-queues the entries of every changed block while unchanged blocks keep
+  theirs; a new reviewer decision changes the resolved text of its page alone on the next run; the
+  raw ledger stays byte-identical throughout.
+- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
 
 #### book-uncertainty-markers-and-review-queue
 
@@ -155,12 +235,14 @@ reviewer can act on. An omitted passage and a passage nobody could read must nev
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
+- Requires: `book-reading-resolution-and-correction-overlay`
 - Dependencies: the [block ledger](current/book-recovery/block-ledger.md). The decision UI reuses
   the [review workbench](current/review-workbench.md) adapter seam.
 - User-visible outcome: every unreadable or uncertain span becomes a short visible marker with its
   PDF page link and, where useful, a padded crop of the region, a row in a page-level quality
   manifest, and an entry in a review queue that opens in the review workbench; a reviewer decision
-  becomes a correction-overlay entry that survives every re-render.
+  becomes a correction-overlay entry that survives every re-render of an unchanged block, and an
+  orphaned entry returns to the queue rather than disappearing.
 - Scope boundary: in scope -- marker syntax that is readable in Obsidian and machine-parseable, with
   distinct markers for unreadable, low-confidence, and uncertain formula or table content;
   deterministic crop names under `review/`; `metadata/quality_manifest.json`; the review-queue file;
@@ -173,8 +255,9 @@ reviewer can act on. An omitted passage and a passage nobody could read must nev
   the queue.
 - Acceptance gates: `make ci` green; a planted unreadable span yields a marker, an existing crop, a
   manifest row, and a queue entry -- never an omission; a workbench decision changes the rendered
-  text and leaves the raw ledger untouched; reopening the queue resumes where it stopped; the
-  adapter passes the workbench's ledger-compatibility tests.
+  text and leaves the raw ledger untouched; reopening the queue resumes where it stopped; an
+  orphaned overlay entry reappears in the queue with its old decision shown; the adapter passes the
+  workbench's ledger-compatibility tests.
 - Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md` and the
   [review workbench](current/review-workbench.md) adapter table.
 
@@ -187,13 +270,18 @@ evidence is thin the output must say so rather than invent a hierarchy.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md); a line engine labels
+  every block `body`, as the full-book RapidOCR ledger did
+  ([block ledger evidence](current/book-recovery/block-ledger.md#evidence)), so the kinds an engine
+  supplies are a hint, not an input this task may require.
 - User-visible outcome: `metadata/document_structure.json` holds the printed-page mapping for every
   PDF page, the hierarchy (book, part, chapter, section, subsection) with page ranges and the
   evidence behind each node, the figure, table, and equation numbering inventory, and the fallback
   flag wherever evidence was insufficient.
-- Scope boundary: in scope -- printed page numbers from page-number blocks under a monotone fit, with
-  gaps, unnumbered plates, and front matter recorded; table-of-contents page detection and parsing;
+- Scope boundary: in scope -- page-number and running-header blocks found from position and
+  repetition across pages, whatever kind the engine gave them; printed page numbers from those
+  blocks under a monotone fit, with gaps, unnumbered plates, and front matter recorded;
+  table-of-contents page detection and parsing;
   headings from typography and numbering; running-header and section-number agreement; a two-pass
   reconciliation of the printed contents against observed headings with every conflict recorded;
   fallback page-range segmentation. Out of scope -- rendering, cross-reference linking, and any node
@@ -204,7 +292,8 @@ evidence is thin the output must say so rather than invent a hierarchy.
 - Acceptance gates: `make ci` green; a synthetic book with a contents page and numbered headings
   reconstructs exactly; an offset numbering with one missing page number recovers the mapping and
   records the gap; a contents entry with no matching heading is reported, never fabricated; a book
-  with neither contents nor numbered headings falls back to page ranges.
+  with neither contents nor numbered headings falls back to page ranges; the same synthetic book
+  with every block relabelled `body` recovers the same page mapping and running headers.
 - Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md`.
 
 #### book-vault-rendering-and-navigation
@@ -224,23 +313,30 @@ will hold, so the output has to be both readable and stable.
   figure embeds at their reading position; uncertainty markers in place; YAML front matter only for
   fields Obsidian or retrieval uses (book, hierarchy ids, PDF and printed page ranges, review
   counts).
-- Scope boundary: in scope -- segmentation that splits an oversized section into ordered page-range
-  parts at block boundaries, never inside a formula, table, figure-caption pair, or paragraph unless
-  the paragraph alone exceeds the cap; deterministic ASCII file names and block anchors; the
-  PDF-page link form verified against the documentation and release notes of the recorded target
-  Obsidian version (a `#page=<n>` fragment on a PDF link is the candidate), plus a configurable
-  rendered-page fallback under `source/pages/`; links valid under each source deployment mode;
-  atomic publish to `--output` that removes stale files. Out of scope -- cross-reference linking,
-  and the quality of formula, table, and figure recovery (this task renders whatever the ledger
-  holds).
+- Scope boundary: in scope -- the resolved text of every block, never a raw reading picked here;
+  segmentation that splits an oversized section into ordered page-range parts at block boundaries,
+  never inside a formula, table, figure-caption pair, or paragraph unless the paragraph alone
+  exceeds the cap; deterministic ASCII file names and block anchors, with the anchor of a numbered
+  target (section, figure, table, equation) derived from its printed number so it survives an
+  engine change that renumbers block ordinals, and an anchor at the first block of every PDF page; a
+  page whose recovery failed rendered as a page-level marker with its PDF link, never left out; a
+  figure block rendered as a crop of its region under the spec's asset naming (PDF page, in-page
+  ordinal, kind), so `book-figure-and-caption-assets` changes what a crop holds, not what it is
+  called; the PDF-page link form verified against the documentation and release notes of the
+  recorded target Obsidian version (a `#page=<n>` fragment on a PDF link is the candidate), plus a
+  configurable rendered-page fallback under `source/pages/`; links valid under each source
+  deployment mode; atomic publish to `--output` that removes stale files. Out of scope --
+  cross-reference linking, and the quality of formula, table, and figure recovery (this task renders
+  whatever the ledger holds).
 - Data and artifact paths: `src/llb/prep/book/render/`; `book/<book-slug>/` inside the run
   directory; the operator-chosen `--output` vault path.
 - Execution path: `make book-ocr-render`; CPU-only inside `make ci`.
 - Acceptance gates: `make ci` green; a re-render is byte-identical; an oversized fixture section
   splits only at permitted boundaries, with a formula and a figure-caption pair at the would-be cut;
-  a parameter that does not touch structure leaves every file name unchanged; front matter parses as
-  YAML; every ledger block appears in exactly one file, in reading order, with no loss and no
-  duplication.
+  a parameter that does not touch structure leaves every file name unchanged; a fixture ledger
+  rebuilt with shifted block ordinals keeps every numbered-target anchor; a failed fixture page
+  appears as its marker; front matter parses as YAML; every ledger block appears in exactly one
+  file, in reading order, with no loss and no duplication.
 - Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md` and the usage
   guide `docs/guides/data-prep/book-ocr.md`.
 
@@ -263,7 +359,8 @@ one report what still needs a person.
   reason); every content file reachable from the contents; previous/next links reciprocal and the
   chain covering every file once; every wikilink, relative link, block anchor, and embed resolving,
   with PDF page fragments inside the page count; every referenced asset existing and every asset
-  referenced; every block carrying a page; marker count equal to review-queue size. Out of scope --
+  referenced; every block carrying a page; every open marker matching exactly one open review-queue
+  entry, and orphaned overlay entries counted in the report. Out of scope --
   judging rendering in the Obsidian app (that is `book-vault-obsidian-acceptance`).
 - Data and artifact paths: `src/llb/prep/book/validate/`; `metadata/processing_report.md` and
   `metadata/validation.json` inside the book directory.
@@ -288,9 +385,10 @@ than none, so resolution must be conservative and every miss counted.
   cited printed page; ambiguous or unresolved references left as plain text and counted in the
   report.
 - Scope boundary: in scope -- a per-book reference grammar in configuration; resolution only to a
-  target that the structure inventory identifies uniquely; printed-page references through the
-  page mapping. Out of scope -- concept or semantic links, model-suggested related sections, and a
-  generated glossary.
+  target that the structure inventory identifies uniquely; printed-page references and index
+  entries through the page mapping to the anchor at the first block of the cited page, so a page
+  split across two files still lands where it starts. Out of scope -- concept or semantic links,
+  model-suggested related sections, and a generated glossary.
 - Data and artifact paths: `src/llb/prep/book/render/`; the generated lists inside the book
   directory.
 - Execution path: CPU-only inside `make ci`.
@@ -312,26 +410,34 @@ project already reads.
 - Dependencies: the citation sidecar and chunk page metadata already carry PDF pages into retrieval
   ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md)); every export refuses a
   `licence` other than `redistributable` or absent
-  ([redistribution gate](current/data-prep/acquired-provenance.md#redistribution-gate)).
+  ([redistribution gate](current/data-prep/acquired-provenance.md#redistribution-gate)); a
+  non-local `source_system` puts the projection in the acquired lane, which refuses changed bytes
+  under an existing document identity and asks for a new one with `revision_of`
+  ([append-only revisions](current/data-prep/acquired-provenance.md#append-only-document-revisions)).
 - User-visible outcome: `llb book-ocr project <run-dir> --out <corpus-dir>` writes one corpus
   document per content file -- content only, formulas as LaTeX, tables as rendered, markers in a
   machine form -- with a `*.citations.json` sidecar (PDF page to character spans, block ids and
   regions, and the vault file and anchor) and manifest fields (`language`, `source_system`,
   `payload_digest` set to the source checksum, `licence` set to the operator-declared class), so
   `make ingest-corpus` admits the book and every chunk carries its source PDF pages.
-- Scope boundary: in scope -- a projection renderer reading the ledger, not the vault Markdown; a
-  required redistribution-class argument with no default; stable document ids so a re-projection of
-  an unchanged ledger is a no-op for `refresh-index`; a `validate-goldset` refusal of a source span
-  overlapping an unresolved marker. Out of scope -- drafting and verifying gold items
-  (`book-goldset-verification`) and any retrieval measurement.
+- Scope boundary: in scope -- a projection renderer reading the resolved ledger, not the vault
+  Markdown; a required redistribution-class argument with no default; stable document ids so a
+  re-projection of an unchanged ledger is a no-op for `refresh-index`; a re-projection whose text
+  changed (a resolved marker, an admitted correction) emitting a new document identity with
+  `revision_of`, never an in-place rewrite, so a gold span accepted against the earlier text still
+  resolves; a `validate-goldset` refusal of a source span overlapping an unresolved marker. Out of
+  scope -- drafting and verifying gold items (`book-goldset-verification`) and any retrieval
+  measurement.
 - Data and artifact paths: `src/llb/prep/book/project/`; the corpus directory the operator names.
-- Execution path: CPU-only inside `make ci`; `make ingest-corpus CORPUS_ROOT=<corpus-dir>` consumes
-  the output unchanged.
+- Execution path: CPU-only inside `make ci`; `make book-ocr-project` (with a `##` help description)
+  wraps the command, and `make ingest-corpus CORPUS_ROOT=<corpus-dir>` consumes the output
+  unchanged.
 - Acceptance gates: `make ci` green; a fixture projection ingests through `make ingest-corpus` with
   page metadata on every chunk; sidecar offsets match the document text exactly; a re-projection
-  yields identical ids and fingerprints; a projected book declared non-redistributable makes the
-  fine-tune export refuse and name it; a gold span over a marker is refused; a missing
-  redistribution class refuses.
+  yields identical ids and fingerprints; a re-projection after one overlay edit ingests without
+  refusal, retains the earlier version, and a gold span over the earlier text still validates; a
+  projected book declared non-redistributable makes the fine-tune export refuse and name it; a gold
+  span over a marker is refused; a missing redistribution class refuses.
 - Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
 
 #### book-pilot-pipeline-comparison
@@ -349,9 +455,15 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - User-visible outcome: a recorded comparison of each candidate pipeline -- engine combinations,
   variant policies, and per-class routing -- against the existing lane on every metric per page
   class, with worked examples of each dangerous-substitution class; the winner per class written as
-  the default `book-ocr` configuration with its rationale.
-- Scope boundary: in scope -- sequential candidate runs under GPU isolation; VRAM and wall time
-  recorded and reported, not optimized; the selected configuration. Out of scope -- model correction
+  the default `book-ocr` configuration with its rationale, the peak VRAM it needs, and a projected
+  full-book wall time.
+- Scope boundary: in scope -- sequential candidate runs under GPU isolation; the existing lane run
+  with its OCR language set to the book's recorded language, the setting recorded beside its
+  numbers; per-class routing under the class stage's precedence; per-class margins with a
+  page-bootstrap interval, because a class holds two or three pilot pages; VRAM and wall time
+  recorded and reported, not optimized; the selected configuration, whose VRAM need the run's dry
+  run checks against the host, and the projected wall time from the book's per-class page counts
+  and the measured per-page times. Out of scope -- model correction
   (`book-evidence-constrained-correction`), and quoting selection-set numbers as an out-of-sample
   estimate (they are labelled as selection-set numbers).
 - Data and artifact paths: `$DATA_DIR/book-ocr/<run_timestamp>/pilot/` per candidate; the selected
@@ -360,10 +472,14 @@ lane is the baseline every candidate must beat on a page class before it serves 
   [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md); scoring recomputes
   from the saved ledgers with no GPU.
 - Acceptance gates: `make ci` green; the reading states, per class, the page count, the winner, and
-  its margin over the existing lane, with dangerous substitutions reported apart; a candidate that
-  wins no class is recorded as such; if no candidate beats the existing lane on any class, the
-  negative goes to [future research](future-research.md) with what would reopen it and the existing
-  lane becomes the configured engine.
+  its margin over the existing lane with its interval, with dangerous substitutions reported apart;
+  a class whose interval includes zero routes to the overall winner rather than to a per-class
+  winner chosen on noise; each candidate's agreement with the reference's unedited pre-draft is
+  reported beside its score, so an anchoring advantage is visible; a candidate that wins no class
+  is recorded as such; a dry run on a host with less VRAM than the selected configuration needs
+  refuses by name; if no candidate beats the existing lane on any class, the negative goes to
+  [future research](future-research.md) with what would reopen it and the existing lane becomes the
+  configured engine.
 - Documentation target: `docs/impl/current/book-recovery/tool-selection.md`.
 
 #### book-formula-and-table-recovery
@@ -447,11 +563,49 @@ guard admits or refuses, and adopt it only if the pilot shows it helps.
   directory.
 - Execution path: fake-model fixtures inside `make ci`; the pilot reading on the CUDA host.
 - Acceptance gates: `make ci` green; a proposed rewrite is refused; a digit change without visual
-  agreement becomes a marker; the raw ledger is unchanged. The pilot reading counts errors fixed and
-  correct tokens made wrong separately; the stage is enabled by default only if total error falls
-  AND the dangerous-substitution rate does not rise; otherwise it stays off and the negative goes to
-  [future research](future-research.md).
+  agreement becomes a marker; an admitted edit reaches the rendering only through the correction
+  overlay; the raw ledger is unchanged. The guard's admitted classes and edit budget are fixed in
+  configuration before the pilot reading and not changed by it, since the pilot also chose the
+  pipeline. The pilot reading counts errors fixed and correct tokens made wrong separately; the
+  stage is enabled by default only if total error falls AND the dangerous-substitution rate does not
+  rise; otherwise it stays off and the negative goes to [future research](future-research.md).
 - Documentation target: `docs/impl/current/book-recovery/correction.md`.
+
+#### book-synthetic-book-end-to-end
+
+Every stage is proven on its own fixtures, and the first place they all meet is a multi-day GPU run
+over 1,067 pages -- the most expensive place to learn that two stages disagree about a coordinate
+frame, a block id, an anchor, or a cache key. Rehearse the whole chain in CI first, on a generated
+book small enough to run in seconds and built so that every seam carries a case.
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
+- Requires: `book-vault-validation-and-report`, `book-cross-reference-linking`,
+  `book-corpus-projection`, `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
+  `book-evidence-constrained-correction`
+- Dependencies: the synthetic scan factory the run tests already use
+  ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
+- User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
+  vault and an ingested corpus projection, and fails naming the stage whose output broke the next.
+- Scope boundary: in scope -- a generated scan with a contents page, numbered headings, printed
+  numbers offset from PDF pages with one gap, a page placed upside down, a two-column page, a formula
+  with an equation number, a ruled table, a captioned figure, a cross-reference and an index entry,
+  an unreadable span, and one page whose recognition fails; every stage through the `book-ocr`
+  runner with fake engines whose readings disagree on one digit; render, link, validate, project,
+  `ingest-corpus`, and a `validate-goldset` refusal of a span over the open marker; a planted kill
+  mid-run and a resume; one reviewer decision followed by a re-render and a re-projection. Out of
+  scope -- recognition quality (the pilot measures it) and any real page.
+- Data and artifact paths: the generator beside the existing scan factory under
+  `tests/llb/prep/book/`; outputs in the test's temporary directory only.
+- Execution path: inside `make ci`, CPU-only.
+- Acceptance gates: `make ci` green; every full-run clause of the registry evaluation holds on the
+  synthetic book -- every page accounted for, every file reachable from the contents, previous/next
+  links reciprocal, every link, anchor, and embed resolving, no uncertain span without its marker and
+  queue entry, a byte-identical re-render after the resume -- plus page provenance on every ingested
+  chunk and the gold-span refusal; the reviewer decision changes the rendered and projected text of
+  its page alone and the re-projection ingests as a revision; the failed page shows as its marker in
+  both renderings.
+- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
 
 #### book-full-run-on-the-target-scan
 
@@ -461,11 +615,9 @@ corpus projection with an honest list of what still needs a person.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Requires: `book-vault-validation-and-report`, `book-cross-reference-linking`,
-  `book-corpus-projection`, `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
-  `book-evidence-constrained-correction`
+- Requires: `book-synthetic-book-end-to-end`
 - Dependencies: the target scan available locally under `DATA_DIR`; the redistribution class the
-  operator declares for it.
+  operator declares for it; a host whose GPU meets the selected configuration's recorded VRAM need.
 - User-visible outcome: the target handbook as a validated reading vault and an ingested corpus
   projection, with a processing report naming every page and content type that still requires
   manual verification.
@@ -481,8 +633,9 @@ corpus projection with an honest list of what still needs a person.
 - Acceptance gates: `make ci` green; `book-ocr validate` green with all 1,067 pages accounted for;
   the log shows the resume repeated no completed stage; a re-render after the resume is
   byte-identical to a clean render from the same cache; the projection ingests with page metadata
-  on every chunk; the report's review-queue size per class and per chapter is recorded with its
-  reading; the limitations found are written down, not smoothed over.
+  on every chunk; the measured wall time is reported against the pilot's projection; the report's
+  review-queue size per class and per chapter is recorded with its reading; the limitations found
+  are written down, not smoothed over.
 - Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md` and the usage guide
   `docs/guides/data-prep/book-ocr.md`.
 
@@ -500,15 +653,66 @@ Character offsets differ between the two corpora, so the paired comparison joins
 - User-visible outcome: recall at k and MRR on the projection against source spans, plus a paired,
   page-anchored comparison against the existing lane's conversion of the same book, with a recorded
   verdict on whether recovery changes retrieval.
-- Scope boundary: in scope -- both corpora indexed under the same retrieval configuration; the
-  span-level reading on the projection; the page-level paired reading on both. Out of scope --
-  retuning retrieval for the book, and answer scoring.
+- Scope boundary: in scope -- the existing lane's conversion of the same scan, with the OCR language
+  the pilot recorded for it; both corpora indexed under the same retrieval configuration; the
+  span-level reading on the projection; the page-level paired reading on both, split by whether the
+  existing lane's page text also holds the item's answer span text -- the items were drafted over
+  the projection, and the split separates a ranking difference from a recognition one. Out of scope
+  -- retuning retrieval for the book, and answer scoring.
 - Data and artifact paths: the two index stores and the eval runs under `$DATA_DIR`.
-- Execution path: `make build-index` and the existing retrieval evaluation targets, once per corpus.
+- Execution path: `make pdf-to-markdown` for the existing lane's conversion, then `make build-index`
+  and the existing retrieval evaluation targets, once per corpus.
 - Acceptance gates: `make ci` green; the reading states the item count, the predeclared effect it
-  could detect, and the verdict; a null result is recorded as recovery buying nothing for retrieval
-  on this book, while the vault remains the human deliverable.
+  could detect, the verdict, and the result on both sides of the split; a null result is recorded as
+  recovery buying nothing for retrieval on this book, while the vault remains the human
+  deliverable.
 - Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
+
+#### scanned-book-recovery-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The tasks in both lanes each prove their own stage, and the synthetic book rehearses
+the chain once; what none of them can see is the whole against its spec -- a property two
+tasks each assumed the other owned, a stage that resolves a value from the page without returning
+it from `effective_params` (the class of bug the run ledger already hit once), a seam whose
+fixture agreed with itself but not with what the full run, the Obsidian acceptance, and the
+retrieval reading found.
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
+  in this group.
+- Requires: `book-page-signals-and-variants`, `book-recovery-quality-metrics`,
+  `book-pilot-page-selection`, `book-reading-resolution-and-correction-overlay`,
+  `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
+  `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
+  `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
+  `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
+  `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,
+  `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-pilot-reference-transcription`,
+  `book-goldset-verification`, `book-vault-obsidian-acceptance`
+- Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and
+  the retrieval reading recorded are this audit's input.
+- User-visible outcome: every load-bearing property of the spec section and every clause of the
+  registry evaluation names the test that pins it; each limitation the real runs recorded is a
+  regression fixture or a stated non-goal; the seams below are integration-tested.
+- Scope boundary: in scope -- the property-to-test map; a logic review of the seams: cache-key
+  completeness of every stage, the coordinate frame from variant to ledger to crop, overlay
+  anchoring across ledger rebuilds, id and anchor stability under a parameter or engine change,
+  document revisions across re-projections, page-class routing and the engine lease, and the
+  redistribution class on every export path; integration tests for each unpinned seam, extending
+  the synthetic book; synthetic regression fixtures for the real-run limitations (never page
+  content); shared helpers and module splits inside `src/llb/prep/book/`. Out of scope -- re-running
+  the pilot or the retrieval reading, committing any page image or recovered text, and new recovery
+  capability (the spec lifecycle).
+- Data and artifact paths: `src/llb/prep/book/`, `tests/llb/prep/book/`, and the audit's task
+  record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: the [book recovery](current/book-recovery.md) area page and the topic
+  pages whose behavior changed.
 
 ### Versioned data and artifact contracts -- `artifact-contracts`
 
@@ -608,6 +812,109 @@ by a build that has moved on.
 - Documentation target: the retrieval and graph contracts page and the RAG-core topic pages that
   own each bundle.
 
+#### artifact-contracts-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The migration lands family by family -- training, inference, screening, robotics, then
+the operator CLI and the repository gate -- while its promise is a property of the whole tree: no
+durable record escapes the registry, and an external application validates any of them without
+`llb`. A producer moved onto the registry whose consumer still reads raw JSON, or the reverse,
+passes both tasks' gates.
+
+- Serves: `artifact-contracts` -- [Versioned data and artifact contracts](../design/spec.md#versioned-data-and-artifact-contracts)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `artifact-contract-training-and-integration-migration`,
+  `artifact-contract-boundary-enforcement`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: every registered family names its producer, its consumers, and the test
+  that round-trips it, and each cross-family handoff is integration-tested from writer to reader.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the writer and every reader of a family resolving through
+  the same registry entry, cross-file digests verified at read as well as at write, schema drift
+  caught without a version declaration, `inspect`, `validate`, and `migrate` reading one catalog,
+  and no second schema version introduced under the pre-release rule; integration tests for each
+  unpinned seam, including one chain from a training dataset through its journal and adapter
+  manifest to a recommendation that the external-consumer fixture validates; shared helpers across
+  the contract modules. Out of scope -- families beyond the migrated surface, and any compatibility
+  shim.
+- Data and artifact paths: `src/llb/core/contracts/`, `src/llb/artifacts/`, `schemas/artifacts/`,
+  the fixtures under `samples/artifact_contracts/`, and the audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: the [artifact contracts](current/artifact-contracts.md) area page and the
+  topic pages whose behavior changed.
+
+### Gold data and ground truth -- `gold-data`
+
+#### gold-data-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The accepted multi-hop ledger becomes the input of two lanes at once -- the fusion sweep
+and the answer-quality comparison -- through the verification gate. Whether its verified grounding,
+its paired-power requirement, and its corpus-version binding survive every hop is a property of
+that chain, not of the review that produced the ledger.
+
+- Serves: `gold-data` -- [Gold data and ground truth](../design/spec.md#data-and-ground-truth)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `multihop-ledger-human-acceptance`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: an accepted ledger is proven to reach every lane that reads it as verified,
+  and a drafted item cannot ride along into a verified reading.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: `verify-review` to `verify-accept` to the accepted ledger
+  to `compare-graph-fusion` and `compare-answer-quality`, the `grounding` flag and the
+  `INCLUDE_DRAFTED` escape, the paired-power requirement checked where a ledger is consumed and not
+  only where it is accepted, and the corpus-version binding on the accepted bundle; integration
+  tests for each unpinned seam over committed worksheet fixtures and injected fakes. Out of scope --
+  re-reviewing items and re-running the sweep on the real ledger.
+- Data and artifact paths: `src/llb/goldset/`, the verification and comparison tests, and the
+  audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [verification gate](current/data-prep/verification-gate.md) and the
+  [GraphRAG](current/graphrag-backend.md) pages whose behavior changed.
+
+### Entity resolution -- `entity-resolution`
+
+#### entity-resolution-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. One reviewer-labelled merge ledger is meant to set two operating points -- the graph
+overlay's and the gold-item suppression policy's -- through one label-fitted model. The labelling
+task and the adoption task each prove their own half; whether a cannot-tell label is treated the
+same way in both curves, and whether a drafting run applies exactly the cut its curve recommended,
+shows only across them.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `entity-merge-labelled-set`, `gold-item-drop-policy-adoption`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: the path from a workbench merge decision to a merge or a suppression in
+  either lane is integration-tested, and neither lane can run on the other's threshold.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: workbench decisions to the label ledger to the
+  label-fitted model to the accuracy curve to the adopted threshold, cannot-tell handling in
+  precision and recall, the shadow report at the adopted cut matching the drafting decision, and
+  each lane reading its own operating point; integration tests for each unpinned seam over the
+  lanes' committed fixtures. Out of scope -- new labels and a third linkage domain.
+- Data and artifact paths: `src/llb/linkage/`, the lane tests, and the audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [entity resolution](current/entity-resolution.md).
+
 ### Retrieval evidence -- `retrieval-evidence`
 
 #### reranker-end-to-end-crosscheck-on-an-evidence-model
@@ -643,6 +950,201 @@ is what the shipped default rests on.
   cleared.
 - Documentation target:
   [rerank](current/rag-core/rerank-and-query.md#reranking-and-context-order-rerank-context-order).
+
+#### retrieval-evidence-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. Its open verdicts -- reranking end to end, the embedder, the goods fusion weight --
+each settle on their own lane, while what they share sits between them: the paired-power contract,
+the minimum-evidence gate, the measurement floor, and the path from a recorded verdict to a shipped
+default. A fix made inside one comparison lane can leave the others computing the same interval
+another way.
+
+- Serves: `retrieval-evidence` -- [Retrieval evidence](../design/spec.md#retrieval-before-generation)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `reranker-end-to-end-crosscheck-on-an-evidence-model`,
+  `embedder-decision-on-a-resolvable-item-set`, `goods-fusion-weight-accepted-ledger`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: every shipped retrieval default traces to the recorded verdict behind it,
+  and the comparison lanes compute one paired interval for the same arms.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: each retrieval default against its recorded verdict, the
+  predeclared item count and effect enforced before retrieval rather than only stated, `make
+  sweep`, `compare-retrieval`, and `compare-embeddings` sharing one paired-statistics path, and the
+  measurement floor applied the same way in every lane; integration tests for each unpinned seam,
+  including one fixture item set read through every lane to the same interval for the same arms and
+  a default that disagrees with its verdict failing a test. Out of scope -- re-running any verdict,
+  this group's optional readings, and widening a grid.
+- Data and artifact paths: `src/llb/rag/`, `src/llb/cli/rag/`, their tests, and the audit's task
+  record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [paired verdicts](current/rag-core/paired-verdicts.md) and the RAG-core
+  pages whose behavior changed.
+
+### Answer scoring -- `answer-scoring`
+
+#### answer-scoring-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The format-weight calibration moves one declared constant, and that constant feeds the
+headline decomposition, the board ranking, and every roster rank published from it. Whether a
+weight change reaches the board only through the declared ranking policy, and whether the
+context-copy shape stays penalized after it, shows only across scoring and the board.
+
+- Serves: `answer-scoring` -- [Answer scoring](../design/spec.md#scoring-policy)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `calibrate-headline-format-weight`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: a weight change is proven to move ranks only through the declared policy,
+  with every rank it moves named.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the declared weight to the decomposition to the board
+  rank, the held-out confirmation required before a default change, the four answer shapes scored
+  after the move, and the precision, recall, and found-rate columns left unchanged by it;
+  integration tests for each unpinned seam over fixture answers of the four shapes and a fixture
+  board. Out of scope -- new labels and judge substitution.
+- Data and artifact paths: `src/llb/scoring/`, `src/llb/board/`, their tests, and the audit's task
+  record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [scoring](current/rag-core/scoring.md).
+
+### Judge calibration -- `judge-calibration`
+
+#### judge-calibration-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The frontier lane crosses the boundary this project treats as irreversible -- data
+leaving the host -- and its authorization is split across a consent flag, a spend cap, a provider
+key, and a human decision field. Each is tested where it is read; whether every path to a provider
+passes all of them, and whether a judge whose decision is still pending stays out of every
+autonomous gate, is a property of the lane as a whole.
+
+- Serves: `judge-calibration` -- [Judge calibration](../design/spec.md#judge-admission)
+- Agent status: CLEAR -- fake providers and committed worksheets; a finding that needs a live run
+  becomes a task in this group.
+- Requires: `frontier-judge-authorization`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: no provider request is reachable without consent and a cap, and a frontier
+  judge ranks nothing until its recorded decision admits it.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: consent, cap, and key checked before the first request on
+  every provider path, the cap math against the measured cost per item, a pending decision or a
+  below-gate correlation demoting the judge to diagnostic wherever a gate reads it, and the egress
+  refusal of non-redistributable material; integration tests for each unpinned seam with fake
+  providers. Out of scope -- live provider runs and new providers.
+- Data and artifact paths: `src/llb/scoring/frontier_agreement/`, the judge tests, and the audit's
+  task record.
+- Execution path: CPU-only inside `make ci`; no network.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [judging](current/rigor-board-judge/judging.md).
+
+### Graph retrieval and ontology -- `graph-retrieval`
+
+#### graph-retrieval-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. An axiom reaches an answer through three readers -- the extraction-ledger checker, the
+OWL cross-check, and the answer gate -- and the sign-off adds the rule all three must honour: only
+a signed axiom may act. Whether every reader refuses an unsigned or rejected axiom, and whether the
+checker and the reasoner agree on the signed set, shows only across them.
+
+- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
+- Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
+  task in this group.
+- Requires: `ontology-axiom-signoff`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: an axiom absent from the signed file is refused by every reader, and the
+  checker and the reasoner agree on every signed axiom's fixtures.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the per-axiom signature (`dcterms:creator`,
+  `dcterms:date`) to the checker to the violation base rate to the answer gate, the refusal of an
+  unsigned axiom at each entry point, checker-versus-reasoner agreement on the signed set, and catch
+  and false-rejection rates computed by one path; integration tests for each unpinned seam over the
+  committed axiom file and fixture ledgers. Out of scope -- new axiom classes and vocabulary
+  changes.
+- Data and artifact paths: `src/llb/prep/ontology/`, `samples/ontology/`, their tests, and the
+  audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [robustness and ontology](current/robustness-ontology-backends.md).
+
+### Autonomous orchestration -- `autonomous-orchestration`
+
+#### autonomous-orchestration-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The acceptance run drives `auto-rag` twice on a real corpus -- autonomous and
+human-gated -- and turns its usability findings into tasks; it leaves no CI test behind for the
+failures it saw. Two modes sharing one stage graph, and a resume while a workbench decision is
+still pending, are seams only the two-mode run exposes.
+
+- Serves: `autonomous-orchestration` -- [Autonomous orchestration](../design/spec.md#autonomous-orchestration)
+- Agent status: CLEAR -- the quickstart corpora and injected fakes; a finding that needs a heavy run
+  becomes a task in this group.
+- Requires: `autonomous-vs-assisted-acceptance`
+- Dependencies: none beyond `Requires`; the acceptance record's findings are this audit's input.
+- User-visible outcome: each failure the acceptance run surfaced is a fixture, and both modes resume
+  from an interrupt with bundles reproducible from their manifests.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the autonomous and human-gated modes over one stage
+  graph, a resume with a gated record pending, post-run self-verification in both modes, and
+  recommendation bundles re-derived from their manifests; integration tests for each unpinned seam
+  over the quickstart corpora. Out of scope -- re-running the acceptance and new orchestration
+  stages.
+- Data and artifact paths: `src/llb/auto_rag/`, its tests, and the audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [Auto-RAG](current/auto-rag.md).
+
+### Robotics RAG and hardware operation -- `robotics-rag-operation`
+
+#### robotics-rag-operation-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The MHS adapter and the supervised canary open the first paths to a real device, and
+the safety claim -- every write traverses the project gate, and an ambiguous result never retries
+-- must hold on every path, not only on those the conformance suite and the canary phases happen to
+exercise.
+
+- Serves: `robotics-rag-operation` -- [Robotics RAG and hardware operation](../design/spec.md#robotics-rag-and-hardware-operation)
+- Agent status: CLEAR -- recorded, redacted responses and the emulator; no device is contacted.
+- Requires: `robotics-mhs-preview-conformance`, `robotics-supervised-device-canary`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: no adapter write is reachable except through the project gate, and a
+  recorded canary session replays in CI with every planted violation blocked.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the emulator and the MHS adapter under one conformance
+  suite, a phase advance requiring a fresh preflight and a new approval digest, the mismatch log
+  covering every field the emulator models, and no credential in any bundle; integration tests for
+  each unpinned seam replaying a redacted recorded session. Out of scope -- any live device call and
+  safety certification.
+- Data and artifact paths: `src/llb/robotics/`, `samples/robotics/`, their tests, and the audit's
+  task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [robotics RAG](current/robotics-rag.md).
 
 ### Corpus conflict and governance -- `corpus-conflict-audit`
 
@@ -908,6 +1410,69 @@ outcome and closes the question.
 - Documentation target:
   [decision groups](current/data-prep/conflict-decision-groups.md#how-many-decisions-the-row-count-is).
 
+#### corpus-conflict-audit-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The chain runs from detection through adjudication, calibration, the plan, the review
+ledger, and resolution to application and rollback, and its two human tasks change what flows
+through it: frozen labels that can suppress the precision block, and reviewed decisions that remove
+chunks from a store. Each stage pins itself; whether an applied reviewed ledger still rolls back to
+the exact baseline, and whether a suppressed precision figure stays suppressed in every report that
+quotes it, is a property of the chain.
+
+- Serves: `corpus-conflict-audit` -- [Corpus conflict and governance](../design/spec.md#corpus-conflict-and-governance)
+- Agent status: CLEAR -- the committed fixture corpus and an injected adjudicator; a finding that
+  needs a heavy run becomes a task in this group.
+- Requires: `conflict-adjudicator-label-slice`, `corpus-conflict-resolution-review`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: the committed fixture corpus runs the whole chain in CI, from detection to an
+  applied and rolled-back resolution, with every report agreeing on the precision it may quote.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: detection to adjudication to calibration to `plan.json`
+  to the review ledger to resolution to apply and rollback, the agreement bound suppressing
+  precision in every report that reads it, the group ids `plan.json` joins on staying stable across
+  re-reads, and stage attribution recomputed from a bundle alone; integration tests for each
+  unpinned seam. Out of scope -- this group's optional research readings and any detector or
+  threshold change.
+- Data and artifact paths: `src/llb/conflicts/`, `samples/corpora/conflicts_uk_v1/`, their tests,
+  and the audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [conflict detection](current/data-prep/conflict-detection.md) and the
+  topic pages whose behavior changed.
+
+### Operator review tooling -- `operator-review-tooling`
+
+#### operator-review-tooling-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The workbench is one review surface for many decision domains -- verification,
+conflicts, merges, axioms, the book review queue, dual-control scenarios -- and each adapter is
+tested on its own. The capability's evaluation is ledger compatibility ACROSS adapters, which no
+single adapter's task checks.
+
+- Serves: `operator-review-tooling` -- [Operator review tooling](../design/spec.md#operator-review-tooling)
+- Agent status: CLEAR -- committed fixture ledgers; no reviewer is needed for the audit itself.
+- Dependencies: none; it covers the adapters registered when it starts, and names the ones still
+  to come.
+- User-visible outcome: every registered adapter passes one shared test -- open, decide, quit
+  mid-record, reopen, resume -- and writes a ledger the compatibility check accepts.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the adapter registry and the ledger shape, resume after
+  an interruption, and a decision never lost when a session ends mid-record; one integration test
+  parametrized over every registered adapter. Out of scope -- this group's optional throughput
+  measurements and new decision domains.
+- Data and artifact paths: `src/llb/review/`, its tests, and the audit's task record.
+- Execution path: CPU-only inside `make ci`.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
+- Documentation target: [review workbench](current/review-workbench.md).
+
 ### Simulated-user dual-control workloads -- `simulated-user-dialogue`
 
 #### dual-control-suite-seam
@@ -1015,6 +1580,37 @@ nothing to do with conversation, and reporting that as a conversational failure 
   uses an injected fake that emits one well-formed and one malformed call.
 - Acceptance gates: `make ci` green; a model/backend pair with no native tool support produces a
   named refusal rather than a zero-scored run.
+- Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md`.
+
+#### simulated-user-dialogue-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The seam, the English screen, and the Ukrainian domain each bring their own gates -- a
+lazy import, a reward recomputed from the bundle, a refused mixed comparison, a replay check -- and
+the registry evaluation states them as one contract. Whether the Ukrainian domain's bundles carry
+the identity fields the screen's comparisons refuse on, and whether no board can carry both lanes,
+shows only once all three exist.
+
+- Serves: `simulated-user-dialogue` -- [Simulated-user dual-control workloads](../design/spec.md#simulated-user-dual-control-workloads)
+- Agent status: CLEAR -- committed fixture domains with fakes for both actors; a finding that needs
+  a real-endpoint run becomes a task in this group.
+- Requires: `dual-control-suite-seam`, `dual-control-screen-discrimination`,
+  `ua-dual-control-domain`
+- Dependencies: none beyond `Requires`.
+- User-visible outcome: a fixture-domain run per lane passes the whole contract in CI, and every
+  refusal the evaluation names is integration-tested.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: the absent-suite refusal, the reward recomputed from the
+  bundle, the user-model mismatch refusal, the replay check on the Ukrainian domain, the external
+  lane refused on a localized board, and the tool-protocol refusal where it exists; integration
+  tests for each unpinned seam. Out of scope -- real-endpoint runs and new domains.
+- Data and artifact paths: `src/llb/bench/dual_control/`, `samples/benchmarks/dual_control/`, their
+  tests, and the audit's task record.
+- Execution path: CPU-only inside `make ci`; no network.
+- Acceptance gates: `make ci` green; the map covers every property and evaluation clause; each new
+  integration test is shown once in the record to fail with its seam broken on purpose; every
+  finding is fixed, routed to a task in this group, or sent through the spec lifecycle, and listed
+  in the record.
 - Documentation target: `docs/impl/current/extended-workflows/dual-control-tier.md`.
 
 ### Documentation integrity -- `documentation-integrity`
@@ -1142,6 +1738,37 @@ area page, and repoint the inbound links. Anchors keep their fragments, so only 
 - Documentation target: [extended workflows](current/extended-workflows.md) and the two pages the
   split produces.
 
+#### documentation-integrity-implementation-audit (optional)
+
+The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
+capability. The rules for the plan, the spec, the records, and the docs tree are stated in prose in
+[AGENTS.md](../../AGENTS.md) and the planning workflow, and enforced in part by `make
+lint-spec-plan`, `make lint-doc-links`, and the record-name check. The gap between what the prose
+promises and what a gate refuses is invisible from either side -- including the closing-audit rule
+this task belongs to, which no gate checks yet.
+
+- Serves: `documentation-integrity` -- [Documentation integrity](../design/spec.md#specification-and-plan-integrity)
+- Agent status: CLEAR
+- Dependencies: none.
+- User-visible outcome: every rule the prose states is either refused by a gate over a synthetic
+  fixture or named as contributor judgment, and `make plan-status` agrees with the gate on the same
+  tree.
+- Scope boundary: in scope -- the property-to-test map over the spec section and the registry
+  evaluation; a logic review of the seams: each parser-checkable rule in AGENTS.md and the planning
+  workflow against the checks in `src/llb/quality/`, the closing-audit rule (one per capability, last
+  in its group, requiring every open required task of its capability) either gated or recorded as
+  judgment, and `plan-status` and the gate reading one plan model; integration tests over a
+  synthetic repository tree with one planted violation per rule. Out of scope -- this group's page
+  splits and any rule the spec does not state.
+- Data and artifact paths: `src/llb/quality/`, `tests/llb/quality/`, and the audit's task record.
+- Execution path: CPU-only inside `make ci` and `make lint-md`.
+- Acceptance gates: `make ci` and `make lint-md` green; the map covers every property and evaluation
+  clause; each new integration test is shown once in the record to fail with its seam broken on
+  purpose; every finding is fixed, routed to a task in this group, or sent through the spec
+  lifecycle, and listed in the record.
+- Documentation target: [documentation and specification
+  gates](current/overview.md#documentation-and-specification-gates).
+
 ## Human-Assisted Tasks
 
 Work whose acceptance needs human judgment or authorization (`BLOCKED BY HUMAN`, `HUMAN-GATED`), in
@@ -1158,9 +1785,10 @@ page number -- has to be checked against the scan by a person, because a referen
 candidates and accepted unread would hand the pilot to whichever candidate drafted it.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: HUMAN-GATED -- an agent pre-drafts every pilot page in the reference format from the
-  shortlisted engines and prepares a side-by-side worksheet per page; a person must correct and
-  accept each page against the scan.
+- Agent status: HUMAN-GATED -- an agent pre-drafts every pilot page in the reference format as a
+  merge of at least two shortlisted engines, with every disagreement flagged and no engine named,
+  keeps the unedited pre-draft, and prepares a side-by-side worksheet per page; a person must
+  correct and accept each page against the scan.
 - Requires: `book-recovery-quality-metrics`, `book-pilot-page-selection`
 - Dependencies: the reference format and the pilot list from the two required agent tasks. Human
   step that gates completion: a reviewer reads every pilot page against its scan and corrects text,
@@ -1168,9 +1796,10 @@ candidates and accepted unread would hand the pilot to whichever candidate draft
   then records an accept per page.
 - User-visible outcome: a verified reference transcription of the 20-30 pilot pages that the
   comparison scores every candidate against.
-- Scope boundary: in scope -- every block on every pilot page, and a per-page accept with the
-  reviewer and the source checksum. Out of scope -- pages outside the pilot set, and judging which
-  engine is better (the metrics do that).
+- Scope boundary: in scope -- every block on every pilot page, a per-page accept with the reviewer
+  and the source checksum, and the unedited pre-draft kept beside the reference so the comparison
+  can show how far the accepted text moved from it. Out of scope -- pages outside the pilot set, and
+  judging which engine is better (the metrics do that).
 - Data and artifact paths: the reference under `$DATA_DIR/book-ocr/`, never in git, because it is
   recovered text of a copyrighted book; its digest and the reviewer record committed beside
   `samples/book_ocr/<book-slug>/pilot_pages.json`.
@@ -1694,9 +2323,9 @@ what remains is entirely the human authorization and the judgment it produces.
 - Documentation target: [evaluation rigor](current/rigor-board-judge.md) judge section and
   [product decisions](current/scope-boundaries.md) for the trust decision per provider.
 
-#### frontier-judge-retrieved-context-agreement
+#### frontier-judge-retrieved-context-agreement (optional)
 
-Optional. Re-measure frontier-vs-human judge agreement with *retrieved* contexts instead of the
+Re-measure frontier-vs-human judge agreement with *retrieved* contexts instead of the
 gold-span windows the authorization lane uses. The current lane deliberately holds retrieval
 constant by grounding each item on a window of its gold source document, which isolates judge
 behavior but also hands the judge cleaner evidence than a scored run ever gives it. A judge that
