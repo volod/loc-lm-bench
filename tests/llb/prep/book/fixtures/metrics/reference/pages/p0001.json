@@ -1,0 +1,60 @@
+{
+  "pdf_page": 1,
+  "page_class": "normal",
+  "printed_page": "57",
+  "width": 200,
+  "height": 400,
+  "blocks": [
+    {
+      "block_id": "p0001-b0000",
+      "kind": "body",
+      "region": {"x0": 10, "y0": 10, "x1": 180, "y1": 40},
+      "reading_order": 0,
+      "text": "The burn is 0.05 km/s."
+    },
+    {
+      "block_id": "p0001-b0001",
+      "kind": "formula",
+      "region": {"x0": 10, "y0": 50, "x1": 180, "y1": 80},
+      "reading_order": 1,
+      "text": "v_{E}(t_{0})",
+      "latex": "v_{E}(t_{0})",
+      "equation_number": "(3-4)"
+    },
+    {
+      "block_id": "p0001-b0002",
+      "kind": "table",
+      "region": {"x0": 10, "y0": 90, "x1": 180, "y1": 150},
+      "reading_order": 2,
+      "text": "",
+      "table": {
+        "rows": [
+          ["Maneuver", "dv"],
+          ["Insertion", "5"]
+        ]
+      }
+    },
+    {
+      "block_id": "p0001-b0003",
+      "kind": "figure",
+      "region": {"x0": 10, "y0": 160, "x1": 100, "y1": 220},
+      "reading_order": 3,
+      "text": "",
+      "caption_id": "p0001-b0004"
+    },
+    {
+      "block_id": "p0001-b0004",
+      "kind": "caption",
+      "region": {"x0": 10, "y0": 230, "x1": 180, "y1": 260},
+      "reading_order": 4,
+      "text": "Fig. 3-2. Altitude versus time."
+    },
+    {
+      "block_id": "p0001-b0005",
+      "kind": "page-number",
+      "region": {"x0": 80, "y0": 360, "x1": 120, "y1": 390},
+      "reading_order": 5,
+      "text": "57"
+    }
+  ]
+}

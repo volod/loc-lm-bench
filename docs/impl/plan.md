@@ -59,46 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-recovery-quality-metrics
-
-The pilot comparison and the correction adoption gate both need metrics that understand how
-technical OCR fails: an average character error rate hides the single `5` read as `S` in a table
-cell that wrecks a value. Build the harness, and the reference format it scores against, before any
-pilot number is taken.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
-- User-visible outcome: `llb book-ocr score --reference <reference-dir> <run-dir>` reports, per page
-  and per page class: character and word error, missing and duplicated text, reading-order
-  agreement, the dangerous-substitution count per confusion class, formula fidelity, table-structure
-  similarity, figure-boundary overlap, caption association, and printed-page mapping accuracy; the
-  same report scores the existing PDF lane's conversion of the same pages.
-- Scope boundary: in scope -- the reference-transcription format (per-page blocks with kind, region,
-  text, LaTeX for formulas, structure for tables, figure boxes with caption ids, reading order, and
-  the printed page number); alignment; the confusion classes (`0/O`, `1/l/I`, `5/S`, minus versus
-  hyphen versus en and em dash, decimal point versus comma, Latin versus Greek lookalikes, sub- and
-  superscript, unit symbols, brackets, equation numbers); LaTeX normalization before comparison plus
-  a parse-validity check; formula fidelity compared term by term, so an equation that parses but
-  lost a term scores as the loss (the survey's dropped `= v_E(t_0)`); tree-edit table similarity;
-  box overlap; rank agreement on reading order; scoring the existing lane from its page-level
-  citation spans as a text-only submission -- a formula it wrote as plain text is scored against the
-  reference LaTeX like any other reading, and a structure it cannot express (figure boxes, table
-  structure) is reported as absent, never dropped from the comparison. The dangerous-substitution
-  rates are reported apart and never folded into a single score. Out of scope -- any reference
-  content (that is `book-pilot-reference-transcription`) and a combined headline score.
-- Data and artifact paths: `src/llb/prep/book/metrics/`; synthetic reference fixtures under
-  `tests/llb/prep/book/`.
-- Execution path: CPU-only inside `make ci`; `make book-ocr-score` (with a `##` help description)
-  wraps the command.
-- Acceptance gates: `make ci` green; every metric is pinned by a hand-computed fixture; a planted
-  `5`-for-`S` substitution in a table cell is counted in its class while barely moving the character
-  error rate, and the fixture asserts both; equivalent LaTeX spellings score equal; invalid LaTeX is
-  flagged; a parsing formula with one term removed scores below the complete one; a fixture
-  existing-lane conversion scores through the same harness with its absent structures reported as
-  absent.
-- Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
-
 #### book-pilot-page-selection
 
 Hand-picked pilot pages bias the pilot toward what someone happened to remember. Select them from
@@ -400,9 +360,9 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-recovery-quality-metrics`, `book-pilot-page-selection`,
-  `book-pilot-reference-transcription`
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and the
+- Requires: `book-pilot-page-selection`, `book-pilot-reference-transcription`
+- Dependencies: the [quality metrics](current/book-recovery/quality-metrics.md), the
+  [block ledger](current/book-recovery/block-ledger.md), and the
   [page variants](current/book-recovery/page-preprocessing.md) a variant policy chooses among.
 - User-visible outcome: a recorded comparison of each candidate pipeline -- engine combinations,
   variant policies, and per-class routing -- against the existing lane on every metric per page
@@ -633,8 +593,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-recovery-quality-metrics`,
-  `book-pilot-page-selection`, `book-reading-resolution-and-correction-overlay`,
+- Requires: `book-pilot-page-selection`, `book-reading-resolution-and-correction-overlay`,
   `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
   `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
@@ -1741,9 +1700,11 @@ candidates and accepted unread would hand the pilot to whichever candidate draft
   merge of at least two shortlisted engines, with every disagreement flagged and no engine named,
   keeps the unedited pre-draft, and prepares a side-by-side worksheet per page; a person must
   correct and accept each page against the scan.
-- Requires: `book-recovery-quality-metrics`, `book-pilot-page-selection`
-- Dependencies: the reference format and the pilot list from the two required agent tasks. Human
-  step that gates completion: a reviewer reads every pilot page against its scan and corrects text,
+- Requires: `book-pilot-page-selection`
+- Dependencies: the reference format is
+  [quality metrics](current/book-recovery/quality-metrics.md). The pilot list comes from the
+  required task. Human step that gates completion: a reviewer reads every pilot page against its
+  scan and corrects text,
   LaTeX, table structure, figure boxes, caption links, reading order, and the printed page number,
   then records an accept per page.
 - User-visible outcome: a verified reference transcription of the 20-30 pilot pages that the
