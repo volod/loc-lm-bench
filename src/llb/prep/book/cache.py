@@ -2,8 +2,10 @@
 
 A stage's key is the SHA-256 of its name and version, its tool identity, its model, the digest of
 its parameters, and the digests of everything it reads -- the source and PDF page for a stage that
-reads the PDF, the upstream stages' output digests otherwise. So the render key is a function of
-the source bytes, and every later key is a function of the page-image digest.
+reads the PDF, the upstream stages' output digests otherwise. The render key is a function of the
+source bytes, and a recognition key is a function of the page-image digest. A stage whose output
+names the page (the ledger, the signal file) also includes the PDF page, so identical images do
+not share that file.
 
 A stage writes into `pages/<pNNNN>/.<stage>.partial/`, its record goes in last, and the whole
 directory is renamed to `pages/<pNNNN>/<stage>/`. A reader therefore sees a complete stage or no

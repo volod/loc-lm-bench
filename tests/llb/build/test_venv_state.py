@@ -356,18 +356,22 @@ def _fake_host(
 
 
 def _run_setup_venv(root: Path, bin_dir: Path, log: Path, **overrides: str):
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PROJECT_ROOT": str(root),
+        "VENV": str(root / ".venv"),
+        "UV_LOG": str(log),
+        "UV_SYNC_ARGS": "--inexact --extra dev",
+        "VENV_INSTALL_VLLM": "0",
+        **overrides,
+    }
+    # The host may export UV_LINK_MODE=copy. Left set, the script never calls uv to choose a
+    # link mode, so a refusal before sync leaves no log for the assertion to read.
+    env.pop("UV_LINK_MODE", None)
     return subprocess.run(
         ["bash", str(SETUP_VENV_SH)],
-        env={
-            **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "PROJECT_ROOT": str(root),
-            "VENV": str(root / ".venv"),
-            "UV_LOG": str(log),
-            "UV_SYNC_ARGS": "--inexact --extra dev",
-            "VENV_INSTALL_VLLM": "0",
-            **overrides,
-        },
+        env=env,
         capture_output=True,
         text=True,
     )

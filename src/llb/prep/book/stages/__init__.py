@@ -29,6 +29,7 @@ class StageContext:
     model: str | None
     inputs: Mapping[str, Path]  # upstream stage name -> its committed directory
     work_dir: Path
+    run_dir: Path
     document: "fitz.Document"
 
 
@@ -116,6 +117,7 @@ def default_registry() -> StageRegistry:
     from llb.prep.book.stages.preprocess import SignalsStage, VariantsStage
     from llb.prep.book.stages.recognize import recognition_stages
     from llb.prep.book.stages.render import RenderStage
+    from llb.prep.book.stages.resolve import ResolveStage
 
     return StageRegistry(
         (
@@ -125,5 +127,6 @@ def default_registry() -> StageRegistry:
             ClassesStage(),
             *FAKE_STAGES,
             *recognition_stages(default_adapter_registry()),
+            ResolveStage(),
         )
     )

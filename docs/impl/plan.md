@@ -59,44 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-reading-resolution-and-correction-overlay
-
-The ledger keeps every engine's raw reading and chooses none, and the spec puts every correction --
-by agreement, by a model, by a reviewer -- in an overlay over it. Neither half exists: no rule says
-which reading a rendering shows for a block, and there is no overlay for a decision to land in. The
-markers, both renderings, the correction stage, and the review queue all read this one seam, so it
-is built once, before any of them. An overlay keyed by block id alone would also attach a decision
-to the wrong block the first time a ledger is rebuilt under another engine, because ids follow
-geometry.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and its uncertainty spans.
-- User-visible outcome: every block has one resolved text with its provenance -- the configured
-  primary reading, an overlay edit, or an unresolved span -- that both renderings read; each overlay
-  edit records its author kind (agreement, model, reviewer), raw text, replacement, and evidence;
-  an edit whose block changed under a ledger rebuild is reported as orphaned and re-queued, never
-  applied to another block.
-- Scope boundary: in scope -- the resolution rule (the primary reading per stage and page class from
-  the run configuration; agreement resolves only what every reading agrees on; an uncertainty span
-  stays unresolved unless an overlay edit covers it); the overlay as a registered artifact contract
-  with one precedence (reviewer over model over agreement); entries anchored by block id plus the
-  digest of the block's region and raw readings, so a changed block orphans its entries; model
-  edits arriving as a stage output and reviewer decisions as a run-level file outside the stage
-  cache, both entering the key of every stage that reads them, so a new decision re-runs exactly the
-  pages it touches. Out of scope -- producing edits (the review queue and the correction stage do),
-  and rendering.
-- Data and artifact paths: `src/llb/prep/book/resolve/`; the overlay and the resolved text per page
-  inside the run directory.
-- Execution path: CPU-only inside `make ci` over synthetic ledgers.
-- Acceptance gates: `make ci` green; a block with three readings and a digit span resolves to the
-  primary reading with the span left unresolved; agreement across every reading resolves; a reviewer
-  edit overrides a model edit on the same span; rebuilding a fixture ledger under a second fake
-  engine orphans and re-queues the entries of every changed block while unchanged blocks keep
-  theirs; a new reviewer decision changes the resolved text of its page alone on the next run; the
-  raw ledger stays byte-identical throughout.
-- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
-
 #### book-uncertainty-markers-and-review-queue
 
 The ledger can say a span is uncertain; nothing yet turns that into something a reader sees and a
@@ -104,9 +66,9 @@ reviewer can act on. An omitted passage and a passage nobody could read must nev
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-reading-resolution-and-correction-overlay`
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md). The decision UI reuses
-  the [review workbench](current/review-workbench.md) adapter seam.
+- Dependencies: the resolved text and its overlay
+  ([uncertainty and review](current/book-recovery/uncertainty-and-review.md)). The decision UI
+  reuses the [review workbench](current/review-workbench.md) adapter seam.
 - User-visible outcome: every unreadable or uncertain span becomes a short visible marker with its
   PDF page link and, where useful, a padded crop of the region, a row in a page-level quality
   manifest, and an entry in a review queue that opens in the review workbench; a reviewer decision
@@ -552,8 +514,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-reading-resolution-and-correction-overlay`,
-  `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
+- Requires: `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
   `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,

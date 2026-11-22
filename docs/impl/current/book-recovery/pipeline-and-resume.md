@@ -3,8 +3,8 @@
 The skeleton every later recovery stage plugs into: one `book-ocr` run over a scanned PDF, with the
 source identified by checksum, a per-page inventory, a per-page, per-stage status ledger, a
 content-addressed stage cache, and a processing report. Render, signals, variants, page classes,
-and the recognition stages ship on that seam, plus two deterministic stand-ins, so resume, reuse,
-and failure isolation run over a real book. Operator usage:
+the recognition stages, and resolution ship on that seam, plus two deterministic stand-ins, so
+resume, reuse, and failure isolation run over a real book. Operator usage:
 [book-ocr guide](../../../guides/data-prep/book-ocr.md).
 
 ## Where it lives
@@ -21,9 +21,9 @@ and failure isolation run over a real book. Operator usage:
 | `src/llb/prep/book/ledger/` | The page manifest projected from the stage records (`manifest.py`); block assembly is the [block ledger](block-ledger.md) |
 | `src/llb/prep/book/report.py`, `logs.py` | The Markdown report and the JSON-lines event log |
 | `src/llb/prep/book/models.py` | Stage-model availability: `ollama:<tag>` against the daemon's served tags, `fake:<name>` |
-| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `classes`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
+| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `classes`, `fake-preprocess`, `fake-ocr`, the recognition stages, and `resolve` |
 | `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, `score`, `pilot-select`, and `engines` |
-| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `src/llb/artifacts/data_prep/book.py` | The eight registered families |
+| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `book_resolve.py`, `src/llb/artifacts/data_prep/book.py` | The twelve registered families |
 | `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-pilot-select`, `make book-ocr-engines` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
@@ -45,11 +45,14 @@ should run.
 
 **The cache key** is the SHA-256 of the stage name and version, the tool identity, the model, the
 digest of the EFFECTIVE parameters, and the input digests: the source checksum and PDF page for a
-stage that reads the PDF, each upstream stage's output digest otherwise. So the `render` key is a
-function of the source bytes, every later key is a function of the page-image digest, and a value a
-stage derives from the page -- `render`'s native resolution, its automatic colorspace -- is in the
-key. Every component is stored beside the key in `stage.json`, so a reader can see why two records
-share one.
+stage that reads the PDF, each upstream stage's output digest otherwise. The `render` key is a
+function of the source bytes, and a recognition key is a function of the page-image digest. A stage
+whose output names the page -- the ledger, the signal file -- also includes the PDF page, so
+identical images do not share that file. A value a stage derives from the page -- `render`'s native
+resolution, its automatic colorspace -- is in the key. Every component is stored beside the key in
+`stage.json`, so a reader can see why two records share one. `resolve` also digests the page's
+reviewer decisions; that file lives outside the stage cache
+([uncertainty and review](uncertainty-and-review.md)).
 
 **Per page and stage**, in order:
 
@@ -91,8 +94,12 @@ are registered families -- `llb.book-ocr-run-config`, `llb.book-ocr-stage-record
 `llb.book-ocr-block-ledger`, and `llb.book-ocr-page-manifest`, each at `1.0.0` with no older form
 (see [data-prep contracts](../artifact-contracts/data-prep-contracts.md#scanned-book-run-families)).
 The block ledger is what a later stage reads
-([block ledger](block-ledger.md)). The processing report and the JSON-lines log are human and
-diagnostic outputs and stay unregistered, as the data-prep policy does for Markdown reports.
+([block ledger](block-ledger.md)). Resolution adds `llb.book-ocr-resolved-page`,
+`llb.book-ocr-correction-overlay`, `llb.book-ocr-model-corrections`, and
+`llb.book-ocr-reviewer-decisions`
+([uncertainty and review](uncertainty-and-review.md)). The processing report and the JSON-lines
+log are human and diagnostic outputs and stay unregistered, as the data-prep policy does for
+Markdown reports.
 
 ## Evidence
 

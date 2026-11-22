@@ -58,12 +58,16 @@ _DEWARP = "dewarp"
 
 
 class SignalsStage:
-    """One signal vector per rendered page."""
+    """One signal vector per rendered page.
+
+    The signal file records the page id, so the cache key includes the PDF page. Identical page
+    images do not share one file.
+    """
 
     name = SIGNALS_STAGE
     version = "1"
     inputs: tuple[str, ...] = (RENDER_STAGE,)
-    reads_source = False
+    reads_source = True
     model_required = False
 
     def tool_identity(self) -> str:

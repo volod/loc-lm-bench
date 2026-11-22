@@ -7,6 +7,9 @@ One run lives under `$DATA_DIR/book-ocr/<run_timestamp>/`:
     pages/<pNNNN>/<stage>/          one committed stage output, with its `stage.json` record
     pages/<pNNNN>/.<stage>.partial/ an uncommitted stage attempt (never read; removed on resume)
     pages/<pNNNN>/blocks.json       the page block ledger (`llb.book-ocr-block-ledger`)
+    pages/<pNNNN>/overlay.json      applied and orphaned corrections (`llb.book-ocr-correction-overlay`)
+    pages/<pNNNN>/resolved.json     the resolved text (`llb.book-ocr-resolved-page`)
+    review/decisions.json           reviewer edits, outside the stage cache
     metadata/page_manifest.json     the per-page, per-stage ledger (`llb.book-ocr-page-manifest`)
     metadata/processing_report.md   the human-readable run report
     logs/run.jsonl                  structured JSON event log, one object per line

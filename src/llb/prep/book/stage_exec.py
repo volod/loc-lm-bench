@@ -40,6 +40,7 @@ from llb.prep.book.constants import (
 from llb.prep.book.classes.records import publish_page_classes
 from llb.prep.book.ledger.io import publish_page_ledger
 from llb.prep.book.preprocess.records import publish_page_signals
+from llb.prep.book.resolve.io import publish_page_resolution
 from llb.prep.book.logs import log_event
 from llb.prep.book.stages import Stage, StageContext, resolved_inputs
 
@@ -91,6 +92,12 @@ def _keyed(
             return None
         digests[upstream] = outputs_digest(record)
         inputs[upstream] = directory
+    extra = getattr(stage, "extra_input_digests", None)
+    if extra is not None:
+        for name, digest in extra(work.run_dir, work.page_id).items():
+            if name in digests:
+                raise RuntimeError(f"stage {stage.name!r} repeated input digest {name!r}")
+            digests[name] = digest
     tool = stage.tool_identity()
     params = _effective_params(stage, spec.params, inputs, work)
     params_digest = digest_json(params)
@@ -193,6 +200,7 @@ def run_stage(
             model=spec.model,
             inputs=keyed.inputs,
             work_dir=partial,
+            run_dir=work.run_dir,
             document=work.document,
         )
         try:
@@ -249,3 +257,4 @@ def _publish(stage_directory: Path) -> None:
     publish_page_ledger(stage_directory)
     publish_page_signals(stage_directory)
     publish_page_classes(stage_directory)
+    publish_page_resolution(stage_directory)

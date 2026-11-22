@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "CorrectionEdit": {
+      "additionalProperties": false,
+      "description": "One replacement anchored to the block that was read, not only to its id.\n\nOffsets are into the primary reading named when the edit was made. `anchor` is the digest of\nthat block's region and raw readings, so a later ledger that reused the id for a different\nblock cannot take the edit.",
+      "properties": {
+        "anchor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Anchor",
+          "type": "string"
+        },
+        "author": {
+          "enum": [
+            "agreement",
+            "model",
+            "reviewer"
+          ],
+          "title": "Author",
+          "type": "string"
+        },
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "edit_id": {
+          "minLength": 1,
+          "title": "Edit Id",
+          "type": "string"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "evidence": {
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "raw_text": {
+          "title": "Raw Text",
+          "type": "string"
+        },
+        "replacement": {
+          "title": "Replacement",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "edit_id",
+        "page_id",
+        "block_id",
+        "anchor",
+        "author",
+        "start",
+        "end",
+        "raw_text",
+        "replacement",
+        "evidence",
+        "source"
+      ],
+      "title": "CorrectionEdit",
+      "type": "object"
+    },
+    "OrphanedEdit": {
+      "additionalProperties": false,
+      "description": "An edit this ledger refused. It is re-queued and never applied to a different block.",
+      "properties": {
+        "edit": {
+          "$ref": "#/$defs/CorrectionEdit"
+        },
+        "reason": {
+          "enum": [
+            "block_missing",
+            "block_changed",
+            "raw_mismatch"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "requeued": {
+          "const": true,
+          "title": "Requeued",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "edit",
+        "reason",
+        "requeued"
+      ],
+      "title": "OrphanedEdit",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-correction-overlay:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`pages/<pNNNN>/overlay.json`: edits applied on this page, and edits the ledger refused.",
+  "properties": {
+    "applied": {
+      "items": {
+        "$ref": "#/$defs/CorrectionEdit"
+      },
+      "title": "Applied",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-correction-overlay",
+      "title": "Kind",
+      "type": "string"
+    },
+    "orphaned": {
+      "items": {
+        "$ref": "#/$defs/OrphanedEdit"
+      },
+      "title": "Orphaned",
+      "type": "array"
+    },
+    "page_id": {
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "pdf_page": {
+      "minimum": 1,
+      "title": "Pdf Page",
+      "type": "integer"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-correction-overlay",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "page_id",
+    "pdf_page"
+  ],
+  "title": "PageCorrectionOverlay",
+  "type": "object"
+}

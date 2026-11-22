@@ -5,8 +5,9 @@ registry of recovery stages one page at a time, records every stage's outcome pe
 after an interruption without repeating a completed stage. The registry holds `render` (each page
 at its scan's native resolution), `signals` and `variants` (the measurements and the corrections
 they call for), `classes` (the page classes a pilot and an engine route on), the recognition
-stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, and two
-deterministic stand-in stages. Structure and rendering plug into the same run as they land. For a
+stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
+`resolve` stage that chooses one text per block, and two deterministic stand-in stages.
+Structure and rendering plug into the same run as they land. For a
 born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
@@ -71,13 +72,14 @@ CLI sets one without a file.
 | Stage | Reads | Writes | Parameters |
 | --- | --- | --- | --- |
 | `render` | the source page | `page.png` | `dpi`: `native` (the scan's own resolution) or an integer; `colorspace`: `auto` (grey when every image on the page is single-channel), `grey`, `rgb` |
-| `signals` | `render` | `signals.json`, also published at `pages/<pNNNN>/signals.json` | none. The measured thresholds are part of the cache key |
+| `signals` | `render` | `signals.json`, also published at `pages/<pNNNN>/signals.json` | none. The measured thresholds are part of the cache key, and so is the PDF page, because the file records the page id |
 | `classes` | `render`, `signals` | `classes.json`, also published at `pages/<pNNNN>/classes.json` | none. The class cuts and the page's placement rotation are part of the cache key |
 | `variants` | `render`, `signals` | `manifest.json` and `<name>/page.png` for each kept correction. This stage's directory is `pages/<pNNNN>/variants/` | `dewarp`: `opencv` (default), `page-dewarp`, `uvdoc`, or `auto` |
 | `fake-preprocess` | `render` | `variant.json` naming the original image | `fail_pages`, `note` |
 | `fake-ocr` | `render` | `text.txt`, a placeholder naming the page and image digest | `fail_pages`, `note` |
 | `layout`, `ocr`, `formula`, `table` | `render`, `variants` when a non-original `variant` is named, and `classes` when `by_page_class` is set and `classes` is configured earlier | `reading.json`, that engine's blocks mapped back onto the render before the merge | `engine` (required), `variant` (`original` by default), `page_class`, `by_page_class` |
-| `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none |
+| `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none. The cache key also includes the PDF page, because the ledger records the page id |
+| `resolve` | `blocks`, `correct` when that stage is configured before it, and `classes` when `by_page_class` is set | `overlay.json` and `resolved.json`, published at `pages/<pNNNN>/` | `primary` (required: `stage`, `engine`, `variant`, optional `model`); `by_page_class`; `page_class` |
 
 The two `fake-` stages recognise nothing. They exist so the run ledger, resume, reuse, and failure
 handling can be driven without an engine. `fail_pages` forces a failure on the named PDF pages.
@@ -88,6 +90,9 @@ the class file is an input of the engine stage, so a class change misses only th
 route on it. Pages in one batch that share an engine run together, so each engine opens at most
 once per batch. The cache key records the engine that ran. A `page_class` set with no `classes`
 stage still applies to every page. `blocks` refuses a run that configured no recognition stage.
+`resolve` refuses a run that names no primary, or a primary stage that is not configured before
+it. The rule, the overlay, and the reviewer file are
+[uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
 An engine that is not installed refuses the dry run by name (`EngineUnavailable`) and writes
 nothing. What a block contains, and how two engines disagree, is
 [the block ledger](../../impl/current/book-recovery/block-ledger.md). The class cuts are
@@ -125,6 +130,9 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   pages/<pNNNN>/classes.json     the classes the page matches (llb.book-ocr-page-classes)
   pages/<pNNNN>/variants/        manifest and kept corrections (llb.book-ocr-variant-manifest)
   pages/<pNNNN>/blocks.json      the page block ledger (llb.book-ocr-block-ledger)
+  pages/<pNNNN>/overlay.json     applied and orphaned corrections (llb.book-ocr-correction-overlay)
+  pages/<pNNNN>/resolved.json    the resolved text (llb.book-ocr-resolved-page)
+  review/decisions.json          reviewer edits (llb.book-ocr-reviewer-decisions)
   pilot/selection.json           the seeded pilot (llb.book-ocr-pilot-selection)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
   metadata/processing_report.md  human-readable summary and failed pages

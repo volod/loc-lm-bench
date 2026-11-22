@@ -20,12 +20,16 @@ _STAGE_VERSION = "1"
 
 
 class BlocksStage:
-    """Merge the configured recognition stages of one page into `blocks.json`."""
+    """Merge the configured recognition stages of one page into `blocks.json`.
+
+    The ledger records the page id and the block ids, so the cache key includes the PDF page.
+    Identical page images do not share a ledger.
+    """
 
     name = BLOCKS_STAGE
     version = _STAGE_VERSION
     inputs: tuple[str, ...] = ()
-    reads_source = False
+    reads_source = True
     model_required = False
 
     def tool_identity(self) -> str:

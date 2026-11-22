@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "CorrectionEdit": {
+      "additionalProperties": false,
+      "description": "One replacement anchored to the block that was read, not only to its id.\n\nOffsets are into the primary reading named when the edit was made. `anchor` is the digest of\nthat block's region and raw readings, so a later ledger that reused the id for a different\nblock cannot take the edit.",
+      "properties": {
+        "anchor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Anchor",
+          "type": "string"
+        },
+        "author": {
+          "enum": [
+            "agreement",
+            "model",
+            "reviewer"
+          ],
+          "title": "Author",
+          "type": "string"
+        },
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "edit_id": {
+          "minLength": 1,
+          "title": "Edit Id",
+          "type": "string"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "evidence": {
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "raw_text": {
+          "title": "Raw Text",
+          "type": "string"
+        },
+        "replacement": {
+          "title": "Replacement",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "edit_id",
+        "page_id",
+        "block_id",
+        "anchor",
+        "author",
+        "start",
+        "end",
+        "raw_text",
+        "replacement",
+        "evidence",
+        "source"
+      ],
+      "title": "CorrectionEdit",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-reviewer-decisions:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`review/decisions.json`: reviewer edits for the whole run, outside the stage cache.",
+  "properties": {
+    "edits": {
+      "items": {
+        "$ref": "#/$defs/CorrectionEdit"
+      },
+      "title": "Edits",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-reviewer-decisions",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-reviewer-decisions",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind"
+  ],
+  "title": "ReviewerDecisions",
+  "type": "object"
+}
