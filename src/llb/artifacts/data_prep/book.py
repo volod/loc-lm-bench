@@ -1,6 +1,6 @@
 """The registered scanned-book recovery run families.
 
-All six are new with this capability, so each has one version and no legacy read form: nothing
+All eight are new with this capability, so each has one version and no legacy read form: nothing
 was written before the registry knew them.
 """
 
@@ -8,6 +8,7 @@ from llb.artifacts.definitions import ContractDefinition
 from llb.core.contracts.artifact_catalog import FormatBinding
 from llb.core.contracts.data_prep.book import BookOcrRunConfig, BookPageManifest, BookStageRecord
 from llb.core.contracts.data_prep.book_blocks import PageBlockLedger
+from llb.core.contracts.data_prep.book_classes import PageClassRecord, PilotSelection
 from llb.core.contracts.data_prep.book_preprocess import PageSignals, VariantManifest
 
 _JSON_DOCUMENT = (
@@ -28,6 +29,14 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             deprecation_policy=_ONLY_FORM,
         ),
         ContractDefinition(
+            schema_id="llb.book-ocr-page-classes",
+            description="Every class one scanned page matches, and the class an engine stage routes on.",
+            current_version="1.0.0",
+            models={"1.0.0": PageClassRecord},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
             schema_id="llb.book-ocr-page-manifest",
             description="Per-page, per-stage ledger of one scanned-book recovery run.",
             current_version="1.0.0",
@@ -40,6 +49,14 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             description="One scanned page's measured signal vector.",
             current_version="1.0.0",
             models={"1.0.0": PageSignals},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id="llb.book-ocr-pilot-selection",
+            description="The seeded pilot pages, the class each one represents, and the signals that placed it.",
+            current_version="1.0.0",
+            models={"1.0.0": PilotSelection},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),

@@ -209,6 +209,92 @@ Dropped from the comparison on survey evidence: Tesseract and OCRmyPDF as candid
 the baseline), Marker `fast`, PP-StructureV3 (both engines), granite-docling, Chandra 2, and
 LightOnOCR-3 (invented figure data, and 9.4 GB for a reading the smaller models match).
 
+## Page classes
+
+A full run routes an engine by the class of the page in front of it, and the pilot is a seeded
+sample of those classes. The `classes` stage reads `render` and `signals` and writes one
+`classes.json` per page (`llb.book-ocr-page-classes` 1.0.0), published at
+`pages/<pNNNN>/classes.json`. The first class a page matches is its primary, and that is what
+`by_page_class` sees. A page can carry several classes; the pilot may select it for a later one.
+`normal` is written only when nothing else matched.
+
+Content is measured on a copy whose long side is at most 720 px, after the page is turned
+upright. The stage reads ink and rules, not characters. The cuts below, and the page's placement
+rotation, are in the stage's cache key, so moving a cut reclassifies the pages it affects and
+leaves the render and the signal files alone.
+
+| Order | Class | A page matches when |
+| --- | --- | --- |
+| 1 | `severe_curvature` | `line_curvature_px` is at least 3, the same bow the dewarp gate treats as worth unbending |
+| 2 | `dense_formulas` | At least three text lines have an empty gap and a short mark at the right, the page has at least twelve text lines, the share of such lines is at least 0.06, and there are at most two columns. A gap full of faint dots is an index leader and does not count |
+| 3 | `large_tables` | A run of at least ten horizontal rules, with the gaps a line apart, and at least four vertical rules |
+| 4 | `labelled_diagrams` | One drawing covers 2.5% to 18% of the page and has 8 to 70 letter-sized components on it |
+| 5 | `small_footnotes` | A short rule in the bottom fifth, 10% to 32% of the page width, has at least ten glyphs under it, and the band from that rule to the bottom is 4% to 15% of the page height |
+| 6 | `gutter_corner` | Six or more glyph-sized components sit in a corner, or the page has a neighbour-page bleed. Gutter width is not a class: a dark edge is the common case on this scan |
+| 7 | `grey_background` | Background unevenness is at least 0.20, or contrast is 0.35 or less |
+| 8 | `landscape` | The page box is landscape, the scan is placed at 90 or 270 degrees, or the content is measured at 90 or 270. Upside down is not landscape |
+| 9 | `multi_column` | Two or more text columns |
+| 10 | `normal` | Nothing above matched |
+
+`make book-ocr-pilot-select` reads a finished `classes` stage and writes
+`<run-dir>/pilot/selection.json` (`llb.book-ocr-pilot-selection` 1.0.0). The default is 25 pages
+at seed 0. A smaller size is accepted, so a test can ask for one page. Quotas are equal across
+the classes that have a member, and the remainder goes to the earlier classes. Inside a class
+the strongest pages form a head four times the quota, and the seed draws from that head. A
+footnote's strength is how close its rule sits to the bottom. A page is selected once. A class
+with no member is named in `empty_classes`; a class that had members but received no page is
+named in `unfilled_classes`. Both use the prose labels (`severe curvature`, `dense formulas`,
+`large or irregular tables`, `labelled diagrams`, `small footnotes`, `gutter and corner text`,
+`grey or shadowed background`, `landscape`, `multi-column layout`, `normal`). `--out` copies the
+same file. The handbook list is
+`samples/book_ocr/space-mission-engineering-the-new-smad/pilot_pages.json`: the source checksum,
+the PDF page numbers, the classes, and the signals. It holds no page image and no recovered text.
+
+How a routed engine stage consumes the class is [the block ledger](block-ledger.md#engines).
+The modules are `src/llb/prep/book/classes/`, `src/llb/prep/book/stages/classes.py`, and
+`src/llb/cli/book/pilot.py`. Tests are `tests/llb/prep/book/test_page_classes.py` and
+`tests/llb/prep/book/test_page_class_stage.py`.
+
+### Evidence
+
+**What ran.** On 2026-11-22, on the GeForce RTX 5050 laptop (8 GB), CPU only. OpenCV measured
+the content signals and the GPU was idle. The input was every page of the 1,067-page *Space
+Mission Engineering* scan (SHA-256
+`89101813d4c695e9f992d540e751c4e2f4b80c6550f24d5d23e1a795383cb7c8`, 163,709,872 bytes), through
+`render`, `signals`, and `classes`. `make book-ocr-pilot-select` then drew 25 pages at seed 0.
+
+**The reading.** Every declared class has at least one page, and the pilot of 25 fills all ten.
+Membership is how many pages carry the class; primary is how many route on it.
+
+| Class | Members | Primary | Pilot pages |
+| --- | --- | --- | --- |
+| severe curvature | 26 | 26 | 154, 351, 765 |
+| dense formulas | 41 | 38 | 258, 977, 979 |
+| large or irregular tables | 59 | 58 | 768, 963, 966 |
+| labelled diagrams | 143 | 120 | 350, 426, 473 |
+| small footnotes | 72 | 56 | 53, 102, 131 |
+| gutter and corner text | 40 | 34 | 316, 845 |
+| grey or shadowed background | 78 | 56 | 638, 1006 |
+| landscape | 45 | 31 | 132, 135 |
+| multi-column layout | 667 | 425 | 1007, 1017 |
+| normal | 223 | 223 | 4, 18 |
+
+Checked against the scan: pages 258, 977, and 979 are display equations (977 and 979 are the
+Kepler-equation appendix), and pages 53, 102, and 131 each have a footnote. Page 131 is placed
+upside down, which is not the landscape class. Pages 1007 and 1017 are three-column index pages.
+They rank ahead of ordinary two-column body pages because the strength is the column count.
+
+**What would overturn it.** The cuts were read on this one greyscale handbook. A different scan
+can move a page across a cut. The stage does not read characters. PDF page 1043 of this scan is
+a dense numeric parameter table and is not `large_tables`, because its horizontal rules do not
+form a run of ten. A conversion-factor table can still match `dense_formulas`, because each row
+has an empty gap before a short right-hand mark. A footnote with no rule is missed, and a short
+rule that is not a footnote can be counted. Changing a threshold reclassifies, because the cuts
+are in the cache key.
+
+The task record is
+[0009](../../records/0009-scanned-book-recovery-book-pilot-page-selection.md).
+
 ## Not installed, and why
 
 Recorded with the blocker and what would reopen each, so the shortlist's absences are auditable

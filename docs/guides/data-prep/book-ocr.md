@@ -4,9 +4,10 @@
 registry of recovery stages one page at a time, records every stage's outcome per page, and resumes
 after an interruption without repeating a completed stage. The registry holds `render` (each page
 at its scan's native resolution), `signals` and `variants` (the measurements and the corrections
-they call for), the recognition stages `layout`, `ocr`, `formula`, and `table`, the `blocks`
-stage that merges them, and two deterministic stand-in stages. Structure and rendering plug into
-the same run as they land. For a born-digital PDF, use the
+they call for), `classes` (the page classes a pilot and an engine route on), the recognition
+stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, and two
+deterministic stand-in stages. Structure and rendering plug into the same run as they land. For a
+born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
 What it does and why it is built this way:
@@ -71,20 +72,26 @@ CLI sets one without a file.
 | --- | --- | --- | --- |
 | `render` | the source page | `page.png` | `dpi`: `native` (the scan's own resolution) or an integer; `colorspace`: `auto` (grey when every image on the page is single-channel), `grey`, `rgb` |
 | `signals` | `render` | `signals.json`, also published at `pages/<pNNNN>/signals.json` | none. The measured thresholds are part of the cache key |
+| `classes` | `render`, `signals` | `classes.json`, also published at `pages/<pNNNN>/classes.json` | none. The class cuts and the page's placement rotation are part of the cache key |
 | `variants` | `render`, `signals` | `manifest.json` and `<name>/page.png` for each kept correction. This stage's directory is `pages/<pNNNN>/variants/` | `dewarp`: `opencv` (default), `page-dewarp`, `uvdoc`, or `auto` |
 | `fake-preprocess` | `render` | `variant.json` naming the original image | `fail_pages`, `note` |
 | `fake-ocr` | `render` | `text.txt`, a placeholder naming the page and image digest | `fail_pages`, `note` |
-| `layout`, `ocr`, `formula`, `table` | `render`, and `variants` when a non-original `variant` is named | `reading.json`, that engine's blocks mapped back onto the render before the merge | `engine` (required), `variant` (`original` by default), `page_class`, `by_page_class` |
+| `layout`, `ocr`, `formula`, `table` | `render`, `variants` when a non-original `variant` is named, and `classes` when `by_page_class` is set and `classes` is configured earlier | `reading.json`, that engine's blocks mapped back onto the render before the merge | `engine` (required), `variant` (`original` by default), `page_class`, `by_page_class` |
 | `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none |
 
 The two `fake-` stages recognise nothing. They exist so the run ledger, resume, reuse, and failure
 handling can be driven without an engine. `fail_pages` forces a failure on the named PDF pages.
 
 A recognition stage's `engine` is an id from `make book-ocr-engines`. `by_page_class` maps a page
-class to a different id; the cache key records the engine that ran. `blocks` refuses a run that
-configured no recognition stage. An engine that is not installed refuses the dry run by name
-(`EngineUnavailable`) and writes nothing. What a block contains, and how two engines disagree, is
-[the block ledger](../../impl/current/book-recovery/block-ledger.md).
+class to a different id. When `classes` ran earlier, the class is that page's primary class and
+the class file is an input of the engine stage, so a class change misses only the stages that
+route on it. Pages in one batch that share an engine run together, so each engine opens at most
+once per batch. The cache key records the engine that ran. A `page_class` set with no `classes`
+stage still applies to every page. `blocks` refuses a run that configured no recognition stage.
+An engine that is not installed refuses the dry run by name (`EngineUnavailable`) and writes
+nothing. What a block contains, and how two engines disagree, is
+[the block ledger](../../impl/current/book-recovery/block-ledger.md). The class cuts are
+[page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
 
 ```sh
 make book-ocr-engines    # id, stages, and ready or refused for each registered engine
@@ -115,8 +122,10 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   source/<name>.pdf              the source, under the copy or symlink policy
   pages/<pNNNN>/<stage>/         one committed stage: outputs and stage.json
   pages/<pNNNN>/signals.json     the measured signal vector (llb.book-ocr-page-signals)
+  pages/<pNNNN>/classes.json     the classes the page matches (llb.book-ocr-page-classes)
   pages/<pNNNN>/variants/        manifest and kept corrections (llb.book-ocr-variant-manifest)
   pages/<pNNNN>/blocks.json      the page block ledger (llb.book-ocr-block-ledger)
+  pilot/selection.json           the seeded pilot (llb.book-ocr-pilot-selection)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
   metadata/processing_report.md  human-readable summary and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
@@ -124,6 +133,30 @@ $DATA_DIR/book-ocr/<run_timestamp>/
 
 `pNNNN` is the 1-based PDF page, zero-padded to four digits (wider for a longer document). A full
 render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
+
+## Pilot selection
+
+`book-ocr pilot-select` reads a finished `classes` stage and writes a reproducible set of pages.
+Each page records the class it represents and the signal values that placed it. The default is
+25 pages at seed 0. A class with no qualifying page is reported by its prose name.
+
+```sh
+make book-ocr BOOK_PDF=<scan.pdf> BOOK_STAGES=render,signals,classes
+make book-ocr-pilot-select BOOK_RUN=<run-dir>
+make book-ocr-pilot-select BOOK_RUN=<run-dir> BOOK_PILOT_SIZE=25 BOOK_PILOT_SEED=0 \
+  BOOK_PILOT_OUT=<path>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run whose `classes` stage has finished for every configured page | required |
+| `BOOK_PILOT_SIZE` | How many pages to select. A size below 20 is accepted | `25` |
+| `BOOK_PILOT_SEED` | The seed that draws inside each class's strongest pages | `0` |
+| `BOOK_PILOT_OUT` | Also write the selection here. The run always keeps `pilot/selection.json` | unset |
+
+Exit code 2 is a run that is not a book-ocr run, or a classes stage that has not finished. The
+cuts, the precedence, and the handbook list are
+[page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
 
 ## Score
 

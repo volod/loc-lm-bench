@@ -53,17 +53,24 @@ def read_manifest(run_dir: Path) -> BookPageManifest | None:
 
 
 def _upstream(
-    registry: StageRegistry | None, name: str, configured: Sequence[str]
+    registry: StageRegistry | None,
+    name: str,
+    configured: Sequence[str],
+    params_of: Mapping[str, Mapping[str, object]],
 ) -> tuple[str, ...]:
     """Stages whose failure blocks `name`. A stage may choose them from what is configured."""
     before = tuple(configured[: configured.index(name)])
     if registry is not None and name in registry:
-        return resolved_inputs(registry.get(name), before)
+        return resolved_inputs(registry.get(name), before, params_of.get(name))
     return before  # unknown stage: assume it reads everything ahead of it
 
 
 def page_states(
-    run_dir: Path, pid: str, stage_names: Sequence[str], registry: StageRegistry | None
+    run_dir: Path,
+    pid: str,
+    stage_names: Sequence[str],
+    registry: StageRegistry | None,
+    params_of: Mapping[str, Mapping[str, object]],
 ) -> tuple[list[PageStageState], str | None]:
     """Every configured stage's state on one page, and the page-image digest when rendered."""
     states: dict[str, PageStageState] = {}
@@ -73,7 +80,7 @@ def page_states(
         if record is None:
             upstream_failed = any(
                 states[up].status in (STATUS_FAILED, STATUS_BLOCKED)
-                for up in _upstream(registry, name, stage_names)
+                for up in _upstream(registry, name, stage_names, params_of)
                 if up in states
             )
             states[name] = PageStageState(
@@ -121,12 +128,13 @@ def build_manifest(
 ) -> BookPageManifest:
     """Project the stage records of every configured page into the page manifest."""
     stage_names = [spec.name for spec in config.stages]
+    params_of = {spec.name: spec.params for spec in config.stages}
     count = config.source.page_count
     pages = []
     for batch_index, batch in enumerate(batches(config.pages, config.batch_pages)):
         for pdf_page in batch:
             pid = page_id(pdf_page, count)
-            states, image_sha = page_states(run_dir, pid, stage_names, registry)
+            states, image_sha = page_states(run_dir, pid, stage_names, registry, params_of)
             pages.append(
                 PageLedgerRecord(
                     page_id=pid,

@@ -38,9 +38,19 @@ not outvote a third.
 ## Engines
 
 `layout`, `ocr`, `formula`, and `table` are stages. Each one's `engine` parameter names an
-adapter; `by_page_class` overrides that name for a page class. The cache key uses the engine that
-actually ran. `blocks` must be configured after `render` and at least one of those four. It reads
-whichever of them the run configured and writes the ledger.
+adapter. `by_page_class` overrides that name for one class. When the `classes` stage is
+configured earlier and `by_page_class` is non-empty, the engine stage reads that page's
+`classes.json` and routes on its primary class. The class file is an input, so its digest is in
+the cache key, and the digested parameters stay `engine` and `variant`. A class change re-runs
+only the stages that route on it. A run that sets `page_class` and does not configure `classes`
+still routes every page on that one class. An id the class stage does not declare is not refused.
+
+Inside a batch the stage runs pages grouped by the engine they will open, in the order that
+engine is first asked for, and in page order within a group, so each engine opens at most once
+per batch. The adapter is opened from the stage, and only on a cache miss. The cache key uses
+the engine that actually ran. `blocks` must be configured after `render` and at least one of
+those four. It reads whichever of them the run configured and writes the ledger. The class
+vocabulary and the cuts are [page classes](tool-selection.md#page-classes).
 
 An adapter that is not installed raises `EngineUnavailable` with a reason and no traceback, at
 dry-run and at execution. An adapter that runs but writes nothing usable, or that silently falls
@@ -80,7 +90,7 @@ misread of display lettering; correcting it is a later stage.
 | Contract | `src/llb/core/contracts/data_prep/book_blocks.py` |
 | Assembly and reconciliation | `src/llb/prep/book/ledger/` |
 | Adapters, parsers, runners | `src/llb/prep/book/engines/` |
-| Stages | `src/llb/prep/book/stages/recognize.py` |
+| Stages | `src/llb/prep/book/stages/recognize.py` (one engine stage), `stages/blocks.py` (the merge), `stages/routing.py` (the class route and the batch order) |
 | Tests | `tests/llb/prep/book/test_block_ledger.py`, `tests/llb/prep/book/test_engine_adapters.py` |
 | List what can run here | `make book-ocr-engines` |
 
@@ -102,7 +112,20 @@ stages:
 ```
 
 `make book-ocr BOOK_PDF=<scan.pdf> BOOK_CONFIG=<file> BOOK_PAGES=300`. An engine that is not
-installed refuses the dry run by name (`EngineUnavailable`), before any page is read.
+installed refuses the dry run by name (`EngineUnavailable`), before any page is read. To route
+on the class stage, configure `classes` before the engine stage:
+
+```yaml
+stages:
+  - render
+  - signals
+  - classes
+  - name: ocr
+    params:
+      engine: rapidocr
+      by_page_class: {dense_formulas: mineru-standard}
+  - blocks
+```
 
 ## Evidence
 

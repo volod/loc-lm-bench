@@ -208,6 +208,28 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Every class one scanned page matches, and the class an engine stage routes on.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-page-classes",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-page-classes/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "Per-page, per-stage ledger of one scanned-book recovery run.",
       "extension_point": null,
       "legacy_read_version": null,
@@ -236,6 +258,28 @@
       "schema_id": "llb.book-ocr-page-signals",
       "schema_paths": {
         "1.0.0": "llb.book-ocr-page-signals/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "The seeded pilot pages, the class each one represents, and the signals that placed it.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-pilot-selection",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-pilot-selection/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"

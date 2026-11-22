@@ -1,28 +1,26 @@
-"""Layout, OCR, formula, and table stages, and the stage that merges them into the ledger.
+"""Layout, OCR, formula, and table stages.
 
 An engine stage's cache key names the engine that actually runs on the page, after `by_page_class`
-is resolved. The blocks stage's inputs are whichever of those stages the run configured.
+is resolved. The merge of those readings lives in `blocks.py`.
 """
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from llb.prep.book.constants import BLOCKS_FILENAME, READING_FILENAME
 from llb.prep.book.engines.image import png_size
 from llb.prep.book.engines.lease import EngineLease
 from llb.prep.book.engines.pdf_page import write_page_pdf
-from llb.prep.book.engines.protocol import (
-    EngineRead,
-    EngineUnavailable,
-    read_reading,
-    write_reading,
-)
+from llb.prep.book.engines.protocol import EngineRead, EngineUnavailable, write_reading
 from llb.prep.book.engines.registry import AdapterRegistry
-from llb.prep.book.ledger.assemble import assemble
-from llb.prep.book.ledger.io import write_ledger
 from llb.prep.book.preprocess.constants import ORIGINAL, VARIANTS_STAGE, VARIANT_NAMES
 from llb.prep.book.stages import StageContext, StageResult
 from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
+from llb.prep.book.stages.routing import (
+    batch_page_order,
+    engine_inputs,
+    routed_params,
+    selected_engine,
+)
 
 LAYOUT_STAGE = "layout"
 OCR_STAGE = "ocr"
@@ -77,10 +75,25 @@ class EngineStage:
     ) -> dict[str, Any]:
         return {"engine": selected_engine(params), "variant": _variant(params)}
 
-    def inputs_for(self, configured_before: Sequence[str]) -> tuple[str, ...]:
-        if VARIANTS_STAGE in configured_before:
-            return (RENDER_STAGE, VARIANTS_STAGE)
-        return (RENDER_STAGE,)
+    def page_params(
+        self,
+        params: Mapping[str, Any],
+        inputs: Mapping[str, Any],
+        inventory: Any,
+        document: Any,
+        pdf_page: int,
+    ) -> dict[str, Any]:
+        """Resolve `page_class` from the classes stage, then the engine that class selects."""
+        return self.effective_params(routed_params(params, inputs), inventory, document, pdf_page)
+
+    def inputs_for(
+        self, configured_before: Sequence[str], params: Mapping[str, Any] | None = None
+    ) -> tuple[str, ...]:
+        return engine_inputs(configured_before, params)
+
+    def batch_order(self, run_dir: Any, config: Any, batch: Sequence[int], spec: Any) -> list[int]:
+        """Pages of one batch grouped so each routed engine opens once."""
+        return batch_page_order(run_dir, config.source.page_count, batch, spec.params)
 
     def validate_order(
         self, params: Mapping[str, Any], configured_before: Sequence[str]
@@ -140,57 +153,12 @@ class EngineStage:
         return errors
 
 
-class BlocksStage:
-    """Merge the configured recognition stages of one page into `blocks.json`."""
-
-    name = BLOCKS_STAGE
-    version = _STAGE_VERSION
-    inputs: tuple[str, ...] = ()
-    reads_source = False
-    model_required = False
-
-    def tool_identity(self) -> str:
-        return BLOCKS_TOOL_IDENTITY
-
-    def inputs_for(self, configured_before: Sequence[str]) -> tuple[str, ...]:
-        selected = tuple(name for name in RECOGNITION_STAGES if name in configured_before)
-        return (RENDER_STAGE, *selected)
-
-    def validate_params(self, params: Mapping[str, Any]) -> list[str]:
-        return [f"blocks: unknown parameter {key!r}" for key in params]
-
-    def validate_configured(self, configured_before: Sequence[str]) -> list[str]:
-        if any(name in configured_before for name in RECOGNITION_STAGES):
-            return []
-        return ["stage 'blocks' needs a layout, ocr, formula, or table stage before it"]
-
-    def effective_params(
-        self, params: Mapping[str, Any], inventory: Any, document: Any, pdf_page: int
-    ) -> dict[str, Any]:
-        return dict(params)
-
-    def run(self, ctx: StageContext) -> StageResult:
-        reads = _readings(ctx)
-        width, height = png_size(ctx.inputs[RENDER_STAGE] / PAGE_IMAGE_FILENAME)
-        ledger = assemble(ctx.page_id, ctx.pdf_page, width, height, reads)
-        write_ledger(ctx.work_dir / BLOCKS_FILENAME, ledger)
-        spans = sum(len(block.uncertainty) for block in ledger.blocks)
-        return StageResult(meta={"blocks": len(ledger.blocks), "uncertainty_spans": spans})
-
-
-def recognition_stages(adapters: AdapterRegistry) -> tuple[EngineStage | BlocksStage, ...]:
+def recognition_stages(adapters: AdapterRegistry) -> tuple[Any, ...]:
     """The five stages a recovery run adds to render: four engines and the ledger merge."""
+    from llb.prep.book.stages.blocks import BlocksStage
+
     engines = tuple(EngineStage(name, adapters) for name in RECOGNITION_STAGES)
     return (*engines, BlocksStage())
-
-
-def selected_engine(params: Mapping[str, Any]) -> str:
-    """The engine this page runs: the page-class override when one is configured, else `engine`."""
-    page_class = str(params.get("page_class") or "")
-    by_class = params.get("by_page_class") or {}
-    if page_class and isinstance(by_class, dict) and page_class in by_class:
-        return str(by_class[page_class])
-    return str(params.get("engine") or "")
 
 
 def _variant(params: Mapping[str, Any]) -> str:
@@ -206,20 +174,6 @@ def _read(stage: str, ctx: StageContext, adapter: Any, pdf: Any) -> EngineRead:
     request = engine_request(render, variants, name, pdf, ctx.work_dir, ctx.model)
     width, height = png_size(render)
     return reading_on_render(adapter.read(request, stage), variants, width, height)
-
-
-def _readings(ctx: StageContext) -> list[EngineRead]:
-    reads = []
-    for name, directory in ctx.inputs.items():
-        if name == RENDER_STAGE:
-            continue
-        path = directory / READING_FILENAME
-        if not path.is_file():
-            raise RuntimeError(f"stage {name} has no {READING_FILENAME}")
-        reads.append(read_reading(path))
-    if not reads:
-        raise RuntimeError("blocks stage has no recognition input")
-    return reads
 
 
 def _meta(reading: EngineRead) -> dict[str, Any]:

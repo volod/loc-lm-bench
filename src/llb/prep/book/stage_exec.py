@@ -11,10 +11,10 @@ directory is all it leaves, and the resume deletes it.
 import logging
 import shutil
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from llb.core.contracts.data_prep.book import BookStageRecord, BookStageSpec, PageInventoryRecord
 from llb.prep.book.cache import (
@@ -37,6 +37,7 @@ from llb.prep.book.constants import (
     STATUS_DONE,
     STATUS_FAILED,
 )
+from llb.prep.book.classes.records import publish_page_classes
 from llb.prep.book.ledger.io import publish_page_ledger
 from llb.prep.book.preprocess.records import publish_page_signals
 from llb.prep.book.logs import log_event
@@ -83,7 +84,7 @@ def _keyed(
     if stage.reads_source:
         digests["source"] = work.source_sha256
         digests["pdf_page"] = str(work.pdf_page)
-    for upstream in resolved_inputs(stage, configured_before):
+    for upstream in resolved_inputs(stage, configured_before, spec.params):
         directory = stage_dir(work.run_dir, work.page_id, upstream)
         record = read_record(directory)
         if record is None or record.status != STATUS_DONE:
@@ -91,7 +92,7 @@ def _keyed(
         digests[upstream] = outputs_digest(record)
         inputs[upstream] = directory
     tool = stage.tool_identity()
-    params = stage.effective_params(spec.params, work.inventory, work.document, work.pdf_page)
+    params = _effective_params(stage, spec.params, inputs, work)
     params_digest = digest_json(params)
     key = stage_key(
         stage=stage.name,
@@ -232,7 +233,19 @@ def run_stage(
     return OUTCOME_FAILED
 
 
+def _effective_params(
+    stage: Stage, params: Mapping[str, Any], inputs: Mapping[str, Path], work: PageWork
+) -> dict[str, Any]:
+    """Parameters the cache key digests. A routed stage resolves its class before that digest."""
+    hook = getattr(stage, "page_params", None)
+    if hook is not None:
+        resolved = hook(params, inputs, work.inventory, work.document, work.pdf_page)
+        return cast(dict[str, Any], resolved)
+    return stage.effective_params(params, work.inventory, work.document, work.pdf_page)
+
+
 def _publish(stage_directory: Path) -> None:
     """Lift a stage file to the page path later stages are told to open."""
     publish_page_ledger(stage_directory)
     publish_page_signals(stage_directory)
+    publish_page_classes(stage_directory)

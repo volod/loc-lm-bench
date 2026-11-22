@@ -105,7 +105,7 @@ def _one_stage_errors(
     errors = []
     if spec.name in configured_before:
         errors.append(f"stage {spec.name!r} is configured twice")
-    needed = resolved_inputs(stage, configured_before)
+    needed = resolved_inputs(stage, configured_before, spec.params)
     missing = [name for name in needed if name not in configured_before]
     if missing:
         errors.append(f"stage {spec.name!r} reads {missing}, which must be configured before it")

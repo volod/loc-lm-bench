@@ -2,9 +2,10 @@
 
 The skeleton every later recovery stage plugs into: one `book-ocr` run over a scanned PDF, with the
 source identified by checksum, a per-page inventory, a per-page, per-stage status ledger, a
-content-addressed stage cache, and a processing report. It ships with one real stage (`render`) and
-two deterministic stand-ins, so the whole ledger -- resume, reuse, failure isolation -- runs over a
-real book before any OCR choice exists. Operator usage: [book-ocr guide](../../../guides/data-prep/book-ocr.md).
+content-addressed stage cache, and a processing report. Render, signals, variants, page classes,
+and the recognition stages ship on that seam, plus two deterministic stand-ins, so resume, reuse,
+and failure isolation run over a real book. Operator usage:
+[book-ocr guide](../../../guides/data-prep/book-ocr.md).
 
 ## Where it lives
 
@@ -20,10 +21,10 @@ real book before any OCR choice exists. Operator usage: [book-ocr guide](../../.
 | `src/llb/prep/book/ledger/` | The page manifest projected from the stage records (`manifest.py`); block assembly is the [block ledger](block-ledger.md) |
 | `src/llb/prep/book/report.py`, `logs.py` | The Markdown report and the JSON-lines event log |
 | `src/llb/prep/book/models.py` | Stage-model availability: `ollama:<tag>` against the daemon's served tags, `fake:<name>` |
-| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
-| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, `score`, and `engines` |
-| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `src/llb/artifacts/data_prep/book.py` | The six registered families |
-| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-engines` |
+| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `classes`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
+| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, `score`, `pilot-select`, and `engines` |
+| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `src/llb/artifacts/data_prep/book.py` | The eight registered families |
+| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-pilot-select`, `make book-ocr-engines` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
 synthetic six-page scan built by `tests/llb/prep/book/_scan_factory.py` -- grey line patterns at

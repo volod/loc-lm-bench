@@ -134,6 +134,23 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-page-classes
+  name: llb.book-ocr-page-classes
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-page-classes/1.0.0.schema.json
+  description: Every class one scanned page matches, and the class an engine stage
+    routes on.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-page-manifest
   name: llb.book-ocr-page-manifest
   logicalType: object
@@ -156,6 +173,23 @@ schema:
   physicalType: file
   physicalName: llb.book-ocr-page-signals/1.0.0.schema.json
   description: One scanned page's measured signal vector.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-pilot-selection
+  name: llb.book-ocr-pilot-selection
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-pilot-selection/1.0.0.schema.json
+  description: The seeded pilot pages, the class each one represents, and the signals
+    that placed it.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

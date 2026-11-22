@@ -185,7 +185,11 @@ def _drive_stage(
     if opener is not None:
         opener()
     try:
-        for pdf_page in batch:
+        order = list(batch)
+        order_fn = getattr(stage, "batch_order", None)
+        if order_fn is not None:
+            order = order_fn(run_dir, config, batch, spec)
+        for pdf_page in order:
             work = PageWork(
                 run_dir=run_dir,
                 page_id=page_id(pdf_page, config.source.page_count),

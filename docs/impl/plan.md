@@ -59,48 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-pilot-page-selection
-
-Hand-picked pilot pages bias the pilot toward what someone happened to remember. Select them from
-measured page signals and cheap content signals, stratified by the page classes the pilot must
-cover, with ordinary pages kept as a control. The same classes are what a full run routes on, and
-nothing yet assigns one: `page_class` is a single parameter for the whole run, so `by_page_class`
-cannot fire on a real book, and the engine lease holds one engine at a time, so a batch whose pages
-alternate between two routed engines would restart a server -- minutes for a vLLM model -- at every
-switch.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- the selection over the target book is a CPU-only signal pass.
-- Dependencies: the per-page signal vector is
-  [page signals and variants](current/book-recovery/page-preprocessing.md); the target scan is
-  available locally under `DATA_DIR`; per-class engine selection and the batch-scoped server are
-  the [block ledger](current/book-recovery/block-ledger.md#engines) seam.
-- User-visible outcome: `llb book-ocr pilot-select <run-dir> --size <n>` writes a reproducible pilot
-  set of 20-30 PDF pages, each with the class it represents and the signal values that placed it;
-  every page of a run carries its class set as a stage output, and an engine stage's
-  `by_page_class` routes on it.
-- Scope boundary: in scope -- stratified, seeded selection over the declared classes (severe
-  curvature, gutter and corner text, grey or shadowed background, dense formulas, large or irregular
-  tables, multi-column layout, labelled diagrams, small footnotes, landscape, normal); cheap content
-  signals (formula density, ruling lines, figure area, column count, footnote band); a coverage
-  report naming any class with no qualifying page; a class stage over every page with a declared
-  precedence for a page in several classes; engine stages reading the class from that stage, so it
-  enters their cache key through the input digest; a routed stage running each batch's pages grouped
-  by selected engine, so each engine opens at most once per batch. Out of scope -- transcription,
-  the comparison, and which engine serves a class (the pilot decides it).
-- Data and artifact paths: the target book's pilot list committed at
-  `samples/book_ocr/<book-slug>/pilot_pages.json` (source checksum, PDF page numbers, classes,
-  signals -- no page image and no recovered text); the per-page class and the selection outputs
-  inside the run directory.
-- Execution path: CPU-only fixture tests inside `make ci`; one signal pass over the target scan;
-  `make book-ocr-pilot-select` (with a `##` help description) wraps the command.
-- Acceptance gates: `make ci` green; the selection is deterministic under its seed; every declared
-  class is covered or reported empty by name; the committed list for the target book carries the
-  source checksum it was selected from; a page whose class changes re-runs only the stages its class
-  routes; a fixture batch of alternating classes opens each routed engine once.
-- Documentation target: `docs/impl/current/book-recovery/tool-selection.md` and the routing section
-  of [block ledger](current/book-recovery/block-ledger.md#engines).
-
 #### book-reading-resolution-and-correction-overlay
 
 The ledger keeps every engine's raw reading and chooses none, and the spec puts every correction --
@@ -360,9 +318,10 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-pilot-page-selection`, `book-pilot-reference-transcription`
+- Requires: `book-pilot-reference-transcription`
 - Dependencies: the [quality metrics](current/book-recovery/quality-metrics.md), the
-  [block ledger](current/book-recovery/block-ledger.md), and the
+  [block ledger](current/book-recovery/block-ledger.md), the
+  [page classes](current/book-recovery/tool-selection.md#page-classes), and the
   [page variants](current/book-recovery/page-preprocessing.md) a variant policy chooses among.
 - User-visible outcome: a recorded comparison of each candidate pipeline -- engine combinations,
   variant policies, and per-class routing -- against the existing lane on every metric per page
@@ -593,7 +552,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-pilot-page-selection`, `book-reading-resolution-and-correction-overlay`,
+- Requires: `book-reading-resolution-and-correction-overlay`,
   `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
   `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
@@ -1700,10 +1659,10 @@ candidates and accepted unread would hand the pilot to whichever candidate draft
   merge of at least two shortlisted engines, with every disagreement flagged and no engine named,
   keeps the unedited pre-draft, and prepares a side-by-side worksheet per page; a person must
   correct and accept each page against the scan.
-- Requires: `book-pilot-page-selection`
 - Dependencies: the reference format is
-  [quality metrics](current/book-recovery/quality-metrics.md). The pilot list comes from the
-  required task. Human step that gates completion: a reviewer reads every pilot page against its
+  [quality metrics](current/book-recovery/quality-metrics.md). The pilot list is
+  [page classes](current/book-recovery/tool-selection.md#page-classes). Human step that gates
+  completion: a reviewer reads every pilot page against its
   scan and corrects text,
   LaTeX, table structure, figure boxes, caption links, reading order, and the printed page number,
   then records an accept per page.

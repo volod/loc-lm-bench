@@ -16,27 +16,32 @@ authors, which this project reads for its data-classification declaration and ne
 
 The models live under `src/llb/core/contracts/data_prep/` (`corpus.py`, `goldset.py`,
 `ontology.py`, `external_draft.py`, `conflicts.py`, `linkage.py`, `review.py`, `book.py`,
-`book_blocks.py`, `book_preprocess.py`); the
+`book_blocks.py`, `book_preprocess.py`, `book_classes.py`); the
 declarations and their migrations live under `src/llb/artifacts/data_prep/` (`families.py`,
 `migrations.py`, `book.py`).
 
 ## Scanned-book run families
 
-A `book-ocr` run writes six registered families, all new with
+A `book-ocr` run writes eight registered families, all new with
 [scanned book recovery](../book-recovery.md) and so each at `1.0.0` with no legacy read form:
 `llb.book-ocr-block-ledger` (`pages/<pNNNN>/blocks.json`, one page's blocks, raw readings, and
 uncertainty spans; see [block ledger](../book-recovery/block-ledger.md)),
+`llb.book-ocr-page-classes` (`pages/<pNNNN>/classes.json`, the classes a page matches and the
+signals that placed it; see [page classes](../book-recovery/tool-selection.md#page-classes)),
 `llb.book-ocr-page-signals` (`pages/<pNNNN>/signals.json`, the measured signal vector; see
 [page signals and variants](../book-recovery/page-preprocessing.md)),
+`llb.book-ocr-pilot-selection` (`pilot/selection.json`, the seeded pilot drawn from those
+classes),
 `llb.book-ocr-variant-manifest` (`pages/<pNNNN>/variants/manifest.json`, which corrections were
 kept and the point map of each geometric one),
 `llb.book-ocr-run-config` (`config.json`, which a resume reads instead of the command line),
 `llb.book-ocr-stage-record` (`pages/<pNNNN>/<stage>/stage.json`, the outcome and cache key of one
 stage on one page), and `llb.book-ocr-page-manifest` (`metadata/page_manifest.json`, the per-page,
 per-stage ledger). The block model lives in `src/llb/core/contracts/data_prep/book_blocks.py`;
-the signal and variant models live in `book_preprocess.py`; the other three live in `book.py`.
-The declarations are in `src/llb/artifacts/data_prep/book.py`. The run's processing report and
-JSON-lines log stay unregistered, like every human or diagnostic report here.
+the class and pilot models live in `book_classes.py`; the signal and variant models live in
+`book_preprocess.py`; the other three live in `book.py`. The declarations are in
+`src/llb/artifacts/data_prep/book.py`. The run's processing report and JSON-lines log stay
+unregistered, like every human or diagnostic report here.
 
 ## Reading what this project already wrote
 

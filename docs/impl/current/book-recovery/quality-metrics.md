@@ -23,7 +23,7 @@ the rules below.
 | Field | Meaning |
 | --- | --- |
 | `pdf_page` | 1-based page in the PDF |
-| `page_class` | Any non-empty string. The class vocabulary belongs to the later page-selection task |
+| `page_class` | Any non-empty string. The class stage's ids and precedence are [page classes](tool-selection.md#page-classes). The score still accepts any other non-empty string |
 | `printed_page` | The number printed on the page, as text |
 | `width`, `height` | The rendered page, in pixels |
 | `blocks` | At least one block |
