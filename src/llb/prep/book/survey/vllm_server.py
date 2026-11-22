@@ -169,6 +169,14 @@ def response_text(raw: str) -> str:
     return raw
 
 
+def sent_size(width: int, height: int, max_side: int | None) -> tuple[int, int]:
+    """The pixel size a page is sent at: unchanged, or scaled so its longer side is `max_side`."""
+    if max_side is None or max(width, height) <= max_side:
+        return width, height
+    scale = max_side / max(width, height)
+    return round(width * scale), round(height * scale)
+
+
 def _page_bytes(image: Path, max_side: int | None) -> tuple[bytes, str]:
     """The page as sent: unchanged, or scaled so its longer side is `max_side` (PNG)."""
     kind = "png" if image.suffix == ".png" else "jpeg"
@@ -177,18 +185,18 @@ def _page_bytes(image: Path, max_side: int | None) -> tuple[bytes, str]:
     import fitz
 
     pix = fitz.Pixmap(str(image))
-    scale = max_side / max(pix.width, pix.height)
-    if scale >= 1:
+    width, height = sent_size(pix.width, pix.height, max_side)
+    if (width, height) == (pix.width, pix.height):
         return image.read_bytes(), kind
-    scaled = fitz.Pixmap(pix, round(pix.width * scale), round(pix.height * scale), None)
+    scaled = fitz.Pixmap(pix, width, height, None)
     data: bytes = scaled.tobytes("png")
     return data, "png"
 
 
-def read_page(
+def chat_content(
     base: str, model: str, prompt: str, image: Path, timeout_s: float, max_side: int | None = None
 ) -> str:
-    """One OpenAI-compatible chat request with the page image; returns the reading."""
+    """One OpenAI-compatible chat request; the message content, not flattened to plain text."""
     import httpx
 
     data, kind = _page_bytes(image, max_side)
@@ -209,4 +217,11 @@ def read_page(
     )
     if response.status_code >= 400:
         raise ServerError(f"HTTP {response.status_code}: {response.text[:500]}")
-    return response_text(str(response.json()["choices"][0]["message"]["content"] or ""))
+    return str(response.json()["choices"][0]["message"]["content"] or "")
+
+
+def read_page(
+    base: str, model: str, prompt: str, image: Path, timeout_s: float, max_side: int | None = None
+) -> str:
+    """One OpenAI-compatible chat request with the page image; returns the reading."""
+    return response_text(chat_content(base, model, prompt, image, timeout_s, max_side))

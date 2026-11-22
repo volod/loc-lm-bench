@@ -21,13 +21,16 @@ declarations and their migrations live under `src/llb/artifacts/data_prep/` (`fa
 
 ## Scanned-book run families
 
-A `book-ocr` run writes three registered families, all new with
+A `book-ocr` run writes four registered families, all new with
 [scanned book recovery](../book-recovery.md) and so each at `1.0.0` with no legacy read form:
+`llb.book-ocr-block-ledger` (`pages/<pNNNN>/blocks.json`, one page's blocks, raw readings, and
+uncertainty spans; see [block ledger](../book-recovery/block-ledger.md)),
 `llb.book-ocr-run-config` (`config.json`, which a resume reads instead of the command line),
 `llb.book-ocr-stage-record` (`pages/<pNNNN>/<stage>/stage.json`, the outcome and cache key of one
 stage on one page), and `llb.book-ocr-page-manifest` (`metadata/page_manifest.json`, the per-page,
-per-stage ledger). The models live in `src/llb/core/contracts/data_prep/book.py` and the
-declarations in `src/llb/artifacts/data_prep/book.py`. The run's processing report and JSON-lines
+per-stage ledger). The block model lives in `src/llb/core/contracts/data_prep/book_blocks.py`; the
+other three live in `src/llb/core/contracts/data_prep/book.py`. The declarations are in
+`src/llb/artifacts/data_prep/book.py`. The run's processing report and JSON-lines
 log stay unregistered, like every human or diagnostic report here.
 
 ## Reading what this project already wrote

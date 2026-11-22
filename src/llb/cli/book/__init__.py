@@ -12,6 +12,7 @@ book_app = typer.Typer(
 )
 app.add_typer(book_app, name="book-ocr")
 
+import llb.cli.book.engines  # noqa: E402,F401
 import llb.cli.book.run  # noqa: E402,F401
 import llb.cli.book.status  # noqa: E402,F401
 import llb.cli.book.survey  # noqa: E402,F401

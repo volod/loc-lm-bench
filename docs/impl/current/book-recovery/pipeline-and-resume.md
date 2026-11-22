@@ -17,12 +17,13 @@ real book before any OCR choice exists. Operator usage: [book-ocr guide](../../.
 | `src/llb/prep/book/ranges.py` | Page-range parsing, batching, page ids |
 | `src/llb/prep/book/source.py` | Source fingerprint (the PDF lane's `_sha256_file`), the copy, symlink, and reference policies, the overlap refusal, resume verification |
 | `src/llb/prep/book/inventory.py` | Document diagnostics (the PDF lane's `inspect_pdf`), per-page inventory, native-resolution rendering |
-| `src/llb/prep/book/ledger.py`, `report.py`, `logs.py` | The page manifest projected from the stage records, the Markdown report, the JSON-lines event log |
+| `src/llb/prep/book/ledger/` | The page manifest projected from the stage records (`manifest.py`); block assembly is the [block ledger](block-ledger.md) |
+| `src/llb/prep/book/report.py`, `logs.py` | The Markdown report and the JSON-lines event log |
 | `src/llb/prep/book/models.py` | Stage-model availability: `ollama:<tag>` against the daemon's served tags, `fake:<name>` |
-| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `fake-preprocess`, `fake-ocr` |
-| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run` and `status` |
-| `src/llb/core/contracts/data_prep/book.py`, `src/llb/artifacts/data_prep/book.py` | The three registered families |
-| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status` |
+| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
+| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, and `engines` |
+| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `src/llb/artifacts/data_prep/book.py` | The four registered families |
+| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-engines` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
 synthetic six-page scan built by `tests/llb/prep/book/_scan_factory.py` -- grey line patterns at
@@ -83,11 +84,13 @@ upright; that is a measured page signal owned by `book-page-signals-and-variants
 
 ## Contracts
 
-`config.json`, every `stage.json`, and `metadata/page_manifest.json` are registered families --
-`llb.book-ocr-run-config`, `llb.book-ocr-stage-record`, `llb.book-ocr-page-manifest`, each at
-`1.0.0` with no older form (see [data-prep contracts](../artifact-contracts/data-prep-contracts.md#scanned-book-run-families)).
-The processing report and the JSON-lines log are human and diagnostic outputs and stay unregistered,
-as the data-prep policy does for Markdown reports.
+`config.json`, every `stage.json`, `pages/<pNNNN>/blocks.json`, and `metadata/page_manifest.json`
+are registered families -- `llb.book-ocr-run-config`, `llb.book-ocr-stage-record`,
+`llb.book-ocr-block-ledger`, and `llb.book-ocr-page-manifest`, each at `1.0.0` with no older form
+(see [data-prep contracts](../artifact-contracts/data-prep-contracts.md#scanned-book-run-families)).
+The block ledger is what a later stage reads
+([block ledger](block-ledger.md)). The processing report and the JSON-lines log are human and
+diagnostic outputs and stay unregistered, as the data-prep policy does for Markdown reports.
 
 ## Evidence
 

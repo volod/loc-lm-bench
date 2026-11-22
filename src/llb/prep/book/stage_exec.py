@@ -11,6 +11,7 @@ directory is all it leaves, and the resume deletes it.
 import logging
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -36,8 +37,9 @@ from llb.prep.book.constants import (
     STATUS_DONE,
     STATUS_FAILED,
 )
+from llb.prep.book.ledger.io import publish_page_ledger
 from llb.prep.book.logs import log_event
-from llb.prep.book.stages import Stage, StageContext
+from llb.prep.book.stages import Stage, StageContext, resolved_inputs
 
 if TYPE_CHECKING:
     import fitz
@@ -71,14 +73,16 @@ class _Keyed:
     inputs: dict[str, Path]
 
 
-def _keyed(work: PageWork, stage: Stage, spec: BookStageSpec) -> _Keyed | None:
+def _keyed(
+    work: PageWork, stage: Stage, spec: BookStageSpec, configured_before: Sequence[str]
+) -> _Keyed | None:
     """The stage's cache key on this page, or None when an upstream stage is not complete."""
     digests: dict[str, str] = {}
     inputs: dict[str, Path] = {}
     if stage.reads_source:
         digests["source"] = work.source_sha256
         digests["pdf_page"] = str(work.pdf_page)
-    for upstream in stage.inputs:
+    for upstream in resolved_inputs(stage, configured_before):
         directory = stage_dir(work.run_dir, work.page_id, upstream)
         record = read_record(directory)
         if record is None or record.status != STATUS_DONE:
@@ -142,7 +146,12 @@ def _reuse(work: PageWork, stage: Stage, keyed: _Keyed, index: ReuseIndex) -> bo
 
 
 def run_stage(
-    work: PageWork, stage: Stage, spec: BookStageSpec, max_attempts: int, index: ReuseIndex
+    work: PageWork,
+    stage: Stage,
+    spec: BookStageSpec,
+    max_attempts: int,
+    index: ReuseIndex,
+    configured_before: Sequence[str] = (),
 ) -> str:
     """Bring one stage on one page to a committed state; returns what happened."""
     fields: dict[str, Any] = {
@@ -150,7 +159,7 @@ def run_stage(
         "pdf_page": work.pdf_page,
         "stage": stage.name,
     }
-    keyed = _keyed(work, stage, spec)
+    keyed = _keyed(work, stage, spec, configured_before)
     if keyed is None:
         log_event("stage_blocked", **fields)
         return OUTCOME_BLOCKED
@@ -163,9 +172,11 @@ def run_stage(
         and outputs_intact(final, existing)
     ):
         log_event("stage_cached", cache_key=keyed.key, **fields)
+        publish_page_ledger(final)
         return OUTCOME_CACHED
     if _reuse(work, stage, keyed, index):
         log_event("stage_reused", cache_key=keyed.key, reused_from=str(index.run_dir), **fields)
+        publish_page_ledger(final)
         return OUTCOME_REUSED
     error = ""
     for attempt in range(1, max_attempts + 1):
@@ -201,6 +212,7 @@ def run_stage(
             meta=dict(result.meta),
         )
         commit(partial, final, record)
+        publish_page_ledger(final)
         log_event("stage_done", attempt=attempt, duration_s=duration, **fields)
         return OUTCOME_RAN
     partial = fresh_partial(work.run_dir, work.page_id, stage.name)

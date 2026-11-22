@@ -186,6 +186,28 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "One scanned page's blocks, raw engine readings, and uncertainty spans.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-block-ledger",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-block-ledger/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "Per-page, per-stage ledger of one scanned-book recovery run.",
       "extension_point": null,
       "legacy_read_version": null,

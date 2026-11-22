@@ -7,7 +7,9 @@ into its own environment and run on the same synthetic page with a known transcr
 real page of the target handbook. This page records the survey of 2026-11-19 and its 2026-11-20
 extension to the models that need vLLM in Docker; the pilot's measured choice per page class will
 be recorded here too, and it decides. The survey only bounds what it may choose from -- the
-[selection for the pilot](#selection-for-the-pilot) says which candidates that is.
+[selection for the pilot](#selection-for-the-pilot) says which candidates that is. A run selects
+one of them per stage ([block ledger](block-ledger.md)); which one serves a page class is still
+the pilot's decision.
 
 Operator usage: [book-ocr guide, recovery-tool survey](../../../guides/data-prep/book-ocr.md#recovery-tool-survey).
 

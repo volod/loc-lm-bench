@@ -2,11 +2,11 @@
 
 `book-ocr` drives a scanned PDF -- a book of page photographs with no text layer -- through a
 registry of recovery stages one page at a time, records every stage's outcome per page, and resumes
-after an interruption without repeating a completed stage. Today the registry holds the `render`
-stage (each page at its scan's native resolution) and two deterministic stand-in stages; the
-preprocessing, recognition, structure, and rendering stages of
-[scanned book recovery](../../design/spec.md#scanned-book-recovery) plug into the same run as they
-land. For a born-digital PDF, use the [PDF corpus lane](pdf-corpus-prep.md) instead.
+after an interruption without repeating a completed stage. The registry holds `render` (each page
+at its scan's native resolution), the recognition stages `layout`, `ocr`, `formula`, and `table`,
+the `blocks` stage that merges them, and two deterministic stand-in stages. Preprocessing,
+structure, and rendering plug into the same run as they land. For a born-digital PDF, use the
+[PDF corpus lane](pdf-corpus-prep.md) instead.
 
 What it does and why it is built this way:
 [pipeline and resume](../../impl/current/book-recovery/pipeline-and-resume.md).
@@ -71,10 +71,21 @@ CLI sets one without a file.
 | `render` | the source page | `page.png` | `dpi`: `native` (the scan's own resolution) or an integer; `colorspace`: `auto` (grey when every image on the page is single-channel), `grey`, `rgb` |
 | `fake-preprocess` | `render` | `variant.json` naming the original image | `fail_pages`, `note` |
 | `fake-ocr` | `render` | `text.txt`, a placeholder naming the page and image digest | `fail_pages`, `note` |
+| `layout`, `ocr`, `formula`, `table` | `render` | `reading.json`, that engine's blocks before the merge | `engine` (required), `variant`, `page_class`, `by_page_class` |
+| `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none |
 
-The two `fake-` stages recognise nothing: they exist so the ledger, resume, reuse, and failure
-handling can be driven over a whole real book before any engine is wired. `fail_pages` forces a
-failure on the named PDF pages.
+The two `fake-` stages recognise nothing. They exist so the run ledger, resume, reuse, and failure
+handling can be driven without an engine. `fail_pages` forces a failure on the named PDF pages.
+
+A recognition stage's `engine` is an id from `make book-ocr-engines`. `by_page_class` maps a page
+class to a different id; the cache key records the engine that ran. `blocks` refuses a run that
+configured no recognition stage. An engine that is not installed refuses the dry run by name
+(`EngineUnavailable`) and writes nothing. What a block contains, and how two engines disagree, is
+[the block ledger](../../impl/current/book-recovery/block-ledger.md).
+
+```sh
+make book-ocr-engines    # id, stages, and ready or refused for each registered engine
+```
 
 ## Interrupt, resume, inspect
 
@@ -99,7 +110,8 @@ refused before any stage ran, `130` on Ctrl-C.
 $DATA_DIR/book-ocr/<run_timestamp>/
   config.json                    what the run is (llb.book-ocr-run-config)
   source/<name>.pdf              the source, under the copy or symlink policy
-  pages/<pNNNN>/<stage>/         one committed stage: its outputs and stage.json (llb.book-ocr-stage-record)
+  pages/<pNNNN>/<stage>/         one committed stage: outputs and stage.json
+  pages/<pNNNN>/blocks.json      the page block ledger (llb.book-ocr-block-ledger)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
   metadata/processing_report.md  human-readable summary and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
@@ -110,9 +122,9 @@ render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
 
 ## Recovery-tool survey
 
-Before any engine is wired into a run, `book-ocr survey` installs each candidate recovery tool into
-its own environment and runs it on one page, so the pilot compares only tools that demonstrably run
-on this host. The candidates, the shortlist per stage, and the smoke results are in
+`book-ocr survey` installs each candidate recovery tool into its own environment and runs it on one
+page, so the pilot compares only tools that demonstrably run on this host. The candidates, the
+shortlist per stage, and the smoke results are in
 [tool selection](../../impl/current/book-recovery/tool-selection.md).
 
 ```sh

@@ -92,9 +92,26 @@ class StageRegistry:
         return name in self._stages
 
 
+def resolved_inputs(stage: Stage, configured_before: Iterable[str]) -> tuple[str, ...]:
+    """The stages `stage` reads, given what was configured ahead of it.
+
+    A stage with `inputs_for` chooses -- the block ledger reads whichever recognition stages the
+    run configured. Every other stage reads the inputs it declared.
+    """
+    choose = getattr(stage, "inputs_for", None)
+    before = tuple(configured_before)
+    if choose is not None:
+        return tuple(choose(before))
+    return tuple(stage.inputs)
+
+
 def default_registry() -> StageRegistry:
     """The stages a `book-ocr` run can name today."""
+    from llb.prep.book.engines.registry import default_adapter_registry
     from llb.prep.book.stages.fake import FAKE_STAGES
+    from llb.prep.book.stages.recognize import recognition_stages
     from llb.prep.book.stages.render import RenderStage
 
-    return StageRegistry((RenderStage(), *FAKE_STAGES))
+    return StageRegistry(
+        (RenderStage(), *FAKE_STAGES, *recognition_stages(default_adapter_registry()))
+    )

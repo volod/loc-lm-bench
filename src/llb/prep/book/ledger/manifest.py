@@ -32,7 +32,7 @@ from llb.prep.book.constants import (
     STATUS_PENDING,
 )
 from llb.prep.book.ranges import batches, page_id
-from llb.prep.book.stages import StageRegistry
+from llb.prep.book.stages import StageRegistry, resolved_inputs
 from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
 
 REUSED = "reused"
@@ -55,9 +55,11 @@ def read_manifest(run_dir: Path) -> BookPageManifest | None:
 def _upstream(
     registry: StageRegistry | None, name: str, configured: Sequence[str]
 ) -> tuple[str, ...]:
+    """Stages whose failure blocks `name`. A stage may choose them from what is configured."""
+    before = tuple(configured[: configured.index(name)])
     if registry is not None and name in registry:
-        return registry.get(name).inputs
-    return tuple(configured[: configured.index(name)])  # unknown stage: assume it reads them all
+        return resolved_inputs(registry.get(name), before)
+    return before  # unknown stage: assume it reads everything ahead of it
 
 
 def page_states(

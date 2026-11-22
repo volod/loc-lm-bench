@@ -59,42 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-block-ledger-and-engine-adapters
-
-Every later stage -- correction, structure, rendering, projection -- reads one thing: the block
-ledger. It has to exist under a registered contract before any engine is wired, and engines have to
-plug into it behind one adapter seam, so the pilot can swap them and a run records exactly which
-engine and variant produced each reading.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: engines register as stages behind the `book-ocr` stage seam, whose committed outputs
-  land in `pages/<pNNNN>/<stage>/` ([run ledger and resume](current/book-recovery/pipeline-and-resume.md));
-  the shortlist per stage, its isolated environments, and the output each adapter must drop or
-  normalise are in [tool selection](current/book-recovery/tool-selection.md).
-- User-visible outcome: each page's blocks -- kind, region, reading-order index, raw text per
-  (engine, image variant), confidence, engine and model identity -- persist per page and re-read
-  without re-running an engine; the shortlisted engines are selectable by configuration per stage
-  and per page class.
-- Scope boundary: in scope -- the ledger contract with its block kinds (body, heading, formula,
-  table, figure, caption, footnote, running header, page number, ornament, neighbour-page bleed,
-  unknown); block ids derived from PDF page and in-page ordinal; an adapter protocol for layout, OCR,
-  formula, and table engines with lazy imports and a named refusal when an engine is absent;
-  adapters for the survey's shortlist; multi-variant reconciliation by character alignment, where a
-  disagreement on a digit, sign, decimal point, or symbol is recorded as an uncertainty span and
-  never settled by majority alone; an injected fake engine for CI. Out of scope -- choosing engines,
-  model correction, structure, and rendering.
-- Data and artifact paths: `src/llb/prep/book/ledger/`, `src/llb/prep/book/engines/`;
-  `pages/<pNNNN>/blocks.json` inside the run directory.
-- Execution path: fixture tests inside `make ci`; each real adapter smoke-tested on the CUDA host
-  against the synthetic scan.
-- Acceptance gates: `make ci` green; the ledger round-trips through its model and generated JSON
-  Schema; block ids are stable across reruns and independent of engine timing; a block without a
-  page and region fails validation; a fixture where two variants read `0.05` and `O.05`, or `-` and
-  an em dash, yields an uncertainty span rather than a choice; an absent engine yields a named
-  refusal, not a traceback.
-- Documentation target: `docs/impl/current/book-recovery/block-ledger.md`.
-
 #### book-page-signals-and-variants
 
 One preprocessing recipe either under-treats the curved, shadowed pages or destroys the thin strokes
@@ -135,8 +99,7 @@ pilot number is taken.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-block-ledger-and-engine-adapters`
-- Dependencies: none.
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
 - User-visible outcome: `llb book-ocr score --reference <reference-dir> <run-dir>` reports, per page
   and per page class: character and word error, missing and duplicated text, reading-order
   agreement, the dangerous-substitution count per confusion class, formula fidelity, table-structure
@@ -192,9 +155,8 @@ reviewer can act on. An omitted passage and a passage nobody could read must nev
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-block-ledger-and-engine-adapters`
-- Dependencies: none. The decision UI reuses the
-  [review workbench](current/review-workbench.md) adapter seam.
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md). The decision UI reuses
+  the [review workbench](current/review-workbench.md) adapter seam.
 - User-visible outcome: every unreadable or uncertain span becomes a short visible marker with its
   PDF page link and, where useful, a padded crop of the region, a row in a page-level quality
   manifest, and an entry in a review queue that opens in the review workbench; a reviewer decision
@@ -225,8 +187,7 @@ evidence is thin the output must say so rather than invent a hierarchy.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-block-ledger-and-engine-adapters`
-- Dependencies: none.
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
 - User-visible outcome: `metadata/document_structure.json` holds the printed-page mapping for every
   PDF page, the hierarchy (book, part, chapter, section, subsection) with page ranges and the
   evidence behind each node, the figure, table, and equation numbering inventory, and the fallback
@@ -382,9 +343,9 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-block-ledger-and-engine-adapters`, `book-page-signals-and-variants`,
-  `book-recovery-quality-metrics`, `book-pilot-page-selection`, `book-pilot-reference-transcription`
-- Dependencies: none.
+- Requires: `book-page-signals-and-variants`, `book-recovery-quality-metrics`,
+  `book-pilot-page-selection`, `book-pilot-reference-transcription`
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
 - User-visible outcome: a recorded comparison of each candidate pipeline -- engine combinations,
   variant policies, and per-class routing -- against the existing lane on every metric per page
   class, with worked examples of each dangerous-substitution class; the winner per class written as
