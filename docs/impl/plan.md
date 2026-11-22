@@ -59,55 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-page-signals-and-variants
-
-One preprocessing recipe either under-treats the curved, shadowed pages or destroys the thin strokes
-on the clean ones. Each page needs measured signals and only the corrections those signals call for,
-with the original rendering always kept beside them. A geometric variant also moves every pixel:
-the ledger records a block's region in the original render's frame, while today an engine stage
-reads only that render and `variant` is a label, so a box read on a rotated or dewarped image has
-no way back to the page it came from.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the page inventory records each image's placement rotation, which does not give
-  content orientation ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#evidence));
-  the shortlisted dewarp and illumination methods and the content each was seen to lose are in
-  [tool selection](current/book-recovery/tool-selection.md#page-preprocessing-dewarp-deskew-illumination);
-  the engine stages and their `variant` parameter are the [block ledger](current/book-recovery/block-ledger.md#engines)
-  seam.
-- User-visible outcome: per page, a recorded signal vector -- skew, line curvature, background
-  unevenness, contrast, blur, gutter-shadow side and width, neighbour-page bleed band, orientation --
-  and the set of image variants generated for it with their parameters, the original among them;
-  an engine stage reads any named variant, and every block it proposes lands in the ledger in the
-  original render's pixel frame.
-- Scope boundary: in scope -- signal measurement; deskew, dewarp (the survey's shortlisted method),
-  illumination and background normalization, local contrast, gutter-shadow correction, gentle
-  denoising, and rotation, each applied only where its signal calls for it; the bleed band recorded
-  as a region rather than blindly cropped; a stroke-preservation guard that refuses a variant
-  erasing thin strokes measured on the original (minus signs, decimal points, rules), and a content
-  guard that refuses a geometric variant losing a text line or the page edge (the survey saw
-  dewarping cut both); no global binarization by default; for every geometric variant (rotation,
-  deskew, dewarp) its recorded transform with a point map back to the original render, a variant
-  whose map does not cover the page refused; the engine stages reading the image of the variant
-  their `variant` parameter names, with each proposed box mapped back before the ledger merge, so
-  regions, crops, and cross-variant reconciliation share one frame. Out of scope -- OCR, choosing the
-  winning variant (reconciliation and the pilot decide that), and super-resolution unless the survey
-  shortlists it as one more variant.
-- Data and artifact paths: `src/llb/prep/book/preprocess/` and `src/llb/prep/book/stages/`;
-  `pages/<pNNNN>/signals.json` and `pages/<pNNNN>/variants/` (each geometric variant with its
-  transform) inside the run directory.
-- Execution path: the OpenCV path runs inside `make ci` over synthetic pages with planted
-  curvature, shadow, blur, bleed, and rotation; the GPU dewarp model is smoke-tested on the host.
-- Acceptance gates: `make ci` green; each planted defect is detected and a clean synthetic page
-  triggers no correction; a variant that erases a planted decimal point or minus sign is refused by
-  the stroke guard, and a dewarp that drops a planted edge line by the content guard; a synthetic
-  page placed upside down is detected and read upright; a block read on a rotated and deskewed
-  variant lands within a stated pixel tolerance of the same block read on the original; the OpenCV
-  variants are byte-identical on rerun (a GPU variant is reproduced through the stage cache, not
-  recomputation); the original rendering is never altered.
-- Documentation target: `docs/impl/current/book-recovery/page-preprocessing.md`.
-
 #### book-recovery-quality-metrics
 
 The pilot comparison and the correction adoption gate both need metrics that understand how
@@ -160,10 +111,10 @@ switch.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- the selection over the target book is a CPU-only signal pass.
-- Requires: `book-page-signals-and-variants`
-- Dependencies: the target scan available locally under `DATA_DIR`; per-class engine selection and
-  the batch-scoped server are the [block ledger](current/book-recovery/block-ledger.md#engines)
-  seam.
+- Dependencies: the per-page signal vector is
+  [page signals and variants](current/book-recovery/page-preprocessing.md); the target scan is
+  available locally under `DATA_DIR`; per-class engine selection and the batch-scoped server are
+  the [block ledger](current/book-recovery/block-ledger.md#engines) seam.
 - User-visible outcome: `llb book-ocr pilot-select <run-dir> --size <n>` writes a reproducible pilot
   set of 20-30 PDF pages, each with the class it represents and the signal values that placed it;
   every page of a run carries its class set as a stage output, and an engine stage's
@@ -449,9 +400,10 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-page-signals-and-variants`, `book-recovery-quality-metrics`,
-  `book-pilot-page-selection`, `book-pilot-reference-transcription`
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md).
+- Requires: `book-recovery-quality-metrics`, `book-pilot-page-selection`,
+  `book-pilot-reference-transcription`
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and the
+  [page variants](current/book-recovery/page-preprocessing.md) a variant policy chooses among.
 - User-visible outcome: a recorded comparison of each candidate pipeline -- engine combinations,
   variant policies, and per-class routing -- against the existing lane on every metric per page
   class, with worked examples of each dangerous-substitution class; the winner per class written as
@@ -681,7 +633,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-page-signals-and-variants`, `book-recovery-quality-metrics`,
+- Requires: `book-recovery-quality-metrics`,
   `book-pilot-page-selection`, `book-reading-resolution-and-correction-overlay`,
   `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
   `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,

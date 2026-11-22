@@ -13,7 +13,6 @@ from llb.prep.book.engines.lease import EngineLease
 from llb.prep.book.engines.pdf_page import write_page_pdf
 from llb.prep.book.engines.protocol import (
     EngineRead,
-    EngineRequest,
     EngineUnavailable,
     read_reading,
     write_reading,
@@ -21,6 +20,7 @@ from llb.prep.book.engines.protocol import (
 from llb.prep.book.engines.registry import AdapterRegistry
 from llb.prep.book.ledger.assemble import assemble
 from llb.prep.book.ledger.io import write_ledger
+from llb.prep.book.preprocess.constants import ORIGINAL, VARIANTS_STAGE, VARIANT_NAMES
 from llb.prep.book.stages import StageContext, StageResult
 from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
 
@@ -35,7 +35,7 @@ BLOCKS_TOOL_IDENTITY = "llb-book-blocks 1"
 _STAGE_VERSION = "1"
 _PAGE_PDF = "page.pdf"
 _ENGINE_PARAMS = ("engine", "variant", "page_class", "by_page_class")
-_DEFAULT_VARIANT = "original"
+_DEFAULT_VARIANT = ORIGINAL
 
 
 class EngineStage:
@@ -77,13 +77,30 @@ class EngineStage:
     ) -> dict[str, Any]:
         return {"engine": selected_engine(params), "variant": _variant(params)}
 
+    def inputs_for(self, configured_before: Sequence[str]) -> tuple[str, ...]:
+        if VARIANTS_STAGE in configured_before:
+            return (RENDER_STAGE, VARIANTS_STAGE)
+        return (RENDER_STAGE,)
+
+    def validate_order(
+        self, params: Mapping[str, Any], configured_before: Sequence[str]
+    ) -> list[str]:
+        name = _variant(params)
+        if name == _DEFAULT_VARIANT:
+            return []
+        if name not in VARIANT_NAMES:
+            return [f"{self.name}: variant {name!r} is not a known variant"]
+        if VARIANTS_STAGE not in configured_before:
+            return [f"{self.name}: variant {name!r} needs the variants stage before it"]
+        return []
+
     def run(self, ctx: StageContext) -> StageResult:
         adapter = self._adapter(ctx)
         self._lease.use(adapter)
         pdf = ctx.work_dir / _PAGE_PDF
         write_page_pdf(ctx.document, ctx.pdf_page, pdf)
         try:
-            reading = adapter.read(_request(ctx, pdf), self.name)
+            reading = _read(self.name, ctx, adapter, pdf)
         finally:
             pdf.unlink(missing_ok=True)
         write_reading(ctx.work_dir, reading)
@@ -180,18 +197,15 @@ def _variant(params: Mapping[str, Any]) -> str:
     return str(params.get("variant") or _DEFAULT_VARIANT)
 
 
-def _request(ctx: StageContext, pdf: Any) -> EngineRequest:
-    image = ctx.inputs[RENDER_STAGE] / PAGE_IMAGE_FILENAME
-    width, height = png_size(image)
-    return EngineRequest(
-        image=image,
-        pdf=pdf,
-        work_dir=ctx.work_dir,
-        variant=_variant(ctx.params),
-        model=ctx.model,
-        width=width,
-        height=height,
-    )
+def _read(stage: str, ctx: StageContext, adapter: Any, pdf: Any) -> EngineRead:
+    from llb.prep.book.preprocess.frames import engine_request, reading_on_render
+
+    name = _variant(ctx.params)
+    variants = ctx.inputs.get(VARIANTS_STAGE)
+    render = ctx.inputs[RENDER_STAGE] / PAGE_IMAGE_FILENAME
+    request = engine_request(render, variants, name, pdf, ctx.work_dir, ctx.model)
+    width, height = png_size(render)
+    return reading_on_render(adapter.read(request, stage), variants, width, height)
 
 
 def _readings(ctx: StageContext) -> list[EngineRead]:

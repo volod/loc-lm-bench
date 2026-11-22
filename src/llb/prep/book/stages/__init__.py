@@ -109,9 +109,16 @@ def default_registry() -> StageRegistry:
     """The stages a `book-ocr` run can name today."""
     from llb.prep.book.engines.registry import default_adapter_registry
     from llb.prep.book.stages.fake import FAKE_STAGES
+    from llb.prep.book.stages.preprocess import SignalsStage, VariantsStage
     from llb.prep.book.stages.recognize import recognition_stages
     from llb.prep.book.stages.render import RenderStage
 
     return StageRegistry(
-        (RenderStage(), *FAKE_STAGES, *recognition_stages(default_adapter_registry()))
+        (
+            RenderStage(),
+            SignalsStage(),
+            VariantsStage(),
+            *FAKE_STAGES,
+            *recognition_stages(default_adapter_registry()),
+        )
     )

@@ -150,6 +150,22 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-page-signals
+  name: llb.book-ocr-page-signals
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-page-signals/1.0.0.schema.json
+  description: One scanned page's measured signal vector.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-run-config
   name: llb.book-ocr-run-config
   logicalType: object
@@ -172,6 +188,22 @@ schema:
   physicalType: file
   physicalName: llb.book-ocr-stage-record/1.0.0.schema.json
   description: One stage's outcome on one page and the cache key it was produced under.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-variant-manifest
+  name: llb.book-ocr-variant-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-variant-manifest/1.0.0.schema.json
+  description: The image variants generated for one scanned page, and the maps back.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

@@ -38,6 +38,7 @@ from llb.prep.book.constants import (
     STATUS_FAILED,
 )
 from llb.prep.book.ledger.io import publish_page_ledger
+from llb.prep.book.preprocess.records import publish_page_signals
 from llb.prep.book.logs import log_event
 from llb.prep.book.stages import Stage, StageContext, resolved_inputs
 
@@ -172,11 +173,11 @@ def run_stage(
         and outputs_intact(final, existing)
     ):
         log_event("stage_cached", cache_key=keyed.key, **fields)
-        publish_page_ledger(final)
+        _publish(final)
         return OUTCOME_CACHED
     if _reuse(work, stage, keyed, index):
         log_event("stage_reused", cache_key=keyed.key, reused_from=str(index.run_dir), **fields)
-        publish_page_ledger(final)
+        _publish(final)
         return OUTCOME_REUSED
     error = ""
     for attempt in range(1, max_attempts + 1):
@@ -212,7 +213,7 @@ def run_stage(
             meta=dict(result.meta),
         )
         commit(partial, final, record)
-        publish_page_ledger(final)
+        _publish(final)
         log_event("stage_done", attempt=attempt, duration_s=duration, **fields)
         return OUTCOME_RAN
     partial = fresh_partial(work.run_dir, work.page_id, stage.name)
@@ -229,3 +230,9 @@ def run_stage(
     commit(partial, final, record)
     log_event("stage_failed", logging.WARNING, attempts=max_attempts, error=error, **fields)
     return OUTCOME_FAILED
+
+
+def _publish(stage_directory: Path) -> None:
+    """Lift a stage file to the page path later stages are told to open."""
+    publish_page_ledger(stage_directory)
+    publish_page_signals(stage_directory)

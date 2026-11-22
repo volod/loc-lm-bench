@@ -20,9 +20,9 @@ real book before any OCR choice exists. Operator usage: [book-ocr guide](../../.
 | `src/llb/prep/book/ledger/` | The page manifest projected from the stage records (`manifest.py`); block assembly is the [block ledger](block-ledger.md) |
 | `src/llb/prep/book/report.py`, `logs.py` | The Markdown report and the JSON-lines event log |
 | `src/llb/prep/book/models.py` | Stage-model availability: `ollama:<tag>` against the daemon's served tags, `fake:<name>` |
-| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
+| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `fake-preprocess`, `fake-ocr`, and the recognition stages |
 | `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, and `engines` |
-| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `src/llb/artifacts/data_prep/book.py` | The four registered families |
+| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `src/llb/artifacts/data_prep/book.py` | The six registered families |
 | `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-engines` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
@@ -80,7 +80,8 @@ orientation, image count, the largest image's pixel size, its native resolution,
 it is PLACED at, and embedded-text characters. The resolution is measured along the image's own
 pixel rows through its placement matrix, not across the bounding box -- see the evidence below for
 why that matters. The placement rotation says nothing about whether the printed content reads
-upright; that is a measured page signal owned by `book-page-signals-and-variants`.
+upright; that measurement is the signals stage
+([page signals and variants](page-preprocessing.md#what-is-measured)).
 
 ## Contracts
 
@@ -113,7 +114,8 @@ fake-preprocess, fake-ocr`, default batches of 25 and the symlink policy.
   turn and 19 at three quarters. The first build
   measured resolution across the bounding box and read those 45 as 200 dpi; measured along the
   placement matrix all 1,067 read 150 dpi. Sampled page 126 renders upside down, so content
-  orientation cannot be read from the placement, and correcting it is left to the page-signals task.
+  orientation cannot be read from the placement. Measuring and correcting it is the signals stage
+  ([page signals and variants](page-preprocessing.md)).
 - **Content addressing held.** That fix changed the `render` key of every page (its effective
   parameters now carry the resolved resolution). A run reusing the pre-fix run re-rendered all
   1,067 pages, took `fake-preprocess` and `fake-ocr` from the earlier run for the 1,022 pages whose

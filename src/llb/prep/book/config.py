@@ -112,6 +112,9 @@ def _one_stage_errors(
     extra = getattr(stage, "validate_configured", None)
     if extra is not None:
         errors.extend(extra(configured_before))
+    order = getattr(stage, "validate_order", None)
+    if order is not None:
+        errors.extend(order(spec.params, configured_before))
     errors.extend(stage.validate_params(spec.params))
     if stage.model_required and not spec.model:
         errors.append(f"stage {spec.name!r} needs a model")

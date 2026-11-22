@@ -6,18 +6,22 @@ boundary, is [Scanned book recovery](../../design/spec.md#scanned-book-recovery)
 `planned` in the [registry](../../design/spec.md#capability-registry), and its remaining work --
 preprocessing, structure, metrics, pilot, rendering, projection -- is in [the plan](../plan.md).
 
-What exists today is the run skeleton, the block ledger, and the tool survey. `llb book-ocr`
-inventories a scanned PDF, renders each page at its native resolution, drives a registry of
+What exists today is the run skeleton, page signals and variants, the block ledger, and the tool
+survey. `llb book-ocr` inventories a scanned PDF, renders each page at its native resolution,
+measures that render, and writes only the corrections the measurements call for
+([page signals and variants](book-recovery/page-preprocessing.md)). It drives a registry of
 stages page by page with a per-page, per-stage ledger and a content-addressed stage cache, and
 resumes a finished stage instead of repeating it.
-`layout`, `ocr`, `formula`, and `table` run a configured engine; `blocks` merges them into
+`layout`, `ocr`, `formula`, and `table` run a configured engine on the original render or on a
+named variant, and map every box back to the render before `blocks` merges them into
 `pages/<pNNNN>/blocks.json` ([block ledger](book-recovery/block-ledger.md)). `llb book-ocr survey`
 installs every candidate recovery tool into its own environment and smokes it on one synthetic and
-one real page. Preprocessing, structure, and rendering are not wired yet. Operator usage is the
+one real page. Structure and rendering are not wired yet. Operator usage is the
 [book-ocr guide](../../guides/data-prep/book-ocr.md).
 
 | Page | What it answers |
 | --- | --- |
 | [Run ledger and resume](book-recovery/pipeline-and-resume.md) | The run directory, the stage seam, cache keys and atomic commits, failure isolation, source policy, the page inventory, and the full-book kill-and-resume evidence |
+| [Page signals and variants](book-recovery/page-preprocessing.md) | The per-page signal vector, the corrections those signals call for, the guards that refuse a damaged page, and the map that puts an engine box back on the original render |
 | [Block ledger](book-recovery/block-ledger.md) | The page block contract, the engine adapter seam, reconciliation, and how a stage selects an engine |
 | [Tool selection](book-recovery/tool-selection.md) | Which dewarp, layout, OCR, formula, table, converter, and vision-model candidates install and run on this host: the per-stage shortlist with version, licence, VRAM and RAM, install route, and one-page smoke result; what was not installed and why |

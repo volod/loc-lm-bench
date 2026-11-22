@@ -230,6 +230,28 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "One scanned page's measured signal vector.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-page-signals",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-page-signals/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "What one scanned-book recovery run is: source, pages, stages, models.",
       "extension_point": null,
       "legacy_read_version": null,
@@ -258,6 +280,28 @@
       "schema_id": "llb.book-ocr-stage-record",
       "schema_paths": {
         "1.0.0": "llb.book-ocr-stage-record/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "The image variants generated for one scanned page, and the maps back.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-variant-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-variant-manifest/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"

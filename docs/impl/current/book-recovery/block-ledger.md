@@ -18,7 +18,10 @@ ledger does not know stays `unknown`. A figure keeps its region and loses its te
 paragraph an engine invented to describe the picture.
 
 The region is an axis-aligned box in pixels of `pages/<pNNNN>/render/page.png`, origin at the top
-left. A block without a PDF page and a region fails validation. The block id is
+left. An engine that was asked for a different image variant still reports its boxes in that
+frame: the stage maps them through the variant's stored transform before the merge
+([page signals and variants](page-preprocessing.md#where-an-engine-reads)). A block without a PDF
+page and a region fails validation. The block id is
 `<page-id>-b<ordinal>` with the ordinal zero-padded to four digits (`p0300-b0000`). Ids are
 assigned after a sort on geometry and engine, so the order the engines finished in does not change
 them.

@@ -3,9 +3,10 @@
 `book-ocr` drives a scanned PDF -- a book of page photographs with no text layer -- through a
 registry of recovery stages one page at a time, records every stage's outcome per page, and resumes
 after an interruption without repeating a completed stage. The registry holds `render` (each page
-at its scan's native resolution), the recognition stages `layout`, `ocr`, `formula`, and `table`,
-the `blocks` stage that merges them, and two deterministic stand-in stages. Preprocessing,
-structure, and rendering plug into the same run as they land. For a born-digital PDF, use the
+at its scan's native resolution), `signals` and `variants` (the measurements and the corrections
+they call for), the recognition stages `layout`, `ocr`, `formula`, and `table`, the `blocks`
+stage that merges them, and two deterministic stand-in stages. Structure and rendering plug into
+the same run as they land. For a born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
 What it does and why it is built this way:
@@ -69,9 +70,11 @@ CLI sets one without a file.
 | Stage | Reads | Writes | Parameters |
 | --- | --- | --- | --- |
 | `render` | the source page | `page.png` | `dpi`: `native` (the scan's own resolution) or an integer; `colorspace`: `auto` (grey when every image on the page is single-channel), `grey`, `rgb` |
+| `signals` | `render` | `signals.json`, also published at `pages/<pNNNN>/signals.json` | none. The measured thresholds are part of the cache key |
+| `variants` | `render`, `signals` | `manifest.json` and `<name>/page.png` for each kept correction. This stage's directory is `pages/<pNNNN>/variants/` | `dewarp`: `opencv` (default), `page-dewarp`, `uvdoc`, or `auto` |
 | `fake-preprocess` | `render` | `variant.json` naming the original image | `fail_pages`, `note` |
 | `fake-ocr` | `render` | `text.txt`, a placeholder naming the page and image digest | `fail_pages`, `note` |
-| `layout`, `ocr`, `formula`, `table` | `render` | `reading.json`, that engine's blocks before the merge | `engine` (required), `variant`, `page_class`, `by_page_class` |
+| `layout`, `ocr`, `formula`, `table` | `render`, and `variants` when a non-original `variant` is named | `reading.json`, that engine's blocks mapped back onto the render before the merge | `engine` (required), `variant` (`original` by default), `page_class`, `by_page_class` |
 | `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none |
 
 The two `fake-` stages recognise nothing. They exist so the run ledger, resume, reuse, and failure
@@ -111,6 +114,8 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   config.json                    what the run is (llb.book-ocr-run-config)
   source/<name>.pdf              the source, under the copy or symlink policy
   pages/<pNNNN>/<stage>/         one committed stage: outputs and stage.json
+  pages/<pNNNN>/signals.json     the measured signal vector (llb.book-ocr-page-signals)
+  pages/<pNNNN>/variants/        manifest and kept corrections (llb.book-ocr-variant-manifest)
   pages/<pNNNN>/blocks.json      the page block ledger (llb.book-ocr-block-ledger)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
   metadata/processing_report.md  human-readable summary and failed pages
