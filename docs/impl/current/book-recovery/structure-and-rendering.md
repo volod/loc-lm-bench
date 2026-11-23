@@ -99,7 +99,7 @@ render runs [vault validation](#vault-validation) and exits 1 when a check fails
 
 | Module | Role |
 | --- | --- |
-| `src/llb/prep/book/render/` | Names, line joining, section files, Markdown, and publish |
+| `src/llb/prep/book/render/` | Names, line joining, section files, Markdown, cross-reference links, and publish |
 | `src/llb/cli/book/render.py` | `llb book-ocr render` |
 | `make/data-prep/book.mk` | `make book-ocr-render` |
 
@@ -108,9 +108,10 @@ enters git.
 
 ### What a reader opens
 
-The vault holds `00_Table_of_Contents.md`, `content/`, `assets/`, `review/`, `metadata/`, and
-`source/`. A content note is one structure node, or one page-range part when the node's resolved
-text passes 12,000 characters. The cut falls on a block boundary. A formula, a table, and a
+The vault holds `00_Table_of_Contents.md`, the figure, table, and equation lists, `content/`,
+`assets/`, `review/`, `metadata/`, and `source/`. A content note is one structure node, or one
+page-range part when the node's resolved text passes 12,000 characters. The cut falls on a
+block boundary. A formula, a table, and a
 figure with its caption stay whole. A paragraph splits only when that paragraph alone passes
 the cap.
 
@@ -159,6 +160,9 @@ Opening the vault in the app is a later human task.
 | `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
 | `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
 | `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+| `BOOK_REFERENCE_GRAMMAR` | YAML grammar that replaces the handbook cues | the handbook grammar |
+
+Citations are [cross-references](#cross-references).
 
 ### Evidence
 
@@ -178,6 +182,94 @@ the first byte for byte, symlink target included.
 kind `figure` on this slice with no crop. A numbered anchor that changes when only the block
 ordinals change. An Obsidian release that drops `#page=`: the recorded version and the link
 form change together.
+
+## Cross-references
+
+Render links a citation only when one target carries that number. A miss stays the words the
+page printed, and the report counts it. The command prints the totals. It does not print the
+sentence.
+
+`BOOK_REFERENCE_GRAMMAR` is a YAML file and replaces the handbook grammar entirely. A missing
+file, an unknown key, or a grammar with no page cues or no index titles is exit code 2.
+
+The handbook cues are `Fig.` / `Figs.` / `Figure` / `Figures`, `Table` / `Tables`, `Eq.` /
+`Eqs.` / `Equation`, `Sec.` / `Section`, `Chapter` / `Chap.` / `Ch.`, and `p.` / `pp.` /
+`page`. A comma in place of the period (`Fig,`, `Eq,`) is the scanned form of the figure and
+equation cues. Parentheses around an equation number are optional. A comma, `and`, or a dash
+joins further numbers, and each number resolves on its own. `Chaps. 3-6` cites chapters 3 and
+6. `Chapter 22.1.5` does not cite chapter 22: a dotted tail is not a range. `Fig. 1-1` is one
+figure number, because the figure pattern already contains the hyphen.
+
+A figure, table, or equation is unique when one caption or one display number carries it. A
+page-footer echo of that number is the running index line, not a second item. Two captions
+with one number stay plain text, and so do several footers with no caption. The report names
+those keys. A section or a chapter is unique when one hierarchy node carries that number.
+
+A printed page links when one observed page carries that label. The link lands on the anchor
+of the first block of that PDF page, so a page split across two notes opens where it starts.
+A mapping gap stays plain, and so does a label that is both a gap and an observed page. The
+report counts a gap citation under unresolved and under gaps. The citation is a warning. It
+does not fail the check.
+
+An index note is one whose title matches an index title in the grammar. The handbook title is
+`index`. On those notes, a comma list or a dot leader at the end of a line cites a printed
+page. The same tails in any other note stay text. This 50-page slice has no index; the index
+rule is pinned by the fixture.
+
+The link keeps the cue and wraps the number. `Fig. 1-1` points at `note.md#^fig-1-1`,
+`Eq. (1-1)` points at `note.md#^eq-1-1`, and `p. 4` points at `note.md#^p0004`. From a
+content note the path is that note's file name, including when the target sits in the same
+file. From a list at the vault root the path starts with `content/`. A fenced block, display
+math, an existing link, inline code, and an anchor line are not citations.
+
+The vault root holds `01_List_of_Figures.md`, `02_List_of_Tables.md`, and
+`03_List_of_Equations.md`. The contents links them. They sit outside the previous/next chain.
+A row is the number, a link to that item's own anchor, the printed page when the inventory
+has one, and the PDF page. The row does not copy the caption. Two items that share a number
+both appear. An empty kind says `None.`
+
+`metadata/reference_links.json` records the grammar name, the counts by kind, the ambiguous
+keys, and the gap count. It quotes no sentence and names no run. The vault report repeats the
+counts under `## Cross-references`, and `validation.json` carries the same object. A missing
+report is a warning.
+
+| Module | Role |
+| --- | --- |
+| `src/llb/prep/book/render/grammar.py` | The handbook grammar, and a file that replaces it |
+| `src/llb/prep/book/render/catalog.py` | Which numbers are unique, ambiguous, or a mapping gap |
+| `src/llb/prep/book/render/link.py`, `index_links.py` | Citation spans, and index tails |
+| `src/llb/prep/book/render/lists.py`, `references.py` | The three lists and the count file |
+| `src/llb/prep/book/validate/references.py` | The report section and the gap warning |
+
+Tests: `tests/llb/prep/book/test_reference_links.py`. Every reference type resolves on a
+fixture. Two figures numbered `1-1` stay plain, and the key is reported. A printed page
+inside a mapping gap stays plain. A page split across two notes links to the note where that
+page starts. A grammar of one cue replaces the handbook cues.
+
+### Evidence
+
+**What ran.** On 2026-11-23, on the RTX PRO 3000 Blackwell laptop host (12 GB), CPU only.
+Render read the document structure and the resolved text of the 50-page RapidOCR 3.10.0 slice
+of the 1,067-page target scan: PDF pages 1-40 and 290-299. Recognition was not repeated. The
+slice has no index.
+
+**Counts.** Resolved 128: chapter 2, equation 10, figure 61, section 19, table 36. Ambiguous
+52: equation 23, figure 6, table 23. The ambiguous keys are `equation 1-0`, `figure 1-4`,
+`figure 10-314`, `table 1-0`, `table 1-2`, and `table 10-26`. Unresolved 251: chapter 48,
+equation 3, figure 21, page 3, section 126, table 50. Mapping gaps left unlinked: 0. The
+three unresolved page citations name printed pages this slice does not contain. Most
+unresolved section and chapter citations name nodes outside these 50 pages. Five cues of the
+form `Chapter` followed by a dotted number stayed plain. No figure cue was linked as a single
+digit. The lists hold 26 figure rows, 18 table rows, and 4 equation rows.
+
+**The check.** `book-ocr validate` reported 0 findings and the same two warnings the structure
+file already accounts for: 197 structure conflicts, and 3 printed pages that used a fallback.
+A second render wrote the same reference report and the same validation file.
+
+**What would overturn it.** A second render of these ledgers whose reference counts differ.
+One of those five dotted chapter cues becoming a link. A hyphenated figure number linked as
+two numbers. One of the ambiguous keys above linked from prose. A gap citation on a later run
+that is neither plain text nor a warning.
 
 ## Vault validation
 
@@ -222,6 +314,9 @@ When `review/queue.json` exists, each open marker matches one open queue entry. 
 the marker kind, the block id, the offsets, and the PDF page. A missing queue is a warning,
 and the markers are then matched to the ledger. Orphaned overlay entries are counted. The
 count is not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
+The report's Cross-references section repeats the counts render wrote
+([cross-references](#cross-references)). A printed-page citation that falls in a mapping gap
+is a warning and does not fail the check.
 
 The report lists the configured engines, models, and parameters, the block readings, and the
 confidence buckets. A bucket is diagnostic routing evidence, not a probability that the

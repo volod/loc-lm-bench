@@ -17,6 +17,7 @@ from llb.prep.book.validate.constants import (
     CONFIDENCE_NOTE,
     VALIDATION_FILENAME,
 )
+from llb.prep.book.validate.references import reference_payload, reference_section
 from llb.prep.book.validate.types import (
     EngineScores,
     OpenMark,
@@ -86,6 +87,7 @@ def render_markdown(report: ValidationReport, open_marks: list[OpenMark]) -> str
         "",
         *_manual(report.pages, open_marks),
         "",
+        *reference_section(ctx.book_dir),
         "## Checks",
         "",
         *_checks(report),
@@ -120,6 +122,7 @@ def render_json(report: ValidationReport, open_marks: list[OpenMark]) -> str:
             }
             for row in report.pages
         ],
+        "references": reference_payload(report.context.book_dir),
         "readings": [
             {"blocks": count, "engine": engine, "model": model, "variant": variant}
             for engine, model, variant, count in report.facts.readings

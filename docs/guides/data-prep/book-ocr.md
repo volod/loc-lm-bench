@@ -203,7 +203,12 @@ make book-ocr-render BOOK_RUN=<run-dir>
 | `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
 | `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
 | `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+| `BOOK_REFERENCE_GRAMMAR` | YAML grammar that replaces the handbook cues | the handbook grammar |
 
+The command also prints how many citations resolved, stayed ambiguous, or stayed unresolved.
+A grammar file replaces the handbook cues entirely. What those cues match, and what the sample
+scan showed, is in
+[cross-references](../../impl/current/book-recovery/structure-and-rendering.md#cross-references).
 `render` then runs the vault check below. A failed check is exit code 1.
 
 ## Vault check

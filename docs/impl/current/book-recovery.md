@@ -3,8 +3,8 @@
 Recovering a scanned technical book -- page photographs with no text layer -- into a page-and-block
 ledger that a reading vault and a corpus projection both render from. The contract, including its
 boundary, is [Scanned book recovery](../../design/spec.md#scanned-book-recovery); the capability is
-`planned` in the [registry](../../design/spec.md#capability-registry), and its remaining work --
-the pilot, vault checks, linking, and projection -- is in [the plan](../plan.md).
+`planned` in the [registry](../../design/spec.md#capability-registry), and its remaining work
+is in [the plan](../plan.md).
 
 What exists today is the run skeleton, page signals and variants, a class for every page and a
 seeded pilot drawn from those classes, the block ledger, the resolution of each block into one
@@ -29,8 +29,8 @@ installs every candidate recovery tool into its own environment and smokes it on
 one real page. `llb book-ocr score` compares a ledger, or the existing PDF lane, with a
 reference transcription ([quality metrics](book-recovery/quality-metrics.md)).
 `llb book-ocr structure` reads the ledgers and writes the printed-page mapping, the hierarchy, and
-the numbering inventory. `llb book-ocr render` writes the Obsidian vault from that file, and
-`llb book-ocr validate` checks it
+the numbering inventory. `llb book-ocr render` writes the Obsidian vault from that file and links
+each citation the structure names uniquely, and `llb book-ocr validate` checks it
 ([structure and the reading vault](book-recovery/structure-and-rendering.md)). Operator usage is
 the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 
@@ -42,4 +42,4 @@ the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 | [Uncertainty and review](book-recovery/uncertainty-and-review.md) | The resolved text of each block, the correction overlay, the uncertainty markers, and the review queue |
 | [Tool selection](book-recovery/tool-selection.md) | Which dewarp, layout, OCR, formula, table, converter, and vision-model candidates install and run on this host, and the page classes a pilot is drawn from: the per-stage shortlist with version, licence, VRAM and RAM, install route, and one-page smoke result; what was not installed and why |
 | [Quality metrics](book-recovery/quality-metrics.md) | The reference format and the per-page, per-class score: character and word error, dangerous substitutions kept apart, formula fidelity, tables, figures, captions, reading order, and the printed page |
-| [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, the Obsidian vault rendered from them, and the mechanical check of that vault |
+| [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, the Obsidian vault rendered from them, the cross-reference links, and the mechanical check of that vault |

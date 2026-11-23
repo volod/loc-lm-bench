@@ -59,34 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-cross-reference-linking
-
-The book refers to itself constantly -- figure, table, and equation numbers, numbered sections,
-chapters, printed pages, and a back-of-book index citing printed pages. Turning those references into
-links is the largest readability gain the vault offers over the scan, and a wrong link is worse
-than none, so resolution must be conservative and every miss counted.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: a vault that passes
-  [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
-- User-visible outcome: references resolve to links to the target block anchor or file; generated
-  lists of figures, tables, and equations; index entries linked to the content file holding the
-  cited printed page; ambiguous or unresolved references left as plain text and counted in the
-  report.
-- Scope boundary: in scope -- a per-book reference grammar in configuration; resolution only to a
-  target that the structure inventory identifies uniquely; printed-page references and index
-  entries through the page mapping to the anchor at the first block of the cited page, so a page
-  split across two files still lands where it starts. Out of scope -- concept or semantic links,
-  model-suggested related sections, and a generated glossary.
-- Data and artifact paths: `src/llb/prep/book/render/`; the generated lists inside the book
-  directory.
-- Execution path: CPU-only inside `make ci`.
-- Acceptance gates: `make ci` green; every reference type resolves on a fixture; a reference made
-  ambiguous by two identically numbered figures stays unlinked and reported; a reference to a
-  printed page inside a mapping gap stays unlinked; `book-ocr validate` passes on the linked output.
-- Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md`.
-
 #### book-corpus-projection
 
 The vault is for a person. Fed to `ingest-corpus` it would index navigation, front matter, and
@@ -275,13 +247,14 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-cross-reference-linking`,
-  `book-corpus-projection`, `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
-  `book-evidence-constrained-correction`
+- Requires: `book-corpus-projection`, `book-formula-and-table-recovery`,
+  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
   The vault check is
   [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+  Cross-reference linking is
+  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references).
 - User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
   vault and an ingested corpus projection, and fails naming the stage whose output broke the next.
 - Scope boundary: in scope -- a generated scan with a contents page, numbered headings, printed
@@ -378,7 +351,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-cross-reference-linking`, `book-corpus-projection`,
+- Requires: `book-corpus-projection`,
   `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,

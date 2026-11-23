@@ -9,6 +9,7 @@ from llb.prep.book.validate.load import load_context
 from llb.prep.book.validate.markers import marker_check
 from llb.prep.book.validate.nav import nav_findings
 from llb.prep.book.validate.pages import page_findings
+from llb.prep.book.validate.references import reference_warnings
 from llb.prep.book.validate.report import write_report
 from llb.prep.book.validate.types import BookContext, Finding, PageRow, RunFacts, ValidationReport
 
@@ -26,6 +27,7 @@ def validate_book(book_dir: Path, run_dir: Path | None = None) -> ValidationRepo
     pages, findings = _collect(context, facts)
     open_marks, marker_findings, warnings = marker_check(context, facts)
     findings.extend(marker_findings)
+    warnings.extend(reference_warnings(context.book_dir))
     warnings.extend(_structure_warnings(context))
     warnings.extend(_manifest_warnings(context, pages))
     unique = _unique(findings)

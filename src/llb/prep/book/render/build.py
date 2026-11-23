@@ -19,17 +19,20 @@ from llb.prep.book.constants import SOURCE_POLICIES, SOURCE_POLICY_REFERENCE, SO
 from llb.prep.book.preprocess.images import encode_png
 from llb.prep.book.ranges import page_id
 from llb.prep.book.render.constants import (
+    OBSIDIAN_VERSION,
     PDF_PAGE_FRAGMENT,
     REFERENCE_FILENAME,
+    REFERENCE_REPORT_FILENAME,
     RENDER_MANIFEST_FILENAME,
     SECTION_CAP_FLOOR,
     SECTION_CHAR_CAP,
     SOURCE_DIRNAME,
     SOURCE_PAGES_DIRNAME,
     VAULT_DIRNAME,
-    OBSIDIAN_VERSION,
 )
 from llb.prep.book.render.documents import layout_files, render_markdown
+from llb.prep.book.render.grammar import load_grammar
+from llb.prep.book.render.references import reference_json, reference_line
 from llb.prep.book.render.load import load_book
 from llb.prep.book.render.names import (
     anchor_map,
@@ -63,6 +66,7 @@ class RenderOptions:
     page_fallback: bool = False
     section_cap: int = SECTION_CHAR_CAP
     slug: str | None = None
+    reference_grammar: Path | None = None
 
 
 def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
@@ -78,11 +82,11 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     assets, figures = _figures(spans, loaded, slug)
     ctx = _context(loaded, dest, slug, opts, assets)
     files = layout_files(spans, opts.section_cap, slug, ctx)
-    blobs = {
-        rel: text.encode("utf-8")
-        for rel, text in render_markdown(files, loaded.structure, ctx).items()
-    }
+    grammar = load_grammar(opts.reference_grammar)
+    docs, counts = render_markdown(files, loaded.structure, ctx, grammar)
+    blobs = {rel: text.encode("utf-8") for rel, text in docs.items()}
     blobs[f"metadata/{RENDER_MANIFEST_FILENAME}"] = _manifest(loaded, slug, opts, files, run_dir)
+    blobs[f"metadata/{REFERENCE_REPORT_FILENAME}"] = reference_json(counts)
     blobs["metadata/document_structure.json"] = structure_path(run_dir).read_bytes()
     blobs.update(figures)
     blobs.update(_crops(blocks, loaded))
@@ -90,7 +94,13 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     links = _source(loaded, dest, opts, blobs)
     publish(dest, blobs, links)
     failed = sum(1 for block in blocks if block.failed)
-    _LOG.info("[book-render] %s content files, %s failed pages -> %s", len(files), failed, dest)
+    _LOG.info(
+        "[book-render] %s content files, %s failed pages, %s -> %s",
+        len(files),
+        failed,
+        reference_line(counts),
+        dest,
+    )
     return dest
 
 

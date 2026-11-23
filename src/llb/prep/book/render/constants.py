@@ -19,6 +19,13 @@ SOURCE_DIRNAME: Final = "source"
 SOURCE_PAGES_DIRNAME: Final = "pages"
 RENDER_MANIFEST_FILENAME: Final = "render.json"
 REFERENCE_FILENAME: Final = "reference.txt"
+REFERENCE_REPORT_FILENAME: Final = "reference_links.json"
+# Generated lists sit beside the contents, outside the reading-order chain.
+LIST_FILENAMES: Final = (
+    ("figure", "01_List_of_Figures.md", "Figures"),
+    ("table", "02_List_of_Tables.md", "Tables"),
+    ("equation", "03_List_of_Equations.md", "Equations"),
+)
 
 OBSIDIAN_VERSION: Final = "1.15"
 PDF_PAGE_FRAGMENT: Final = "page"

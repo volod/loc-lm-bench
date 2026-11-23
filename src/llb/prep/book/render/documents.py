@@ -11,8 +11,12 @@ from llb.core.contracts.data_prep.book_structure import DocumentStructure, Struc
 from llb.prep.book.render.constants import (
     CONTENT_DIRNAME,
     HEADING_LEVEL,
+    LIST_FILENAMES,
     TOC_FILENAME,
 )
+from llb.prep.book.render.grammar import ReferenceGrammar
+from llb.prep.book.render.lists import render_lists
+from llb.prep.book.render.references import ReferenceCounts, apply_references
 from llb.prep.book.render.names import content_stem, node_label
 from llb.prep.book.render.prose import render_units
 from llb.prep.book.render.segment import Span, pack_span
@@ -55,13 +59,18 @@ def layout_files(spans: list[Span], cap: int, book: str, ctx: RenderContext) -> 
 
 
 def render_markdown(
-    files: list[VaultFile], structure: DocumentStructure, ctx: RenderContext
-) -> dict[str, str]:
-    """Relative path to Markdown, including the table of contents."""
+    files: list[VaultFile],
+    structure: DocumentStructure,
+    ctx: RenderContext,
+    grammar: ReferenceGrammar,
+) -> tuple[dict[str, str], ReferenceCounts]:
+    """Relative path to Markdown, including the contents and the generated lists."""
+    counts, catalog = apply_references(files, structure, grammar)
     docs = {TOC_FILENAME: _toc(files, structure, ctx)}
+    docs.update(render_lists(catalog))
     for index, file in enumerate(files):
         docs[f"{CONTENT_DIRNAME}/{file.stem}.md"] = _wrap(index, files, structure, ctx)
-    return docs
+    return docs, counts
 
 
 def front_matter(
@@ -161,7 +170,8 @@ def _toc(files: list[VaultFile], structure: DocumentStructure, ctx: RenderContex
     matter = front_matter(ctx.book, "book", start, end, printed_start, printed_end, 0)
     nav = _toc_nav(files, ctx, start, end, structure)
     lines = _toc_lines(structure.hierarchy, _by_node(files))
-    body = "# Contents\n\n" + ("\n".join(lines) if lines else "No sections were rendered.")
+    hierarchy = "\n".join(lines) if lines else "No sections were rendered."
+    body = "# Contents\n\n" + "\n".join(_list_links()) + "\n\n" + hierarchy
     return f"{matter}\n\n{nav}\n\n{body}\n\n{nav}\n"
 
 
@@ -198,6 +208,10 @@ def _child_lines(node: StructureNode, by_node: dict[str, list[VaultFile]], depth
     for child in node.children:
         lines.extend(_child_lines(child, by_node, depth + 1))
     return lines
+
+
+def _list_links() -> list[str]:
+    return [f"- [{title}]({filename})" for _kind, filename, title in LIST_FILENAMES]
 
 
 def _book_items(files: list[VaultFile]) -> list[str]:

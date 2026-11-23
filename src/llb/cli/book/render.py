@@ -1,12 +1,13 @@
 """`llb book-ocr render`: an Obsidian vault from a run's ledger and structure."""
 
+import json
 from pathlib import Path
 
 import typer
 
 from llb.cli.book import book_app
-from llb.prep.book.constants import SOURCE_POLICY_SYMLINK
-from llb.prep.book.render.constants import SECTION_CHAR_CAP
+from llb.prep.book.constants import METADATA_DIRNAME, SOURCE_POLICY_SYMLINK
+from llb.prep.book.render.constants import REFERENCE_REPORT_FILENAME, SECTION_CHAR_CAP
 
 
 @book_app.command("render")
@@ -27,6 +28,11 @@ def render_cmd(
     slug: str | None = typer.Option(
         None, "--slug", help="ASCII vault name; default is the PDF name"
     ),
+    reference_grammar: Path | None = typer.Option(
+        None,
+        "--reference-grammar",
+        help="YAML reference grammar; the default is the handbook grammar",
+    ),
 ) -> None:
     """Render the reading vault. Prints the vault path and no recovered text."""
     from llb.prep.book.render.build import RenderOptions, build_vault
@@ -40,13 +46,32 @@ def render_cmd(
                 page_fallback=page_fallback,
                 section_cap=section_cap,
                 slug=slug,
+                reference_grammar=reference_grammar,
             ),
         )
     except (OSError, ValueError) as exc:
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(f"[book-ocr] vault -> {dest}")
+    typer.echo(_reference_line(dest))
     _validate(dest)
+
+
+def _reference_line(dest: Path) -> str:
+    path = dest / METADATA_DIRNAME / REFERENCE_REPORT_FILENAME
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return (
+        "[book-ocr] references "
+        f"resolved={_total(payload.get('resolved'))} "
+        f"ambiguous={_total(payload.get('ambiguous'))} "
+        f"unresolved={_total(payload.get('unresolved'))}"
+    )
+
+
+def _total(raw: object) -> int:
+    if not isinstance(raw, dict):
+        return 0
+    return sum(value for value in raw.values() if isinstance(value, int))
 
 
 def _validate(dest: Path) -> None:
