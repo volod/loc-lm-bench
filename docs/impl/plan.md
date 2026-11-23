@@ -59,41 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-structure-inference
-
-A reader navigates the book by part, chapter, and section, and the book cites itself by printed page.
-Neither is in the file: the PDF has no outline and no page labels, and its printed numbers are offset
-from its PDF page numbers. Both must be inferred globally from page-level evidence, and where the
-evidence is thin the output must say so rather than invent a hierarchy.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md); a line engine labels
-  every block `body`, as the full-book RapidOCR ledger did
-  ([block ledger evidence](current/book-recovery/block-ledger.md#evidence)), so the kinds an engine
-  supplies are a hint, not an input this task may require.
-- User-visible outcome: `metadata/document_structure.json` holds the printed-page mapping for every
-  PDF page, the hierarchy (book, part, chapter, section, subsection) with page ranges and the
-  evidence behind each node, the figure, table, and equation numbering inventory, and the fallback
-  flag wherever evidence was insufficient.
-- Scope boundary: in scope -- page-number and running-header blocks found from position and
-  repetition across pages, whatever kind the engine gave them; printed page numbers from those
-  blocks under a monotone fit, with gaps, unnumbered plates, and front matter recorded;
-  table-of-contents page detection and parsing;
-  headings from typography and numbering; running-header and section-number agreement; a two-pass
-  reconciliation of the printed contents against observed headings with every conflict recorded;
-  fallback page-range segmentation. Out of scope -- rendering, cross-reference linking, and any node
-  a model proposes without page evidence.
-- Data and artifact paths: `src/llb/prep/book/structure/`; `metadata/document_structure.json`
-  registered as an artifact contract.
-- Execution path: CPU-only inside `make ci` over synthetic ledgers.
-- Acceptance gates: `make ci` green; a synthetic book with a contents page and numbered headings
-  reconstructs exactly; an offset numbering with one missing page number recovers the mapping and
-  records the gap; a contents entry with no matching heading is reported, never fabricated; a book
-  with neither contents nor numbered headings falls back to page ranges; the same synthetic book
-  with every block relabelled `body` recovers the same page mapping and running headers.
-- Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md`.
-
 #### book-vault-rendering-and-navigation
 
 With a ledger, markers, and a structure, the reading vault can be rendered: the deliverable a person
@@ -102,8 +67,8 @@ will hold, so the output has to be both readable and stable.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-structure-inference`
-- Dependencies: none.
+- Dependencies: the inferred structure
+  ([structure](current/book-recovery/structure-and-rendering.md)).
 - User-visible outcome: a book directory with `00_Table_of_Contents.md`, `content/`, `assets/`,
   `review/`, `metadata/`, and `source/`; content split by chapter and section, each file opening and
   closing with links to the contents, the previous file, the next file, and its source PDF page
@@ -481,8 +446,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-structure-inference`,
-  `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
+- Requires: `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,

@@ -7,7 +7,8 @@ at its scan's native resolution), `signals` and `variants` (the measurements and
 they call for), `classes` (the page classes a pilot and an engine route on), the recognition
 stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
 `resolve` stage that chooses one text per block, and two deterministic stand-in stages.
-Structure and rendering plug into the same run as they land. For a
+`book-ocr structure` then infers the printed pages and the hierarchy from those ledgers.
+Rendering the vault is still ahead. For a
 born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
@@ -137,6 +138,7 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   review/<block>-s<start>-<end>.png   a padded crop of one uncertain block
   pilot/selection.json           the seeded pilot (llb.book-ocr-pilot-selection)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
+  metadata/document_structure.json  printed pages, hierarchy, numbering (llb.book-ocr-document-structure)
   metadata/quality_manifest.json one row per uncertain span (llb.book-ocr-quality-manifest)
   metadata/processing_report.md  human-readable summary and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
@@ -164,6 +166,22 @@ make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
 Exit code 2 is a path that is not a run, or a page that still lacks its ledger, resolved text, and
 overlay. The command prints kind counts. It does not print the recovered text. After a decision,
 resume the run so `resolve` applies it, then build the queue again.
+
+## Structure
+
+`book-ocr structure` reads a finished ledger and writes `metadata/document_structure.json`: the
+printed page of every PDF page, the hierarchy, the running headers, and the figure, table, and
+equation numbers. It is not a stage. A missing ledger is exit code 2. The command prints counts
+and does not print the recovered text. What the inference keeps, and what the sample scan showed,
+is [structure](../../impl/current/book-recovery/structure-and-rendering.md).
+
+```sh
+make book-ocr-structure BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run whose block ledger exists for every configured page | required |
 
 ## Pilot selection
 

@@ -22,7 +22,7 @@ declarations and their migrations live under `src/llb/artifacts/data_prep/` (`fa
 
 ## Scanned-book run families
 
-A `book-ocr` run writes fourteen registered families, all new with
+A `book-ocr` run writes fifteen registered families, all new with
 [scanned book recovery](../book-recovery.md) and so each at `1.0.0` with no legacy read form:
 `llb.book-ocr-block-ledger` (`pages/<pNNNN>/blocks.json`, one page's blocks, raw readings, and
 uncertainty spans; see [block ledger](../book-recovery/block-ledger.md)),
@@ -42,14 +42,17 @@ renderings read), `llb.book-ocr-correction-overlay` (`pages/<pNNNN>/overlay.json
 orphaned edits), `llb.book-ocr-model-corrections` (`pages/<pNNNN>/corrections.json`, when a
 correction stage wrote it), `llb.book-ocr-reviewer-decisions` (`review/decisions.json`,
 outside the stage cache), `llb.book-ocr-review-queue` (`review/queue.json`, the workbench ledger of
-uncertain spans), and `llb.book-ocr-quality-manifest` (`metadata/quality_manifest.json`, the same
-spans grouped by page). The rule is
+uncertain spans), `llb.book-ocr-quality-manifest` (`metadata/quality_manifest.json`, the same
+spans grouped by page), and `llb.book-ocr-document-structure`
+(`metadata/document_structure.json`, the printed pages, the hierarchy, and the numbering
+inventory; see [structure](../book-recovery/structure-and-rendering.md)). The rule for the queue is
 [uncertainty and review](../book-recovery/uncertainty-and-review.md). The block model
 lives in `src/llb/core/contracts/data_prep/book_blocks.py`; the class and pilot models live in
 `book_classes.py`; the signal and variant models live in `book_preprocess.py`; the resolution
-models live in `book_resolve.py`; the queue and the manifest live in `book_review.py`; the other
-three live in `book.py`. The declarations are in
-`src/llb/artifacts/data_prep/book.py`. The run's processing report and JSON-lines log stay
+models live in `book_resolve.py`; the queue and the manifest live in `book_review.py`; the
+structure model lives in `book_structure.py`; the other three live in `book.py`.
+Declarations are in `src/llb/artifacts/data_prep/book.py`. The run's processing report and the
+JSON-lines log stay
 unregistered, like every human or diagnostic report here.
 
 ## Reading what this project already wrote

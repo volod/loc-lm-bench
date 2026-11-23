@@ -230,6 +230,28 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Printed pages, hierarchy, and figure, table, and equation numbers of one scanned book.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-document-structure",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-document-structure/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "Model edits for one scanned page, read by resolution and not produced by it.",
       "extension_point": null,
       "legacy_read_version": null,

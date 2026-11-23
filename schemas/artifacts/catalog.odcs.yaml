@@ -150,6 +150,23 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-document-structure
+  name: llb.book-ocr-document-structure
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-document-structure/1.0.0.schema.json
+  description: Printed pages, hierarchy, and figure, table, and equation numbers of
+    one scanned book.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-model-corrections
   name: llb.book-ocr-model-corrections
   logicalType: object

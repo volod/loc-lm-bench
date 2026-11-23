@@ -16,6 +16,7 @@ from llb.core.contracts.data_prep.book_resolve import (
     ReviewerDecisions,
 )
 from llb.core.contracts.data_prep.book_review import QualityManifest, ReviewQueue
+from llb.core.contracts.data_prep.book_structure import DocumentStructure
 
 _JSON_DOCUMENT = (
     FormatBinding(format="json", media_type="application/json", granularity="document"),
@@ -39,6 +40,17 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             description="Edits applied to one scanned page, and edits a rebuilt ledger orphaned.",
             current_version="1.0.0",
             models={"1.0.0": PageCorrectionOverlay},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id="llb.book-ocr-document-structure",
+            description=(
+                "Printed pages, hierarchy, and figure, table, and equation "
+                "numbers of one scanned book."
+            ),
+            current_version="1.0.0",
+            models={"1.0.0": DocumentStructure},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),
