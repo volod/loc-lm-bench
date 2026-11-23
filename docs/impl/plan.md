@@ -59,50 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-vault-rendering-and-navigation
-
-With a ledger, markers, and a structure, the reading vault can be rendered: the deliverable a person
-opens in Obsidian. Every choice here is visible to the reader, and every name is a link someone else
-will hold, so the output has to be both readable and stable.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the inferred structure
-  ([structure](current/book-recovery/structure-and-rendering.md)).
-- User-visible outcome: a book directory with `00_Table_of_Contents.md`, `content/`, `assets/`,
-  `review/`, `metadata/`, and `source/`; content split by chapter and section, each file opening and
-  closing with links to the contents, the previous file, the next file, and its source PDF page
-  range; formulas as display LaTeX carrying their equation numbers; tables as Markdown or HTML;
-  figure embeds at their reading position; uncertainty markers in place; YAML front matter only for
-  fields Obsidian or retrieval uses (book, hierarchy ids, PDF and printed page ranges, review
-  counts).
-- Scope boundary: in scope -- the resolved text of every block, never a raw reading picked here;
-  segmentation that splits an oversized section into ordered page-range parts at block boundaries,
-  never inside a formula, table, figure-caption pair, or paragraph unless the paragraph alone
-  exceeds the cap; deterministic ASCII file names and block anchors, with the anchor of a numbered
-  target (section, figure, table, equation) derived from its printed number so it survives an
-  engine change that renumbers block ordinals, and an anchor at the first block of every PDF page; a
-  page whose recovery failed rendered as a page-level marker with its PDF link, never left out; a
-  figure block rendered as a crop of its region under the spec's asset naming (PDF page, in-page
-  ordinal, kind), so `book-figure-and-caption-assets` changes what a crop holds, not what it is
-  called; the PDF-page link form verified against the documentation and release notes of the
-  recorded target Obsidian version (a `#page=<n>` fragment on a PDF link is the candidate), plus a
-  configurable rendered-page fallback under `source/pages/`; links valid under each source
-  deployment mode; atomic publish to `--output` that removes stale files. Out of scope --
-  cross-reference linking, and the quality of formula, table, and figure recovery (this task renders
-  whatever the ledger holds).
-- Data and artifact paths: `src/llb/prep/book/render/`; `book/<book-slug>/` inside the run
-  directory; the operator-chosen `--output` vault path.
-- Execution path: `make book-ocr-render`; CPU-only inside `make ci`.
-- Acceptance gates: `make ci` green; a re-render is byte-identical; an oversized fixture section
-  splits only at permitted boundaries, with a formula and a figure-caption pair at the would-be cut;
-  a parameter that does not touch structure leaves every file name unchanged; a fixture ledger
-  rebuilt with shifted block ordinals keeps every numbered-target anchor; a failed fixture page
-  appears as its marker; front matter parses as YAML; every ledger block appears in exactly one
-  file, in reading order, with no loss and no duplication.
-- Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md` and the usage
-  guide `docs/guides/data-prep/book-ocr.md`.
-
 #### book-vault-validation-and-report
 
 A 1,067-page render cannot be checked by eye. The full run must prove mechanically that every page
@@ -111,9 +67,10 @@ one report what still needs a person.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-vault-rendering-and-navigation`
-- Dependencies: none. The link resolver may reuse the relative-link and anchor logic of
-  `make lint-doc-links`, extended to wikilinks, block anchors, and PDF page fragments.
+- Dependencies: a rendered vault
+  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
+  The link resolver may reuse the relative-link and anchor logic of `make lint-doc-links`,
+  extended to wikilinks, block anchors, and PDF page fragments.
 - User-visible outcome: `llb book-ocr validate <book-dir>` runs standalone and at the end of every
   `run`, and `metadata/processing_report.md` lists per-page status, warnings, confidence
   distributions as diagnostics, the engines, models, and parameters used, the review-queue size per
@@ -169,7 +126,6 @@ project already reads.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-vault-rendering-and-navigation`
 - Dependencies: the citation sidecar and chunk page metadata already carry PDF pages into retrieval
   ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md)); every export refuses a
   `licence` other than `redistributable` or absent
@@ -177,6 +133,8 @@ project already reads.
   non-local `source_system` puts the projection in the acquired lane, which refuses changed bytes
   under an existing document identity and asks for a new one with `revision_of`
   ([append-only revisions](current/data-prep/acquired-provenance.md#append-only-document-revisions)).
+  The reading vault is a separate render of the same ledger
+  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
 - User-visible outcome: `llb book-ocr project <run-dir> --out <corpus-dir>` writes one corpus
   document per content file -- content only, formulas as LaTeX, tables as rendered, markers in a
   machine form -- with a `*.citations.json` sidecar (PDF page to character spans, block ids and
@@ -256,8 +214,9 @@ output faithfully.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- the pilot reading runs the selected engines on the CUDA host.
-- Requires: `book-vault-rendering-and-navigation`, `book-pilot-pipeline-comparison`
-- Dependencies: none.
+- Requires: `book-pilot-pipeline-comparison`
+- Dependencies: the reading vault renders the ledger's formula and table text
+  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
 - User-visible outcome: formulas render as valid LaTeX with the book's equation number kept as a
   tag, and an uncertain formula keeps its crop beside the LaTeX; tables render as Markdown when one
   header row and no merged cells suffice, as HTML otherwise, and with the original image retained
@@ -284,8 +243,9 @@ them conservatively, keep each with its printed caption, and name them so they s
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- the pilot reading runs the selected layout engine on the CUDA host.
-- Requires: `book-vault-rendering-and-navigation`, `book-pilot-pipeline-comparison`
-- Dependencies: none.
+- Requires: `book-pilot-pipeline-comparison`
+- Dependencies: the reading vault already names a figure crop from its PDF page, ordinal, and kind
+  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
 - User-visible outcome: each figure is one asset named `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`
   plus a slug only when one derives reliably, padded to keep labels, legends, scale markings, and the
   caption, embedded at its reading position with its printed caption and source-page link.
@@ -446,7 +406,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
+- Requires: `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,

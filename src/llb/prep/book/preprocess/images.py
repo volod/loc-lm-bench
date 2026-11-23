@@ -22,13 +22,18 @@ def read_grey(path: Path) -> np.ndarray:
     return np.asarray(image, dtype=np.uint8)
 
 
+def encode_png(grey: np.ndarray) -> bytes:
+    """PNG bytes of `grey`. The same pixels always encode to the same bytes."""
+    ok, encoded = cv2.imencode(".png", np.asarray(grey, dtype=np.uint8), list(_PNG_PARAMS))
+    if not ok:
+        raise RuntimeError("could not encode a page image")
+    return encoded.tobytes()
+
+
 def write_png(path: Path, grey: np.ndarray) -> None:
     """Write `grey` as a deterministic PNG."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    ok, encoded = cv2.imencode(".png", np.asarray(grey, dtype=np.uint8), list(_PNG_PARAMS))
-    if not ok:
-        raise RuntimeError(f"could not encode {path.name}")
-    path.write_bytes(encoded.tobytes())
+    path.write_bytes(encode_png(grey))
 
 
 def background_kernel(shape: tuple[int, ...]) -> int:

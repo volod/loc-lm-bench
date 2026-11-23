@@ -24,7 +24,7 @@ resume, reuse, and failure isolation run over a real book. Operator usage:
 | `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `classes`, `fake-preprocess`, `fake-ocr`, the recognition stages, and `resolve` |
 | `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, `score`, `pilot-select`, `engines`, `review-queue`, and `structure` |
 | `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `book_resolve.py`, `book_review.py`, `book_structure.py`, `src/llb/artifacts/data_prep/book.py` | The fifteen registered families |
-| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-pilot-select`, `make book-ocr-engines`, `make book-ocr-review-queue`, `make book-ocr-structure` |
+| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-pilot-select`, `make book-ocr-engines`, `make book-ocr-review-queue`, `make book-ocr-structure`, `make book-ocr-render` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
 synthetic six-page scan built by `tests/llb/prep/book/_scan_factory.py` -- grey line patterns at

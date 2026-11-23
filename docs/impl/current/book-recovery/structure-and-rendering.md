@@ -1,8 +1,7 @@
-# Structure
+# Structure and the reading vault
 
 The printed page, the hierarchy, and the figure, table, and equation numbers of one scanned book,
-read from the block ledger after `resolve`. The vault that renders this file is still open work
-([book vault rendering](../../plan.md#book-vault-rendering-and-navigation)).
+read from the block ledger after `resolve`, and the Obsidian vault rendered from that file.
 
 `llb book-ocr structure` is a command, not a stage. It reads every configured page's ledger, prefers
 the resolved text when that text is non-empty, and writes one book-level file. A block's kind is
@@ -81,3 +80,99 @@ and equation numbers.
 **What would overturn it.** An observed body numeral on this scan that is not 17 behind its PDF
 page. A heading on these pages that the file omits, or a node whose text is not on that page. A
 second run over the same ledgers that is not byte-identical.
+
+## Reading vault
+
+`llb book-ocr render` reads the structure file and the resolved text and writes an Obsidian
+vault. It is a command, not a stage. A page with no resolved text becomes one marker and a link
+to that PDF page. The command prints the vault path. It does not print recovered text. It refuses
+a missing structure, a source checksum that disagrees, or a page list that disagrees.
+
+```sh
+make book-ocr-render BOOK_RUN=<run-dir>
+```
+
+The default vault is `book/<book-slug>/` inside the run. `--output` publishes elsewhere, replaces
+the directory in one step, and drops files the new vault does not contain. Exit code 2 is a
+missing structure, a bad path, or a destination inside the scan's directory.
+
+| Module | Role |
+| --- | --- |
+| `src/llb/prep/book/render/` | Names, line joining, section files, Markdown, and publish |
+| `src/llb/cli/book/render.py` | `llb book-ocr render` |
+| `make/data-prep/book.mk` | `make book-ocr-render` |
+
+Tests: `tests/llb/prep/book/test_render.py`, over synthetic ledgers. No page of a real book
+enters git.
+
+### What a reader opens
+
+The vault holds `00_Table_of_Contents.md`, `content/`, `assets/`, `review/`, `metadata/`, and
+`source/`. A content note is one structure node, or one page-range part when the node's resolved
+text passes 12,000 characters. The cut falls on a block boundary. A formula, a table, and a
+figure with its caption stay whole. A paragraph splits only when that paragraph alone passes
+the cap.
+
+A node that resumes after one of its children becomes a later file. Previous and next reach it.
+The contents lists the node's first span, including the parts the character cap made. Each note
+opens and closes with the same links: the contents, the neighbouring notes, and the PDF page
+the note starts on. The page link is a relative path plus `#page=<n>`, counted from 1.
+
+Front matter holds `book`, `node_id`, `pdf_start`, `pdf_end`, `printed_start`, `printed_end`,
+and `review_count`. Printed numbers stay strings, so a roman numeral is not read as an integer.
+
+A numbered target's anchor is its printed number: `^ch-1`, `^sec-1-1`, `^sub-1-2-2`,
+`^fig-1-1`, `^tbl-2-1`, `^eq-1-1`. The first block of a PDF page carries `^p0007`. Changing
+block ordinals leaves those anchors in place. A block whose ledger kind is `figure` is a tight
+crop at `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`, plus the printed number when the inventory
+has one. Review crops keep the queue's 16-pixel padding. A line engine that labels every block
+`body` yields the anchors and no figure crops.
+
+A formula is display math. The inventory's equation number becomes a `\tag` when the text has
+none. A table stays Markdown when every line contains a pipe, HTML when the text is already a
+table, and one column otherwise. An unresolved span keeps its review marker. A running header
+or a printed page number that structure identified stays in the note, labelled.
+
+Consecutive body lines in one column join into a paragraph. A footnote, a column break, an
+indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index line each start a
+new paragraph. A word split by a hyphen at the column edge is joined. The rest of the right
+column stays in reading order, after the left column's footnote and index line.
+
+`source/` follows the run's three policies. `symlink` is the default. `copy` writes a read-only
+PDF. `reference` writes `source/reference.txt` and points the page links at the PDF where it
+already is. `BOOK_PAGE_FALLBACK=1` adds `source/pages/<page-id>.png` and a link on each note.
+The fallback and the source policy leave content file names unchanged.
+
+`metadata/render.json` records the slug, the content files, the source checksum, the section
+cap, the source policy, the page-fallback switch, `obsidian_version` `1.15`, and
+`pdf_page_fragment` `page`. Obsidian 0.10.8, released 2021-01-11, introduced
+`[[file.pdf#page=3]]`. The 1.15 help for PDF files and for embeds still documents that fragment.
+Opening the vault in the app is a later human task.
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run that already has a document structure | required |
+| `BOOK_OUTPUT` | Vault directory | `book/<slug>/` inside the run |
+| `BOOK_SOURCE_POLICY` | `copy`, `symlink`, or `reference` | `symlink` |
+| `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
+| `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
+| `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+
+### Evidence
+
+**What ran.** On 2026-11-23, on the RTX PRO 3000 Blackwell laptop host, render read the 50-page
+RapidOCR slice of the 1,067-page target scan: PDF pages 1-40 and 290-299, CPU RapidOCR 3.10.0,
+no GPU. The render itself does no recognition and uses no GPU.
+
+**The vault.** 52 content notes and no failed page. 238 review crops. No figure crops, because
+the line engine labeled every block `body` and a crop is written only for kind `figure`. The
+inventory numbers are anchors on the lines structure named. Section 1.1 is one note, PDF 18-20,
+printed 1-3. The untitled front matter is one span in five parts under the 12,000-character cap.
+On PDF 19 the column break inside "necessary" is one word again, and the footnote and the
+Table/Fig/Eq index line are their own paragraphs. A second render of the same ledgers matched
+the first byte for byte, symlink target included.
+
+**What would overturn it.** A second render of these ledgers that differs by a byte. A block of
+kind `figure` on this slice with no crop. A numbered anchor that changes when only the block
+ordinals change. An Obsidian release that drops `#page=`: the recorded version and the link
+form change together.

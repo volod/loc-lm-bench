@@ -183,6 +183,27 @@ make book-ocr-structure BOOK_RUN=<run-dir>
 | --- | --- | --- |
 | `BOOK_RUN` | A book-ocr run whose block ledger exists for every configured page | required |
 
+## Reading vault
+
+`book-ocr render` writes an Obsidian vault from a run that already has a document structure. It
+is not a stage. The default directory is `book/<book-slug>/` inside the run. A missing structure
+is exit code 2. The command prints the vault path and does not print the recovered text. The
+layout, the page links, and what the sample scan showed are in
+[the reading vault](../../impl/current/book-recovery/structure-and-rendering.md#reading-vault).
+
+```sh
+make book-ocr-render BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run that already has a document structure | required |
+| `BOOK_OUTPUT` | Vault directory | `book/<slug>/` inside the run |
+| `BOOK_SOURCE_POLICY` | `copy`, `symlink`, or `reference` | `symlink` |
+| `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
+| `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
+| `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+
 ## Pilot selection
 
 `book-ocr pilot-select` reads a finished `classes` stage and writes a reproducible set of pages.
