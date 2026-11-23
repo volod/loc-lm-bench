@@ -15,6 +15,7 @@ from llb.core.contracts.data_prep.book_resolve import (
     PageResolvedText,
     ReviewerDecisions,
 )
+from llb.core.contracts.data_prep.book_review import QualityManifest, ReviewQueue
 
 _JSON_DOCUMENT = (
     FormatBinding(format="json", media_type="application/json", granularity="document"),
@@ -82,10 +83,26 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             deprecation_policy=_ONLY_FORM,
         ),
         ContractDefinition(
+            schema_id="llb.book-ocr-quality-manifest",
+            description="One row per uncertain span of a scanned book, grouped by PDF page.",
+            current_version="1.0.0",
+            models={"1.0.0": QualityManifest},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
             schema_id="llb.book-ocr-resolved-page",
             description="One scanned page's resolved text, with the provenance of every span.",
             current_version="1.0.0",
             models={"1.0.0": PageResolvedText},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id="llb.book-ocr-review-queue",
+            description="Uncertain spans of a scanned book, opened by the review workbench.",
+            current_version="1.0.0",
+            models={"1.0.0": ReviewQueue},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),

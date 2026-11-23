@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "QualityPage": {
+      "additionalProperties": false,
+      "description": "Every quality row on one PDF page. A page with no rows was still checked.",
+      "properties": {
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/QualityRow"
+          },
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_id",
+        "pdf_page"
+      ],
+      "title": "QualityPage",
+      "type": "object"
+    },
+    "QualityRow": {
+      "additionalProperties": false,
+      "description": "One uncertain span on one page, the same span the queue carries.",
+      "properties": {
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "classes": {
+          "items": {
+            "enum": [
+              "digit",
+              "sign",
+              "decimal",
+              "symbol"
+            ],
+            "type": "string"
+          },
+          "title": "Classes",
+          "type": "array"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "entry_id": {
+          "minLength": 1,
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "unreadable",
+            "low-confidence",
+            "formula-table"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "marker": {
+          "minLength": 1,
+          "title": "Marker",
+          "type": "string"
+        },
+        "raw_text": {
+          "title": "Raw Text",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unresolved",
+            "empty",
+            "low-confidence",
+            "orphaned"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entry_id",
+        "block_id",
+        "kind",
+        "reason",
+        "start",
+        "end",
+        "marker",
+        "raw_text"
+      ],
+      "title": "QualityRow",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-quality-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`metadata/quality_manifest.json`: one row per uncertain span, grouped by page.",
+  "properties": {
+    "counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Counts",
+      "type": "object"
+    },
+    "kind": {
+      "const": "book-ocr-quality-manifest",
+      "title": "Kind",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/QualityPage"
+      },
+      "title": "Pages",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-quality-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "source_sha256"
+  ],
+  "title": "QualityManifest",
+  "type": "object"
+}

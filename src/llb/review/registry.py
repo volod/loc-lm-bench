@@ -6,7 +6,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from llb.artifacts.gates import refuse_unreadable_review
+from llb.core.contracts.data_prep.book_review import QUEUE_SCHEMA_ID
 from llb.review.adapters import (
+    BookQueueAdapter,
     ConflictResolutionAdapter,
     DraftCompareAdapter,
     ExternalRagAdapter,
@@ -20,6 +22,9 @@ from llb.review.core import ReviewAdapter
 
 
 def _open_review_directory(path: Path) -> ReviewAdapter:
+    queue = path / "review" / "queue.json"
+    if _is_book_queue(queue):
+        return BookQueueAdapter(queue)
     signatures: tuple[tuple[str, Callable[[Path], ReviewAdapter]], ...] = (
         ("comparison.json", DraftCompareAdapter),
         ("translation_review.csv", KnowledgeCutoffAdapter),
@@ -55,6 +60,8 @@ def _open_jsonl_review(path: Path) -> ReviewAdapter | None:
 
 
 def _open_review_file(path: Path) -> ReviewAdapter:
+    if _is_book_queue(path):
+        return BookQueueAdapter(path)
     if path.name == "comparison.json":
         return DraftCompareAdapter(path)
     if path.name == "candidates.json" or _is_candidate_json(path):
@@ -125,6 +132,16 @@ def _is_external_rag(path: Path) -> bool:
         and "question" in record
         and any(field in record for field in answer_fields)
     )
+
+
+def _is_book_queue(path: Path) -> bool:
+    if path.suffix.lower() != ".json" or not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("schema_id") == QUEUE_SCHEMA_ID
 
 
 def _is_conflict_resolution(path: Path) -> bool:

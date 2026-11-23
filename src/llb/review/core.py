@@ -37,6 +37,7 @@ class ReviewAction:
     label: str
     value: str
     tone: ActionTone = "neutral"
+    asks_for_text: bool = False
 
 
 @dataclass(frozen=True, slots=True)

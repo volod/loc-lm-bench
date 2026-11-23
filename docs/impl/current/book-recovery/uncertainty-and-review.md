@@ -1,9 +1,10 @@
 # Uncertainty and review
 
 `resolve` chooses the one text both renderings will read for each block, and records every
-correction in an overlay over the raw ledger. The ledger is not rewritten. Markers, the review
-queue, model edits, and both renderings are later stages; they read this seam. Operator usage is
-the [book-ocr guide](../../../guides/data-prep/book-ocr.md). The ledger they resolve is the
+correction in an overlay over the raw ledger. The ledger is not rewritten. The review queue reads
+that overlay and writes reviewer decisions back into the same file. Model edits and both
+renderings are later work; they read this seam. Operator usage is the
+[book-ocr guide](../../../guides/data-prep/book-ocr.md). The ledger they resolve is the
 [block ledger](block-ledger.md).
 
 ## Where it lives
@@ -16,10 +17,14 @@ the [book-ocr guide](../../../guides/data-prep/book-ocr.md). The ledger they res
 | `src/llb/prep/book/resolve/anchor.py` | The block digest an edit must match |
 | `src/llb/prep/book/resolve/io.py` | Overlay, resolved text, model corrections, and the run-level reviewer file |
 | `src/llb/prep/book/stages/resolve.py` | The `resolve` stage |
-| `src/llb/core/contracts/data_prep/book_resolve.py` | The four families below |
+| `src/llb/core/contracts/data_prep/book_resolve.py` | The four resolution families below |
+| `src/llb/prep/book/review/` | Markers, crops, the quality manifest, and the review queue |
+| `src/llb/review/adapters/book_queue.py` | The workbench adapter that writes reviewer decisions |
+| `src/llb/cli/book/review_queue.py` | `llb book-ocr review-queue` |
+| `src/llb/core/contracts/data_prep/book_review.py` | The queue and the quality manifest |
 
-Tests: `tests/llb/prep/book/test_resolve.py`, `test_resolve_stage.py`, and
-`test_ledger_reuse.py`.
+Tests: `tests/llb/prep/book/test_resolve.py`, `test_resolve_stage.py`, `test_ledger_reuse.py`,
+and `test_review_queue.py`. The adapter is also covered from `tests/llb/review/test_adapters.py`.
 
 ## The resolution rule
 
@@ -104,10 +109,73 @@ stages:
 The stage writes `overlay.json` and `resolved.json`, and the run publishes the same two files at
 `pages/<pNNNN>/`. `pages/<pNNNN>/blocks.json` stays the raw ledger.
 
+## Markers
+
+A span the pipeline cannot read reliably is a short Markdown link, not a gap. The same line is
+what a person sees in Obsidian and what a machine parses back:
+
+```text
+[!unreadable](source/book.pdf#page=3 "p0003-b0001 2-5") ![[review/p0003-b0001-s0002-0005.png]]
+```
+
+The link target is the run-relative stored PDF plus `#page=N`. The title is the block id and the
+character offsets into the primary reading. The embed is optional. The three kinds are
+`unreadable`, `low-confidence`, and `formula-table`.
+
+An unresolved character span takes `formula-table` on a formula or table block, `unreadable` when
+its text is blank, and `low-confidence` otherwise. An empty content block with no unresolved span
+is `unreadable`, or `formula-table` when the block is a formula or table. Content here is body,
+heading, caption, footnote, unknown, formula, and table. A figure, an ornament, a running header,
+a page number, or neighbour-page bleed is not queued only because its text is empty. A primary
+reading whose confidence is present and below 0.9, on non-empty content with no unresolved span,
+marks the whole block `low-confidence` and keeps the text. A missing confidence does not route.
+The 0.9 cut routes a span to review. It is not a probability of correctness. This engine labels
+every block `body`, so a displayed relation is `low-confidence` until a layout stage names it
+`formula`.
+
+The passage a reader sees replaces each unresolved span with its marker. An empty passage is the
+marker alone. A low-confidence block and an orphaned block prefix the marker and keep the text.
+A candidate, when one exists, is the other reading of that span: the highest confidence, then
+engine, then variant. For a whole block it is the strongest other reading whose text differs.
+
+## The review queue
+
+`llb book-ocr review-queue` reads a finished resolve and writes three things. `review/queue.json`
+(`llb.book-ocr-review-queue` 1.0.0) is the workbench ledger. `metadata/quality_manifest.json`
+(`llb.book-ocr-quality-manifest` 1.0.0) lists the same spans, one page object per configured page,
+and its `counts` equal the rows. Each crop is `review/<block-id>-s<start>-<end>.png`: the block
+region padded by 16 pixels, clipped to the page, written as a grey PNG. The same span always gets
+the same name. A page with no render still gets its marker and its row, with no crop. A rebuild
+deletes a crop the new queue does not name. It leaves `review/decisions.json` in place.
+
+The command is not a stage. It exits 2 when the path is not a run, or when any configured page
+lacks `blocks.json`, `resolved.json`, and `overlay.json`.
+
+```sh
+make book-ocr-review-queue BOOK_RUN=<run-dir>
+make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
+make book-ocr BOOK_RESUME=<run-dir>
+make book-ocr-review-queue BOOK_RUN=<run-dir>
+```
+
+A workbench decision becomes a reviewer edit. Accept raw writes the raw slice, so an unresolved
+digit reappears. Accept candidate writes the other reading and refuses when there is none. Enter
+text writes one non-empty line. Mark illegible writes an `[!unreadable]` marker, so a passage
+nobody could read stays visible. Clear removes the edit. The edit id is `reviewer:<entry-id>`,
+the author is `reviewer`, and the evidence is the decision token. A decision on a missing block
+is refused. The raw ledger is not rewritten. The next `resolve` applies the edit, and a later
+queue build drops a span that edit covers. A decision already on disk but not yet in the overlay
+keeps its verdict, so reopening the queue resumes at the next pending entry.
+
+An orphan comes back with its old decision shown and an empty verdict. When the block is still
+there, the new entry is the block's current text and current anchor, so the next decision can
+attach. When the block is gone, the old anchor stays and a new decision is refused.
+
 ## Contracts
 
-Four families, each at `1.0.0` with no older form. The models are
-`src/llb/core/contracts/data_prep/book_resolve.py`.
+The resolution families, each at `1.0.0` with no older form, live in
+`src/llb/core/contracts/data_prep/book_resolve.py`. The queue and the manifest live in
+`book_review.py`, also at `1.0.0`.
 
 | Family | File |
 | --- | --- |
@@ -115,13 +183,15 @@ Four families, each at `1.0.0` with no older form. The models are
 | `llb.book-ocr-resolved-page` | `pages/<pNNNN>/resolved.json` |
 | `llb.book-ocr-model-corrections` | `pages/<pNNNN>/corrections.json`, when a `correct` stage wrote it |
 | `llb.book-ocr-reviewer-decisions` | `review/decisions.json` |
+| `llb.book-ocr-review-queue` | `review/queue.json` |
+| `llb.book-ocr-quality-manifest` | `metadata/quality_manifest.json` |
 
 ## Evidence
 
-**What ran.** On 2026-11-22, on the GeForce RTX 5050 laptop (8 GB). This pass did not use the GPU. Resolution
-and the ledger rebuild are CPU work. Recognition was the RapidOCR 3.10.0 reading already recorded
-on the [block ledger](block-ledger.md#evidence) page (PP-OCRv6 small, ONNX Runtime, CPU), reused
-rather than repeated.
+**What ran.** On 2026-11-22, on the GeForce RTX 5050 laptop (8 GB). This pass did not use the
+GPU. Resolution and the ledger rebuild are CPU work. Recognition was the RapidOCR 3.10.0 reading
+already recorded on the [block ledger](block-ledger.md#evidence) page (PP-OCRv6 small, ONNX
+Runtime, CPU), reused rather than repeated.
 
 - **The rule.** `test_a_digit_span_stays_unresolved_on_the_primary_reading` leaves the digit
   unresolved on the primary reading and adopts the rest.
@@ -151,3 +221,29 @@ rebuild that changes a block's region or its raw readings would orphan an overla
 than move it. A render whose long side is under 1000 pixels is the ledger page's caveat, not a
 property of this rule. The task record is
 [0010](../../records/0010-scanned-book-recovery-book-reading-resolution-and-correction-overlay.md).
+
+**Review queue.** On 2026-11-23, on the RTX PRO 3000 Blackwell laptop (12 GB). RapidOCR 3.10.0
+(PP-OCRv6 small) on its CPU route; this pass loaded no GPU model. The source is the same
+1,067-page *Space Mission Engineering* scan. Render was reused. This pass recognized PDF pages
+1-15 and 290-299: 25 pages, 75 stages ran, 25 renders were reused, none failed. Wall time was
+75 s, of which the OCR stage recorded 73 s.
+
+The 25 pages hold 2,596 blocks. Every block is `body` and has one reading. There is no unresolved
+span, no empty reading, and no missing confidence. On pages 1-15 the 1,481 scores have minimum
+0.504, 10th percentile 0.91, and median 0.995. On pages 290-299 the 1,115 scores have minimum
+0.503, 5th percentile 0.937, 10th percentile 0.964, and median 0.993. A cut of 0.5 queued none of
+the 2,596 lines. The cut is 0.9. It queued 179 lines, 136 of the 1,481 and 43 of the 1,115. All
+179 are `low-confidence`, each has a crop, and each keeps its line after the marker. The manifest
+has 25 pages and 179 rows, and its counts match. Six pages have no row. PDF pages 3 and 7
+contributed 38 and 36 of the rows. A second build left the queue file byte-identical.
+
+A displayed relation on PDF page 299 scored 0.883, and a short decimal on PDF page 295 scored
+0.840, so both are queued. A one-character mark on PDF page 3 scored 0.504. Italic prose sits in
+the same low band. This engine never named a block `formula`, so the relation's marker is
+`low-confidence`.
+
+What would overturn the queue reading: a RapidOCR build whose scores sit on another scale, or a
+second engine that disagrees on a digit, a sign, a decimal, or a symbol. That disagreement is an
+unresolved span, which the cut does not create. A layout stage that names formula and table blocks
+would change the marker kind of those lines. The task record is
+[0011](../../records/0011-scanned-book-recovery-book-uncertainty-markers-and-review-queue.md).

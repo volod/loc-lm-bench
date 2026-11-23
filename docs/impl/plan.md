@@ -59,39 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-uncertainty-markers-and-review-queue
-
-The ledger can say a span is uncertain; nothing yet turns that into something a reader sees and a
-reviewer can act on. An omitted passage and a passage nobody could read must never look the same.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the resolved text and its overlay
-  ([uncertainty and review](current/book-recovery/uncertainty-and-review.md)). The decision UI
-  reuses the [review workbench](current/review-workbench.md) adapter seam.
-- User-visible outcome: every unreadable or uncertain span becomes a short visible marker with its
-  PDF page link and, where useful, a padded crop of the region, a row in a page-level quality
-  manifest, and an entry in a review queue that opens in the review workbench; a reviewer decision
-  becomes a correction-overlay entry that survives every re-render of an unchanged block, and an
-  orphaned entry returns to the queue rather than disappearing.
-- Scope boundary: in scope -- marker syntax that is readable in Obsidian and machine-parseable, with
-  distinct markers for unreadable, low-confidence, and uncertain formula or table content;
-  deterministic crop names under `review/`; `metadata/quality_manifest.json`; the review-queue file;
-  a workbench adapter whose typed decisions (accept raw, accept candidate, enter text, mark
-  illegible) write to the overlay. Out of scope -- model correction, and working the queue (that is
-  `book-review-queue-resolution`).
-- Data and artifact paths: `src/llb/prep/book/review/`, `src/llb/review/adapters/`; `review/` and
-  `metadata/quality_manifest.json` inside the book directory.
-- Execution path: CPU-only inside `make ci`; `make review-workbench REVIEW_PATH=<review-queue>` opens
-  the queue.
-- Acceptance gates: `make ci` green; a planted unreadable span yields a marker, an existing crop, a
-  manifest row, and a queue entry -- never an omission; a workbench decision changes the rendered
-  text and leaves the raw ledger untouched; reopening the queue resumes where it stopped; an
-  orphaned overlay entry reappears in the queue with its old decision shown; the adapter passes the
-  workbench's ledger-compatibility tests.
-- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md` and the
-  [review workbench](current/review-workbench.md) adapter table.
-
 #### book-structure-inference
 
 A reader navigates the book by part, chapter, and section, and the book cites itself by printed page.
@@ -135,7 +102,7 @@ will hold, so the output has to be both readable and stable.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-uncertainty-markers-and-review-queue`, `book-structure-inference`
+- Requires: `book-structure-inference`
 - Dependencies: none.
 - User-visible outcome: a book directory with `00_Table_of_Contents.md`, `content/`, `assets/`,
   `review/`, `metadata/`, and `source/`; content split by chapter and section, each file opening and
@@ -379,7 +346,7 @@ guard admits or refuses, and adopt it only if the pilot shows it helps.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- the adoption reading runs a local vision model over the pilot set.
 - Research: yes
-- Requires: `book-uncertainty-markers-and-review-queue`, `book-pilot-pipeline-comparison`
+- Requires: `book-pilot-pipeline-comparison`
 - Dependencies: the model is the strongest vision-capable model that fits the host, chosen per
   [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
 - User-visible outcome: an optional `correct` stage that proposes per-block edits from the page crop
@@ -514,7 +481,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-uncertainty-markers-and-review-queue`, `book-structure-inference`,
+- Requires: `book-structure-inference`,
   `book-vault-rendering-and-navigation`, `book-vault-validation-and-report`,
   `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,

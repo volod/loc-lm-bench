@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "PriorDecision": {
+      "additionalProperties": false,
+      "description": "A decision the current ledger refused, shown again so it is not lost.",
+      "properties": {
+        "decision": {
+          "default": "",
+          "title": "Decision",
+          "type": "string"
+        },
+        "edit_id": {
+          "minLength": 1,
+          "title": "Edit Id",
+          "type": "string"
+        },
+        "evidence": {
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "block_missing",
+            "block_changed",
+            "raw_mismatch"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "replacement": {
+          "title": "Replacement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edit_id",
+        "replacement",
+        "evidence",
+        "reason"
+      ],
+      "title": "PriorDecision",
+      "type": "object"
+    },
+    "ReviewQueueEntry": {
+      "additionalProperties": false,
+      "description": "One span a reviewer can accept, replace, or mark illegible.",
+      "properties": {
+        "anchor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Anchor",
+          "type": "string"
+        },
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "block_present": {
+          "default": true,
+          "title": "Block Present",
+          "type": "boolean"
+        },
+        "candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate"
+        },
+        "classes": {
+          "items": {
+            "enum": [
+              "digit",
+              "sign",
+              "decimal",
+              "symbol"
+            ],
+            "type": "string"
+          },
+          "title": "Classes",
+          "type": "array"
+        },
+        "crop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "entry_id": {
+          "minLength": 1,
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "unreadable",
+            "low-confidence",
+            "formula-table"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "marker": {
+          "minLength": 1,
+          "title": "Marker",
+          "type": "string"
+        },
+        "ordinal": {
+          "minimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "pdf_link": {
+          "minLength": 1,
+          "title": "Pdf Link",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "priors": {
+          "items": {
+            "$ref": "#/$defs/PriorDecision"
+          },
+          "title": "Priors",
+          "type": "array"
+        },
+        "raw_text": {
+          "title": "Raw Text",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unresolved",
+            "empty",
+            "low-confidence",
+            "orphaned"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "rendered": {
+          "minLength": 1,
+          "title": "Rendered",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "verdict": {
+          "default": "",
+          "enum": [
+            "",
+            "accept-raw",
+            "accept-candidate",
+            "enter-text",
+            "mark-illegible"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry_id",
+        "page_id",
+        "pdf_page",
+        "block_id",
+        "ordinal",
+        "anchor",
+        "kind",
+        "reason",
+        "start",
+        "end",
+        "raw_text",
+        "marker",
+        "pdf_link",
+        "rendered"
+      ],
+      "title": "ReviewQueueEntry",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-review-queue:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`review/queue.json`: every open uncertainty, in reading order.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/ReviewQueueEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-review-queue",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-review-queue",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "source_sha256"
+  ],
+  "title": "ReviewQueue",
+  "type": "object"
+}

@@ -133,14 +133,37 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   pages/<pNNNN>/overlay.json     applied and orphaned corrections (llb.book-ocr-correction-overlay)
   pages/<pNNNN>/resolved.json    the resolved text (llb.book-ocr-resolved-page)
   review/decisions.json          reviewer edits (llb.book-ocr-reviewer-decisions)
+  review/queue.json              uncertain spans for the workbench (llb.book-ocr-review-queue)
+  review/<block>-s<start>-<end>.png   a padded crop of one uncertain block
   pilot/selection.json           the seeded pilot (llb.book-ocr-pilot-selection)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
+  metadata/quality_manifest.json one row per uncertain span (llb.book-ocr-quality-manifest)
   metadata/processing_report.md  human-readable summary and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
 ```
 
 `pNNNN` is the 1-based PDF page, zero-padded to four digits (wider for a longer document). A full
 render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
+
+## Review queue
+
+`book-ocr review-queue` reads a finished `resolve` and writes a marker, a crop, a manifest row, and
+a queue entry for every uncertain span. It is not a stage. The marker syntax, the three kinds, and
+what a decision writes are
+[uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
+
+```sh
+make book-ocr-review-queue BOOK_RUN=<run-dir>
+make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run whose `resolve` stage has finished for every configured page | required |
+
+Exit code 2 is a path that is not a run, or a page that still lacks its ledger, resolved text, and
+overlay. The command prints kind counts. It does not print the recovered text. After a decision,
+resume the run so `resolve` applies it, then build the queue again.
 
 ## Pilot selection
 
