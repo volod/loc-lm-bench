@@ -1,0 +1,269 @@
+{
+  "$defs": {
+    "AffineTransform": {
+      "additionalProperties": false,
+      "description": "Variant pixel to original pixel: `[x, y, 1]` times this 2x3 matrix.",
+      "properties": {
+        "height": {
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "affine",
+          "title": "Kind",
+          "type": "string"
+        },
+        "matrix": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "array"
+        },
+        "src_height": {
+          "minimum": 1,
+          "title": "Src Height",
+          "type": "integer"
+        },
+        "src_width": {
+          "minimum": 1,
+          "title": "Src Width",
+          "type": "integer"
+        },
+        "width": {
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "matrix",
+        "src_width",
+        "src_height",
+        "width",
+        "height"
+      ],
+      "title": "AffineTransform",
+      "type": "object"
+    },
+    "GridTransform": {
+      "additionalProperties": false,
+      "description": "A sampled point map. `rows`/`cols` are variant pixels; `map_x`/`map_y` are original pixels.",
+      "properties": {
+        "cols": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "title": "Cols",
+          "type": "array"
+        },
+        "height": {
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "grid",
+          "title": "Kind",
+          "type": "string"
+        },
+        "map_x": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Map X",
+          "type": "array"
+        },
+        "map_y": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Map Y",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "title": "Rows",
+          "type": "array"
+        },
+        "src_height": {
+          "minimum": 1,
+          "title": "Src Height",
+          "type": "integer"
+        },
+        "src_width": {
+          "minimum": 1,
+          "title": "Src Width",
+          "type": "integer"
+        },
+        "width": {
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "rows",
+        "cols",
+        "src_width",
+        "src_height",
+        "width",
+        "height",
+        "map_x",
+        "map_y"
+      ],
+      "title": "GridTransform",
+      "type": "object"
+    },
+    "VariantRecord": {
+      "additionalProperties": false,
+      "description": "One image variant, or the reason it was refused and not written.",
+      "properties": {
+        "geometric": {
+          "title": "Geometric",
+          "type": "boolean"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "title": "Parameters",
+          "type": "object"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "kept",
+            "refused"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "affine": "#/$defs/AffineTransform",
+                  "grid": "#/$defs/GridTransform"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AffineTransform"
+                },
+                {
+                  "$ref": "#/$defs/GridTransform"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transform"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "geometric"
+      ],
+      "title": "VariantRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-variant-manifest:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`pages/<pNNNN>/variants/manifest.json`: the variants generated for one page.",
+  "properties": {
+    "kind": {
+      "const": "book-ocr-variant-manifest",
+      "title": "Kind",
+      "type": "string"
+    },
+    "page_id": {
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "pdf_page": {
+      "minimum": 1,
+      "title": "Pdf Page",
+      "type": "integer"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-variant-manifest",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/VariantRecord"
+      },
+      "minItems": 1,
+      "title": "Variants",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "page_id",
+    "pdf_page",
+    "variants"
+  ],
+  "title": "VariantManifest",
+  "type": "object"
+}

@@ -33,7 +33,7 @@ from llb.prep.book.inventory import PdfOpenError, inventory_document
 from llb.prep.book.models import OllamaLister, model_problem
 from llb.prep.book.ranges import PageRangeError, batches, parse_page_ranges
 from llb.prep.book.source import sha256_file
-from llb.prep.book.stages import StageRegistry
+from llb.prep.book.stages import StageRegistry, resolved_inputs
 from llb.prep.pdf.model import PdfDiagnostics
 
 _FILE_KEYS = ("pages", "batch_pages", "max_attempts", "source_policy", "stages")
@@ -105,9 +105,16 @@ def _one_stage_errors(
     errors = []
     if spec.name in configured_before:
         errors.append(f"stage {spec.name!r} is configured twice")
-    missing = [name for name in stage.inputs if name not in configured_before]
+    needed = resolved_inputs(stage, configured_before, spec.params)
+    missing = [name for name in needed if name not in configured_before]
     if missing:
         errors.append(f"stage {spec.name!r} reads {missing}, which must be configured before it")
+    extra = getattr(stage, "validate_configured", None)
+    if extra is not None:
+        errors.extend(extra(configured_before))
+    order = getattr(stage, "validate_order", None)
+    if order is not None:
+        errors.extend(order(spec.params, configured_before))
     errors.extend(stage.validate_params(spec.params))
     if stage.model_required and not spec.model:
         errors.append(f"stage {spec.name!r} needs a model")

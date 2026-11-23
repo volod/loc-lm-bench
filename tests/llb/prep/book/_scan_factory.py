@@ -39,6 +39,23 @@ def _grey_samples(width: int, height: int, seed: int) -> bytes:
     return bytes(rows)
 
 
+def make_duplicate_scan(path: Path) -> Path:
+    """Two pages with the same raster, so a cache keyed only on the image would alias them."""
+    import fitz
+
+    doc = fitz.open()
+    w_px = round(PAGE_W_PT / POINTS_PER_INCH * SCAN_DPI)
+    h_px = round(PAGE_H_PT / POINTS_PER_INCH * SCAN_DPI)
+    samples = _grey_samples(w_px, h_px, 1)
+    for _page in range(2):
+        page = doc.new_page(width=PAGE_W_PT, height=PAGE_H_PT)
+        pixmap = fitz.Pixmap(fitz.csGRAY, w_px, h_px, samples, False)
+        page.insert_image(page.rect, pixmap=pixmap)
+    doc.save(path, garbage=3, deflate=True, no_new_id=True)
+    doc.close()
+    return path
+
+
 def make_scan(path: Path, spec: ScanSpec = ScanSpec()) -> Path:
     """Write the synthetic scan to `path` and return it."""
     import fitz

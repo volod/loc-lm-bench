@@ -118,12 +118,143 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-block-ledger
+  name: llb.book-ocr-block-ledger
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-block-ledger/1.0.0.schema.json
+  description: One scanned page's blocks, raw engine readings, and uncertainty spans.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-correction-overlay
+  name: llb.book-ocr-correction-overlay
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-correction-overlay/1.0.0.schema.json
+  description: Edits applied to one scanned page, and edits a rebuilt ledger orphaned.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-model-corrections
+  name: llb.book-ocr-model-corrections
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-model-corrections/1.0.0.schema.json
+  description: Model edits for one scanned page, read by resolution and not produced
+    by it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-page-classes
+  name: llb.book-ocr-page-classes
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-page-classes/1.0.0.schema.json
+  description: Every class one scanned page matches, and the class an engine stage
+    routes on.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-page-manifest
   name: llb.book-ocr-page-manifest
   logicalType: object
   physicalType: file
   physicalName: llb.book-ocr-page-manifest/1.0.0.schema.json
   description: Per-page, per-stage ledger of one scanned-book recovery run.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-page-signals
+  name: llb.book-ocr-page-signals
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-page-signals/1.0.0.schema.json
+  description: One scanned page's measured signal vector.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-pilot-selection
+  name: llb.book-ocr-pilot-selection
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-pilot-selection/1.0.0.schema.json
+  description: The seeded pilot pages, the class each one represents, and the signals
+    that placed it.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-resolved-page
+  name: llb.book-ocr-resolved-page
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-resolved-page/1.0.0.schema.json
+  description: One scanned page's resolved text, with the provenance of every span.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-reviewer-decisions
+  name: llb.book-ocr-reviewer-decisions
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-reviewer-decisions/1.0.0.schema.json
+  description: Reviewer edits for a scanned-book run, kept outside the stage cache.
   customProperties:
   - property: schemaVersion
     value: 1.0.0
@@ -156,6 +287,22 @@ schema:
   physicalType: file
   physicalName: llb.book-ocr-stage-record/1.0.0.schema.json
   description: One stage's outcome on one page and the cache key it was produced under.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-variant-manifest
+  name: llb.book-ocr-variant-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-variant-manifest/1.0.0.schema.json
+  description: The image variants generated for one scanned page, and the maps back.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

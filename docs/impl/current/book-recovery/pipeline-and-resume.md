@@ -2,9 +2,10 @@
 
 The skeleton every later recovery stage plugs into: one `book-ocr` run over a scanned PDF, with the
 source identified by checksum, a per-page inventory, a per-page, per-stage status ledger, a
-content-addressed stage cache, and a processing report. It ships with one real stage (`render`) and
-two deterministic stand-ins, so the whole ledger -- resume, reuse, failure isolation -- runs over a
-real book before any OCR choice exists. Operator usage: [book-ocr guide](../../../guides/data-prep/book-ocr.md).
+content-addressed stage cache, and a processing report. Render, signals, variants, page classes,
+the recognition stages, and resolution ship on that seam, plus two deterministic stand-ins, so
+resume, reuse, and failure isolation run over a real book. Operator usage:
+[book-ocr guide](../../../guides/data-prep/book-ocr.md).
 
 ## Where it lives
 
@@ -17,12 +18,13 @@ real book before any OCR choice exists. Operator usage: [book-ocr guide](../../.
 | `src/llb/prep/book/ranges.py` | Page-range parsing, batching, page ids |
 | `src/llb/prep/book/source.py` | Source fingerprint (the PDF lane's `_sha256_file`), the copy, symlink, and reference policies, the overlap refusal, resume verification |
 | `src/llb/prep/book/inventory.py` | Document diagnostics (the PDF lane's `inspect_pdf`), per-page inventory, native-resolution rendering |
-| `src/llb/prep/book/ledger.py`, `report.py`, `logs.py` | The page manifest projected from the stage records, the Markdown report, the JSON-lines event log |
+| `src/llb/prep/book/ledger/` | The page manifest projected from the stage records (`manifest.py`); block assembly is the [block ledger](block-ledger.md) |
+| `src/llb/prep/book/report.py`, `logs.py` | The Markdown report and the JSON-lines event log |
 | `src/llb/prep/book/models.py` | Stage-model availability: `ollama:<tag>` against the daemon's served tags, `fake:<name>` |
-| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `fake-preprocess`, `fake-ocr` |
-| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run` and `status` |
-| `src/llb/core/contracts/data_prep/book.py`, `src/llb/artifacts/data_prep/book.py` | The three registered families |
-| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status` |
+| `src/llb/prep/book/stages/` | The `Stage` protocol and registry, `render`, `signals`, `variants`, `classes`, `fake-preprocess`, `fake-ocr`, the recognition stages, and `resolve` |
+| `src/llb/cli/book/` | The `llb book-ocr` Typer group: `run`, `status`, `score`, `pilot-select`, and `engines` |
+| `src/llb/core/contracts/data_prep/book.py`, `book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `book_resolve.py`, `src/llb/artifacts/data_prep/book.py` | The twelve registered families |
+| `make/data-prep/book.mk` | `make book-ocr`, `make book-ocr-status`, `make book-ocr-score`, `make book-ocr-pilot-select`, `make book-ocr-engines` |
 
 Tests: `tests/llb/prep/book/` (ranges, run, resume) and `tests/llb/cli/test_cli_book_ocr.py`, over a
 synthetic six-page scan built by `tests/llb/prep/book/_scan_factory.py` -- grey line patterns at
@@ -43,11 +45,14 @@ should run.
 
 **The cache key** is the SHA-256 of the stage name and version, the tool identity, the model, the
 digest of the EFFECTIVE parameters, and the input digests: the source checksum and PDF page for a
-stage that reads the PDF, each upstream stage's output digest otherwise. So the `render` key is a
-function of the source bytes, every later key is a function of the page-image digest, and a value a
-stage derives from the page -- `render`'s native resolution, its automatic colorspace -- is in the
-key. Every component is stored beside the key in `stage.json`, so a reader can see why two records
-share one.
+stage that reads the PDF, each upstream stage's output digest otherwise. The `render` key is a
+function of the source bytes, and a recognition key is a function of the page-image digest. A stage
+whose output names the page -- the ledger, the signal file -- also includes the PDF page, so
+identical images do not share that file. A value a stage derives from the page -- `render`'s native
+resolution, its automatic colorspace -- is in the key. Every component is stored beside the key in
+`stage.json`, so a reader can see why two records share one. `resolve` also digests the page's
+reviewer decisions; that file lives outside the stage cache
+([uncertainty and review](uncertainty-and-review.md)).
 
 **Per page and stage**, in order:
 
@@ -79,15 +84,22 @@ orientation, image count, the largest image's pixel size, its native resolution,
 it is PLACED at, and embedded-text characters. The resolution is measured along the image's own
 pixel rows through its placement matrix, not across the bounding box -- see the evidence below for
 why that matters. The placement rotation says nothing about whether the printed content reads
-upright; that is a measured page signal owned by `book-page-signals-and-variants`.
+upright; that measurement is the signals stage
+([page signals and variants](page-preprocessing.md#what-is-measured)).
 
 ## Contracts
 
-`config.json`, every `stage.json`, and `metadata/page_manifest.json` are registered families --
-`llb.book-ocr-run-config`, `llb.book-ocr-stage-record`, `llb.book-ocr-page-manifest`, each at
-`1.0.0` with no older form (see [data-prep contracts](../artifact-contracts/data-prep-contracts.md#scanned-book-run-families)).
-The processing report and the JSON-lines log are human and diagnostic outputs and stay unregistered,
-as the data-prep policy does for Markdown reports.
+`config.json`, every `stage.json`, `pages/<pNNNN>/blocks.json`, and `metadata/page_manifest.json`
+are registered families -- `llb.book-ocr-run-config`, `llb.book-ocr-stage-record`,
+`llb.book-ocr-block-ledger`, and `llb.book-ocr-page-manifest`, each at `1.0.0` with no older form
+(see [data-prep contracts](../artifact-contracts/data-prep-contracts.md#scanned-book-run-families)).
+The block ledger is what a later stage reads
+([block ledger](block-ledger.md)). Resolution adds `llb.book-ocr-resolved-page`,
+`llb.book-ocr-correction-overlay`, `llb.book-ocr-model-corrections`, and
+`llb.book-ocr-reviewer-decisions`
+([uncertainty and review](uncertainty-and-review.md)). The processing report and the JSON-lines
+log are human and diagnostic outputs and stay unregistered, as the data-prep policy does for
+Markdown reports.
 
 ## Evidence
 
@@ -110,7 +122,8 @@ fake-preprocess, fake-ocr`, default batches of 25 and the symlink policy.
   turn and 19 at three quarters. The first build
   measured resolution across the bounding box and read those 45 as 200 dpi; measured along the
   placement matrix all 1,067 read 150 dpi. Sampled page 126 renders upside down, so content
-  orientation cannot be read from the placement, and correcting it is left to the page-signals task.
+  orientation cannot be read from the placement. Measuring and correcting it is the signals stage
+  ([page signals and variants](page-preprocessing.md)).
 - **Content addressing held.** That fix changed the `render` key of every page (its effective
   parameters now carry the resolved resolution). A run reusing the pre-fix run re-rendered all
   1,067 pages, took `fake-preprocess` and `fake-ocr` from the earlier run for the 1,022 pages whose

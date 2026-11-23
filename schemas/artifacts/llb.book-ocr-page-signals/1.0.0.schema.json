@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "BleedBand": {
+      "additionalProperties": false,
+      "description": "A neighbour-page bleed, as a region of the original render. It is not cropped.",
+      "properties": {
+        "side": {
+          "enum": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "x0": {
+          "minimum": 0,
+          "title": "X0",
+          "type": "integer"
+        },
+        "x1": {
+          "minimum": 1,
+          "title": "X1",
+          "type": "integer"
+        },
+        "y0": {
+          "minimum": 0,
+          "title": "Y0",
+          "type": "integer"
+        },
+        "y1": {
+          "minimum": 1,
+          "title": "Y1",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "side",
+        "x0",
+        "y0",
+        "x1",
+        "y1"
+      ],
+      "title": "BleedBand",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-page-signals:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`pages/<pNNNN>/signals.json`: one page's measured signal vector.",
+  "properties": {
+    "background_unevenness": {
+      "minimum": 0,
+      "title": "Background Unevenness",
+      "type": "number"
+    },
+    "bleed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BleedBand"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "blur": {
+      "minimum": 0,
+      "title": "Blur",
+      "type": "number"
+    },
+    "contrast": {
+      "minimum": 0,
+      "title": "Contrast",
+      "type": "number"
+    },
+    "gutter_side": {
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "none"
+      ],
+      "title": "Gutter Side",
+      "type": "string"
+    },
+    "gutter_width_px": {
+      "minimum": 0,
+      "title": "Gutter Width Px",
+      "type": "integer"
+    },
+    "height": {
+      "minimum": 1,
+      "title": "Height",
+      "type": "integer"
+    },
+    "kind": {
+      "const": "book-ocr-page-signals",
+      "title": "Kind",
+      "type": "string"
+    },
+    "line_curvature_px": {
+      "minimum": 0,
+      "title": "Line Curvature Px",
+      "type": "number"
+    },
+    "noise": {
+      "minimum": 0,
+      "title": "Noise",
+      "type": "number"
+    },
+    "orientation_deg": {
+      "enum": [
+        0,
+        90,
+        180,
+        270
+      ],
+      "title": "Orientation Deg",
+      "type": "integer"
+    },
+    "page_id": {
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "pdf_page": {
+      "minimum": 1,
+      "title": "Pdf Page",
+      "type": "integer"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-page-signals",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "skew_deg": {
+      "title": "Skew Deg",
+      "type": "number"
+    },
+    "width": {
+      "minimum": 1,
+      "title": "Width",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "page_id",
+    "pdf_page",
+    "width",
+    "height",
+    "skew_deg",
+    "line_curvature_px",
+    "background_unevenness",
+    "contrast",
+    "blur",
+    "noise",
+    "gutter_side",
+    "gutter_width_px",
+    "orientation_deg"
+  ],
+  "title": "PageSignals",
+  "type": "object"
+}

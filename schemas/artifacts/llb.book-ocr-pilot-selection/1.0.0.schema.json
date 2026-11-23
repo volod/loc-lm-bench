@@ -1,0 +1,324 @@
+{
+  "$defs": {
+    "PilotPageEntry": {
+      "additionalProperties": false,
+      "description": "One pilot page: the class it was chosen to represent, and the signals that placed it.",
+      "properties": {
+        "classes": {
+          "items": {
+            "enum": [
+              "severe_curvature",
+              "dense_formulas",
+              "large_tables",
+              "labelled_diagrams",
+              "small_footnotes",
+              "gutter_corner",
+              "grey_background",
+              "landscape",
+              "multi_column",
+              "normal"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Classes",
+          "type": "array"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "primary": {
+          "enum": [
+            "severe_curvature",
+            "dense_formulas",
+            "large_tables",
+            "labelled_diagrams",
+            "small_footnotes",
+            "gutter_corner",
+            "grey_background",
+            "landscape",
+            "multi_column",
+            "normal"
+          ],
+          "title": "Primary",
+          "type": "string"
+        },
+        "represents": {
+          "enum": [
+            "severe_curvature",
+            "dense_formulas",
+            "large_tables",
+            "labelled_diagrams",
+            "small_footnotes",
+            "gutter_corner",
+            "grey_background",
+            "landscape",
+            "multi_column",
+            "normal"
+          ],
+          "title": "Represents",
+          "type": "string"
+        },
+        "signals": {
+          "$ref": "#/$defs/PlacedSignals"
+        }
+      },
+      "required": [
+        "pdf_page",
+        "page_id",
+        "represents",
+        "classes",
+        "primary",
+        "signals"
+      ],
+      "title": "PilotPageEntry",
+      "type": "object"
+    },
+    "PlacedSignals": {
+      "additionalProperties": false,
+      "description": "The measurements that decided a page's classes. No pixels and no text.",
+      "properties": {
+        "background_unevenness": {
+          "minimum": 0,
+          "title": "Background Unevenness",
+          "type": "number"
+        },
+        "column_count": {
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Column Count",
+          "type": "integer"
+        },
+        "contrast": {
+          "minimum": 0,
+          "title": "Contrast",
+          "type": "number"
+        },
+        "corner_components": {
+          "minimum": 0,
+          "title": "Corner Components",
+          "type": "integer"
+        },
+        "diagram_labels": {
+          "minimum": 0,
+          "title": "Diagram Labels",
+          "type": "integer"
+        },
+        "equation_lines": {
+          "minimum": 0,
+          "title": "Equation Lines",
+          "type": "integer"
+        },
+        "figure_area": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Figure Area",
+          "type": "number"
+        },
+        "footnote_band": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Footnote Band",
+          "type": "number"
+        },
+        "formula_density": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Formula Density",
+          "type": "number"
+        },
+        "gutter_ink": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Gutter Ink",
+          "type": "number"
+        },
+        "gutter_side": {
+          "enum": [
+            "left",
+            "right",
+            "top",
+            "bottom",
+            "none"
+          ],
+          "title": "Gutter Side",
+          "type": "string"
+        },
+        "gutter_width_px": {
+          "minimum": 0,
+          "title": "Gutter Width Px",
+          "type": "integer"
+        },
+        "has_bleed": {
+          "title": "Has Bleed",
+          "type": "boolean"
+        },
+        "image_rotation": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                90,
+                180,
+                270
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Rotation"
+        },
+        "line_curvature_px": {
+          "minimum": 0,
+          "title": "Line Curvature Px",
+          "type": "number"
+        },
+        "orientation_deg": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "title": "Orientation Deg",
+          "type": "integer"
+        },
+        "page_orientation": {
+          "enum": [
+            "portrait",
+            "landscape"
+          ],
+          "title": "Page Orientation",
+          "type": "string"
+        },
+        "ruled_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Ruled Fraction",
+          "type": "number"
+        },
+        "ruling_lines": {
+          "minimum": 0,
+          "title": "Ruling Lines",
+          "type": "integer"
+        },
+        "vertical_rules": {
+          "minimum": 0,
+          "title": "Vertical Rules",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line_curvature_px",
+        "gutter_width_px",
+        "gutter_side",
+        "background_unevenness",
+        "contrast",
+        "orientation_deg",
+        "page_orientation",
+        "has_bleed",
+        "formula_density",
+        "equation_lines",
+        "ruling_lines",
+        "vertical_rules",
+        "ruled_fraction",
+        "figure_area",
+        "diagram_labels",
+        "column_count",
+        "footnote_band",
+        "corner_components",
+        "gutter_ink"
+      ],
+      "title": "PlacedSignals",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-pilot-selection:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The seeded pilot set. `empty_classes` names every declared class no page matched.",
+  "properties": {
+    "coverage": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Coverage",
+      "type": "object"
+    },
+    "empty_classes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Empty Classes",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-pilot-selection",
+      "title": "Kind",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PilotPageEntry"
+      },
+      "title": "Pages",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-pilot-selection",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "minimum": 0,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "size": {
+      "minimum": 1,
+      "title": "Size",
+      "type": "integer"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    },
+    "unfilled_classes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unfilled Classes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "source_sha256",
+    "seed",
+    "size",
+    "pages",
+    "empty_classes",
+    "unfilled_classes",
+    "coverage"
+  ],
+  "title": "PilotSelection",
+  "type": "object"
+}

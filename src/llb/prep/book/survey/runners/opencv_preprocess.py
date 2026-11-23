@@ -22,6 +22,8 @@ def main(image: str, out_dir: str) -> None:
     import numpy as np
 
     grey = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
+    if grey is None:
+        raise SystemExit(f"unreadable image: {image}")
     background = cv2.medianBlur(grey, BACKGROUND_KERNEL).astype(np.float32) + 1.0
     flat = np.clip(grey.astype(np.float32) / background * 255.0, 0, 255).astype(np.uint8)
     ink = (flat < 255 * INK_THRESHOLD).astype(np.float32)

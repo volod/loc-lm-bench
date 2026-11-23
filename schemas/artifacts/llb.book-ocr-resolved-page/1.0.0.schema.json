@@ -1,0 +1,223 @@
+{
+  "$defs": {
+    "ResolvedBlock": {
+      "additionalProperties": false,
+      "description": "One block's adopted text, the reading it was resolved from, and every span.",
+      "properties": {
+        "anchor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Anchor",
+          "type": "string"
+        },
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "engine": {
+          "minLength": 1,
+          "title": "Engine",
+          "type": "string"
+        },
+        "fallback": {
+          "title": "Fallback",
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "primary_text": {
+          "title": "Primary Text",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/ResolvedSpan"
+          },
+          "title": "Spans",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "variant": {
+          "minLength": 1,
+          "title": "Variant",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block_id",
+        "anchor",
+        "engine",
+        "variant",
+        "fallback",
+        "primary_text",
+        "text"
+      ],
+      "title": "ResolvedBlock",
+      "type": "object"
+    },
+    "ResolvedSpan": {
+      "additionalProperties": false,
+      "description": "One slice of the primary reading after resolution.\n\n`start` and `end` are offsets into the primary reading. An overlay replacement may be a\ndifferent length than the slice it covers. An unresolved span keeps the primary characters\nand is not part of the adopted text.",
+      "properties": {
+        "adopted": {
+          "title": "Adopted",
+          "type": "boolean"
+        },
+        "classes": {
+          "items": {
+            "enum": [
+              "digit",
+              "sign",
+              "decimal",
+              "symbol"
+            ],
+            "type": "string"
+          },
+          "title": "Classes",
+          "type": "array"
+        },
+        "edit_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edit Id"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "provenance": {
+          "enum": [
+            "primary",
+            "agreement",
+            "model",
+            "reviewer",
+            "unresolved"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provenance",
+        "text",
+        "start",
+        "end",
+        "adopted"
+      ],
+      "title": "ResolvedSpan",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-resolved-page:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`pages/<pNNNN>/resolved.json`: the text both renderings read for one page.",
+  "properties": {
+    "blocks": {
+      "items": {
+        "$ref": "#/$defs/ResolvedBlock"
+      },
+      "title": "Blocks",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-resolved-page",
+      "title": "Kind",
+      "type": "string"
+    },
+    "page_class": {
+      "title": "Page Class",
+      "type": "string"
+    },
+    "page_id": {
+      "minLength": 1,
+      "title": "Page Id",
+      "type": "string"
+    },
+    "pdf_page": {
+      "minimum": 1,
+      "title": "Pdf Page",
+      "type": "integer"
+    },
+    "primary_engine": {
+      "minLength": 1,
+      "title": "Primary Engine",
+      "type": "string"
+    },
+    "primary_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Primary Model"
+    },
+    "primary_stage": {
+      "minLength": 1,
+      "title": "Primary Stage",
+      "type": "string"
+    },
+    "primary_variant": {
+      "minLength": 1,
+      "title": "Primary Variant",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-resolved-page",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "page_id",
+    "pdf_page",
+    "page_class",
+    "primary_stage",
+    "primary_engine",
+    "primary_variant"
+  ],
+  "title": "PageResolvedText",
+  "type": "object"
+}

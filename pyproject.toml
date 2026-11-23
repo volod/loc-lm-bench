@@ -25,6 +25,10 @@ dependencies = [
   # CUDA host. Bump in lockstep with `_REQUIRED_TEXT_SPLITTERS` in llb/rag/chunking.py.
   "langchain-text-splitters==1.1.2",
   "numpy>=2.0",
+  # Page signals, deskew, illumination, and the stroke guard run inside `make ci` on synthetic
+  # pages. The headless build is the survey's pin, so a CI measurement and a survey measurement
+  # are the same library. The GPU dewarp stays in the survey's own environment.
+  "opencv-python-headless==5.1.0.95",
 ]
 
 [project.optional-dependencies]

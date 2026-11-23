@@ -11,9 +11,10 @@ directory is all it leaves, and the resume deletes it.
 import logging
 import shutil
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from llb.core.contracts.data_prep.book import BookStageRecord, BookStageSpec, PageInventoryRecord
 from llb.prep.book.cache import (
@@ -36,8 +37,12 @@ from llb.prep.book.constants import (
     STATUS_DONE,
     STATUS_FAILED,
 )
+from llb.prep.book.classes.records import publish_page_classes
+from llb.prep.book.ledger.io import publish_page_ledger
+from llb.prep.book.preprocess.records import publish_page_signals
+from llb.prep.book.resolve.io import publish_page_resolution
 from llb.prep.book.logs import log_event
-from llb.prep.book.stages import Stage, StageContext
+from llb.prep.book.stages import Stage, StageContext, resolved_inputs
 
 if TYPE_CHECKING:
     import fitz
@@ -71,22 +76,30 @@ class _Keyed:
     inputs: dict[str, Path]
 
 
-def _keyed(work: PageWork, stage: Stage, spec: BookStageSpec) -> _Keyed | None:
+def _keyed(
+    work: PageWork, stage: Stage, spec: BookStageSpec, configured_before: Sequence[str]
+) -> _Keyed | None:
     """The stage's cache key on this page, or None when an upstream stage is not complete."""
     digests: dict[str, str] = {}
     inputs: dict[str, Path] = {}
     if stage.reads_source:
         digests["source"] = work.source_sha256
         digests["pdf_page"] = str(work.pdf_page)
-    for upstream in stage.inputs:
+    for upstream in resolved_inputs(stage, configured_before, spec.params):
         directory = stage_dir(work.run_dir, work.page_id, upstream)
         record = read_record(directory)
         if record is None or record.status != STATUS_DONE:
             return None
         digests[upstream] = outputs_digest(record)
         inputs[upstream] = directory
+    extra = getattr(stage, "extra_input_digests", None)
+    if extra is not None:
+        for name, digest in extra(work.run_dir, work.page_id).items():
+            if name in digests:
+                raise RuntimeError(f"stage {stage.name!r} repeated input digest {name!r}")
+            digests[name] = digest
     tool = stage.tool_identity()
-    params = stage.effective_params(spec.params, work.inventory, work.document, work.pdf_page)
+    params = _effective_params(stage, spec.params, inputs, work)
     params_digest = digest_json(params)
     key = stage_key(
         stage=stage.name,
@@ -142,7 +155,12 @@ def _reuse(work: PageWork, stage: Stage, keyed: _Keyed, index: ReuseIndex) -> bo
 
 
 def run_stage(
-    work: PageWork, stage: Stage, spec: BookStageSpec, max_attempts: int, index: ReuseIndex
+    work: PageWork,
+    stage: Stage,
+    spec: BookStageSpec,
+    max_attempts: int,
+    index: ReuseIndex,
+    configured_before: Sequence[str] = (),
 ) -> str:
     """Bring one stage on one page to a committed state; returns what happened."""
     fields: dict[str, Any] = {
@@ -150,7 +168,7 @@ def run_stage(
         "pdf_page": work.pdf_page,
         "stage": stage.name,
     }
-    keyed = _keyed(work, stage, spec)
+    keyed = _keyed(work, stage, spec, configured_before)
     if keyed is None:
         log_event("stage_blocked", **fields)
         return OUTCOME_BLOCKED
@@ -163,9 +181,11 @@ def run_stage(
         and outputs_intact(final, existing)
     ):
         log_event("stage_cached", cache_key=keyed.key, **fields)
+        _publish(final)
         return OUTCOME_CACHED
     if _reuse(work, stage, keyed, index):
         log_event("stage_reused", cache_key=keyed.key, reused_from=str(index.run_dir), **fields)
+        _publish(final)
         return OUTCOME_REUSED
     error = ""
     for attempt in range(1, max_attempts + 1):
@@ -180,6 +200,7 @@ def run_stage(
             model=spec.model,
             inputs=keyed.inputs,
             work_dir=partial,
+            run_dir=work.run_dir,
             document=work.document,
         )
         try:
@@ -201,6 +222,7 @@ def run_stage(
             meta=dict(result.meta),
         )
         commit(partial, final, record)
+        _publish(final)
         log_event("stage_done", attempt=attempt, duration_s=duration, **fields)
         return OUTCOME_RAN
     partial = fresh_partial(work.run_dir, work.page_id, stage.name)
@@ -217,3 +239,22 @@ def run_stage(
     commit(partial, final, record)
     log_event("stage_failed", logging.WARNING, attempts=max_attempts, error=error, **fields)
     return OUTCOME_FAILED
+
+
+def _effective_params(
+    stage: Stage, params: Mapping[str, Any], inputs: Mapping[str, Path], work: PageWork
+) -> dict[str, Any]:
+    """Parameters the cache key digests. A routed stage resolves its class before that digest."""
+    hook = getattr(stage, "page_params", None)
+    if hook is not None:
+        resolved = hook(params, inputs, work.inventory, work.document, work.pdf_page)
+        return cast(dict[str, Any], resolved)
+    return stage.effective_params(params, work.inventory, work.document, work.pdf_page)
+
+
+def _publish(stage_directory: Path) -> None:
+    """Lift a stage file to the page path later stages are told to open."""
+    publish_page_ledger(stage_directory)
+    publish_page_signals(stage_directory)
+    publish_page_classes(stage_directory)
+    publish_page_resolution(stage_directory)

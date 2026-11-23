@@ -13,11 +13,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from llb.core.contracts.data_prep.book import (
     BookOcrRunConfig,
     BookPageManifest,
+    BookStageSpec,
     PageInventoryRecord,
     SourcePolicy,
 )
@@ -137,29 +138,70 @@ def execute(run_dir: Path, config: BookOcrRunConfig, registry: StageRegistry) ->
             manifest = build_manifest(run_dir, config, inventories, registry)
             write_manifest(run_dir, manifest)
             try:
-                for number, batch in enumerate(batches(config.pages, config.batch_pages)):
-                    log_event(
-                        "batch_start", logging.INFO, batch=number, first=batch[0], last=batch[-1]
-                    )
-                    for spec in config.stages:
-                        stage = registry.get(spec.name)
-                        for pdf_page in batch:
-                            work = PageWork(
-                                run_dir=run_dir,
-                                page_id=page_id(pdf_page, config.source.page_count),
-                                pdf_page=pdf_page,
-                                inventory=inventories[pdf_page],
-                                source_sha256=config.source.sha256,
-                                document=document,
-                            )
-                            outcomes[run_stage(work, stage, spec, config.max_attempts, index)] += 1
-                    manifest = _publish(run_dir, config, inventories, registry)
+                _run_batches(run_dir, config, inventories, registry, outcomes, index, document)
             finally:
                 manifest = _publish(run_dir, config, inventories, registry)
         finally:
             document.close()
         log_event("run_end", logging.INFO, run_id=config.run_id, **dict(sorted(outcomes.items())))
     return RunOutcome(run_dir=run_dir, manifest=manifest, outcomes=dict(outcomes))
+
+
+def _run_batches(
+    run_dir: Path,
+    config: BookOcrRunConfig,
+    inventories: Mapping[int, PageInventoryRecord],
+    registry: StageRegistry,
+    outcomes: Counter[str],
+    index: ReuseIndex,
+    document: Any,
+) -> None:
+    for number, batch in enumerate(batches(config.pages, config.batch_pages)):
+        log_event("batch_start", logging.INFO, batch=number, first=batch[0], last=batch[-1])
+        for spec in config.stages:
+            _drive_stage(
+                run_dir, config, inventories, registry, spec, batch, outcomes, index, document
+            )
+        _publish(run_dir, config, inventories, registry)
+
+
+def _drive_stage(
+    run_dir: Path,
+    config: BookOcrRunConfig,
+    inventories: Mapping[int, PageInventoryRecord],
+    registry: StageRegistry,
+    spec: BookStageSpec,
+    batch: list[int],
+    outcomes: Counter[str],
+    index: ReuseIndex,
+    document: Any,
+) -> None:
+    """One stage across one batch. The stage may hold a server open for these pages only."""
+    stage = registry.get(spec.name)
+    names = [item.name for item in config.stages]
+    before = tuple(names[: names.index(spec.name)])
+    opener = getattr(stage, "open_batch", None)
+    closer = getattr(stage, "close_batch", None)
+    if opener is not None:
+        opener()
+    try:
+        order = list(batch)
+        order_fn = getattr(stage, "batch_order", None)
+        if order_fn is not None:
+            order = order_fn(run_dir, config, batch, spec)
+        for pdf_page in order:
+            work = PageWork(
+                run_dir=run_dir,
+                page_id=page_id(pdf_page, config.source.page_count),
+                pdf_page=pdf_page,
+                inventory=inventories[pdf_page],
+                source_sha256=config.source.sha256,
+                document=document,
+            )
+            outcomes[run_stage(work, stage, spec, config.max_attempts, index, before)] += 1
+    finally:
+        if closer is not None:
+            closer()
 
 
 def _publish(
