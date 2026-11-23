@@ -29,7 +29,8 @@ installs every candidate recovery tool into its own environment and smokes it on
 one real page. `llb book-ocr score` compares a ledger, or the existing PDF lane, with a
 reference transcription ([quality metrics](book-recovery/quality-metrics.md)).
 `llb book-ocr structure` reads the ledgers and writes the printed-page mapping, the hierarchy, and
-the numbering inventory. `llb book-ocr render` writes the Obsidian vault from that file
+the numbering inventory. `llb book-ocr render` writes the Obsidian vault from that file, and
+`llb book-ocr validate` checks it
 ([structure and the reading vault](book-recovery/structure-and-rendering.md)). Operator usage is
 the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 
@@ -41,4 +42,4 @@ the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 | [Uncertainty and review](book-recovery/uncertainty-and-review.md) | The resolved text of each block, the correction overlay, the uncertainty markers, and the review queue |
 | [Tool selection](book-recovery/tool-selection.md) | Which dewarp, layout, OCR, formula, table, converter, and vision-model candidates install and run on this host, and the page classes a pilot is drawn from: the per-stage shortlist with version, licence, VRAM and RAM, install route, and one-page smoke result; what was not installed and why |
 | [Quality metrics](book-recovery/quality-metrics.md) | The reference format and the per-page, per-class score: character and word error, dangerous substitutions kept apart, formula fidelity, tables, figures, captions, reading order, and the printed page |
-| [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, and the Obsidian vault rendered from them |
+| [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, the Obsidian vault rendered from them, and the mechanical check of that vault |

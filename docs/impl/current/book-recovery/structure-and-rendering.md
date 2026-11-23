@@ -73,9 +73,9 @@ printed 273). In the roman front matter the offset is 1 (PDF 7 is vi, PDF 17 is 
 1.1-1.5 and the subsections under 1.2, 1.3, and 1.4, then, after the unread span, subsections
 10.6.3 and 10.6.4 and section 10.7 with 10.7.1 and 10.7.2. Section 10.7 carries both a contents
 match and the running header. 173 contents entries have no heading on these pages; each is a
-conflict, not a node. One contents title and one running-header section number disagree with the
-heading on the page, and both disagreements are recorded. The inventory holds 97 figure, table,
-and equation numbers.
+conflict, not a node. 22 headings on these pages have no contents entry. One contents title
+and one running-header section number disagree with the heading on the page, and both
+disagreements are recorded. The inventory holds 97 figure, table, and equation numbers.
 
 **What would overturn it.** An observed body numeral on this scan that is not 17 behind its PDF
 page. A heading on these pages that the file omits, or a node whose text is not on that page. A
@@ -94,7 +94,8 @@ make book-ocr-render BOOK_RUN=<run-dir>
 
 The default vault is `book/<book-slug>/` inside the run. `--output` publishes elsewhere, replaces
 the directory in one step, and drops files the new vault does not contain. Exit code 2 is a
-missing structure, a bad path, or a destination inside the scan's directory.
+missing structure, a bad path, or a destination inside the scan's directory. After publish,
+render runs [vault validation](#vault-validation) and exits 1 when a check fails.
 
 | Module | Role |
 | --- | --- |
@@ -144,8 +145,9 @@ already is. `BOOK_PAGE_FALLBACK=1` adds `source/pages/<page-id>.png` and a link 
 The fallback and the source policy leave content file names unchanged.
 
 `metadata/render.json` records the slug, the content files, the source checksum, the section
-cap, the source policy, the page-fallback switch, `obsidian_version` `1.15`, and
-`pdf_page_fragment` `page`. Obsidian 0.10.8, released 2021-01-11, introduced
+cap, the source policy, the page-fallback switch, `run_dir`, `obsidian_version` `1.15`, and
+`pdf_page_fragment` `page`. `run_dir` is how a vault published outside the run finds that run.
+Obsidian 0.10.8, released 2021-01-11, introduced
 `[[file.pdf#page=3]]`. The 1.15 help for PDF files and for embeds still documents that fragment.
 Opening the vault in the app is a later human task.
 
@@ -176,3 +178,91 @@ the first byte for byte, symlink target included.
 kind `figure` on this slice with no crop. A numbered anchor that changes when only the block
 ordinals change. An Obsidian release that drops `#page=`: the recorded version and the link
 form change together.
+
+## Vault validation
+
+`llb book-ocr validate` checks one rendered vault and writes the report into that vault.
+`render` runs the same check after it publishes. `run` and `resume` run it for each vault
+already under `book/` that has `metadata/render.json`. A run with no vault is unchanged, and a
+dry run does not check one. The check reads files. It uses no GPU.
+
+```sh
+make book-ocr-validate BOOK_DIR=<book-dir>
+```
+
+Set `BOOK_RUN` when the vault was published outside its run. A vault inside the run, or one
+whose `metadata/render.json` records `run_dir`, finds the run itself.
+
+Exit code `0` means every check passed. Exit code `1` means a check failed, and the command
+names the file. Exit code `2` means the directory is not a vault, or the run cannot be read.
+The command does not print recovered text.
+
+The report is `metadata/processing_report.md` in the vault. `metadata/validation.json` is the
+same outcome, with one record per PDF page. The run directory keeps a separate
+`metadata/processing_report.md` for its stages. The two files share a name and live in
+different directories.
+
+Every PDF page is completed, failed, or skipped. A selected page with a `^pNNNN` anchor is
+completed. A page whose note carries `[!page-failed]` is failed, and that status wins over an
+anchor. A page outside the configured range is skipped. Consecutive skipped pages share one
+row. `validation.json` lists every page. A selected page with neither an anchor nor a failure
+marker fails the check.
+
+Every content note is reachable from the contents. Previous and next name each other, and
+walking Next from the first note visits every content note once. The contents Next starts
+that chain.
+
+Every relative link, wikilink, embed, and block anchor resolves. A heading fragment uses the
+same slug as `make lint-doc-links`. A PDF fragment is `#page=<n>` with `n` inside the source
+page count. An image under `assets/`, `review/`, or `source/pages/` is linked from a note, and
+every linked image exists. A note whose front matter does not name its PDF pages fails the
+check.
+
+When `review/queue.json` exists, each open marker matches one open queue entry. The match is
+the marker kind, the block id, the offsets, and the PDF page. A missing queue is a warning,
+and the markers are then matched to the ledger. Orphaned overlay entries are counted. The
+count is not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
+
+The report lists the configured engines, models, and parameters, the block readings, and the
+confidence buckets. A bucket is diagnostic routing evidence, not a probability that the
+characters are correct. It also lists the open queue by marker kind and uncertainty class, and
+the pages and content types still open for a person.
+
+| Module | Role |
+| --- | --- |
+| `src/llb/prep/book/validate/` | The checks and the vault report |
+| `src/llb/cli/book/validate.py` | `llb book-ocr validate` |
+| `make/data-prep/book.mk` | `make book-ocr-validate` |
+
+Tests: `tests/llb/prep/book/test_vault_validate.py`. The clean fixture passes. Each failure class is
+a broken copy of that fixture, and the finding names the file.
+
+### Evidence
+
+**What ran.** On 2026-11-23, on the RTX PRO 3000 Blackwell laptop host (12 GB), CPU only. The
+vault is the render of the 50-page RapidOCR 3.10.0 slice of the 1,067-page target scan: PDF
+pages 1-40 and 290-299. The review queue was built from those ledgers, the vault was rendered
+again, and `book-ocr validate` checked it.
+
+**Accounting.** All 1,067 PDF pages are accounted for: 50 completed, 0 failed, and 1,017
+skipped because they sit outside `1-40,290-299`. The skipped pages collapse to two rows,
+41-289 and 300-1067. The vault has 52 content notes and 0 findings. The manifest records
+render, ocr, blocks, and resolve as done on all 50 pages, and 25 of each stage were reused.
+
+**What still needs a person.** The queue holds 238 open `low-confidence` entries, all on
+`body` blocks, and no `unreadable` or `formula-table` entry. No uncertainty class is set on
+those entries. Orphaned overlays: 0. The report warns that 197 structure conflicts remain
+(173 contents entries with no heading, 22 headings with no contents entry, one title
+mismatch, and one header mismatch) and that 3 printed pages used a fallback. Those warnings
+match the structure file. They do not fail the check.
+
+**Readings.** 5,278 RapidOCR readings, model `3.10.0, PP-OCRv6 small`, variant `original`.
+Every reading has a score. The minimum is 0.501 and the maximum is 1.000. The buckets are 0
+below 0.50, 131 in 0.50-0.80, 107 in 0.80-0.90, 120 in 0.90-0.95, and 4,920 in 0.95-1.00.
+The two buckets below 0.90 sum to 238, the same count as the open queue. The routing cut is
+0.9, so a score in 0.90-0.95 is counted and not queued.
+
+**What would overturn it.** A page in this vault with no anchor and no failure marker. A
+content note the contents cannot reach. A queue entry with no marker, or a marker with no
+queue entry. A second check of this vault that reports a finding. A confidence-bucket total
+other than 5,278.

@@ -140,7 +140,7 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
   metadata/document_structure.json  printed pages, hierarchy, numbering (llb.book-ocr-document-structure)
   metadata/quality_manifest.json one row per uncertain span (llb.book-ocr-quality-manifest)
-  metadata/processing_report.md  human-readable summary and failed pages
+  metadata/processing_report.md  run summary: stages and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
 ```
 
@@ -203,6 +203,31 @@ make book-ocr-render BOOK_RUN=<run-dir>
 | `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
 | `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
 | `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+
+`render` then runs the vault check below. A failed check is exit code 1.
+
+## Vault check
+
+`book-ocr validate` checks a rendered vault and writes `metadata/processing_report.md` and
+`metadata/validation.json` into that vault. It also runs at the end of `render`, and at the end
+of `run` or `resume` when the run already holds a vault. The report lists page status,
+warnings, engines, readings, confidence buckets, the open review queue, and the pages still
+open for a person. Confidence buckets are diagnostics, not probabilities of correctness. The
+command prints failed checks and does not print recovered text. What the check refuses is
+[vault validation](../../impl/current/book-recovery/structure-and-rendering.md#vault-validation).
+
+```sh
+make book-ocr-validate BOOK_DIR=<book-dir>
+make book-ocr-validate BOOK_DIR=<book-dir> BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_DIR` | A rendered reading vault | required |
+| `BOOK_RUN` | The book-ocr run, when the vault was published outside it | the run recorded in the vault |
+
+Exit code `0` means the vault passed. Exit code `1` means a check failed. Exit code `2` means
+the directory is not a vault, or the run cannot be read.
 
 ## Pilot selection
 

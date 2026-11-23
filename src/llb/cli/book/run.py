@@ -10,6 +10,33 @@ from llb.cli.book import book_app
 
 _LOG = logging.getLogger(__name__)
 _EXIT_REFUSED = 2
+_EXIT_VALIDATE = 1
+
+
+def _validate_vaults(run_dir: Path) -> None:
+    """Re-check a vault this run already holds. A run with no vault is unchanged."""
+    from llb.prep.book.render.constants import RENDER_MANIFEST_FILENAME, VAULT_DIRNAME
+    from llb.prep.book.validate import validate_book
+
+    root = run_dir / VAULT_DIRNAME
+    if not root.is_dir():
+        return
+    failed = False
+    for vault in sorted(path for path in root.iterdir() if path.is_dir()):
+        if not (vault / "metadata" / RENDER_MANIFEST_FILENAME).is_file():
+            continue
+        try:
+            report = validate_book(vault, run_dir)
+        except (OSError, ValueError) as exc:
+            typer.echo(f"[error] {exc}", err=True)
+            raise typer.Exit(code=_EXIT_VALIDATE) from exc
+        state = "ok" if report.ok else "failed"
+        typer.echo(f"[book-ocr] validate {state} -> {vault}")
+        failed = failed or not report.ok
+        for finding in report.findings:
+            typer.echo(f"[book-ocr] {finding.file}: {finding.check}: {finding.detail}", err=True)
+    if failed:
+        raise typer.Exit(code=_EXIT_VALIDATE)
 
 
 def _stage_overrides(raw: str | None, models: list[str], file_stages: Any) -> Any:
@@ -92,6 +119,7 @@ def _summarize(outcome: Any) -> None:
     failed = sum(summary.get("failed", 0) for summary in outcome.manifest.summary.values())
     if failed:
         typer.echo(f"[book-ocr] {failed} page stage(s) failed; see `llb book-ocr status`", err=True)
+    _validate_vaults(outcome.run_dir)
 
 
 @book_app.command("run")

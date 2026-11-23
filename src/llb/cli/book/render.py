@@ -46,3 +46,20 @@ def render_cmd(
         typer.echo(f"[error] {exc}", err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(f"[book-ocr] vault -> {dest}")
+    _validate(dest)
+
+
+def _validate(dest: Path) -> None:
+    from llb.prep.book.validate import validate_book
+
+    try:
+        report = validate_book(dest)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"[error] {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    state = "ok" if report.ok else "failed"
+    typer.echo(f"[book-ocr] validate {state}")
+    for finding in report.findings:
+        typer.echo(f"[book-ocr] {finding.file}: {finding.check}: {finding.detail}", err=True)
+    if not report.ok:
+        raise typer.Exit(code=1)

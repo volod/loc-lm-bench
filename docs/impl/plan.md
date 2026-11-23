@@ -59,36 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-vault-validation-and-report
-
-A 1,067-page render cannot be checked by eye. The full run must prove mechanically that every page
-is accounted for, every file is reachable, every link lands, and every asset exists -- and say in
-one report what still needs a person.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: a rendered vault
-  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
-  The link resolver may reuse the relative-link and anchor logic of `make lint-doc-links`,
-  extended to wikilinks, block anchors, and PDF page fragments.
-- User-visible outcome: `llb book-ocr validate <book-dir>` runs standalone and at the end of every
-  `run`, and `metadata/processing_report.md` lists per-page status, warnings, confidence
-  distributions as diagnostics, the engines, models, and parameters used, the review-queue size per
-  class, and the pages and content types still requiring manual verification.
-- Scope boundary: in scope -- every input page accounted for (completed, failed, or skipped with a
-  reason); every content file reachable from the contents; previous/next links reciprocal and the
-  chain covering every file once; every wikilink, relative link, block anchor, and embed resolving,
-  with PDF page fragments inside the page count; every referenced asset existing and every asset
-  referenced; every block carrying a page; every open marker matching exactly one open review-queue
-  entry, and orphaned overlay entries counted in the report. Out of scope --
-  judging rendering in the Obsidian app (that is `book-vault-obsidian-acceptance`).
-- Data and artifact paths: `src/llb/prep/book/validate/`; `metadata/processing_report.md` and
-  `metadata/validation.json` inside the book directory.
-- Execution path: `make book-ocr-validate BOOK_DIR=<book-dir>`; CPU-only inside `make ci`.
-- Acceptance gates: `make ci` green; one synthetic broken vault per failure class is refused with the
-  offending file named; the clean fixture passes; a validation failure exits non-zero.
-- Documentation target: `docs/impl/current/book-recovery/structure-and-rendering.md`.
-
 #### book-cross-reference-linking
 
 The book refers to itself constantly -- figure, table, and equation numbers, numbered sections,
@@ -98,8 +68,8 @@ than none, so resolution must be conservative and every miss counted.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-vault-validation-and-report`
-- Dependencies: none.
+- Dependencies: a vault that passes
+  [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
 - User-visible outcome: references resolve to links to the target block anchor or file; generated
   lists of figures, tables, and equations; index entries linked to the content file holding the
   cited printed page; ambiguous or unresolved references left as plain text and counted in the
@@ -305,11 +275,13 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-vault-validation-and-report`, `book-cross-reference-linking`,
+- Requires: `book-cross-reference-linking`,
   `book-corpus-projection`, `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
+  The vault check is
+  [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
 - User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
   vault and an ingested corpus projection, and fails naming the stage whose output broke the next.
 - Scope boundary: in scope -- a generated scan with a contents page, numbered headings, printed
@@ -406,8 +378,8 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-vault-validation-and-report`,
-  `book-cross-reference-linking`, `book-corpus-projection`, `book-pilot-pipeline-comparison`,
+- Requires: `book-cross-reference-linking`, `book-corpus-projection`,
+  `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-pilot-reference-transcription`,

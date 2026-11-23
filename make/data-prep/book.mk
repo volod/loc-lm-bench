@@ -1,7 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
 .PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-pilot-select \
-	book-ocr-review-queue book-ocr-structure book-ocr-render \
+	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
 book-ocr: ## Run (or BOOK_DRY_RUN=1 validate) a scanned-book recovery over BOOK_PDF (BOOK_PAGES=1-, BOOK_BATCH_PAGES=25, BOOK_STAGES=render, BOOK_CONFIG=yaml, BOOK_SOURCE_POLICY=symlink|copy|reference, BOOK_REUSE_FROM=run, BOOK_OUT_DIR=); BOOK_RESUME=<run-dir> continues a run
@@ -63,6 +63,13 @@ book-ocr-render: ## Render BOOK_RUN as an Obsidian vault (BOOK_OUTPUT=, BOOK_SOU
 	if [ -n "$(BOOK_SECTION_CAP)" ]; then args+=(--section-cap "$(BOOK_SECTION_CAP)"); fi; \
 	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
 	$(PY) -m llb.main book-ocr render "$${args[@]}"
+
+book-ocr-validate: ## Validate a rendered vault at BOOK_DIR and write its processing report (BOOK_RUN= when the vault is outside the run)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_DIR)" || { echo "ERROR: set BOOK_DIR=<book-dir>"; exit 2; }
+	@args=("$(BOOK_DIR)"); \
+	if [ -n "$(BOOK_RUN)" ]; then args+=(--run "$(BOOK_RUN)"); fi; \
+	$(PY) -m llb.main book-ocr validate "$${args[@]}"
 
 book-ocr-engines: ## List ledger engines and whether each one can run on this host
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

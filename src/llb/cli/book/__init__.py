@@ -1,4 +1,4 @@
-"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`, `score`, `pilot-select`, `review-queue`, `structure`, `render`, `survey`)."""
+"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`, `score`, `pilot-select`, `review-queue`, `structure`, `render`, `validate`, `survey`)."""
 
 import typer
 
@@ -21,3 +21,4 @@ import llb.cli.book.score  # noqa: E402,F401
 import llb.cli.book.status  # noqa: E402,F401
 import llb.cli.book.structure  # noqa: E402,F401
 import llb.cli.book.survey  # noqa: E402,F401
+import llb.cli.book.validate  # noqa: E402,F401

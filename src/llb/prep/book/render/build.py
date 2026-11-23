@@ -82,7 +82,7 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
         rel: text.encode("utf-8")
         for rel, text in render_markdown(files, loaded.structure, ctx).items()
     }
-    blobs[f"metadata/{RENDER_MANIFEST_FILENAME}"] = _manifest(loaded, slug, opts, files)
+    blobs[f"metadata/{RENDER_MANIFEST_FILENAME}"] = _manifest(loaded, slug, opts, files, run_dir)
     blobs["metadata/document_structure.json"] = structure_path(run_dir).read_bytes()
     blobs.update(figures)
     blobs.update(_crops(blocks, loaded))
@@ -227,13 +227,16 @@ def _reference(dest: Path, pdf: Path) -> bytes:
     return (rel + "\n").encode("ascii", "replace")
 
 
-def _manifest(loaded: BookLoad, slug: str, opts: RenderOptions, files: list[VaultFile]) -> bytes:
+def _manifest(
+    loaded: BookLoad, slug: str, opts: RenderOptions, files: list[VaultFile], run_dir: Path
+) -> bytes:
     payload = {
         "book": slug,
         "content_files": [f"content/{file.stem}.md" for file in files],
         "obsidian_version": OBSIDIAN_VERSION,
         "page_fallback": opts.page_fallback,
         "pdf_page_fragment": PDF_PAGE_FRAGMENT,
+        "run_dir": str(run_dir.resolve()),
         "section_char_cap": opts.section_cap,
         "source_policy": opts.source_policy,
         "source_sha256": loaded.config.source.sha256,
