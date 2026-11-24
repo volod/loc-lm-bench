@@ -216,6 +216,45 @@ guard admits or refuses, and adopt it only if the pilot shows it helps.
   against the same ledger.
 - Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
 
+#### book-projection-reference-sidecar
+
+The vault links every citation the book prints that names one target, and the index note links
+every page an index line cites. The corpus projection carries none of it. A retriever over the
+projection sees `see Table 4-2` as words, and the table it names is a separate document with no
+edge to the sentence that needs it. These references are the one relation set in the book that no
+model has to infer. Write them into the projection as data, beside the citation sidecar, so a graph
+lane can follow what the book prints
+([method survey](../design/graph-construction-methods.md#the-printed-reference-graph)).
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR -- synthetic book fixtures; no model and no GPU.
+- Dependencies: citation and index resolution is
+  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references); document
+  offsets and the citation sidecar are [corpus projection](current/book-recovery/corpus-projection.md).
+- User-visible outcome: `llb book-ocr project` also writes the printed references each projected
+  document contains. Each resolved citation is recorded as its cue span in this document and the
+  span of the target block in that block's document. Each index line is recorded as its term span
+  and the PDF pages its printed pages map to. Each document records its place in the hierarchy. A
+  later reader can follow a citation from the sentence to the table, equation, figure, section, or
+  page it names without parsing the text again.
+- Scope boundary: in scope -- one reference sidecar per projected document under a registered
+  contract; the render's catalog and resolvers reused, so the projection and the vault resolve the
+  same citations from one grammar; ambiguous keys and mapping gaps recorded as unresolved with no
+  target; an index sub-entry carrying its printed parent where the indentation shows one;
+  `ingest-corpus` copying the sidecar the way it copies the citation sidecar, and a stale document
+  taking it along; the redistribution refusal applied to it on every export path. Out of scope --
+  any link the book does not print (a concept, a co-occurrence, a similarity), settling an
+  ambiguous key by proximity, and quoting a sentence in any report.
+- Data and artifact paths: `src/llb/prep/book/project/` and the resolvers in
+  `src/llb/prep/book/render/`; a `<document>.md.references.json` beside each projected document.
+- Execution path: the synthetic book in `tests/llb/prep/book/test_project.py` and
+  `tests/llb/prep/book/test_reference_links.py` inside `make ci`, CPU-only.
+- Acceptance gates: `make ci` green; on the fixture the sidecar names exactly the citations the
+  vault links, with the same targets, plus the ambiguous and gap citations the reference report
+  counts; every recorded span lands in its document's text at its offsets; a second projection
+  writes the same bytes; a `local-only` export refuses the sidecar with its document.
+- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
+
 #### book-technical-content-audit
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
@@ -248,7 +287,7 @@ book small enough to run in seconds and built so that every seam carries a case.
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
 - Requires: `book-formula-and-table-recovery`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
-  `book-technical-content-audit`
+  `book-technical-content-audit`, `book-projection-reference-sidecar`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
   The projection command is
@@ -264,7 +303,8 @@ book small enough to run in seconds and built so that every seam carries a case.
   with an equation number, a ruled table, a captioned figure, a cross-reference and an index entry,
   an unreadable span, and one page whose recognition fails; every stage through the `book-ocr`
   runner with fake engines whose readings disagree on one digit; render, link, validate, project,
-  `ingest-corpus`, and a `validate-goldset` refusal of a span over the open marker; a planted kill
+  the reference sidecar checked against the vault's links, `ingest-corpus`, and a
+  `validate-goldset` refusal of a span over the open marker; a planted kill
   mid-run and a resume; one reviewer decision followed by a re-render and a re-projection. Out of
   scope -- recognition quality (the pilot measures it) and any real page.
 - Data and artifact paths: the generator beside the existing scan factory under
@@ -359,6 +399,59 @@ Character offsets differ between the two corpora, so the paired comparison joins
   deliverable.
 - Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
 
+#### book-reference-graph-reading
+
+A technical handbook's hardest questions join a sentence to the table, equation, or figure it cites.
+The vector lane retrieves the sentence without the table: a numeric grid embeds poorly and is its
+own projected document. The book already prints the edge between them, and the projection's
+reference sidecar records it. Build a graph from those printed references alone and read whether it
+delivers cited evidence that the vector lane over the same projection misses
+([method survey](../design/graph-construction-methods.md#the-printed-reference-graph)).
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: RUN NEEDED -- index and graph builds and the paired reading over the recovered book
+  run on the CUDA host.
+- Research: yes
+- Requires: `book-projection-reference-sidecar`, `book-full-run-on-the-target-scan`,
+  `book-goldset-verification`
+- Dependencies: the projection and its sidecars
+  ([corpus projection](current/book-recovery/corpus-projection.md)); the graph store, its
+  strategies, and the fusion seam ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
+  the minimum-evidence gate on a paired reading
+  ([paired verdicts](current/rag-core/paired-verdicts.md)). The derived-source contract is
+  [graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology).
+- User-visible outcome: `llb build-graph` over a projected book builds a graph in which every node
+  mention and every edge's evidence is a span the book printed, under a closed structural vocabulary
+  kept apart from the entity types. An operator learns whether following the book's own references
+  retrieves the cited tables, equations, and figures the vector lane misses, alone and fused.
+- Scope boundary: in scope -- section, figure, table, equation, page, and index-term nodes and the
+  `contains`, `cites`, and `indexes` relations as a closed set beside the entity vocabulary, never
+  normalized into it; index terms linked to the question by the existing lexical linker; no edge
+  built from a citation the sidecar records as unresolved; `local_khop` over the graph, since a
+  cited block is one `cites` hop away, alone and fused with the vector lane through the existing
+  fusion seam; `ppr` rows beside it when `graph-seeded-propagation-ranking` has left the plan by
+  the time of the run, with their absence stated otherwise; the reading on the verified book items
+  under the same retrieval configuration as `book-retrieval-reading`, split by whether an item's
+  spans include a table, equation, or figure block. Out of scope -- any edge the book does not
+  print, blending the structural graph and an extracted graph into one store, retuning retrieval
+  for the book, and answer scoring.
+- Data and artifact paths: a book-reference builder beside `src/llb/graph/build.py`; the graph
+  store, the index, and the comparison under `$DATA_DIR`.
+- Execution path: the synthetic book inside `make ci`, where a sentence citing a table reaches the
+  table block in one `cites` hop; on the CUDA host, `make build-graph` and `make build-index` over
+  the projected corpus, then `make compare-graph-fusion` on the verified book items with
+  `NOISE_FLOOR=1`.
+- Acceptance gates: `make ci` green; every node mention and edge evidence resolves to its document
+  text at its offsets; the graph builds byte-identically twice; no edge comes from an unresolved
+  citation; the reading states the item count, the predeclared effect it could detect, and the
+  paired deltas per slice with intervals; a lane that separates from the vector row on no slice is
+  recorded as the book's references buying nothing for retrieval on this book, while the vault
+  links remain the reader's deliverable, and the negative goes to
+  [future research](future-research.md).
+- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md` beside the book's
+  vector reading, and the structural vocabulary in
+  [graph ontology schema](../design/graph-ontology-schema.md) outside the signed entity vocabulary.
+
 #### scanned-book-recovery-implementation-audit (optional)
 
 The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
@@ -372,13 +465,14 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-missing-region-accounting`, `book-technical-content-audit`,
-  `book-publication-and-resume-audit`,
+- Requires: `book-missing-region-accounting`, `book-projection-reference-sidecar`,
+  `book-technical-content-audit`, `book-publication-and-resume-audit`,
   `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,
-  `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-pilot-reference-transcription`,
-  `book-goldset-verification`, `book-vault-obsidian-acceptance`
+  `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
+  `book-pilot-reference-transcription`, `book-goldset-verification`,
+  `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and
   the retrieval reading recorded are this audit's input.
 - User-visible outcome: every load-bearing property of the spec section and every clause of the
@@ -387,8 +481,9 @@ retrieval reading found.
 - Scope boundary: in scope -- the property-to-test map; a logic review of the seams: cache-key
   completeness of every stage, the coordinate frame from variant to ledger to crop, overlay
   anchoring across ledger rebuilds, id and anchor stability under a parameter or engine change,
-  document revisions across re-projections, page-class routing and the engine lease, and the
-  redistribution class on every export path; integration tests for each unpinned seam, extending
+  document revisions across re-projections, the projected reference sidecar against the vault's
+  links and the reference graph against that sidecar, page-class routing and the engine lease, and
+  the redistribution class on every export path; integration tests for each unpinned seam, extending
   the synthetic book; synthetic regression fixtures for the real-run limitations (never page
   content); shared helpers and module splits inside `src/llb/prep/book/`. Out of scope -- re-running
   the pilot or the retrieval reading, committing any page image or recovered text, and new recovery
@@ -573,6 +668,48 @@ that chain, not of the review that produced the ledger.
 
 ### Entity resolution -- `entity-resolution`
 
+#### relation-predicate-linkage-lane (optional)
+
+The induced relation vocabulary runs to nearly one surface per fact, so most relation-scoped axioms
+have no population on a given corpus
+([ontology axiom layer](current/robustness-ontology-backends.md#ontology-axiom-layer)). Some
+surfaces name one predicate, some name a predicate and its inverse, and some name a narrower
+predicate. KGGen and AutoOntic cluster relations for this reason
+([method survey](../design/graph-construction-methods.md#the-methods)). The linkage seam can price
+the same decision on the fields a predicate record carries, and the DIRECTION of the argument
+overlap is what separates an inverse from a synonym.
+
+- Serves: `entity-resolution` --
+  [Entity resolution](../design/spec.md#entity-resolution-and-record-linkage)
+- Agent status: RUN NEEDED -- the fit and its reading run over the three draft extraction ledgers
+  the axiom base rates read, on the CUDA host.
+- Research: yes
+- Dependencies: the linkage seam and the overlay pattern of the graph node lane
+  ([entity resolution](current/entity-resolution.md#the-graph-node-lane)); the axiom checker and its
+  ledgers ([ontology axiom layer](current/robustness-ontology-backends.md#ontology-axiom-layer)).
+- User-visible outcome: a predicate overlay proposes which relation surfaces are one predicate and
+  which pairs are inverses. A reading shows what the overlay does to each relation-scoped axiom's
+  checked population. The proposals stay a ranked candidate list until a reviewer labels them.
+- Scope boundary: in scope -- one record per distinct relation surface; comparisons on surface
+  distance, embedding cosine, the argument-type signature, forward argument-pair overlap, and
+  reversed overlap; a pair agreeing only when reversed proposed as `inverse_of` and never merged;
+  the overlay read by the axiom checker only when the operator names it; graph retrieval left
+  unchanged, since it reads no relation label. Out of scope -- rewriting an extraction ledger, the
+  axiom file, or a stored graph; an LLM synonym-versus-subtype judge (a narrower predicate is a
+  non-match here); labelling; and adopting any cut without reviewer labels.
+- Data and artifact paths: predicate records beside the existing lanes under `src/llb/linkage/` and
+  `src/llb/prep/ontology/linkage/`; the reading under `$DATA_DIR/relation-predicate-linkage/<run>/`.
+- Execution path: a fixture ledger with a planted synonym pair, inverse pair, and distinct pair
+  inside `make ci`; on the CUDA host, the fit over the three ledgers, then
+  `make validate-ontology-axioms` over each with and without the overlay.
+- Acceptance gates: `make ci` green; the fixture's synonym pair clusters, its inverse pair is
+  proposed as an inverse, and its distinct pair stays apart; a graph retrieval run with the overlay
+  named matches one without it exactly; the reading states the checked-unit count per ledger and per
+  relation-scoped axiom with and without the overlay; the proposals are reported as a ranked list,
+  never as a precision; an overlay that populates no axiom it did not already populate is recorded
+  as buying nothing there, and the negative goes to [future research](future-research.md).
+- Documentation target: a predicate-lane section of `docs/impl/current/entity-resolution.md`.
+
 #### entity-resolution-implementation-audit (optional)
 
 The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
@@ -742,28 +879,163 @@ autonomous gate, is a property of the lane as a whole.
 
 ### Graph retrieval and ontology -- `graph-retrieval`
 
+#### graph-seeded-propagation-ranking
+
+Both graph strategies rank a NODE by a coarse level -- a hop distance or a community -- so every
+span of a node ties and the rank cut falls inside the tie. The multi-hop reading puts the both-hops
+ceiling at the budget rather than at any ranking knob the fusion grid sweeps
+([retrieval budget evidence](current/graphrag-backend/retrieval-budget-evidence.md#is-the-both-hops-ceiling-a-budget-or-a-query-problem)),
+and hard node merging lost recall at every cut that merged anything
+([entity resolution evidence](current/graphrag-backend/entity-resolution-evidence.md)). Personalized
+PageRank from the question's linked seeds, the HippoRAG method, ranks every node by how much of the
+walk reaches it. A bridge entity that two seeds both connect to then outranks a node one seed
+reaches alone, and a soft similarity edge between two near-identical nodes lets relevance flow
+without asserting they are one. Build it as a third strategy and read it against the two it would
+join.
+
+- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
+- Agent status: RUN NEEDED -- the paired reading runs over the built multi-hop stores on the CUDA
+  host.
+- Research: yes
+- Dependencies: the seed linker and the span serializer
+  ([retrieval strategies](current/graphrag-backend/modules-and-cli.md#retrieval-strategies)); the
+  node mention vectors the resolution lane already embeds
+  ([graph node lane](current/entity-resolution.md#the-graph-node-lane)); the fusion sweep and its
+  measurement floor
+  ([fusion sweep evidence](current/graphrag-backend/fusion-sweep-evidence.md#the-graph-weight-sweep-lane)).
+- User-visible outcome: `--retrieval-strategy ppr` ranks graph spans by the propagated mass that
+  reaches them from the question's seeds, optionally across declared similarity edges, through the
+  same span-scored seam as the other two strategies. The comparison, fusion, and answer-quality
+  lanes can select it. A recorded verdict says whether it carries more multi-hop evidence at a fixed
+  budget than `local_khop` and `global_community`.
+- Scope boundary: in scope -- PPR over the stored graph by sparse power iteration on the `rag`
+  extra's SciPy, with no graph-analytics dependency; seeds weighted by the existing linker's
+  scores; the damping factor, iteration cap, and tolerance as named constants; similarity edges
+  between nodes whose mention vectors clear a declared cosine floor, with an edges-off arm; spans
+  scored by the mass of the nodes they ground, so the span-affinity band still orders exact ties; a
+  deterministic ranking for a fixed graph; the strategy in the config fingerprint and in the
+  comparison, fusion, and sweep grids. Out of scope -- the `hipporag` package, which pins its own
+  Python and LLM stack; LLM-side triple filtering; changing either shipped strategy or the default
+  backend; merging any node; and a similarity edge reaching the axiom checker or the linkage seam.
+- Data and artifact paths: `src/llb/graph/` (a propagation module beside `retrieval.py`) and
+  `src/llb/graph/constants.py`; the readings under `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: fixture graphs inside `make ci`; on the CUDA host, `make compare-graph-fusion`
+  with `ppr` in the compared strategies and `NOISE_FLOOR=1`, over the widened multi-hop draft and
+  the goods ledger the earlier fusion readings used, at the shipped budget and at k=50.
+- Acceptance gates: `make ci` green; one graph and one seed set give one ranking twice; on a fixture
+  where a shared bridge node carries both hops, both hop spans rank above a node one seed reaches
+  alone; the reading states per corpus and per question-type slice the paired deltas in
+  `all-spans@k`, span coverage, recall@k, and MRR against both shipped strategies and the vector
+  row, with intervals and the measurement floor; a drafted ledger's reading is labelled drafted;
+  the similarity-edge arm is read against the edges-off arm as the soft-identity answer to the
+  hard-merge negative; a row that separates is read end to end through `compare-answer-quality` on
+  the same items, naming its generator, before any recommendation, and changes no default here; a
+  strategy that separates from neither shipped strategy is recorded as buying nothing, and the
+  negative goes to [future research](future-research.md) with what would reopen it.
+- Documentation target: the strategy in `docs/impl/current/graphrag-backend/modules-and-cli.md`,
+  and the reading on a new evidence page in the [GraphRAG](current/graphrag-backend.md) area index.
+
+#### graph-closed-ie-extraction-adapter (optional)
+
+Every graph and every drafted gold set rests on generative extraction: one model call per window,
+with any quote the model paraphrases dropped at grounding. A compact span classifier given the
+closed vocabulary as its labels (GLiNER) returns exact spans by construction and runs far faster,
+which matters most on a 1,067-page book. Whether its entities make a graph the lane can use, on
+Ukrainian corpora where its coverage is not documented, is a measurement.
+
+- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
+- Agent status: RUN NEEDED -- the extraction and the paired reading run on the CUDA host.
+- Research: yes
+- Dependencies: the `ExtractionAdapter` seam, with the spaCy adapter as its precedent
+  ([spaCy adapter](current/robustness-ontology-backends.md#spacy-adapter-and-long-documents)); the
+  closed vocabulary ([graph ontology schema](../design/graph-ontology-schema.md)).
+- User-visible outcome: `--extractor gliner` writes a `DocExtraction` whose entities are exact spans
+  typed in the closed vocabulary. Its facts come either from the generative extractor or, in the
+  model-light variant, from a `co_occurs` relation evidenced by the sentence two entities share. An
+  operator learns what each variant costs and what it does to graph retrieval.
+- Scope boundary: in scope -- the adapter behind its own optional extra, with a pinned Apache-2.0
+  multilingual checkpoint recorded per run; the 13 types passed as its labels and still passed
+  through `normalize_entity_type`; the sentence co-occurrence facts as a separately labelled
+  variant; entity agreement with the generative extraction, the normalization rate, and extraction
+  wall time per corpus. Out of scope -- replacing the default extractor, fine-tuning a checkpoint,
+  the non-commercial REBEL weights, and drafting gold items from the co-occurrence variant, because
+  a co-occurrence is not a stated fact.
+- Data and artifact paths: `src/llb/prep/ontology/endpoints/` beside the spaCy adapter; the bundles
+  under `$DATA_DIR/prepare-goldset/<run>/` and the comparisons under
+  `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: a fake classifier inside `make ci`; on the CUDA host, extraction over the corpus
+  behind the widened multi-hop draft and over the projected book slice, then `make build-graph` per
+  variant and `make compare-graph-fusion` over the same items with `NOISE_FLOOR=1`.
+- Acceptance gates: `make ci` green; every emitted mention grounds at its offsets; the reading
+  states per corpus the wall time, the entity agreement with the generative extraction, and each
+  variant's paired graph-lane deltas against the generative graph on the same items with
+  intervals; a checkpoint whose Ukrainian entities are unusable is recorded as such by
+  measurement; a variant that costs graph recall beyond the floor is not adopted, and the negative
+  goes to [future research](future-research.md).
+- Documentation target: the adapter section of
+  [robustness and ontology](current/robustness-ontology-backends.md#spacy-adapter-and-long-documents),
+  and the reading in the [GraphRAG](current/graphrag-backend.md) area.
+
+#### graph-community-detection-candidates (optional)
+
+`global_community` is the graph strategy that reaches the most multi-hop evidence at a larger
+budget, and its communities come from deterministic label propagation, which fragments a sparse
+graph into many small communities. Leiden, the community step of Microsoft GraphRAG, guarantees
+connected communities and exposes a resolution. Whether it gives the narrative layer communities
+worth retrieving is a paired reading.
+
+- Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
+- Agent status: RUN NEEDED -- graph rebuilds and the paired reading on the CUDA host.
+- Dependencies: the community step
+  ([modules and CLI](current/graphrag-backend/modules-and-cli.md)); the tuning/final split
+  discipline ([evaluation rigor](current/rigor-board-judge.md)).
+- User-visible outcome: a recorded choice between label propagation and Leiden for the narrative
+  layer, with the community count and size distribution each produces and what each does to
+  `global_community` retrieval.
+- Scope boundary: in scope -- Leiden from `graspologic-native` behind its own optional extra,
+  seeded, with the seed and resolution recorded in the graph metadata; the resolution chosen on the
+  tuning split and read on final; communities detected the same way after an entity overlay. Out of
+  scope -- community summaries as retrieval context (they stay diagnostic), a hierarchy of
+  community levels, and changing the default before a final-split separation.
+- Data and artifact paths: `src/llb/graph/community.py` and `src/llb/graph/constants.py`; the
+  readings under `$DATA_DIR/graph-vector-fusion-multihop/<run>/`.
+- Execution path: fixture graphs inside `make ci`; on the CUDA host, `make build-graph` per detector
+  over the stores the fusion readings used, then `make compare-graph-fusion` over the
+  `global_community` rows at the shipped budget and at k=50 with `NOISE_FLOOR=1`.
+- Acceptance gates: `make ci` green; one seed partitions one graph identically twice; the reading
+  states per corpus the paired deltas with intervals and the floor, beside the partition
+  statistics; label propagation stays the default unless Leiden separates on the final split, and a
+  negative is recorded with the partition statistics that explain it.
+- Documentation target: the community step in
+  `docs/impl/current/graphrag-backend/modules-and-cli.md`, and the reading in the
+  [GraphRAG](current/graphrag-backend.md) area.
+
 #### graph-retrieval-implementation-audit (optional)
 
 The [closing audit](../guides/development/planning-workflow.md#closing-implementation-audit) of this
 capability. An axiom reaches an answer through three readers -- the extraction-ledger checker, the
 OWL cross-check, and the answer gate -- and the sign-off adds the rule all three must honour: only
 a signed axiom may act. Whether every reader refuses an unsigned or rejected axiom, and whether the
-checker and the reasoner agree on the signed set, shows only across them.
+checker and the reasoner agree on the signed set, shows only across them. The graph lane also gains
+a third strategy, and whether every strategy still emits only grounded spans through one serializer
+shows only across the tasks that add them.
 
 - Serves: `graph-retrieval` -- [Graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a heavy run becomes a
   task in this group.
-- Requires: `ontology-axiom-signoff`
+- Requires: `ontology-axiom-signoff`, `graph-seeded-propagation-ranking`
 - Dependencies: none beyond `Requires`.
 - User-visible outcome: an axiom absent from the signed file is refused by every reader, and the
-  checker and the reasoner agree on every signed axiom's fixtures.
+  checker and the reasoner agree on every signed axiom's fixtures. Every strategy emits only spans
+  that resolve to their document text, and a similarity edge changes no axiom reading.
 - Scope boundary: in scope -- the property-to-test map over the spec section and the registry
   evaluation; a logic review of the seams: the per-axiom signature (`dcterms:creator`,
   `dcterms:date`) to the checker to the violation base rate to the answer gate, the refusal of an
-  unsigned axiom at each entry point, checker-versus-reasoner agreement on the signed set, and catch
-  and false-rejection rates computed by one path; integration tests for each unpinned seam over the
-  committed axiom file and fixture ledgers. Out of scope -- new axiom classes and vocabulary
-  changes.
+  unsigned axiom at each entry point, checker-versus-reasoner agreement on the signed set, catch
+  and false-rejection rates computed by one path, each strategy through the one serializer, and the
+  structural vocabulary kept out of entity normalization; integration tests for
+  each unpinned seam over the committed axiom file and fixture ledgers. Out of scope -- new axiom
+  classes and vocabulary changes.
 - Data and artifact paths: `src/llb/prep/ontology/`, `samples/ontology/`, their tests, and the
   audit's task record.
 - Execution path: CPU-only inside `make ci`.

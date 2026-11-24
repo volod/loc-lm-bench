@@ -58,8 +58,10 @@ build when the two disagree.
 - [Success criteria](spec.md#success-criteria) -- what a defensible selection workflow must prove.
 
 The ontology graph schema is defined separately in
-[graph-ontology-schema.md](graph-ontology-schema.md). Two data contracts with parties outside this
-repository are also separate documents: the
+[graph-ontology-schema.md](graph-ontology-schema.md), and the published graph-construction and
+graph-retrieval methods the graph lane takes as candidates or declines are surveyed in
+[graph-construction-methods.md](graph-construction-methods.md). Two data contracts with parties
+outside this repository are also separate documents: the
 [acquired-corpus projection](acquired-corpus-projection.md) an upstream acquisition service renders
 into, and the [external-service draft contract](external-draft-contract.md) for artifacts drafted by
 hand with a chat provider.
