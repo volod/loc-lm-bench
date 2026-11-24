@@ -5,12 +5,15 @@ beside it. A text-only lane scores formula terms as plain text and reports figur
 grids, and caption links absent. Where the blocks sit is scored in ``layout``.
 """
 
+from llb.core.contracts.data_prep.book_blocks import UNCERTAINTY_CLASSES
 from llb.prep.book.metrics.align import text_score
+from llb.prep.book.metrics.constants import FIELD_FORMULA, FIELD_TABLE
 from llb.prep.book.metrics.confusion import confusion_counts, script_events, unicode_script_tokens
 from llb.prep.book.metrics.latex import (
     FormulaRead,
     LatexError,
     formula_fidelity,
+    latex_parses,
     script_tokens,
     terms_of,
 )
@@ -43,7 +46,9 @@ def score_page(page: RefPage, submission: PageSubmission) -> PageScore:
     hypothesis_text = _hypothesis_text(submission)
     text = text_score(reference_text, hypothesis_text)
     counts = confusion_counts(
-        reference_text, hypothesis_text, _script_count(page, submission, hypothesis_text)
+        reference_text,
+        _in_reference_order(page, submission, hypothesis_text),
+        _script_count(page, submission, hypothesis_text),
     )
     fidelity, parse_valid = _formulas(page, submission, hypothesis_text)
     return PageScore(
@@ -64,6 +69,8 @@ def score_page(page: RefPage, submission: PageSubmission) -> PageScore:
         figure_overlap=figures(page, submission),
         caption_association=captions(page, submission),
         printed_page_accuracy=printed(page, submission, hypothesis_text),
+        submitted=submission.present,
+        abstentions=_abstentions(submission),
     )
 
 
@@ -77,6 +84,23 @@ def _hypothesis_text(submission: PageSubmission) -> str:
 def _hyp_reading(block: HypBlock) -> str:
     cells = cell_labels(block.table) if block.table is not None else None
     return block_reading(block.kind, block.text, block.equation_number, cells)
+
+
+def _in_reference_order(page: RefPage, submission: PageSubmission, reading: str) -> str:
+    """Compare glyphs in matching regions when all reading blocks can be paired by box."""
+    if submission.text_only:
+        return reading
+    refs = [block for block in page.blocks if reference_reading(block)]
+    hyps = [block for block in submission.blocks if _hyp_reading(block)]
+    if len(refs) != len(hyps) or any(block.region is None for block in hyps):
+        return reading
+    matched = [
+        (reference.reading_order, _hyp_reading(hypothesis))
+        for kind in {block.kind for block in refs}
+        for reference, hypothesis in pairs(refs, hyps, kind)
+        if hypothesis is not None
+    ]
+    return page_reading(matched) if len(matched) == len(refs) else reading
 
 
 def _script_count(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> int:
@@ -110,8 +134,11 @@ def _formulas(
     page: RefPage, submission: PageSubmission, hypothesis_text: str
 ) -> tuple[MetricValue, bool | None]:
     formulas = [block for block in page.blocks if block.kind == "formula" and block.latex]
+    parse_valid = _emitted_formulas_parse(submission)
     if not formulas:
-        return not_applicable(), None
+        return not_applicable(), parse_valid
+    if FIELD_FORMULA in submission.unsupported:
+        return absent(), None
     if submission.text_only:
         plain = [
             formula_fidelity(block.latex or "", hypothesis_text, hypothesis_is_latex=False)
@@ -127,8 +154,14 @@ def _formulas(
             structured.append(formula_fidelity(latex, hypothesis.latex, hypothesis_is_latex=True))
         else:
             structured.append(formula_fidelity(latex, hypothesis.text, hypothesis_is_latex=False))
-    invalid = any(not read.parse_valid for read in structured)
-    return _fidelity(structured), not invalid
+    return _fidelity(structured), parse_valid
+
+
+def _emitted_formulas_parse(submission: PageSubmission) -> bool | None:
+    formulas = [block for block in submission.blocks if block.kind == "formula"]
+    if submission.text_only or not formulas:
+        return None
+    return all(latex_parses(block.latex or block.text) for block in formulas)
 
 
 def _missed(latex: str) -> FormulaRead:
@@ -148,7 +181,7 @@ def _tables(page: RefPage, submission: PageSubmission) -> MetricValue:
     tables = [block for block in page.blocks if block.kind == "table" and block.table is not None]
     if not tables:
         return not_applicable()
-    if submission.text_only:
+    if submission.text_only or FIELD_TABLE in submission.unsupported:
         return absent()
     distance = 0
     total = 0
@@ -162,6 +195,14 @@ def _tables(page: RefPage, submission: PageSubmission) -> MetricValue:
     if total == 0:
         return not_applicable()
     return scored(1.0 - distance / total)
+
+
+def _abstentions(submission: PageSubmission) -> dict[str, int]:
+    counts: dict[str, int] = dict.fromkeys(UNCERTAINTY_CLASSES, 0)
+    for name, count in submission.abstentions:
+        if name in counts:
+            counts[name] += count
+    return counts
 
 
 def _ref_rows(block: RefBlock) -> tuple[tuple[Cell, ...], ...]:

@@ -28,6 +28,7 @@ from tests.llb.prep.book._page_factory import (
     blob_box,
     bow,
     clean_page,
+    image_pdf,
     tilt,
     upside_down,
     with_blob,
@@ -171,23 +172,11 @@ def test_unknown_variant_needs_the_variants_stage_first():
     assert stage_errors(ordered, registry, None) == []
 
 
-def _pdf(path: Path, page: np.ndarray) -> None:
-    import fitz
-
-    height, width = page.shape
-    doc = fitz.open()
-    pdf_page = doc.new_page(width=width, height=height)
-    pixmap = fitz.Pixmap(fitz.csGRAY, width, height, page.tobytes(), False)
-    pdf_page.insert_image(pdf_page.rect, pixmap=pixmap)
-    doc.save(path, garbage=3, deflate=True, no_new_id=True)
-    doc.close()
-
-
 def test_a_rerun_reuses_the_variants_stage_and_the_render_is_unchanged(tmp_path: Path):
     library = tmp_path / "library"
     library.mkdir()
     source = library / "scan.pdf"
-    _pdf(source, bow(clean_page(), 8.0))
+    image_pdf(source, bow(clean_page(), 8.0))
     registry = StageRegistry((RenderStage(), SignalsStage(), VariantsStage()))
     stages = (
         BookStageSpec(name="render", params={"dpi": 72, "colorspace": "grey"}),

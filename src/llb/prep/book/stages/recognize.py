@@ -34,6 +34,7 @@ _STAGE_VERSION = "1"
 _PAGE_PDF = "page.pdf"
 _ENGINE_PARAMS = ("engine", "variant", "page_class", "by_page_class")
 _DEFAULT_VARIANT = ORIGINAL
+_BOX_MAP_RECIPE = "2"
 
 
 class EngineStage:
@@ -73,7 +74,11 @@ class EngineStage:
     def effective_params(
         self, params: Mapping[str, Any], inventory: Any, document: Any, pdf_page: int
     ) -> dict[str, Any]:
-        return {"engine": selected_engine(params), "variant": _variant(params)}
+        variant = _variant(params)
+        resolved = {"engine": selected_engine(params), "variant": variant}
+        if variant != ORIGINAL:
+            resolved["box_map_recipe"] = _BOX_MAP_RECIPE
+        return resolved
 
     def page_params(
         self,

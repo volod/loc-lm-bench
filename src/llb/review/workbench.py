@@ -6,9 +6,9 @@ from typing import Literal
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Grid, ScrollableContainer
-from textual.widgets import Button, Footer, Header, Static
+from textual.widgets import Button, Footer, Header, Input, Static
 
-from llb.review.core import ActionTone, ReviewAdapter, ReviewNavigator, ReviewSection
+from llb.review.core import ActionTone, ReviewAction, ReviewAdapter, ReviewNavigator, ReviewSection
 from llb.review.registry import open_review
 
 _BUTTON_VARIANTS: dict[ActionTone, Literal["default", "primary", "success", "warning", "error"]] = {
@@ -34,6 +34,7 @@ class ReviewWorkbench(App[None]):
     #actions { height: auto; min-height: 5; padding: 1; background: #332913;
                grid-size: 6; grid-gutter: 0 1; }
     #actions Button { width: 1fr; min-width: 12; text-style: bold; }
+    #review-entry { display: none; height: 3; margin: 0 1; }
     #status { height: 2; padding: 0 2; background: #332913; color: #ffe3a3; }
     """
     BINDINGS = [
@@ -47,6 +48,7 @@ class ReviewWorkbench(App[None]):
         super().__init__()
         self.adapter = adapter
         self.navigator = ReviewNavigator(adapter, start)
+        self._text_action = ""
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -62,6 +64,7 @@ class ReviewWorkbench(App[None]):
                     id=f"review-action-{index}",
                     variant=_BUTTON_VARIANTS[action.tone],
                 )
+        yield Input(placeholder="Replacement text, then enter", id="review-entry")
         yield Static("", id="status", markup=False)
         yield Footer()
 
@@ -69,6 +72,11 @@ class ReviewWorkbench(App[None]):
         self._render_record()
 
     def on_key(self, event: object) -> None:
+        if self._entry_is_focused():
+            if getattr(event, "key", "") == "escape":
+                getattr(event, "prevent_default")()
+                self._hide_entry()
+            return
         character = getattr(event, "character", None)
         key = (
             character
@@ -80,15 +88,23 @@ class ReviewWorkbench(App[None]):
             return
         getattr(event, "prevent_default")()
         getattr(event, "stop")()
-        self._apply(action.value)
+        self._activate(action)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         prefix = "review-action-"
         button_id = event.button.id or ""
         if not button_id.startswith(prefix):
             return
-        action = self.adapter.actions[int(button_id.removeprefix(prefix))]
-        self._apply(action.value)
+        self._activate(self.adapter.actions[int(button_id.removeprefix(prefix))])
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        event.input.value = ""
+        self._hide_entry()
+        if not text:
+            self.query_one("#status", Static).update("[blocked] enter the replacement text")
+            return
+        self._apply(f"{self._text_action}:{text}")
 
     def action_next(self) -> None:
         self.navigator.next()
@@ -101,6 +117,23 @@ class ReviewWorkbench(App[None]):
     def action_pending(self) -> None:
         self.navigator.next_pending()
         self._render_record()
+
+    def _activate(self, action: ReviewAction) -> None:
+        if action.asks_for_text:
+            self._text_action = action.value
+            entry = self.query_one("#review-entry", Input)
+            entry.display = True
+            entry.focus()
+            self.query_one("#status", Static).update("Type the replacement, then press enter")
+            return
+        self._apply(action.value)
+
+    def _entry_is_focused(self) -> bool:
+        return getattr(self.focused, "id", None) == "review-entry"
+
+    def _hide_entry(self) -> None:
+        entry = self.query_one("#review-entry", Input)
+        entry.display = False
 
     def _apply(self, value: str) -> None:
         try:

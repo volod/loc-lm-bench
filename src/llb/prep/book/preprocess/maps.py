@@ -1,6 +1,7 @@
 """Sample a stored point map, and send a variant box back to the original render."""
 
-from collections.abc import Callable
+from bisect import bisect_left
+from collections.abc import Callable, Iterator
 
 import numpy as np
 
@@ -46,16 +47,26 @@ def locate_dense(map_x: np.ndarray, map_y: np.ndarray, src_width: int, src_heigh
 def map_box(
     transform: Transform, box: Proposed, src_width: int, src_height: int
 ) -> Proposed | None:
-    """The axis-aligned box of `box`'s corners sent back to the original render."""
-    corners = ((box.x0, box.y0), (box.x1, box.y0), (box.x1, box.y1), (box.x0, box.y1))
-    mapped = [_point(transform, x, y) for x, y in corners]
-    xs = [point[0] for point in mapped]
-    ys = [point[1] for point in mapped]
+    """Send pixel edges through a map defined on pixel centers, then enclose them."""
+    mapped = [_point(transform, x, y) for x, y in _box_samples(transform, box)]
+    xs = [point[0] + 0.5 for point in mapped]
+    ys = [point[1] + 0.5 for point in mapped]
     x0, y0 = max(0.0, min(xs)), max(0.0, min(ys))
     x1, y1 = min(float(src_width), max(xs)), min(float(src_height), max(ys))
     if x1 - x0 < 1 or y1 - y0 < 1:
         return None
     return Proposed(box.kind, box.order, x0, y0, x1, y1, box.text, box.confidence)
+
+
+def _box_samples(transform: Transform, box: Proposed) -> Iterator[tuple[float, float]]:
+    xs = [box.x0 - 0.5, box.x1 - 0.5]
+    ys = [box.y0 - 0.5, box.y1 - 0.5]
+    if isinstance(transform, GridTransform):
+        # A bilinear cell's extrema lie at its corners. Include intersections
+        # inside the box so a bow between the outer corners stays in the crop.
+        xs.extend(x for x in transform.cols if xs[0] < x < xs[1])
+        ys.extend(y for y in transform.rows if ys[0] < y < ys[1])
+    return ((x, y) for x in xs for y in ys)
 
 
 def _point(transform: Transform, x: float, y: float) -> tuple[float, float]:
@@ -82,14 +93,10 @@ def _blend(
 
 
 def _bracket(coords: list[int], value: float) -> tuple[int, int, float]:
-    if value <= coords[0]:
-        return 0, 0, 0.0
-    if value >= coords[-1]:
-        last = len(coords) - 1
-        return last, last, 0.0
-    hi = 1
-    while hi < len(coords) and coords[hi] < value:
-        hi += 1
+    # An image edge is half a pixel outside the first or last grid center. Use the
+    # nearest interval there so a full-image box can still cover the whole render.
+    value = min(max(coords[0] - 0.5, value), coords[-1] + 0.5)
+    hi = min(max(1, bisect_left(coords, value)), len(coords) - 1)
     lo = hi - 1
     span = coords[hi] - coords[lo]
     if span <= 0:

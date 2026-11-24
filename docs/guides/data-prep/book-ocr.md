@@ -7,7 +7,8 @@ at its scan's native resolution), `signals` and `variants` (the measurements and
 they call for), `classes` (the page classes a pilot and an engine route on), the recognition
 stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
 `resolve` stage that chooses one text per block, and two deterministic stand-in stages.
-Structure and rendering plug into the same run as they land. For a
+`book-ocr structure` then infers the printed pages and the hierarchy from those ledgers.
+Rendering the vault is still ahead. For a
 born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
@@ -133,14 +134,133 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   pages/<pNNNN>/overlay.json     applied and orphaned corrections (llb.book-ocr-correction-overlay)
   pages/<pNNNN>/resolved.json    the resolved text (llb.book-ocr-resolved-page)
   review/decisions.json          reviewer edits (llb.book-ocr-reviewer-decisions)
+  review/queue.json              uncertain spans for the workbench (llb.book-ocr-review-queue)
+  review/<block>-s<start>-<end>.png   a padded crop of one uncertain block
   pilot/selection.json           the seeded pilot (llb.book-ocr-pilot-selection)
   metadata/page_manifest.json    per-page, per-stage ledger (llb.book-ocr-page-manifest)
-  metadata/processing_report.md  human-readable summary and failed pages
+  metadata/document_structure.json  printed pages, hierarchy, numbering (llb.book-ocr-document-structure)
+  metadata/quality_manifest.json one row per uncertain span (llb.book-ocr-quality-manifest)
+  metadata/processing_report.md  run summary: stages and failed pages
   logs/run.jsonl                 one JSON event per line, appended by every invocation
 ```
 
 `pNNNN` is the 1-based PDF page, zero-padded to four digits (wider for a longer document). A full
 render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
+
+## Review queue
+
+`book-ocr review-queue` reads a finished `resolve` and writes a marker, a crop, a manifest row, and
+a queue entry for every uncertain span. It is not a stage. The marker syntax, the three kinds, and
+what a decision writes are
+[uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
+
+```sh
+make book-ocr-review-queue BOOK_RUN=<run-dir>
+make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run whose `resolve` stage has finished for every configured page | required |
+
+Exit code 2 is a path that is not a run, or a page that still lacks its ledger, resolved text, and
+overlay. The command prints kind counts. It does not print the recovered text. After a decision,
+resume the run so `resolve` applies it, then build the queue again.
+
+## Structure
+
+`book-ocr structure` reads a finished ledger and writes `metadata/document_structure.json`: the
+printed page of every PDF page, the hierarchy, the running headers, and the figure, table, and
+equation numbers. It is not a stage. A missing ledger is exit code 2. The command prints counts
+and does not print the recovered text. What the inference keeps, and what the sample scan showed,
+is [structure](../../impl/current/book-recovery/structure-and-rendering.md).
+
+```sh
+make book-ocr-structure BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run whose block ledger exists for every configured page | required |
+
+## Reading vault
+
+`book-ocr render` writes an Obsidian vault from a run that already has a document structure. It
+is not a stage. The default directory is `book/<book-slug>/` inside the run. A missing structure
+is exit code 2. The command prints the vault path and does not print the recovered text. The
+layout, the page links, and what the sample scan showed are in
+[the reading vault](../../impl/current/book-recovery/structure-and-rendering.md#reading-vault).
+
+```sh
+make book-ocr-render BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run that already has a document structure | required |
+| `BOOK_OUTPUT` | Vault directory | `book/<slug>/` inside the run |
+| `BOOK_SOURCE_POLICY` | `copy`, `symlink`, or `reference` | `symlink` |
+| `BOOK_PAGE_FALLBACK` | Set to `1` to write a rendered image of each page | off |
+| `BOOK_SECTION_CAP` | Resolved characters in one note. The floor is 200 | `12000` |
+| `BOOK_SLUG` | Lowercase ASCII vault name | the PDF file name |
+| `BOOK_REFERENCE_GRAMMAR` | YAML grammar that replaces the handbook cues | the handbook grammar |
+
+The command also prints how many citations resolved, stayed ambiguous, or stayed unresolved.
+A grammar file replaces the handbook cues entirely. What those cues match, and what the sample
+scan showed, is in
+[cross-references](../../impl/current/book-recovery/structure-and-rendering.md#cross-references).
+`render` then runs the vault check below. A failed check is exit code 1.
+
+## Corpus projection
+
+`book-ocr project` writes a retrieval corpus from a run that already has a document structure.
+It is not a stage. One vault content file becomes one document: formulas as LaTeX, tables as
+Markdown, and an unresolved span as a machine marker. Navigation, front matter, and page
+furniture are left out. Each document gets a page-citation sidecar and a metadata sidecar.
+`BOOK_LICENCE` is required and has no default. A copyrighted scan is `local-only`. The command
+prints counts and does not print the recovered text. What the files contain, and what the
+sample scan showed, is [corpus projection](../../impl/current/book-recovery/corpus-projection.md).
+
+```sh
+make book-ocr-project BOOK_RUN=<run-dir> BOOK_CORPUS=<corpus-dir> BOOK_LICENCE=local-only
+make ingest-corpus CORPUS_ROOT=<corpus-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run that already has a document structure | required |
+| `BOOK_CORPUS` | The corpus directory to write | required |
+| `BOOK_LICENCE` | `redistributable` or `local-only` | required |
+| `BOOK_LANGUAGE` | Language recorded on every document | detected from the text |
+| `BOOK_SECTION_CAP` | Packed source characters in one document. The floor is 200 | `12000` |
+| `BOOK_SLUG` | Lowercase ASCII book name used in vault file paths | the PDF file name |
+
+A missing structure, a missing licence, or an output that would replace the run is exit code 2.
+An unchanged ledger projects to the same files. A changed text is a new file whose
+`revision_of` names the previous one.
+
+## Vault check
+
+`book-ocr validate` checks a rendered vault and writes `metadata/processing_report.md` and
+`metadata/validation.json` into that vault. It also runs at the end of `render`, and at the end
+of `run` or `resume` when the run already holds a vault. The report lists page status,
+warnings, engines, readings, confidence buckets, the open review queue, and the pages still
+open for a person. Confidence buckets are diagnostics, not probabilities of correctness. The
+command prints failed checks and does not print recovered text. What the check refuses is
+[vault validation](../../impl/current/book-recovery/structure-and-rendering.md#vault-validation).
+
+```sh
+make book-ocr-validate BOOK_DIR=<book-dir>
+make book-ocr-validate BOOK_DIR=<book-dir> BOOK_RUN=<run-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_DIR` | A rendered reading vault | required |
+| `BOOK_RUN` | The book-ocr run, when the vault was published outside it | the run recorded in the vault |
+
+Exit code `0` means the vault passed. Exit code `1` means a check failed. Exit code `2` means
+the directory is not a vault, or the run cannot be read.
 
 ## Pilot selection
 
@@ -152,7 +272,7 @@ Each page records the class it represents and the signal values that placed it. 
 make book-ocr BOOK_PDF=<scan.pdf> BOOK_STAGES=render,signals,classes
 make book-ocr-pilot-select BOOK_RUN=<run-dir>
 make book-ocr-pilot-select BOOK_RUN=<run-dir> BOOK_PILOT_SIZE=25 BOOK_PILOT_SEED=0 \
-  BOOK_PILOT_OUT=<path>
+  BOOK_PILOT_FROZEN=<frozen-pilot.json> BOOK_PILOT_OUT=<path>
 ```
 
 | Variable | Meaning | Default |
@@ -160,20 +280,23 @@ make book-ocr-pilot-select BOOK_RUN=<run-dir> BOOK_PILOT_SIZE=25 BOOK_PILOT_SEED
 | `BOOK_RUN` | A book-ocr run whose `classes` stage has finished for every configured page | required |
 | `BOOK_PILOT_SIZE` | How many pages to select. A size below 20 is accepted | `25` |
 | `BOOK_PILOT_SEED` | The seed that draws inside each class's strongest pages | `0` |
+| `BOOK_PILOT_FROZEN` | Require the replay to match the source checksum, sampler settings, coverage and page records in this selection | unset |
 | `BOOK_PILOT_OUT` | Also write the selection here. The run always keeps `pilot/selection.json` | unset |
 
-Exit code 2 is a run that is not a book-ocr run, or a classes stage that has not finished. The
-cuts, the precedence, and the handbook list are
+The selector rehashes the run's source and checks that every class record names its configured PDF
+page. Exit code 2 means the run could not be read, the source changed, class records were missing
+or misplaced, or the replay differed from the frozen selection. These checks run before the
+selection files are written. The cuts, the precedence, and the handbook list are
 [page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
 
 ## Score
 
-`book-ocr score` compares a finished ledger, or the existing PDF lane's citation sidecar, with a
-reference transcription. It reports character and word error, missing and duplicated words,
-reading order, one count per dangerous-substitution class, formula fidelity, and the structural
-metrics. The substitution counts are not folded into a single score. Figure boxes, table grids,
-and caption links the existing lane cannot express are reported absent. The definitions, the
-reference format, and the hand-computed pins are
+`book-ocr score` compares a finished ledger, the resolved pipeline when the run has one, or the
+existing PDF lane's citation sidecar, with a reference transcription. It reports character and
+word error, missing and duplicated words, reading order, one count per dangerous-substitution
+class, formula fidelity, and the structural metrics. The substitution counts are not folded into
+a single score. Figure boxes, table grids, and caption links a lane cannot express are reported
+absent. The definitions, the reference format, and the hand-computed pins are
 [quality metrics](../../impl/current/book-recovery/quality-metrics.md).
 
 ```sh
@@ -181,10 +304,11 @@ make book-ocr-score BOOK_REFERENCE=<reference-dir> BOOK_RUN=<run-dir>
 make book-ocr-score BOOK_REFERENCE=<reference-dir> BOOK_CITATIONS=<doc>.citations.json
 ```
 
-`BOOK_ENGINE` scores one ledger engine. `BOOK_SCORE_OUT` writes the JSON report and `BOOK_JSON=1`
-prints it. Without `BOOK_JSON`, the command prints a short summary. Exit code 2 is a missing
-input or a reference the loader refused. The command does not recover a scan and does not write a
-reference.
+`BOOK_ENGINE` scores one ledger engine and still includes the resolved lane. `BOOK_SCORE_OUT`
+writes the JSON report and `BOOK_JSON=1` prints it. Without `BOOK_JSON`, the command prints a
+short summary that names missing submissions, non-zero abstentions, and fields a page did not
+emit. Exit code 2 is a missing input or a reference the loader refused. The command does not
+recover a scan and does not write a reference.
 
 ## Recovery-tool survey
 

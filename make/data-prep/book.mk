@@ -1,6 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
 .PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-pilot-select \
+	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-project book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
 book-ocr: ## Run (or BOOK_DRY_RUN=1 validate) a scanned-book recovery over BOOK_PDF (BOOK_PAGES=1-, BOOK_BATCH_PAGES=25, BOOK_STAGES=render, BOOK_CONFIG=yaml, BOOK_SOURCE_POLICY=symlink|copy|reference, BOOK_REUSE_FROM=run, BOOK_OUT_DIR=); BOOK_RESUME=<run-dir> continues a run
@@ -36,12 +37,52 @@ book-ocr-score: ## Score BOOK_RUN against reference dir BOOK_REFERENCE (BOOK_CIT
 	if [ -n "$(BOOK_JSON)" ]; then args+=(--json); fi; \
 	$(PY) -m llb.main book-ocr score "$${args[@]}"
 
-book-ocr-pilot-select: ## Select a seeded pilot page set from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_OUT=)
+book-ocr-pilot-select: ## Select a seeded pilot from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_FROZEN=, BOOK_PILOT_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
 	@args=("$(BOOK_RUN)" --size "$(or $(BOOK_PILOT_SIZE),25)" --seed "$(or $(BOOK_PILOT_SEED),0)"); \
+	if [ -n "$(BOOK_PILOT_FROZEN)" ]; then args+=(--frozen "$(BOOK_PILOT_FROZEN)"); fi; \
 	if [ -n "$(BOOK_PILOT_OUT)" ]; then args+=(--out "$(BOOK_PILOT_OUT)"); fi; \
 	$(PY) -m llb.main book-ocr pilot-select "$${args[@]}"
+
+book-ocr-review-queue: ## Write uncertainty markers, crops, the quality manifest, and the review queue for BOOK_RUN
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
+	@$(PY) -m llb.main book-ocr review-queue "$(BOOK_RUN)"
+
+book-ocr-structure: ## Infer printed pages, hierarchy, and numbering inventory for BOOK_RUN
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
+	@$(PY) -m llb.main book-ocr structure "$(BOOK_RUN)"
+
+book-ocr-render: ## Render BOOK_RUN as an Obsidian vault (BOOK_OUTPUT=, BOOK_SOURCE_POLICY=symlink|copy|reference, BOOK_PAGE_FALLBACK=1, BOOK_SECTION_CAP=, BOOK_SLUG=, BOOK_REFERENCE_GRAMMAR=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
+	@args=("$(BOOK_RUN)" --source-policy "$(or $(BOOK_SOURCE_POLICY),symlink)"); \
+	if [ -n "$(BOOK_OUTPUT)" ]; then args+=(--output "$(BOOK_OUTPUT)"); fi; \
+	if [ -n "$(BOOK_PAGE_FALLBACK)" ]; then args+=(--page-fallback); fi; \
+	if [ -n "$(BOOK_SECTION_CAP)" ]; then args+=(--section-cap "$(BOOK_SECTION_CAP)"); fi; \
+	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
+	if [ -n "$(BOOK_REFERENCE_GRAMMAR)" ]; then args+=(--reference-grammar "$(BOOK_REFERENCE_GRAMMAR)"); fi; \
+	$(PY) -m llb.main book-ocr render "$${args[@]}"
+
+book-ocr-project: ## Project BOOK_RUN into a retrieval corpus at BOOK_CORPUS (BOOK_LICENCE=redistributable|local-only required, BOOK_LANGUAGE=, BOOK_SECTION_CAP=, BOOK_SLUG=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
+	@test -n "$(BOOK_CORPUS)" || { echo "ERROR: set BOOK_CORPUS=<corpus-dir>"; exit 2; }
+	@test -n "$(BOOK_LICENCE)" || { echo "ERROR: set BOOK_LICENCE=redistributable|local-only"; exit 2; }
+	@args=("$(BOOK_RUN)" --out "$(BOOK_CORPUS)" --licence "$(BOOK_LICENCE)"); \
+	if [ -n "$(BOOK_LANGUAGE)" ]; then args+=(--language "$(BOOK_LANGUAGE)"); fi; \
+	if [ -n "$(BOOK_SECTION_CAP)" ]; then args+=(--section-cap "$(BOOK_SECTION_CAP)"); fi; \
+	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
+	$(PY) -m llb.main book-ocr project "$${args[@]}"
+
+book-ocr-validate: ## Validate a rendered vault at BOOK_DIR and write its processing report (BOOK_RUN= when the vault is outside the run)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_DIR)" || { echo "ERROR: set BOOK_DIR=<book-dir>"; exit 2; }
+	@args=("$(BOOK_DIR)"); \
+	if [ -n "$(BOOK_RUN)" ]; then args+=(--run "$(BOOK_RUN)"); fi; \
+	$(PY) -m llb.main book-ocr validate "$${args[@]}"
 
 book-ocr-engines: ## List ledger engines and whether each one can run on this host
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from llb.prep.pdf.model import PDF_SUFFIX
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX, PDF_SUFFIX
 from llb.prep.pdf.reuse import _sha256_file
 from llb.prep.corpus.governance import (
     is_acquisition_source_system,
@@ -190,6 +190,7 @@ def _ingest_text_file(
         and target.is_file()
     ):
         _LOG.info("[corpus] reuse %s (unchanged source %s)", doc_id, source)
+        _sync_citation_sidecar(path, out_dir, doc_id)
         return CorpusItem(
             source=source,
             doc_id=doc_id,
@@ -213,6 +214,7 @@ def _ingest_text_file(
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
+    _sync_citation_sidecar(path, out_dir, doc_id)
     return CorpusItem(
         source=source,
         doc_id=doc_id,
@@ -222,3 +224,20 @@ def _ingest_text_file(
         source_sha256=source_sha256,
         **_governance_kwargs(governance),
     )
+
+
+def _sync_citation_sidecar(source: Path, out_dir: Path, doc_id: str) -> None:
+    """Copy a text document's page-citation sidecar into the staged corpus.
+
+    Passthrough keeps the markdown bytes, so the sidecar has to travel with
+    them. A document with no sidecar is unchanged.
+    """
+    src = source.with_suffix(PDF_CITATION_SUFFIX)
+    if not src.is_file():
+        return
+    dest = out_dir / Path(doc_id).with_suffix(PDF_CITATION_SUFFIX)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    data = src.read_bytes()
+    if dest.is_file() and dest.read_bytes() == data:
+        return
+    dest.write_bytes(data)

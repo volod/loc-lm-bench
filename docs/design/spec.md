@@ -307,6 +307,22 @@ Neither rendering is the source of truth; the ledger is. This is the projection 
 [acquired-corpus seam](#corpus-provenance-and-acquisition-boundary) follows: a field either consumer
 needs later is added to the ledger and rendered, never patched into one output.
 
+The corpus projection also carries the book's printed REFERENCES as data. A technical book is a
+graph its author already drew. A sentence cites a table, an equation, a figure, a section, or a
+page by number, and the index maps the book's own terms to the pages that treat them. The vault
+turns those references into links for a reader. The projection records each one for a retrieval
+lane: the citation's span in its document and the span of the block it names in that block's
+document, an index line's term and the PDF pages its printed pages map to, and each document's
+place in the hierarchy. A lane can then follow the same edge from a sentence to the evidence it
+names, which matters most where the evidence is a table or a display equation that embeds poorly
+on its own. The projection records only a reference that resolved to one target. An ambiguous
+number or a mapping gap stays the words the page printed and is recorded as unresolved, never
+settled by proximity. These are references the book prints, so they sit inside the boundary below
+rather than being an exception to it. Whether following them retrieves evidence the vector lane
+misses is part of this capability's evaluation. The graph built from them is a derived source in
+the [graph lane's](#graph-retrieval-and-ontology) terms, and it is read on the book's verified
+items.
+
 The load-bearing properties:
 
 - **Every block traces to its page.** The unit of recovery is a block: a page region with a kind
@@ -439,6 +455,16 @@ pairwise links into identity clusters. That is what this capability supplies: a 
 that graph node identity, gold-item duplication, and document edition identity all address the same
 way, so an operating threshold is READ OFF a precision/recall curve instead of picked.
 
+The same question arises one level up, in the induced RELATION vocabulary. Its long tail of
+surfaces holds two verbs that name one predicate, an active and a passive form that name a
+predicate and its inverse, and a narrower verb that names a sub-predicate. A relation-scoped axiom
+written against one surface checks nothing its synonyms carry. A relation surface has several
+weakly correlated fields: its text, its embedding, the entity types it joins, and the argument
+pairs it connects. It is therefore a linkage record like the others, and the same seam prices it.
+Direction is part of a predicate's identity. Two surfaces whose argument pairs agree only when
+reversed are proposed as inverses and never merged as synonyms, and a narrower predicate is a
+non-match.
+
 The confidence contract is narrow, and it is what keeps this capability separable from the conflict
 audit rather than a second entrance to it:
 
@@ -538,6 +564,45 @@ two remain comparable. It uses the closed node vocabulary in
 [graph-ontology-schema.md](graph-ontology-schema.md); the closed set keeps graph queries, node
 typing, and relation caps stable across model runs, and model-invented types normalize to the
 canonical vocabulary or `MISC`.
+
+A graph lane has three parts, and each is a MEASURED choice rather than a property of this section:
+the SOURCE its nodes and edges come from, the RANKING that turns a question into ranked spans, and,
+for the narrative layer, the COMMUNITY partition. Which published methods are candidates for each
+part, which are declined, and why, is recorded in the
+[method survey](graph-construction-methods.md).
+
+- **Sources.** A graph is EXTRACTED or DERIVED. An extracted graph holds entities and
+  subject-relation-object facts that a model or a span classifier read from the text, typed in the
+  closed vocabulary. A derived graph is built from a document's printed structure: the sections,
+  figures, tables, equations, pages, and index terms of a [recovered book](#scanned-book-recovery),
+  joined by containment, by the citations the book prints, and by its index entries. A derived graph
+  has its own closed structural vocabulary, fixed by the reference grammar rather than chosen by a
+  model. A structural node is never typed as an entity, and the two graphs are separate stores, not
+  one blended schema. An extractor -- generative by default, or a compact span classifier given the
+  closed vocabulary as its labels -- is adopted for a corpus only on the paired reading below, with
+  its extraction cost reported beside it.
+- **Ranking.** Besides k-hop expansion and community membership, a strategy may rank by seeded
+  propagation: a personalized random walk from the question's linked seeds, which scores a bridge
+  node that several seeds reach above a node only one seed reaches. The walk may cross SIMILARITY
+  edges between nodes whose mentions are near-identical. Such an edge is a retrieval-time weight,
+  never an identity claim. It merges no node, adds no span, and is invisible to the axiom layer and
+  to the [linkage seam](#entity-resolution-and-record-linkage), where identity is decided on
+  labelled evidence.
+- **Communities.** The partition is computed offline and deterministically under a recorded seed. A
+  detection algorithm, or a resolution it exposes, is chosen on the tuning split and read on final.
+
+Every one of these choices is read on the source-span metric, as a paired comparison over the
+identical items against the strategy or source it would join or replace. A claim about multi-hop
+evidence is read on `all-spans@k` at a FIXED budget, because a larger budget lifts every lane alike.
+A choice that separates from nothing is recorded as buying nothing on that corpus, and the shipped
+strategy stays the default.
+
+The boundary of those choices: no graph lane returns text that is not a grounded span. An LLM
+community summary -- the global-sensemaking layer of hierarchical community summarization -- stays a
+tagged diagnostic, because an abstraction cannot be span-scored. No source asserts an edge its input
+does not state: an extracted fact needs grounded evidence, and a derived edge needs a reference the
+document prints. Grounding nodes to an external ontology's identifiers is not part of the lane,
+because it sends corpus terms off the host and drops what that ontology does not cover.
 
 An ontology layer above the vocabulary may express axioms the corpus is expected to satisfy, and an
 answer gate may refuse an answer that violates one. Because an axiom encodes a domain claim rather
@@ -1002,7 +1067,17 @@ The implementation favors maintained Python-native components and small project-
   English task sets the external-suite lane screens against;
 - the dewarping, layout, OCR, formula, and table models that the scanned-book pilot selects, and an
   Ollama-served vision model for evidence-constrained correction;
+- the graph lane's candidate components, each adopted only on its own paired reading: seeded
+  propagation over SciPy sparse matrices from the existing `rag` extra, so it adds no dependency;
+  Leiden partitioning from `graspologic-native`, one Rust wheel with no igraph stack; and a GLiNER
+  span classifier from an Apache-2.0 multilingual checkpoint, each behind its own optional extra;
 - NVML, `nvidia-smi`, and process telemetry for runtime evidence.
+
+A published graph method is reused as a METHOD when its package would import a second stack. The
+HippoRAG package pins its own Python and LLM clients, and the Microsoft GraphRAG indexer and KGGen
+clustering are LLM pipelines with their own clients. Each is reimplemented over the stored graph
+where the [method survey](graph-construction-methods.md) takes it up, and the checkpoint, version,
+and licence of every model a graph build used are recorded on that build.
 
 Heavy or backend-specific dependencies stay behind optional extras and lazy imports. A base install
 can inspect data, plans, and artifacts without importing GPU stacks.
@@ -1092,20 +1167,21 @@ Four rules settle it, in order:
 An explicit operator priority may override rule 4, never rules 1-3. `scanned-book-recovery` sits
 above `artifact-contracts` on that basis: the operator made it the top priority, and none of the
 remaining contract work changes what a book task produces or measures. `corpus-provenance` sits
-above both and is shipped: `book-corpus-projection` builds on the redistribution gate it delivered.
+above both and is shipped: [corpus projection](../impl/current/book-recovery/corpus-projection.md)
+builds on the redistribution gate it delivered.
 
 | # | Capability | Status | How it is evaluated | Implementation |
 | --- | --- | --- | --- | --- |
 | 1 | `reproducible-environment` | shipped | A fresh environment build reaches a green check suite with no manual repair step | [Overview](../impl/current/overview.md) |
 | 2 | `corpus-provenance` | shipped | A gold-set item and any answer scored against it resolve offline to a specific capture of a specific source URI at a specific time under recorded terms, while a corpus carrying no provenance fields ingests byte-identically to today; a gold-set bundle names the corpus version its spans are valid against and the acquisition run behind that version, or records the absence of one explicitly; a revised upstream document yields a new document version with the superseded version retained and spans labelled against it still resolving, and an in-place update of an acquired document fails rather than succeeding quietly; an export refuses material whose recorded redistribution class forbids it, naming the document, and a fixture fails when that gate is removed | [Acquired-corpus provenance](../impl/current/data-prep/acquired-provenance.md) (against the [acquired-corpus projection](acquired-corpus-projection.md) contract) |
-| 3 | `scanned-book-recovery` | planned | On a frozen pilot set of 20-30 difficult pages with a human-verified reference transcription: character and word error, missing and duplicated text, reading-order agreement, formula fidelity after LaTeX normalization with every rendered formula parsing, table-structure similarity, figure-boundary overlap and caption association, and printed-page mapping accuracy, each reported per page class beside the existing PDF lane on the same pages, with the dangerous-substitution rate (digit/letter, minus/dash, decimal point, Latin/Greek, index, unit, bracket, equation number) reported separately and never folded into an average; model-assisted correction adopted only when it lowers error on the pilot without raising the dangerous-substitution rate, with the correct raw tokens it made wrong counted apart from the errors it fixed; a full run accounts for every input page, reaches every content file from the table of contents, keeps every previous/next link reciprocal, resolves every link, anchor, and embed, renders no uncertain span without its marker and review-queue entry, and re-renders byte-identically after resuming from an interruption; the corpus projection ingests with source-PDF page provenance on every chunk, refuses a gold span over an unresolved marker, and its retrieval over verified book items is reported beside the existing lane's conversion of the same book; a pipeline that beats the existing lane on no page class is recorded as buying nothing there, and that lane stays the recovery engine | [Scanned book recovery](../impl/current/book-recovery.md) (the resumable run skeleton and the recovery-tool survey; the remaining work is in [the plan](../impl/plan.md)) |
+| 3 | `scanned-book-recovery` | planned | On a frozen pilot set of 20-30 difficult pages with a human-verified reference transcription: character and word error, missing and duplicated text, reading-order agreement, formula fidelity after LaTeX normalization with every rendered formula parsing, table-structure similarity, figure-boundary overlap and caption association, and printed-page mapping accuracy, each reported per page class beside the existing PDF lane on the same pages, with the dangerous-substitution rate (digit/letter, minus/dash, decimal point, Latin/Greek, index, unit, bracket, equation number) reported separately and never folded into an average; model-assisted correction adopted only when it lowers error on the pilot without raising the dangerous-substitution rate, with the correct raw tokens it made wrong counted apart from the errors it fixed; a full run accounts for every input page, reaches every content file from the table of contents, keeps every previous/next link reciprocal, resolves every link, anchor, and embed, renders no uncertain span without its marker and review-queue entry, and re-renders byte-identically after resuming from an interruption; the corpus projection ingests with source-PDF page provenance on every chunk, refuses a gold span over an unresolved marker, carries exactly the printed references the vault links with every ambiguous or unresolved citation recorded as such and no reference the book does not print, and its retrieval over verified book items is reported beside the existing lane's conversion of the same book; a graph derived from those printed references alone carries no edge the book does not print and is read beside the vector lane over the same projection on the same verified items, split by whether an item's evidence includes a table, equation, or figure block, and a graph that separates on no slice is recorded as the book's references buying nothing for retrieval there; a pipeline that beats the existing lane on no page class is recorded as buying nothing there, and that lane stays the recovery engine | [Scanned book recovery](../impl/current/book-recovery.md) (run and block ledgers, page variants, pilot selection and scoring, review, structure and vault rendering; the remaining work is in [the plan](../impl/plan.md)) |
 | 4 | `artifact-contracts` | planned | Every in-scope durable producer and consumer resolves through a registered `schema_id` and semantic `schema_version`; current project-owned records round-trip through their Pydantic models and generated JSON Schema, registered older fixtures migrate to the same canonical meaning or their declared refusal, unsupported future versions fail before downstream action, schema drift without a version and migration declaration fails CI, and an external fixture validates the exported schema and dataset catalog without importing `llb` | [Versioned data and artifact contracts](#versioned-data-and-artifact-contracts) (the contract; the work is in [the plan](../impl/plan.md)) |
 | 5 | `gold-data` | shipped | Split validation on the committed fixture; human verification gate with experiment-derived acceptance thresholds; multi-annotator adjudication | [Data prep](../impl/current/data-prep.md) |
-| 6 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
+| 6 | `entity-resolution` | planned | Paired graph-lane recall at k and MRR over the same source spans before and after node clustering; linkage precision/recall against a reviewer-labelled merge set, with the operating threshold read off that labelled accuracy curve; a threshold that lifts no lane metric is recorded as a negative result rather than adopted; for relation surfaces, each relation-scoped axiom's checked population with and without the proposed predicate overlay, an inverse pair proposed as an inverse and never merged, and graph retrieval identical with the overlay named | [Entity resolution](../impl/current/entity-resolution.md) (the linkage seam, the gold-item shadow lane, and the graph node lane; the remaining identity decisions are in [the plan](../impl/plan.md)) |
 | 7 | `retrieval-evidence` | shipped | Recall at k and MRR against source spans, with span character coverage, intactness, and served context size reported beside them; paired verdicts with a predeclared MDE and a minimum-evidence gate; an adoption bar for a component swap | [RAG core](../impl/current/rag-core.md) |
 | 8 | `answer-scoring` | shipped | Objective metric decomposition (token precision/recall/found-rate) with a declared format weight; answer-side coverage of the item's gold spans reported beside the objective; leaked-reasoning and off-language delivery failures flagged per response and rated per run beside reliability; miss classification into retrieval, generation, refusal, artifact, judge; per-model answer-contract conformance, with its shape-failure split and repair rate reported apart from correctness | [Scoring](../impl/current/rag-core/scoring.md) |
 | 9 | `judge-calibration` | shipped | Correlation gate against human Ukrainian ratings before a judge may rank; demotion to diagnostic below the gate | [Judging](../impl/current/rigor-board-judge/judging.md) |
-| 10 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused | [GraphRAG](../impl/current/graphrag-backend.md) |
+| 10 | `graph-retrieval` | shipped | Same source-span metric as the vector lanes, graph-vs-vector paired comparison; closed-vocabulary normalization rate; per-class axiom-violation base rate over an extraction ledger, cross-checked against an OWL reasoner, where an axiom class with no population or no violation on a corpus is recorded as buying nothing there rather than as a pass; at answer time, per-axiom-class catch and false-rejection rates reported as separate numbers over planted violations and adversarial correct answers, with the objective delta read on the commonly-answered items and an unsigned axiom set refused; a new graph source, extractor, ranking strategy, or community detector read as a paired comparison over the identical items against what it would join or replace -- multi-hop evidence on `all-spans@k` at a fixed budget -- with its build cost beside it, a similarity edge leaving node identity and every axiom reading unchanged, and a choice that separates from nothing recorded as buying nothing there | [GraphRAG](../impl/current/graphrag-backend.md) |
 | 11 | `host-fit-serving` | shipped | Host acceptance checklist and repeatable smoke runs per backend; the recorded served configuration replayed | [Host validation](../impl/current/host-validation.md) |
 | 12 | `model-roster-currency` | shipped | Every carried model resolves to a registered family generation, with exactly one `current` generation per family; the published family, generation, and license tables regenerate from the roster manifest and a drift fails the docs check; the upstream currency report reproduces both a newer-generation finding and a no-newer-generation outcome from recorded registry responses, and reports rather than edits; a proposed generation swap lists every committed run aggregate, published value, and delivered baseline row whose recorded model resolves to the outgoing generation, lists none measured on another family, and states plainly when nothing is affected | [Model roster](../impl/current/model-roster.md) |
 | 13 | `optimization-search` | shipped | Tuning/final split discipline enforced per sweep cell; provenance digests binding a tuned artifact to its source data; a locally tuned retriever adopted only on a held-out paired verdict against the encoder it would replace, with its training data refused if it names a calibration or final item and its store recording the tuned identity so no other encoder can query it | [Evaluation rigor](../impl/current/rigor-board-judge.md), [embedder fine-tuning](../impl/current/extended-workflows/embedder-finetune.md) |

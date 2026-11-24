@@ -230,6 +230,28 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Printed pages, hierarchy, and figure, table, and equation numbers of one scanned book.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-document-structure",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-document-structure/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "Model edits for one scanned page, read by resolution and not produced by it.",
       "extension_point": null,
       "legacy_read_version": null,
@@ -340,12 +362,56 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "One row per uncertain span of a scanned book, grouped by PDF page.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-quality-manifest",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-quality-manifest/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "One scanned page's resolved text, with the provenance of every span.",
       "extension_point": null,
       "legacy_read_version": null,
       "schema_id": "llb.book-ocr-resolved-page",
       "schema_paths": {
         "1.0.0": "llb.book-ocr-resolved-page/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Uncertain spans of a scanned book, opened by the review workbench.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-review-queue",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-review-queue/1.0.0.schema.json"
       },
       "supported_read_versions": [
         "1.0.0"

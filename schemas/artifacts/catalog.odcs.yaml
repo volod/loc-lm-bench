@@ -150,6 +150,23 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-document-structure
+  name: llb.book-ocr-document-structure
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-document-structure/1.0.0.schema.json
+  description: Printed pages, hierarchy, and figure, table, and equation numbers of
+    one scanned book.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-model-corrections
   name: llb.book-ocr-model-corrections
   logicalType: object
@@ -233,12 +250,44 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-quality-manifest
+  name: llb.book-ocr-quality-manifest
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-quality-manifest/1.0.0.schema.json
+  description: One row per uncertain span of a scanned book, grouped by PDF page.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-resolved-page
   name: llb.book-ocr-resolved-page
   logicalType: object
   physicalType: file
   physicalName: llb.book-ocr-resolved-page/1.0.0.schema.json
   description: One scanned page's resolved text, with the provenance of every span.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-review-queue
+  name: llb.book-ocr-review-queue
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-review-queue/1.0.0.schema.json
+  description: Uncertain spans of a scanned book, opened by the review workbench.
   customProperties:
   - property: schemaVersion
     value: 1.0.0

@@ -4,12 +4,14 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from llb.core.contracts.data_prep.book_blocks import UNCERTAINTY_CLASSES
 from llb.core.contracts.data_prep.corpus import DataPrepRow
 from llb.prep.book.metrics.constants import (
     CONFUSION_CLASSES,
     STATUS_ABSENT,
     STATUS_NOT_APPLICABLE,
     STATUS_SCORED,
+    STRUCTURE_FIELDS,
 )
 
 MetricStatus = Literal["scored", "absent", "not_applicable"]
@@ -68,11 +70,15 @@ class PageScore(DataPrepRow):
     figure_overlap: MetricValue
     caption_association: MetricValue
     printed_page_accuracy: MetricValue
+    submitted: bool
+    abstentions: dict[str, int]
 
     @model_validator(mode="after")
     def _every_class(self) -> "PageScore":
         if set(self.dangerous_substitutions) != set(CONFUSION_CLASSES):
             raise ValueError("every confusion class is reported")
+        if set(self.abstentions) != set(UNCERTAINTY_CLASSES):
+            raise ValueError("every abstention class is reported")
         return self
 
 
@@ -94,6 +100,15 @@ class ClassScore(DataPrepRow):
     figure_overlap: MetricValue
     caption_association: MetricValue
     printed_page_accuracy: MetricValue
+    missing_submissions: int = Field(ge=0)
+    unscorable_fields: dict[str, int]
+    abstentions: dict[str, int]
+
+    @model_validator(mode="after")
+    def _abstentions_cover_every_class(self) -> "ClassScore":
+        if set(self.abstentions) != set(UNCERTAINTY_CLASSES):
+            raise ValueError("every abstention class is reported")
+        return self
 
 
 class LaneScore(DataPrepRow):
@@ -102,6 +117,15 @@ class LaneScore(DataPrepRow):
     lane: str
     pages: list[PageScore]
     by_page_class: dict[str, ClassScore]
+    missing_submissions: int = Field(ge=0)
+    unscorable_fields: dict[str, int]
+    abstentions: dict[str, int]
+
+    @model_validator(mode="after")
+    def _abstentions_cover_every_class(self) -> "LaneScore":
+        if set(self.abstentions) != set(UNCERTAINTY_CLASSES):
+            raise ValueError("every abstention class is reported")
+        return self
 
 
 class ScoreReport(DataPrepRow):
@@ -125,6 +149,7 @@ def _class_score(name: str, pages: list[PageScore]) -> ClassScore:
     }
     chars = sum(page.reference_chars for page in pages)
     rates = {kind: (counts[kind] / chars if chars else None) for kind in CONFUSION_CLASSES}
+    missing, unscorable, abstentions = field_coverage(pages)
     return ClassScore(
         page_class=name,
         pages=len(pages),
@@ -141,7 +166,28 @@ def _class_score(name: str, pages: list[PageScore]) -> ClassScore:
         figure_overlap=_mean([page.figure_overlap for page in pages]),
         caption_association=_mean([page.caption_association for page in pages]),
         printed_page_accuracy=_mean([page.printed_page_accuracy for page in pages]),
+        missing_submissions=missing,
+        unscorable_fields=unscorable,
+        abstentions=abstentions,
     )
+
+
+def field_coverage(pages: list[PageScore]) -> tuple[int, dict[str, int], dict[str, int]]:
+    """Missing pages, absent structural fields, and abstention totals.
+
+    An absent field is omitted when its count is zero. Every abstention class is present.
+    """
+    missing: int = sum(0 if page.submitted else 1 for page in pages)
+    absent_fields: dict[str, int] = {}
+    abstentions: dict[str, int] = dict.fromkeys(UNCERTAINTY_CLASSES, 0)
+    for page in pages:
+        for name in STRUCTURE_FIELDS:
+            metric = getattr(page, name)
+            if isinstance(metric, MetricValue) and metric.status == STATUS_ABSENT:
+                absent_fields[name] = absent_fields.get(name, 0) + 1
+        for name, count in page.abstentions.items():
+            abstentions[name] += count
+    return missing, absent_fields, abstentions
 
 
 def _mean(values: list[MetricValue]) -> MetricValue:

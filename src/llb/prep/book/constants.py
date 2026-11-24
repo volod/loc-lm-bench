@@ -10,7 +10,10 @@ One run lives under `$DATA_DIR/book-ocr/<run_timestamp>/`:
     pages/<pNNNN>/overlay.json      applied and orphaned corrections (`llb.book-ocr-correction-overlay`)
     pages/<pNNNN>/resolved.json     the resolved text (`llb.book-ocr-resolved-page`)
     review/decisions.json           reviewer edits, outside the stage cache
+    review/queue.json               uncertain spans for the review workbench
     metadata/page_manifest.json     the per-page, per-stage ledger (`llb.book-ocr-page-manifest`)
+    metadata/quality_manifest.json  one row per uncertain span (`llb.book-ocr-quality-manifest`)
+    metadata/document_structure.json  printed pages and hierarchy (`llb.book-ocr-document-structure`)
     metadata/processing_report.md   the human-readable run report
     logs/run.jsonl                  structured JSON event log, one object per line
 """

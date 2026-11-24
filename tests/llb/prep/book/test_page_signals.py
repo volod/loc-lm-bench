@@ -70,7 +70,9 @@ def test_each_planted_defect_is_detected():
     assert grainy.noise >= NOISE_CORRECT
     assert guttered.gutter_side == "left"
     assert guttered.gutter_width_px >= GUTTER_WIDTH_CORRECT
-    assert bled.bleed is not None and bled.bleed.side == "left"
+    band = bled.bleed
+    assert band is not None
+    assert (band.side, band.x0, band.y0, band.x1, band.y1) == ("left", 8, 0, 40, 540)
     assert selected(skewed)["deskew"]
     assert selected(curved)["dewarp"]
     assert selected(shaded)["illumination"]

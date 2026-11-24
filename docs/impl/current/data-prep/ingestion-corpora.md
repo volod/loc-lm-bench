@@ -84,10 +84,12 @@ Manifest-diff contract (dynamic-corpus-refresh): `corpus_doc_fingerprints` in
 `src/llb/prep/corpus/governance.py` maps `doc_id -> fingerprint` from the same two sources as
 `corpus_fingerprint` -- the canonical per-item row (content sha256 plus governance fields) when
 `corpus_manifest.json` exists, else the sha256 of each committed `.md`/`.txt` file keyed by its
-corpus-relative path. In both modes a document's PDF citation sidecar
-(`pdf-<digest>.citations.json`) hash is folded into its fingerprint when one exists, so a
-sidecar-only regeneration (page spans rebuilt, text unchanged) reads as a modified document;
-sidecar-less docs keep the plain hash, so older stores stay refresh-compatible. `build-index`
+corpus-relative path. In both modes a document's citation sidecar
+(`<doc>.citations.json`; `pdf-<digest>.citations.json` for the PDF lane) is folded into its
+fingerprint when one exists, so a sidecar-only regeneration (page spans rebuilt, text
+unchanged) reads as a modified document. Sidecar-less docs keep the plain hash, so older
+stores stay refresh-compatible. Text ingest copies a sibling sidecar into the staged corpus
+and deletes it with a stale document. `build-index`
 records the map in `store_meta.json` as `doc_fingerprints`; `llb refresh-index` diffs it against
 the current corpus to re-chunk/re-embed only added or modified documents and to drop deleted
 ones (details in [RAG core](../rag-core/retrieval-store.md#store-lifecycle-dynamic-corpus-refresh)).
@@ -104,7 +106,7 @@ llb ingest-corpus --root <mixed-dir> --out-dir <out-dir> --min-chars 500 --parse
 stages to a mixed corpus: `ingest-corpus` -> full-corpus index -> ontology draft -> graph ->
 validate, logging each stage under `$DATA_DIR/llb/logs/quickstart/`. It reuses the PDF quickstart's
 model selection, workload estimate, and confirmation gate, and drafts directly over the converted
-corpus (passthrough text has no citation sidecar, so no per-doc staging step is needed). The mixed
+corpus (a plain text file carries a citation sidecar only when its producer wrote one). The mixed
 fixture `samples/corpus/` (`.md` + `.txt`) backs the ingestion unit tests.
 
 Ontology draft bundles preserve that PDF evidence. When a source document has a matching

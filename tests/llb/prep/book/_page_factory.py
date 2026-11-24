@@ -4,6 +4,8 @@ The glyphs are darker on the bottom half, so orientation can tell upright from u
 Solid bars cannot. Nothing here is a page of a real book.
 """
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 
@@ -12,6 +14,19 @@ INK = 32
 UPPER = 90
 WIDTH = 420
 HEIGHT = 540
+
+
+def image_pdf(path: Path, image: np.ndarray) -> Path:
+    """Store one grey scan, with a 72 dpi native render that preserves every pixel."""
+    import fitz
+
+    height, width = image.shape
+    with fitz.open() as document:
+        page = document.new_page(width=width, height=height)
+        pixels = fitz.Pixmap(fitz.csGRAY, width, height, image.tobytes(), False)
+        page.insert_image(page.rect, pixmap=pixels)
+        document.save(path, garbage=3, deflate=True, no_new_id=True)
+    return path
 
 
 def clean_page(width: int = WIDTH, height: int = HEIGHT) -> np.ndarray:

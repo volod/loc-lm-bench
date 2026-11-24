@@ -21,6 +21,7 @@ from typing import Any
 
 from llb.core.contracts.data_prep.corpus import CorpusItemRecord, CorpusManifest
 from llb.prep.pdf.ingest import ingest_pdf_corpus
+from llb.prep.pdf.model import PDF_CITATION_SUFFIX
 from llb.prep.pdf.model import PdfTextExtractor
 from llb.prep.pdf.render import default_markdown_out_dir
 from llb.prep.corpus.governance import (
@@ -114,6 +115,7 @@ def _unlink_if_file(path: Path, description: str) -> None:
 def _remove_stale_doc_files(out_dir: Path, doc_id: str, payload: dict[str, Any]) -> None:
     """Delete the staged document and its citation sidecar for one superseded manifest entry."""
     _unlink_if_file(out_dir / doc_id, "staged document")
+    _unlink_if_file(out_dir / Path(doc_id).with_suffix(PDF_CITATION_SUFFIX), "citation sidecar")
     citation_path = payload.get("citation_path")
     if isinstance(citation_path, str):
         _unlink_if_file(out_dir / citation_path, "citation sidecar")

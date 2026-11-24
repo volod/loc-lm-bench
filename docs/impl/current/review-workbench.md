@@ -23,6 +23,7 @@ helpers:
 | Knowledge cutoff UA | translation bundle or worksheet | translation profile checks through the goldset writer |
 | Prompt system | run directory or `candidates.json` | indented candidate JSON writer and existing statuses |
 | Corpus conflict resolution | `resolution_review.jsonl` | typed keep/drop decision in the resolver ledger |
+| Book review queue | `review/queue.json`, or a run directory that contains it | reviewer edit in `review/decisions.json`; the queue stores the verdict |
 
 `src/llb/review/registry.py` detects these signatures conservatively. Opening a ledger does not
 create a new artifact root: writes remain in its existing CSV, JSONL, or JSON path.
@@ -50,8 +51,10 @@ record, and `q` saves and exits. Action buttons show their key. Goldset-family l
 four lower-case pass and upper-case fail keys plus `y` accept, `x` reject, and `c` clear. Judge
 calibration retains ratings `1` through `5`; external RAG retains accept/partial/reject; prompt
 systems retain approve/pin/reject. Conflict resolution uses `k` for keep both, `a` for drop side A,
-`b` for drop side B, and `c` to clear. Every action writes through immediately, and a fresh
-session resumes at the first pending record.
+`b` for drop side B, and `c` to clear. The book review queue uses `a` for accept raw, `c` for
+accept candidate, `e` for enter text, `i` for illegible, and `x` to clear. `e` asks for one line;
+Enter submits it and Escape dismisses the prompt. Every action writes through immediately, and a
+fresh session resumes at the first pending record.
 
 `ConflictResolutionAdapter` in `src/llb/review/adapters/conflicts.py` recognizes the typed
 `review_type: corpus_conflict_resolution` JSONL rows emitted by `resolve-corpus-conflicts`. Passing
@@ -61,7 +64,7 @@ into accepted plan actions; opening the ledger alone never applies an overlay.
 ## Verification
 
 `tests/llb/review/` and the conflict-resolution tests cover navigation and progress, path detection
-for all seven adapters,
+for all eight adapters,
 byte-for-byte compatibility against the legacy CSV/JSON/JSONL writers, composite draft lanes, the
 knowledge-cutoff profile, and Textual pilot interactions for resume, navigation, verdict entry,
 progress rendering, and distinct data/evidence/action colors. The tests are part of `make ci`;

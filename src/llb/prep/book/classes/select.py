@@ -31,6 +31,14 @@ def select_pilot(
     return _assemble(chosen, present, empty, source_sha256=source_sha256, seed=seed, size=size)
 
 
+def check_frozen(selection: PilotSelection, frozen: PilotSelection) -> None:
+    """Refuse drift in the source, sampling parameters, class coverage, or page metadata."""
+    actual = selection.model_dump()
+    changed = [field for field, value in frozen.model_dump().items() if actual[field] != value]
+    if changed:
+        raise ValueError(f"frozen pilot differs in {', '.join(changed)}")
+
+
 def _check(size: int, seed: int) -> None:
     if size < 1:
         raise ValueError("pilot size must be at least 1")

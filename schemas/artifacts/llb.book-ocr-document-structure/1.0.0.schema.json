@@ -1,0 +1,424 @@
+{
+  "$defs": {
+    "NumberedItem": {
+      "additionalProperties": false,
+      "description": "One figure, table, or equation number read on one page.",
+      "properties": {
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "evidence": {
+          "enum": [
+            "caption",
+            "page-footer",
+            "display-number"
+          ],
+          "title": "Evidence",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "figure",
+            "table",
+            "equation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "number": {
+          "minLength": 1,
+          "title": "Number",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "printed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Printed"
+        }
+      },
+      "required": [
+        "kind",
+        "number",
+        "pdf_page",
+        "block_id",
+        "evidence"
+      ],
+      "title": "NumberedItem",
+      "type": "object"
+    },
+    "PrintedPage": {
+      "additionalProperties": false,
+      "description": "One PDF page's printed number, and whether that number was read or fitted.",
+      "properties": {
+        "block_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Block Id"
+        },
+        "fallback": {
+          "title": "Fallback",
+          "type": "boolean"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "printed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Printed"
+        },
+        "scheme": {
+          "enum": [
+            "arabic",
+            "roman",
+            "none"
+          ],
+          "title": "Scheme",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "observed",
+            "gap",
+            "unnumbered",
+            "front-matter"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pdf_page",
+        "page_id",
+        "scheme",
+        "status",
+        "fallback"
+      ],
+      "title": "PrintedPage",
+      "type": "object"
+    },
+    "RunningHeader": {
+      "additionalProperties": false,
+      "description": "One running header text across a contiguous run of PDF pages.",
+      "properties": {
+        "block_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Block Ids",
+          "type": "array"
+        },
+        "pdf_end": {
+          "minimum": 1,
+          "title": "Pdf End",
+          "type": "integer"
+        },
+        "pdf_start": {
+          "minimum": 1,
+          "title": "Pdf Start",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "pdf_start",
+        "pdf_end",
+        "block_ids"
+      ],
+      "title": "RunningHeader",
+      "type": "object"
+    },
+    "StructureConflict": {
+      "additionalProperties": false,
+      "description": "A contents entry, a heading, or a running header that did not agree.",
+      "properties": {
+        "contents_title": {
+          "default": "",
+          "title": "Contents Title",
+          "type": "string"
+        },
+        "detail": {
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "heading_title": {
+          "default": "",
+          "title": "Heading Title",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "contents-without-heading",
+            "heading-without-contents",
+            "title-mismatch",
+            "page-mismatch",
+            "header-mismatch"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "number": {
+          "default": "",
+          "title": "Number",
+          "type": "string"
+        },
+        "pdf_page": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pdf Page"
+        },
+        "printed": {
+          "default": "",
+          "title": "Printed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "detail"
+      ],
+      "title": "StructureConflict",
+      "type": "object"
+    },
+    "StructureNode": {
+      "additionalProperties": false,
+      "description": "One node of the hierarchy. Children are the next level down, in reading order.",
+      "properties": {
+        "block_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Block Id"
+        },
+        "children": {
+          "items": {
+            "$ref": "#/$defs/StructureNode"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "enum": [
+              "root",
+              "numbered-heading",
+              "typography",
+              "contents",
+              "running-header",
+              "fallback"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "fallback": {
+          "title": "Fallback",
+          "type": "boolean"
+        },
+        "level": {
+          "enum": [
+            "book",
+            "part",
+            "chapter",
+            "section",
+            "subsection",
+            "page-range"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "number": {
+          "default": "",
+          "title": "Number",
+          "type": "string"
+        },
+        "pdf_end": {
+          "minimum": 1,
+          "title": "Pdf End",
+          "type": "integer"
+        },
+        "pdf_start": {
+          "minimum": 1,
+          "title": "Pdf Start",
+          "type": "integer"
+        },
+        "printed_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Printed End"
+        },
+        "printed_start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Printed Start"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "level",
+        "pdf_start",
+        "pdf_end",
+        "evidence",
+        "fallback"
+      ],
+      "title": "StructureNode",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-document-structure:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`metadata/document_structure.json`: printed pages, hierarchy, and numbering.",
+  "properties": {
+    "conflicts": {
+      "items": {
+        "$ref": "#/$defs/StructureConflict"
+      },
+      "title": "Conflicts",
+      "type": "array"
+    },
+    "contents_pages": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Contents Pages",
+      "type": "array"
+    },
+    "headers": {
+      "items": {
+        "$ref": "#/$defs/RunningHeader"
+      },
+      "title": "Headers",
+      "type": "array"
+    },
+    "hierarchy": {
+      "$ref": "#/$defs/StructureNode"
+    },
+    "inventory": {
+      "items": {
+        "$ref": "#/$defs/NumberedItem"
+      },
+      "title": "Inventory",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-ocr-document-structure",
+      "title": "Kind",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PrintedPage"
+      },
+      "minItems": 1,
+      "title": "Pages",
+      "type": "array"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-document-structure",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "kind",
+    "source_sha256",
+    "pages",
+    "hierarchy"
+  ],
+  "title": "DocumentStructure",
+  "type": "object"
+}

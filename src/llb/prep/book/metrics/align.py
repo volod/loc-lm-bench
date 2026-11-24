@@ -39,6 +39,8 @@ def text_score(reference: str, hypothesis: str) -> TextScore:
 
 def edit_distance(reference: Sequence[str], hypothesis: Sequence[str]) -> int:
     """Levenshtein distance. A string is a sequence of characters."""
+    if reference == hypothesis:
+        return 0
     if len(reference) < len(hypothesis):
         reference, hypothesis = hypothesis, reference
     previous = list(range(len(hypothesis) + 1))
@@ -60,8 +62,10 @@ def alignment(reference: str, hypothesis: str) -> list[tuple[str, int, int]]:
     """Edit script as ``(op, ref_index, hyp_index)``. An absent side uses ``-1``.
 
     Equal cost prefers a substitution over a deletion plus an insertion, so a one-character
-    change is one substitution.
+    change is one substitution. Identical strings are one equal step per character.
     """
+    if reference == hypothesis:
+        return [("eq", index, index) for index in range(len(reference))]
     rows = len(reference) + 1
     cols = len(hypothesis) + 1
     cost = [[0] * cols for _ in range(rows)]

@@ -15,6 +15,8 @@ from llb.core.contracts.data_prep.book_resolve import (
     PageResolvedText,
     ReviewerDecisions,
 )
+from llb.core.contracts.data_prep.book_review import QualityManifest, ReviewQueue
+from llb.core.contracts.data_prep.book_structure import DocumentStructure
 
 _JSON_DOCUMENT = (
     FormatBinding(format="json", media_type="application/json", granularity="document"),
@@ -38,6 +40,17 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             description="Edits applied to one scanned page, and edits a rebuilt ledger orphaned.",
             current_version="1.0.0",
             models={"1.0.0": PageCorrectionOverlay},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id="llb.book-ocr-document-structure",
+            description=(
+                "Printed pages, hierarchy, and figure, table, and equation "
+                "numbers of one scanned book."
+            ),
+            current_version="1.0.0",
+            models={"1.0.0": DocumentStructure},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),
@@ -82,10 +95,26 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             deprecation_policy=_ONLY_FORM,
         ),
         ContractDefinition(
+            schema_id="llb.book-ocr-quality-manifest",
+            description="One row per uncertain span of a scanned book, grouped by PDF page.",
+            current_version="1.0.0",
+            models={"1.0.0": QualityManifest},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
             schema_id="llb.book-ocr-resolved-page",
             description="One scanned page's resolved text, with the provenance of every span.",
             current_version="1.0.0",
             models={"1.0.0": PageResolvedText},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id="llb.book-ocr-review-queue",
+            description="Uncertain spans of a scanned book, opened by the review workbench.",
+            current_version="1.0.0",
+            models={"1.0.0": ReviewQueue},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),

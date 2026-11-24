@@ -165,3 +165,9 @@ def test_cutoff_and_draft_compare_are_named_goldset_adapters(tmp_path) -> None:
 
 def test_candidate_fields_remain_serializable() -> None:
     assert "role" in asdict(_candidate().fields)
+
+
+def test_book_queue_adapter_matches_decision_writer(tmp_path) -> None:
+    from tests.llb.prep.book.test_review_queue import test_adapter_matches_the_decision_writer
+
+    test_adapter_matches_the_decision_writer(tmp_path / "adapter")
