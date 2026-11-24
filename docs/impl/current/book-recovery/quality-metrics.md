@@ -105,7 +105,12 @@ substitution penalty.
 ## Dangerous substitutions
 
 Every class is present on every page, zeros included. A count is never added into the character
-error. The classes, in the order a substitution is claimed, are `0/O`, `1/l/I` (also `|`),
+error. When every reading block has a one-to-one match by kind and region, the glyph alignment
+uses reference order so a column swap does not create character confusions. Text-only output
+and pages without complete region matches use the emitted sequence for glyph alignment.
+Character and word error always use the emitted sequence.
+
+The classes, in the order a substitution is claimed, are `0/O`, `1/l/I` (also `|`),
 `5/S` (also `s`), `minus/hyphen/dash` (hyphen, minus, and the en and em dashes, including
 substitutions between these signs and plus), `unit`
 (degree against `o` or `0`, micro against `u` or Greek mu, ohm against `O`, angstrom against
@@ -317,3 +322,63 @@ The harness record is
 [0008](../../records/0008-scanned-book-recovery-book-recovery-quality-metrics.md).
 The resolved-lane record is
 [0018](../../records/0018-scanned-book-recovery-book-resolved-pipeline-scoring.md).
+
+## Pilot input audit
+
+The audit gates the source, image variants, original-frame crops, class routing, and scoring
+before pipeline comparison. It uses a 72 dpi synthetic PDF with planted pixels for the crop
+test, synthetic page arrays and readings for independent damage tests, and committed class
+metadata for the frozen selection. Run the fixture gates with `make ci`.
+
+| Property | Fixture or command | Consequence |
+| --- | --- | --- |
+| The pilot comes from the expected source and covers the declared strata | `test_pilot_frozen.py`, the committed handbook pilot check in `test_page_class_stage.py`, and the full-run replay below | A changed source, a class record filed under the wrong page, or frozen selection drift stops selection before a report is written |
+| Variant regions refer to the original pixels | `test_rotated_corner_mark_reaches_an_exact_original_crop` and `test_grid_box_contains_the_bow_between_its_corners` in `test_pilot_audit.py` | The OCR box from the rotated 11-by-13 pixel mark yields exactly the original 143 black pixels at zero padding. The grid test encloses an eight-pixel bow beyond the straight box edge |
+| Clipped gutter text, signs, and decimal points survive preprocessing | The edge and faint-mark tests in `test_pilot_audit.py` | Keeping a separate neighbour strip cannot hide the loss of the planted clipped fragment. Erasing either one of two faint marks independently refuses the candidate, even with dark text two pixels from the point |
+| Class precedence and ordinary controls stay stable | `test_page_classes.py`, `test_page_class_stage.py`, and `test_page_signals.py` | A two-column page can route on a higher-priority defect. Unmatched pages route as normal. A clean synthetic page requests no correction |
+| Reading order and glyph damage have independent measurements | The two-column score tests in `test_pilot_audit.py` | The clean reading gets order 1 and character error 0. Reversing two intact columns gives order 0 and character error 2/21 with zero substitutions and unchanged word inventory. A `5` read as `S`, a deleted minus, and a deleted decimal point each leave order at 1 and give character error 1/21 with one count in the corresponding class. A `5` read as `6` has the same character error and zero counts in the named classes |
+| Neighbour bleed remains outside the body score | The bleed-signal check in `test_page_signals.py` and `test_neighbour_bleed_contributes_no_body_text` in `test_pilot_audit.py` | The synthetic signal locates a strip in original coordinates. A ledger block labelled as bleed supplies no body characters or words |
+
+### Handbook replay
+
+On 2026-11-24, the Intel Core Ultra 7 265HX host ran PyMuPDF 1.27.2.3 and OpenCV 5.1.0 on CPU.
+The *Space Mission Engineering: The New SMAD* source was 163,709,872 bytes, SHA-256
+`89101813d4c695e9f992d540e751c4e2f4b80c6550f24d5d23e1a795383cb7c8`. All 1,067 PDF pages held
+one image at 150 dpi with zero embedded text characters. Placement was unrotated on 1,022 pages,
+90 degrees on 26 and 270 degrees on 19. Placement and content orientation are different inputs
+to the class rules.
+
+```sh
+make book-ocr BOOK_PDF=<scan.pdf> BOOK_STAGES=render,signals,classes
+make book-ocr-pilot-select BOOK_RUN=<classified-run> BOOK_PILOT_FROZEN=<frozen-pilot.json>
+make book-ocr BOOK_PDF=<scan.pdf> BOOK_PAGES=<pilot-page-list> \
+  BOOK_STAGES=render,signals,classes,variants BOOK_REUSE_FROM=<classified-run>
+```
+
+At 25 pages and seed 0, the emitted selection was byte-identical to the frozen file. The first five
+classes in routing order each supplied three pages and the remaining five each supplied two.
+There were no empty or unfilled classes. See the [frozen coverage table](tool-selection.md#evidence)
+for page numbers.
+
+All 25 original images were kept. The pilot kept 35 corrections: illumination on 25 pages,
+gutter lift on five, exact half-turns on PDF pages 131, 132 and 135, and OpenCV dewarps on pages
+154 and 351. The remaining dewarp, on page 765, was refused after one line or edge sample lost
+ink. Checks at preview scale showed upright text on the three rotated pages and visible margins
+in both kept dewarps. Page 131 visibly includes a narrow neighboring-page strip even though
+its heuristic bleed flag is false. Class membership helps select pages and route engines.
+The frozen reference still needs a person to identify marginal material against the scan.
+
+A CPU draft using RapidOCR 3.10.0 (PP-OCRv6 small, ONNX Runtime 1.32.0) ran
+`render,ocr,blocks,resolve` on the 25 original images. It produced 3,962 body blocks and one
+resolved file per page. A second CPU run used the `rotated` variant on pages 131, 132, and 135.
+It resolved 117, 90, and 100 body blocks respectively. All 307 original-frame OCR regions
+yielded pixel-identical crops after rotating the variant crops back. These runs check artifact
+coverage and coordinate fidelity. Accuracy and variant preference will be measured against the
+verified transcription.
+
+A replay that changes the source checksum, any page record or class count, or a fixture that
+loses its edge crop or conflates order with glyph damage reopens the corresponding audit gate.
+Engine selection still depends on the human-verified pilot transcription.
+
+The audit record is
+[0019](../../records/0019-scanned-book-recovery-book-input-and-pilot-audit.md).

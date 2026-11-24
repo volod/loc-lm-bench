@@ -272,7 +272,7 @@ Each page records the class it represents and the signal values that placed it. 
 make book-ocr BOOK_PDF=<scan.pdf> BOOK_STAGES=render,signals,classes
 make book-ocr-pilot-select BOOK_RUN=<run-dir>
 make book-ocr-pilot-select BOOK_RUN=<run-dir> BOOK_PILOT_SIZE=25 BOOK_PILOT_SEED=0 \
-  BOOK_PILOT_OUT=<path>
+  BOOK_PILOT_FROZEN=<frozen-pilot.json> BOOK_PILOT_OUT=<path>
 ```
 
 | Variable | Meaning | Default |
@@ -280,10 +280,13 @@ make book-ocr-pilot-select BOOK_RUN=<run-dir> BOOK_PILOT_SIZE=25 BOOK_PILOT_SEED
 | `BOOK_RUN` | A book-ocr run whose `classes` stage has finished for every configured page | required |
 | `BOOK_PILOT_SIZE` | How many pages to select. A size below 20 is accepted | `25` |
 | `BOOK_PILOT_SEED` | The seed that draws inside each class's strongest pages | `0` |
+| `BOOK_PILOT_FROZEN` | Require the replay to match the source checksum, sampler settings, coverage and page records in this selection | unset |
 | `BOOK_PILOT_OUT` | Also write the selection here. The run always keeps `pilot/selection.json` | unset |
 
-Exit code 2 is a run that is not a book-ocr run, or a classes stage that has not finished. The
-cuts, the precedence, and the handbook list are
+The selector rehashes the run's source and checks that every class record names its configured PDF
+page. Exit code 2 means the run could not be read, the source changed, class records were missing
+or misplaced, or the replay differed from the frozen selection. These checks run before the
+selection files are written. The cuts, the precedence, and the handbook list are
 [page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
 
 ## Score

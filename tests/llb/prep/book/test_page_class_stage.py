@@ -7,9 +7,10 @@ from typer.testing import CliRunner
 
 from llb.cli import app
 from llb.core.contracts.data_prep.book import BookStageSpec
-from llb.core.contracts.data_prep.book_classes import PAGE_CLASS_LABELS
+from llb.core.contracts.data_prep.book_classes import PAGE_CLASS_IDS
 from llb.core.fsutil import atomic_write_text
 from llb.prep.book.cache import list_outputs, read_record, stage_dir
+from llb.prep.book.classes.assign import matching_classes
 from llb.prep.book.classes.records import read_classes, read_selection, write_classes
 from llb.prep.book.config import RunRequest
 from llb.prep.book.constants import STAGE_RECORD_FILENAME
@@ -225,14 +226,16 @@ def test_the_committed_handbook_pilot_names_every_class():
     path = Path("samples/book_ocr/space-mission-engineering-the-new-smad/pilot_pages.json")
     selection = read_selection(path)
     assert selection.source_sha256 == _SOURCE_SHA
-    assert 20 <= len(selection.pages) <= 30
+    assert (selection.seed, selection.size, len(selection.pages)) == (0, 25, 25)
+    assert (selection.empty_classes, selection.unfilled_classes) == ([], [])
+    assert selection.coverage == dict(zip(PAGE_CLASS_IDS, [3] * 5 + [2] * 5, strict=True))
+    for page in selection.pages:
+        assert 1 <= page.pdf_page <= 1067
+        assert page.page_id == page_id(page.pdf_page, 1067)
+        assert page.classes == matching_classes(page.signals)
+        assert page.primary == page.classes[0]
     text = path.read_text(encoding="utf-8")
     assert "page.png" not in text and "transcription" not in text
-    for name, label in PAGE_CLASS_LABELS.items():
-        if selection.coverage[name] == 0:
-            assert label in selection.empty_classes or label in selection.unfilled_classes
-        else:
-            assert label not in selection.empty_classes
 
 
 def _keys(run_dir: Path) -> dict[str, dict[int, str]]:

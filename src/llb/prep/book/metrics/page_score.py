@@ -46,7 +46,9 @@ def score_page(page: RefPage, submission: PageSubmission) -> PageScore:
     hypothesis_text = _hypothesis_text(submission)
     text = text_score(reference_text, hypothesis_text)
     counts = confusion_counts(
-        reference_text, hypothesis_text, _script_count(page, submission, hypothesis_text)
+        reference_text,
+        _in_reference_order(page, submission, hypothesis_text),
+        _script_count(page, submission, hypothesis_text),
     )
     fidelity, parse_valid = _formulas(page, submission, hypothesis_text)
     return PageScore(
@@ -82,6 +84,23 @@ def _hypothesis_text(submission: PageSubmission) -> str:
 def _hyp_reading(block: HypBlock) -> str:
     cells = cell_labels(block.table) if block.table is not None else None
     return block_reading(block.kind, block.text, block.equation_number, cells)
+
+
+def _in_reference_order(page: RefPage, submission: PageSubmission, reading: str) -> str:
+    """Compare glyphs in matching regions when all reading blocks can be paired by box."""
+    if submission.text_only:
+        return reading
+    refs = [block for block in page.blocks if reference_reading(block)]
+    hyps = [block for block in submission.blocks if _hyp_reading(block)]
+    if len(refs) != len(hyps) or any(block.region is None for block in hyps):
+        return reading
+    matched = [
+        (reference.reading_order, _hyp_reading(hypothesis))
+        for kind in {block.kind for block in refs}
+        for reference, hypothesis in pairs(refs, hyps, kind)
+        if hypothesis is not None
+    ]
+    return page_reading(matched) if len(matched) == len(refs) else reading
 
 
 def _script_count(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> int:

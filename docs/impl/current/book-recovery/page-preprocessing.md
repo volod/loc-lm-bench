@@ -82,14 +82,16 @@ explicit `page-dewarp` or `uvdoc` that fails is refused, not swapped.
 Two guards run before a variant is kept. Either one records the variant as `refused` with a
 reason and writes no image.
 
-The stroke guard looks at thin strokes and small dots measured on the original (a minus, a
-decimal point, a rule). A stroke that is not dark ink, or a speck sitting inside a dark region,
-does not count. The variant must keep at least 70 percent of the ones that do. It runs on every
-correction, including the photometric ones.
+The stroke guard looks for thin strokes and small dots at least 24 grey levels darker than the
+local median background, including faint minuses and decimal points. It samples an ink pixel
+from each selected component and ignores dot-sized specks on dark surfaces. The variant must
+keep at least 70 percent of the sampled marks. A photometric variant checks each mark at the
+same pixel. A geometric variant allows a three-pixel neighbourhood for interpolation.
 
 The content guard runs on `rotated`, `deskew`, and `dewarp`. A text line is sampled at a real ink
 pixel, not at the middle of a full-width band, so a two-column page whose gutter is empty does
-not look like a lost line. Ink in the outer band of the page has to survive as well. A map that
+not look like a lost line. Each run of ink along the four outer strips gets its own sample,
+so retaining one edge fragment cannot stand in for a separate clipped gutter line. A map that
 does not cover the page is the same refusal.
 
 ## Where an engine reads
@@ -101,9 +103,12 @@ execution, a name that was not kept for that page raises `VariantUnavailable`. T
 There is no silent fallback to the original.
 
 Each proposed box is mapped through the stored transform before the reading is written, so
-`blocks` merges rectangles that already share the render's pixel frame. A block read on a
-rotated and deskewed variant of a synthetic page lands within 4 pixels of the same block on the
-original.
+`blocks` merges rectangles that already share the render's pixel frame. The mapper converts from
+box edges to the stored pixel-center frame and back. A quarter-turn box therefore recovers the
+same original pixels. A grid-based box also encloses mapped grid intersections within the box,
+which can extend beyond the mapped outer corners. A block read on a rotated and deskewed variant
+of a synthetic page lands within 4 pixels of the same block on the original. See the
+[pilot input audit](quality-metrics.md#pilot-input-audit) for the exact quarter-turn crop test.
 
 ## Where it lives
 

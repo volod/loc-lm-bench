@@ -249,6 +249,9 @@ named in `unfilled_classes`. Both use the prose labels (`severe curvature`, `den
 same file. The handbook list is
 `samples/book_ocr/space-mission-engineering-the-new-smad/pilot_pages.json`: the source checksum,
 the PDF page numbers, the classes, and the signals. It holds no page image and no recovered text.
+Replay the full class run with `BOOK_PILOT_FROZEN=<frozen-pilot.json>` to check that selection.
+The selector verifies the source bytes and each class record's page identity before comparing
+the seed, pages, signals, and coverage. See the [pilot input audit](quality-metrics.md#pilot-input-audit).
 
 How a routed engine stage consumes the class is [the block ledger](block-ledger.md#engines).
 The modules are `src/llb/prep/book/classes/`, `src/llb/prep/book/stages/classes.py`, and

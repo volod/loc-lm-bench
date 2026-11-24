@@ -59,23 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-input-and-pilot-audit
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the [frozen pilot and class rules](current/book-recovery/tool-selection.md#page-classes).
-- User-visible outcome: a reproducible decision on whether the input, geometry and scoring chain
-  can distinguish an improved reading from a damaged one before selecting engines.
-- Scope boundary: exercise inventory, variants, inverse coordinates, class routing and scoring on
-  rotation, clipped gutter text, neighbour bleed, faint signs and decimal points, two columns and
-  ordinary controls. Check source identity and pilot coverage against the frozen selection.
-- Data and artifact paths: `tests/llb/prep/book/`, the pilot selection and the audit task record.
-- Execution path: use synthetic scans with known marks and cached pilot metadata inside `make ci`.
-- Acceptance gates: trace a rotated corner mark from source to variant to original crop; corrupt a
-  thin stroke, swap columns and change a digit independently and identify each failure in its own
-  measure. Record the property, fixture, command and consequence for each selection gate.
-- Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
-
 #### book-pilot-pipeline-comparison
 
 With engines behind one seam, metrics that see dangerous substitutions, a stratified pilot set, and
@@ -85,8 +68,9 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-pilot-reference-transcription`, `book-input-and-pilot-audit`
-- Dependencies: the [quality metrics](current/book-recovery/quality-metrics.md), the
+- Requires: `book-pilot-reference-transcription`
+- Dependencies: the [pilot input audit](current/book-recovery/quality-metrics.md#pilot-input-audit),
+  the [quality metrics](current/book-recovery/quality-metrics.md), the
   [block ledger](current/book-recovery/block-ledger.md), the
   [page classes](current/book-recovery/tool-selection.md#page-classes), and the
   [page variants](current/book-recovery/page-preprocessing.md) a variant policy chooses among.
@@ -388,8 +372,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-input-and-pilot-audit`,
-  `book-missing-region-accounting`, `book-technical-content-audit`,
+- Requires: `book-missing-region-accounting`, `book-technical-content-audit`,
   `book-publication-and-resume-audit`,
   `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,

@@ -37,10 +37,11 @@ book-ocr-score: ## Score BOOK_RUN against reference dir BOOK_REFERENCE (BOOK_CIT
 	if [ -n "$(BOOK_JSON)" ]; then args+=(--json); fi; \
 	$(PY) -m llb.main book-ocr score "$${args[@]}"
 
-book-ocr-pilot-select: ## Select a seeded pilot page set from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_OUT=)
+book-ocr-pilot-select: ## Select a seeded pilot from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_FROZEN=, BOOK_PILOT_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
 	@args=("$(BOOK_RUN)" --size "$(or $(BOOK_PILOT_SIZE),25)" --seed "$(or $(BOOK_PILOT_SEED),0)"); \
+	if [ -n "$(BOOK_PILOT_FROZEN)" ]; then args+=(--frozen "$(BOOK_PILOT_FROZEN)"); fi; \
 	if [ -n "$(BOOK_PILOT_OUT)" ]; then args+=(--out "$(BOOK_PILOT_OUT)"); fi; \
 	$(PY) -m llb.main book-ocr pilot-select "$${args[@]}"
 

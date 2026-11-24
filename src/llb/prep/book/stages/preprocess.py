@@ -23,6 +23,7 @@ from llb.prep.book.preprocess.constants import (
     DEWARP_OPENCV,
     DEWARP_PAGE,
     DEWARP_UVDOC,
+    DOT_PAPER_MIN,
     GUTTER_DARK_FRACTION,
     GUTTER_MAX_FRACTION,
     GUTTER_WIDTH_CORRECT,
@@ -43,8 +44,8 @@ from llb.prep.book.preprocess.constants import (
     SKEW_COARSE_STEP,
     SKEW_CORRECT_DEG,
     SKEW_FINE_STEP,
-    STROKE_DARK_MAX,
     STROKE_KEEP_FRACTION,
+    STROKE_MIN_CONTRAST,
     TILES,
     UNEVENNESS_CORRECT,
     VARIANT_RECIPE,
@@ -197,7 +198,8 @@ def _variant_key(method: str) -> dict[str, Any]:
         "gutter_max_fraction": GUTTER_MAX_FRACTION,
         "noise_correct": NOISE_CORRECT,
         "stroke_keep_fraction": STROKE_KEEP_FRACTION,
-        "stroke_dark_max": STROKE_DARK_MAX,
+        "dot_paper_min": DOT_PAPER_MIN,
+        "stroke_min_contrast": STROKE_MIN_CONTRAST,
     }
 
 
