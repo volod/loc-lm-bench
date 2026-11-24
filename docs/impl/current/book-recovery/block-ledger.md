@@ -38,12 +38,16 @@ not outvote a third.
 ## Engines
 
 `layout`, `ocr`, `formula`, and `table` are stages. Each one's `engine` parameter names an
-adapter. `by_page_class` overrides that name for one class. When the `classes` stage is
-configured earlier and `by_page_class` is non-empty, the engine stage reads that page's
-`classes.json` and routes on its primary class. The class file is an input, so its digest is in
-the cache key, and the digested parameters stay `engine` and `variant`. A class change re-runs
-only the stages that route on it. A run that sets `page_class` and does not configure `classes`
-still routes every page on that one class. An id the class stage does not declare is not refused.
+adapter. `by_page_class` overrides that name for one class, and `variant_by_page_class` overrides
+`variant` the same way. When the `classes` stage is configured earlier and either map is
+non-empty, the engine stage reads that page's `classes.json` and routes on its primary class.
+The class file is an input, so its digest is in the cache key. The digested parameters are the
+engine and the variant that actually run. `ocr_language`, when the stage sets one, is part of
+that key. A non-original variant also records the box-map recipe. `vram_mb` is not in the key:
+it is the dry-run budget, a map of engine to megabytes, and a host that cannot hold a named
+engine refuses by that engine's name before a page is read. A class change re-runs only the
+stages that route on it. A run that sets `page_class` and does not configure `classes` still
+routes every page on that one class. An id the class stage does not declare is not refused.
 
 Inside a batch the stage runs pages grouped by the engine they will open, in the order that
 engine is first asked for, and in page order within a group, so each engine opens at most once
@@ -120,12 +124,22 @@ stages:
   - render
   - signals
   - classes
+  - name: variants
+    params:
+      dewarp: uvdoc
   - name: ocr
     params:
-      engine: rapidocr
+      engine: docling
+      ocr_language: eng
+      vram_mb: {docling: 2970, mineru-standard: 2867}
+      variant_by_page_class: {severe_curvature: dewarp}
       by_page_class: {dense_formulas: mineru-standard}
   - blocks
 ```
+
+A non-original `variant_by_page_class` value needs the `variants` stage earlier in the same
+list. `vram_mb` names every engine the stage may run. The numbers above are the survey peaks
+in MiB, not a selected handbook config.
 
 ## Evidence
 

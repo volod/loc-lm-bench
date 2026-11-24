@@ -26,6 +26,7 @@ def engine_request(
     pdf: Path,
     work_dir: Path,
     model: str | None,
+    language: str | None = None,
 ) -> EngineRequest:
     """The engine call for `name`, reading that variant's image when it is not the original."""
     image, width, height = page_image(render_png, variants_dir, name)
@@ -37,6 +38,7 @@ def engine_request(
         model=model,
         width=width,
         height=height,
+        language=language,
     )
 
 

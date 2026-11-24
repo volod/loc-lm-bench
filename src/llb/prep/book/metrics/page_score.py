@@ -38,6 +38,15 @@ from llb.prep.book.metrics.submission import HypBlock, PageSubmission
 from llb.prep.book.metrics.tables import Cell, table_distance, table_size
 
 
+def alignment_pair(page: RefPage, submission: PageSubmission) -> tuple[str, str]:
+    """The reference reading and the hypothesis string the confusion counts use."""
+    reference_text = page_reading(
+        (block.reading_order, reference_reading(block)) for block in page.blocks
+    )
+    hypothesis_text = _hypothesis_text(submission)
+    return reference_text, _in_reference_order(page, submission, hypothesis_text)
+
+
 def score_page(page: RefPage, submission: PageSubmission) -> PageScore:
     """Every metric for one page. The substitution counts are not added to the error rates."""
     reference_text = page_reading(

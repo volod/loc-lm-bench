@@ -9,8 +9,9 @@ beside the error rates. The report has no field that folds them into one number.
 
 The harness does not read a scan and does not produce a reference. The 1,067-page target handbook
 is the book a later pilot scores; transcribing it is
-`book-pilot-reference-transcription`, and choosing a pipeline
-comes after that. Operator usage is the
+`book-pilot-reference-transcription`. `llb book-ocr compare` chooses a pipeline from those scores
+once every pilot page is accepted
+([pilot comparison](tool-selection.md#pilot-comparison)). Operator usage is the
 [book-ocr guide](../../../guides/data-prep/book-ocr.md#score).
 The contract is [Scanned book recovery](../../../design/spec.md#scanned-book-recovery).
 
@@ -206,6 +207,7 @@ Lanes are not averaged together.
 | Resolved lane | `src/llb/prep/book/metrics/resolved.py` |
 | One page, the report | `src/llb/prep/book/metrics/page_score.py`, `score.py`, `report.py` |
 | Command | `src/llb/cli/book/score.py`, `make book-ocr-score` |
+| Pilot comparison | `src/llb/prep/book/compare/`, `src/llb/cli/book/compare.py`, `make book-ocr-compare` |
 
 The survey smoke scorer (`src/llb/prep/book/survey/score.py`) is a separate check that a candidate
 tool ran. It is not this harness. The ledger the score reads is the

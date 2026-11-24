@@ -310,6 +310,21 @@ short summary that names missing submissions, non-zero abstentions, and fields a
 emit. Exit code 2 is a missing input or a reference the loader refused. The command does not
 recover a scan and does not write a reference.
 
+## Compare
+
+`book-ocr compare` reads a manifest of accepted pilot pages and writes the comparison report and
+the book-ocr config the decision selected. It does not load a model and does not read the scan.
+Every reference page must be accepted, and the existing lane's citation sidecar must record the
+same OCR language the manifest names. Exit code 2 means the comparison cannot start. Exit code 0
+with `negative: true` means no candidate beat the existing lane; that is a result, and the config
+names `docling`. The decision rule, the selection-set label, and the VRAM refusal are
+[pilot comparison](../../impl/current/book-recovery/tool-selection.md#pilot-comparison).
+
+```sh
+make book-ocr-compare BOOK_MANIFEST=<manifest.yaml> \
+  BOOK_COMPARE_OUT=<report.json> BOOK_COMPARE_CONFIG=<book-ocr.yaml>
+```
+
 ## Recovery-tool survey
 
 `book-ocr survey` installs each candidate recovery tool into its own environment and runs it on one

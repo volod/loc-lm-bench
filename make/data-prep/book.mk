@@ -1,6 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
-.PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-pilot-select \
+.PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-compare \
+	book-ocr-pilot-select \
 	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-project book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
@@ -36,6 +37,14 @@ book-ocr-score: ## Score BOOK_RUN against reference dir BOOK_REFERENCE (BOOK_CIT
 	if [ -n "$(BOOK_SCORE_OUT)" ]; then args+=(--out "$(BOOK_SCORE_OUT)"); fi; \
 	if [ -n "$(BOOK_JSON)" ]; then args+=(--json); fi; \
 	$(PY) -m llb.main book-ocr score "$${args[@]}"
+
+book-ocr-compare: ## Compare accepted pilot lanes in BOOK_MANIFEST (BOOK_COMPARE_OUT=, BOOK_COMPARE_CONFIG=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_MANIFEST)" || { echo "ERROR: set BOOK_MANIFEST=<comparison-manifest>"; exit 2; }
+	@test -n "$(BOOK_COMPARE_OUT)" || { echo "ERROR: set BOOK_COMPARE_OUT=<report.json>"; exit 2; }
+	@test -n "$(BOOK_COMPARE_CONFIG)" || { echo "ERROR: set BOOK_COMPARE_CONFIG=<book-ocr.yaml>"; exit 2; }
+	@$(PY) -m llb.main book-ocr compare "$(BOOK_MANIFEST)" \
+		--out "$(BOOK_COMPARE_OUT)" --config-out "$(BOOK_COMPARE_CONFIG)"
 
 book-ocr-pilot-select: ## Select a seeded pilot from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_FROZEN=, BOOK_PILOT_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

@@ -24,6 +24,7 @@ from llb.core.contracts.data_prep.book import (
 )
 from llb.prep.book.cache import ReuseIndex, discard_debris
 from llb.prep.book.config import (
+    _USE_HOST,
     Preflight,
     RunRequest,
     stage_errors,
@@ -75,9 +76,10 @@ def check_request(
     request: RunRequest,
     registry: StageRegistry | None = None,
     ollama_lister: OllamaLister | None = None,
+    host_vram_mb: int | None | object = _USE_HOST,
 ) -> Preflight:
     """The dry run: every refusal a real start would raise, with nothing written."""
-    return preflight(request, registry or default_registry(), ollama_lister)
+    return preflight(request, registry or default_registry(), ollama_lister, host_vram_mb)
 
 
 def start_run(
@@ -85,10 +87,11 @@ def start_run(
     out_root: Path,
     registry: StageRegistry | None = None,
     ollama_lister: OllamaLister | None = None,
+    host_vram_mb: int | None | object = _USE_HOST,
 ) -> RunOutcome:
     """Validate, create the run directory, hold the source, record the config, and run."""
     registry = registry or default_registry()
-    plan = preflight(request, registry, ollama_lister)
+    plan = preflight(request, registry, ollama_lister, host_vram_mb)
     if not plan.ok or plan.sha256 is None or plan.page_count is None:
         raise BookRunError(plan.errors)
     run_id, run_dir = new_run_dir(out_root)

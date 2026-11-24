@@ -4,6 +4,7 @@ The survey candidate says how the engine is installed and smoked. This adapter r
 route, then normalises the output into proposed blocks. Figure prose is dropped by the normaliser.
 """
 
+from collections.abc import Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,16 @@ from llb.prep.book.survey.candidates import (
 from llb.prep.book.survey.vllm_server import ServerError, running_server, sent_size
 
 _RECOGNITION = ("layout", "ocr", "formula", "table")
+_DOCLING = "docling"
+
+
+def with_ocr_language(engine_id: str, argv: Sequence[str], language: str | None) -> list[str]:
+    """Append Docling's OCR language flag. Every other engine keeps its argv."""
+    if engine_id != _DOCLING or not language:
+        return list(argv)
+    return [*argv, "--ocr-lang", language]
+
+
 _PROCESS = "process"
 _SERVED = "served"
 _OLLAMA = "ollama"
@@ -126,7 +137,9 @@ class CandidateAdapter:
             values["server"] = self._base
         code = run_command(
             self.engine_id,
-            self.spec.argv or smoke.argv,
+            tuple(
+                with_ocr_language(self.engine_id, self.spec.argv or smoke.argv, request.language)
+            ),
             values,
             request.work_dir,
             resolve_data_dir(),

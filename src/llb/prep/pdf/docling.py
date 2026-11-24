@@ -13,7 +13,29 @@ from llb.prep.pdf.model import (
 )
 
 
-def _extract_with_docling(pdf_path: Path) -> PdfExtraction:
+_EASY_LANG = {"eng": "en", "ukr": "uk", "en": "en", "uk": "uk"}
+
+
+def ocr_language_pairs(
+    ocr_languages: tuple[str, ...] | None,
+) -> tuple[list[str], list[str]]:
+    """Tesseract tags and EasyOCR tags.
+
+    ``None`` keeps the corpus default, Ukrainian plus English. A book comparison
+    passes the book's recorded language instead.
+    """
+    if ocr_languages is None:
+        return ["ukr", "eng"], ["uk", "en"]
+    if not ocr_languages:
+        raise ValueError("ocr language list is empty")
+    tesseract = list(ocr_languages)
+    easy = [_EASY_LANG.get(code, code) for code in ocr_languages]
+    return tesseract, easy
+
+
+def _extract_with_docling(
+    pdf_path: Path, *, ocr_languages: tuple[str, ...] | None = None
+) -> PdfExtraction:
     """Extract with Docling when the optional CUDA-capable layout/OCR dependency is installed."""
     try:
         from docling.datamodel.base_models import InputFormat
@@ -24,7 +46,7 @@ def _extract_with_docling(pdf_path: Path) -> PdfExtraction:
     diagnostics = inspect_pdf(pdf_path)
     force_ocr = _is_image_only_pdf(diagnostics)
     last_error: Exception | None = None
-    for ocr_options in _docling_ocr_option_candidates(force_ocr):
+    for ocr_options in _docling_ocr_option_candidates(force_ocr, ocr_languages):
         try:
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_ocr = force_ocr
@@ -77,25 +99,27 @@ def _torch_cuda_available() -> bool:
         return False
 
 
-def _docling_ocr_option_candidates(force_full_page_ocr: bool) -> list[Any | None]:
+def _docling_ocr_option_candidates(
+    force_full_page_ocr: bool, ocr_languages: tuple[str, ...] | None = None
+) -> list[Any | None]:
     if not force_full_page_ocr:
         return [None]
     try:
         from docling.datamodel import pipeline_options as options
     except ImportError:
         return [None]
-
+    tesseract, easy = ocr_language_pairs(ocr_languages)
     candidates = (
         (
             "TesseractCliOcrOptions",
-            {"force_full_page_ocr": force_full_page_ocr, "lang": ["ukr", "eng"]},
+            {"force_full_page_ocr": force_full_page_ocr, "lang": tesseract},
         ),
         ("RapidOcrOptions", {"force_full_page_ocr": force_full_page_ocr, "backend": "torch"}),
         (
             "EasyOcrOptions",
-            {"force_full_page_ocr": force_full_page_ocr, "lang": ["uk", "en"], "use_gpu": True},
+            {"force_full_page_ocr": force_full_page_ocr, "lang": easy, "use_gpu": True},
         ),
-        ("OcrAutoOptions", {"force_full_page_ocr": force_full_page_ocr, "lang": ["uk", "en"]}),
+        ("OcrAutoOptions", {"force_full_page_ocr": force_full_page_ocr, "lang": easy}),
     )
     options_list: list[Any | None] = []
     for name, kwargs in candidates:

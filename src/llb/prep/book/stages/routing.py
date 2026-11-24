@@ -61,18 +61,31 @@ def batch_page_order(
 
 def selected_engine(params: Mapping[str, Any]) -> str:
     """The engine this page runs: the page-class override when one is configured, else `engine`."""
+    return _selected(params, "by_page_class", "engine")
+
+
+def selected_variant(params: Mapping[str, Any]) -> str:
+    """The variant this page runs: the page-class override, else `variant`, else the original."""
+    chosen = _selected(params, "variant_by_page_class", "variant")
+    return chosen or "original"
+
+
+def _selected(params: Mapping[str, Any], map_key: str, default_key: str) -> str:
     page_class = str(params.get("page_class") or "")
-    by_class = params.get("by_page_class") or {}
+    by_class = params.get(map_key) or {}
     if page_class and isinstance(by_class, dict) and page_class in by_class:
         return str(by_class[page_class])
-    return str(params.get("engine") or "")
+    return str(params.get(default_key) or "")
 
 
 def _routes(params: Mapping[str, Any] | None) -> bool:
     if not isinstance(params, Mapping):
         return False
-    mapping = params.get("by_page_class") or {}
-    return isinstance(mapping, dict) and bool(mapping)
+    for key in ("by_page_class", "variant_by_page_class"):
+        mapping = params.get(key) or {}
+        if isinstance(mapping, dict) and mapping:
+            return True
+    return False
 
 
 def _page_params(

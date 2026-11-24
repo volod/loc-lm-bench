@@ -20,6 +20,7 @@ from llb.prep.book.stages.routing import (
     engine_inputs,
     routed_params,
     selected_engine,
+    selected_variant,
 )
 
 LAYOUT_STAGE = "layout"
@@ -32,7 +33,15 @@ TOOL_IDENTITY = "llb-book-engines 1"
 BLOCKS_TOOL_IDENTITY = "llb-book-blocks 1"
 _STAGE_VERSION = "1"
 _PAGE_PDF = "page.pdf"
-_ENGINE_PARAMS = ("engine", "variant", "page_class", "by_page_class")
+_ENGINE_PARAMS = (
+    "engine",
+    "variant",
+    "page_class",
+    "by_page_class",
+    "variant_by_page_class",
+    "vram_mb",
+    "ocr_language",
+)
 _DEFAULT_VARIANT = ORIGINAL
 _BOX_MAP_RECIPE = "2"
 
@@ -69,15 +78,21 @@ class EngineStage:
         errors.extend(_check_variant(self.name, params.get("variant", _DEFAULT_VARIANT)))
         errors.extend(_check_page_class(self.name, params.get("page_class", "")))
         errors.extend(self._check_map(params.get("by_page_class", {})))
+        errors.extend(_check_variant_map(self.name, params.get("variant_by_page_class")))
+        errors.extend(_check_vram(self.name, params.get("vram_mb")))
+        errors.extend(_check_language(self.name, params.get("ocr_language")))
         return errors
 
     def effective_params(
         self, params: Mapping[str, Any], inventory: Any, document: Any, pdf_page: int
     ) -> dict[str, Any]:
-        variant = _variant(params)
+        variant = selected_variant(params)
         resolved = {"engine": selected_engine(params), "variant": variant}
         if variant != ORIGINAL:
             resolved["box_map_recipe"] = _BOX_MAP_RECIPE
+        language = params.get("ocr_language")
+        if isinstance(language, str) and language:
+            resolved["ocr_language"] = language
         return resolved
 
     def page_params(
@@ -103,14 +118,15 @@ class EngineStage:
     def validate_order(
         self, params: Mapping[str, Any], configured_before: Sequence[str]
     ) -> list[str]:
-        name = _variant(params)
-        if name == _DEFAULT_VARIANT:
-            return []
-        if name not in VARIANT_NAMES:
-            return [f"{self.name}: variant {name!r} is not a known variant"]
-        if VARIANTS_STAGE not in configured_before:
-            return [f"{self.name}: variant {name!r} needs the variants stage before it"]
-        return []
+        errors: list[str] = []
+        for name in _variant_names(params):
+            if name == _DEFAULT_VARIANT:
+                continue
+            if name not in VARIANT_NAMES:
+                errors.append(f"{self.name}: variant {name!r} is not a known variant")
+            elif VARIANTS_STAGE not in configured_before:
+                errors.append(f"{self.name}: variant {name!r} needs the variants stage before it")
+        return errors
 
     def run(self, ctx: StageContext) -> StageResult:
         adapter = self._adapter(ctx)
@@ -170,13 +186,28 @@ def _variant(params: Mapping[str, Any]) -> str:
     return str(params.get("variant") or _DEFAULT_VARIANT)
 
 
+def _variant_names(params: Mapping[str, Any]) -> list[str]:
+    names = [_variant(params)]
+    raw = params.get("variant_by_page_class") or {}
+    if isinstance(raw, dict):
+        names.extend(str(value) for value in raw.values())
+    return names
+
+
+def _language(ctx: StageContext) -> str | None:
+    language = ctx.params.get("ocr_language")
+    if isinstance(language, str) and language:
+        return language
+    return None
+
+
 def _read(stage: str, ctx: StageContext, adapter: Any, pdf: Any) -> EngineRead:
     from llb.prep.book.preprocess.frames import engine_request, reading_on_render
 
     name = _variant(ctx.params)
     variants = ctx.inputs.get(VARIANTS_STAGE)
     render = ctx.inputs[RENDER_STAGE] / PAGE_IMAGE_FILENAME
-    request = engine_request(render, variants, name, pdf, ctx.work_dir, ctx.model)
+    request = engine_request(render, variants, name, pdf, ctx.work_dir, ctx.model, _language(ctx))
     width, height = png_size(render)
     return reading_on_render(adapter.read(request, stage), variants, width, height)
 
@@ -204,3 +235,42 @@ def _check_page_class(stage: str, page_class: object) -> list[str]:
 
 def _named(exc: EngineUnavailable) -> str:
     return f"{type(exc).__name__}: {exc}"
+
+
+def _check_variant_map(stage: str, raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return [f"{stage}: variant_by_page_class must be a mapping of page class to variant"]
+    errors: list[str] = []
+    for key, variant in raw.items():
+        if not isinstance(key, str):
+            errors.append(f"{stage}: variant_by_page_class keys must be strings")
+            continue
+        errors.extend(_check_variant(stage, variant))
+    return errors
+
+
+def _check_vram(stage: str, raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return [f"{stage}: vram_mb must be a mapping of engine to megabytes"]
+    errors: list[str] = []
+    for engine, need in raw.items():
+        if not isinstance(engine, str) or not engine:
+            errors.append(f"{stage}: vram_mb keys must name an engine")
+            continue
+        if isinstance(need, bool) or not isinstance(need, (int, float)):
+            errors.append(f"{stage}: vram_mb[{engine}] must be a number of megabytes")
+        elif need < 0:
+            errors.append(f"{stage}: vram_mb[{engine}] must not be negative")
+    return errors
+
+
+def _check_language(stage: str, raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str) and raw:
+        return []
+    return [f"{stage}: ocr_language must be a non-empty string"]

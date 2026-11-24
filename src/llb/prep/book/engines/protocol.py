@@ -46,6 +46,7 @@ class EngineRequest:
     model: str | None
     width: int
     height: int
+    language: str | None = None
 
 
 @dataclass(frozen=True)

@@ -139,6 +139,22 @@ def stage_errors(
     return errors
 
 
+def _vram_errors(stages: Sequence[BookStageSpec], host_vram_mb: int | None | object) -> list[str]:
+    """Refusals for engines whose budget exceeds the host. No budget means no probe."""
+    if not any(isinstance(spec.params.get("vram_mb"), dict) for spec in stages):
+        return []
+    budget = host_vram_mb
+    if budget is _USE_HOST:
+        from llb.prep.book.survey.measure import device_total_mb
+
+        budget = device_total_mb()
+    if not isinstance(budget, int) and budget is not None:
+        return ["host VRAM must be a number of megabytes or none"]
+    from llb.prep.book.compare.vram import vram_requirement_errors
+
+    return vram_requirement_errors(stages, budget)
+
+
 def _option_errors(request: RunRequest) -> list[str]:
     errors = []
     if request.source_policy not in SOURCE_POLICIES:
@@ -156,11 +172,18 @@ def _option_errors(request: RunRequest) -> list[str]:
     return errors
 
 
+_USE_HOST = object()
+
+
 def preflight(
-    request: RunRequest, registry: StageRegistry, ollama_lister: OllamaLister | None = None
+    request: RunRequest,
+    registry: StageRegistry,
+    ollama_lister: OllamaLister | None = None,
+    host_vram_mb: int | None | object = _USE_HOST,
 ) -> Preflight:
     """Validate the source, ranges, options, stages, and models without running a stage."""
     errors = _option_errors(request) + stage_errors(request.stages, registry, ollama_lister)
+    errors.extend(_vram_errors(request.stages, host_vram_mb))
     if not request.source.is_file():
         return Preflight(errors=[f"source PDF {request.source} does not exist", *errors])
     try:

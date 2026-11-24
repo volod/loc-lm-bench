@@ -1,4 +1,4 @@
-"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`, `score`, `pilot-select`, `review-queue`, `structure`, `render`, `project`, `validate`, `survey`)."""
+"""`llb book-ocr`: the resumable scanned-book recovery run (`run`, `status`, `score`, `compare`, `pilot-select`, `review-queue`, `structure`, `render`, `project`, `validate`, `survey`)."""
 
 import typer
 
@@ -12,6 +12,7 @@ book_app = typer.Typer(
 )
 app.add_typer(book_app, name="book-ocr")
 
+import llb.cli.book.compare  # noqa: E402,F401
 import llb.cli.book.engines  # noqa: E402,F401
 import llb.cli.book.pilot  # noqa: E402,F401
 import llb.cli.book.project  # noqa: E402,F401

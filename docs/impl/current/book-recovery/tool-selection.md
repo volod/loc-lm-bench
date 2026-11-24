@@ -5,11 +5,11 @@ Which recovery tools install and run on this host, and therefore which ones the 
 so nothing here is chosen by reputation: every candidate was installed from its current release
 into its own environment and run on the same synthetic page with a known transcription and on one
 real page of the target handbook. This page records the survey of 2026-11-19 and its 2026-11-20
-extension to the models that need vLLM in Docker; the pilot's measured choice per page class will
-be recorded here too, and it decides. The survey only bounds what it may choose from -- the
-[selection for the pilot](#selection-for-the-pilot) says which candidates that is. A run selects
-one of them per stage ([block ledger](block-ledger.md)); which one serves a page class is still
-the pilot's decision.
+extension to the models that need vLLM in Docker. The survey only bounds what the pilot may choose
+from -- the [selection for the pilot](#selection-for-the-pilot) says which candidates that is, and
+[pilot comparison](#pilot-comparison) is how an accepted reference chooses among them. The measured
+choice per page class is written in that section once the reference is accepted. A run selects one
+engine per stage ([block ledger](block-ledger.md)).
 
 Operator usage: [book-ocr guide, recovery-tool survey](../../../guides/data-prep/book-ocr.md#recovery-tool-survey).
 
@@ -208,6 +208,78 @@ with Tesseract). The order inside a stage is the survey's reading, not a ranking
 Dropped from the comparison on survey evidence: Tesseract and OCRmyPDF as candidates (they remain
 the baseline), Marker `fast`, PP-StructureV3 (both engines), granite-docling, Chandra 2, and
 LightOnOCR-3 (invented figure data, and 9.4 GB for a reading the smaller models match).
+
+## Pilot comparison
+
+`llb book-ocr compare` scores accepted pilot pages and writes the comparison report and a
+`book-ocr` config. It does not load a model. The readings it scores are ledgers and the existing
+PDF lane's citation sidecar, both named by the manifest. Scoring recomputes from those files.
+
+The command refuses to start unless every reference page carries an accept (`accepts.json`,
+`accepted: true`) and the sidecar's `diagnostics.ocr_language` is the language the manifest names.
+For this handbook that language is `eng`. The corpus extractor still defaults to Ukrainian plus
+English when a caller passes no language. The book lane passes `eng` and stores that tag on the
+sidecar, beside the numbers.
+
+Per page class the margin is the existing lane's character error minus the candidate's. A positive
+margin means the candidate is closer to the reference. The interval is the page bootstrap of that
+margin: the lowest and the highest page. With two or three pilot pages that range is the range of
+every resampled mean, because drawing the worst page every time and the best page every time are
+both legal resamples. A gain requires the whole interval above zero, so every pilot page of the
+class improved. A margin of zero is not a gain. An interval that contains zero is inconclusive,
+and the existing lane stays.
+
+Dangerous substitutions are reported beside the character error and are never added into it. A
+candidate whose pooled rate (substitution counts over reference characters) is higher than the
+existing lane's is blocked, even when the character margin is a gain. The per-page rate interval
+is reported too. An interval that straddles zero does not, by itself, block a candidate whose
+pooled rate did not rise.
+
+Each lane's agreement with the unedited pre-draft (one minus the character error against that
+draft) is written beside its score. It does not choose the winner. Among the lanes that gained
+and were not blocked, the winner is the highest lower bound, then the smaller VRAM budget, then
+the lane id.
+
+A variant policy is measured on RapidOCR against that engine's original variant, by the same
+character-error rule and the same dangerous-rate veto. The variant that wins is the one the
+winning page reader is configured to read. Two classes that want different dewarp methods cannot
+both have one: the stronger lower bound keeps its method, and the other class stays on the
+original image.
+
+An engine whose declared budget is above the host, or that is not installed, is listed under
+`not_compared` and wins no class. Its reading is not scored, so an unread perfect page cannot
+win. A budget of zero is a CPU engine and is not checked. The dry run of the written config
+refuses an over-budget engine by name (`EngineUnavailable`) before a page is read, once per
+engine no matter how many stages name it. `vram_mb` is that budget. It is not part of the
+recognition cache key. `ocr_language` is, when the stage sets it.
+
+The roster starts one engine at a time, and only an entry whose survey peak fits the host. On an
+8 GB card the four vLLM page readers are not started: Marker balanced (10.3 GB), dots.ocr
+(11.3 GB), DeepSeek-OCR-2 (11.2 GB), and olmOCR-2 (11.7 GB). They are recorded as winning no
+class. They are not scored as empty failures. The peaks are the survey's, converted at 1024 MiB
+per published gigabyte.
+
+The projected wall time multiplies the book's per-class page counts by the measured seconds of
+one engine call and by the number of recognition stages that will call that engine. The report
+labels it `selection-set`. It is not a measurement of the rest of the book. A class with no count
+or no measured rate leaves the projection empty and names the class.
+
+When no candidate wins a class, `negative` is true and the config names `docling`, which is the
+existing lane's engine, with `ocr_language` set to the book's language. The report carries the
+condition that would reopen the question. That negative is recorded in future research only after
+the accepted handbook pages have been scored. The harness tests do not write that section, and
+they do not commit a config under `samples/book_ocr/`.
+
+The handbook per-class winner is not on this page. The verified reference is still
+`book-pilot-reference-transcription`. Until every pilot page is accepted, the command refuses.
+
+```sh
+make book-ocr-compare BOOK_MANIFEST=<manifest.yaml> \
+  BOOK_COMPARE_OUT=<report.json> BOOK_COMPARE_CONFIG=<book-ocr.yaml>
+```
+
+The package is `src/llb/prep/book/compare/`. The command is `src/llb/cli/book/compare.py`. Tests
+are `tests/llb/prep/book/test_pilot_comparison.py` and `test_pilot_comparison_config.py`.
 
 ## Page classes
 
