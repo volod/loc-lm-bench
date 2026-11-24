@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -26,7 +27,7 @@ from llb.core.contracts.data_prep.book_structure import (
 from llb.prep.book.config import write_config
 from llb.prep.book.constants import BLOCK_LEDGER_SCHEMA_ID, CONTRACT_VERSION, RUN_CONFIG_SCHEMA_ID
 from llb.prep.book.ledger.io import write_ledger
-from llb.prep.book.preprocess.images import write_png
+from llb.prep.book.preprocess.images import read_pixels, write_png
 from llb.prep.book.ranges import page_id
 from llb.prep.book.render.build import RenderOptions, build_vault
 from llb.prep.book.render.constants import OBSIDIAN_VERSION, PDF_PAGE_FRAGMENT
@@ -507,6 +508,30 @@ def test_source_policy_and_page_fallback_keep_file_names(tmp_path: Path) -> None
     assert list((images / "source" / "pages").glob("*.png"))
     assert not (plain / "source" / "pages").exists()
     _assert_links(images)
+
+
+def test_vault_preserves_color_channels_in_crops_and_fallback(tmp_path: Path) -> None:
+    run = _sample(tmp_path)
+    color = np.full((_H, _W, 3), (11, 71, 201), dtype=np.uint8)
+    source = run / "pages/p0001/render/page.png"
+    write_png(source, color)
+    write_png(run / "pages/p0002/render/page.png", color)
+    vault = _vault(run, tmp_path / "color", page_fallback=True)
+    assert (vault / "source/pages/p0001.png").read_bytes() == source.read_bytes()
+    for directory in ("assets", "review"):
+        crop = read_pixels(next((vault / directory).rglob("*.png")))
+        assert crop.shape[2] == 3
+        assert np.all(crop == (11, 71, 201))
+
+
+def test_source_replacement_refuses_publication(tmp_path: Path) -> None:
+    run = _sample(tmp_path)
+    vault = _vault(run, tmp_path / "book", source_policy="copy")
+    original = _snapshot(vault)
+    (run / "source/book.pdf").write_bytes(b"another edition")
+    with pytest.raises(ValueError, match="sha256"):
+        _vault(run, vault, source_policy="copy")
+    assert _snapshot(vault) == original
 
 
 def test_oversized_section_splits_only_at_permitted_boundaries(tmp_path: Path) -> None:

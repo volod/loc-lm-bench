@@ -87,10 +87,12 @@ def _caption_matches(
     index: int,
     figure: RefBlock,
 ) -> bool:
-    target = by_id.get(figure.caption_id or "")
+    linked = figure_match.get(index)
+    if figure.caption_id is None:
+        return linked is not None and linked.caption_id is None
+    target = by_id.get(figure.caption_id)
     if target is None:
         return False
-    linked = figure_match.get(index)
     matched = caption_match.get(target)
     if linked is None or matched is None:
         return False
@@ -110,12 +112,15 @@ def order(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> Me
 
 
 def printed(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> MetricValue:
-    """Exact printed-page token. A page-number block wins; otherwise the token is sought in the text."""
+    """Score a structured folio, or look for a known folio in text-only output."""
+    numbers = [block for block in submission.blocks if block.kind == "page-number"]
+    if page.printed_page is None:
+        if submission.text_only:
+            return absent()
+        return scored(float(submission.present and not numbers))
     want = _page_token(page.printed_page)
     if not submission.text_only:
-        numbers = [block for block in submission.blocks if block.kind == "page-number"]
-        if numbers:
-            return scored(1.0 if _page_token(numbers[0].text) == want else 0.0)
+        return scored(float(len(numbers) == 1 and _page_token(numbers[0].text) == want))
     return scored(
         1.0 if re.search(rf"(?<![\w]){re.escape(want)}(?![\w])", hypothesis_text) else 0.0
     )

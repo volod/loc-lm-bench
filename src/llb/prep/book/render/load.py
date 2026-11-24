@@ -6,8 +6,6 @@ including on a page whose recovery failed: that page becomes one marker.
 
 from pathlib import Path
 
-import numpy as np
-
 from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, Region
 from llb.core.contracts.data_prep.book_resolve import (
     CorrectionEdit,
@@ -17,10 +15,10 @@ from llb.core.contracts.data_prep.book_resolve import (
 )
 from llb.prep.book.cache import page_dir
 from llb.prep.book.config import read_config
+from llb.prep.book.engines.image import png_size
 from llb.prep.book.constants import BLOCKS_FILENAME
 from llb.prep.book.ledger.io import read_ledger
 from llb.prep.book.ledger.manifest import read_manifest
-from llb.prep.book.preprocess.images import read_grey
 from llb.prep.book.ranges import page_id
 from llb.prep.book.render.constants import FAIL_REASON_LIMIT
 from llb.prep.book.render.types import BookLoad, RenderBlock
@@ -37,7 +35,7 @@ from llb.prep.book.review.constants import CROP_PADDING_PX
 from llb.prep.book.review.crops import crop_filename, padded_box
 from llb.prep.book.review.files import reviewer_edits
 from llb.prep.book.review.marks import SpanMark
-from llb.prep.book.source import stored_source_path
+from llb.prep.book.source import verify_source
 from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
 from llb.prep.book.structure.io import read_structure, structure_path
 
@@ -55,38 +53,42 @@ def load_book(run_dir: Path) -> BookLoad:
         raise ValueError(
             "document structure does not match the run's pages; run book-ocr structure"
         )
-    pdf = stored_source_path(run_dir, config.source)
-    if not pdf.is_file():
-        raise ValueError(f"source PDF {pdf} is missing")
+    pdf = verify_source(run_dir, config.source)
     edits = reviewer_edits(run_dir)
     blocks: list[RenderBlock] = []
-    images: dict[int, np.ndarray] = {}
+    images: dict[int, Path] = {}
     for pdf_page in config.pages:
         pid = page_id(pdf_page, config.source.page_count)
-        page_blocks, image = _page(run_dir, pid, pdf_page, edits)
-        blocks.extend(page_blocks)
-        if image is not None:
-            images[pdf_page] = image
+        path = page_dir(run_dir, pid) / RENDER_STAGE / PAGE_IMAGE_FILENAME
+        shape = None
+        if path.is_file():
+            images[pdf_page] = path
+            width, height = png_size(path)
+            shape = (height, width)
+        blocks.extend(_page(run_dir, pid, pdf_page, edits, shape))
     blocks.sort(key=lambda block: (block.pdf_page, block.reading_order, block.ordinal))
     return BookLoad(config, structure, pdf, blocks, images)
 
 
 def _page(
-    run_dir: Path, pid: str, pdf_page: int, edits: list[CorrectionEdit]
-) -> tuple[list[RenderBlock], np.ndarray | None]:
+    run_dir: Path,
+    pid: str,
+    pdf_page: int,
+    edits: list[CorrectionEdit],
+    shape: tuple[int, int] | None,
+) -> list[RenderBlock]:
     base = page_dir(run_dir, pid)
     resolved_path = base / RESOLVED_FILENAME
     if not resolved_path.is_file():
-        return [_failed(pid, pdf_page, _reason(run_dir, pid))], _image(base)
+        return [_failed(pid, pdf_page, _reason(run_dir, pid))]
     ledger_path = base / BLOCKS_FILENAME
     if not ledger_path.is_file():
         raise ValueError(f"{pid} has resolved text and no block ledger")
     ledger = read_ledger(ledger_path)
     resolved = read_resolved(resolved_path)
     overlay = _overlay(base, pid, pdf_page)
-    image = _image(base)
     marks = _marks(pid, ledger, resolved, overlay, edits)
-    return _blocks(pid, ledger, resolved, marks, image), image
+    return _blocks(pid, ledger, resolved, marks, shape)
 
 
 def _blocks(
@@ -94,7 +96,7 @@ def _blocks(
     ledger: PageBlockLedger,
     resolved: PageResolvedText,
     marks: list[SpanMark],
-    image: np.ndarray | None,
+    shape: tuple[int, int] | None,
 ) -> list[RenderBlock]:
     by_id = {block.block_id: block for block in resolved.blocks}
     grouped: dict[str, list[SpanMark]] = {}
@@ -104,10 +106,10 @@ def _blocks(
     seen: set[str] = set()
     for source in sorted(ledger.blocks, key=lambda block: (block.reading_order, block.ordinal)):
         seen.add(source.block_id)
-        built.append(_from_ledger(pid, source, by_id.get(source.block_id), grouped, image))
+        built.append(_from_ledger(pid, source, by_id.get(source.block_id), grouped, shape))
     for block in resolved.blocks:
         if block.block_id not in seen:
-            built.append(_from_resolved(pid, resolved.pdf_page, block, grouped, image))
+            built.append(_from_resolved(pid, resolved.pdf_page, block, grouped))
     return built
 
 
@@ -116,12 +118,12 @@ def _from_ledger(
     source: Block,
     resolved: ResolvedBlock | None,
     grouped: dict[str, list[SpanMark]],
-    image: np.ndarray | None,
+    shape: tuple[int, int] | None,
 ) -> RenderBlock:
     own = tuple(grouped.get(source.block_id, ()))
     if resolved is None:
-        return _render_block(pid, source, None, "", own, image, "missing-block")
-    return _render_block(pid, source, resolved, resolved.text, own, image, source.kind)
+        return _render_block(pid, source, None, "", own, shape, "missing-block")
+    return _render_block(pid, source, resolved, resolved.text, own, shape, source.kind)
 
 
 def _from_resolved(
@@ -129,7 +131,6 @@ def _from_resolved(
     pdf_page: int,
     resolved: ResolvedBlock,
     grouped: dict[str, list[SpanMark]],
-    image: np.ndarray | None,
 ) -> RenderBlock:
     own = tuple(grouped.get(resolved.block_id, ()))
     return RenderBlock(
@@ -145,7 +146,6 @@ def _from_resolved(
         region=None,
         resolved=resolved,
         marks=own,
-        crops=_crops(own, None, image),
     )
 
 
@@ -155,7 +155,7 @@ def _render_block(
     resolved: ResolvedBlock | None,
     text: str,
     marks: tuple[SpanMark, ...],
-    image: np.ndarray | None,
+    shape: tuple[int, int] | None,
     role: str,
 ) -> RenderBlock:
     digest = resolved.anchor if resolved is not None else ""
@@ -172,14 +172,14 @@ def _render_block(
         region=source.region,
         resolved=resolved,
         marks=marks,
-        crops=_crops(marks, source.region, image),
+        crops=_crops(marks, source.region, shape),
     )
 
 
 def _crops(
-    marks: tuple[SpanMark, ...], region: Region | None, image: np.ndarray | None
+    marks: tuple[SpanMark, ...], region: Region | None, shape: tuple[int, int] | None
 ) -> tuple[tuple[int, int, str], ...]:
-    if region is None or image is None or padded_box(region, image.shape, CROP_PADDING_PX) is None:
+    if region is None or shape is None or padded_box(region, shape, CROP_PADDING_PX) is None:
         return ()
     return tuple(
         (mark.start, mark.end, f"review/{crop_filename(mark.block_id, mark.start, mark.end)}")
@@ -216,13 +216,6 @@ def _overlay(base: Path, pid: str, pdf_page: int) -> PageCorrectionOverlay:
         page_id=pid,
         pdf_page=pdf_page,
     )
-
-
-def _image(base: Path) -> np.ndarray | None:
-    path = base / RENDER_STAGE / PAGE_IMAGE_FILENAME
-    if not path.is_file():
-        return None
-    return read_grey(path)
 
 
 def _marks(

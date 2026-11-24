@@ -16,7 +16,16 @@ _PNG_PARAMS = (cv2.IMWRITE_PNG_COMPRESSION, 3)
 
 def read_grey(path: Path) -> np.ndarray:
     """The page as one uint8 channel. A colour render is converted; the file is not modified."""
-    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    return _read(path, cv2.IMREAD_GRAYSCALE)
+
+
+def read_pixels(path: Path) -> np.ndarray:
+    """Read the original channels for figure assets and visual review."""
+    return _read(path, cv2.IMREAD_UNCHANGED)
+
+
+def _read(path: Path, mode: int) -> np.ndarray:
+    image = cv2.imread(str(path), mode)
     if image is None:
         raise ValueError(f"unreadable image: {path}")
     return np.asarray(image, dtype=np.uint8)

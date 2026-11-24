@@ -103,6 +103,43 @@ project already reads.
   span over a marker is refused; a missing redistribution class refuses.
 - Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
 
+#### book-resolved-pipeline-scoring
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Dependencies: [quality metrics](current/book-recovery/quality-metrics.md) and
+  [resolved readings](current/book-recovery/uncertainty-and-review.md).
+- User-visible outcome: score the actual routed, resolved pipeline beside the raw engine lanes
+  and the existing PDF conversion on exactly the frozen reference pages.
+- Scope boundary: read adopted text, table structure, formula output, caption links, printed-page
+  mapping and unresolved spans from the artifacts each renderer consumes. Score the fields each
+  pipeline can emit and mark unsupported fields absent. Keep raw-engine scores for diagnosis.
+  Report missing submissions, unscorable fields and abstentions by class.
+- Data and artifact paths: `src/llb/prep/book/metrics/` and the pilot score report.
+- Execution path: exercise the score CLI with a synthetic multi-engine run inside `make ci`.
+- Acceptance gates: a variant switch and one overlay edit each change only the expected lane and
+  page; a missing page remains in the denominator; a wrong caption or folio in the output loses
+  credit even when a nearest-caption or body-text guess would match. Verify class totals by hand.
+- Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
+
+#### book-input-and-pilot-audit
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Requires: `book-resolved-pipeline-scoring`
+- Dependencies: the [frozen pilot and class rules](current/book-recovery/tool-selection.md#page-classes).
+- User-visible outcome: a reproducible decision on whether the input, geometry and scoring chain
+  can distinguish an improved reading from a damaged one before selecting engines.
+- Scope boundary: exercise inventory, variants, inverse coordinates, class routing and scoring on
+  rotation, clipped gutter text, neighbour bleed, faint signs and decimal points, two columns and
+  ordinary controls. Check source identity and pilot coverage against the frozen selection.
+- Data and artifact paths: `tests/llb/prep/book/`, the pilot selection and the audit task record.
+- Execution path: use synthetic scans with known marks and cached pilot metadata inside `make ci`.
+- Acceptance gates: trace a rotated corner mark from source to variant to original crop; corrupt a
+  thin stroke, swap columns and change a digit independently and identify each failure in its own
+  measure. Record the property, fixture, command and consequence for each selection gate.
+- Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
+
 #### book-pilot-pipeline-comparison
 
 With engines behind one seam, metrics that see dangerous substitutions, a stratified pilot set, and
@@ -112,7 +149,7 @@ lane is the baseline every candidate must beat on a page class before it serves 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- every candidate runs over the pilot set on the CUDA host.
 - Research: yes
-- Requires: `book-pilot-reference-transcription`
+- Requires: `book-pilot-reference-transcription`, `book-input-and-pilot-audit`
 - Dependencies: the [quality metrics](current/book-recovery/quality-metrics.md), the
   [block ledger](current/book-recovery/block-ledger.md), the
   [page classes](current/book-recovery/tool-selection.md#page-classes), and the
@@ -138,8 +175,8 @@ lane is the baseline every candidate must beat on a page class before it serves 
   from the saved ledgers with no GPU.
 - Acceptance gates: `make ci` green; the reading states, per class, the page count, the winner, and
   its margin over the existing lane with its interval, with dangerous substitutions reported apart;
-  a class whose interval includes zero routes to the overall winner rather than to a per-class
-  winner chosen on noise; each candidate's agreement with the reference's unedited pre-draft is
+  retain the existing lane for a class when its comparison supplies no evidence of a gain;
+  identify an inconclusive interval; each candidate's agreement with the unedited pre-draft is
   reported beside its score, so an anchoring advantage is visible; a candidate that wins no class
   is recorded as such; a dry run on a host with less VRAM than the selected configuration needs
   refuses by name; if no candidate beats the existing lane on any class, the negative goes to
@@ -238,6 +275,48 @@ guard admits or refuses, and adopt it only if the pilot shows it helps.
   rise; otherwise it stays off and the negative goes to [future research](future-research.md).
 - Documentation target: `docs/impl/current/book-recovery/correction.md`.
 
+#### book-missing-region-accounting
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Requires: `book-corpus-projection`
+- Dependencies: [review queue](current/book-recovery/uncertainty-and-review.md) and
+  [validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+- User-visible outcome: an operator can distinguish a blank scan, an unread region on an otherwise
+  successful page, and a page whose recognition failed, in both outputs and in the review queue.
+- Scope boundary: compare original page evidence with layout and recognition coverage. Route
+  uncertain omissions to review with original coordinates; preserve confirmed blanks. Permit a
+  terminal page failure in a finished queue while refusing an unfinished run.
+- Data and artifact paths: `src/llb/prep/book/`, page quality manifests and review crops.
+- Execution path: fake an empty response, a missing second column, a legitimate blank and a
+  terminal engine failure through the normal run, queue and render commands inside `make ci`.
+- Acceptance gates: identify each planted omission even if every returned block is confident;
+  account for all four pages, retain readable neighbours, and reject a missing or stale queue
+  entry at full-run acceptance. Check the projected machine markers and PDF-page provenance
+  against the same ledger.
+- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
+
+#### book-technical-content-audit
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Requires: `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
+  `book-evidence-constrained-correction`, `book-missing-region-accounting`
+- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
+  [review semantics](current/book-recovery/uncertainty-and-review.md).
+- User-visible outcome: a reader can trace each technical value or uncertainty marker through the
+  chosen recognition route and overlay to the pixels that support it.
+- Scope boundary: exercise an ambiguous index and sign, a merged or empty cell, a diagram with
+  labels but no caption, competing nearby captions, and an omitted column. Include an engine
+  fallback and a stale reviewer edit after rebuilding the ledger.
+- Data and artifact paths: `tests/llb/prep/book/`, the pilot comparison and correction records.
+- Execution path: replay the pilot decisions with deterministic synthetic analogues in `make ci`.
+- Acceptance gates: verify raw readings stay immutable; every edit names its evidence; an
+  unsupported digit, caption or cell cannot enter the resolved reading. Pin each pilot loss that
+  changes the selected route to a regression or an explicit abstention. Score specialist output
+  from the emitted formula, grid and caption association.
+- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
+
 #### book-synthetic-book-end-to-end
 
 Every stage is proven on its own fixtures, and the first place they all meet is a multi-day GPU run
@@ -248,7 +327,8 @@ book small enough to run in seconds and built so that every seam carries a case.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
 - Requires: `book-corpus-projection`, `book-formula-and-table-recovery`,
-  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`
+  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
+  `book-technical-content-audit`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
   The vault check is
@@ -277,6 +357,25 @@ book small enough to run in seconds and built so that every seam carries a case.
   both renderings.
 - Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
 
+#### book-publication-and-resume-audit
+
+- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
+- Agent status: CLEAR
+- Requires: `book-synthetic-book-end-to-end`
+- Dependencies: [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+- User-visible outcome: a go or repair decision before committing a full handbook to publication,
+  based on source fidelity, resource use, restart behaviour and evidence links in both outputs.
+- Scope boundary: exercise the normal commands on a long generated book with page fallbacks,
+  a failed page, repeated folios, an interruption during publish, and a reviewer edit.
+- Data and artifact paths: `tests/llb/prep/book/`, temporary vault and corpus trees.
+- Execution path: CPU fixtures in `make ci`; compare clean and resumed outputs and inspect the
+  mapping from a retrieved chunk back to the source pixels.
+- Acceptance gates: bound decoded page memory independent of book length; verify exact source
+  pixels in fallbacks, consistent publication after retry, byte-identical clean and resumed
+  renderings, and a new revision only for the edited document. A broken queue, ambiguous printed
+  link or unresolved gold span must surface at its own gate.
+- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
+
 #### book-full-run-on-the-target-scan
 
 Every stage proven on fixtures and the pilot has not yet met 1,067 real pages. Run the whole target
@@ -285,7 +384,7 @@ corpus projection with an honest list of what still needs a person.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Requires: `book-synthetic-book-end-to-end`
+- Requires: `book-publication-and-resume-audit`
 - Dependencies: the target scan available locally under `DATA_DIR`; the redistribution class the
   operator declares for it; a host whose GPU meets the selected configuration's recorded VRAM need.
 - User-visible outcome: the target handbook as a validated reading vault and an ingested corpus
@@ -351,7 +450,9 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-corpus-projection`,
+- Requires: `book-resolved-pipeline-scoring`, `book-input-and-pilot-audit`,
+  `book-missing-region-accounting`, `book-technical-content-audit`,
+  `book-publication-and-resume-audit`, `book-corpus-projection`,
   `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,

@@ -227,7 +227,7 @@ def _pair_class(left: str, right: str) -> str | None:
         return CLASS_ONE_LI
     if pair <= _FIVE and len(pair) == 2:
         return CLASS_FIVE_S
-    if pair <= _MINUS and len(pair) == 2:
+    if pair <= (_MINUS | {"+"}) and len(pair) == 2:
         return CLASS_MINUS
     if pair in _UNIT_PAIRS:
         return CLASS_UNIT

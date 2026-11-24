@@ -47,6 +47,7 @@ class PageSubmission:
     pdf_page: int
     blocks: tuple[HypBlock, ...]
     text_only: bool
+    present: bool = True
 
 
 def load_run(run_dir: Path, engine: str | None) -> list[PageSubmission]:

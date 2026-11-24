@@ -106,6 +106,12 @@ render runs [vault validation](#vault-validation) and exits 1 when a check fails
 Tests: `tests/llb/prep/book/test_render.py`, over synthetic ledgers. No page of a real book
 enters git.
 
+The vault renderer verifies the source PDF checksum before publishing. It keeps page paths
+and crop coordinates in memory. During publication it copies fallback PNGs byte for byte,
+streams a source PDF under the copy policy, and decodes a page on demand for crops with a
+one-page cache. Figures and review crops retain the source render's colour channels.
+`test_render.py` checks colour crops, exact fallback bytes and refusal of a substituted PDF.
+
 ### What a reader opens
 
 The vault holds `00_Table_of_Contents.md`, the figure, table, and equation lists, `content/`,

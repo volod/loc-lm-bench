@@ -6,6 +6,7 @@ parses lowers that share. A string that does not parse is flagged and is not giv
 number. Canonical spelling and the parse check live in the sibling modules.
 """
 
+import re
 from dataclasses import dataclass
 
 from llb.prep.book.metrics.latex_norm import (
@@ -72,10 +73,12 @@ def formula_fidelity(
         return FormulaRead(
             True, _ratio(matched, len(reference_terms)), len(reference_terms), matched
         )
-    haystack = plain_form(hypothesis)
-    matched = sum(
-        1 for term in reference_terms if plain_form(term) and plain_form(term) in haystack
-    )
+    haystack = plain_form(hypothesis).replace("\u2212", "-")
+    matched = 0
+    for needle in sorted(map(plain_form, reference_terms), key=len, reverse=True):
+        if needle:
+            haystack, hits = re.subn(r"(?<!-)" + re.escape(needle), "\0", haystack, count=1)
+            matched += hits
     return FormulaRead(True, _ratio(matched, len(reference_terms)), len(reference_terms), matched)
 
 
@@ -122,7 +125,7 @@ def _split_additive(text: str) -> list[str]:
             depth -= 1
         elif depth == 0 and char in "+-" and index > start and _binary(text, index):
             parts.append(text[start:index])
-            start = index + 1
+            start = index if char == "-" else index + 1
     parts.append(text[start:])
     return [part for part in parts if part]
 

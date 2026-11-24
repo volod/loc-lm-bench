@@ -12,11 +12,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
 from llb.core.contracts.data_prep.book_blocks import Region
+from llb.prep.book.engines.image import png_size
 from llb.prep.book.constants import SOURCE_POLICIES, SOURCE_POLICY_REFERENCE, SOURCE_POLICY_SYMLINK
-from llb.prep.book.preprocess.images import encode_png
 from llb.prep.book.ranges import page_id
 from llb.prep.book.render.constants import (
     OBSIDIAN_VERSION,
@@ -45,7 +43,7 @@ from llb.prep.book.render.names import (
     parents_of,
     source_filename,
 )
-from llb.prep.book.render.publish import publish
+from llb.prep.book.render.publish import Asset, Crop, publish
 from llb.prep.book.render.segment import Span, prepare, section_spans
 from llb.prep.book.render.types import BookLoad, RenderBlock, RenderContext, VaultFile
 from llb.prep.book.review.crops import padded_box
@@ -84,7 +82,7 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     files = layout_files(spans, opts.section_cap, slug, ctx)
     grammar = load_grammar(opts.reference_grammar)
     docs, counts = render_markdown(files, loaded.structure, ctx, grammar)
-    blobs = {rel: text.encode("utf-8") for rel, text in docs.items()}
+    blobs: dict[str, Asset] = {rel: text.encode("utf-8") for rel, text in docs.items()}
     blobs[f"metadata/{RENDER_MANIFEST_FILENAME}"] = _manifest(loaded, slug, opts, files, run_dir)
     blobs[f"metadata/{REFERENCE_REPORT_FILENAME}"] = reference_json(counts)
     blobs["metadata/document_structure.json"] = structure_path(run_dir).read_bytes()
@@ -158,11 +156,11 @@ def _href(directory: Path, pdf: Path) -> Href:
 
 def _figures(
     spans: list[Span], loaded: BookLoad, book: str
-) -> tuple[dict[str, str], dict[str, bytes]]:
+) -> tuple[dict[str, str], dict[str, Asset]]:
     parents = parents_of(loaded.structure.hierarchy)
     numbers = figure_numbers(loaded.structure)
     paths: dict[str, str] = {}
-    blobs: dict[str, bytes] = {}
+    blobs: dict[str, Asset] = {}
     for span in spans:
         chapter = chapter_slug(span.node, parents, book)
         for block in span.blocks:
@@ -176,14 +174,14 @@ def _figure(
     numbers: dict[str, str],
     loaded: BookLoad,
     paths: dict[str, str],
-    blobs: dict[str, bytes],
+    blobs: dict[str, Asset],
 ) -> None:
     if block.kind != "figure" or block.region is None:
         return
     image = loaded.images.get(block.pdf_page)
     if image is None:
         return
-    data = _region_png(image, block.region, 0)
+    data = _crop_asset(image, block.region, 0)
     if data is None:
         return
     rel = figure_asset(
@@ -193,13 +191,13 @@ def _figure(
     blobs[rel] = data
 
 
-def _crops(blocks: list[RenderBlock], loaded: BookLoad) -> dict[str, bytes]:
-    blobs: dict[str, bytes] = {}
+def _crops(blocks: list[RenderBlock], loaded: BookLoad) -> dict[str, Asset]:
+    blobs: dict[str, Asset] = {}
     for block in blocks:
         image = loaded.images.get(block.pdf_page)
-        if block.region is None or image is None:
+        if not block.crops or block.region is None or image is None:
             continue
-        data = _region_png(image, block.region, CROP_PADDING_PX)
+        data = _crop_asset(image, block.region, CROP_PADDING_PX)
         if data is None:
             continue
         for _start, _end, rel in block.crops:
@@ -207,24 +205,24 @@ def _crops(blocks: list[RenderBlock], loaded: BookLoad) -> dict[str, bytes]:
     return blobs
 
 
-def _pages(loaded: BookLoad, opts: RenderOptions) -> dict[str, bytes]:
+def _pages(loaded: BookLoad, opts: RenderOptions) -> dict[str, Asset]:
     if not opts.page_fallback:
         return {}
-    blobs: dict[str, bytes] = {}
+    blobs: dict[str, Asset] = {}
     width = loaded.config.source.page_count
     for pdf_page, image in sorted(loaded.images.items()):
         pid = page_id(pdf_page, width)
-        blobs[f"{SOURCE_DIRNAME}/{SOURCE_PAGES_DIRNAME}/{pid}.png"] = encode_png(image)
+        blobs[f"{SOURCE_DIRNAME}/{SOURCE_PAGES_DIRNAME}/{pid}.png"] = image
     return blobs
 
 
 def _source(
-    loaded: BookLoad, dest: Path, opts: RenderOptions, blobs: dict[str, bytes]
+    loaded: BookLoad, dest: Path, opts: RenderOptions, blobs: dict[str, Asset]
 ) -> dict[str, Path]:
     name = source_filename(loaded.pdf.name)
     rel = f"{SOURCE_DIRNAME}/{name}"
     if opts.source_policy == "copy":
-        blobs[rel] = loaded.pdf.read_bytes()
+        blobs[rel] = loaded.pdf
         return {}
     if opts.source_policy == SOURCE_POLICY_SYMLINK:
         return {rel: loaded.pdf.resolve()}
@@ -255,9 +253,7 @@ def _manifest(
     return text.encode("ascii")
 
 
-def _region_png(image: np.ndarray, region: Region, padding: int) -> bytes | None:
-    box = padded_box(region, image.shape, padding)
-    if box is None:
-        return None
-    x0, y0, x1, y1 = box
-    return encode_png(image[y0:y1, x0:x1])
+def _crop_asset(image: Path, region: Region, padding: int) -> Crop | None:
+    width, height = png_size(image)
+    box = padded_box(region, (height, width), padding)
+    return Crop(image, box) if box is not None else None

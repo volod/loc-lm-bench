@@ -24,7 +24,7 @@ from llb.core.contracts.data_prep.book_review import (
 )
 from llb.prep.book.constants import BLOCKS_FILENAME, PAGES_DIRNAME
 from llb.prep.book.ledger.io import read_ledger
-from llb.prep.book.preprocess.images import read_grey
+from llb.prep.book.preprocess.images import read_pixels
 from llb.prep.book.resolve.constants import OVERLAY_FILENAME, RESOLVED_FILENAME, REVIEW_DIRNAME
 from llb.prep.book.resolve.io import decisions_path, read_decisions, read_overlay, read_resolved
 from llb.prep.book.review.constants import MARKER_KIND_ORDER
@@ -86,7 +86,7 @@ def load_page(
     if not resolved_path.is_file() or not ledger_path.is_file() or not overlay_path.is_file():
         return None
     image_path = base / RENDER_STAGE / PAGE_IMAGE_FILENAME
-    image = read_grey(image_path) if image_path.is_file() else None
+    image = read_pixels(image_path) if image_path.is_file() else None
     return read_ledger(ledger_path), read_resolved(resolved_path), read_overlay(overlay_path), image
 
 

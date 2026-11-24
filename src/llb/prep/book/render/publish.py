@@ -8,8 +8,11 @@ import os
 import shutil
 import stat
 import tempfile
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
+from llb.prep.book.preprocess.images import encode_png, read_pixels
 from llb.prep.book.render.constants import (
     ASSETS_DIRNAME,
     CONTENT_DIRNAME,
@@ -28,17 +31,33 @@ _DIRECTORIES = (
 )
 
 
-def publish(dest: Path, files: dict[str, bytes], links: dict[str, Path]) -> None:
+@dataclass(frozen=True)
+class Crop:
+    source: Path
+    box: tuple[int, int, int, int]
+
+
+type Asset = bytes | Path | Crop
+
+
+def publish(dest: Path, files: dict[str, Asset], links: dict[str, Path]) -> None:
     """Replace `dest` with `files` and symlinks. `links` values are absolute targets."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     temp = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
+    pixels = lru_cache(maxsize=1)(read_pixels)
     try:
         for name in _DIRECTORIES:
             (temp / name).mkdir(parents=True, exist_ok=True)
         for rel, data in files.items():
             path = temp / rel
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            if isinstance(data, Path):
+                shutil.copyfile(data, path)
+            elif isinstance(data, Crop):
+                x0, y0, x1, y1 = data.box
+                path.write_bytes(encode_png(pixels(data.source)[y0:y1, x0:x1]))
+            else:
+                path.write_bytes(data)
             if path.suffix == ".pdf":
                 os.chmod(path, _READ_ONLY)
         for rel, target in links.items():

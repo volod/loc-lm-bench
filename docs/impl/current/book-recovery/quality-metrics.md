@@ -24,14 +24,15 @@ the rules below.
 | --- | --- |
 | `pdf_page` | 1-based page in the PDF |
 | `page_class` | Any non-empty string. The class stage's ids and precedence are [page classes](tool-selection.md#page-classes). The score still accepts any other non-empty string |
-| `printed_page` | The number printed on the page, as text |
+| `printed_page` | The printed number as text, or explicit `null` for an unnumbered page |
 | `width`, `height` | The rendered page, in pixels |
-| `blocks` | At least one block |
+| `blocks` | Blocks in the transcription; use an empty list for a verified blank page |
 
 A block has `block_id`, `kind` (a ledger kind), `region` (`x0`, `y0`, `x1`, `y1`, origin top
 left; integers are accepted and stored as floats), `reading_order`, and `text`. A formula also
 needs non-empty `latex`. A table needs `table.rows`, each row a list of strings or of
-`{text, colspan, rowspan}`. A figure needs `caption_id` naming a caption block on the same page.
+`{text, colspan, rowspan}`. A captioned figure has a `caption_id` naming a caption block on the
+same page. Leave it null or omit it for an uncaptioned figure.
 `equation_number` is optional. Ids and reading orders are unique. A region has area and lies
 inside the page. `caption_id` on anything but a figure is refused. Score also refuses a reference
 formula whose LaTeX does not parse.
@@ -78,7 +79,8 @@ substitution penalty.
 
 Every class is present on every page, zeros included. A count is never added into the character
 error. The classes, in the order a substitution is claimed, are `0/O`, `1/l/I` (also `|`),
-`5/S` (also `s`), `minus/hyphen/dash` (hyphen, minus, and the en and em dashes), `unit`
+`5/S` (also `s`), `minus/hyphen/dash` (hyphen, minus, and the en and em dashes, including
+substitutions between these signs and plus), `unit`
 (degree against `o` or `0`, micro against `u` or Greek mu, ohm against `O`, angstrom against
 `A`, per-mille against `%`), `latin/greek` (the lookalike pairs), `bracket`, and
 `decimal/comma`. A deletion or insertion counts only for a minus, a bracket, a unit symbol, a
@@ -108,9 +110,13 @@ rewrites `\le`/`\leq`, `\ge`/`\geq`, `\ne`/`\neq`, `\to`/`\rightarrow`, `\cdotp`
 token. Unicode dashes become `-`. `\tag`, `\begin`, `\end`, `&`, and `\\` are removed.
 
 Terms are the top-level sides of `=`, then each top-level `+` or binary `-`. Fidelity is the
-share of reference terms the hypothesis still has. A hypothesis that does not parse is
-`formula_parse_valid` false, fidelity null, and left out of the page ratio. A structured formula
-with no match contributes every term as missed. Plain text, including the existing lane, is
+share of reference terms the hypothesis still has. Each subtractive term retains its sign.
+Each matched occurrence in the hypothesis counts once per reference formula. An unparseable LaTeX
+hypothesis has null fidelity, fails the parse check and is left out of the page ratio.
+A structured formula
+with no match contributes every term as missed. Parse status covers every formula the structured
+lane submits, including extra formulas on pages with no reference equation. It is null when
+the lane submits no formula. Plain text, including the existing lane, is
 scored by substring: `\frac{a}{b}` becomes `a/b`, scripts flatten, and the Greek commands become
 letters. Character error still compares the reading strings, so two equivalent spellings can
 move the character error and still score fidelity 1.
@@ -129,7 +135,8 @@ lane is `absent`.
 
 Caption association uses that figure match and the same match on caption boxes. A figure is
 correct when its `caption_id` is the block id of the hypothesis caption that matched the
-reference caption. Unmatched figures stay in the denominator. A text-only lane is `absent`.
+reference caption. A matched uncaptioned figure earns credit when it has no caption link.
+Unmatched figures stay in the denominator. A text-only lane is `absent`.
 
 Reading-order agreement is the share of matched pairs whose relative order agrees. On a
 structured lane the match is by overlap within a kind, and the ranks are `reading_order`. On a
@@ -137,9 +144,10 @@ text-only lane each reference reading is sought in the plain text and then blank
 can match again, and the rank is the character offset. Fewer than two comparable pairs is
 `not_applicable`.
 
-Printed-page accuracy is always scored. A page-number block must match the reference token after
-stripping whitespace and surrounding punctuation. Without that block, the token must appear as a
-whole word in the page text.
+A structured lane needs exactly one page-number block matching the reference token after
+stripping whitespace and surrounding punctuation. An unnumbered reference needs a submitted
+page with no page-number block. For text-only output, a known folio is sought as a whole word.
+On an unnumbered page this lane reports the metric as `absent`.
 
 ## Per-class rollup
 

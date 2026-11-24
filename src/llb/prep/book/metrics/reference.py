@@ -94,10 +94,10 @@ class RefPage(DataPrepRow):
 
     pdf_page: int = Field(ge=1)
     page_class: str = Field(min_length=1)
-    printed_page: str = Field(min_length=1)
+    printed_page: str | None = Field(min_length=1)
     width: int = Field(ge=1)
     height: int = Field(ge=1)
-    blocks: list[RefBlock] = Field(min_length=1)
+    blocks: list[RefBlock]
 
     @model_validator(mode="after")
     def _page_is_consistent(self) -> "RefPage":
@@ -145,7 +145,7 @@ def _kind_errors(block: RefBlock, captions: set[str]) -> list[str]:
         errors.append(f"{block.block_id} formula needs latex")
     if block.kind == "table" and block.table is None:
         errors.append(f"{block.block_id} table needs a structure")
-    if block.kind == "figure" and block.caption_id not in captions:
+    if block.kind == "figure" and block.caption_id is not None and block.caption_id not in captions:
         errors.append(f"{block.block_id} figure caption_id does not name a caption")
     if block.kind != "figure" and block.caption_id is not None:
         errors.append(f"{block.block_id} caption_id belongs on a figure")

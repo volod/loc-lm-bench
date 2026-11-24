@@ -4,7 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
 
 from llb.core.contracts.data_prep.book import BookOcrRunConfig
 from llb.core.contracts.data_prep.book_blocks import Region
@@ -79,10 +78,10 @@ class RenderContext:
 
 @dataclass
 class BookLoad:
-    """What `render` reads from one run. Images stay here, off the blocks."""
+    """What `render` reads from one run. Keep page-image paths so renders can stream assets."""
 
     config: BookOcrRunConfig
     structure: DocumentStructure
     pdf: Path
     blocks: list[RenderBlock]
-    images: dict[int, np.ndarray]
+    images: dict[int, Path]

@@ -68,7 +68,7 @@ def _lane(
     for page in pages:
         submission = found.get(page.pdf_page)
         if submission is None:
-            submission = PageSubmission(name, page.pdf_page, (), text_only)
+            submission = PageSubmission(name, page.pdf_page, (), text_only, present=False)
         scored.append(score_page(page, submission))
     return LaneScore(lane=name, pages=scored, by_page_class=rollup(scored))
 

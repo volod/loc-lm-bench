@@ -11,6 +11,7 @@ from llb.prep.book.metrics.latex import (
     FormulaRead,
     LatexError,
     formula_fidelity,
+    latex_parses,
     script_tokens,
     terms_of,
 )
@@ -110,8 +111,9 @@ def _formulas(
     page: RefPage, submission: PageSubmission, hypothesis_text: str
 ) -> tuple[MetricValue, bool | None]:
     formulas = [block for block in page.blocks if block.kind == "formula" and block.latex]
+    parse_valid = _emitted_formulas_parse(submission)
     if not formulas:
-        return not_applicable(), None
+        return not_applicable(), parse_valid
     if submission.text_only:
         plain = [
             formula_fidelity(block.latex or "", hypothesis_text, hypothesis_is_latex=False)
@@ -127,8 +129,14 @@ def _formulas(
             structured.append(formula_fidelity(latex, hypothesis.latex, hypothesis_is_latex=True))
         else:
             structured.append(formula_fidelity(latex, hypothesis.text, hypothesis_is_latex=False))
-    invalid = any(not read.parse_valid for read in structured)
-    return _fidelity(structured), not invalid
+    return _fidelity(structured), parse_valid
+
+
+def _emitted_formulas_parse(submission: PageSubmission) -> bool | None:
+    formulas = [block for block in submission.blocks if block.kind == "formula"]
+    if submission.text_only or not formulas:
+        return None
+    return all(latex_parses(block.latex or block.text) for block in formulas)
 
 
 def _missed(latex: str) -> FormulaRead:
