@@ -1092,7 +1092,8 @@ Four rules settle it, in order:
 An explicit operator priority may override rule 4, never rules 1-3. `scanned-book-recovery` sits
 above `artifact-contracts` on that basis: the operator made it the top priority, and none of the
 remaining contract work changes what a book task produces or measures. `corpus-provenance` sits
-above both and is shipped: `book-corpus-projection` builds on the redistribution gate it delivered.
+above both and is shipped: [corpus projection](../impl/current/book-recovery/corpus-projection.md)
+builds on the redistribution gate it delivered.
 
 | # | Capability | Status | How it is evaluated | Implementation |
 | --- | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
 .PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-pilot-select \
-	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-validate \
+	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-project book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
 book-ocr: ## Run (or BOOK_DRY_RUN=1 validate) a scanned-book recovery over BOOK_PDF (BOOK_PAGES=1-, BOOK_BATCH_PAGES=25, BOOK_STAGES=render, BOOK_CONFIG=yaml, BOOK_SOURCE_POLICY=symlink|copy|reference, BOOK_REUSE_FROM=run, BOOK_OUT_DIR=); BOOK_RESUME=<run-dir> continues a run
@@ -64,6 +64,17 @@ book-ocr-render: ## Render BOOK_RUN as an Obsidian vault (BOOK_OUTPUT=, BOOK_SOU
 	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
 	if [ -n "$(BOOK_REFERENCE_GRAMMAR)" ]; then args+=(--reference-grammar "$(BOOK_REFERENCE_GRAMMAR)"); fi; \
 	$(PY) -m llb.main book-ocr render "$${args[@]}"
+
+book-ocr-project: ## Project BOOK_RUN into a retrieval corpus at BOOK_CORPUS (BOOK_LICENCE=redistributable|local-only required, BOOK_LANGUAGE=, BOOK_SECTION_CAP=, BOOK_SLUG=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
+	@test -n "$(BOOK_CORPUS)" || { echo "ERROR: set BOOK_CORPUS=<corpus-dir>"; exit 2; }
+	@test -n "$(BOOK_LICENCE)" || { echo "ERROR: set BOOK_LICENCE=redistributable|local-only"; exit 2; }
+	@args=("$(BOOK_RUN)" --out "$(BOOK_CORPUS)" --licence "$(BOOK_LICENCE)"); \
+	if [ -n "$(BOOK_LANGUAGE)" ]; then args+=(--language "$(BOOK_LANGUAGE)"); fi; \
+	if [ -n "$(BOOK_SECTION_CAP)" ]; then args+=(--section-cap "$(BOOK_SECTION_CAP)"); fi; \
+	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
+	$(PY) -m llb.main book-ocr project "$${args[@]}"
 
 book-ocr-validate: ## Validate a rendered vault at BOOK_DIR and write its processing report (BOOK_RUN= when the vault is outside the run)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

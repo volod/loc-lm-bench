@@ -31,7 +31,9 @@ reference transcription ([quality metrics](book-recovery/quality-metrics.md)).
 `llb book-ocr structure` reads the ledgers and writes the printed-page mapping, the hierarchy, and
 the numbering inventory. `llb book-ocr render` writes the Obsidian vault from that file and links
 each citation the structure names uniquely, and `llb book-ocr validate` checks it
-([structure and the reading vault](book-recovery/structure-and-rendering.md)). Operator usage is
+([structure and the reading vault](book-recovery/structure-and-rendering.md)).
+`llb book-ocr project` writes the retrieval corpus from the same ledger
+([corpus projection](book-recovery/corpus-projection.md)). Operator usage is
 the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 
 | Page | What it answers |
@@ -43,3 +45,4 @@ the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 | [Tool selection](book-recovery/tool-selection.md) | Which dewarp, layout, OCR, formula, table, converter, and vision-model candidates install and run on this host, and the page classes a pilot is drawn from: the per-stage shortlist with version, licence, VRAM and RAM, install route, and one-page smoke result; what was not installed and why |
 | [Quality metrics](book-recovery/quality-metrics.md) | The reference format and the per-page, per-class score: character and word error, dangerous substitutions kept apart, formula fidelity, tables, figures, captions, reading order, and the printed page |
 | [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, the Obsidian vault rendered from them, the cross-reference links, and the mechanical check of that vault |
+| [Corpus projection](book-recovery/corpus-projection.md) | The retrieval rendering of the same ledger: content only, page citations, stable document ids, append-only revisions, and the operator-declared redistribution class |

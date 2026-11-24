@@ -59,50 +59,6 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-corpus-projection
-
-The vault is for a person. Fed to `ingest-corpus` it would index navigation, front matter, and
-markers as content, and passthrough Markdown carries no page citations, so a chunk would lose the
-page it came from. Render the book for retrieval from the ledger instead, in the corpus shape this
-project already reads.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the citation sidecar and chunk page metadata already carry PDF pages into retrieval
-  ([mixed-corpus ingestion](current/data-prep/ingestion-corpora.md)); every export refuses a
-  `licence` other than `redistributable` or absent
-  ([redistribution gate](current/data-prep/acquired-provenance.md#redistribution-gate)); a
-  non-local `source_system` puts the projection in the acquired lane, which refuses changed bytes
-  under an existing document identity and asks for a new one with `revision_of`
-  ([append-only revisions](current/data-prep/acquired-provenance.md#append-only-document-revisions)).
-  The reading vault is a separate render of the same ledger
-  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
-- User-visible outcome: `llb book-ocr project <run-dir> --out <corpus-dir>` writes one corpus
-  document per content file -- content only, formulas as LaTeX, tables as rendered, markers in a
-  machine form -- with a `*.citations.json` sidecar (PDF page to character spans, block ids and
-  regions, and the vault file and anchor) and manifest fields (`language`, `source_system`,
-  `payload_digest` set to the source checksum, `licence` set to the operator-declared class), so
-  `make ingest-corpus` admits the book and every chunk carries its source PDF pages.
-- Scope boundary: in scope -- a projection renderer reading the resolved ledger, not the vault
-  Markdown; a required redistribution-class argument with no default; stable document ids so a
-  re-projection of an unchanged ledger is a no-op for `refresh-index`; a re-projection whose text
-  changed (a resolved marker, an admitted correction) emitting a new document identity with
-  `revision_of`, never an in-place rewrite, so a gold span accepted against the earlier text still
-  resolves; a `validate-goldset` refusal of a source span overlapping an unresolved marker. Out of
-  scope -- drafting and verifying gold items (`book-goldset-verification`) and any retrieval
-  measurement.
-- Data and artifact paths: `src/llb/prep/book/project/`; the corpus directory the operator names.
-- Execution path: CPU-only inside `make ci`; `make book-ocr-project` (with a `##` help description)
-  wraps the command, and `make ingest-corpus CORPUS_ROOT=<corpus-dir>` consumes the output
-  unchanged.
-- Acceptance gates: `make ci` green; a fixture projection ingests through `make ingest-corpus` with
-  page metadata on every chunk; sidecar offsets match the document text exactly; a re-projection
-  yields identical ids and fingerprints; a re-projection after one overlay edit ingests without
-  refusal, retains the earlier version, and a gold span over the earlier text still validates; a
-  projected book declared non-redistributable makes the fine-tune export refuse and name it; a gold
-  span over a marker is refused; a missing redistribution class refuses.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
-
 #### book-resolved-pipeline-scoring
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
@@ -279,9 +235,9 @@ guard admits or refuses, and adopt it only if the pilot shows it helps.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-corpus-projection`
-- Dependencies: [review queue](current/book-recovery/uncertainty-and-review.md) and
-  [validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+- Dependencies: [review queue](current/book-recovery/uncertainty-and-review.md),
+  [validation](current/book-recovery/structure-and-rendering.md#vault-validation), and
+  [corpus projection](current/book-recovery/corpus-projection.md).
 - User-visible outcome: an operator can distinguish a blank scan, an unread region on an otherwise
   successful page, and a page whose recognition failed, in both outputs and in the review queue.
 - Scope boundary: compare original page evidence with layout and recognition coverage. Route
@@ -326,11 +282,13 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-corpus-projection`, `book-formula-and-table-recovery`,
+- Requires: `book-formula-and-table-recovery`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
+  The projection command is
+  [corpus projection](current/book-recovery/corpus-projection.md).
   The vault check is
   [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
   Cross-reference linking is
@@ -452,7 +410,7 @@ retrieval reading found.
   in this group.
 - Requires: `book-resolved-pipeline-scoring`, `book-input-and-pilot-audit`,
   `book-missing-region-accounting`, `book-technical-content-audit`,
-  `book-publication-and-resume-audit`, `book-corpus-projection`,
+  `book-publication-and-resume-audit`,
   `book-pilot-pipeline-comparison`,
   `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
   `book-evidence-constrained-correction`, `book-synthetic-book-end-to-end`,

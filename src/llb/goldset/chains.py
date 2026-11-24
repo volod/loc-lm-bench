@@ -13,6 +13,7 @@ from typing import Final, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from llb.core.contracts.common import ValidationReport
+from llb.goldset.markers import marker_error
 from llb.goldset.schema import Provenance, SourceSpan, Split
 
 CHAINS_FILENAME = "chains.jsonl"
@@ -145,13 +146,18 @@ def _get_corpus_text(
     return cache[doc_id]
 
 
-def _validate_span(item_id: str, span: SourceSpan, text: str, errors: list[str]) -> None:
+def _validate_span(
+    item_id: str, span: SourceSpan, text: str, errors: list[str], corpus_root: Path
+) -> None:
     if span.char_end > len(text):
         errors.append(f"{item_id}: span out of range in {span.doc_id}")
         return
     got = text[span.char_start : span.char_end]
     if got != span.text:
         errors.append(f"{item_id}: span mismatch ({got!r} != {span.text!r})")
+    refusal = marker_error(item_id, span.doc_id, text, span.char_start, span.char_end, corpus_root)
+    if refusal:
+        errors.append(refusal)
 
 
 def _validate_chain_steps(
@@ -172,7 +178,7 @@ def _validate_chain_steps(
             span_keys.add(key)
             text = _get_corpus_text(corpus_root, span.doc_id, cache, errors, chain.chain_id)
             if text is not None:
-                _validate_span(chain.chain_id, span, text, errors)
+                _validate_span(chain.chain_id, span, text, errors, corpus_root)
 
 
 def _validate_final_answer_progression(chain: ChainItem, errors: list[str]) -> None:

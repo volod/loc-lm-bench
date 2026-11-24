@@ -211,6 +211,34 @@ scan showed, is in
 [cross-references](../../impl/current/book-recovery/structure-and-rendering.md#cross-references).
 `render` then runs the vault check below. A failed check is exit code 1.
 
+## Corpus projection
+
+`book-ocr project` writes a retrieval corpus from a run that already has a document structure.
+It is not a stage. One vault content file becomes one document: formulas as LaTeX, tables as
+Markdown, and an unresolved span as a machine marker. Navigation, front matter, and page
+furniture are left out. Each document gets a page-citation sidecar and a metadata sidecar.
+`BOOK_LICENCE` is required and has no default. A copyrighted scan is `local-only`. The command
+prints counts and does not print the recovered text. What the files contain, and what the
+sample scan showed, is [corpus projection](../../impl/current/book-recovery/corpus-projection.md).
+
+```sh
+make book-ocr-project BOOK_RUN=<run-dir> BOOK_CORPUS=<corpus-dir> BOOK_LICENCE=local-only
+make ingest-corpus CORPUS_ROOT=<corpus-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_RUN` | A book-ocr run that already has a document structure | required |
+| `BOOK_CORPUS` | The corpus directory to write | required |
+| `BOOK_LICENCE` | `redistributable` or `local-only` | required |
+| `BOOK_LANGUAGE` | Language recorded on every document | detected from the text |
+| `BOOK_SECTION_CAP` | Packed source characters in one document. The floor is 200 | `12000` |
+| `BOOK_SLUG` | Lowercase ASCII book name used in vault file paths | the PDF file name |
+
+A missing structure, a missing licence, or an output that would replace the run is exit code 2.
+An unchanged ledger projects to the same files. A changed text is a new file whose
+`revision_of` names the previous one.
+
 ## Vault check
 
 `book-ocr validate` checks a rendered vault and writes `metadata/processing_report.md` and

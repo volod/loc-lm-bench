@@ -12,6 +12,7 @@ from pathlib import Path
 
 from llb.core.contracts.common import ValidationReport
 from llb.goldset.chains import load_chains, validate_chains
+from llb.goldset.markers import marker_error
 from llb.goldset.schema import GoldItem, SourceSpan, load_goldset
 
 _LOG = logging.getLogger(__name__)
@@ -36,13 +37,18 @@ def _get_corpus_text(
     return cache[doc_id]
 
 
-def _validate_span(item_id: str, span: SourceSpan, text: str, errors: list[str]) -> None:
+def _validate_span(
+    item_id: str, span: SourceSpan, text: str, errors: list[str], corpus_root: Path | None = None
+) -> None:
     if span.char_end > len(text):
         errors.append(f"{item_id}: span out of range in {span.doc_id}")
         return
     got = text[span.char_start : span.char_end]
     if got != span.text:
         errors.append(f"{item_id}: span mismatch ({got!r} != {span.text!r})")
+    refusal = marker_error(item_id, span.doc_id, text, span.char_start, span.char_end, corpus_root)
+    if refusal:
+        errors.append(refusal)
 
 
 def _validate_item_spans(
@@ -55,7 +61,7 @@ def _validate_item_spans(
         text = _get_corpus_text(corpus_root, span.doc_id, cache, errors, item.id)
         if text is None:
             continue
-        _validate_span(item.id, span, text, errors)
+        _validate_span(item.id, span, text, errors, corpus_root)
 
 
 def validate_items(items: list[GoldItem], corpus_root: Path) -> ValidationReport:
