@@ -288,12 +288,12 @@ cuts, the precedence, and the handbook list are
 
 ## Score
 
-`book-ocr score` compares a finished ledger, or the existing PDF lane's citation sidecar, with a
-reference transcription. It reports character and word error, missing and duplicated words,
-reading order, one count per dangerous-substitution class, formula fidelity, and the structural
-metrics. The substitution counts are not folded into a single score. Figure boxes, table grids,
-and caption links the existing lane cannot express are reported absent. The definitions, the
-reference format, and the hand-computed pins are
+`book-ocr score` compares a finished ledger, the resolved pipeline when the run has one, or the
+existing PDF lane's citation sidecar, with a reference transcription. It reports character and
+word error, missing and duplicated words, reading order, one count per dangerous-substitution
+class, formula fidelity, and the structural metrics. The substitution counts are not folded into
+a single score. Figure boxes, table grids, and caption links a lane cannot express are reported
+absent. The definitions, the reference format, and the hand-computed pins are
 [quality metrics](../../impl/current/book-recovery/quality-metrics.md).
 
 ```sh
@@ -301,10 +301,11 @@ make book-ocr-score BOOK_REFERENCE=<reference-dir> BOOK_RUN=<run-dir>
 make book-ocr-score BOOK_REFERENCE=<reference-dir> BOOK_CITATIONS=<doc>.citations.json
 ```
 
-`BOOK_ENGINE` scores one ledger engine. `BOOK_SCORE_OUT` writes the JSON report and `BOOK_JSON=1`
-prints it. Without `BOOK_JSON`, the command prints a short summary. Exit code 2 is a missing
-input or a reference the loader refused. The command does not recover a scan and does not write a
-reference.
+`BOOK_ENGINE` scores one ledger engine and still includes the resolved lane. `BOOK_SCORE_OUT`
+writes the JSON report and `BOOK_JSON=1` prints it. Without `BOOK_JSON`, the command prints a
+short summary that names missing submissions, non-zero abstentions, and fields a page did not
+emit. Exit code 2 is a missing input or a reference the loader refused. The command does not
+recover a scan and does not write a reference.
 
 ## Recovery-tool survey
 

@@ -1,13 +1,14 @@
 """Where a page's blocks sit: figure overlap, captions, reading order, and the printed page.
 
 A text-only lane cannot express a figure box, a caption link, or a table grid, so those metrics
-are absent there. Reading order on that lane is the order its plain text happens to contain the
-reference readings. The printed page is always scored.
+are absent there. A resolved page that did not emit one of those fields is absent too. Reading
+order on a text-only lane is the order its plain text happens to contain the reference readings.
 """
 
 import re
 from collections.abc import Sequence
 
+from llb.prep.book.metrics.constants import FIELD_CAPTION, FIELD_FIGURE, FIELD_PRINTED
 from llb.prep.book.metrics.geometry import (
     Box,
     intersection_over_union,
@@ -26,7 +27,7 @@ def figures(page: RefPage, submission: PageSubmission) -> MetricValue:
     found = [block for block in page.blocks if block.kind == "figure"]
     if not found:
         return not_applicable()
-    if submission.text_only:
+    if submission.text_only or FIELD_FIGURE in submission.unsupported:
         return absent()
     hypothesis = [
         block for block in submission.blocks if block.kind == "figure" and block.region is not None
@@ -44,7 +45,7 @@ def captions(page: RefPage, submission: PageSubmission) -> MetricValue:
     found = _reference_kind(page, "figure")
     if not found:
         return not_applicable()
-    if submission.text_only:
+    if submission.text_only or FIELD_CAPTION in submission.unsupported:
         return absent()
     figure_match = _match_blocks(found, _hypothesis_kind(submission, "figure"))
     reference_captions = _reference_kind(page, "caption")
@@ -112,7 +113,15 @@ def order(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> Me
 
 
 def printed(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> MetricValue:
-    """Score a structured folio, or look for a known folio in text-only output."""
+    """Score a structured folio, or look for a known folio in text-only output.
+
+    A resolved page scores the printed-page mapping the renderers publish. A matching
+    token in the body, or on a page-number block, does not stand in for that mapping.
+    """
+    if FIELD_PRINTED in submission.unsupported:
+        return absent()
+    if submission.uses_emitted_folio:
+        return _emitted_folio(page, submission.emitted_folio)
     numbers = [block for block in submission.blocks if block.kind == "page-number"]
     if page.printed_page is None:
         if submission.text_only:
@@ -124,6 +133,14 @@ def printed(page: RefPage, submission: PageSubmission, hypothesis_text: str) -> 
     return scored(
         1.0 if re.search(rf"(?<![\w]){re.escape(want)}(?![\w])", hypothesis_text) else 0.0
     )
+
+
+def _emitted_folio(page: RefPage, folio: str | None) -> MetricValue:
+    if page.printed_page is None:
+        return scored(float(folio is None))
+    if folio is None:
+        return scored(0.0)
+    return scored(float(_page_token(folio) == _page_token(page.printed_page)))
 
 
 def pairs(

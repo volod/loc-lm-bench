@@ -5,7 +5,7 @@ split only when that paragraph alone is longer than the cap. Furniture on a
 page stays with the section that owns the page's text.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from llb.core.contracts.data_prep.book_structure import DocumentStructure, StructureNode
@@ -119,6 +119,22 @@ def _unit(blocks: list[RenderBlock], href: Href) -> Unit:
     return Unit(role, tuple(blocks), text, False)
 
 
+def linked_caption_ids(items: Sequence[tuple[str, str, int]]) -> dict[str, str]:
+    """Figure block id to the caption the vault places beside it.
+
+    ``items`` is ``(block_id, role, pdf_page)`` in reading order. A figure and a caption
+    link only when they are neighbors on one page. A nearer caption that is not the
+    neighbor is not the link a reader sees.
+    """
+    links: dict[str, str] = {}
+    for left, right in zip(items, items[1:]):
+        if left[2] != right[2] or {left[1], right[1]} != {"figure", "caption"}:
+            continue
+        figure, caption = (left, right) if left[1] == "figure" else (right, left)
+        links.setdefault(figure[0], caption[0])
+    return links
+
+
 def _pairs(units: list[Unit]) -> list[Unit]:
     bound: list[Unit] = []
     index = 0
@@ -136,9 +152,14 @@ def _pairs(units: list[Unit]) -> list[Unit]:
 def _is_pair(left: Unit, right: Unit) -> bool:
     if not left.blocks or not right.blocks:
         return False
-    if left.blocks[0].pdf_page != right.blocks[0].pdf_page:
-        return False
-    return {left.role, right.role} == {"figure", "caption"}
+    return bool(
+        linked_caption_ids(
+            (
+                (left.blocks[0].block_id, left.role, left.blocks[0].pdf_page),
+                (right.blocks[0].block_id, right.role, right.blocks[0].pdf_page),
+            )
+        )
+    )
 
 
 def _merge(left: Unit, right: Unit) -> Unit:

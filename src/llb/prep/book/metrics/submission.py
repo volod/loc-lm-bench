@@ -41,13 +41,23 @@ class HypBlock:
 
 @dataclass(frozen=True)
 class PageSubmission:
-    """One lane's reading of one PDF page."""
+    """One lane's reading of one PDF page.
+
+    ``unsupported`` names structural metrics this page did not emit. ``uses_emitted_folio``
+    is set when the submission carries the printed-page mapping the renderers publish;
+    ``emitted_folio`` is that string, or None for an unnumbered page. ``abstentions`` counts
+    unresolved spans per uncertainty class.
+    """
 
     lane: str
     pdf_page: int
     blocks: tuple[HypBlock, ...]
     text_only: bool
     present: bool = True
+    unsupported: frozenset[str] = frozenset()
+    uses_emitted_folio: bool = False
+    emitted_folio: str | None = None
+    abstentions: tuple[tuple[str, int], ...] = ()
 
 
 def load_run(run_dir: Path, engine: str | None) -> list[PageSubmission]:

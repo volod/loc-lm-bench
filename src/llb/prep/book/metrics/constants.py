@@ -37,6 +37,22 @@ STATUS_ABSENT: Final = "absent"
 STATUS_NOT_APPLICABLE: Final = "not_applicable"
 
 LANE_BOOK: Final = "book-ocr"
+LANE_RESOLVED: Final = "book-ocr/resolved"
 LANE_EXISTING: Final = "existing-pdf"
 ORIGINAL_VARIANT: Final = "original"
 REFERENCE_PAGES_DIRNAME: Final = "pages"
+
+# Metric names a lane can fail to emit. A resolved page that has no block of the
+# kind leaves the metric absent; a raw engine lane still scores that miss as zero.
+FIELD_FORMULA: Final = "formula_fidelity"
+FIELD_TABLE: Final = "table_similarity"
+FIELD_FIGURE: Final = "figure_overlap"
+FIELD_CAPTION: Final = "caption_association"
+FIELD_PRINTED: Final = "printed_page_accuracy"
+STRUCTURE_FIELDS: tuple[str, ...] = (
+    FIELD_FORMULA,
+    FIELD_TABLE,
+    FIELD_FIGURE,
+    FIELD_CAPTION,
+    FIELD_PRINTED,
+)

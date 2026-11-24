@@ -59,30 +59,10 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-#### book-resolved-pipeline-scoring
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: [quality metrics](current/book-recovery/quality-metrics.md) and
-  [resolved readings](current/book-recovery/uncertainty-and-review.md).
-- User-visible outcome: score the actual routed, resolved pipeline beside the raw engine lanes
-  and the existing PDF conversion on exactly the frozen reference pages.
-- Scope boundary: read adopted text, table structure, formula output, caption links, printed-page
-  mapping and unresolved spans from the artifacts each renderer consumes. Score the fields each
-  pipeline can emit and mark unsupported fields absent. Keep raw-engine scores for diagnosis.
-  Report missing submissions, unscorable fields and abstentions by class.
-- Data and artifact paths: `src/llb/prep/book/metrics/` and the pilot score report.
-- Execution path: exercise the score CLI with a synthetic multi-engine run inside `make ci`.
-- Acceptance gates: a variant switch and one overlay edit each change only the expected lane and
-  page; a missing page remains in the denominator; a wrong caption or folio in the output loses
-  credit even when a nearest-caption or body-text guess would match. Verify class totals by hand.
-- Documentation target: `docs/impl/current/book-recovery/quality-metrics.md`.
-
 #### book-input-and-pilot-audit
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-resolved-pipeline-scoring`
 - Dependencies: the [frozen pilot and class rules](current/book-recovery/tool-selection.md#page-classes).
 - User-visible outcome: a reproducible decision on whether the input, geometry and scoring chain
   can distinguish an improved reading from a damaged one before selecting engines.
@@ -408,7 +388,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-resolved-pipeline-scoring`, `book-input-and-pilot-audit`,
+- Requires: `book-input-and-pilot-audit`,
   `book-missing-region-accounting`, `book-technical-content-audit`,
   `book-publication-and-resume-audit`,
   `book-pilot-pipeline-comparison`,

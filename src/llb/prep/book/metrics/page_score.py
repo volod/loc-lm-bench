@@ -5,7 +5,9 @@ beside it. A text-only lane scores formula terms as plain text and reports figur
 grids, and caption links absent. Where the blocks sit is scored in ``layout``.
 """
 
+from llb.core.contracts.data_prep.book_blocks import UNCERTAINTY_CLASSES
 from llb.prep.book.metrics.align import text_score
+from llb.prep.book.metrics.constants import FIELD_FORMULA, FIELD_TABLE
 from llb.prep.book.metrics.confusion import confusion_counts, script_events, unicode_script_tokens
 from llb.prep.book.metrics.latex import (
     FormulaRead,
@@ -65,6 +67,8 @@ def score_page(page: RefPage, submission: PageSubmission) -> PageScore:
         figure_overlap=figures(page, submission),
         caption_association=captions(page, submission),
         printed_page_accuracy=printed(page, submission, hypothesis_text),
+        submitted=submission.present,
+        abstentions=_abstentions(submission),
     )
 
 
@@ -114,6 +118,8 @@ def _formulas(
     parse_valid = _emitted_formulas_parse(submission)
     if not formulas:
         return not_applicable(), parse_valid
+    if FIELD_FORMULA in submission.unsupported:
+        return absent(), None
     if submission.text_only:
         plain = [
             formula_fidelity(block.latex or "", hypothesis_text, hypothesis_is_latex=False)
@@ -156,7 +162,7 @@ def _tables(page: RefPage, submission: PageSubmission) -> MetricValue:
     tables = [block for block in page.blocks if block.kind == "table" and block.table is not None]
     if not tables:
         return not_applicable()
-    if submission.text_only:
+    if submission.text_only or FIELD_TABLE in submission.unsupported:
         return absent()
     distance = 0
     total = 0
@@ -170,6 +176,14 @@ def _tables(page: RefPage, submission: PageSubmission) -> MetricValue:
     if total == 0:
         return not_applicable()
     return scored(1.0 - distance / total)
+
+
+def _abstentions(submission: PageSubmission) -> dict[str, int]:
+    counts: dict[str, int] = dict.fromkeys(UNCERTAINTY_CLASSES, 0)
+    for name, count in submission.abstentions:
+        if name in counts:
+            counts[name] += count
+    return counts
 
 
 def _ref_rows(block: RefBlock) -> tuple[tuple[Cell, ...], ...]:
