@@ -93,31 +93,49 @@ def page_anchor_number(name: str) -> int | None:
 
 
 def extract_links(doc: VaultDoc, book_dir: Path) -> list[VaultLink]:
-    """Every link in one note. Fenced samples are skipped."""
+    """Every link in one note. Fenced samples are skipped.
+
+    Display math is not a Markdown link. A formula can contain ``](``, which is
+    LaTeX, and it can also contain an image or a wikilink the renderer inserted.
+    """
     found: list[VaultLink] = []
-    for line_no, line in enumerate(_plain_lines(doc.body), 1):
-        found.extend(_line_links(doc, book_dir, line_no, line))
+    for line_no, (line, in_math) in enumerate(_classified_lines(doc.body), 1):
+        found.extend(_line_links(doc, book_dir, line_no, line, in_math))
     return found
 
 
 def _plain_lines(body: str) -> list[str]:
-    lines: list[str] = []
+    """Note lines outside fenced samples. Display-math delimiters are not lines."""
+    return [line for line, _in_math in _classified_lines(body)]
+
+
+def _classified_lines(body: str) -> list[tuple[str, bool]]:
+    """Those lines, and whether each one sits between ``$$`` delimiters."""
+    lines: list[tuple[str, bool]] = []
     fenced = False
+    math = False
     for line in body.splitlines():
         if line.lstrip().startswith(_FENCE):
             fenced = not fenced
             continue
-        if not fenced:
-            lines.append(line)
+        if fenced:
+            continue
+        if line.strip() == "$$":
+            math = not math
+            continue
+        lines.append((line, math))
     return lines
 
 
-def _line_links(doc: VaultDoc, book_dir: Path, line_no: int, line: str) -> list[VaultLink]:
+def _line_links(
+    doc: VaultDoc, book_dir: Path, line_no: int, line: str, in_math: bool
+) -> list[VaultLink]:
     found: list[VaultLink] = []
     for match in _IMAGE.finditer(line):
         _keep(found, _relative(doc, line_no, "image", "", match.group(1)))
-    for match in _MARKDOWN.finditer(line):
-        _keep(found, _relative(doc, line_no, "markdown", match.group(1), match.group(2)))
+    if not in_math:
+        for match in _MARKDOWN.finditer(line):
+            _keep(found, _relative(doc, line_no, "markdown", match.group(1), match.group(2)))
     for match in _EMBED.finditer(line):
         link = _wiki(doc, book_dir, line_no, "embed", "", match.group(1), match.group(2))
         _keep(found, link)

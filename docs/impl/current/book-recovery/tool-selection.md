@@ -253,11 +253,15 @@ refuses an over-budget engine by name (`EngineUnavailable`) before a page is rea
 engine no matter how many stages name it. `vram_mb` is that budget. It is not part of the
 recognition cache key. `ocr_language` is, when the stage sets it.
 
-The roster starts one engine at a time, and only an entry whose survey peak fits the host. On an
-8 GB card the four vLLM page readers are not started: Marker balanced (10.3 GB), dots.ocr
-(11.3 GB), DeepSeek-OCR-2 (11.2 GB), and olmOCR-2 (11.7 GB). They are recorded as winning no
-class. They are not scored as empty failures. The peaks are the survey's, converted at 1024 MiB
-per published gigabyte.
+`llb book-ocr pilot-run` starts one engine at a time, and only an entry whose survey peak fits
+the host. On an 8 GB card the four vLLM page readers are not started: Marker balanced (10.3 GB),
+dots.ocr (11.3 GB), DeepSeek-OCR-2 (11.2 GB), and olmOCR-2 (11.7 GB). They are recorded as
+winning no class. They are not scored as empty failures. The peaks are the survey's, converted
+at 1024 MiB per published gigabyte. The command reuses a classified run and writes one book-ocr
+run per fitting engine, plus the existing lane. It does not score. A lane that reads some pages
+and fails others stays measured, and the failed pages are named; a lane that finishes no
+recognition call is not scored. The guide is
+[pilot reading](../../../guides/data-prep/book-ocr.md#pilot-reading).
 
 The projected wall time multiplies the book's per-class page counts by the measured seconds of
 one engine call and by the number of recognition stages that will call that engine. The report
@@ -270,16 +274,87 @@ condition that would reopen the question. That negative is recorded in future re
 the accepted handbook pages have been scored. The harness tests do not write that section, and
 they do not commit a config under `samples/book_ocr/`.
 
-The handbook per-class winner is not on this page. The verified reference is still
-`book-pilot-reference-transcription`. Until every pilot page is accepted, the command refuses.
+The handbook per-class winner is not on this page. The fitting engines have been read on the
+pilot; that reading is below. The verified reference is still
+`book-pilot-reference-transcription`. Until every pilot page is accepted, compare refuses, no
+config is written under `samples/book_ocr/`, and future research is left untouched.
 
 ```sh
 make book-ocr-compare BOOK_MANIFEST=<manifest.yaml> \
   BOOK_COMPARE_OUT=<report.json> BOOK_COMPARE_CONFIG=<book-ocr.yaml>
 ```
 
-The package is `src/llb/prep/book/compare/`. The command is `src/llb/cli/book/compare.py`. Tests
-are `tests/llb/prep/book/test_pilot_comparison.py` and `test_pilot_comparison_config.py`.
+The package is `src/llb/prep/book/compare/`. The commands are `src/llb/cli/book/compare.py` and
+`src/llb/cli/book/pilot_run.py`. Tests are `tests/llb/prep/book/test_pilot_comparison.py`,
+`test_pilot_comparison_config.py`, and `test_pilot_campaign.py`.
+
+### Handbook pilot reading
+
+**What ran.** On 2026-11-25, on the GeForce RTX 5050 laptop (8,151 MB), `book-ocr pilot-run`
+read the frozen 25-page pilot (seed 0, all ten classes) of the 1,067-page *Space Mission
+Engineering* scan (SHA-256
+`89101813d4c695e9f992d540e751c4e2f4b80c6550f24d5d23e1a795383cb7c8`, 163,709,872 bytes).
+Language `eng`. Render, signals, and classes were reused from the classification whose primary
+counts are in [page classes](#page-classes). The existing lane is Docling plus Tesseract in the
+isolated Docling environment, one convert of the 25-page subset. Each fitting page reader then
+ran alone, calling the engine once per recognition stage it serves. The wall clock for the
+whole roster was 114.5 minutes. No second GPU job overlapped it.
+
+**The reading.** This is a selection-set rate, not a scored winner. Compare did not run: the
+pilot has no accepts file. A higher character count is not a gain.
+
+| Lane | Result | Seconds per call | Pages read |
+| --- | --- | --- | --- |
+| Existing Docling + Tesseract | measured | 7.099 | 25 of 25 |
+| MinerU `standard` | measured | 12.226 | 25 of 25 |
+| MinerU2.5-Pro via Docling | measured | 29.614 | 25 of 25 |
+| PaddleOCR-VL-1.6 | measured | 20.281 | 25 of 25 |
+| RapidOCR original | measured | 4.660 | 25 of 25 |
+| RapidOCR illumination | measured | 4.602 | 25 of 25 |
+| RapidOCR OpenCV dewarp | measured | 4.738 | 2 of 25 |
+| RapidOCR page-dewarp | measured | 5.265 | 1 of 25 |
+| RapidOCR deskew | unavailable | | 0 of 25 |
+| RapidOCR UVDoc | unavailable | | 0 of 25 |
+
+The existing-lane figure is the subset convert's wall time divided by 25. Every other figure is
+the mean duration of one recognition call. The converters make four calls per page, RapidOCR
+one. The slowest single call was 161 s (MinerU), 192 s (MinerU2.5-Pro), 171 s (PaddleOCR-VL),
+and 7.5 s (RapidOCR); those first calls include the weight download, and they stay inside the
+mean. A partial lane's seconds are the calls that finished. Deskew and UVDoc finished none.
+Resolved text, which is what a vault shows, was 70,653 characters for the existing lane,
+80,933 for RapidOCR, 420,927 for MinerU, 463,396 for MinerU2.5-Pro, and 474,307 for
+PaddleOCR-VL. MinerU2.5-Pro's reading of PDF page 638 (grey background) is empty. The other
+measured page readers have text on every pilot page.
+
+Marker balanced (10,547 MB), dots.ocr (11,571 MB), DeepSeek-OCR-2 (11,469 MB), and olmOCR-2
+(11,981 MB) were not started. They win no class and were not scored as empty failures.
+
+Deskew was not generated for any pilot page. OpenCV dewarp was kept only on PDF pages 154 and
+351, the severe-curvature pair; the other 23 pages were not generated, so that lane cannot win
+a class whose pilot pages were not unbent. Page-dewarp was kept only on page 154; page 351's
+point map does not cover the page. UVDoc covered no pilot page, including page 154, which it
+refused for lack of a point map. Illumination was kept on all 25.
+
+At these rates, four recognition calls on all 1,067 pages would be about 14.5 hours for MinerU
+`standard`, 24.0 hours for PaddleOCR-VL, and 35.1 hours for MinerU2.5-Pro. RapidOCR's one call
+would be about 1.4 hours, and the existing lane's one convert about 2.1 hours. Those products
+are the pilot rate times the book. They are not a measurement of the other 1,042 pages, and
+they do not choose an engine.
+
+**Recovered example.** Each page reader that finished every page was structured and rendered:
+MinerU `standard`, MinerU2.5-Pro, PaddleOCR-VL, and RapidOCR. Each vault has 25 completed
+pages and 1,042 skipped pages, which is the rest of the book, and `book-ocr validate` reported
+0 findings. The three layout vaults numbered no printed page; all 25 used a fallback mapping,
+which is what a scattered pilot does when neighbouring pages are absent. The RapidOCR vault
+numbered 8 pages, left 5 gaps, kept 3 structure conflicts, and mapped the other 15 pages by
+fallback. The same two warnings appear on every vault: the review queue was not written, and
+open markers were checked against the ledger.
+
+**What would overturn it.** An accepts file on which some lane's page-bootstrap interval sits
+above zero without a higher dangerous-substitution rate. A warm-cache rerun whose mean call is
+far below the figures above, since those means include the weight download. A host with more
+than 10,547 MB, so Marker balanced can be started. A dewarp method that is kept on a pilot page
+this run refused. Text on MinerU2.5-Pro's reading of PDF page 638.
 
 ## Page classes
 

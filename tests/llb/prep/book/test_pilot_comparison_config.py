@@ -11,7 +11,6 @@ from llb.cli import app
 from llb.core.contracts.data_prep.book import BookStageSpec
 from llb.prep.book.compare.assemble import compare_submissions
 from llb.prep.book.compare.baseline import (
-    docling_available,
     extract_baseline,
     recorded_language,
     write_baseline,
@@ -217,9 +216,11 @@ def test_language_is_part_of_the_cache_key_and_the_docling_argv() -> None:
     assert any("deskew" in error for error in errors)
 
 
-def test_extract_baseline_names_docling_when_it_is_not_installed(tmp_path: Path) -> None:
-    if docling_available():
-        pytest.skip("docling is installed; the refusal is the missing-dependency path")
+def test_extract_baseline_names_docling_when_it_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("llb.prep.book.compare.baseline.docling_available", lambda: False)
+    monkeypatch.setattr("llb.prep.book.compare.baseline.installed_env", lambda *_args: None)
     with pytest.raises(EngineUnavailable, match="docling"):
         extract_baseline(tmp_path / "missing.pdf", [1], "eng", tmp_path / "out")
 

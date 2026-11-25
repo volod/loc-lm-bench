@@ -1,8 +1,7 @@
 """Pilot comparison of book-recovery pipelines.
 
 Importing this package does not import a recognition library. Scoring reads saved
-ledgers. The roster runner is the only piece that starts an engine, and it starts
-one at a time.
+ledgers. ``llb book-ocr pilot-run`` starts an engine, and it starts one at a time.
 """
 
 __all__ = ["LaneInput", "compare_submissions"]

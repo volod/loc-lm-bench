@@ -56,7 +56,8 @@ page class before it serves that class.
 
 Status: open. The comparison harness is in the tree (`llb book-ocr compare`,
 `src/llb/prep/book/compare/`). It scores saved ledgers. It does not load a model and
-does not invent an accept.
+does not invent an accept. `llb book-ocr pilot-run` is the roster: the existing lane,
+then one fitting engine at a time, reusing a classified run.
 
 The margin is the existing lane's character error minus the candidate's. The interval
 is the lowest and highest page margin, which is the page-bootstrap range. A gain
@@ -67,33 +68,34 @@ weaker class stays on the original image. An over-budget engine is not scored an
 wins no class. The dry run refuses it by name. The wall-time figure is labelled
 `selection-set` and counts every recognition stage that will call the engine.
 
-The handbook reading is not done. The pilot reference is still the human gate
-`book-pilot-reference-transcription`. A page left unaccepted keeps the command from
-writing a winner. No config was committed under `samples/book_ocr/`. Future research
-was not edited, because the accepted pages have not been scored.
+The fitting engines have been read on the 25-page pilot. The numbers are in
+[tool selection](../current/book-recovery/tool-selection.md#handbook-pilot-reading).
+A lane that finishes no recognition call is `unavailable`. A lane that reads some
+pages and misses others stays measured, and the missed pages are named, so an unread
+page cannot win once the pages are scored. Display math that contains `](` is not a
+vault link; an image inside that math still is.
+
+The pilot reference is still the human gate `book-pilot-reference-transcription`.
+A page left unaccepted keeps compare from writing a winner. No config was committed
+under `samples/book_ocr/`. Future research was not edited, because the accepted pages
+have not been scored. The other 1,042 pages of the scan were not read.
 
 ## Acceptance evidence
 
-Open. The handbook comparison has not started: the target scan is on the host and has
-no accepts file.
+Open on the winner. The fitting engines were read on 2026-11-25 on the RTX 5050
+(8,151 MB); the numbers and the four rendered pilot vaults are in
+[tool selection](../current/book-recovery/tool-selection.md#handbook-pilot-reading).
+Compare was not run. The scan has no accepts file. No winner config was written.
 
-Commands on this tree:
+Commands on this tree, after the pilot reading:
 
-- The pilot tests plus `test_engine_adapters.py`, `test_book_run.py`,
-  `test_quality_score.py`, and `test_page_class_stage.py`: 47 passed.
-- `make lint-md` on the pages this task edited: 0 broken links, 0 run-path
-  citations, 0 record-name findings.
+- `make lint-md`: 0 broken links, 0 run-path citations, 0 record-name findings.
 - `make ci`: ruff, mypy, the complexity gate, the spec/plan gate, and the
-  contract checks passed. Pytest reported 5229 passed, 2 skipped, 50
-  deselected, and 1 failed:
-  `test_a_silent_fallback_an_empty_output_and_a_hang_all_fail`. The failure is
-  the sandbox refusing SIGKILL on the survey hang fixture. That test is not
-  part of this change. Re-run outside the sandbox, it passed.
+  contract checks passed. Pytest reported 5237 passed, 2 skipped, 50 deselected.
 
 ## Handoff
 
-Next action: a reviewer accepts every pilot page. Then run the roster one engine at a
-time and `make book-ocr-compare` against that reference. On an 8 GB card the four
-vLLM page readers (Marker balanced, dots.ocr, DeepSeek-OCR-2, olmOCR-2) are over the
-published survey peaks and are recorded as winning no class. They are not scored as
-empty failures. The plan task stays until that accepted reading exists.
+Next action: a reviewer accepts every pilot page, then `make book-ocr-compare` against
+that reference. The roster has been read. On this 8 GB card the four vLLM page readers
+were over the survey peaks and were not started. The plan task stays until that
+accepted reading exists.

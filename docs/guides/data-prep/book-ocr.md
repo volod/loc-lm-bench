@@ -8,7 +8,7 @@ they call for), `classes` (the page classes a pilot and an engine route on), the
 stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
 `resolve` stage that chooses one text per block, and two deterministic stand-in stages.
 `book-ocr structure` then infers the printed pages and the hierarchy from those ledgers.
-Rendering the vault is still ahead. For a
+`book-ocr render` writes the reading vault from that structure. For a
 born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
@@ -288,6 +288,40 @@ page. Exit code 2 means the run could not be read, the source changed, class rec
 or misplaced, or the replay differed from the frozen selection. These checks run before the
 selection files are written. The cuts, the precedence, and the handbook list are
 [page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
+
+## Pilot reading
+
+`book-ocr pilot-run` reads a frozen pilot with the existing Docling-plus-Tesseract lane, then with
+each roster engine that fits this host, one engine at a time. It reuses a classified run's
+`render`, `signals`, and `classes`. It does not score pages and it does not choose a winner.
+Scoring is `book-ocr compare`, which still needs an accepted reference.
+
+```sh
+make book-ocr-pilot-run BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_REUSE_FROM=<classified-run> BOOK_LANGUAGE=eng
+make book-ocr-pilot-run BOOK_DRY_RUN=1 BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_REUSE_FROM=<classified-run>
+make book-ocr-pilot-run BOOK_RESUME=<campaign-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_PDF` | The scan the frozen pilot was drawn from | required for a new run |
+| `BOOK_PILOT` | Frozen pilot selection | required for a new run |
+| `BOOK_REUSE_FROM` | Classified run whose render, signals, and classes are reused | unset |
+| `BOOK_LANGUAGE` | OCR language recorded on the existing lane and on each recognition stage | `eng` |
+| `BOOK_OUT_DIR` | Parent of the campaign directory and of each lane's run | `$DATA_DIR/book-ocr` |
+| `BOOK_DRY_RUN` | Set to `1` to print the plan and write nothing | unset |
+| `BOOK_RESUME` | Campaign directory to continue | unset |
+| `BOOK_REFERENCE`, `BOOK_PREDRAFT`, `BOOK_ACCEPTS`, `BOOK_MANIFEST` | When all four are set, also write the compare manifest | unset |
+
+The campaign directory holds `campaign.json`. Each fitting engine is a normal book-ocr run under
+the same output root. An engine whose survey peak is above the host is listed and not started.
+A lane that finishes no recognition call is `unavailable`. A lane that reads some pages and fails
+others stays measured, and the failed PDF pages are named in the campaign index. Exit code 2 means
+the PDF is missing, the pilot was drawn from another file, or a pending lane's dry run refused.
+The decision rule is
+[pilot comparison](../../impl/current/book-recovery/tool-selection.md#pilot-comparison).
 
 ## Score
 

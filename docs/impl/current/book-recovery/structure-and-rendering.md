@@ -137,9 +137,11 @@ has one. Review crops keep the queue's 16-pixel padding. A line engine that labe
 `body` yields the anchors and no figure crops.
 
 A formula is display math. The inventory's equation number becomes a `\tag` when the text has
-none. A table stays Markdown when every line contains a pipe, HTML when the text is already a
-table, and one column otherwise. An unresolved span keeps its review marker. A running header
-or a printed page number that structure identified stays in the note, labelled.
+none. A `](` inside that math is LaTeX, not a relative link. An image or a wikilink in the
+same math is still a link. A table stays Markdown when every line contains a pipe, HTML when
+the text is already a table, and one column otherwise. An unresolved span keeps its review
+marker. A running header or a printed page number that structure identified stays in the note,
+labelled.
 
 Consecutive body lines in one column join into a paragraph. A footnote, a column break, an
 indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index line each start a

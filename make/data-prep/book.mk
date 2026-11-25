@@ -1,7 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
 .PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-compare \
-	book-ocr-pilot-select \
+	book-ocr-pilot-select book-ocr-pilot-run \
 	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-project book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
@@ -45,6 +45,22 @@ book-ocr-compare: ## Compare accepted pilot lanes in BOOK_MANIFEST (BOOK_COMPARE
 	@test -n "$(BOOK_COMPARE_CONFIG)" || { echo "ERROR: set BOOK_COMPARE_CONFIG=<book-ocr.yaml>"; exit 2; }
 	@$(PY) -m llb.main book-ocr compare "$(BOOK_MANIFEST)" \
 		--out "$(BOOK_COMPARE_OUT)" --config-out "$(BOOK_COMPARE_CONFIG)"
+
+book-ocr-pilot-run: ## Run the pilot roster one engine at a time (BOOK_PDF=, BOOK_PILOT=, BOOK_REUSE_FROM=, BOOK_LANGUAGE=eng, BOOK_DRY_RUN=1, BOOK_RESUME=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(); \
+	if [ -n "$(BOOK_PDF)" ]; then args+=("$(BOOK_PDF)"); fi; \
+	if [ -n "$(BOOK_PILOT)" ]; then args+=(--pilot "$(BOOK_PILOT)"); fi; \
+	if [ -n "$(BOOK_REUSE_FROM)" ]; then args+=(--reuse-from "$(BOOK_REUSE_FROM)"); fi; \
+	if [ -n "$(BOOK_LANGUAGE)" ]; then args+=(--language "$(BOOK_LANGUAGE)"); fi; \
+	if [ -n "$(BOOK_OUT_DIR)" ]; then args+=(--out-root "$(BOOK_OUT_DIR)"); fi; \
+	if [ -n "$(BOOK_RESUME)" ]; then args+=(--resume "$(BOOK_RESUME)"); fi; \
+	if [ -n "$(BOOK_DRY_RUN)" ]; then args+=(--dry-run); fi; \
+	if [ -n "$(BOOK_REFERENCE)" ]; then args+=(--reference "$(BOOK_REFERENCE)"); fi; \
+	if [ -n "$(BOOK_PREDRAFT)" ]; then args+=(--predraft "$(BOOK_PREDRAFT)"); fi; \
+	if [ -n "$(BOOK_ACCEPTS)" ]; then args+=(--accepts "$(BOOK_ACCEPTS)"); fi; \
+	if [ -n "$(BOOK_MANIFEST)" ]; then args+=(--manifest-out "$(BOOK_MANIFEST)"); fi; \
+	$(PY) -m llb.main book-ocr pilot-run "$${args[@]}"
 
 book-ocr-pilot-select: ## Select a seeded pilot from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_FROZEN=, BOOK_PILOT_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }

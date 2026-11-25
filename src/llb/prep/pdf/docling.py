@@ -34,17 +34,25 @@ def ocr_language_pairs(
 
 
 def _extract_with_docling(
-    pdf_path: Path, *, ocr_languages: tuple[str, ...] | None = None
+    pdf_path: Path,
+    *,
+    ocr_languages: tuple[str, ...] | None = None,
+    force_ocr: bool | None = None,
 ) -> PdfExtraction:
-    """Extract with Docling when the optional CUDA-capable layout/OCR dependency is installed."""
+    """Extract with Docling when the optional CUDA-capable layout/OCR dependency is installed.
+
+    ``force_ocr`` skips the PyMuPDF inspection when the caller already knows the
+    PDF has no text layer. ``None`` inspects the file.
+    """
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions
         from docling.document_converter import DocumentConverter, PdfFormatOption
     except ImportError as exc:
         raise RuntimeError("missing docling dependency") from exc
-    diagnostics = inspect_pdf(pdf_path)
-    force_ocr = _is_image_only_pdf(diagnostics)
+    if force_ocr is None:
+        diagnostics = inspect_pdf(pdf_path)
+        force_ocr = _is_image_only_pdf(diagnostics)
     last_error: Exception | None = None
     for ocr_options in _docling_ocr_option_candidates(force_ocr, ocr_languages):
         try:
