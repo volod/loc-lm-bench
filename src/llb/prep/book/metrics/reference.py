@@ -12,8 +12,11 @@ from pathlib import Path
 from pydantic import Field, ValidationError, model_validator
 
 from llb.core.contracts.data_prep.book_blocks import BlockKind
+from llb.core.contracts.data_prep.book_pilot_review import PilotReferenceAcceptance
 from llb.core.contracts.data_prep.corpus import DataPrepRow
+from llb.prep.book.cache import digest_json
 from llb.prep.book.metrics.constants import REFERENCE_PAGES_DIRNAME
+from llb.prep.book.source import sha256_file
 
 
 def _as_float(value: object) -> object:
@@ -177,3 +180,31 @@ def load_reference(directory: Path) -> list[RefPage]:
             raise ValueError(f"{path}: page_class is empty")
         pages.append(page)
     return sorted(pages, key=lambda page: page.pdf_page)
+
+
+def require_formulas(pages: list[RefPage]) -> None:
+    """Refuse formulas the scoring normalizer cannot parse."""
+    from llb.prep.book.metrics.latex import latex_parses
+
+    errors = [
+        f"pdf page {page.pdf_page} block {block.block_id} latex does not parse"
+        for page in pages
+        for block in page.blocks
+        if block.kind == "formula" and not latex_parses(block.latex or "")
+    ]
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+def digest_pages(directory: Path) -> str:
+    """Hash the ordered filenames and page file digests, including exact file bytes."""
+    return digest_json({path.name: sha256_file(path) for path in sorted(directory.glob("*.json"))})
+
+
+def verify_reference_digest(directory: Path, record: Path, source_sha256: str | None) -> None:
+    """Bind a scoring run to the exact accepted reference and its source."""
+    payload = PilotReferenceAcceptance.model_validate_json(record.read_bytes())
+    if digest_pages(directory / REFERENCE_PAGES_DIRNAME) != payload.reference_sha256:
+        raise ValueError(f"{directory} differs from the reference checksum in {record}")
+    if source_sha256 is not None and source_sha256 != payload.source_sha256:
+        raise ValueError(f"scoring run source checksum differs from {record}")

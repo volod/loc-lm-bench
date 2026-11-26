@@ -323,6 +323,55 @@ the PDF is missing, the pilot was drawn from another file, or a pending lane's d
 The decision rule is
 [pilot comparison](../../impl/current/book-recovery/tool-selection.md#pilot-comparison).
 
+## Review the frozen pilot
+
+Use two different shortlisted recognition runs on the frozen pilot, such as two complete lanes
+from the [pilot campaign](#pilot-reading). Pass the run with layout and structured blocks as
+`BOOK_PRIMARY` and a second reading as `BOOK_ALTERNATE`. Each run needs a completed render and
+block ledger for every pilot page. Set `BOOK_ALTERNATE_OVERRIDE` to a subset read by the second
+engine on a better variant, such as pages that needed a half-turn.
+
+```sh
+make book-ocr-pilot-prepare BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_PRIMARY=<layout-run> BOOK_ALTERNATE=<second-run>
+make book-ocr-pilot-review BOOK_REVIEW=<layout-run>/pilot/reference-review
+```
+
+Open the printed loopback URL. The worksheet shows the source pixels next to the editable
+transcription, with disagreements and unpaired readings indicated on the block list. Use the page
+selector, Previous, Next, and Next pending to move through the frozen set. Click a region or select
+a block to compare it. Use Zoom, Rotate, and Draw region to inspect or correct geometry. Region
+coordinates stay in the original scan frame when you rotate the view.
+
+Review the entire page, including material both readings may have missed. Correct the printed
+folio, block types, text and reading order, formulas and equation numbers, table cell spans, and
+figure boxes and links to caption blocks. For a table, enter a JSON list of rows. A plain string is
+a one-cell entry and `{"text": "header", "colspan": 2}` spans two columns. Add or remove blocks
+where the scan requires it. Enter your name, confirm the full-page check, and choose **Accept page**.
+
+**Save draft** saves a revision. Changing pages also saves pending edits, including unfinished
+table JSON. Reopen the same bundle to resume, or load the pre-draft or an earlier saved revision
+as an editable draft. An edit to an accepted page needs a new acceptance. Copy the entire review
+bundle when moving computers. Its `scans/`, `predraft/`, and `history/` directories preserve
+the scans, starting draft, and progress alongside `review.json`.
+
+```sh
+make book-ocr-pilot-review-status BOOK_REVIEW=<review-bundle>
+make book-ocr-pilot-finalize BOOK_REVIEW=<review-bundle>
+make book-ocr-score BOOK_RUN=<recognition-run> BOOK_REFERENCE=<finalized-reference> \
+  BOOK_ACCEPTANCE=<finalized-reference>/acceptance.json
+```
+
+Finalization checks every page has a current acceptance and validates scan checksums, the
+pre-draft digest, reference structure, and LaTeX. The printed output path is an immutable
+snapshot with `pages/` for scoring and an `acceptance.json` record with page decisions and
+digests. Keep the review bundle and reference under `DATA_DIR`. Place only the acceptance
+record beside the frozen `pilot_pages.json` for the repository handoff. Pass that copy as
+`BOOK_ACCEPTANCE` when scoring to check that the file bytes and source match the recorded
+reference. When generating the comparison manifest with `make book-ocr-pilot-run`, set
+`BOOK_ACCEPTS` to an `accepts.json` with the `source_sha256` and one row per page containing
+`pdf_page`, `reviewer`, and `accepted: true`.
+
 ## Score
 
 `book-ocr score` compares a finished ledger, the resolved pipeline when the run has one, or the

@@ -445,6 +445,14 @@ are in the cache key.
 The task record is
 [0009](../../records/0009-scanned-book-recovery-book-pilot-page-selection.md).
 
+## Pilot reference review
+
+The [pilot worksheet](../../../guides/data-prep/book-ocr.md#review-the-frozen-pilot) uses the
+frozen selection and two saved recognition runs. It preserves a blind pre-draft, compares each
+page against its original scan, and exports a reference only after the reviewer records all
+page acceptances. The [reference format](quality-metrics.md#reference-transcription) is the
+same format consumed by the comparison scorer.
+
 ## Not installed, and why
 
 Recorded with the blocker and what would reopen each, so the shortlist's absences are auditable

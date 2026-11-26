@@ -340,6 +340,72 @@
       "compatibility": [],
       "current_version": "1.0.0",
       "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Checksums and reviewer acceptances for a finalized pilot reference.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-pilot-acceptance",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-pilot-acceptance/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "Frozen scan, pre-draft digest, and blind reading notes for a book pilot.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-pilot-review",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-pilot-review/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
+      "description": "One saved pilot page edit and its human acceptance decision.",
+      "extension_point": null,
+      "legacy_read_version": null,
+      "schema_id": "llb.book-ocr-pilot-revision",
+      "schema_paths": {
+        "1.0.0": "llb.book-ocr-pilot-revision/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Version 1 is the only form; a resume refuses any other.",
       "description": "The seeded pilot pages, the class each one represents, and the signals that placed it.",
       "extension_point": null,
       "legacy_read_version": null,

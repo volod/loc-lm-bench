@@ -42,6 +42,14 @@ The synthetic page the pins use is
 `tests/llb/prep/book/fixtures/metrics/reference/pages/p0001.json`: class `normal`, printed page
 `57`, one body line, one formula, one 2-by-2 table, one figure, its caption, and the page number.
 
+The [pilot worksheet](../../../guides/data-prep/book-ocr.md#review-the-frozen-pilot) prepares
+this format from two recognition ledgers over the same frozen PDF. It uses the layout reading
+for initial boundaries and reading order, pairs alternate text by overlap, and flags different
+or unpaired blocks. The human reviewer can correct the draft in the original scan frame,
+including adding blocks absent from both readings. Per-page revisions preserve the unedited
+pre-draft and the reviewer decisions. Finalization publishes a scoreable snapshot and a
+metadata-only acceptance record. `BOOK_ACCEPTANCE` checks the recorded digest when scoring.
+
 ## What a lane submits
 
 A book-ocr lane is named `book-ocr/<engine>`. With no `--engine`, each engine in the ledger is

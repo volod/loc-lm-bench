@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "AlternateReading": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "body",
+            "heading",
+            "formula",
+            "table",
+            "figure",
+            "caption",
+            "footnote",
+            "running-header",
+            "page-number",
+            "ornament",
+            "neighbour-page-bleed",
+            "unknown"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "region": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "propertyNames": {
+            "enum": [
+              "x0",
+              "y0",
+              "x1",
+              "y1"
+            ]
+          },
+          "title": "Region",
+          "type": "object"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "region"
+      ],
+      "title": "AlternateReading",
+      "type": "object"
+    },
+    "DraftNote": {
+      "additionalProperties": false,
+      "properties": {
+        "alternate": {
+          "items": {
+            "$ref": "#/$defs/AlternateReading"
+          },
+          "title": "Alternate",
+          "type": "array"
+        },
+        "block_id": {
+          "title": "Block Id",
+          "type": "string"
+        },
+        "flags": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Flags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "block_id",
+        "flags",
+        "alternate"
+      ],
+      "title": "DraftNote",
+      "type": "object"
+    },
+    "PilotScanPage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^p[0-9]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/DraftNote"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "number": {
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        },
+        "orientation": {
+          "title": "Orientation",
+          "type": "integer"
+        },
+        "page_class": {
+          "title": "Page Class",
+          "type": "string"
+        },
+        "scan_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Scan Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "page_class",
+        "orientation",
+        "scan_sha256",
+        "notes"
+      ],
+      "title": "PilotScanPage",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-pilot-review:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The frozen scan, score-format pre-draft, and blind notes for the selected pages.",
+  "properties": {
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PilotScanPage"
+      },
+      "minItems": 1,
+      "title": "Pages",
+      "type": "array"
+    },
+    "pilot_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Pilot Sha256",
+      "type": "string"
+    },
+    "predraft_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Predraft Sha256",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-pilot-review",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "source_sha256",
+    "pilot_sha256",
+    "predraft_sha256",
+    "pages"
+  ],
+  "title": "PilotReviewManifest",
+  "type": "object"
+}

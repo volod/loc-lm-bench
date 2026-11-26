@@ -8,6 +8,15 @@ from llb.core.contracts.artifact_catalog import FormatBinding
 from llb.core.contracts.data_prep.book import BookOcrRunConfig, BookPageManifest, BookStageRecord
 from llb.core.contracts.data_prep.book_blocks import PageBlockLedger
 from llb.core.contracts.data_prep.book_classes import PageClassRecord, PilotSelection
+from llb.core.contracts.data_prep.book_pilot_review import (
+    PILOT_PAGE_REVISION,
+    PILOT_REFERENCE_ACCEPTANCE,
+    PILOT_REVIEW_MANIFEST,
+    PILOT_REVIEW_VERSION,
+    PilotPageRevision,
+    PilotReferenceAcceptance,
+    PilotReviewManifest,
+)
 from llb.core.contracts.data_prep.book_preprocess import PageSignals, VariantManifest
 from llb.core.contracts.data_prep.book_resolve import (
     ModelCorrections,
@@ -83,6 +92,30 @@ def book_definitions() -> tuple[ContractDefinition, ...]:
             description="One scanned page's measured signal vector.",
             current_version="1.0.0",
             models={"1.0.0": PageSignals},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id=PILOT_REFERENCE_ACCEPTANCE,
+            description="Checksums and reviewer acceptances for a finalized pilot reference.",
+            current_version=PILOT_REVIEW_VERSION,
+            models={PILOT_REVIEW_VERSION: PilotReferenceAcceptance},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id=PILOT_REVIEW_MANIFEST,
+            description="Frozen scan, pre-draft digest, and blind reading notes for a book pilot.",
+            current_version=PILOT_REVIEW_VERSION,
+            models={PILOT_REVIEW_VERSION: PilotReviewManifest},
+            bindings=_JSON_DOCUMENT,
+            deprecation_policy=_ONLY_FORM,
+        ),
+        ContractDefinition(
+            schema_id=PILOT_PAGE_REVISION,
+            description="One saved pilot page edit and its human acceptance decision.",
+            current_version=PILOT_REVIEW_VERSION,
+            models={PILOT_REVIEW_VERSION: PilotPageRevision},
             bindings=_JSON_DOCUMENT,
             deprecation_policy=_ONLY_FORM,
         ),

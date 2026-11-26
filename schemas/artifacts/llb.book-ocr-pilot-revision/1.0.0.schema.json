@@ -1,0 +1,53 @@
+{
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-pilot-revision:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An append-only edit in the original scan frame, optionally accepted.",
+  "properties": {
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "page": {
+      "additionalProperties": true,
+      "description": "Score-format page draft, with optional incomplete edits.",
+      "title": "Page",
+      "type": "object"
+    },
+    "reviewer": {
+      "title": "Reviewer",
+      "type": "string"
+    },
+    "saved_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Saved At"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-pilot-revision",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "page",
+    "reviewer",
+    "accepted",
+    "saved_at"
+  ],
+  "title": "PilotPageRevision",
+  "type": "object"
+}

@@ -7,9 +7,8 @@ report and in the class totals.
 
 from pathlib import Path
 
-from llb.prep.book.metrics.latex import latex_parses
 from llb.prep.book.metrics.page_score import score_page
-from llb.prep.book.metrics.reference import RefPage, load_reference
+from llb.prep.book.metrics.reference import RefPage, load_reference, require_formulas
 from llb.prep.book.metrics.report import (
     ClassScore,
     LaneScore,
@@ -30,7 +29,7 @@ def score_reference(
 ) -> ScoreReport:
     """The report for ``llb book-ocr score``. Refuses a reference whose formulas do not parse."""
     pages = load_reference(reference_dir)
-    _require_formulas(pages)
+    require_formulas(pages)
     submissions: list[PageSubmission] = []
     if run_dir is not None:
         submissions.extend(load_run(run_dir, engine))
@@ -86,17 +85,6 @@ def _lane(
         unscorable_fields=unscorable,
         abstentions=abstentions,
     )
-
-
-def _require_formulas(pages: list[RefPage]) -> None:
-    errors = [
-        f"pdf page {page.pdf_page} block {block.block_id} latex does not parse"
-        for page in pages
-        for block in page.blocks
-        if block.kind == "formula" and not latex_parses(block.latex or "")
-    ]
-    if errors:
-        raise ValueError("; ".join(errors))
 
 
 def _page_line(page: PageScore) -> str:

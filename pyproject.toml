@@ -187,6 +187,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "llb.prompts" = ["templates/**/*.txt", "templates/**/*.prompt.json", "templates/registry.json"]
+"llb.prep.book.pilot_review" = ["worksheet.html", "worksheet.css", "worksheet.js"]
 
 [tool.ruff]
 line-length = 100
