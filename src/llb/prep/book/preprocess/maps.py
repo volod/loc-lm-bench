@@ -3,6 +3,8 @@
 from bisect import bisect_left
 from collections.abc import Callable, Iterator
 
+from dataclasses import replace
+
 import numpy as np
 
 from llb.core.contracts.data_prep.book_preprocess import AffineTransform, GridTransform, Transform
@@ -55,7 +57,7 @@ def map_box(
     x1, y1 = min(float(src_width), max(xs)), min(float(src_height), max(ys))
     if x1 - x0 < 1 or y1 - y0 < 1:
         return None
-    return Proposed(box.kind, box.order, x0, y0, x1, y1, box.text, box.confidence)
+    return replace(box, x0=x0, y0=y0, x1=x1, y1=y1)
 
 
 def _box_samples(transform: Transform, box: Proposed) -> Iterator[tuple[float, float]]:

@@ -3,9 +3,13 @@
 import json
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableReading
 from llb.prep.book.engines.parse_docling import parse_docling_dir
 from llb.prep.book.engines.parse_text import parse_dots, parse_grounding, parse_markdown
 from llb.prep.book.engines.protocol import Proposed
+from llb.prep.book.grid import formula_from_text, table_from_text
 
 RAW_BLOCKS = "raw_blocks.json"
 _TEXT_PARSERS = {
@@ -62,6 +66,8 @@ def _raw(path: Path) -> list[Proposed]:
                 float(item["y1"]),
                 str(item.get("text") or ""),
                 _confidence(item.get("confidence")),
+                _reading(item.get("formula"), FormulaReading),
+                _reading(item.get("table"), TableReading),
             )
         )
     return proposed
@@ -101,16 +107,56 @@ def _content_list(path: Path) -> list[Proposed]:
         box = item.get("bbox")
         if not isinstance(box, list) or len(box) != 4:
             continue
+        kind, text, formula, table = _mineru(item)
         proposed.append(
             Proposed(
-                str(item.get("type") or "unknown"),
+                kind,
                 index,
                 float(box[0]),
                 float(box[1]),
                 float(box[2]),
                 float(box[3]),
-                str(item.get("text") or ""),
+                text,
                 None,
+                formula,
+                table,
             )
         )
     return proposed
+
+
+def _reading[T: (FormulaReading, TableReading)](value: object, model: type[T]) -> T | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        return model.model_validate(value)
+    except ValidationError:
+        return None
+
+
+def _mineru(
+    item: dict[str, object],
+) -> tuple[str, str, FormulaReading | None, TableReading | None]:
+    kind = str(item.get("type") or "unknown")
+    key = kind.strip().lower().replace("_", "-")
+    text = str(item.get("text") or "")
+    if key in {"equation", "formula", "interline-equation", "inline-equation"}:
+        display = key != "inline-equation"
+        latex = str(item.get("latex") or text)
+        label = "formula" if display else "inline-formula"
+        return label, latex, formula_from_text(latex, display=display), None
+    if key == "table":
+        body = str(item.get("table_body") or text)
+        caption = _mineru_caption(item.get("table_caption"))
+        table = table_from_text(body, caption) if body else None
+        return "table", body or text, None, table
+    return kind, text, None, None
+
+
+def _mineru_caption(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, list):
+        parts = [str(item).strip() for item in value if str(item).strip()]
+        return " ".join(parts) or None
+    return None

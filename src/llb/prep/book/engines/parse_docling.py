@@ -7,7 +7,9 @@ so a box is flipped and scaled from the page's point size onto the image.
 import json
 from pathlib import Path
 
+from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableReading
 from llb.prep.book.engines.protocol import Proposed
+from llb.prep.book.grid import formula_from_text, table_from_flat, table_from_grid
 
 
 def parse_docling_dir(directory: Path, width: int, height: int) -> list[Proposed]:
@@ -29,8 +31,10 @@ def parse_docling(payload: dict[str, object], width: int, height: int) -> list[P
         box = _box(item, page_w, page_h, width, height)
         if box is None:
             continue
-        kind, text = _content(item)
-        proposed.append(Proposed(kind, order, box[0], box[1], box[2], box[3], text, None))
+        kind, text, formula, table = _content(item, by_ref)
+        proposed.append(
+            Proposed(kind, order, box[0], box[1], box[2], box[3], text, None, formula, table)
+        )
     return proposed
 
 
@@ -104,13 +108,19 @@ def _walk(node: object, groups: dict[str, dict[str, object]], seen: set[str]) ->
     return found
 
 
-def _content(item: dict[str, object]) -> tuple[str, str]:
+def _content(
+    item: dict[str, object], by_ref: dict[str, dict[str, object]]
+) -> tuple[str, str, FormulaReading | None, TableReading | None]:
     kind = str(item.get("label") or item.get("_kind") or "unknown")
     if item.get("_kind") == "picture":
-        return "figure", ""
+        return "figure", "", None, None
     if item.get("_kind") == "table":
-        return "table", _table_text(item)
-    return kind, str(item.get("text") or "")
+        text = _table_text(item)
+        return "table", text, None, _table(item, by_ref)
+    text = str(item.get("text") or "")
+    if kind.strip().lower().replace("_", "-") in {"formula", "equation"}:
+        return "formula", text, formula_from_text(text, display=True), None
+    return kind, text, None, None
 
 
 def _table_text(item: dict[str, object]) -> str:
@@ -123,6 +133,39 @@ def _table_text(item: dict[str, object]) -> str:
         if isinstance(row, list):
             rows.append(" | ".join(_cell(cell) for cell in row))
     return "\n".join(rows)
+
+
+def _table(item: dict[str, object], by_ref: dict[str, dict[str, object]]) -> TableReading | None:
+    data = item.get("data")
+    caption = _caption(item, by_ref)
+    if not isinstance(data, dict):
+        return None
+    grid = data.get("grid")
+    if isinstance(grid, list) and grid:
+        return table_from_grid(grid, caption)
+    cells = data.get("table_cells")
+    if isinstance(cells, list) and cells:
+        return table_from_flat(cells, caption)
+    return None
+
+
+def _caption(item: dict[str, object], by_ref: dict[str, dict[str, object]]) -> str | None:
+    rows = item.get("captions")
+    if not isinstance(rows, list):
+        return None
+    texts: list[str] = []
+    for row in rows:
+        if isinstance(row, str) and row.strip():
+            texts.append(row.strip())
+        elif isinstance(row, dict):
+            ref = row.get("$ref")
+            target = by_ref.get(str(ref)) if isinstance(ref, str) else None
+            if target is not None and target.get("text"):
+                texts.append(str(target.get("text")))
+            elif row.get("text"):
+                texts.append(str(row.get("text")))
+    joined = " ".join(texts).strip()
+    return joined or None
 
 
 def _cell(cell: object) -> str:

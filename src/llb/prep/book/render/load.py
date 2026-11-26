@@ -6,7 +6,7 @@ including on a page whose recovery failed: that page becomes one marker.
 
 from pathlib import Path
 
-from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, Region
+from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, RawReading, Region
 from llb.core.contracts.data_prep.book_resolve import (
     CorrectionEdit,
     PageCorrectionOverlay,
@@ -15,11 +15,19 @@ from llb.core.contracts.data_prep.book_resolve import (
 )
 from llb.prep.book.cache import page_dir
 from llb.prep.book.config import read_config
-from llb.prep.book.engines.image import png_size
 from llb.prep.book.constants import BLOCKS_FILENAME
+from llb.prep.book.engines.image import png_size
 from llb.prep.book.ledger.io import read_ledger
 from llb.prep.book.ranges import page_id
 from llb.prep.book.preprocess.images import read_grey
+from llb.prep.book.render.bars import (
+    caption_is_separate,
+    formula_needs_crop,
+    formula_of,
+    table_needs_evidence,
+    table_needs_image,
+    table_of,
+)
 from llb.prep.book.render.omissions import with_coverage
 from llb.prep.book.render.types import BookLoad, RenderBlock
 from llb.prep.book.review.settled import failure_reason
@@ -105,11 +113,14 @@ def _blocks(
     grouped: dict[str, list[SpanMark]] = {}
     for mark in marks:
         grouped.setdefault(mark.block_id, []).append(mark)
+    captions = _caption_texts(ledger, by_id)
     built: list[RenderBlock] = []
     seen: set[str] = set()
     for source in sorted(ledger.blocks, key=lambda block: (block.reading_order, block.ordinal)):
         seen.add(source.block_id)
-        built.append(_from_ledger(pid, source, by_id.get(source.block_id), grouped, shape))
+        built.append(
+            _from_ledger(pid, source, by_id.get(source.block_id), grouped, shape, captions)
+        )
     for block in resolved.blocks:
         if block.block_id not in seen:
             built.append(_from_resolved(pid, resolved.pdf_page, block, grouped))
@@ -122,11 +133,12 @@ def _from_ledger(
     resolved: ResolvedBlock | None,
     grouped: dict[str, list[SpanMark]],
     shape: tuple[int, int] | None,
+    captions: set[str],
 ) -> RenderBlock:
     own = tuple(grouped.get(source.block_id, ()))
     if resolved is None:
-        return _render_block(pid, source, None, "", own, shape, "missing-block")
-    return _render_block(pid, source, resolved, resolved.text, own, shape, source.kind)
+        return _render_block(pid, source, None, "", own, shape, "missing-block", captions)
+    return _render_block(pid, source, resolved, resolved.text, own, shape, source.kind, captions)
 
 
 def _from_resolved(
@@ -160,8 +172,12 @@ def _render_block(
     marks: tuple[SpanMark, ...],
     shape: tuple[int, int] | None,
     role: str,
+    captions: set[str],
 ) -> RenderBlock:
     digest = resolved.anchor if resolved is not None else ""
+    reading = _primary(source, resolved)
+    formula = formula_of(reading)
+    table = table_of(reading)
     return RenderBlock(
         pdf_page=source.pdf_page,
         page_id=pid,
@@ -177,7 +193,34 @@ def _render_block(
         marks=marks,
         crops=_crops(marks, source.region, shape),
         paragraph=source.paragraph,
+        formula=formula,
+        table=table,
+        emit_caption=not caption_is_separate(table, captions, text),
+        formula_crop=formula_needs_crop(source, reading),
+        table_image=table_needs_image(source, reading),
+        table_evidence=table_needs_evidence(source),
     )
+
+
+def _primary(source: Block, resolved: ResolvedBlock | None) -> RawReading | None:
+    if not source.readings:
+        return None
+    if resolved is None:
+        return source.readings[0]
+    for reading in source.readings:
+        if reading.engine == resolved.engine and reading.variant == resolved.variant:
+            if resolved.model is None or reading.model == resolved.model:
+                return reading
+    return source.readings[0]
+
+
+def _caption_texts(ledger: PageBlockLedger, by_id: dict[str, ResolvedBlock]) -> set[str]:
+    found: set[str] = set()
+    for block in ledger.blocks:
+        resolved = by_id.get(block.block_id)
+        text = resolved.text if resolved is not None else block.readings[0].text
+        found.add(" ".join(text.split()))
+    return found
 
 
 def _crops(

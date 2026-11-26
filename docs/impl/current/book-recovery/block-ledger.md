@@ -38,6 +38,11 @@ touches a digit, a sign (hyphen, plus, minus, en dash, em dash), a decimal point
 comma between digits), or a non-alphanumeric symbol becomes a span. Two readings that agree do
 not outvote a third.
 
+A raw reading may also carry a formula or a table: LaTeX with its equation number and side,
+or the cell grid with spans, header rows, caption, and whether HTML can hold it. A block may
+carry cell disputes for a dangerous cell disagreement, with both engines' texts kept. The
+export rules are in [formulas and tables](formulas-tables-figures.md).
+
 ## Engines
 
 `layout`, `ocr`, `formula`, and `table` are stages. Each one's `engine` parameter names an

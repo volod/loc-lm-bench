@@ -49,8 +49,11 @@ real book enters git. Ingest copies a sibling `*.citations.json` when a text doc
 One content file of the vault becomes one corpus document. Furniture stays in the ledger and
 out of the text: running headers, page numbers, ornaments, and neighbour-page bleed. The
 generated contents, the previous and next links, and the YAML front matter are not written.
-A formula is display LaTeX, with the inventory's equation number as a `\tag` when the text
-has none. A table is Markdown. A figure keeps the caption the page printed.
+A formula is the same LaTeX the vault emits, including the equation-number `\tag`, and it
+does not embed a page crop. A table is Markdown or HTML when the grid is faithful. An
+unfaithful table contributes its caption only, because the corpus has no page assets. The
+choice is in [formulas and tables](formulas-tables-figures.md). A figure keeps the caption
+the page printed.
 
 An unresolved span, an empty block, a blank page, an unread region, a failed page, and a
 low-confidence or orphaned reading are a machine token, not a callout:

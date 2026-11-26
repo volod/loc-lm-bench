@@ -54,10 +54,12 @@ metadata-only acceptance record. `BOOK_ACCEPTANCE` checks the recorded digest wh
 
 A book-ocr lane is named `book-ocr/<engine>`. With no `--engine`, each engine in the ledger is
 its own lane. A block's reading is the `original` variant when that variant exists, otherwise
-the lexicographically first variant. A table grid is parsed from markdown pipe rows or from HTML;
-a separator row is skipped. Text that does not parse is an empty grid, and the table metric is
-then zero, not absent. A figure's caption link is the nearest caption by center, one caption to
-one figure. Formula text that contains `\`, `_`, or `^` is read as LaTeX.
+the lexicographically first variant. When that reading carries a formula, the lane scores its
+LaTeX and its equation number. Otherwise formula text that contains `\`, `_`, or `^` is read as
+LaTeX. When the reading carries a table, the lane scores that grid, including an unfaithful one.
+Otherwise a table grid is parsed from markdown pipe rows or from HTML; a separator row is
+skipped. Text that does not parse is an empty grid, and the table metric is then zero, not
+absent. A figure's caption link is the nearest caption by center, one caption to one figure.
 
 The existing lane is `existing-pdf`, from a `llb.pdf-citations` sidecar beside its markdown. Each
 PDF page is one body block whose text is `markdown[text_start:text_end]`. The block has no
@@ -80,10 +82,12 @@ raw engine lanes. `--engine` still limits the raw lanes. The resolved lane stays
 resolved pages has no such lane.
 
 The lane reads the artifacts the vault and the corpus projection render from. Adopted text comes
-from `resolved.json`. Kind, region, and reading order come from the block ledger. A table is the
-grid `table_markdown` renders from that text. A formula is the display math `formula_math`
-renders, and the equation number is the one the structure inventory recorded for that block, or
-else the first parenthesized number in the text. A caption link is the figure and caption that
+from `resolved.json`. Kind, region, and reading order come from the block ledger. A formula
+is the engine LaTeX when the primary reading carried it, wrapped the same way the vault wraps
+it, and the equation number is that reading's printed number, or else the inventory number, or
+else the first parenthesized number in the text. A table is the native grid when the export is
+Markdown or HTML. An image-mode table submits no grid. Without a native grid, the table is
+what `table_markdown` renders from the text. A caption link is the figure and caption that
 sit next to each other in reading order. The printed page is the structure file's mapping for
 that PDF page.
 

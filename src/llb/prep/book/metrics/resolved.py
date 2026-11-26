@@ -11,9 +11,15 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from llb.core.contracts.data_prep.book_blocks import UNCERTAINTY_CLASSES, Block, PageBlockLedger
+from llb.core.contracts.data_prep.book_blocks import (
+    UNCERTAINTY_CLASSES,
+    Block,
+    PageBlockLedger,
+    RawReading,
+)
 from llb.core.contracts.data_prep.book_resolve import PageResolvedText, ResolvedBlock
 from llb.core.contracts.data_prep.book_structure import DocumentStructure
+from llb.prep.book.grid import cells_of
 from llb.prep.book.constants import BLOCKS_FILENAME, PAGES_DIRNAME
 from llb.prep.book.ledger.io import read_ledger
 from llb.prep.book.metrics.confusion import equation_numbers
@@ -27,9 +33,10 @@ from llb.prep.book.metrics.constants import (
 )
 from llb.prep.book.metrics.geometry import Box
 from llb.prep.book.metrics.submission import HypBlock, PageSubmission
-from llb.prep.book.metrics.tables import parse_table_text
+from llb.prep.book.metrics.tables import Cell, parse_table_text
 from llb.prep.book.render.names import equation_numbers as inventory_numbers
-from llb.prep.book.render.prose import formula_math, table_markdown
+from llb.prep.book.render.mathform import IMAGE, formula_math, render_body, table_mode
+from llb.prep.book.render.prose import table_markdown
 from llb.prep.book.render.segment import linked_caption_ids
 from llb.prep.book.resolve.constants import RESOLVED_FILENAME
 from llb.prep.book.resolve.io import read_resolved
@@ -110,8 +117,11 @@ def _hyp_block(
     numbers: dict[str, str],
 ) -> HypBlock:
     text = resolved.text if resolved is not None else ""
+    reading = _reading(block, resolved)
     number = numbers.get(block.block_id, "") if block.kind == "formula" else ""
     found = equation_numbers(text) if block.kind == "formula" else []
+    if reading is not None and reading.formula is not None and reading.formula.equation_number:
+        number = reading.formula.equation_number
     equation = number or (found[0] if found else "")
     region = block.region
     return HypBlock(
@@ -120,11 +130,22 @@ def _hyp_block(
         region=Box(region.x0, region.y0, region.x1, region.y1),
         reading_order=block.reading_order,
         text=text,
-        latex=_formula(text, number) if block.kind == "formula" else None,
-        table=parse_table_text(table_markdown(text)) if block.kind == "table" else None,
+        latex=_formula(block.kind, text, number, reading),
+        table=_table(block.kind, text, reading),
         caption_id=links.get(block.block_id) if block.kind == "figure" else None,
         equation_number=equation or None,
     )
+
+
+def _reading(block: Block, resolved: ResolvedBlock | None) -> RawReading | None:
+    if not block.readings:
+        return None
+    if resolved is None:
+        return block.readings[0]
+    for reading in block.readings:
+        if reading.engine == resolved.engine and reading.variant == resolved.variant:
+            return reading
+    return block.readings[0]
 
 
 def _orphan(resolved: ResolvedBlock) -> HypBlock:
@@ -141,11 +162,26 @@ def _orphan(resolved: ResolvedBlock) -> HypBlock:
     )
 
 
-def _formula(text: str, number: str) -> str:
-    rendered = formula_math(text, number)
+def _formula(kind: str, text: str, number: str, reading: RawReading | None) -> str | None:
+    if kind != "formula":
+        return None
+    source = text
+    if reading is not None and reading.formula is not None:
+        source = render_body(reading.formula.latex) or reading.formula.latex
+    rendered = formula_math(source, number)
     if rendered.startswith("$$") and rendered.endswith("$$"):
         return rendered[2:-2].strip()
     return rendered.strip()
+
+
+def _table(kind: str, text: str, reading: RawReading | None) -> tuple[tuple[Cell, ...], ...] | None:
+    if kind != "table":
+        return None
+    if reading is not None and reading.table is not None:
+        if table_mode(reading.table) == IMAGE:
+            return None
+        return cells_of(reading.table)
+    return parse_table_text(table_markdown(text))
 
 
 def _folio(pdf_page: int, structure: DocumentStructure | None) -> tuple[bool, str | None]:

@@ -13,12 +13,15 @@ from llb.core.contracts.data_prep.book_blocks import (
     BLOCK_KINDS,
     Block,
     BlockKind,
+    FormulaReading,
     PageBlockLedger,
     RawReading,
     Region,
+    TableReading,
 )
 from llb.prep.book.constants import BLOCK_LEDGER_SCHEMA_ID, CONTRACT_VERSION
 from llb.prep.book.engines.protocol import EngineRead, Proposed
+from llb.prep.book.ledger.cells import cell_disputes
 from llb.prep.book.ledger.ids import block_id
 from llb.prep.book.ledger.reading import STRUCTURAL_STAGES, recover
 from llb.prep.book.ledger.reconcile import reconcile
@@ -212,6 +215,7 @@ def _block(page_id: str, pdf_page: int, ordinal: int, item: _Assembly, region: R
         reading_order=ordinal,
         readings=readings,
         uncertainty=reconcile(readings),
+        cell_disputes=cell_disputes(readings),
         paragraph=item.paragraph,
     )
 
@@ -237,6 +241,30 @@ def _kind(group: Sequence[_Tagged]) -> BlockKind:
     return "unknown"
 
 
+def _first_formula(parts: Sequence[_Tagged]) -> FormulaReading | None:
+    for part in parts:
+        if part.proposed.formula is not None:
+            return part.proposed.formula
+    return None
+
+
+def _first_table(parts: Sequence[_Tagged]) -> TableReading | None:
+    for part in parts:
+        if part.proposed.table is not None:
+            return part.proposed.table
+    return None
+
+
+def _texts(parts: Sequence[_Tagged]) -> list[str]:
+    """One copy of a text that two stages of the same engine wrote identically."""
+    texts: list[str] = []
+    for part in parts:
+        text = part.proposed.text
+        if text and (not texts or texts[-1] != text):
+            texts.append(text)
+    return texts
+
+
 def _readings(group: Sequence[_Tagged]) -> list[RawReading]:
     structural = {(item.engine, item.variant) for item in group if item.stage in STRUCTURAL_STAGES}
     buckets: dict[tuple[str, str, str | None], list[_Tagged]] = {}
@@ -247,7 +275,7 @@ def _readings(group: Sequence[_Tagged]) -> list[RawReading]:
         buckets.setdefault((item.engine, item.variant, item.model), []).append(item)
     readings = []
     for (engine, variant, model), parts in buckets.items():
-        texts = [part.proposed.text for part in parts if part.proposed.text]
+        texts = _texts(parts)
         scores = [
             part.proposed.confidence for part in parts if part.proposed.confidence is not None
         ]
@@ -258,6 +286,8 @@ def _readings(group: Sequence[_Tagged]) -> list[RawReading]:
                 variant=variant,
                 text="\n".join(texts),
                 confidence=None if not scores else sum(scores) / len(scores),
+                formula=_first_formula(parts),
+                table=_first_table(parts),
             )
         )
     return readings

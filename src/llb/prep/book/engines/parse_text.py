@@ -4,7 +4,9 @@ import json
 import re
 from collections.abc import Iterator
 
+from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableReading
 from llb.prep.book.engines.protocol import Proposed
+from llb.prep.book.grid import formula_from_text, looks_like_caption, table_from_text
 
 _FENCE = re.compile(r"^---\s*$")
 _IMAGE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<name>[^)]+)\)")
@@ -13,6 +15,7 @@ _HEADING = re.compile(r"^(?P<marks>#{1,6})\s+(?P<text>.+)$")
 _DISPLAY = re.compile(r"^\$\$(?P<body>.*)\$\$$")
 _GROUND = re.compile(r"^(?P<label>[A-Za-z][A-Za-z0-9_-]*)\[\[(?P<box>[^\]]+)\]\](?P<rest>.*)$")
 _THOUSANDTHS = 1000.0
+_MARK = "\x1f"
 
 
 def parse_markdown(text: str, width: int, height: int) -> list[Proposed]:
@@ -34,7 +37,7 @@ def parse_dots(text: str, width: int, height: int) -> list[Proposed]:
             continue
         label = str(item.get("category") or item.get("type") or item.get("label") or "unknown")
         content = str(item.get("text") or item.get("content") or "")
-        proposed.append(Proposed(label, order, box[0], box[1], box[2], box[3], content, None))
+        proposed.append(_proposed(label, order, box, content))
     return proposed
 
 
@@ -62,13 +65,26 @@ def _body(text: str) -> str:
 def _chunks(text: str) -> Iterator[tuple[str, str, tuple[float, float, float, float] | None]]:
     paragraph: list[str] = []
     table: list[str] = []
+    caption: str | None = None
+    html = False
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("|"):
+        if _table_line(stripped, html):
+            caption = _remember_caption(paragraph, caption)
             yield from _flush(paragraph, "body")
             table.append(stripped)
+            html = html or stripped.lower().startswith("<table")
+            if html and "</table>" in stripped.lower():
+                yield ("table", _marked(table, caption), None)
+                table.clear()
+                caption = None
+                html = False
             continue
-        yield from _flush(table, "table")
+        if table:
+            yield ("table", _marked(table, caption), None)
+            table.clear()
+            caption = None
+            html = False
         if not stripped:
             yield from _flush(paragraph, "body")
             continue
@@ -78,7 +94,8 @@ def _chunks(text: str) -> Iterator[tuple[str, str, tuple[float, float, float, fl
             continue
         yield from _flush(paragraph, "body")
         yield special
-    yield from _flush(table, "table")
+    if table:
+        yield ("table", _marked(table, caption), None)
     yield from _flush(paragraph, "body")
 
 
@@ -100,6 +117,12 @@ def _special(stripped: str) -> tuple[str, str, tuple[float, float, float, float]
         return ("heading", heading.group("text").strip(), None)
     if _DISPLAY.match(stripped) or stripped.startswith("$$"):
         return ("formula", stripped.strip("$").strip(), None)
+    if stripped.startswith("$") and stripped.endswith("$") and len(stripped) > 2:
+        return ("inline-formula", stripped[1:-1].strip(), None)
+    if stripped.startswith(r"\[") and stripped.endswith(r"\]"):
+        return ("formula", stripped[2:-2].strip(), None)
+    if stripped.startswith(r"\(") and stripped.endswith(r"\)"):
+        return ("inline-formula", stripped[2:-2].strip(), None)
     return None
 
 
@@ -125,8 +148,71 @@ def _place(
             y0 = band * step
             box = (0.0, y0, float(width), max(y0 + 1.0, (band + 1) * step))
             band += 1
-        proposed.append(Proposed(kind, order, box[0], box[1], box[2], box[3], text, None))
+        text, caption = _unmark(text)
+        proposed.append(_proposed(kind, order, box, text, caption))
     return proposed
+
+
+def _proposed(
+    kind: str,
+    order: int,
+    box: tuple[float, float, float, float],
+    text: str,
+    caption: str | None = None,
+) -> Proposed:
+    return Proposed(
+        kind,
+        order,
+        box[0],
+        box[1],
+        box[2],
+        box[3],
+        text,
+        None,
+        _formula(kind, text),
+        _table(kind, text, caption),
+    )
+
+
+def _table_line(stripped: str, html: bool) -> bool:
+    lowered = stripped.lower()
+    if html:
+        return True
+    return stripped.startswith("|") or lowered.startswith("<table")
+
+
+def _remember_caption(paragraph: list[str], caption: str | None) -> str | None:
+    if len(paragraph) == 1 and looks_like_caption(paragraph[0]):
+        return paragraph[0]
+    return caption
+
+
+def _marked(lines: list[str], caption: str | None) -> str:
+    body = "\n".join(lines).strip()
+    if not caption:
+        return body
+    return f"{_MARK}{caption}{_MARK}{body}"
+
+
+def _unmark(text: str) -> tuple[str, str | None]:
+    if not text.startswith(_MARK):
+        return text, None
+    _mark, caption, body = text.split(_MARK, 2)
+    return body, caption or None
+
+
+def _formula(kind: str, text: str) -> FormulaReading | None:
+    key = kind.strip().lower().replace("_", "-")
+    if key not in {"formula", "inline-formula", "equation", "display-formula"}:
+        return None
+    return formula_from_text(text, display=key != "inline-formula")
+
+
+def _table(kind: str, text: str, caption: str | None) -> TableReading | None:
+    key = kind.strip().lower().replace("_", "-")
+    if key != "table":
+        return None
+    return table_from_text(text, caption)
 
 
 def _json(text: str) -> object | None:

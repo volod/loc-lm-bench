@@ -64,36 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-formula-and-table-recovery
-
-Formulas and tables carry the book's technical content, and they are where generic OCR fails worst:
-indices, Greek letters, minus signs, and equation numbers in one, merged cells and numeric columns in
-the other. Preserve native formula and table structure through the ledger and both
-exports before scoring the candidates against a human reference.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- planted formulas and table structures through the normal stages.
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. The vault renders formula and table text
-  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
-- User-visible outcome: formulas render as valid LaTeX with the book's equation number kept as a
-  tag, and an uncertain formula keeps its crop beside the LaTeX; tables render as Markdown when one
-  header row and no merged cells suffice, as HTML otherwise, and with the original image retained
-  when even HTML cannot hold the structure faithfully.
-- Scope boundary: carry native structured engine output, including table caption associations,
-  row and column spans, empty cells, and formula number and position; inline versus display math;
-  local LaTeX parse validation compatible with Obsidian; Markdown/HTML/image fallback; route
-  disputed table cells through dangerous-substitution checks and preserve their source evidence.
-  Formula derivation, unit conversion, and calculation stay outside recovery.
-- Data and artifact paths: `src/llb/prep/book/engines/` and `src/llb/prep/book/render/`; formula and
-  table crops under `assets/` and `review/` in the book directory.
-- Execution path: synthetic formula and table fixtures inside `make ci`.
-- Acceptance gates: `make ci` green; the emitted formula parses and keeps its equation
-  number, each formula below the validity or agreement bar carries its crop, and the fixture
-  catches an altered cell value, collapsed header, lost empty cell, and wrong caption separately.
-- Documentation target: `docs/impl/current/book-recovery/formulas-tables-figures.md`.
-
 #### book-figure-and-caption-assets
 
 Figures, graphs, and drawings carry labels, legends, and scales that a tight crop loses, and a
@@ -199,8 +169,7 @@ lane can follow what the book prints
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
-  `book-evidence-constrained-correction`
+- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`
 - Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
   [review semantics](current/book-recovery/uncertainty-and-review.md).
 - User-visible outcome: a reader can trace each technical value or uncertainty marker through the
@@ -225,8 +194,7 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-formula-and-table-recovery`,
-  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
+- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-projection-reference-sidecar`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
@@ -452,7 +420,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-projection-reference-sidecar`, `book-formula-and-table-recovery`,
+- Requires: `book-projection-reference-sidecar`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
   `book-publication-and-resume-audit`, `book-pilot-pipeline-comparison`,
