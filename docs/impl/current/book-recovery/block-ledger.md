@@ -30,13 +30,14 @@ One block can carry several raw readings, keyed by engine, model, and image vari
 one stage's readings, a line that sits inside another engine's block shares that block and keeps
 its own reading. With a layout region and a line reading both present, the line joins the region
 that owns it, in the [reading order](#reading-order-and-paragraph-boundaries) below. Two boxes
-from the same engine and the same stage join only when they are nearly the same rectangle, and
-then in that engine's order. Neighbouring lines stay separate. Readings from different engines or
-variants are aligned
-character by character. A letter-only difference stays on the raw readings. A difference that
-touches a digit, a sign (hyphen, plus, minus, en dash, em dash), a decimal point (a dot, or a
-comma between digits), or a non-alphanumeric symbol becomes a span. Two readings that agree do
-not outvote a third.
+from the same engine join only when they are nearly the same rectangle (intersection over union
+at least 0.85), including when several recognition stages wrote that rectangle. Identical text
+is kept once. Different text on that rectangle stays in the engine's order. A line inside a
+larger region of the same engine stays a line. Neighbouring lines stay separate. Readings from
+different engines or variants are aligned character by character. A letter-only difference stays on
+the raw readings. A difference that touches a digit, a sign (hyphen, plus, minus, en dash, em
+dash), a decimal point (a dot, or a comma between digits), or a non-alphanumeric symbol becomes
+a span. Two readings that agree do not outvote a third.
 
 A raw reading may also carry a formula or a table: LaTeX with its equation number and side,
 or the cell grid with spans, header rows, caption, and whether HTML can hold it. A block may
@@ -59,7 +60,9 @@ routes every page on that one class. An id the class stage does not declare is n
 
 Inside a batch the stage runs pages grouped by the engine they will open, in the order that
 engine is first asked for, and in page order within a group, so each engine opens at most once
-per batch. The adapter is opened from the stage, and only on a cache miss. The cache key uses
+per batch. A whole-page adapter ignores the stage name: the first recognition stage calls it,
+and each later stage copies that reading instead of calling the engine again. The adapter is
+opened from the stage, and only on a cache miss. The copy does not open it. The cache key uses
 the engine that actually ran. `blocks` must be configured after `render` and at least one of
 those four. It reads whichever of them the run configured and writes the ledger. The class
 vocabulary and the cuts are [page classes](tool-selection.md#page-classes).

@@ -24,6 +24,7 @@ from llb.prep.book.engines.protocol import EngineRead, Proposed
 from llb.prep.book.ledger.cells import cell_disputes
 from llb.prep.book.ledger.ids import block_id
 from llb.prep.book.ledger.reading import STRUCTURAL_STAGES, recover
+from llb.prep.book.ledger.repeat import collapse_repeated
 from llb.prep.book.ledger.reconcile import reconcile
 
 # Cross-engine: intersection over the smaller box. Half the smaller region inside the other
@@ -71,11 +72,13 @@ def assemble(
     reads: Sequence[EngineRead],
 ) -> PageBlockLedger:
     """The block ledger for one page. Ids follow geometry, not the order engines finished in."""
-    tagged = [
-        _Tagged(read.stage, read.engine, read.model, read.variant, proposed)
-        for read in reads
-        for proposed in read.blocks
-    ]
+    tagged = collapse_repeated(
+        [
+            _Tagged(read.stage, read.engine, read.model, read.variant, proposed)
+            for read in reads
+            for proposed in read.blocks
+        ]
+    )
     built: list[tuple[_Assembly, Region]] = []
     for item in _assemblies(tagged, height):
         region = _fit(_box_of(item.members), width, height)

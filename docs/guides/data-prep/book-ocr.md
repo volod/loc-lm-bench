@@ -295,7 +295,8 @@ selection files are written. The cuts, the precedence, and the handbook list are
 
 `book-ocr pilot-run` reads a frozen pilot with the existing Docling-plus-Tesseract lane, then with
 each roster engine that fits this host, one engine at a time. It reuses a classified run's
-`render`, `signals`, and `classes`. It does not score pages and it does not choose a winner.
+`render`, `signals`, and `classes`. A whole-page engine is called on the first recognition stage;
+the later stages copy that reading. It does not score pages and it does not choose a winner.
 Scoring is `book-ocr compare`, which still needs an accepted reference.
 
 ```sh

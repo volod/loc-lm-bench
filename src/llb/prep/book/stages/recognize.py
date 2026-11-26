@@ -130,6 +130,12 @@ class EngineStage:
 
     def run(self, ctx: StageContext) -> StageResult:
         adapter = self._adapter(ctx)
+        if getattr(adapter, "shares_reading", False):
+            shared = _shared(ctx, adapter.engine_id, self.name)
+            if shared is not None:
+                reading, source = shared
+                write_reading(ctx.work_dir, reading)
+                return StageResult(meta={**_meta(reading), "shared_from": source})
         self._lease.use(adapter)
         pdf = ctx.work_dir / _PAGE_PDF
         write_page_pdf(ctx.document, ctx.pdf_page, pdf)
@@ -199,6 +205,12 @@ def _language(ctx: StageContext) -> str | None:
     if isinstance(language, str) and language:
         return language
     return None
+
+
+def _shared(ctx: StageContext, engine: str, stage: str) -> tuple[EngineRead, str] | None:
+    from llb.prep.book.stages.shared_reading import shared_reading
+
+    return shared_reading(ctx, engine, _variant(ctx.params), stage)
 
 
 def _read(stage: str, ctx: StageContext, adapter: Any, pdf: Any) -> EngineRead:

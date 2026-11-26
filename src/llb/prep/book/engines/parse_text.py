@@ -16,6 +16,7 @@ _DISPLAY = re.compile(r"^\$\$(?P<body>.*)\$\$$")
 _GROUND = re.compile(r"^(?P<label>[A-Za-z][A-Za-z0-9_-]*)\[\[(?P<box>[^\]]+)\]\](?P<rest>.*)$")
 _THOUSANDTHS = 1000.0
 _MARK = "\x1f"
+_Chunk = tuple[str, str, tuple[float, float, float, float] | None]
 
 
 def parse_markdown(text: str, width: int, height: int) -> list[Proposed]:
@@ -62,41 +63,81 @@ def _body(text: str) -> str:
     return text
 
 
-def _chunks(text: str) -> Iterator[tuple[str, str, tuple[float, float, float, float] | None]]:
-    paragraph: list[str] = []
-    table: list[str] = []
-    caption: str | None = None
-    html = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if _table_line(stripped, html):
-            caption = _remember_caption(paragraph, caption)
-            yield from _flush(paragraph, "body")
-            table.append(stripped)
-            html = html or stripped.lower().startswith("<table")
-            if html and "</table>" in stripped.lower():
-                yield ("table", _marked(table, caption), None)
-                table.clear()
-                caption = None
-                html = False
+class _Scan:
+    """The paragraph and table gathered from one markdown page."""
+
+    def __init__(self) -> None:
+        self.paragraph: list[str] = []
+        self.table: list[str] = []
+        self.caption: str | None = None
+        self.html = False
+
+
+def _chunks(text: str) -> Iterator[_Chunk]:
+    scan = _Scan()
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if stripped == "$$":
+            yield from _flush(scan.paragraph, "body")
+            body, index = _display_body(lines, index + 1)
+            yield ("formula", body, None)
             continue
-        if table:
-            yield ("table", _marked(table, caption), None)
-            table.clear()
-            caption = None
-            html = False
-        if not stripped:
-            yield from _flush(paragraph, "body")
+        if _table_line(stripped, scan.html):
+            yield from _append_table(scan, stripped)
+            index += 1
             continue
-        special = _special(stripped)
-        if special is None:
-            paragraph.append(stripped)
-            continue
-        yield from _flush(paragraph, "body")
-        yield special
-    if table:
-        yield ("table", _marked(table, caption), None)
-    yield from _flush(paragraph, "body")
+        yield from _finish_table(scan)
+        yield from _text_line(scan, stripped)
+        index += 1
+    yield from _finish_table(scan)
+    yield from _flush(scan.paragraph, "body")
+
+
+def _append_table(scan: _Scan, stripped: str) -> Iterator[_Chunk]:
+    """Add one table line. A closing HTML tag emits the table."""
+    scan.caption = _remember_caption(scan.paragraph, scan.caption)
+    yield from _flush(scan.paragraph, "body")
+    scan.table.append(stripped)
+    scan.html = scan.html or stripped.lower().startswith("<table")
+    if scan.html and "</table>" in stripped.lower():
+        yield from _finish_table(scan)
+
+
+def _finish_table(scan: _Scan) -> Iterator[_Chunk]:
+    """Emit an open table and clear it. A page with no open table yields nothing."""
+    if not scan.table:
+        return
+    yield ("table", _marked(scan.table, scan.caption), None)
+    scan.table.clear()
+    scan.caption = None
+    scan.html = False
+
+
+def _text_line(scan: _Scan, stripped: str) -> Iterator[_Chunk]:
+    """A blank line ends the paragraph. A special line is its own block."""
+    if not stripped:
+        yield from _flush(scan.paragraph, "body")
+        return
+    special = _special(stripped)
+    if special is None:
+        scan.paragraph.append(stripped)
+        return
+    yield from _flush(scan.paragraph, "body")
+    yield special
+
+
+def _display_body(lines: list[str], start: int) -> tuple[str, int]:
+    """The lines between a `$$` pair. The returned index is the line after the closer."""
+    body: list[str] = []
+    index = start
+    while index < len(lines) and lines[index].strip() != "$$":
+        body.append(lines[index].strip())
+        index += 1
+    if index < len(lines):
+        index += 1
+    return "\n".join(line for line in body if line), index
 
 
 def _flush(

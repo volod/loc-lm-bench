@@ -315,40 +315,6 @@ against the vector lane over the same projection
   vector reading, and the structural vocabulary in
   [graph ontology schema](../design/graph-ontology-schema.md) outside the signed entity vocabulary.
 
-#### book-pilot-pipeline-comparison
-
-Prepare a comparison that can select a profile from frozen candidate outputs once a reviewer
-supplies the reference. Inspect readable paragraph order and table cells during the agent run
-so a plausible page box cannot stand in for usable text.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: RUN NEEDED -- candidate and baseline capture on the CUDA host.
-- Requires: `book-technical-content-audit`
-- Dependencies: the [frozen pilot](current/book-recovery/tool-selection.md#page-classes),
-  [metrics](current/book-recovery/quality-metrics.md), and
-  [page variants](current/book-recovery/page-preprocessing.md).
-- User-visible outcome: rerunnable candidate and baseline ledgers, resource logs, a blind pilot
-  draft and worksheets, and a scorer that can select a profile per class from an accepted
-  reference checksum.
-- Scope boundary: exercise each shortlisted route sequentially. Capture native paragraphs,
-  table titles and cells, figures, formula alternatives with and without correction, variant
-  choices, and named failures. Record language, VRAM, time, and the full-run estimate.
-  Freeze the comparison and correction adoption rules before reference review.
-- Data and artifact paths: `$DATA_DIR/book-ocr/<run_timestamp>/pilot/`, scorer fixtures, and
-  metadata-only candidate configurations under `samples/book_ocr/<book-slug>/`.
-- Execution path: run one engine at a time per
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md). Recompute the
-  comparison from saved ledgers and a synthetic reference inside `make ci`.
-- Acceptance gates: account for every frozen page in each lane with a reading or named failure.
-  Check original-frame regions and paragraph continuity on the rotated two-column and boxed
-  example cases. Check table titles, row order, empty cells and merged headers on table pages.
-  Route unsupported joins and unread content to review. Pin per-class baseline margins and
-  page-bootstrap intervals, dangerous substitutions,
-  uncertainty, pre-draft agreement, full-run projection, and the insufficient-VRAM refusal.
-  Use fixture results to exercise retaining the baseline on an inconclusive or negative result.
-  Selection and correction adoption on the handbook wait for the release reference.
-- Documentation target: `docs/impl/current/book-recovery/tool-selection.md`.
-
 #### book-full-run-on-the-target-scan
 
 Qualify the whole pipeline on the 1,067-page target scan with a provisional recovery profile.
@@ -356,7 +322,7 @@ Interrupt it, resume it, and stage the vault and projection with a report of wha
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Requires: `book-publication-and-resume-audit`, `book-pilot-pipeline-comparison`
+- Requires: `book-publication-and-resume-audit`
 - Dependencies: the target scan under `DATA_DIR`, its operator-declared redistribution
   class, and a host with enough VRAM for the provisional configuration.
 - User-visible outcome: a mechanically validated vault and ingested corpus projection
@@ -423,7 +389,7 @@ retrieval reading found.
 - Requires: `book-projection-reference-sidecar`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
-  `book-publication-and-resume-audit`, `book-pilot-pipeline-comparison`,
+  `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`

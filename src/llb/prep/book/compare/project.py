@@ -1,8 +1,10 @@
 """Full-book wall time from per-class page counts and measured per-call seconds.
 
-Each recognition stage that names an engine pays one call. The product is a
-selection-set projection: the pilot's per-page time applied to the book's class
-counts, not a measurement of the book.
+The measured rate is the mean duration of the recognition stages. A whole-page
+engine runs on the first of those stages; the later stages copy that reading, so
+their duration is near zero. Multiplying the mean by the stage count recovers the
+recognition wall time. The product is a selection-set projection: the pilot's
+per-page time applied to the book's class counts, not a measurement of the book.
 """
 
 from collections.abc import Mapping, Sequence

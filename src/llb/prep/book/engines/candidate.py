@@ -68,6 +68,8 @@ class CandidateAdapter:
         self.engine_id = spec.engine_id
         self._candidate = _candidate(spec.engine_id)
         self.stages = tuple(stage for stage in self._candidate.stages if stage in _RECOGNITION)
+        # One command returns the whole page. Later stages reuse that reading.
+        self.shares_reading = True
         self._stack: ExitStack | None = None
         self._base: str | None = None
 

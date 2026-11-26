@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableReading
 from llb.prep.book.engines.parse_docling import parse_docling_dir
+from llb.prep.book.engines.parse_middle import parse_middle_file
 from llb.prep.book.engines.parse_text import parse_dots, parse_grounding, parse_markdown
 from llb.prep.book.engines.protocol import Proposed
 from llb.prep.book.grid import formula_from_text, table_from_text
@@ -80,6 +81,12 @@ def _confidence(value: object) -> float | None:
 
 
 def _mineru_or_markdown(directory: Path, width: int, height: int) -> list[Proposed]:
+    for path in sorted(directory.glob("**/*.json")):
+        if path.name == RAW_BLOCKS:
+            continue
+        proposed = parse_middle_file(path, width, height)
+        if proposed:
+            return proposed
     for path in sorted(directory.glob("**/*content_list*.json")):
         proposed = _content_list(path)
         if proposed:

@@ -264,9 +264,11 @@ recognition call is not scored. The guide is
 [pilot reading](../../../guides/data-prep/book-ocr.md#pilot-reading).
 
 The projected wall time multiplies the book's per-class page counts by the measured seconds of
-one engine call and by the number of recognition stages that will call that engine. The report
-labels it `selection-set`. It is not a measurement of the rest of the book. A class with no count
-or no measured rate leaves the projection empty and names the class.
+one recognition stage and by the number of recognition stages. A whole-page engine is invoked
+once; the later stages copy that reading, so their duration is near zero, and the product is
+the time spent reading. The report labels it `selection-set`. It is not a measurement of the
+rest of the book. A class with no count or no measured rate leaves the projection empty and
+names the class.
 
 When no candidate wins a class, `negative` is true and the config names `docling`, which is the
 existing lane's engine, with `ocr_language` set to the book's language. The report carries the
@@ -297,13 +299,20 @@ Engineering* scan (SHA-256
 Language `eng`. Render, signals, and classes were reused from the classification whose primary
 counts are in [page classes](#page-classes). The existing lane is Docling plus Tesseract in the
 isolated Docling environment, one convert of the 25-page subset. Each fitting page reader then
-ran alone, calling the engine once per recognition stage it serves. The wall clock for the
-whole roster was 114.5 minutes. No second GPU job overlapped it.
+ran alone. That day a whole-page engine was called once per recognition stage, four calls on
+each page. The wall clock for the whole roster was 114.5 minutes. No second GPU job overlapped
+it.
+
+On 2026-11-26, on the same host, the ledger was rebuilt so those four copies of one region
+become one block, and MinerU `standard` was read again from middle JSON. That format keeps each
+block's box. The engine was called once per page; the `ocr`, `formula`, and `table` stages
+copied the `layout` reading. Language `eng`. The same classified render, signals, and classes
+were reused. GPU memory was free before the run (about 42 MB in use) and after it.
 
 **The reading.** This is a selection-set rate, not a scored winner. Compare did not run: the
 pilot has no accepts file. A higher character count is not a gain.
 
-| Lane | Result | Seconds per call | Pages read |
+| Lane | Result | Seconds per stage | Pages read |
 | --- | --- | --- | --- |
 | Existing Docling + Tesseract | measured | 7.099 | 25 of 25 |
 | MinerU `standard` | measured | 12.226 | 25 of 25 |
@@ -316,15 +325,30 @@ pilot has no accepts file. A higher character count is not a gain.
 | RapidOCR deskew | unavailable | | 0 of 25 |
 | RapidOCR UVDoc | unavailable | | 0 of 25 |
 
-The existing-lane figure is the subset convert's wall time divided by 25. Every other figure is
-the mean duration of one recognition call. The converters make four calls per page, RapidOCR
-one. The slowest single call was 161 s (MinerU), 192 s (MinerU2.5-Pro), 171 s (PaddleOCR-VL),
-and 7.5 s (RapidOCR); those first calls include the weight download, and they stay inside the
-mean. A partial lane's seconds are the calls that finished. Deskew and UVDoc finished none.
-Resolved text, which is what a vault shows, was 70,653 characters for the existing lane,
-80,933 for RapidOCR, 420,927 for MinerU, 463,396 for MinerU2.5-Pro, and 474,307 for
-PaddleOCR-VL. MinerU2.5-Pro's reading of PDF page 638 (grey background) is empty. The other
-measured page readers have text on every pilot page.
+The existing-lane figure is the subset convert's wall time divided by 25. Every other figure in
+the table is the mean duration of one recognition stage on 2026-11-25, when each stage called
+the engine. The slowest single call was 161 s (MinerU), 192 s (MinerU2.5-Pro), 171 s
+(PaddleOCR-VL), and 7.5 s (RapidOCR); those first calls include the weight download, and they
+stay inside the mean. A partial lane's seconds are the calls that finished. Deskew and UVDoc
+finished none.
+
+Those four calls wrote the same page four times, so the resolved character counts from that day
+(420,927 MinerU, 463,396 MinerU2.5-Pro, 474,307 PaddleOCR-VL) count each region about four
+times. After the 2026-11-26 rebuild, resolved primary text is 116,175 characters for that MinerU
+reading, 115,082 for MinerU2.5-Pro, 118,236 for PaddleOCR-VL, and 80,958 for RapidOCR. RapidOCR
+was already one call; its count barely moved (it was 80,933). The MinerU markdown reading's
+boxes are still full-width bands, one per line, so that lane cannot be checked against the
+printed frame. MinerU2.5-Pro's reading of PDF page 638 (grey background) is still empty. The
+other measured page readers have text on every pilot page.
+
+The 2026-11-26 MinerU middle-JSON reading is the one with printed regions. All 25 pages were
+read. No stage failed. The `layout` stage mean was 11.115 s (maximum 14.209 s, 277.9 s across
+the 25 pages). The three copied stages were about 0 s (the `ocr` mean was 0.001 s). Weights
+were already on disk, so this mean is a warm engine. Resolved primary text is 119,863
+characters, one copy of each region. At 11.115 s a page, the same projection over all 1,067
+pages is 3.3 hours. That replaces the 14.5 hour figure, which multiplied four real MinerU
+calls. PaddleOCR-VL and MinerU2.5-Pro were not re-timed under the single call, so their
+2026-11-25 rates still describe four calls and are not a one-call estimate.
 
 Marker balanced (10,547 MB), dots.ocr (11,571 MB), DeepSeek-OCR-2 (11,469 MB), and olmOCR-2
 (11,981 MB) were not started. They win no class and were not scored as empty failures.
@@ -335,26 +359,43 @@ a class whose pilot pages were not unbent. Page-dewarp was kept only on page 154
 point map does not cover the page. UVDoc covered no pilot page, including page 154, which it
 refused for lack of a point map. Illumination was kept on all 25.
 
-At these rates, four recognition calls on all 1,067 pages would be about 14.5 hours for MinerU
-`standard`, 24.0 hours for PaddleOCR-VL, and 35.1 hours for MinerU2.5-Pro. RapidOCR's one call
-would be about 1.4 hours, and the existing lane's one convert about 2.1 hours. Those products
-are the pilot rate times the book. They are not a measurement of the other 1,042 pages, and
-they do not choose an engine.
+RapidOCR's one call would be about 1.4 hours on all 1,067 pages, and the existing lane's one
+convert about 2.1 hours. The 2026-11-25 products for PaddleOCR-VL (24.0 hours) and
+MinerU2.5-Pro (35.1 hours) still assume four calls. They are the pilot rate times the book.
+They are not a measurement of the other 1,042 pages, and they do not choose an engine.
 
-**Recovered example.** Each page reader that finished every page was structured and rendered:
-MinerU `standard`, MinerU2.5-Pro, PaddleOCR-VL, and RapidOCR. Each vault has 25 completed
-pages and 1,042 skipped pages, which is the rest of the book, and `book-ocr validate` reported
-0 findings. The three layout vaults numbered no printed page; all 25 used a fallback mapping,
-which is what a scattered pilot does when neighbouring pages are absent. The RapidOCR vault
-numbered 8 pages, left 5 gaps, kept 3 structure conflicts, and mapped the other 15 pages by
-fallback. The same two warnings appear on every vault: the review queue was not written, and
-open markers were checked against the ledger.
+**Recovered pages.** The middle-JSON MinerU reading was structured and rendered. The vault has
+25 completed pages and 1,042 skipped pages, which is the rest of the book. `book-ocr validate`
+reported 0 findings. The warnings are 3 structure conflicts and 15 printed pages mapped by
+fallback. Structure numbered 8 pages, left 4 gaps, and built a hierarchy that is not itself a
+fallback. The review queue covers 25 read pages and has 0 open entries. No paragraph in the
+checked pages is repeated.
+
+Regions sit on the printed frame, not on full-width bands. PDF page 131 (a rotated two-column
+page RapidOCR had omitted) has 41 regions, the left column then the right, 5,768 characters,
+two formulas, and a figure. PDF page 135 (landscape, also omitted by RapidOCR) has 40 regions
+in two columns, 5,107 characters, and five headings. PDF page 258 has 31 regions, nine
+formulas, equation numbers `10-1a`, `10-1b`, `10-2a`, `10-2b`, `10-3`, `10-4`, `10-5`, and
+`10-6`, one formula with no number, a figure with its caption, and two footnotes. PDF page 768
+has 22 regions in two columns, four formulas (numbers `24-9`, `24-11`, and `24-12`, one
+without a number), and one table: 13 rows, two header rows, a column span and two row spans,
+five empty cells, and a caption. PDF page 963 has two captioned tables, 20 rows and 21 rows.
+PDF page 1007, the three-column index, is three body regions, one per column, 9,472 characters
+together, not one line per entry. PDF page 638 has text in this MinerU reading; the empty
+reading of that page is still the 2026-11-25 MinerU2.5-Pro lane.
+
+A blind worksheet over this MinerU reading and the RapidOCR lane is prepared for all 25 pilot
+pages. All 25 are pending. None is accepted. Compare was not run. No config was written under
+`samples/book_ocr/`. Correction was not adopted. Future research was not edited. The record is
+[0020](../../records/0020-scanned-book-recovery-book-pilot-pipeline-comparison.md).
 
 **What would overturn it.** An accepts file on which some lane's page-bootstrap interval sits
-above zero without a higher dangerous-substitution rate. A warm-cache rerun whose mean call is
-far below the figures above, since those means include the weight download. A host with more
-than 10,547 MB, so Marker balanced can be started. A dewarp method that is kept on a pilot page
-this run refused. Text on MinerU2.5-Pro's reading of PDF page 638.
+above zero without a higher dangerous-substitution rate. A cold MinerU start whose mean page is
+far above 11.115 s, or a warm one far below it. A shared-stage timing of PaddleOCR-VL or
+MinerU2.5-Pro, which this recovery did not re-measure. A host with more than 10,547 MB, so
+Marker balanced can be started. A dewarp method that is kept on a pilot page the 2026-11-25
+run refused. Text on MinerU2.5-Pro's reading of PDF page 638. An index page whose middle JSON
+is one region per entry rather than one region per column.
 
 ## Page classes
 

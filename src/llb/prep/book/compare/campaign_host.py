@@ -45,7 +45,11 @@ def default_hooks() -> CampaignHooks:
 def lane_timing(
     run_dir: Path, manifest: BookPageManifest
 ) -> tuple[float | None, list[int], list[str]]:
-    """Mean seconds of one recognition call, and the pages that did not finish."""
+    """Mean seconds of one recognition stage, and the pages that did not finish.
+
+    A stage that copies a sibling reading contributes almost nothing, so this
+    mean times the stage count is the time spent reading the page.
+    """
     failed: list[int] = []
     errors: list[str] = []
     samples: list[float] = []

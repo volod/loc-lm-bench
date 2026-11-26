@@ -25,6 +25,23 @@ _RAPID = ("{python}", "-I", "{runners}/rapidocr_blocks.py", "{image}", "{out}")
 _PADDLE = ("{python}", "-I", "{runners}/paddle_blocks.py", "{image}", "{out}")
 
 
+def _mineru(tier: str) -> tuple[str, ...]:
+    """Middle JSON keeps each block's box. Markdown alone is a vertical band per line."""
+    return (
+        "{bin}/mineru-kit",
+        "parse",
+        "{pdf}",
+        "-o",
+        "{out}/page.json",
+        "--format",
+        "middle_json",
+        "--tier",
+        tier,
+        "--ocr-mode",
+        "ocr",
+    )
+
+
 def _vlm(preset: str) -> tuple[str, ...]:
     return (
         "{bin}/docling",
@@ -46,8 +63,8 @@ def _vlm(preset: str) -> tuple[str, ...]:
 # engine id, parser, optional argv (None keeps the survey smoke command).
 _SPECS: tuple[tuple[str, str, tuple[str, ...] | None], ...] = (
     ("rapidocr", "raw-json", _RAPID),
-    ("mineru-basic", "files", None),
-    ("mineru-standard", "files", None),
+    ("mineru-basic", "files", _mineru("basic")),
+    ("mineru-standard", "files", _mineru("standard")),
     ("docling", "docling-json", _DOCLING),
     ("docling-vlm-mineru2-pro", "docling-json", _vlm("mineru2_pro")),
     ("docling-vlm-surya-ocr2-5", "docling-json", _vlm("surya_ocr2_5")),

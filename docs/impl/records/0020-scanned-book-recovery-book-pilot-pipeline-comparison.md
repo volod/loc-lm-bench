@@ -52,50 +52,60 @@ page class before it serves that class.
 - Documentation target: `docs/impl/current/book-recovery/tool-selection.md`.
 ```
 
+## Scope change
+
+The plan item was rewritten before this pass. The paste above is the earlier ask: it
+required a per-class winner. The contract this pass closed does not select a handbook
+profile. It freezes the scorer, rebuilds the ledgers so a repeated stage is not a
+repeated paragraph, and reads MinerU from middle JSON so the boxes are the printed
+regions. Selection and correction adoption wait for `book-pilot-reference-transcription`.
+`book-technical-content-audit` was still open when this pass started; the user named
+this task, and the audit was not implemented here.
+
 ## Implementation and decisions
 
-Status: open. The comparison harness is in the tree (`llb book-ocr compare`,
-`src/llb/prep/book/compare/`). It scores saved ledgers. It does not load a model and
-does not invent an accept. `llb book-ocr pilot-run` is the roster: the existing lane,
-then one fitting engine at a time, reusing a classified run.
+Status: accepted. The comparison harness stays `llb book-ocr compare`
+(`src/llb/prep/book/compare/`). It scores saved ledgers, refuses without an accepts
+file, and does not invent one. The margin, the page-bootstrap interval, the
+dangerous-substitution veto, pre-draft agreement, the single dewarp method, the
+over-budget refusal, and the `selection-set` projection are unchanged. A whole-page
+engine is now called once. Later recognition stages copy that reading. The projection
+multiplies the mean stage duration by the stage count, which is the time spent reading
+when the copies are near zero.
 
-The margin is the existing lane's character error minus the candidate's. The interval
-is the lowest and highest page margin, which is the page-bootstrap range. A gain
-requires that whole interval above zero. A higher pooled dangerous-substitution rate
-blocks a character gain. Pre-draft agreement is reported beside the score and does
-not choose the winner. One dewarp method survives when two classes disagree; the
-weaker class stays on the original image. An over-budget engine is not scored and
-wins no class. The dry run refuses it by name. The wall-time figure is labelled
-`selection-set` and counts every recognition stage that will call the engine.
+The ledger collapses same-engine boxes whose intersection over union is at least 0.85.
+Identical text is kept once. A line inside a larger region stays a line. Formula and
+table fields are filled from text when the reading file omitted them, including a
+spaced `\tag {n}` and a Markdown header whose corner labels repeat. A trailing pipe
+that is not a fence keeps an empty cell. MinerU's recovery command writes middle JSON.
+Display math fenced by a `$$` pair is one formula.
 
-The fitting engines have been read on the 25-page pilot. The numbers are in
+The 2026-11-25 roster on the RTX 5050 (8,151 MB) still accounts for every frozen page:
+a reading, or a named failure where a variant was not generated. The numbers, the
+2026-11-26 MinerU reading, and the page checks are in
 [tool selection](../current/book-recovery/tool-selection.md#handbook-pilot-reading).
-A lane that finishes no recognition call is `unavailable`. A lane that reads some
-pages and misses others stays measured, and the missed pages are named, so an unread
-page cannot win once the pages are scored. Display math that contains `](` is not a
-vault link; an image inside that math still is.
-
-The pilot reference is still the human gate `book-pilot-reference-transcription`.
-A page left unaccepted keeps compare from writing a winner. No config was committed
-under `samples/book_ocr/`. Future research was not edited, because the accepted pages
-have not been scored. The other 1,042 pages of the scan were not read.
+No config was committed under `samples/book_ocr/`. Future research was not edited.
+The other 1,042 pages of the scan were not read.
 
 ## Acceptance evidence
 
-Open on the winner. The fitting engines were read on 2026-11-25 on the RTX 5050
-(8,151 MB); the numbers and the four rendered pilot vaults are in
-[tool selection](../current/book-recovery/tool-selection.md#handbook-pilot-reading).
-Compare was not run. The scan has no accepts file. No winner config was written.
+Accepted on the frozen scorer and the recovered pilot reading. Handbook selection
+waits for the release reference. On 2026-11-26 the MinerU `standard` middle-JSON
+reading of the 25-page pilot finished 25 of 25 pages, one engine call per page
+(layout mean 11.115 s, copied stages about 0 s). Resolved primary text is 119,863
+characters. Checked pages keep column order, formula numbers, and the page 768 table
+(13 rows, two header rows, spans, five empty cells, a caption). The vault validated
+with 0 findings. The review queue has 0 open entries on 25 read pages. The blind
+worksheet has 0 of 25 pages accepted.
 
-Commands on this tree, after the pilot reading:
+Commands on this tree, after that reading:
 
 - `make lint-md`: 0 broken links, 0 run-path citations, 0 record-name findings.
 - `make ci`: ruff, mypy, the complexity gate, the spec/plan gate, and the
-  contract checks passed. Pytest reported 5237 passed, 2 skipped, 50 deselected.
+  contract checks passed. Pytest reported 5277 passed, 2 skipped, 50 deselected.
 
 ## Handoff
 
-Next action: a reviewer accepts every pilot page, then `make book-ocr-compare` against
-that reference. The roster has been read. On this 8 GB card the four vLLM page readers
-were over the survey peaks and were not started. The plan task stays until that
-accepted reading exists.
+Next action is the human gate `book-pilot-reference-transcription`: accept every pilot
+page, then `make book-ocr-compare`. On this 8 GB card the four vLLM page readers stay
+unstarted. PaddleOCR-VL and MinerU2.5-Pro were not re-timed under the single call.

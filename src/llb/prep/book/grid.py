@@ -13,7 +13,8 @@ from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableCell, 
 if TYPE_CHECKING:
     from llb.prep.book.metrics.tables import Cell
 
-_TAG = re.compile(r"\\tag\*?\{([^{}]*)\}")
+_TAG = re.compile(r"\\tag\s*\*?\s*\{([^{}]*)\}")
+_DISPLAY_WRAP = re.compile(r"^\\\[([\s\S]*)\\\]$")
 _LEAD = re.compile(r"^\((?P<num>\d{1,4}(?:[-\u2013\u2014]\d{1,4})*)\)\s+")
 _TRAIL = re.compile(r"\s+\((?P<num>\d{1,4}(?:[-\u2013\u2014]\d{1,4})*)\)\s*$")
 _LEAD_PAREN = re.compile(r"^\((?P<num>[^()]*)\)\s+")
@@ -28,7 +29,7 @@ _CAPTION = re.compile(r"^Table\b", re.IGNORECASE)
 
 def formula_from_text(text: str, *, display: bool) -> FormulaReading | None:
     """A formula reading. A trailing or leading parenthesized number is the equation number."""
-    body = _TRAILING_BREAK.sub("", text.strip()).strip()
+    body = _unwrap_display(_TRAILING_BREAK.sub("", text.strip()).strip())
     if not body:
         return None
     number, side, body = _number(body)
@@ -50,7 +51,10 @@ def table_from_text(text: str, caption: str | None = None) -> TableReading | Non
     if parsed is None:
         return None
     rows = [[_from_cell(cell) for cell in row] for row in parsed]
-    headers = _html_header_rows(text) if "<table" in text.lower() else 1
+    if "<table" in text.lower():
+        headers = _html_header_rows(text)
+    else:
+        rows, headers = _repeated_header(rows)
     return _finish(rows, headers, caption)
 
 
@@ -154,6 +158,85 @@ def cells_of(table: TableReading) -> "tuple[tuple[Cell, ...], ...]":
     )
 
 
+def _unwrap_display(body: str) -> str:
+    """Drop a display-math wrapper. The equation number lives inside it."""
+    wrapped = _DISPLAY_WRAP.match(body)
+    if wrapped is not None:
+        return wrapped.group(1).strip()
+    if body.startswith("$$") and body.endswith("$$") and len(body) > 4:
+        return body[2:-2].strip()
+    return body
+
+
+def _repeated_header(rows: list[list[TableCell]]) -> tuple[list[list[TableCell]], int]:
+    """Two header rows whose corners repeat, with a colspan where a label repeats sideways.
+
+    A Markdown export of a merged header has no separator line. The corner labels are
+    copied into both rows, and the spanning label is written once per column it covers.
+    """
+    matched = _matching_header(rows)
+    if matched is None:
+        return rows, 1
+    top, nxt = matched
+    vertical = _vertical_header(top, nxt)
+    collapsed = _span_header(top, vertical)
+    kept = [cell for cell, down in zip(nxt, vertical) if not down]
+    return [collapsed, kept, *rows[2:]], 2
+
+
+def _matching_header(rows: list[list[TableCell]]) -> tuple[list[TableCell], list[TableCell]] | None:
+    """The two header rows when their corners repeat and one label spans sideways."""
+    if len(rows) < 2:
+        return None
+    top = list(rows[0])
+    nxt = list(rows[1])
+    if len(top) != len(nxt) or len(top) < 2:
+        return None
+    if top[0].text != nxt[0].text or top[-1].text != nxt[-1].text:
+        return None
+    if not _sideways_repeat(top):
+        return None
+    return top, nxt
+
+
+def _sideways_repeat(top: list[TableCell]) -> bool:
+    return any(
+        top[index].text and top[index].text == top[index + 1].text for index in range(len(top) - 1)
+    )
+
+
+def _vertical_header(top: Sequence[TableCell], nxt: Sequence[TableCell]) -> list[bool]:
+    return [
+        bool(top[index].text) and top[index].text == nxt[index].text for index in range(len(top))
+    ]
+
+
+def _span_header(top: Sequence[TableCell], vertical: Sequence[bool]) -> list[TableCell]:
+    """Rowspan on a repeated corner, colspan on a label written once per column."""
+    collapsed: list[TableCell] = []
+    index = 0
+    while index < len(top):
+        if vertical[index]:
+            collapsed.append(top[index].model_copy(update={"rowspan": 2}))
+            index += 1
+            continue
+        end = _colspan_end(top, vertical, index)
+        collapsed.append(top[index].model_copy(update={"colspan": end - index}))
+        index = end
+    return collapsed
+
+
+def _colspan_end(top: Sequence[TableCell], vertical: Sequence[bool], index: int) -> int:
+    end = index + 1
+    while end < len(top) and _same_span(top, vertical, index, end):
+        end += 1
+    return end
+
+
+def _same_span(top: Sequence[TableCell], vertical: Sequence[bool], index: int, end: int) -> bool:
+    return bool(not vertical[end] and top[end].text == top[index].text and top[index].text)
+
+
 def _number(body: str) -> tuple[str | None, Literal["left", "right"] | None, str]:
     tag = _TAG.search(body)
     if tag:
@@ -235,14 +318,32 @@ def _flagged_headers(rows: Sequence[Sequence[object]]) -> int:
 
 
 def _html_header_rows(text: str) -> int:
+    rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", text, flags=re.IGNORECASE | re.DOTALL)
     count = 0
-    for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", text, flags=re.IGNORECASE | re.DOTALL):
+    for row in rows:
         cells = re.findall(r"<t([dh])\b", row, flags=re.IGNORECASE)
         if cells and all(tag.lower() == "h" for tag in cells):
             count += 1
             continue
         break
+    if count > 1:
+        return count
+    if rows and _merged_header(rows[0]):
+        return 2
     return count or 1
+
+
+def _merged_header(row: str) -> bool:
+    """A first row of data cells that spans is the top of a two-row header."""
+    attrs = re.findall(r"<td\b([^>]*)>", row, flags=re.IGNORECASE)
+    if len(attrs) < 2:
+        return False
+    return any(_span_at_least(attr, name) for attr in attrs for name in ("rowspan", "colspan"))
+
+
+def _span_at_least(attrs: str, name: str) -> bool:
+    found = re.search(rf"{name}\s*=\s*['\"]?(\d+)", attrs, flags=re.IGNORECASE)
+    return found is not None and int(found.group(1)) >= 2
 
 
 def _finish(rows: list[list[TableCell]], header_rows: int, caption: str | None) -> TableReading:
