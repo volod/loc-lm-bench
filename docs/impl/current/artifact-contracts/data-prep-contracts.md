@@ -43,7 +43,7 @@ orphaned edits), `llb.book-ocr-model-corrections` (`pages/<pNNNN>/corrections.js
 correction stage wrote it), `llb.book-ocr-reviewer-decisions` (`review/decisions.json`,
 outside the stage cache), `llb.book-ocr-review-queue` (`review/queue.json`, the workbench ledger of
 uncertain spans), `llb.book-ocr-quality-manifest` (`metadata/quality_manifest.json`, the same
-spans grouped by page), and `llb.book-ocr-document-structure`
+spans grouped by page, plus that page's coverage), and `llb.book-ocr-document-structure`
 (`metadata/document_structure.json`, the printed pages, the hierarchy, and the numbering
 inventory; see [structure](../book-recovery/structure-and-rendering.md)). The rule for the queue is
 [uncertainty and review](../book-recovery/uncertainty-and-review.md). The block model

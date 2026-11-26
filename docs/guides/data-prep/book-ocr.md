@@ -149,9 +149,10 @@ render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
 
 ## Review queue
 
-`book-ocr review-queue` reads a finished `resolve` and writes a marker, a crop, a manifest row, and
-a queue entry for every uncertain span. It is not a stage. The marker syntax, the three kinds, and
-what a decision writes are
+`book-ocr review-queue` reads a finished run and writes a marker, a crop, a manifest row, and a
+queue entry for every uncertain span, plus one entry for a page that failed terminally. A blank
+page is recorded on the manifest and has no queue entry. The marker syntax, the coverage field,
+and what a decision writes are
 [uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
 
 ```sh
@@ -161,18 +162,19 @@ make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `BOOK_RUN` | A book-ocr run whose `resolve` stage has finished for every configured page | required |
+| `BOOK_RUN` | A finished book-ocr run. A terminal page failure is included | required |
 
-Exit code 2 is a path that is not a run, or a page that still lacks its ledger, resolved text, and
-overlay. The command prints kind counts. It does not print the recovered text. After a decision,
+Exit code 2 is a path that is not a run, or a page that is still unfinished. The command prints
+kind counts and coverage counts. It does not print the recovered text. After a decision,
 resume the run so `resolve` applies it, then build the queue again.
 
 ## Structure
 
 `book-ocr structure` reads a finished ledger and writes `metadata/document_structure.json`: the
 printed page of every PDF page, the hierarchy, the running headers, and the figure, table, and
-equation numbers. It is not a stage. A missing ledger is exit code 2. The command prints counts
-and does not print the recovered text. What the inference keeps, and what the sample scan showed,
+equation numbers. It is not a stage. An unfinished ledger is exit code 2. A page that failed
+terminally is included and contributes no lines. The command prints counts and does not print the
+recovered text. What the inference keeps, and what the sample scan showed,
 is [structure](../../impl/current/book-recovery/structure-and-rendering.md).
 
 ```sh
@@ -181,7 +183,7 @@ make book-ocr-structure BOOK_RUN=<run-dir>
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `BOOK_RUN` | A book-ocr run whose block ledger exists for every configured page | required |
+| `BOOK_RUN` | A book-ocr run. An unfinished ledger is refused; a terminal failure is included | required |
 
 ## Reading vault
 

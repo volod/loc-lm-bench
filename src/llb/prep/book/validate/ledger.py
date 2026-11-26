@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from llb.core.contracts.data_prep.book import BookOcrRunConfig
+from llb.core.contracts.data_prep.book_blocks import PageBlockLedger
 from llb.core.contracts.data_prep.book_resolve import (
     ORPHAN_REASONS,
     CorrectionEdit,
@@ -29,10 +30,14 @@ from llb.prep.book.resolve.constants import (
     SCHEMA_VERSION,
 )
 from llb.prep.book.resolve.io import read_overlay, read_resolved
+from llb.prep.book.preprocess.images import read_grey
 from llb.prep.book.review.classify import page_marks
+from llb.prep.book.review.coverage import account_page
 from llb.prep.book.review.files import reviewer_edits
+from llb.prep.book.review.gaps import omission_marks
 from llb.prep.book.review.io import queue_path, read_queue
 from llb.prep.book.review.marks import SpanMark
+from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
 from llb.prep.book.validate.constants import BLOCK_WITHOUT_PAGE, CONFIDENCE_BUCKETS
 from llb.prep.book.validate.types import EngineScores, Finding, OpenMark, RunFacts
 
@@ -50,7 +55,7 @@ def scan_run(run_dir: Path, config: BookOcrRunConfig) -> RunFacts:
         _scan_page(
             run_dir, config, pdf_page, edits, marks, findings, orphans, scores, readings, kinds
         )
-    queue = _queue_marks(run_dir, kinds)
+    queue, failed_pages = _queue_marks(run_dir, kinds)
     return RunFacts(
         marks=marks,
         queue_marks=queue,
@@ -59,6 +64,7 @@ def scan_run(run_dir: Path, config: BookOcrRunConfig) -> RunFacts:
         scores=scores,
         readings=[(*key, count) for key, count in sorted(readings.items())],
         findings=findings,
+        failed_pages=failed_pages,
     )
 
 
@@ -92,6 +98,7 @@ def _scan_page(
         if mark.verdict:
             continue
         marks.append(_from_span(mark, kinds))
+    _omissions(base, ledger, marks, kinds)
 
 
 def _ledger(
@@ -137,11 +144,30 @@ def _from_span(mark: SpanMark, kinds: dict[str, str]) -> OpenMark:
     )
 
 
-def _queue_marks(run_dir: Path, kinds: dict[str, str]) -> list[OpenMark] | None:
+def _omissions(
+    base: Path,
+    ledger: PageBlockLedger,
+    marks: list[OpenMark],
+    kinds: dict[str, str],
+) -> None:
+    image_path = base / RENDER_STAGE / PAGE_IMAGE_FILENAME
+    image = read_grey(image_path) if image_path.is_file() else None
+    account = account_page(image, ledger, base)
+    for mark in omission_marks(account, ledger.page_id, ledger.pdf_page):
+        kinds[mark.block_id] = "omission"
+        marks.append(_from_span(mark, kinds))
+
+
+def _queue_marks(
+    run_dir: Path, kinds: dict[str, str]
+) -> tuple[list[OpenMark] | None, tuple[str, ...]]:
     path = queue_path(run_dir)
     if not path.is_file():
-        return None
-    return [_from_entry(entry, kinds) for entry in read_queue(path).entries if not entry.verdict]
+        return None, ()
+    open_entries = [entry for entry in read_queue(path).entries if not entry.verdict]
+    marks = [_from_entry(entry, kinds) for entry in open_entries if entry.reason != "page-failed"]
+    failed = tuple(entry.page_id for entry in open_entries if entry.reason == "page-failed")
+    return marks, failed
 
 
 def _from_entry(entry: ReviewQueueEntry, kinds: dict[str, str]) -> OpenMark:

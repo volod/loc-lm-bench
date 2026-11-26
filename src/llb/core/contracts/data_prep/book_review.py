@@ -14,10 +14,26 @@ from llb.core.contracts.data_prep.book_blocks import UncertaintyClass
 from llb.core.contracts.data_prep.book_resolve import OrphanReason
 from llb.core.contracts.data_prep.corpus import DataPrepRow
 
-MarkerKind = Literal["unreadable", "low-confidence", "formula-table"]
-MARKER_KINDS: tuple[MarkerKind, ...] = ("unreadable", "low-confidence", "formula-table")
-QueueReason = Literal["unresolved", "empty", "low-confidence", "orphaned"]
-QUEUE_REASONS: tuple[QueueReason, ...] = ("unresolved", "empty", "low-confidence", "orphaned")
+MarkerKind = Literal["unreadable", "low-confidence", "formula-table", "page-failed"]
+MARKER_KINDS: tuple[MarkerKind, ...] = (
+    "unreadable",
+    "low-confidence",
+    "formula-table",
+    "page-failed",
+)
+QueueReason = Literal[
+    "unresolved", "empty", "low-confidence", "orphaned", "omission", "page-failed"
+]
+QUEUE_REASONS: tuple[QueueReason, ...] = (
+    "unresolved",
+    "empty",
+    "low-confidence",
+    "orphaned",
+    "omission",
+    "page-failed",
+)
+CoverageStatus = Literal["read", "blank", "omission", "failed"]
+COVERAGE_STATUSES: tuple[CoverageStatus, ...] = ("read", "blank", "omission", "failed")
 ReviewVerdict = Literal["", "accept-raw", "accept-candidate", "enter-text", "mark-illegible"]
 REVIEW_VERDICTS: tuple[str, ...] = (
     "accept-raw",
@@ -67,6 +83,8 @@ class ReviewQueueEntry(DataPrepRow):
     priors: list[PriorDecision] = Field(default_factory=list)
     verdict: ReviewVerdict = ""
     block_present: bool = True
+    # Original rendered-page pixels, x0 y0 x1 y1. Empty for a character span.
+    box: list[float] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _span_and_marker_agree(self) -> "ReviewQueueEntry":
@@ -80,6 +98,10 @@ class ReviewQueueEntry(DataPrepRow):
             raise ValueError("queue entry marker must be a visible uncertainty marker")
         if not self.rendered.strip():
             raise ValueError("queue entry must show its marker, not a blank passage")
+        if self.box and (
+            len(self.box) != 4 or self.box[2] <= self.box[0] or self.box[3] <= self.box[1]
+        ):
+            raise ValueError("queue entry box must be x0, y0, x1, y1 with positive area")
         return self
 
 
@@ -106,13 +128,19 @@ class QualityRow(DataPrepRow):
     marker: str = Field(min_length=1)
     crop: str | None = None
     raw_text: str
+    box: list[float] = Field(default_factory=list)
 
 
 class QualityPage(DataPrepRow):
-    """Every quality row on one PDF page. A page with no rows was still checked."""
+    """Every quality row on one PDF page. A page with no rows was still checked.
+
+    `coverage` says whether the page was blank, fully covered, missing a region,
+    or failed. It is not a confidence.
+    """
 
     page_id: str = Field(min_length=1)
     pdf_page: int = Field(ge=1)
+    coverage: CoverageStatus
     rows: list[QualityRow] = Field(default_factory=list)
 
 

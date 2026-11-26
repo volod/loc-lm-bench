@@ -64,30 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-missing-region-accounting
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. Also the
-  [review queue](current/book-recovery/uncertainty-and-review.md),
-  [validation](current/book-recovery/structure-and-rendering.md#vault-validation), and
-  [corpus projection](current/book-recovery/corpus-projection.md).
-- User-visible outcome: an operator can distinguish a blank scan, an unread region on an otherwise
-  successful page, and a page whose recognition failed, in both outputs and in the review queue.
-- Scope boundary: compare original page evidence with layout and recognition coverage. Route
-  uncertain omissions to review with original coordinates; preserve confirmed blanks. Permit a
-  terminal page failure in a finished queue while refusing an unfinished run.
-- Data and artifact paths: `src/llb/prep/book/`, page quality manifests and review crops.
-- Execution path: fake an empty response, a missing second column, a legitimate blank and a
-  terminal engine failure through the normal run, queue and render commands inside `make ci`.
-- Acceptance gates: identify each planted omission even if every returned block is confident;
-  account for all four pages, retain readable neighbours, and reject a missing or stale queue
-  entry at full-run acceptance. Check the projected machine markers and PDF-page provenance
-  against the same ledger.
-- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
-
 #### book-formula-and-table-recovery
 
 Formulas and tables carry the book's technical content, and they are where generic OCR fails worst:
@@ -224,7 +200,7 @@ lane can follow what the book prints
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
 - Requires: `book-formula-and-table-recovery`, `book-figure-and-caption-assets`,
-  `book-evidence-constrained-correction`, `book-missing-region-accounting`
+  `book-evidence-constrained-correction`
 - Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
   [review semantics](current/book-recovery/uncertainty-and-review.md).
 - User-visible outcome: a reader can trace each technical value or uncertainty marker through the
@@ -476,8 +452,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-missing-region-accounting`,
-  `book-projection-reference-sidecar`, `book-formula-and-table-recovery`,
+- Requires: `book-projection-reference-sidecar`, `book-formula-and-table-recovery`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
   `book-publication-and-resume-audit`, `book-pilot-pipeline-comparison`,

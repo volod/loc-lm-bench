@@ -50,7 +50,18 @@ FURNITURE_ROLES: Final = frozenset(
     {"running-header", "page-number", "ornament", "neighbour-page-bleed"}
 )
 STRUCTURAL_ROLES: Final = frozenset(
-    {"formula", "table", "figure", "caption", "footnote", "heading", "page-failed", "missing-block"}
+    {
+        "formula",
+        "table",
+        "figure",
+        "caption",
+        "footnote",
+        "heading",
+        "page-failed",
+        "missing-block",
+        "blank",
+        "omission",
+    }
 )
 
 HEADING_LEVEL: Final = {
@@ -72,4 +83,3 @@ ITEM_ANCHOR: Final = {"figure": "fig", "table": "tbl", "equation": "eq"}
 FILE_INDEX_WIDTH: Final = 4
 ORDINAL_WIDTH: Final = 4
 SLUG_LIMIT: Final = 60
-FAIL_REASON_LIMIT: Final = 120

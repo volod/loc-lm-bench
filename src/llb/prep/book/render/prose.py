@@ -175,11 +175,29 @@ def _figure_block(block: RenderBlock, ctx: RenderContext) -> str:
     return f'[!figure-missing]({href} "{block.page_id} {block.block_id}")'
 
 
+def _blank(unit: Unit, ctx: RenderContext) -> str:
+    block = unit.blocks[0]
+    href = ctx.content_href(block.pdf_page)
+    return f'[!blank]({href} "{block.page_id}")'
+
+
+def _omission(unit: Unit, ctx: RenderContext) -> str:
+    lines: list[str] = []
+    for block in unit.blocks:
+        href = ctx.content_href(block.pdf_page)
+        crop = block.crops[0][2] if block.crops else None
+        lines.append(render_marker("unreadable", href, block.block_id, 0, 0, crop))
+    return "\n\n".join(lines)
+
+
 def _failed(unit: Unit, ctx: RenderContext) -> str:
     block = unit.blocks[0]
     href = ctx.content_href(block.pdf_page)
     reason = block.fail_reason or "recovery failed"
-    return f'[!page-failed]({href} "{block.page_id} {reason}")'
+    marker = f'[!page-failed]({href} "{block.page_id} {reason}")'
+    if not block.crops:
+        return marker
+    return f"{marker}\n\n![[{block.crops[0][2]}]]"
 
 
 def _missing(unit: Unit, ctx: RenderContext) -> str:
@@ -200,6 +218,8 @@ _BODY = {
     "unknown": _paragraph,
     "page-failed": _failed,
     "missing-block": _missing,
+    "blank": _blank,
+    "omission": _omission,
     "running-header": _furniture,
     "page-number": _furniture,
     "ornament": _furniture,

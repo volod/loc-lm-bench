@@ -18,10 +18,11 @@ from llb.prep.book.config import read_config
 from llb.prep.book.engines.image import png_size
 from llb.prep.book.constants import BLOCKS_FILENAME
 from llb.prep.book.ledger.io import read_ledger
-from llb.prep.book.ledger.manifest import read_manifest
 from llb.prep.book.ranges import page_id
-from llb.prep.book.render.constants import FAIL_REASON_LIMIT
+from llb.prep.book.preprocess.images import read_grey
+from llb.prep.book.render.omissions import with_coverage
 from llb.prep.book.render.types import BookLoad, RenderBlock
+from llb.prep.book.review.settled import failure_reason
 from llb.prep.book.resolve.constants import (
     OVERLAY_FILENAME,
     OVERLAY_KIND,
@@ -80,7 +81,7 @@ def _page(
     base = page_dir(run_dir, pid)
     resolved_path = base / RESOLVED_FILENAME
     if not resolved_path.is_file():
-        return [_failed(pid, pdf_page, _reason(run_dir, pid))]
+        return [_failed(pid, pdf_page, failure_reason(run_dir, pid), shape)]
     ledger_path = base / BLOCKS_FILENAME
     if not ledger_path.is_file():
         raise ValueError(f"{pid} has resolved text and no block ledger")
@@ -88,7 +89,9 @@ def _page(
     resolved = read_resolved(resolved_path)
     overlay = _overlay(base, pid, pdf_page)
     marks = _marks(pid, ledger, resolved, overlay, edits)
-    return _blocks(pid, ledger, resolved, marks, shape)
+    built = _blocks(pid, ledger, resolved, marks, shape)
+    image = read_grey(base / RENDER_STAGE / PAGE_IMAGE_FILENAME) if shape is not None else None
+    return with_coverage(built, image, ledger, base)
 
 
 def _blocks(
@@ -188,7 +191,15 @@ def _crops(
     )
 
 
-def _failed(pid: str, pdf_page: int, reason: str) -> RenderBlock:
+def _failed(pid: str, pdf_page: int, reason: str, shape: tuple[int, int] | None) -> RenderBlock:
+    region = None
+    crops: tuple[tuple[int, int, str], ...] = ()
+    block_id = ""
+    if shape is not None:
+        height, width = shape
+        block_id = f"{pid}-r0000"
+        region = Region(x0=0, y0=0, x1=float(width), y1=float(height), width=width, height=height)
+        crops = ((0, 0, f"review/{crop_filename(block_id, 0, 0)}"),)
     return RenderBlock(
         pdf_page=pdf_page,
         page_id=pid,
@@ -196,13 +207,14 @@ def _failed(pid: str, pdf_page: int, reason: str) -> RenderBlock:
         reading_order=0,
         kind="page-failed",
         role="page-failed",
-        block_id="",
+        block_id=block_id,
         digest="",
         text="",
-        region=None,
+        region=region,
         resolved=None,
         failed=True,
         fail_reason=reason,
+        crops=crops,
     )
 
 
@@ -228,22 +240,3 @@ def _marks(
 ) -> list[SpanMark]:
     blocks = {block.block_id: block for block in ledger.blocks}
     return page_marks(pid, blocks, resolved, overlay, edits)
-
-
-def _reason(run_dir: Path, pid: str) -> str:
-    manifest = read_manifest(run_dir)
-    if manifest is None:
-        return "recovery failed"
-    for page in manifest.pages:
-        if page.page_id != pid:
-            continue
-        for stage in page.stages:
-            if stage.status == "failed" and stage.error:
-                return _plain(stage.error)
-    return "recovery failed"
-
-
-def _plain(text: str) -> str:
-    cleaned = "".join(ch if 32 <= ord(ch) < 127 and ch != '"' else " " for ch in text)
-    compact = " ".join(cleaned.split())
-    return (compact or "recovery failed")[:FAIL_REASON_LIMIT]

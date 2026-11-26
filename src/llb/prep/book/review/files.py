@@ -45,6 +45,7 @@ def quality_row(entry: ReviewQueueEntry) -> QualityRow:
         marker=entry.marker,
         crop=entry.crop,
         raw_text=entry.raw_text,
+        box=list(entry.box),
     )
 
 

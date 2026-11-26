@@ -100,6 +100,7 @@ class RunFacts:
     scores: dict[str, EngineScores]
     readings: list[tuple[str, str, str, int]]
     findings: list[Finding]
+    failed_pages: tuple[str, ...] = ()
 
 
 @dataclass

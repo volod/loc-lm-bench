@@ -11,7 +11,10 @@ from llb.prep.book.structure.io import structure_path
 
 @book_app.command("structure")
 def structure_cmd(
-    run_dir: Path = typer.Argument(..., help="a book-ocr run whose block ledgers have finished"),
+    run_dir: Path = typer.Argument(
+        ...,
+        help="a book-ocr run; an unfinished ledger is refused and a terminal failure is included",
+    ),
 ) -> None:
     """Infer printed pages, the hierarchy, and figure, table, and equation numbers."""
     from llb.prep.book.structure.build import build_structure

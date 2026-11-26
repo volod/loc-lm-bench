@@ -12,8 +12,9 @@ relabelled `body` produce the same mapping and the same running headers.
 make book-ocr-structure BOOK_RUN=<run-dir>
 ```
 
-Exit code 2 is a run that is missing a ledger. The command prints counts. It does not print the
-recovered text. A second run over the same ledgers writes the same bytes.
+Exit code 2 is a page whose ledger is still unfinished. A page that failed terminally is included
+and contributes no lines. The command prints counts. It does not print the recovered text. A
+second run over the same ledgers writes the same bytes.
 
 ## Where it lives
 
@@ -322,10 +323,13 @@ page count. An image under `assets/`, `review/`, or `source/pages/` is linked fr
 every linked image exists. A note whose front matter does not name its PDF pages fails the
 check.
 
-When `review/queue.json` exists, each open marker matches one open queue entry. The match is
-the marker kind, the block id, the offsets, and the PDF page. A missing queue is a warning,
-and the markers are then matched to the ledger. Orphaned overlay entries are counted. The
-count is not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
+When `review/queue.json` exists, each open span marker matches one open queue entry. The match is
+the marker kind, the block id, the offsets, and the PDF page. A failed page is matched as a page,
+apart from those spans. On a finished run a missing queue is `missing-review-queue` and a queue
+that has drifted from the ledger, or whose failed pages disagree, is `stale-review-queue`. Both
+fail the check. A run with no page manifest keeps a missing or drifted queue as a warning, and
+the markers are then matched to the ledger. Orphaned overlay entries are counted. The count is
+not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
 The report's Cross-references section repeats the counts render wrote
 ([cross-references](#cross-references)). A printed-page citation that falls in a mapping gap
 is a warning and does not fail the check.

@@ -35,8 +35,12 @@ def render_content(file: VaultFile, ctx: RenderContext) -> RenderedDocument | No
 
 def corpus_passage(block: RenderBlock) -> str:
     """The block a retrieval document keeps. An unresolved span is a marker."""
+    if block.role == "blank":
+        return marker_token("blank", block.page_id or "page", 0, 0)
+    if block.role == "omission":
+        return marker_token("omission", block.block_id or block.page_id or "page", 0, 0)
     if block.failed or block.role == "page-failed":
-        return marker_token("unresolved", block.page_id or "page", 0, 0)
+        return marker_token("page-failed", block.page_id or "page", 0, 0)
     if block.resolved is None:
         label = block.block_id or block.page_id or "page"
         return marker_token("unresolved", label, 0, 0)

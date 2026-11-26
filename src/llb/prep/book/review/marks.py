@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from llb.core.contracts.data_prep.book_blocks import UncertaintyClass
+from llb.core.contracts.data_prep.book_blocks import Region, UncertaintyClass
 from llb.core.contracts.data_prep.book_review import (
     MarkerKind,
     PriorDecision,
@@ -30,3 +30,4 @@ class SpanMark:
     priors: tuple[PriorDecision, ...] = ()
     verdict: ReviewVerdict = ""
     block_present: bool = True
+    region: Region | None = None
