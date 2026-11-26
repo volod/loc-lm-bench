@@ -109,6 +109,8 @@ class Block(DataPrepRow):
     reading_order: int = Field(ge=0)
     readings: list[RawReading] = Field(min_length=1)
     uncertainty: list[UncertaintySpan] = Field(default_factory=list)
+    # A finished region. The renderer joins the next body block only when this text ends in a hyphen.
+    paragraph: bool = False
 
 
 class PageBlockLedger(ArtifactContract):

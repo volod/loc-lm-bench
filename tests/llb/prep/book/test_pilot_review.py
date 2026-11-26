@@ -35,10 +35,11 @@ def test_merge_flags_disagreements_and_keeps_alternate_only_blocks() -> None:
         False,
     )
     blocks, notes = merge_readings(layout, alternate)
-    assert [b["text"] for b in blocks] == ["A 5", "Missing heading"]
+    assert [b["text"] for b in blocks] == ["Missing heading", "A 5"]
     assert [n["block_id"] for n in notes] == [b["block_id"] for b in blocks]
-    assert notes[0]["flags"] == ["Text differs.", "Block boundaries differ."]
-    assert notes[0]["alternate"][0]["text"] == "A S"
+    assert notes[0]["flags"] == ["No region owns this line."]
+    assert notes[1]["flags"] == ["Text differs.", "Block boundaries differ."]
+    assert notes[1]["alternate"][0]["text"] == "A S"
     assert "private-" not in json.dumps((blocks, notes))
 
 

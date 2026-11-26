@@ -26,10 +26,13 @@ page and a region fails validation. The block id is
 assigned after a sort on geometry and engine, so the order the engines finished in does not change
 them.
 
-One block can carry several raw readings, keyed by engine, model, and image variant. A line that
-sits inside a block from another engine shares that block and keeps its own reading. Two boxes
-from the same engine join only when they are nearly the same rectangle, and then in that engine's
-order. Neighbouring lines stay separate. Readings from different engines or variants are aligned
+One block can carry several raw readings, keyed by engine, model, and image variant. With only
+one stage's readings, a line that sits inside another engine's block shares that block and keeps
+its own reading. With a layout region and a line reading both present, the line joins the region
+that owns it, in the [reading order](#reading-order-and-paragraph-boundaries) below. Two boxes
+from the same engine and the same stage join only when they are nearly the same rectangle, and
+then in that engine's order. Neighbouring lines stay separate. Readings from different engines or
+variants are aligned
 character by character. A letter-only difference stays on the raw readings. A difference that
 touches a digit, a sign (hyphen, plus, minus, en dash, em dash), a decimal point (a dot, or a
 comma between digits), or a non-alphanumeric symbol becomes a span. Two readings that agree do
@@ -95,7 +98,7 @@ misread of display lettering; correcting it is a later stage.
 | Assembly and reconciliation | `src/llb/prep/book/ledger/` |
 | Adapters, parsers, runners | `src/llb/prep/book/engines/` |
 | Stages | `src/llb/prep/book/stages/recognize.py` (one engine stage), `stages/blocks.py` (the merge), `stages/routing.py` (the class route and the batch order) |
-| Tests | `tests/llb/prep/book/test_block_ledger.py`, `tests/llb/prep/book/test_engine_adapters.py` |
+| Tests | `tests/llb/prep/book/test_block_ledger.py`, `tests/llb/prep/book/test_paragraph_reading.py`, `tests/llb/prep/book/test_paragraph_pipeline.py`, `tests/llb/prep/book/test_engine_adapters.py` |
 | List what can run here | `make book-ocr-engines` |
 
 `reading.json` inside an engine stage is that engine's proposals before the merge. The published
@@ -141,6 +144,34 @@ A non-original `variant_by_page_class` value needs the `variants` stage earlier 
 list. `vram_mb` names every engine the stage may run. The numbers above are the survey peaks
 in MiB, not a selected handbook config.
 
+## Reading order and paragraph boundaries
+
+A page that has both a structural reading (`layout`, `formula`, or `table`) and a line reading
+is ordered by region, not by the overlap cluster. Each line joins the tightest region that
+covers at least half of the smaller box. A body or `unknown` box that only wraps two or more
+tighter regions is dropped, and those regions are the page. A line that two regions of similar
+area claim about equally stays its own block. The worksheet marks that block "Placement is
+unclear." and lists the rival regions. A line with no region stays at its own crop, marked "No
+region owns this line.", in the column its box falls in.
+
+A body region that spans the gutter, with at least two lines on each side that do not
+themselves cross the gutter, is replaced by those lines, each in column order (left, then
+right). A line that only clips a region from the other column stays out of that region. A line
+with at least half its width inside the region stays there, including a table cell whose center
+has crossed the gutter. A heading, caption, table, formula, figure, footnote, or piece of
+furniture inside a body region stays its own block. A boxed aside
+(`aside`, `sidebar`, `text-box`, `boxed`, `boxed-text`) is `unknown`. A bare integer in the top
+or bottom 12 percent of the page, owned by no region, is a `page-number`.
+
+`paragraph` is false unless the block kept a structural region. The field is optional on
+contract 1.0.0 and defaults to false, so a ledger written before it still validates. The
+renderer joins consecutive body lines in one column. A block with `paragraph` true joins the
+next body block only when its text ends in a hyphen. That tail is taken from the other column,
+or from the next page when the next page's first unit is the tail and starts in the same
+column. The corpus keeps one fragment per block: the vault shows the joined word, and the
+block that held the tail still cites the remainder. Furniture, including neighbouring-page
+bleed and a page number, stays out of the corpus.
+
 ## Evidence
 
 **What ran.** On 2026-11-22, on the GeForce RTX 5050 laptop (8 GB), with RapidOCR 3.10.0
@@ -168,6 +199,16 @@ those engines need more than this card has.
   smaller one was half inside the other, glued neighbouring lines together. Same-engine boxes now
   join only when the rectangles nearly coincide. Rebuilding all 1,067 ledgers from the saved
   readings took 19 s; render and recognition were not repeated.
+- **Pilot pages, layout plus lines.** On 2026-11-26, on the RTX PRO 3000 Blackwell laptop
+  (12 GB), the saved Docling layout readings and RapidOCR line readings of the 25 pilot pages of
+  the same 1,067-page scan were merged again. The merge read those saved readings on the CPU.
+  Each rendered page is 1241 by 1755 pixels. The merge produced 885 blocks: 769 kept a structural
+  region (`paragraph` true), 116 are line-only blocks placed by their boxes, 19 are tables, and 4
+  are page numbers. Fourteen layout strings appear on two regions, matching two proposals from
+  the layout engine. On the three-column index page, 31 line readings that sit
+  inside a table and whose centers fall across the gutter stay on that table (0 line-only body
+  blocks remain inside a table there). On the contents page, 9 line-only blocks sit in column
+  order and the bottom folio is a `page-number`.
 - **Gates that do not need a GPU.** The ledger round-trips its model and the generated JSON
   Schema. A block missing its page or its region fails both. `0.05` against `O.05` is a digit
   span naming both slices, including when two of three readings agree. A hyphen against an em
@@ -176,5 +217,10 @@ those engines need more than this card has.
 
 What would overturn the page-300 reading: a render whose long side is under 1000 pixels (the
 coordinate rule would then be untested on this page), or a RapidOCR build that stops returning
-quads in pixel space. The task record is
-[0006](../../records/0006-scanned-book-recovery-book-block-ledger-and-engine-adapters.md).
+quads in pixel space. What would overturn the pilot-page merge: a structural region that contains
+two tighter regions and is itself one paragraph (the container rule would drop it), or a cell
+whose width is less than half inside its table (it would stay a separate line). The task records
+are
+[0006](../../records/0006-scanned-book-recovery-book-block-ledger-and-engine-adapters.md)
+and
+[0021](../../records/0021-scanned-book-recovery-book-paragraph-reading-recovery.md).

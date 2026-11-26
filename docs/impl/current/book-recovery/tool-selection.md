@@ -450,8 +450,11 @@ The task record is
 The [pilot worksheet](../../../guides/data-prep/book-ocr.md#review-the-frozen-pilot) uses the
 frozen selection and two saved recognition runs. It preserves a blind pre-draft, compares each
 page against its original scan, and exports a reference only after the reviewer records all
-page acceptances. The [reference format](quality-metrics.md#reference-transcription) is the
-same format consumed by the comparison scorer.
+page acceptances. Line readings are placed in the region that owns them
+([reading order](block-ledger.md#reading-order-and-paragraph-boundaries)): an unmatched line
+keeps its crop, and a line two regions claim equally lists both regions on the note. The
+[reference format](quality-metrics.md#reference-transcription) is the same format consumed by
+the comparison scorer.
 
 ## Not installed, and why
 

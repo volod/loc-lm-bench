@@ -32,6 +32,11 @@
           "title": "Ordinal",
           "type": "integer"
         },
+        "paragraph": {
+          "default": false,
+          "title": "Paragraph",
+          "type": "boolean"
+        },
         "pdf_page": {
           "minimum": 1,
           "title": "Pdf Page",

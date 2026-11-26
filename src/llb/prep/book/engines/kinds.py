@@ -43,6 +43,11 @@ _ALIASES = {
     "ornament": "ornament",
     "neighbour-page-bleed": "neighbour-page-bleed",
     "unknown": "unknown",
+    "aside": "unknown",
+    "sidebar": "unknown",
+    "text-box": "unknown",
+    "boxed": "unknown",
+    "boxed-text": "unknown",
 }
 # A box whose largest coordinate is at most this is treated as 0..1 normalized, not pixels.
 _NORMALIZED_MAX = 1.5

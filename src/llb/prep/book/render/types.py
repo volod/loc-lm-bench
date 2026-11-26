@@ -31,6 +31,8 @@ class RenderBlock:
     crops: tuple[tuple[int, int, str], ...] = ()
     failed: bool = False
     fail_reason: str = ""
+    # Copied from the ledger. A finished region does not absorb the next body block.
+    paragraph: bool = False
 
 
 @dataclass(frozen=True, slots=True)

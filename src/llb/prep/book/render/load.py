@@ -173,6 +173,7 @@ def _render_block(
         resolved=resolved,
         marks=marks,
         crops=_crops(marks, source.region, shape),
+        paragraph=source.paragraph,
     )
 
 

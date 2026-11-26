@@ -1,9 +1,9 @@
 """Merge engine proposals into one page ledger.
 
-Proposals that cover the same region become one block. A line from one engine that sits inside
-another engine's block is the same region: the block keeps both readings. Two boxes from the same
-engine and variant are the same region only when they are nearly the same rectangle, so a line
-engine's neighbours stay separate blocks instead of being chained into one.
+One engine's boxes cluster by near-equality, so a line engine's neighbours stay separate.
+A layout region and a line engine are a different case: each line joins the tightest region
+that owns it, and the block order is the column reading order. A page-sized box that only
+wraps those regions is not itself a paragraph.
 """
 
 from collections.abc import Sequence
@@ -20,6 +20,7 @@ from llb.core.contracts.data_prep.book_blocks import (
 from llb.prep.book.constants import BLOCK_LEDGER_SCHEMA_ID, CONTRACT_VERSION
 from llb.prep.book.engines.protocol import EngineRead, Proposed
 from llb.prep.book.ledger.ids import block_id
+from llb.prep.book.ledger.reading import STRUCTURAL_STAGES, recover
 from llb.prep.book.ledger.reconcile import reconcile
 
 # Cross-engine: intersection over the smaller box. Half the smaller region inside the other
@@ -45,10 +46,18 @@ KIND_RANK: dict[str, int] = {
 
 @dataclass(frozen=True)
 class _Tagged:
+    stage: str
     engine: str
     model: str | None
     variant: str
     proposed: Proposed
+
+
+@dataclass(frozen=True)
+class _Assembly:
+    members: tuple[_Tagged, ...]
+    paragraph: bool
+    kind: str | None
 
 
 def assemble(
@@ -60,18 +69,18 @@ def assemble(
 ) -> PageBlockLedger:
     """The block ledger for one page. Ids follow geometry, not the order engines finished in."""
     tagged = [
-        _Tagged(read.engine, read.model, read.variant, proposed)
+        _Tagged(read.stage, read.engine, read.model, read.variant, proposed)
         for read in reads
         for proposed in read.blocks
     ]
-    built: list[tuple[list[_Tagged], Region]] = []
-    for group in sorted(cluster(tagged), key=_cluster_key):
-        region = _fit(_union(group), width, height)
+    built: list[tuple[_Assembly, Region]] = []
+    for item in _assemblies(tagged, height):
+        region = _fit(_box_of(item.members), width, height)
         if region is not None:
-            built.append((group, region))
+            built.append((item, region))
     blocks = [
-        _block(page_id, pdf_page, ordinal, group, region)
-        for ordinal, (group, region) in enumerate(built)
+        _block(page_id, pdf_page, ordinal, item, region)
+        for ordinal, (item, region) in enumerate(built)
     ]
     return PageBlockLedger(
         schema_id=BLOCK_LEDGER_SCHEMA_ID,
@@ -81,6 +90,22 @@ def assemble(
         pdf_page=pdf_page,
         blocks=blocks,
     )
+
+
+def _assemblies(tagged: Sequence[_Tagged], height: int) -> list[_Assembly]:
+    if not _mixed(tagged):
+        ordered = sorted(cluster(tagged), key=_cluster_key)
+        return [_Assembly(tuple(group), False, None) for group in ordered]
+    recovered = recover(tagged, float(height))
+    return [
+        _Assembly(tuple(tagged[index] for index in members), paragraph, kind)
+        for members, paragraph, kind in recovered
+    ]
+
+
+def _mixed(tagged: Sequence[_Tagged]) -> bool:
+    stages = {item.stage for item in tagged}
+    return bool(stages & STRUCTURAL_STAGES) and bool(stages - STRUCTURAL_STAGES)
 
 
 def cluster(items: Sequence[_Tagged]) -> list[list[_Tagged]]:
@@ -171,20 +196,37 @@ def _fit(box: tuple[float, float, float, float], width: int, height: int) -> Reg
     return Region(x0=x0, y0=y0, x1=x1, y1=y1, width=width, height=height)
 
 
-def _block(
-    page_id: str, pdf_page: int, ordinal: int, group: Sequence[_Tagged], region: Region
-) -> Block:
-    readings = _readings(group)
+def _box_of(group: Sequence[_Tagged]) -> tuple[float, float, float, float]:
+    structural = [item for item in group if item.stage in STRUCTURAL_STAGES]
+    return _union(structural or group)
+
+
+def _block(page_id: str, pdf_page: int, ordinal: int, item: _Assembly, region: Region) -> Block:
+    readings = _readings(item.members)
     return Block(
         block_id=block_id(page_id, ordinal),
         pdf_page=pdf_page,
         ordinal=ordinal,
-        kind=_kind(group),
+        kind=_chosen_kind(item),
         region=region,
         reading_order=ordinal,
         readings=readings,
         uncertainty=reconcile(readings),
+        paragraph=item.paragraph,
     )
+
+
+def _chosen_kind(item: _Assembly) -> BlockKind:
+    if item.kind is not None:
+        for known in BLOCK_KINDS:
+            if item.kind == known:
+                return known
+    return _kind(item.members)
+
+
+def _reading_key(item: _Tagged) -> tuple[str, str, float, float, int]:
+    box = item.proposed
+    return (item.engine, item.variant or "", box.y0, box.x0, box.order)
 
 
 def _kind(group: Sequence[_Tagged]) -> BlockKind:
@@ -196,9 +238,12 @@ def _kind(group: Sequence[_Tagged]) -> BlockKind:
 
 
 def _readings(group: Sequence[_Tagged]) -> list[RawReading]:
+    structural = {(item.engine, item.variant) for item in group if item.stage in STRUCTURAL_STAGES}
     buckets: dict[tuple[str, str, str | None], list[_Tagged]] = {}
-    ordered = sorted(group, key=lambda item: (item.engine, item.variant or "", item.proposed.order))
+    ordered = sorted(group, key=_reading_key)
     for item in ordered:
+        if item.stage not in STRUCTURAL_STAGES and (item.engine, item.variant) in structural:
+            continue
         buckets.setdefault((item.engine, item.variant, item.model), []).append(item)
     readings = []
     for (engine, variant, model), parts in buckets.items():

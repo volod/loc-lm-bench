@@ -64,40 +64,14 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-paragraph-reading-recovery
-
-A plausible page box can still hold interleaved lines from two columns, and a paragraph can lose
-its continuation when a draft appends stray OCR lines. Recover reading order and usable paragraph
-text from explicit page regions, including on folios with bleed, tables, and boxed examples.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- use planted text and captured synthetic engine payloads.
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md), original coordinate
-  maps from [page preprocessing](current/book-recovery/page-preprocessing.md), and the
-  [pilot worksheet](current/book-recovery/tool-selection.md#pilot-reference-review).
-- User-visible outcome: the vault, projected corpus, and worksheet preserve supported reading
-  order and paragraph boundaries, with the crop and disagreement visible when placement is unclear.
-- Scope boundary: carry the engine's paragraph and reading-order evidence through the ledger.
-  Match line reads within their owning region. Join across a column or page only on source
-  evidence of continuation. Handle a span across columns, a boxed aside, a caption and its table,
-  and a rotated page with neighbouring bleed. Keep unmatched candidates accessible by region.
-- Data and artifact paths: `src/llb/prep/book/`, synthetic fixtures under `tests/llb/prep/book/`,
-  and page traces under the book run directory.
-- Execution path: run the normal stages and render, project, and prepare the worksheet over a
-  planted scan with competing structured and line readings inside `make ci`.
-- Acceptance gates: planted paragraphs retain their text and order with no cross-column
-  interleaving, duplicates, or unsupported joins; an unmatched line cannot become trailing body
-  text without placement evidence; a title, caption, cell, or boxed passage cannot be folded
-  into another paragraph; page variants return each region to its source pixels. The fixture
-  detects order, paragraph text, and table-caption association failures individually.
-- Documentation target: `docs/impl/current/book-recovery/block-ledger.md`.
-
 #### book-missing-region-accounting
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-paragraph-reading-recovery`
-- Dependencies: [review queue](current/book-recovery/uncertainty-and-review.md),
+- Dependencies:
+  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
+  records where a line joins its region. Also the
+  [review queue](current/book-recovery/uncertainty-and-review.md),
   [validation](current/book-recovery/structure-and-rendering.md#vault-validation), and
   [corpus projection](current/book-recovery/corpus-projection.md).
 - User-visible outcome: an operator can distinguish a blank scan, an unread region on an otherwise
@@ -123,8 +97,9 @@ exports before scoring the candidates against a human reference.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- planted formulas and table structures through the normal stages.
-- Requires: `book-paragraph-reading-recovery`
-- Dependencies: the reading vault renders the ledger's formula and table text
+- Dependencies:
+  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
+  records where a line joins its region. The vault renders formula and table text
   ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
 - User-visible outcome: formulas render as valid LaTeX with the book's equation number kept as a
   tag, and an uncertain formula keeps its crop beside the LaTeX; tables render as Markdown when one
@@ -151,8 +126,10 @@ them conservatively, keep each with its printed caption, and name them so they s
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- synthetic figure regions and captions.
-- Requires: `book-paragraph-reading-recovery`
-- Dependencies: the reading vault already names a figure crop from its PDF page, ordinal, and kind
+- Dependencies:
+  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
+  records where a line joins its region. The vault already names a figure crop from its PDF page,
+  ordinal, and kind
   ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
 - User-visible outcome: each figure is one asset named `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`
   plus a slug only when one derives reliably, padded to keep labels, legends, scale markings, and the
@@ -178,8 +155,10 @@ guard admits or refuses. Prepare its adoption check for the release pilot.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake model and deterministic edit and refusal cases.
-- Requires: `book-paragraph-reading-recovery`
-- Dependencies: the model is the strongest vision-capable model that fits the host, chosen per
+- Dependencies:
+  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
+  records where a line joins its region. The model is the strongest vision-capable model that fits
+  the host, chosen per
   [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
 - User-visible outcome: an optional `correct` stage that proposes per-block edits from the page crop
   and neighbouring blocks through a local Ollama endpoint; each admitted edit appears in the overlay
@@ -497,7 +476,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-paragraph-reading-recovery`, `book-missing-region-accounting`,
+- Requires: `book-missing-region-accounting`,
   `book-projection-reference-sidecar`, `book-formula-and-table-recovery`,
   `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,

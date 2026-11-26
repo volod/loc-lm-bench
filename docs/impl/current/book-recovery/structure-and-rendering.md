@@ -143,10 +143,14 @@ the text is already a table, and one column otherwise. An unresolved span keeps 
 marker. A running header or a printed page number that structure identified stays in the note,
 labelled.
 
-Consecutive body lines in one column join into a paragraph. A footnote, a column break, an
-indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index line each start a
-new paragraph. A word split by a hyphen at the column edge is joined. The rest of the right
-column stays in reading order, after the left column's footnote and index line.
+Consecutive body lines in one column join into a paragraph. A block whose ledger `paragraph`
+flag is true joins the next body block only when its text ends in a hyphen. A footnote, a
+column break, an indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index
+line each start a new paragraph. A word split by a hyphen at the column edge is joined, and so
+is a hyphen whose tail is the first unit of the next page in the same column. The rest of the
+right column stays in reading order, after the left column's footnote and index line. The
+corpus keeps one fragment per block, so the joined word is in the vault and the block that
+held the tail still cites the remainder.
 
 `source/` follows the run's three policies. `symlink` is the default. `copy` writes a read-only
 PDF. `reference` writes `source/reference.txt` and points the page links at the PDF where it
