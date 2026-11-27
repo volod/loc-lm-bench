@@ -2,7 +2,8 @@
 
 Raw engine lanes stay beside it. This lane reads ``resolved.json`` for adopted text and
 unresolved spans, the block ledger for kind and region, and the document structure for the
-printed-page mapping and equation numbers. Caption links are the vault's neighbor pairs.
+printed-page mapping and equation numbers. A formula or a table is scored as the vault emits it,
+and caption links are the figure-asset association the vault prints.
 A page with no resolved file is a missing submission. A structural metric the page did not
 emit is absent, not a zero.
 """
@@ -14,8 +15,10 @@ from pydantic import ValidationError
 from llb.core.contracts.data_prep.book_blocks import (
     UNCERTAINTY_CLASSES,
     Block,
+    FormulaReading,
     PageBlockLedger,
     RawReading,
+    TableReading,
 )
 from llb.core.contracts.data_prep.book_resolve import PageResolvedText, ResolvedBlock
 from llb.core.contracts.data_prep.book_structure import DocumentStructure
@@ -32,16 +35,29 @@ from llb.prep.book.metrics.constants import (
     LANE_RESOLVED,
 )
 from llb.prep.book.metrics.geometry import Box
+from llb.prep.book.metrics.resolved_captions import emitted_captions
 from llb.prep.book.metrics.submission import HypBlock, PageSubmission
 from llb.prep.book.metrics.tables import Cell, parse_table_text
 from llb.prep.book.render.names import equation_numbers as inventory_numbers
-from llb.prep.book.render.mathform import IMAGE, formula_math, render_body, table_mode
-from llb.prep.book.render.prose import table_markdown
-from llb.prep.book.render.segment import linked_caption_ids
+from llb.prep.book.render.emitted import (
+    OPEN,
+    ResolutionState,
+    emitted_structure,
+    resolution_state,
+)
+from llb.prep.book.render.mathform import (
+    IMAGE,
+    formula_math,
+    render_body,
+    table_markdown,
+    table_mode,
+)
 from llb.prep.book.resolve.constants import RESOLVED_FILENAME
 from llb.prep.book.resolve.io import read_resolved
+from llb.prep.book.resolve.primary import resolved_reading
 from llb.prep.book.structure.io import read_structure, structure_path
 
+_STRUCTURED = frozenset({"formula", "table"})
 _KIND_FIELDS = (
     ("formula", FIELD_FORMULA),
     ("table", FIELD_TABLE),
@@ -55,7 +71,9 @@ def load_resolved(run_dir: Path) -> list[PageSubmission]:
     if not paths:
         return []
     structure = _structure(run_dir)
-    pages = [_submission(path, structure) for path in paths]
+    read = [_page(path) for path in paths]
+    captions = emitted_captions(read, structure)
+    pages = [_submission(ledger, resolved, structure, captions) for ledger, resolved in read]
     _unique(pages)
     return pages
 
@@ -67,7 +85,7 @@ def _structure(run_dir: Path) -> DocumentStructure | None:
     return read_structure(path)
 
 
-def _submission(path: Path, structure: DocumentStructure | None) -> PageSubmission:
+def _page(path: Path) -> tuple[PageBlockLedger, PageResolvedText]:
     resolved = read_resolved(path)
     ledger_path = path.parent / BLOCKS_FILENAME
     if not ledger_path.is_file():
@@ -81,7 +99,16 @@ def _submission(path: Path, structure: DocumentStructure | None) -> PageSubmissi
             f"{resolved.page_id} ledger is pdf page {ledger.pdf_page}, "
             f"resolved text is pdf page {resolved.pdf_page}"
         )
-    blocks = _blocks(ledger, resolved, structure)
+    return ledger, resolved
+
+
+def _submission(
+    ledger: PageBlockLedger,
+    resolved: PageResolvedText,
+    structure: DocumentStructure | None,
+    captions: dict[str, str],
+) -> PageSubmission:
+    blocks = _blocks(ledger, resolved, structure, captions)
     folio_known, folio = _folio(resolved.pdf_page, structure)
     return PageSubmission(
         LANE_RESOLVED,
@@ -96,11 +123,13 @@ def _submission(path: Path, structure: DocumentStructure | None) -> PageSubmissi
 
 
 def _blocks(
-    ledger: PageBlockLedger, resolved: PageResolvedText, structure: DocumentStructure | None
+    ledger: PageBlockLedger,
+    resolved: PageResolvedText,
+    structure: DocumentStructure | None,
+    links: dict[str, str],
 ) -> list[HypBlock]:
     by_id = {block.block_id: block for block in resolved.blocks}
     ordered = sorted(ledger.blocks, key=lambda block: (block.reading_order, block.ordinal))
-    links = linked_caption_ids([(block.block_id, block.kind, block.pdf_page) for block in ordered])
     numbers = inventory_numbers(structure) if structure is not None else {}
     built = [_hyp_block(block, by_id.get(block.block_id), links, numbers) for block in ordered]
     seen = {block.block_id for block in ordered}
@@ -117,35 +146,27 @@ def _hyp_block(
     numbers: dict[str, str],
 ) -> HypBlock:
     text = resolved.text if resolved is not None else ""
-    reading = _reading(block, resolved)
+    reading = resolved_reading(block, resolved)
+    formula, table = emitted_structure(reading, resolved)
     number = numbers.get(block.block_id, "") if block.kind == "formula" else ""
     found = equation_numbers(text) if block.kind == "formula" else []
-    if reading is not None and reading.formula is not None and reading.formula.equation_number:
-        number = reading.formula.equation_number
+    if formula is not None and formula.equation_number:
+        number = formula.equation_number
     equation = number or (found[0] if found else "")
     region = block.region
+    state = resolution_state(resolved)
     return HypBlock(
         block_id=block.block_id,
         kind=block.kind,
         region=Box(region.x0, region.y0, region.x1, region.y1),
         reading_order=block.reading_order,
         text=text,
-        latex=_formula(block.kind, text, number, reading),
-        table=_table(block.kind, text, reading),
+        latex=_formula(block.kind, text, number, formula, state),
+        table=_table(block.kind, text, table, reading),
         caption_id=links.get(block.block_id) if block.kind == "figure" else None,
         equation_number=equation or None,
+        held_open=block.kind in _STRUCTURED and state == OPEN,
     )
-
-
-def _reading(block: Block, resolved: ResolvedBlock | None) -> RawReading | None:
-    if not block.readings:
-        return None
-    if resolved is None:
-        return block.readings[0]
-    for reading in block.readings:
-        if reading.engine == resolved.engine and reading.variant == resolved.variant:
-            return reading
-    return block.readings[0]
 
 
 def _orphan(resolved: ResolvedBlock) -> HypBlock:
@@ -162,25 +183,35 @@ def _orphan(resolved: ResolvedBlock) -> HypBlock:
     )
 
 
-def _formula(kind: str, text: str, number: str, reading: RawReading | None) -> str | None:
-    if kind != "formula":
+def _formula(
+    kind: str, text: str, number: str, formula: FormulaReading | None, state: ResolutionState
+) -> str | None:
+    """The math the vault emits. A formula held open emits its passage, not math."""
+    if kind != "formula" or state == OPEN:
         return None
     source = text
-    if reading is not None and reading.formula is not None:
-        source = render_body(reading.formula.latex) or reading.formula.latex
+    if formula is not None:
+        source = render_body(formula.latex) or formula.latex
     rendered = formula_math(source, number)
     if rendered.startswith("$$") and rendered.endswith("$$"):
         return rendered[2:-2].strip()
     return rendered.strip()
 
 
-def _table(kind: str, text: str, reading: RawReading | None) -> tuple[tuple[Cell, ...], ...] | None:
+def _table(
+    kind: str, text: str, table: TableReading | None, reading: RawReading | None
+) -> tuple[tuple[Cell, ...], ...] | None:
+    """The grid the vault emits: the published structure, the page image, or the passage."""
     if kind != "table":
         return None
-    if reading is not None and reading.table is not None:
-        if table_mode(reading.table) == IMAGE:
+    if table is not None:
+        if table_mode(table) == IMAGE:
             return None
-        return cells_of(reading.table)
+        return cells_of(table)
+    if reading is not None and reading.table is not None and table_mode(reading.table) == IMAGE:
+        return None
+    if not text.strip():
+        return None
     return parse_table_text(table_markdown(text))
 
 

@@ -5,7 +5,8 @@ kinds the structure file already names, plus ``page`` and ``index``. Cues are
 the words the book prints in front of a number. A comma in place of the period
 (``Fig,``) is the scanned form of that cue. A number pattern is the token
 itself. A dash between two tokens is a range. The trailing boundary keeps
-``Chapter 22`` from swallowing ``22.1.5``.
+``Chapter 22`` from swallowing ``22.1.5``, and refuses a number that runs into an
+uncertainty marker.
 """
 
 import re
@@ -14,7 +15,11 @@ from pathlib import Path
 
 import yaml
 
-_BOUNDARY = r"(?![A-Za-z0-9]|[.\-]\d)"
+# A number that runs into an uncertainty marker is not the number the page printed: `Fig. 12-`
+# before the marker of an unresolved `3` is not a citation of Figure 12. Both the vault marker
+# and the corpus token are refused.
+_MARKER_AHEAD = r"[.\-\u2013\u2014]?(?:\[!|\{\{llb-marker:)"
+_BOUNDARY = rf"(?![A-Za-z0-9]|[.\-]\d|{_MARKER_AHEAD})"
 _DASH = r"[\-\u2013\u2014]"
 _INVENTORY = ("figure", "table", "equation")
 _HIERARCHY = ("section", "chapter")

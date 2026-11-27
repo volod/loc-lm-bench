@@ -167,7 +167,9 @@ def _formulas(
 
 
 def _emitted_formulas_parse(submission: PageSubmission) -> bool | None:
-    formulas = [block for block in submission.blocks if block.kind == "formula"]
+    formulas = [
+        block for block in submission.blocks if block.kind == "formula" and not block.held_open
+    ]
     if submission.text_only or not formulas:
         return None
     return all(latex_parses(block.latex or block.text) for block in formulas)

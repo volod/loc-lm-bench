@@ -1,9 +1,11 @@
 """Apply the resolution rule to one page.
 
 The adopted text is the primary reading, with three exceptions. Characters every reading shares
-are an agreement edit. An uncertainty span stays unresolved unless an overlay edit covers it.
-Reviewer edits win over model edits, and both win over agreement. An edit whose anchor does not
-match the block is orphaned and re-queued; it is not tried against any other block.
+are an agreement edit. An uncertainty span stays unresolved unless an overlay edit covers it, and
+so do a refused model edit, a disputed table cell, a contested table caption, and a formula letter
+another formula reading writes differently. Reviewer edits win over model edits, and both win over
+agreement. An edit whose anchor does not match the block is orphaned and re-queued; it is not tried
+against any other block.
 """
 
 from collections.abc import Sequence
@@ -26,6 +28,7 @@ from llb.prep.book.resolve.constants import (
 )
 from llb.prep.book.resolve.primary import PrimaryChoice, select_reading
 from llb.prep.book.resolve.spans import ForcedSpan, cover_spans
+from llb.prep.book.resolve.technical import technical_spans
 
 
 def resolve_page(
@@ -96,8 +99,9 @@ def resolve_block(
     primary, fallback = select_reading(block, choice)
     kept, orphaned = _attach(primary, anchor, edits)
     winners = _winners(kept)
+    forced = [*_refused(primary, anchor, refusals), *technical_spans(block, primary)]
     spans, agreement = cover_spans(
-        page_id, block, primary, anchor, winners, _forced(primary, anchor, refusals, winners)
+        page_id, block, primary, anchor, winners, _uncovered(forced, winners)
     )
     applied = sorted([*winners, *agreement], key=lambda edit: (edit.start, edit.edit_id))
     text = "".join(span.text for span in spans if span.adopted)
@@ -131,14 +135,10 @@ def _attach(
     return kept, orphaned
 
 
-def _forced(
-    primary: RawReading,
-    anchor: str,
-    refusals: Sequence[RefusedCorrection],
-    winners: list[CorrectionEdit],
+def _refused(
+    primary: RawReading, anchor: str, refusals: Sequence[RefusedCorrection]
 ) -> list[ForcedSpan]:
-    """Refusal spans the adopted edits do not already cover."""
-    covered = [(edit.start, edit.end) for edit in winners]
+    """Refusal spans that still name this block's primary characters."""
     forced: list[ForcedSpan] = []
     for refusal in refusals:
         if refusal.anchor != anchor:
@@ -147,11 +147,18 @@ def _forced(
             continue
         if primary.text[refusal.start : refusal.end] != refusal.raw_text:
             continue
-        inside = any(start <= refusal.start and refusal.end <= end for start, end in covered)
-        if inside:
-            continue
         forced.append((refusal.start, refusal.end, tuple(refusal.classes)))
     return forced
+
+
+def _uncovered(forced: list[ForcedSpan], winners: list[CorrectionEdit]) -> list[ForcedSpan]:
+    """Forced spans no adopted edit already covers. An edit over the span settles it."""
+    covered = [(edit.start, edit.end) for edit in winners]
+    return [
+        span
+        for span in forced
+        if not any(start <= span[0] and span[1] <= end for start, end in covered)
+    ]
 
 
 def _winners(edits: list[CorrectionEdit]) -> list[CorrectionEdit]:

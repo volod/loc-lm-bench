@@ -120,11 +120,11 @@ def _unit(blocks: list[RenderBlock], href: Href) -> Unit:
 
 
 def linked_caption_ids(items: Sequence[tuple[str, str, int]]) -> dict[str, str]:
-    """Figure block id to the caption the vault places beside it.
+    """Figure block id to the neighbouring caption, which joins it in one unsplittable unit.
 
     ``items`` is ``(block_id, role, pdf_page)`` in reading order. A figure and a caption
-    link only when they are neighbors on one page. A nearer caption that is not the
-    neighbor is not the link a reader sees.
+    pair only when they are neighbours on one page. This keeps the two in one file; the
+    caption printed under a drawing is the figure-asset association, not this pairing.
     """
     links: dict[str, str] = {}
     for left, right in zip(items, items[1:]):

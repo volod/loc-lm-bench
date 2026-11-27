@@ -144,7 +144,7 @@ def _context(
     formula_crops: dict[str, str],
     table_images: dict[str, str],
     table_evidence: dict[str, str],
-    figure_captions: dict[str, str],
+    figure_captions: dict[str, RenderBlock],
     suppressed: frozenset[str],
 ) -> RenderContext:
     pdf = _vault_pdf(dest, loaded.pdf, opts.source_policy)

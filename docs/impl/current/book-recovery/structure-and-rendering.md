@@ -58,6 +58,10 @@ changes. `fallback` is true on a page or a node the evidence did not settle.
 
 Figure, table, and equation numbers come from a caption line, a footer line, or a display number
 `(n)`. A page that is a list of those captions does not inventory them as captions on that page.
+A line whose number runs on into a lowercase word, such as `Figure 3-1 shows the transfer.`, cites
+the item and is not its caption. A resolved block is read as its number text: a number that an
+open span touches is `?`, so no folio, section, or caption number is read across the gap
+([technical content](uncertainty-and-review.md#technical-content)).
 
 ## Evidence
 
@@ -217,7 +221,9 @@ The handbook cues are `Fig.` / `Figs.` / `Figure` / `Figures`, `Table` / `Tables
 equation cues. Parentheses around an equation number are optional. A comma, `and`, or a dash
 joins further numbers, and each number resolves on its own. `Chaps. 3-6` cites chapters 3 and
 6. `Chapter 22.1.5` does not cite chapter 22: a dotted tail is not a range. `Fig. 1-1` is one
-figure number, because the figure pattern already contains the hyphen.
+figure number, because the figure pattern already contains the hyphen. A number that runs into
+an uncertainty marker or a corpus marker token is not a citation: `Fig. 12-` before the marker
+of an open `3` does not cite figure 12.
 
 A figure, table, or equation is unique when one caption or one display number carries it. A
 page-footer echo of that number is the running index line, not a second item. Two captions

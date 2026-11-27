@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from llb.core.contracts.data_prep.book_blocks import Block, RawReading
+from llb.core.contracts.data_prep.book_resolve import ResolvedBlock
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,24 @@ def select_reading(block: Block, choice: PrimaryChoice) -> tuple[RawReading, boo
         block.readings, key=lambda reading: (reading.engine, reading.variant, reading.model or "")
     )
     return ordered[0], True
+
+
+def resolved_reading(block: Block, resolved: ResolvedBlock | None) -> RawReading | None:
+    """The ledger reading a resolved block was taken from: engine, variant, then model.
+
+    Every consumer that reads structure or confidence off the primary reading asks here, so a
+    block resolved from a fallback reading is read from that reading everywhere.
+    """
+    if not block.readings:
+        return None
+    if resolved is None:
+        return block.readings[0]
+    for reading in block.readings:
+        if reading.engine != resolved.engine or reading.variant != resolved.variant:
+            continue
+        if resolved.model is None or reading.model == resolved.model:
+            return reading
+    return block.readings[0]
 
 
 def _matches(reading: RawReading, choice: PrimaryChoice) -> bool:

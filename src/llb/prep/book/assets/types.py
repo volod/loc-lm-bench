@@ -55,7 +55,7 @@ class FigureRender:
 
     paths: dict[str, str]
     blobs: dict[str, Asset]
-    captions: dict[str, str]
+    captions: dict[str, RenderBlock]
     suppressed: frozenset[str]
     ornaments: frozenset[str]
     record: bytes

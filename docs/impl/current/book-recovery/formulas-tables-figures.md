@@ -32,6 +32,12 @@ A block may also carry cell disputes. Two engines that disagree on a cell run th
 dangerous-substitution check the character spans use. A digit, sign, decimal, or symbol
 difference, or a named substitution such as `5/S`, is a dispute. Each dispute keeps both
 engines' cell texts. A letter-only difference stays on the raw readings and is not a dispute.
+The grids are compared position by position after spans are expanded, and `row` and `column`
+are that position. A merged cell whose text matched where it starts is not disputed against the
+blank the other engine left beside it. A position only one grid fills is compared with a blank,
+so a column one engine omitted is a dispute wherever the other read a digit, a sign, or a
+symbol there. Resolve holds a disputed cell open
+([technical content](uncertainty-and-review.md#technical-content)).
 
 Docling and MinerU attach this structure from their own JSON. A Markdown reading does too:
 a pipe grid or an HTML table, and a preceding `Table` line stored as the caption without
@@ -42,6 +48,11 @@ When the formula stage and the table stage of one engine write the same text for
 the ledger keeps that text once.
 
 ## How an export is chosen
+
+The rules below apply to a block whose resolved text is the primary reading as read. A block
+an overlay edit changed publishes the structure re-read from the corrected text, and a block
+with an open span publishes its passage instead of structure
+([technical content](uncertainty-and-review.md#technical-content)).
 
 Display math is `$$...$$`. The equation number is the engine's printed number when it has
 one, otherwise the structure inventory's number, written as `\tag{...}` on the right. Inline
@@ -69,8 +80,8 @@ read as a number.
 A table with one header row, a rectangular grid, and no span other than 1 is Markdown, and
 an empty cell stays an empty cell. Any other faithful grid is HTML. An unfaithful grid is
 the page image under `assets/<chapter>/`, and the export does not also print the grid. A
-cell dispute keeps `review/<block-id>-table.png` beside the grid that was published. The
-corpus has no assets: an unfaithful table contributes its caption only.
+cell dispute keeps `review/<block-id>-table.png` beside the table, whose disputed cell is a
+marker. The corpus has no assets: an unfaithful table contributes its caption only.
 
 The caption is printed above the grid when no other block already has that text. A `Table`
 line that is its own block is not repeated.
@@ -103,7 +114,8 @@ Each planted case returns that one name.
 | Fixture | `tests/llb/prep/book/test_formula_table.py` |
 
 The raw score uses the native grid whenever the reading has one. The resolved score uses
-that grid when the export is Markdown or HTML, and submits no grid when the export is the
+the structure the block publishes (`src/llb/prep/book/render/emitted.py`): that grid when the
+export is Markdown or HTML, and no grid when the export is the
 page image. A reading with no structure still falls back to the text.
 
 ## Evidence
@@ -142,6 +154,7 @@ names sort as the figures appear. The chapter slug is the chapter above that reg
 the hierarchy has no chapter there, the directory is the owning node's slug. A second render
 of the same run writes the same bytes. The embed sits at the primary region's reading
 position, then the printed caption once, then a source-page link labelled with the page id.
+The caption is printed as its passage, so a span still open in it keeps its marker.
 
 Regions on one page whose edges are within 2% of the shorter side, clamped to 8-40 px, and
 that do not carry conflicting printed numbers, become one asset. The record lists every
@@ -160,7 +173,11 @@ number, including when the inventory recorded that line as a page footer. Two ca
 print the same number attach to neither, and the asset has no number slug. A page-footer
 inventory row with no such caption is not a slug. An unnumbered caption attaches only when
 it is the single nearest within the caption band and a second caption is not within 1.25
-times that gap. A caption that opens as a table or an equation is never that guess.
+times that gap. A caption that opens as a table or an equation is never that guess, and
+neither is one whose printed number is held open. Numbers are read from the number text, so a
+caption `Figure 12-3` whose `3` is open gives no number and no slug
+([technical content](uncertainty-and-review.md#technical-content)). The resolved score reads
+this same association (`select_figures` in `src/llb/prep/book/assets/extract.py`).
 
 A small figure, longer side at most 16% of the shorter page side and area at most 1.5% of
 the page, whose box overlaps a small figure on another page by IoU at least 0.45, is a

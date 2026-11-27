@@ -6,7 +6,7 @@ including on a page whose recovery failed: that page becomes one marker.
 
 from pathlib import Path
 
-from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, RawReading, Region
+from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, Region
 from llb.core.contracts.data_prep.book_resolve import (
     CorrectionEdit,
     PageCorrectionOverlay,
@@ -23,11 +23,10 @@ from llb.prep.book.preprocess.images import read_grey
 from llb.prep.book.render.bars import (
     caption_is_separate,
     formula_needs_crop,
-    formula_of,
     table_needs_evidence,
     table_needs_image,
-    table_of,
 )
+from llb.prep.book.render.emitted import emitted_caption, emitted_structure
 from llb.prep.book.render.omissions import with_coverage
 from llb.prep.book.render.types import BookLoad, RenderBlock
 from llb.prep.book.review.settled import failure_reason
@@ -39,6 +38,7 @@ from llb.prep.book.resolve.constants import (
     SCHEMA_VERSION,
 )
 from llb.prep.book.resolve.io import read_overlay, read_resolved
+from llb.prep.book.resolve.primary import resolved_reading
 from llb.prep.book.review.classify import page_marks
 from llb.prep.book.review.constants import CROP_PADDING_PX
 from llb.prep.book.review.crops import crop_filename, padded_box
@@ -175,9 +175,8 @@ def _render_block(
     captions: set[str],
 ) -> RenderBlock:
     digest = resolved.anchor if resolved is not None else ""
-    reading = _primary(source, resolved)
-    formula = formula_of(reading)
-    table = table_of(reading)
+    reading = resolved_reading(source, resolved)
+    formula, table = emitted_structure(reading, resolved)
     return RenderBlock(
         pdf_page=source.pdf_page,
         page_id=pid,
@@ -195,23 +194,15 @@ def _render_block(
         paragraph=source.paragraph,
         formula=formula,
         table=table,
-        emit_caption=not caption_is_separate(table, captions, text),
+        caption=_printed_caption(emitted_caption(source, reading, resolved), captions, text),
         formula_crop=formula_needs_crop(source, reading),
         table_image=table_needs_image(source, reading),
         table_evidence=table_needs_evidence(source),
     )
 
 
-def _primary(source: Block, resolved: ResolvedBlock | None) -> RawReading | None:
-    if not source.readings:
-        return None
-    if resolved is None:
-        return source.readings[0]
-    for reading in source.readings:
-        if reading.engine == resolved.engine and reading.variant == resolved.variant:
-            if resolved.model is None or reading.model == resolved.model:
-                return reading
-    return source.readings[0]
+def _printed_caption(caption: str, captions: set[str], own: str) -> str:
+    return "" if caption_is_separate(caption, captions, own) else caption
 
 
 def _caption_texts(ledger: PageBlockLedger, by_id: dict[str, ResolvedBlock]) -> set[str]:

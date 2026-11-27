@@ -83,13 +83,19 @@ resolved pages has no such lane.
 
 The lane reads the artifacts the vault and the corpus projection render from. Adopted text comes
 from `resolved.json`. Kind, region, and reading order come from the block ledger. A formula
-is the engine LaTeX when the primary reading carried it, wrapped the same way the vault wraps
-it, and the equation number is that reading's printed number, or else the inventory number, or
-else the first parenthesized number in the text. A table is the native grid when the export is
-Markdown or HTML. An image-mode table submits no grid. Without a native grid, the table is
-what `table_markdown` renders from the text. A caption link is the figure and caption that
-sit next to each other in reading order. The printed page is the structure file's mapping for
-that PDF page.
+or a table is what the block publishes
+([technical content](uncertainty-and-review.md#technical-content)). A formula is the LaTeX it
+publishes, wrapped the same way the vault wraps it, and the equation number is that formula's
+printed number, or else the inventory number, or else the first parenthesized number in the
+text. A table is the published grid when the export is Markdown or HTML. An image-mode table
+submits no grid. Without a published grid, the table is what `table_markdown` renders from the
+adopted text, and a table with no adopted text submits none. A formula or table with an open
+span is `held_open`. A held-open formula submits no math and is left out of the parse check,
+because the vault does not render it as math; its open spans are already counted as
+abstentions. A caption link is the
+figure-asset association the vault prints: the printed number, then an unambiguous nearest
+caption, never the reading-order neighbour alone. The printed page is the structure file's
+mapping for that PDF page.
 
 An unresolved span counts as one abstention for each uncertainty class on the span: `digit`,
 `sign`, `decimal`, and `symbol`. Every class is present on every page, zeros included. The count

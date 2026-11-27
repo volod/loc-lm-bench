@@ -3,6 +3,9 @@
 Agreement is the characters every reading shares with the primary. A single reading has nothing
 to agree with. An uncertainty span stays on the primary characters its own slice names; a
 disagreement between two other readings does not punch a hole in a primary that was not part of it.
+A primary slice of no width is a character another reading has and the primary lacks, such as the
+second `0` of `0.05` against `0.5`. It holds the primary characters on either side of that point,
+so a value the primary shortened is not adopted as read.
 """
 
 from collections.abc import Sequence
@@ -41,9 +44,10 @@ def uncertain_mask(primary: RawReading, spans: Sequence[UncertaintySpan]) -> lis
     mask = [False] * len(primary.text)
     for span in spans:
         for sliver in span.slices:
-            if not _slice_is_primary(primary, sliver):
+            held = _held(primary, sliver)
+            if held is None:
                 continue
-            for index in range(sliver.start, sliver.end):
+            for index in range(*held):
                 mask[index] = True
     return mask
 
@@ -55,11 +59,29 @@ def classes_covering(
     found: list[UncertaintyClass] = []
     for span in spans:
         for sliver in span.slices:
-            if sliver.end <= start or sliver.start >= end:
+            held = _held(primary, sliver)
+            if held is None or held[1] <= start or held[0] >= end:
                 continue
-            if _slice_is_primary(primary, sliver):
-                found.extend(span.classes)
+            found.extend(span.classes)
     return [name for name in UNCERTAINTY_CLASSES if name in found]
+
+
+def insertion_range(length: int, point: int) -> tuple[int, int] | None:
+    """The primary characters on either side of a point where another reading has more."""
+    start = max(0, point - 1)
+    end = min(length, point + 1)
+    if end <= start:
+        return None
+    return start, end
+
+
+def _held(primary: RawReading, sliver: UncertaintySlice) -> tuple[int, int] | None:
+    """The primary characters a slice of this reading holds open."""
+    if not _slice_is_primary(primary, sliver):
+        return None
+    if sliver.end > sliver.start:
+        return sliver.start, sliver.end
+    return insertion_range(len(primary.text), sliver.start)
 
 
 def _slice_is_primary(primary: RawReading, sliver: UncertaintySlice) -> bool:

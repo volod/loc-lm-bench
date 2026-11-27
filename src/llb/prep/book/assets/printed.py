@@ -13,7 +13,7 @@ from llb.prep.book.assets.boxes import edge_gap, from_region
 from llb.prep.book.assets.constants import CAPTION_GAP_MAX_PX
 from llb.prep.book.assets.types import Piece
 from llb.prep.book.render.catalog import canonical
-from llb.prep.book.render.types import RenderBlock
+from llb.prep.book.render.types import RenderBlock, numbered_text
 from llb.prep.book.structure.inventory import caption_figure_number
 
 
@@ -53,7 +53,7 @@ def _add_printed(reliable: dict[str, NumberedItem], captions: list[RenderBlock],
     for key, block in _unique_printed(captions).items():
         if key in reliable:
             continue
-        number = caption_figure_number(block.text)
+        number = caption_figure_number(numbered_text(block))
         if not number:
             continue
         reliable[key] = NumberedItem(
@@ -68,7 +68,7 @@ def _add_printed(reliable: dict[str, NumberedItem], captions: list[RenderBlock],
 def _unique_printed(captions: list[RenderBlock]) -> dict[str, RenderBlock]:
     grouped: dict[str, list[RenderBlock]] = {}
     for block in captions:
-        number = caption_figure_number(block.text)
+        number = caption_figure_number(numbered_text(block))
         if number:
             grouped.setdefault(canonical(number), []).append(block)
     return {key: rows[0] for key, rows in grouped.items() if len(rows) == 1}
@@ -157,7 +157,7 @@ def _printing(captions: list[RenderBlock], item: NumberedItem) -> RenderBlock | 
     if owned is not None:
         return owned
     key = canonical(item.number)
-    matches = [block for block in captions if _same_number(block.text, key)]
+    matches = [block for block in captions if _same_number(numbered_text(block), key)]
     if not matches:
         return None
     return min(matches, key=lambda block: (block.reading_order, block.ordinal, block.block_id))

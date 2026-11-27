@@ -116,11 +116,25 @@ def formula_case(root: Path) -> tuple[Path, Path]:
 
 
 def caption_case(root: Path) -> tuple[Path, Path]:
-    """A neighbor caption is wrong and the mapped folio is wrong. Guesses would pass."""
-    run = root / "run"
-    figure = _placed(1, 1, "figure", "", _box(0, 0, 10, 10))
+    """The neighbour caption is not the printed one, and the mapped folio is wrong."""
     wrong = _placed(1, 2, "caption", "Fig. 9-9. Wrong.", _box(0, 100, 30, 120))
     right = _placed(1, 3, "caption", "Fig. 3-2. Right.", _box(20, 0, 50, 10))
+    return _captioned(root, wrong, right)
+
+
+def competing_case(root: Path) -> tuple[Path, Path]:
+    """Two unnumbered captions one edge gap away. The vault attaches neither.
+
+    The centre-distance guess still picks the right one, so a lane that guesses would pass.
+    """
+    wrong = _placed(1, 2, "caption", "Wrong label.", _box(0, 12, 40, 22))
+    right = _placed(1, 3, "caption", "Right label.", _box(12, 0, 32, 10))
+    return _captioned(root, wrong, right)
+
+
+def _captioned(root: Path, wrong: Block, right: Block) -> tuple[Path, Path]:
+    run = root / "run"
+    figure = _placed(1, 1, "figure", "", _box(0, 0, 10, 10))
     body = _placed(1, 0, "body", "The folio is 57.", _box(10, 140, 120, 170))
     folio = _placed(1, 4, "page-number", "57", _box(80, 360, 120, 390))
     blocks = [body, figure, wrong, right, folio]
@@ -151,18 +165,23 @@ def _caption_page(body: Block, figure: Block, wrong: Block, right: Block, folio:
         [
             (body.block_id, "body", "The folio is 57."),
             (figure.block_id, "figure", "", right.block_id),
-            (wrong.block_id, "caption", "Fig. 9-9. Wrong."),
-            (right.block_id, "caption", "Fig. 3-2. Right."),
+            (wrong.block_id, "caption", wrong.readings[0].text),
+            (right.block_id, "caption", right.readings[0].text),
             (folio.block_id, "page-number", "57"),
         ],
         [
             (10, 140, 120, 170),
             (0, 0, 10, 10),
-            (0, 100, 30, 120),
-            (20, 0, 50, 10),
+            _corners(wrong),
+            _corners(right),
             (80, 360, 120, 390),
         ],
     )
+
+
+def _corners(block: Block) -> tuple[float, float, float, float]:
+    region = block.region
+    return (region.x0, region.y0, region.x1, region.y1)
 
 
 def _bare_page() -> RefPage:

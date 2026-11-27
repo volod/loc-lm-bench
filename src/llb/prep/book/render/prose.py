@@ -6,7 +6,7 @@ Markdown or HTML. Figures become embeds. Furniture stays visible and labelled.
 
 from collections.abc import Callable
 
-from llb.prep.book.render.mathform import formula_math, render_formula, render_table
+from llb.prep.book.render.structured import formula_text, table_text
 from llb.prep.book.render.types import RenderBlock, RenderContext, Unit
 from llb.prep.book.review.markers import render_marker, render_passage
 
@@ -17,6 +17,19 @@ def passage(block: RenderBlock, href: Href) -> str:
     """The block's resolved text, with a marker where a span was left unresolved."""
     if block.resolved is None:
         return block.text
+    replacements, prefixes = _markers(block, href)
+    return render_passage(block.resolved, replacements, prefixes)
+
+
+def passage_parts(block: RenderBlock, href: Href) -> tuple[str, str]:
+    """The block's leading markers, and its body with an open span's marker in place."""
+    if block.resolved is None:
+        return "", block.text
+    replacements, prefixes = _markers(block, href)
+    return " ".join(prefixes), render_passage(block.resolved, replacements, ())
+
+
+def _markers(block: RenderBlock, href: Href) -> tuple[dict[tuple[int, int], str], list[str]]:
     link = href(block.pdf_page)
     crops = {(start, end): name for start, end, name in block.crops}
     replacements: dict[tuple[int, int], str] = {}
@@ -29,7 +42,7 @@ def passage(block: RenderBlock, href: Href) -> str:
             replacements[(mark.start, mark.end)] = marker
         else:
             prefixes.append(marker)
-    return render_passage(block.resolved, replacements, prefixes)
+    return replacements, prefixes
 
 
 def join_lines(blocks: tuple[RenderBlock, ...] | list[RenderBlock], href: Href) -> str:
@@ -58,21 +71,6 @@ def render_unit(unit: Unit, ctx: RenderContext) -> str:
     """One unit, then the numbered-target anchors that belong to its blocks."""
     body = _BODY.get(unit.role, _paragraph)(unit, ctx)
     return _with_anchors(body, unit, ctx)
-
-
-def table_markdown(text: str) -> str:
-    """HTML when the text is already a table, Markdown when it has pipes, else one column."""
-    stripped = text.strip()
-    lowered = stripped.lower()
-    if "<table" in lowered and "</table>" in lowered:
-        return stripped
-    rows = [row.strip() for row in stripped.splitlines() if row.strip()]
-    if rows and all("|" in row for row in rows):
-        return "\n".join(rows)
-    body = ["| |", "| --- |"]
-    for row in rows or [stripped]:
-        body.append("| " + row.replace("|", "\\|") + " |")
-    return "\n".join(body)
 
 
 def _append(text: str, piece: str) -> str:
@@ -125,29 +123,19 @@ def _formula(unit: Unit, ctx: RenderContext) -> str:
         number = ctx.equations.get(item.block_id, number)
     if block.formula is not None and block.formula.equation_number:
         number = block.formula.equation_number
-    if block.formula is not None:
-        return render_formula(
-            block.formula.latex,
-            number,
-            block.formula.display,
-            ctx.formula_crops.get(block.block_id),
-        )
-    body = formula_math(unit.text, number)
-    crop = ctx.formula_crops.get(block.block_id)
-    if not crop:
-        return body
-    return f"{body}\n\n![[{crop}]]"
+    lead, body = passage_parts(block, ctx.content_href)
+    return formula_text(block, lead, body, number, ctx.formula_crops.get(block.block_id))
 
 
 def _table(unit: Unit, ctx: RenderContext) -> str:
     block = unit.blocks[0]
-    if block.table is None:
-        return table_markdown(unit.text)
-    return render_table(
-        block.table,
+    lead, body = passage_parts(block, ctx.content_href)
+    return table_text(
+        block,
+        lead,
+        body,
         ctx.table_images.get(block.block_id),
         ctx.table_evidence.get(block.block_id),
-        emit_caption=block.emit_caption,
     )
 
 
@@ -190,7 +178,8 @@ def _figure_block(block: RenderBlock, ctx: RenderContext) -> str:
     piece = passage(block, ctx.content_href).strip()
     if piece:
         lines.append(piece)
-    caption = ctx.figure_captions.get(block.block_id, "").strip()
+    caption_block = ctx.figure_captions.get(block.block_id)
+    caption = "" if caption_block is None else passage(caption_block, ctx.content_href).strip()
     if caption and caption != piece:
         lines.append(caption)
     if path:

@@ -64,29 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-technical-content-audit
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
-  [review semantics](current/book-recovery/uncertainty-and-review.md).
-  Admitted and refused model edits are
-  [evidence-constrained correction](current/book-recovery/correction.md).
-  Figure crops and caption association are
-  [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
-- User-visible outcome: a reader can trace each technical value or uncertainty marker through the
-  chosen recognition route and overlay to the pixels that support it.
-- Scope boundary: exercise an ambiguous index and sign, a merged or empty cell, a diagram with
-  labels but no caption, competing nearby captions, and an omitted column. Include an engine
-  fallback and a stale reviewer edit after rebuilding the ledger.
-- Data and artifact paths: `tests/llb/prep/book/` and the audit record.
-- Execution path: replay deterministic synthetic analogues in `make ci`.
-- Acceptance gates: verify raw readings stay immutable; every edit names its evidence; an
-  unsupported digit, caption or cell cannot enter the resolved reading. Pin each exercised routing
-  loss to a regression or an explicit abstention. Score specialist output using the emitted formula,
-  grid and caption association.
-- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
-
 #### book-synthetic-book-end-to-end
 
 Every stage is proven on its own fixtures, and the first place they all meet is a multi-day GPU run
@@ -96,9 +73,10 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-technical-content-audit`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
+  What a formula or table publishes while a value is open is
+  [technical content](current/book-recovery/uncertainty-and-review.md#technical-content).
   The projection command is
   [corpus projection](current/book-recovery/corpus-projection.md).
   The vault check is
@@ -291,8 +269,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
-  `book-publication-and-resume-audit`,
+- Requires: `book-synthetic-book-end-to-end`, `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`

@@ -8,6 +8,7 @@ from pathlib import Path
 from llb.core.contracts.data_prep.book import BookOcrRunConfig
 from llb.core.contracts.data_prep.book_blocks import FormulaReading, Region, TableReading
 from llb.core.contracts.data_prep.book_resolve import ResolvedBlock
+from llb.prep.book.resolve.numbers import number_text
 from llb.core.contracts.data_prep.book_structure import DocumentStructure, StructureNode
 from llb.prep.book.review.marks import SpanMark
 
@@ -35,12 +36,20 @@ class RenderBlock:
     paragraph: bool = False
     formula: FormulaReading | None = None
     table: TableReading | None = None
-    emit_caption: bool = False
+    # The table caption this block prints from its structure; empty when another block prints it.
+    caption: str = ""
     # The vault writes a crop when the formula is below the validity or agreement bar.
     formula_crop: bool = False
     # An unfaithful table keeps the page image. A disputed cell keeps a review crop.
     table_image: bool = False
     table_evidence: bool = False
+
+
+def numbered_text(block: RenderBlock) -> str:
+    """The text a printed number is read from: no number survives an unresolved span."""
+    if block.resolved is None:
+        return block.text
+    return number_text(block.resolved)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,8 +96,8 @@ class RenderContext:
     formula_crops: dict[str, str] = field(default_factory=dict)
     table_images: dict[str, str] = field(default_factory=dict)
     table_evidence: dict[str, str] = field(default_factory=dict)
-    # Printed caption text for a figure asset, and blocks already shown inside it.
-    figure_captions: dict[str, str] = field(default_factory=dict)
+    # The printed caption block of a figure asset, and blocks already shown inside it.
+    figure_captions: dict[str, RenderBlock] = field(default_factory=dict)
     suppressed: frozenset[str] = field(default_factory=frozenset)
 
 

@@ -15,6 +15,8 @@ _CAPTION_FIG = re.compile(r"^(?:figure|fig\.)\s*([A-Za-z]?\d+(?:[.\-]\d+)*)", re
 _CAPTION_TAB = re.compile(r"^table\s+([A-Za-z]?\d+(?:[.\-]\d+)*)", re.IGNORECASE)
 _CAPTION_EQ = re.compile(r"^(?:equation|eq\.)\s*([A-Za-z]?\d+(?:[.\-]\d+)*)", re.IGNORECASE)
 _DISPLAY = re.compile(r"^\(([A-Za-z]?\d+(?:[.\-]\d+)*)\)$")
+# A lowercase word straight after the number is a sentence running on, not a caption title.
+_PROSE_AFTER = re.compile(r"\s+[a-z]")
 
 
 def inventory_of(lines: list[Line], printed_of: dict[int, str | None]) -> list[NumberedItem]:
@@ -66,9 +68,9 @@ def _items(line: Line) -> list[tuple[ItemKind, str, ItemEvidence]]:
             + _found(text, _EQ, "equation", "page-footer")
         )
     caption = (
-        _found(text, _CAPTION_FIG, "figure", "caption")
-        + _found(text, _CAPTION_TAB, "table", "caption")
-        + _found(text, _CAPTION_EQ, "equation", "caption")
+        _caption(text, _CAPTION_FIG, "figure")
+        + _caption(text, _CAPTION_TAB, "table")
+        + _caption(text, _CAPTION_EQ, "equation")
     )
     if caption:
         return caption
@@ -88,6 +90,20 @@ def _list_pages(lines: list[Line]) -> set[int]:
         if _CAPTION_FIG.match(text) or _CAPTION_TAB.match(text) or _CAPTION_EQ.match(text):
             counts[line.pdf_page] += 1
     return {pdf for pdf, count in counts.items() if count >= LIST_CAPTION_MIN}
+
+
+def _caption(
+    text: str, pattern: re.Pattern[str], kind: ItemKind
+) -> list[tuple[ItemKind, str, ItemEvidence]]:
+    """A line that opens with a numbered label, unless prose runs on from the number.
+
+    `Figure 3-1 shows the transfer.` cites the figure; it is not the figure's caption, and
+    taking it as one would anchor the figure on the sentence. The kind is not consulted.
+    """
+    matched = pattern.match(text)
+    if matched is None or _PROSE_AFTER.match(text, matched.end()) is not None:
+        return []
+    return [(kind, matched.group(1), "caption")]
 
 
 def _found(

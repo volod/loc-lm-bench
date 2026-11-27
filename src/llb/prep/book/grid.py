@@ -95,6 +95,25 @@ def table_from_flat(cells: Sequence[object], caption: str | None = None) -> Tabl
     return table_from_grid(ordered, caption)
 
 
+Position = tuple[int, int]
+CellIndex = tuple[int, int]
+
+
+def occupancy(table: TableReading) -> dict[Position, CellIndex]:
+    """Each expanded grid position, mapped to the ``(row, index in row)`` of the cell covering it."""
+    taken: dict[Position, CellIndex] = {}
+    for row_index, row in enumerate(table.rows):
+        column = 0
+        for cell_index, cell in enumerate(row):
+            while (row_index, column) in taken:
+                column += 1
+            for down in range(cell.rowspan):
+                for across in range(cell.colspan):
+                    taken.setdefault((row_index + down, column + across), (row_index, cell_index))
+            column += cell.colspan
+    return taken
+
+
 def html_holds(table: TableReading) -> bool:
     """False when a span overlaps another cell or a cell nests a table."""
     if _nests_table(table):

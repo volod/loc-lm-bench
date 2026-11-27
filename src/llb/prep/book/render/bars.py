@@ -6,24 +6,10 @@ under the review cut. A table keeps its image when HTML cannot hold the grid,
 and a review crop when a cell dispute names a dangerous substitution.
 """
 
-from llb.core.contracts.data_prep.book_blocks import Block, FormulaReading, RawReading, TableReading
+from llb.core.contracts.data_prep.book_blocks import Block, RawReading
 from llb.prep.book.metrics.latex_norm import canonicalize
 from llb.prep.book.render.mathform import IMAGE, render_body, table_mode
 from llb.prep.book.review.constants import LOW_CONFIDENCE_BELOW
-
-
-def formula_of(reading: RawReading | None) -> FormulaReading | None:
-    """The primary reading's formula, when it carried one."""
-    if reading is None:
-        return None
-    return reading.formula
-
-
-def table_of(reading: RawReading | None) -> TableReading | None:
-    """The primary reading's table, when it carried one."""
-    if reading is None:
-        return None
-    return reading.table
 
 
 def formula_needs_crop(block: Block, reading: RawReading | None) -> bool:
@@ -53,13 +39,13 @@ def table_needs_evidence(block: Block) -> bool:
     return block.kind == "table" and bool(block.cell_disputes)
 
 
-def caption_is_separate(table: TableReading | None, captions: set[str], own: str) -> bool:
-    """True when some other block already prints the table's caption."""
-    if table is None or not table.caption:
+def caption_is_separate(caption: str, captions: set[str], own: str) -> bool:
+    """True when the table has no caption of its own, or some other block already prints it."""
+    if not caption:
         return True
     others = set(captions)
     others.discard(" ".join(own.split()))
-    return " ".join(table.caption.split()) in others
+    return " ".join(caption.split()) in others
 
 
 def _latex(reading: RawReading | None) -> str:

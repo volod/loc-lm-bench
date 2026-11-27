@@ -2,12 +2,24 @@
 
 A letter-only difference stays on the raw readings. A difference the ledger already
 treats as dangerous, or that the substitution walk names, becomes a cell dispute.
+
+Two grids are compared position by position after spans are expanded, so a merged cell
+is compared with every cell it covers rather than shifting the rest of its row. A
+position only one grid fills is compared with a blank: a column one engine omitted is a
+dispute wherever the other engine read a digit, a sign, or a symbol there. ``row`` and
+``column`` are that expanded position.
 """
 
 from collections.abc import Sequence
 from itertools import combinations
 
-from llb.core.contracts.data_prep.book_blocks import CellDispute, CellSource, RawReading
+from llb.core.contracts.data_prep.book_blocks import (
+    CellDispute,
+    CellSource,
+    RawReading,
+    TableReading,
+)
+from llb.prep.book.grid import CellIndex, occupancy
 from llb.prep.book.ledger.reconcile import mismatch_classes
 from llb.prep.book.metrics.align import alignment
 from llb.prep.book.metrics.confusion import (
@@ -31,21 +43,54 @@ def cell_disputes(readings: Sequence[RawReading]) -> list[CellDispute]:
 def _pair(left: RawReading, right: RawReading, seen: set[tuple[object, ...]]) -> list[CellDispute]:
     disputes: list[CellDispute] = []
     assert left.table is not None and right.table is not None
-    rows = min(len(left.table.rows), len(right.table.rows))
-    for row_index in range(rows):
-        left_row = left.table.rows[row_index]
-        right_row = right.table.rows[row_index]
-        for column in range(min(len(left_row), len(right_row))):
-            dispute = _cell(
-                left, right, row_index, column, left_row[column].text, right_row[column].text
-            )
-            if dispute is None:
-                continue
-            key = _key(dispute)
-            if key not in seen:
-                seen.add(key)
-                disputes.append(dispute)
+    left_cells = occupancy(left.table)
+    right_cells = occupancy(right.table)
+    compared: set[tuple[CellIndex | None, CellIndex | None]] = set()
+    matched: set[tuple[int, CellIndex]] = set()
+    for position in sorted(set(left_cells) | set(right_cells)):
+        pair = (left_cells.get(position), right_cells.get(position))
+        if pair in compared:
+            continue
+        compared.add(pair)
+        one = _text(left.table, pair[0])
+        other = _text(right.table, pair[1])
+        if one == other:
+            matched.update(_sides(pair))
+            continue
+        if _merge_only(pair, one, other, matched):
+            continue
+        dispute = _cell(left, right, position[0], position[1], one, other)
+        if dispute is None:
+            continue
+        key = _key(dispute)
+        if key not in seen:
+            seen.add(key)
+            disputes.append(dispute)
     return disputes
+
+
+def _sides(pair: tuple[CellIndex | None, CellIndex | None]) -> set[tuple[int, CellIndex]]:
+    return {(side, index) for side, index in enumerate(pair) if index is not None}
+
+
+def _merge_only(
+    pair: tuple[CellIndex | None, CellIndex | None],
+    one: str,
+    other: str,
+    matched: set[tuple[int, CellIndex]],
+) -> bool:
+    """A merged cell whose text already matched, against the blank the other grid left beside it."""
+    left, right = pair
+    if not other and left is not None and (0, left) in matched:
+        return True
+    return not one and right is not None and (1, right) in matched
+
+
+def _text(table: TableReading, index: CellIndex | None) -> str:
+    if index is None:
+        return ""
+    row, cell = index
+    return table.rows[row][cell].text
 
 
 def _cell(

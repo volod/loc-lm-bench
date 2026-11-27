@@ -16,6 +16,10 @@ stage writes the model edits this seam reads
 | `src/llb/prep/book/resolve/spans.py` | How one primary reading is tiled into adopted and unresolved spans |
 | `src/llb/prep/book/resolve/primary.py` | The configured reading, and the visible fallback when a block lacks it |
 | `src/llb/prep/book/resolve/anchor.py` | The block digest an edit must match |
+| `src/llb/prep/book/resolve/technical.py` | Spans a formula or a table holds open: disputed cells, contested captions, formula letters |
+| `src/llb/prep/book/resolve/numbers.py` | The text a number parser reads, with a number an open span touches masked |
+| `src/llb/prep/book/render/emitted.py` | Which formula or table structure a block publishes: as read, as corrected, or none |
+| `src/llb/prep/book/render/structured.py` | A formula or table block written as structure or as its passage, for the vault and the corpus |
 | `src/llb/prep/book/resolve/io.py` | Overlay, resolved text, model corrections, and the run-level reviewer file |
 | `src/llb/prep/book/stages/resolve.py` | The `resolve` stage |
 | `src/llb/prep/book/correct/` | The optional `correct` stage: proposals, the guard, and the adoption report |
@@ -27,7 +31,9 @@ stage writes the model edits this seam reads
 
 Tests: `tests/llb/prep/book/test_resolve.py`, `test_resolve_stage.py`, `test_ledger_reuse.py`,
 and `test_review_queue.py`. Model edits are `test_correct_guard.py` and `test_correct_stage.py`.
-The adapter is also covered from `tests/llb/review/test_adapters.py`.
+Technical content is `test_technical_content_audit.py`, `test_technical_review_rebuild.py`, and
+`test_technical_seams.py`, over the planted scan in `technical_fixture.py`. The adapter is also
+covered from `tests/llb/review/test_adapters.py`.
 
 ## The resolution rule
 
@@ -52,7 +58,13 @@ readings, each character every other reading shares with the primary is an agree
 `raw_text` equals its `replacement`, its evidence is `every reading agrees`, and its id is
 `agreement:<block-id>:<start>:<end>`. Two of three agreeing does not outvote the third. An
 uncertainty span of the primary stays unresolved unless an overlay edit covers those offsets. A
-letter disagreement that is not an uncertainty span stays the primary reading.
+letter disagreement that is not an uncertainty span stays the primary reading, except inside a
+formula ([technical content](#technical-content)).
+
+A character another reading has and the primary lacks is a slice of no width on the primary.
+It holds the primary characters on either side of that point, so `0.5` against `0.05` leaves
+`.5` unresolved, and `3` against `-3` leaves the `3` unresolved. The review candidate is the
+other reading over the same characters: `.05`.
 
 The adopted `text` joins the adopted spans only. An unresolved span keeps the primary characters,
 with `adopted` false and the uncertainty classes that cover it, and those characters are omitted
@@ -89,6 +101,45 @@ other page's. A missing file digests the same as an empty list, so a file that d
 page does not re-run it. An invalid file changes the key and the page fails until the file is
 fixed. A new decision therefore re-runs exactly the pages it touches. The stage re-reads the
 ledger after writing and refuses to continue if those bytes moved.
+
+## Technical content
+
+A formula's symbols and a table's cells are compared on their own structure, and that structure
+is printed from the primary reading rather than from the adopted text. Resolve therefore holds
+these open as well:
+
+- **A disputed cell.** The cell is found in the primary text, row by row, and those characters
+  stay unresolved with the dispute's classes. A cell the primary left blank or did not have, or
+  whose text the primary text does not show, holds the whole reading open. Cells are compared on
+  the expanded grid ([cell disputes](formulas-tables-figures.md#what-a-reading-carries)).
+- **A contested table caption.** Two table readings whose captions differ on a digit, a sign, a
+  decimal, or a symbol hold the whole reading open, because the caption is not in the text.
+- **A formula letter.** Between two formula readings, a difference that holds a letter is open
+  with class `symbol`, so `x_i` against `x_j` is not settled by the primary.
+
+The stage identity is `llb-book-resolve 2`, so a page resolved under the earlier rule resolves
+again.
+
+What a formula or a table block then publishes follows from its spans
+(`src/llb/prep/book/render/emitted.py`). The vault, the corpus, and the resolved score all ask
+the same function:
+
+| Spans | Published |
+| --- | --- |
+| Every span primary or agreement | The engine's formula or grid |
+| An overlay edit, nothing open | The structure read again from the corrected text by the engine-text parser; the engine's equation number and caption are kept where the text has none |
+| A span still open | No structure. A formula is its passage, markers in place, beside its crop, never math around a marker. A table is its passage laid out as a Markdown grid when it still reads as rows, so a disputed cell is a marker inside its cell; otherwise the passage as written |
+
+A low-confidence, orphaned, or empty block keeps its marker above the structure it publishes. A
+contested caption is not printed; the crop beside the marker shows it.
+
+A number is never read across an open span. The adopted text drops the span, so `Figure 12-3`
+with its `3` open adopts as `Figure 12-`. Structure inference and figure numbering read the
+number text instead (`src/llb/prep/book/resolve/numbers.py`): every run of letters, digits, and
+number punctuation that touches an open span is one `?`. That caption is a numbered caption
+whose number is unread. It gets no asset number and is not attached by proximity. A folio read
+`125` with its `2` open is `?`, not printed page `15`. A citation whose number runs into a marker
+is not linked ([cross-references](structure-and-rendering.md#cross-references)).
 
 ## How to run
 
@@ -304,3 +355,34 @@ What would overturn it: a column with ink and no recognition box marked `read`, 
 boxes already cover at least half its ink marked `omission`. The planted gate is
 `tests/llb/prep/book/test_region_accounting.py`. The task record is
 [0022](../../records/0022-scanned-book-recovery-book-missing-region-accounting.md).
+
+**Technical content.** On 2026-11-27, on host vola-ASUS-V16-V3607VH1 (ASUS V16), CPU only, no
+model. A planted four-page scan is read by two scripted engines on the `formula` and `table`
+stages and published through structure, the queue, the vault, the corpus, and validation inside
+`make ci`. The same tests were run once against the code before this change.
+
+| Case | Before | Now |
+| --- | --- | --- |
+| Formula index digit, sign, and index letter disagree | Raw `v_1 - v_i` printed as math in both outputs; two queue entries had no vault marker | Three open spans, three markers and tokens, the crop, no math; `E = mc^2 \tag{2-5}` agreed and printed |
+| Primary shortened `0.05` and kept a `-` the other engine lacks | `0.5` adopted, the minus held | `.5` and `-` held: adopted `The burn lasts 0 s at x = 3.` |
+| Table cell `35` against `36` | `Valve \| 35` published; the cell's queue entry had no marker | The marker sits in the cell; `Tank \| 1200` stays |
+| Merged header against a blank | No dispute | No dispute; the HTML grid is published |
+| Primary blank cell and omitted column | The two-column grid published | One marker for the table and the table crop |
+| Captions `Table 2-1` against `Table 2-7` | `Table 2-1` printed | Whole table held open, no caption printed |
+| Figure caption `Figure 12-3` against `12-8` | Asset `p0003_0008_figure_12`, caption attached; marker missing | No asset number, caption printed with its marker |
+| A sentence opening `Figure 3-1 shows` beside an uncaptioned diagram | Inventoried as figure 3-1's caption; `^fig-3-1` on the sentence | Not inventoried; the diagram has no caption |
+| Two unnumbered captions one gap away | Neither attached; the score linked the reading-order neighbour | Neither attached; the score credits neither |
+| Formula only the other engine read | Fallback recorded; both outputs and the score used that reading | Unchanged |
+
+Before the change, validation of that vault reported four `marker-queue-mismatch` findings and
+four unreferenced crops. Now it reports none, and the queue holds 9 entries. A reviewer edit on
+all three formula spans publishes `v_1 - v_k = \Delta v \tag{2-4}`. A rebuilt ledger then
+orphans all three edits with `block_changed`, `v_k` is in neither output, and the open letter
+span carries the refused decisions. The ledger bytes did not change across the queue, vault,
+and corpus passes.
+
+What would overturn it: an adopted character that a second reading contradicts on a digit, a
+sign, a decimal, or a symbol; a grid or math printed for a block with an open span; a figure
+number read across an open span; a vault marker without its queue entry, or the reverse. The
+task record is
+[0027](../../records/0027-scanned-book-recovery-book-technical-content-audit.md).

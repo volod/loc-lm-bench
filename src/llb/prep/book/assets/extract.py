@@ -5,9 +5,10 @@ when the page makes that association, and a crop from the best geometric
 variant. Repeated badges and isolated specks stay out of ``assets/``.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
-from llb.core.contracts.data_prep.book_structure import DocumentStructure
+from llb.core.contracts.data_prep.book_structure import DocumentStructure, NumberedItem
 from llb.prep.book.assets.boxes import Box, from_region
 from llb.prep.book.assets.captions import assign_proximity, caption_in_crop
 from llb.prep.book.assets.printed import assign_printed
@@ -23,29 +24,53 @@ from llb.prep.book.render.types import BookLoad, RenderBlock
 
 
 def figure_assets(spans: list[Span], loaded: BookLoad, book: str, run_dir: Path) -> FigureRender:
-    """Assets, caption text, suppressed blocks, ornament relabels, and the region record."""
+    """Assets, caption blocks, suppressed blocks, ornament relabels, and the region record."""
     pieces, captions = _collect(spans, book, loaded.structure)
-    ornaments = repeated_ornament_ids(pieces)
-    kept = [piece for piece in pieces if piece.block.block_id not in ornaments]
-    assign_printed(kept, captions, loaded.structure.inventory)
-    groups = group_pieces(kept)
-    assign_proximity(groups, captions)
-    groups, noise = drop_noise(groups)
+    groups, ornaments, noise = select_figures(pieces, captions, loaded.structure.inventory)
     paths: dict[str, str] = {}
     blobs: dict[str, Asset] = {}
-    caption_text: dict[str, str] = {}
+    caption_blocks: dict[str, RenderBlock] = {}
     suppressed: set[str] = set()
     rows: list[dict[str, object]] = []
     for group in groups:
         _emit(
-            group, groups, captions, loaded, run_dir, paths, blobs, caption_text, suppressed, rows
+            group, groups, captions, loaded, run_dir, paths, blobs, caption_blocks, suppressed, rows
         )
     rejected = _rejected(pieces, ornaments, noise)
     record = figure_record(rows, rejected)
     labelled = ornaments | noise
     return FigureRender(
-        paths, blobs, caption_text, frozenset(suppressed), frozenset(labelled), record
+        paths, blobs, caption_blocks, frozenset(suppressed), frozenset(labelled), record
     )
+
+
+def select_figures(
+    pieces: list[Piece], captions: list[RenderBlock], inventory: Sequence[NumberedItem]
+) -> tuple[list[FigureGroup], set[str], set[str]]:
+    """The drawings the vault embeds, and the ids it drops as ornaments and as noise.
+
+    Each group carries the printed number and the caption it is associated with. Nothing here
+    crops, so the resolved score reads the same association the vault prints.
+    """
+    ornaments = repeated_ornament_ids(pieces)
+    kept = [piece for piece in pieces if piece.block.block_id not in ornaments]
+    assign_printed(kept, captions, inventory)
+    groups = group_pieces(kept)
+    assign_proximity(groups, captions)
+    groups, noise = drop_noise(groups)
+    return groups, ornaments, noise
+
+
+def caption_links(
+    blocks: Sequence[RenderBlock], inventory: Sequence[NumberedItem]
+) -> dict[str, str]:
+    """Figure block id to the caption block id the vault prints under that drawing."""
+    pieces: list[Piece] = []
+    captions: list[RenderBlock] = []
+    for block in blocks:
+        _take(pieces, captions, block, "")
+    groups, _ornaments, _noise = select_figures(_ordered(pieces), _by_order(captions), inventory)
+    return {group.primary.block_id: group.caption_id for group in groups if group.caption_id}
 
 
 def _collect(
@@ -58,11 +83,18 @@ def _collect(
         chapter = chapter_slug(span.node, parents, book)
         for block in span.blocks:
             _take(pieces, captions, block, chapter)
-    pieces.sort(key=piece_key)
-    captions.sort(
-        key=lambda block: (block.pdf_page, block.reading_order, block.ordinal, block.block_id)
+    return _ordered(pieces), _by_order(captions)
+
+
+def _ordered(pieces: list[Piece]) -> list[Piece]:
+    return sorted(pieces, key=piece_key)
+
+
+def _by_order(captions: list[RenderBlock]) -> list[RenderBlock]:
+    return sorted(
+        captions,
+        key=lambda block: (block.pdf_page, block.reading_order, block.ordinal, block.block_id),
     )
-    return pieces, captions
 
 
 def _take(
@@ -84,7 +116,7 @@ def _emit(
     run_dir: Path,
     paths: dict[str, str],
     blobs: dict[str, Asset],
-    caption_text: dict[str, str],
+    caption_blocks: dict[str, RenderBlock],
     suppressed: set[str],
     rows: list[dict[str, object]],
 ) -> None:
@@ -102,7 +134,9 @@ def _emit(
     if cropped is None:
         return
     image, variant, recorded = cropped
-    _store(group, image, variant, recorded, captions, paths, blobs, caption_text, suppressed, rows)
+    _store(
+        group, image, variant, recorded, captions, paths, blobs, caption_blocks, suppressed, rows
+    )
 
 
 def _store(
@@ -113,7 +147,7 @@ def _store(
     captions: list[RenderBlock],
     paths: dict[str, str],
     blobs: dict[str, Asset],
-    caption_text: dict[str, str],
+    caption_blocks: dict[str, RenderBlock],
     suppressed: set[str],
     rows: list[dict[str, object]],
 ) -> None:
@@ -127,9 +161,9 @@ def _store(
     )
     paths[group.primary.block_id] = rel
     blobs[rel] = image
-    text = _caption_text(group.caption_id, captions)
-    if text:
-        caption_text[group.primary.block_id] = text
+    caption = _caption_block(group.caption_id, captions)
+    if caption is not None:
+        caption_blocks[group.primary.block_id] = caption
     if group.caption_id:
         suppressed.add(group.caption_id)
     for piece in group.pieces[1:]:
@@ -137,13 +171,14 @@ def _store(
     rows.append(figure_row(group, rel, variant, recorded))
 
 
-def _caption_text(caption_id: str | None, captions: list[RenderBlock]) -> str:
+def _caption_block(caption_id: str | None, captions: list[RenderBlock]) -> RenderBlock | None:
+    """The caption block, printed as its passage so an open span keeps its marker."""
     if not caption_id:
-        return ""
+        return None
     for block in captions:
         if block.block_id == caption_id:
-            return block.text.strip()
-    return ""
+            return block
+    return None
 
 
 def _others(group: FigureGroup, groups: list[FigureGroup]) -> list[Box]:

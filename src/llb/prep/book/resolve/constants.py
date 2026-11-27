@@ -4,8 +4,8 @@ from typing import Final
 
 RESOLVE_STAGE: Final = "resolve"
 CORRECT_STAGE: Final = "correct"
-RESOLVE_VERSION: Final = "1"
-RESOLVE_TOOL: Final = "llb-book-resolve 1"
+RESOLVE_VERSION: Final = "2"
+RESOLVE_TOOL: Final = "llb-book-resolve 2"
 
 OVERLAY_FILENAME: Final = "overlay.json"
 RESOLVED_FILENAME: Final = "resolved.json"

@@ -1,9 +1,12 @@
 """Proximity captions, after the printed number has been assigned.
 
 An unnumbered caption can belong to a drawing when it is clearly the nearest
-one. A caption that prints a figure, table, or equation number is not a guess.
-Two captions at a similar distance attach to neither drawing.
+one. A caption that prints a figure, table, or equation number is not a guess,
+and neither is one whose printed number is held open for review. Two captions at
+a similar distance attach to neither drawing.
 """
+
+import re
 
 from llb.prep.book.assets.boxes import edge_gap, from_region, span_limit
 from llb.prep.book.assets.constants import (
@@ -13,11 +16,16 @@ from llb.prep.book.assets.constants import (
     CAPTION_GAP_MIN_PX,
 )
 from llb.prep.book.assets.types import FigureGroup
-from llb.prep.book.render.types import RenderBlock
+from llb.prep.book.render.types import RenderBlock, numbered_text
+from llb.prep.book.resolve.numbers import NUMBER_PLACEHOLDER
 from llb.prep.book.structure.inventory import (
     caption_equation_number,
     caption_figure_number,
     caption_table_number,
+)
+
+_UNREAD_NUMBER = re.compile(
+    rf"^(?:figure|fig\.|table|equation|eq\.)\s*{re.escape(NUMBER_PLACEHOLDER)}", re.IGNORECASE
 )
 
 
@@ -54,7 +62,7 @@ def _nearest_plain(group: FigureGroup, captions: list[RenderBlock], used: set[st
     for block in captions:
         if block.pdf_page != group.primary.pdf_page or block.block_id in used:
             continue
-        if block.region is None or _numbered_caption(block.text):
+        if block.region is None or _numbered_caption(numbered_text(block)):
             continue
         gap = edge_gap(group.union, from_region(block.region))
         if gap <= limit:
@@ -63,10 +71,12 @@ def _nearest_plain(group: FigureGroup, captions: list[RenderBlock], used: set[st
 
 
 def _numbered_caption(text: str) -> bool:
+    """A caption that prints a number, including one whose number is held open."""
     return (
         caption_figure_number(text) is not None
         or caption_table_number(text) is not None
         or caption_equation_number(text) is not None
+        or _UNREAD_NUMBER.match(text) is not None
     )
 
 
