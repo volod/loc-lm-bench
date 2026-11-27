@@ -37,8 +37,9 @@ the numbering inventory. `llb book-ocr render` writes the Obsidian vault from th
 each citation the structure names uniquely, and `llb book-ocr validate` checks it
 ([structure and the reading vault](book-recovery/structure-and-rendering.md)).
 `llb book-ocr project` writes the retrieval corpus from the same ledger
-([corpus projection](book-recovery/corpus-projection.md)). One CI test walks a generated book
-from the PDF through those stages, the vault check, ingest, and one reviewer revision
+([corpus projection](book-recovery/corpus-projection.md)). The generated books in CI exercise
+vault publication, recovery from interruption, ingestion, a reviewer revision, and the link
+from a retrieval hit to the cited scan region
 ([full-run rehearsal](book-recovery/full-run-evidence.md)). Operator usage is
 the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 

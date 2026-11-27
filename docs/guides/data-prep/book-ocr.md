@@ -224,6 +224,10 @@ scan showed, is in
 [cross-references](../../impl/current/book-recovery/structure-and-rendering.md#cross-references).
 `render` then runs the vault check below. A failed check is exit code 1.
 
+After an interruption during publication, repeat `make book-ocr-render` with the same output
+path. The renderer recovers any displaced prior vault and removes abandoned staging before
+rebuilding. The fallback file is the original cached render for that PDF page.
+
 ## Corpus projection
 
 `book-ocr project` writes a retrieval corpus from a run that already has a document structure.

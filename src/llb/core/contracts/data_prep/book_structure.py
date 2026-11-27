@@ -147,6 +147,7 @@ class DocumentStructure(ArtifactContract):
     kind: Literal["book-ocr-document-structure"]
     source_sha256: str = Field(pattern=_SHA)
     pages: list[PrintedPage] = Field(min_length=1)
+    ambiguous_folios: list[str] = Field(default_factory=list)
     headers: list[RunningHeader] = Field(default_factory=list)
     hierarchy: StructureNode
     inventory: list[NumberedItem] = Field(default_factory=list)

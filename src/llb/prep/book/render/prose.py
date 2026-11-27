@@ -54,13 +54,15 @@ def join_lines(blocks: tuple[RenderBlock, ...] | list[RenderBlock], href: Href) 
     return text
 
 
-def render_units(units: list[Unit], ctx: RenderContext, seen_pages: set[int]) -> str:
-    """The body of one file. The first block of a PDF page carries that page's anchor."""
+def render_units(units: list[Unit], ctx: RenderContext, page_anchors: dict[int, str]) -> str:
+    """Render one note with a local anchor at the first unit from each of its pages."""
     chunks: list[str] = []
+    seen: set[int] = set()
     for unit in units:
-        anchor = _page_anchor(unit, seen_pages)
-        if anchor:
-            chunks.append(anchor)
+        for block in unit.blocks:
+            if block.pdf_page not in seen:
+                seen.add(block.pdf_page)
+                chunks.append(f"^{page_anchors[block.pdf_page]}")
         body = render_unit(unit, ctx)
         if body:
             chunks.append(body)
@@ -81,15 +83,6 @@ def _append(text: str, piece: str) -> str:
     if text.endswith("-") and piece[0].islower():
         return text[:-1] + piece
     return f"{text} {piece}"
-
-
-def _page_anchor(unit: Unit, seen: set[int]) -> str:
-    for block in unit.blocks:
-        if block.pdf_page in seen:
-            continue
-        seen.add(block.pdf_page)
-        return f"^{block.page_id}"
-    return ""
 
 
 def _with_anchors(body: str, unit: Unit, ctx: RenderContext) -> str:

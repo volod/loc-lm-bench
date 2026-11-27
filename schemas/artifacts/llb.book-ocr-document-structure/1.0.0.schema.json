@@ -351,6 +351,13 @@
   "additionalProperties": false,
   "description": "`metadata/document_structure.json`: printed pages, hierarchy, and numbering.",
   "properties": {
+    "ambiguous_folios": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ambiguous Folios",
+      "type": "array"
+    },
     "conflicts": {
       "items": {
         "$ref": "#/$defs/StructureConflict"

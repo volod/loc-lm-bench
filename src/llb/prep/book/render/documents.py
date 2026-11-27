@@ -122,10 +122,25 @@ def _file(
         span_count[span.node.node_id],
     )
     stem = _unique(stem, used)
-    body = render_units(units, ctx, seen)
+    page_anchors = _local_page_anchors(units, seen, index)
+    body = render_units(units, ctx, page_anchors)
     if opening and not any(unit.role == "heading" for unit in units):
         body = _title(span.node, body)
-    return VaultFile(stem, span.node, units, start, end, span.depth, body, _reviews(body), opening)
+    return VaultFile(
+        stem, span.node, units, start, end, span.depth, body, _reviews(body), opening, page_anchors
+    )
+
+
+def _local_page_anchors(units: list[Unit], seen: set[int], note_index: int) -> dict[int, str]:
+    anchors: dict[int, str] = {}
+    for unit in units:
+        for block in unit.blocks:
+            page = block.pdf_page
+            if page not in anchors:
+                label = block.page_id
+                anchors[page] = f"{label}-note-{note_index}" if page in seen else label
+                seen.add(page)
+    return anchors
 
 
 def _wrap(

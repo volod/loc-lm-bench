@@ -117,12 +117,20 @@ directory, so the sidecar stays with the corpus.
 The logical key is the source checksum, the structure node, and the part index of that node
 inside the layout. The document id is `book-` plus the first 16 hex characters of the key's
 SHA-256, plus the first 16 hex characters of the text's SHA-256. An unchanged text keeps its
-filename. `refresh-index` then sees the same id and the same fingerprint.
+filename. `refresh-index` fingerprints the document and its sidecars, so it can refresh changed
+provenance or references under the same document ID.
 
 A changed text -- a resolved marker, or an admitted correction -- is a new file. `revision_of`
 names the previous file, which stays on disk. A gold span accepted against the earlier text
 still validates. Re-projecting the new text again keeps that link; it does not add another
 file. The output keeps every version it has written.
+
+Projection writes a new document's sidecars before publishing the Markdown file. A retry fills
+in interrupted output before ingestion can discover that document. When a printed reference
+points to a revised document, its sidecar can update the target while the citing document keeps
+its text and ID. Both outputs share section boundaries and the corpus records the local anchor
+when a cited page continues in a second note. A split paragraph contributes its part to each
+document once, with character offsets local to that document.
 
 ## Redistribution
 

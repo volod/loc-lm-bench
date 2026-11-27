@@ -61,6 +61,7 @@ class Unit:
     text: str
     splittable: bool
     keep_anchors: bool = True
+    text_range: tuple[int, int] | None = None
 
 
 @dataclass
@@ -78,6 +79,7 @@ class VaultFile:
     # False for a later span of a node, the prose that sits between its children.
     # The contents lists the opening span, including its length-split parts.
     opening: bool = False
+    page_anchors: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

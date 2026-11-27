@@ -79,16 +79,19 @@ __all__ = [
 ]
 
 
-def write_scan(path: Path) -> Path:
+def write_scan(path: Path, *, page_count: int = PAGE_COUNT, color_page: int = 0) -> Path:
     """Write the eleven-page scan. One page's pixels are rotated 180 degrees."""
     import fitz
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with fitz.open() as document:
-        for number in range(1, PAGE_COUNT + 1):
+        for number in range(1, page_count + 1):
             image = _pixels(number)
             page = document.new_page(width=WIDTH, height=HEIGHT)
             pixmap = fitz.Pixmap(fitz.csGRAY, WIDTH, HEIGHT, image.tobytes(), False)
+            if number == color_page:
+                pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
+                pixmap.set_rect(fitz.IRect(42, 172, 182, 176), (8, 94, 175))
             page.insert_image(page.rect, pixmap=pixmap)
         document.save(path, garbage=3, deflate=True, no_new_id=True)
     return path
@@ -110,20 +113,21 @@ def stage_specs() -> tuple[BookStageSpec, ...]:
     )
 
 
-def make_registry(*, kill: bool) -> StageRegistry:
+def make_registry(*, kill: bool, extra: Sequence[Plant] = ()) -> StageRegistry:
     """Four fake engines. `kill` dies once, mid-run, on the formula page's OCR."""
+    planted = (*_plants(), *extra)
     reader = _Engine(
         "reader",
         "ocr",
-        _plants(),
+        planted,
         fail_page=FAILED_PAGE,
         kill_page=KILL_PAGE if kill else 0,
     )
     engines = (
-        _Engine("layout", "layout", _plants()),
+        _Engine("layout", "layout", planted),
         reader,
-        _Engine("formula", "formula", _plants()),
-        _Engine("table", "table", _plants()),
+        _Engine("formula", "formula", planted),
+        _Engine("table", "table", planted),
     )
     return StageRegistry(
         (

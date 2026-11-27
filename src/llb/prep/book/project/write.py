@@ -38,12 +38,13 @@ def write_document(
     references: str,
 ) -> None:
     """Write the document, its citations, its references, and its metadata."""
-    _write(out_dir / doc_id, item.text)
     citation = out_dir / Path(doc_id).with_suffix(".citations.json")
     _write(citation, _citations(source, doc_id, digest, item))
     _write(out_dir / f"{doc_id}{REFERENCE_SIDECAR_SUFFIX}", references)
     sidecar = out_dir / f"{doc_id}{SOURCE_METADATA_SUFFIX}"
     _write(sidecar, _metadata(item.key, revision, licence, language, digest, run_id, captured))
+    # Ingestion discovers the Markdown file. Make it visible only after its sidecars exist.
+    _write(out_dir / doc_id, item.text)
 
 
 def _citations(source: str, doc_id: str, digest: str, item: ProjectedDocument) -> str:

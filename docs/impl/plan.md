@@ -64,25 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-publication-and-resume-audit
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Dependencies: [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
-  The eleven-page chain is [full-run rehearsal](current/book-recovery/full-run-evidence.md).
-- User-visible outcome: a go or repair decision before committing a full handbook to publication,
-  based on source fidelity, resource use, restart behaviour and evidence links in both outputs.
-- Scope boundary: exercise the normal commands on a long generated book with page fallbacks,
-  a failed page, repeated folios, an interruption during publish, and a reviewer edit.
-- Data and artifact paths: `tests/llb/prep/book/`, temporary vault and corpus trees.
-- Execution path: CPU fixtures in `make ci`; compare clean and resumed outputs and inspect the
-  mapping from a retrieved chunk back to the source pixels.
-- Acceptance gates: bound decoded page memory independent of book length; verify exact source
-  pixels in fallbacks, consistent publication after retry, byte-identical clean and resumed
-  renderings, and a new revision only for the edited document. A broken queue, ambiguous printed
-  link or unresolved gold span must surface at its own gate.
-- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
-
 #### book-retrieval-reading
 
 Prepare the paired retrieval comparison before operator review so an accepted book item can
@@ -159,9 +140,9 @@ Interrupt it, resume it, and stage the vault and projection with a report of wha
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Requires: `book-publication-and-resume-audit`
 - Dependencies: the target scan under `DATA_DIR`, its operator-declared redistribution
   class, and a host with enough VRAM for the provisional configuration.
+  See the [publication audit](current/book-recovery/full-run-evidence.md#publication-and-resume-audit).
 - User-visible outcome: a mechanically validated vault and ingested corpus projection
   for all 1,067 pages, with limitations and a named provisional profile.
 - Scope boundary: qualify the whole target run, including chapter-sized batches,
@@ -223,8 +204,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-publication-and-resume-audit`,
-  `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
+- Requires: `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and

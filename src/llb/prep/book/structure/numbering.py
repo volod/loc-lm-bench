@@ -7,6 +7,7 @@ before either series are front matter. The fit does not invent a number past the
 except for the single page touching each end of a pure offset.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from llb.core.contracts.data_prep.book_structure import NumberScheme, PageStatus, PrintedPage
@@ -36,6 +37,18 @@ def printed_pages(pages: list[int], hits: list[PageHit], page_count: int) -> lis
     roman = _series([_obs(hit) for hit in hits if hit.scheme == "roman"], pages)
     _extend_edges(arabic, roman, pages)
     return [_printed(pdf, arabic, roman, page_count) for pdf in pages]
+
+
+def ambiguous_folios(hits: list[PageHit]) -> list[str]:
+    """Keep duplicate observations even when only one fits the monotone sequence."""
+    claimants: dict[tuple[str, int], set[int]] = defaultdict(set)
+    for hit in hits:
+        claimants[hit.scheme, hit.value].add(hit.pdf)
+    return [
+        int_to_roman(value) if scheme == "roman" else str(value)
+        for (scheme, value), pdfs in sorted(claimants.items())
+        if len(pdfs) > 1
+    ]
 
 
 def _obs(hit: PageHit) -> _Obs:

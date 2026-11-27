@@ -54,7 +54,7 @@ def reference_sidecars(
 ) -> list[str]:
     """One JSON sidecar per document, in the same order as ``items``."""
     located = _locate(items)
-    pages = _observed(structure)
+    pages = _observed(structure, catalog)
     places = _places(structure)
     return [
         _dump(_record(item, doc_id, catalog, grammar, located, pages, places))
@@ -226,20 +226,13 @@ def _places(structure: DocumentStructure) -> dict[str, list[HierarchyPlace]]:
     return places
 
 
-def _observed(structure: DocumentStructure) -> dict[str, int]:
-    found: dict[str, list[int]] = {}
-    gaps: set[str] = set()
-    for page in structure.pages:
-        if not page.printed:
-            continue
-        key = norm_printed(page.printed)
-        if page.status == "gap":
-            gaps.add(key)
-            continue
-        if page.status == "observed":
-            found.setdefault(key, []).append(page.pdf_page)
+def _observed(structure: DocumentStructure, catalog: Catalog) -> dict[str, int]:
     return {
-        key: pages[0] for key, pages in found.items() if key not in gaps and len(set(pages)) == 1
+        norm_printed(page.printed): page.pdf_page
+        for page in structure.pages
+        if page.printed
+        and norm_printed(page.printed) in catalog.pages
+        and page.status == "observed"
     }
 
 

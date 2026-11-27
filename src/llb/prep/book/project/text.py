@@ -27,7 +27,15 @@ def render_content(file: VaultFile, ctx: RenderContext) -> RenderedDocument | No
     fragments = _fragments(file, ctx, vault_file)
     if not fragments:
         return None
-    document = assemble(fragments)
+    anchors = {line[1:] for line in file.body.splitlines() if line.startswith("^")}
+    document = assemble(
+        [
+            fragment
+            if fragment.anchor in anchors
+            else replace(fragment, anchor=file.page_anchors[fragment.page])
+            for fragment in fragments
+        ]
+    )
     if not document.text.strip():
         return None
     return document
@@ -119,7 +127,24 @@ def _paragraph(unit: Unit, ctx: RenderContext, vault_file: str) -> list[Fragment
         if pieces and not _dehyphenate(pieces, text):
             gap = " "
         pieces.append(_fragment(block, text, ctx, vault_file, gap))
-    return pieces
+    if unit.text_range is None:
+        return pieces
+    return _clip(pieces, *unit.text_range)
+
+
+def _clip(pieces: list[Fragment], start: int, end: int) -> list[Fragment]:
+    """Project only the part of a plain paragraph that this note renders."""
+    clipped: list[Fragment] = []
+    cursor = 0
+    for fragment in pieces:
+        text_start = cursor + len(fragment.gap_before)
+        stop = text_start + len(fragment.text)
+        if text_start < end and stop > start:
+            text = fragment.text[max(start - text_start, 0) : end - text_start]
+            gap = fragment.gap_before if clipped else ""
+            clipped.append(replace(fragment, text=text, gap_before=gap))
+        cursor = stop
+    return clipped
 
 
 def _dehyphenate(pieces: list[Fragment], text: str) -> bool:
