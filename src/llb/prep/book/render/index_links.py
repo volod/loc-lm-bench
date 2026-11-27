@@ -8,7 +8,15 @@ import re
 
 from llb.prep.book.render.catalog import Catalog
 from llb.prep.book.render.grammar import page_token
-from llb.prep.book.render.link import Replacement, Resolve, _blocked, _page_resolver, _rewrite
+from llb.prep.book.render.index_segments import index_segments
+from llb.prep.book.render.link import (
+    Replacement,
+    Resolve,
+    _blocked,
+    _page_resolver,
+    _rewrite,
+    place_cited,
+)
 from llb.prep.book.structure.text import norm_printed, roman_value
 
 _PAGE_TOKEN = page_token()
@@ -26,12 +34,9 @@ def index_replacements(
 ) -> list[Replacement]:
     """One replacement per page token on an index line."""
     found: list[Replacement] = []
-    offset = 0
     resolve = _page_resolver(here, catalog, "index")
-    for line in text.splitlines(keepends=True):
-        body = line[:-1] if line.endswith("\n") else line
+    for offset, body in index_segments(text):
         found.extend(_index_line(body, offset, blocked, resolve))
-        offset += len(line)
     return found
 
 
@@ -42,9 +47,17 @@ def _index_line(
     for start, end in _page_pieces(body):
         if _blocked(offset + start, offset + end, blocked):
             continue
-        rewritten, events = _rewrite(body[start:end], _PAGE_TOKEN, resolve, "index")
-        if events:
-            found.append(Replacement(offset + start, offset + end, rewritten, events))
+        rewritten, hits = _rewrite(body[start:end], _PAGE_TOKEN, resolve, "index")
+        if hits:
+            found.append(
+                Replacement(
+                    offset + start,
+                    offset + end,
+                    rewritten,
+                    tuple(hit.event for hit in hits),
+                    place_cited(hits, offset + start),
+                )
+            )
     return found
 
 

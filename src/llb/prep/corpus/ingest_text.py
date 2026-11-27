@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from llb.prep.corpus.sidecars import REFERENCE_SIDECAR_SUFFIX
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX, PDF_SUFFIX
 from llb.prep.pdf.reuse import _sha256_file
 from llb.prep.corpus.governance import (
@@ -191,6 +192,7 @@ def _ingest_text_file(
     ):
         _LOG.info("[corpus] reuse %s (unchanged source %s)", doc_id, source)
         _sync_citation_sidecar(path, out_dir, doc_id)
+        _sync_reference_sidecar(path, out_dir, doc_id)
         return CorpusItem(
             source=source,
             doc_id=doc_id,
@@ -215,6 +217,7 @@ def _ingest_text_file(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     _sync_citation_sidecar(path, out_dir, doc_id)
+    _sync_reference_sidecar(path, out_dir, doc_id)
     return CorpusItem(
         source=source,
         doc_id=doc_id,
@@ -236,6 +239,23 @@ def _sync_citation_sidecar(source: Path, out_dir: Path, doc_id: str) -> None:
     if not src.is_file():
         return
     dest = out_dir / Path(doc_id).with_suffix(PDF_CITATION_SUFFIX)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    data = src.read_bytes()
+    if dest.is_file() and dest.read_bytes() == data:
+        return
+    dest.write_bytes(data)
+
+
+def _sync_reference_sidecar(source: Path, out_dir: Path, doc_id: str) -> None:
+    """Copy a text document's printed-reference sidecar into the staged corpus.
+
+    The file keeps the ``.md`` suffix, so it sits beside the citation sidecar
+    under a different name. A document with no sidecar is unchanged.
+    """
+    src = source.with_name(source.name + REFERENCE_SIDECAR_SUFFIX)
+    if not src.is_file():
+        return
+    dest = out_dir / f"{doc_id}{REFERENCE_SIDECAR_SUFFIX}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     data = src.read_bytes()
     if dest.is_file() and dest.read_bytes() == data:

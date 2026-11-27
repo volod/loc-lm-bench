@@ -574,6 +574,28 @@
     {
       "bindings": [
         {
+          "format": "json",
+          "granularity": "document",
+          "media_type": "application/json"
+        }
+      ],
+      "compatibility": [],
+      "current_version": "1.0.0",
+      "deprecation_policy": "Sidecar version 1 remains readable for this release line.",
+      "description": "Printed citations, index lines, and hierarchy place of one projected document.",
+      "extension_point": null,
+      "legacy_read_version": "1.0.0",
+      "schema_id": "llb.book-references",
+      "schema_paths": {
+        "1.0.0": "llb.book-references/1.0.0.schema.json"
+      },
+      "supported_read_versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "bindings": [
+        {
           "format": "jsonl",
           "granularity": "row",
           "media_type": "application/x-ndjson"

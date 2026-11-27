@@ -35,6 +35,8 @@ from llb.core.contracts.artifacts import (
     RecordGranularity,
 )
 
+from llb.prep.corpus.sidecars import REFERENCE_SIDECAR_SUFFIX
+
 CORPUS_DATASET_ID = "llb-staged-corpus"
 DRAFT_DATASET_ID = "llb-draft-bundle"
 PDF_CITATION_SUFFIX = ".citations.json"
@@ -85,17 +87,21 @@ _QUALITY_CHECKS = (
 def corpus_bundle_manifest(
     corpus_root: Path | str, registry: ContractRegistry = DEFAULT_REGISTRY
 ) -> DatasetManifest:
-    """Describe a staged corpus, including one citation sidecar member per converted PDF."""
+    """Describe a staged corpus, including citation and reference sidecars beside its documents."""
     root = Path(corpus_root)
     citations = tuple(
         MemberSpec(f"citations-{path.name}", path.name, "llb.pdf-citations")
         for path in sorted(root.glob(f"*{PDF_CITATION_SUFFIX}"))
     )
+    references = tuple(
+        MemberSpec(f"references-{path.name}", path.name, "llb.book-references")
+        for path in sorted(root.glob(f"*{REFERENCE_SIDECAR_SUFFIX}"))
+    )
     return _manifest(
         root,
         CORPUS_DATASET_ID,
-        "One staged corpus: its ingestion manifests, citation sidecars, and applied overlay.",
-        (*CORPUS_MEMBERS, *citations),
+        "One staged corpus: its manifests, citation and reference sidecars, and applied overlay.",
+        (*CORPUS_MEMBERS, *citations, *references),
         registry,
     )
 

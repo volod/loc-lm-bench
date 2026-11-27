@@ -29,6 +29,11 @@ def project_cmd(
     slug: str | None = typer.Option(
         None, "--slug", help="ASCII book name used in vault file paths; default is the PDF name"
     ),
+    reference_grammar: Path | None = typer.Option(
+        None,
+        "--reference-grammar",
+        help="YAML grammar that replaces the handbook cues; the vault uses the same file",
+    ),
 ) -> None:
     """Project the ledger for retrieval. Prints counts and no recovered text."""
     from llb.prep.book.project.build import project_corpus
@@ -41,6 +46,7 @@ def project_cmd(
             language=language,
             section_cap=section_cap,
             slug=slug,
+            reference_grammar=reference_grammar,
         )
     except (OSError, ValueError) as exc:
         typer.echo(f"[error] {exc}", err=True)

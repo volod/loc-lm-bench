@@ -7,6 +7,7 @@ from pathlib import Path
 from llb.core.contracts.data_prep.corpus import PdfCitations, PdfPageCitationRecord
 from llb.core.fsutil import atomic_write_text
 from llb.prep.book.project.constants import LOGICAL_KEY_FIELD, PARSER, SOURCE_SYSTEM
+from llb.prep.corpus.sidecars import REFERENCE_SIDECAR_SUFFIX
 from llb.prep.book.project.spans import PageSpan
 from llb.prep.corpus.governance import SOURCE_METADATA_SUFFIX
 
@@ -18,6 +19,8 @@ class ProjectedDocument:
     key: str
     text: str
     pages: tuple[PageSpan, ...]
+    stem: str
+    node_id: str
 
 
 def write_document(
@@ -32,11 +35,13 @@ def write_document(
     digest: str,
     run_id: str,
     captured: str,
+    references: str,
 ) -> None:
-    """Write the document, its citations, and its metadata. Identical bytes stay put."""
+    """Write the document, its citations, its references, and its metadata."""
     _write(out_dir / doc_id, item.text)
     citation = out_dir / Path(doc_id).with_suffix(".citations.json")
     _write(citation, _citations(source, doc_id, digest, item))
+    _write(out_dir / f"{doc_id}{REFERENCE_SIDECAR_SUFFIX}", references)
     sidecar = out_dir / f"{doc_id}{SOURCE_METADATA_SUFFIX}"
     _write(sidecar, _metadata(item.key, revision, licence, language, digest, run_id, captured))
 

@@ -3,7 +3,8 @@
 ## Delivered boundary
 
 Every project-owned machine-readable artifact of the data-preparation surface is a registered
-contract family: the corpus and PDF manifests, the citation sidecars, the gold rows, chains and
+contract family: the corpus and PDF manifests, the citation sidecars, the printed-reference
+sidecars, the gold rows, chains and
 needle rows, the induced ontology and its extraction rows, the drafting provenance, the
 external-draft sidecars, the conflict stage-inputs record and applied overlay, the linkage bundle
 settings, and the verification worksheet row. Each names a `schema_id`, one current
@@ -16,7 +17,8 @@ authors, which this project reads for its data-classification declaration and ne
 
 The models live under `src/llb/core/contracts/data_prep/` (`corpus.py`, `goldset.py`,
 `ontology.py`, `external_draft.py`, `conflicts.py`, `linkage.py`, `review.py`, `book.py`,
-`book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `book_resolve.py`, `book_review.py`); the
+`book_blocks.py`, `book_preprocess.py`, `book_classes.py`, `book_resolve.py`, `book_review.py`,
+`book_references.py`); the
 declarations and their migrations live under `src/llb/artifacts/data_prep/` (`families.py`,
 `migrations.py`, `book.py`).
 

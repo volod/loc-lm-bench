@@ -410,6 +410,23 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-references
+  name: llb.book-references
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-references/1.0.0.schema.json
+  description: Printed citations, index lines, and hierarchy place of one projected
+    document.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-case-score
   name: llb.case-score
   logicalType: object

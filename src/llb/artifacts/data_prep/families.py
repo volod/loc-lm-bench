@@ -29,6 +29,7 @@ from llb.core.contracts.data_prep.conflicts import (
     ConflictStageInputsV6,
     STAGE_INPUTS_SCHEMA_ID,
 )
+from llb.core.contracts.data_prep.book_references import BookReferences
 from llb.core.contracts.data_prep.corpus import CorpusManifest, PdfCitations, PdfCorpusManifest
 from llb.core.contracts.data_prep.external_draft import (
     ExternalDraftItemRow,
@@ -244,6 +245,15 @@ def data_prep_definitions() -> tuple[ContractDefinition, ...]:
                     transform=ontology_provenance_v1_to_v2,
                 ),
             ),
+            legacy_version="1.0.0",
+        ),
+        ContractDefinition(
+            schema_id="llb.book-references",
+            description="Printed citations, index lines, and hierarchy place of one projected document.",
+            current_version="1.0.0",
+            models={"1.0.0": BookReferences},
+            bindings=JSON_DOCUMENT,
+            deprecation_policy="Sidecar version 1 remains readable for this release line.",
             legacy_version="1.0.0",
         ),
         ContractDefinition(

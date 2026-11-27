@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from llb.prep.corpus.governance_fields import FINGERPRINTED_GOVERNANCE_FIELDS
+from llb.prep.corpus.sidecars import REFERENCE_SIDECAR_SUFFIX
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX
 
 CORPUS_MANIFEST = "corpus_manifest.json"
@@ -162,17 +163,35 @@ def _citation_sidecar_sha(root: Path, doc_id: str) -> str | None:
     return _sha256_file(sidecar) if sidecar.is_file() else None
 
 
+def _reference_sidecar_sha(root: Path, doc_id: str) -> str | None:
+    sidecar = root / f"{doc_id}{REFERENCE_SIDECAR_SUFFIX}"
+    return _sha256_file(sidecar) if sidecar.is_file() else None
+
+
 def _with_citation_sidecar(root: Path, doc_id: str, row: dict[str, Any]) -> dict[str, Any]:
-    sidecar_sha = _citation_sidecar_sha(root, doc_id)
-    return row if sidecar_sha is None else {**row, "citations_sha256": sidecar_sha}
+    extra: dict[str, str] = {}
+    citations = _citation_sidecar_sha(root, doc_id)
+    references = _reference_sidecar_sha(root, doc_id)
+    if citations is not None:
+        extra["citations_sha256"] = citations
+    if references is not None:
+        extra["references_sha256"] = references
+    return {**row, **extra} if extra else row
 
 
 def _plain_doc_fingerprint(root: Path, path: Path) -> str:
     sha = _sha256_file(path)
-    sidecar_sha = _citation_sidecar_sha(root, path.relative_to(root).as_posix())
-    if sidecar_sha is None:
+    doc_id = path.relative_to(root).as_posix()
+    extra: dict[str, str] = {}
+    citations = _citation_sidecar_sha(root, doc_id)
+    references = _reference_sidecar_sha(root, doc_id)
+    if citations is not None:
+        extra["citations_sha256"] = citations
+    if references is not None:
+        extra["references_sha256"] = references
+    if not extra:
         return sha
-    return _json_fingerprint({"sha256": sha, "citations_sha256": sidecar_sha})
+    return _json_fingerprint({"sha256": sha, **extra})
 
 
 def _json_fingerprint(payload: Any) -> str:

@@ -64,45 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-projection-reference-sidecar
-
-The vault links every citation the book prints that names one target, and the index note links
-every page an index line cites. The corpus projection carries none of it. A retriever over the
-projection sees `see Table 4-2` as words, and the table it names is a separate document with no
-edge to the sentence that needs it. These references are the one relation set in the book that no
-model has to infer. Write them into the projection as data, beside the citation sidecar, so a graph
-lane can follow what the book prints
-([method survey](../design/graph-construction-methods.md#the-printed-reference-graph)).
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- synthetic book fixtures; no model and no GPU.
-- Dependencies: citation and index resolution is
-  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references); document
-  offsets and the citation sidecar are [corpus projection](current/book-recovery/corpus-projection.md).
-- User-visible outcome: `llb book-ocr project` also writes the printed references each projected
-  document contains. Each resolved citation is recorded as its cue span in this document and the
-  span of the target block in that block's document. Each index line is recorded as its term span
-  and the PDF pages its printed pages map to. Each document records its place in the hierarchy. A
-  later reader can follow a citation from the sentence to the table, equation, figure, section, or
-  page it names without parsing the text again.
-- Scope boundary: in scope -- one reference sidecar per projected document under a registered
-  contract; the render's catalog and resolvers reused, so the projection and the vault resolve the
-  same citations from one grammar; ambiguous keys and mapping gaps recorded as unresolved with no
-  target; an index sub-entry carrying its printed parent where the indentation shows one;
-  `ingest-corpus` copying the sidecar the way it copies the citation sidecar, and a stale document
-  taking it along; the redistribution refusal applied to it on every export path. Out of scope --
-  any link the book does not print (a concept, a co-occurrence, a similarity), settling an
-  ambiguous key by proximity, and quoting a sentence in any report.
-- Data and artifact paths: `src/llb/prep/book/project/` and the resolvers in
-  `src/llb/prep/book/render/`; a `<document>.md.references.json` beside each projected document.
-- Execution path: the synthetic book in `tests/llb/prep/book/test_project.py` and
-  `tests/llb/prep/book/test_reference_links.py` inside `make ci`, CPU-only.
-- Acceptance gates: `make ci` green; on the fixture the sidecar names exactly the citations the
-  vault links, with the same targets, plus the ambiguous and gap citations the reference report
-  counts; every recorded span lands in its document's text at its offsets; a second projection
-  writes the same bytes; a `local-only` export refuses the sidecar with its document.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
-
 #### book-technical-content-audit
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
@@ -135,7 +96,7 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-technical-content-audit`, `book-projection-reference-sidecar`
+- Requires: `book-technical-content-audit`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
   The projection command is
@@ -197,7 +158,6 @@ exercise both corpora through one replayable command.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- replay over a planted corpus and synthetic gold.
-- Requires: `book-projection-reference-sidecar`
 - Dependencies: [RAG core](current/rag-core.md) and
   [paired verdicts](current/rag-core/paired-verdicts.md).
 - User-visible outcome: a report of recall at k and MRR against source spans and a paired comparison
@@ -225,10 +185,11 @@ against the vector lane over the same projection
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- deterministic graph, provenance, and paired comparison fixtures.
-- Requires: `book-projection-reference-sidecar`, `book-retrieval-reading`
-- Dependencies: the projection and its sidecars
-  ([corpus projection](current/book-recovery/corpus-projection.md)); the graph store, its
-  strategies, and the fusion seam ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
+- Requires: `book-retrieval-reading`
+- Dependencies: the printed references each projected document records
+  ([corpus projection](current/book-recovery/corpus-projection.md#printed-references));
+  the graph store, its strategies, and the fusion seam
+  ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
   the minimum-evidence gate on a paired reading
   ([paired verdicts](current/rag-core/paired-verdicts.md)). The derived-source contract is
   [graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology).
@@ -330,8 +291,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-projection-reference-sidecar`,
-  `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
+- Requires: `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
   `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
