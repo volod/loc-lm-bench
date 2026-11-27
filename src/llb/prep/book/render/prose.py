@@ -108,8 +108,14 @@ def _with_anchors(body: str, unit: Unit, ctx: RenderContext) -> str:
     return f"{body}\n\n{tail}" if body else tail
 
 
-def _paragraph(unit: Unit, _ctx: RenderContext) -> str:
+def _paragraph(unit: Unit, ctx: RenderContext) -> str:
+    if _suppressed(unit, ctx):
+        return ""
     return unit.text.strip()
+
+
+def _suppressed(unit: Unit, ctx: RenderContext) -> bool:
+    return bool(unit.blocks) and all(block.block_id in ctx.suppressed for block in unit.blocks)
 
 
 def _formula(unit: Unit, ctx: RenderContext) -> str:
@@ -165,6 +171,8 @@ def _figure(unit: Unit, ctx: RenderContext) -> str:
 def _pair(unit: Unit, ctx: RenderContext) -> str:
     lines: list[str] = []
     for block in unit.blocks:
+        if block.block_id in ctx.suppressed:
+            continue
         if block.kind == "figure" or block.role == "figure":
             lines.append(_figure_block(block, ctx))
         else:
@@ -173,6 +181,8 @@ def _pair(unit: Unit, ctx: RenderContext) -> str:
 
 
 def _figure_block(block: RenderBlock, ctx: RenderContext) -> str:
+    if block.block_id in ctx.suppressed:
+        return ""
     lines: list[str] = []
     path = ctx.assets.get(block.block_id, "")
     if path:
@@ -180,6 +190,11 @@ def _figure_block(block: RenderBlock, ctx: RenderContext) -> str:
     piece = passage(block, ctx.content_href).strip()
     if piece:
         lines.append(piece)
+    caption = ctx.figure_captions.get(block.block_id, "").strip()
+    if caption and caption != piece:
+        lines.append(caption)
+    if path:
+        lines.append(f"[{block.page_id}]({ctx.content_href(block.pdf_page)})")
     if lines:
         return "\n\n".join(lines)
     href = ctx.content_href(block.pdf_page)

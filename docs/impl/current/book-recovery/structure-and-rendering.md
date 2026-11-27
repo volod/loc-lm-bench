@@ -132,10 +132,12 @@ and `review_count`. Printed numbers stay strings, so a roman numeral is not read
 
 A numbered target's anchor is its printed number: `^ch-1`, `^sec-1-1`, `^sub-1-2-2`,
 `^fig-1-1`, `^tbl-2-1`, `^eq-1-1`. The first block of a PDF page carries `^p0007`. Changing
-block ordinals leaves those anchors in place. A block whose ledger kind is `figure` is a tight
-crop at `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`, plus the printed number when the inventory
-has one. Review crops keep the queue's 16-pixel padding. A line engine that labels every block
-`body` yields the anchors and no figure crops.
+block ordinals leaves those anchors in place. A block whose ledger kind is `figure` is one
+padded asset at `assets/<chapter-slug>/p<NNNN>_<ord>_figure`, plus a number slug only when
+the caption association is reliable. The rules are in
+[figure assets](formulas-tables-figures.md#figure-assets). Review crops keep the queue's
+16-pixel padding. A line engine that labels every block `body` yields the anchors and no
+figure crops.
 
 A formula uses the engine's LaTeX when the reading carried it, and the block text otherwise.
 The equation number is the engine's printed number, or else the inventory number, as a `\tag`.

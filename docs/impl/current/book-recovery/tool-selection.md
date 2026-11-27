@@ -530,8 +530,10 @@ instance it must handle.
   table of the synthetic chart with values that appear nowhere on the page. On the real page
   Chandra 2 wrote a paragraph naming diagram labels the scan does not show. The spec forbids
   generated descriptions and captions, so a VLM adapter must keep a figure as its image region and
-  drop whatever the model writes for it (`book-block-ledger-and-engine-adapters`,
-  `book-figure-and-caption-assets`). PaddleOCR-VL-1.6,
+  drop whatever the model writes for it
+  ([block ledger](block-ledger.md),
+  [figure assets](formulas-tables-figures.md#figure-assets)).
+  PaddleOCR-VL-1.6,
   MinerU, Docling's standard pipeline, Marker `balanced`, dots.ocr, DeepSeek-OCR-2, and olmOCR-2
   emit the figure as an image region only -- for Surya 2.5 the pipeline around the model decides.
 - **A dropped term reads as a complete equation.** dots.ocr and GLM-OCR both wrote (10-28)'s third

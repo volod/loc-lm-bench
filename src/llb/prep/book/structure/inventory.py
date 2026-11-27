@@ -35,6 +35,28 @@ def inventory_of(lines: list[Line], printed_of: dict[int, str | None]) -> list[N
     return found
 
 
+def caption_figure_number(text: str) -> str | None:
+    """The printed figure number when ``text`` opens as a figure caption, else none."""
+    return _opening(_CAPTION_FIG, text)
+
+
+def caption_table_number(text: str) -> str | None:
+    """The printed table number when ``text`` opens as a table caption, else none."""
+    return _opening(_CAPTION_TAB, text)
+
+
+def caption_equation_number(text: str) -> str | None:
+    """The printed equation number when ``text`` opens as an equation caption, else none."""
+    return _opening(_CAPTION_EQ, text)
+
+
+def _opening(pattern: re.Pattern[str], text: str) -> str | None:
+    matched = pattern.match(norm_space(text))
+    if matched is None:
+        return None
+    return matched.group(1)
+
+
 def _items(line: Line) -> list[tuple[ItemKind, str, ItemEvidence]]:
     text = norm_space(line.text)
     if line.y_frac >= FOOTER_BAND:

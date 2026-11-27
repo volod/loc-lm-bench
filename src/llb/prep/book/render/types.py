@@ -87,6 +87,9 @@ class RenderContext:
     formula_crops: dict[str, str] = field(default_factory=dict)
     table_images: dict[str, str] = field(default_factory=dict)
     table_evidence: dict[str, str] = field(default_factory=dict)
+    # Printed caption text for a figure asset, and blocks already shown inside it.
+    figure_captions: dict[str, str] = field(default_factory=dict)
+    suppressed: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass

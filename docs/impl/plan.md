@@ -64,34 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-figure-and-caption-assets
-
-Figures, graphs, and drawings carry labels, legends, and scales that a tight crop loses, and a
-scanned page also carries ornaments and noise that a loose detector extracts as figures. Extract
-them conservatively, keep each with its printed caption, and name them so they sort as they appear.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- synthetic figure regions and captions.
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. The vault already names a figure crop from its PDF page,
-  ordinal, and kind
-  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
-- User-visible outcome: each figure is one asset named `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`
-  plus a slug only when one derives reliably, padded to keep labels, legends, scale markings, and the
-  caption, embedded at its reading position with its printed caption and source-page link.
-- Scope boundary: in scope -- grouping of multi-region figures into one asset with every source
-  region recorded; padding policy; caption association by proximity and printed number; rejection
-  of ornaments and badges that repeat across pages and of isolated noise; crops taken from the best
-  geometric variant while recording the original region. Out of scope -- redrawing or vectorizing
-  figures, and any generated description or alt text beyond the printed caption.
-- Data and artifact paths: `src/llb/prep/book/assets/`; `assets/` in the book directory.
-- Execution path: synthetic fixtures inside `make ci`.
-- Acceptance gates: `make ci` green; asset names are stable across reruns and sort in reading
-  order; a repeated ornament never becomes a figure; a figure split across two regions appears
-  once; a wrong or ambiguous caption cannot replace the printed association.
-- Documentation target: `docs/impl/current/book-recovery/formulas-tables-figures.md`.
-
 #### book-evidence-constrained-correction
 
 Even the best engine leaves probable misreadings that context plus the page image can resolve. A
@@ -169,9 +141,11 @@ lane can follow what the book prints
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`
+- Requires: `book-evidence-constrained-correction`
 - Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
   [review semantics](current/book-recovery/uncertainty-and-review.md).
+  Figure crops and caption association are
+  [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
 - User-visible outcome: a reader can trace each technical value or uncertainty marker through the
   chosen recognition route and overlay to the pixels that support it.
 - Scope boundary: exercise an ambiguous index and sign, a merged or empty cell, a diagram with
@@ -194,7 +168,7 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
+- Requires: `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-projection-reference-sidecar`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
@@ -202,6 +176,8 @@ book small enough to run in seconds and built so that every seam carries a case.
   [corpus projection](current/book-recovery/corpus-projection.md).
   The vault check is
   [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+  Figure crops and caption association are
+  [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
   Cross-reference linking is
   [cross-references](current/book-recovery/structure-and-rendering.md#cross-references).
 - User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
@@ -387,7 +363,7 @@ retrieval reading found.
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
 - Requires: `book-projection-reference-sidecar`,
-  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
+  `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
   `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
