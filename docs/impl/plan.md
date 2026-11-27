@@ -64,58 +64,12 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-synthetic-book-end-to-end
-
-Every stage is proven on its own fixtures, and the first place they all meet is a multi-day GPU run
-over 1,067 pages -- the most expensive place to learn that two stages disagree about a coordinate
-frame, a block id, an anchor, or a cache key. Rehearse the whole chain in CI first, on a generated
-book small enough to run in seconds and built so that every seam carries a case.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Dependencies: the synthetic scan factory the run tests already use
-  ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
-  What a formula or table publishes while a value is open is
-  [technical content](current/book-recovery/uncertainty-and-review.md#technical-content).
-  The projection command is
-  [corpus projection](current/book-recovery/corpus-projection.md).
-  The vault check is
-  [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
-  Figure crops and caption association are
-  [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
-  The optional correction stage is
-  [evidence-constrained correction](current/book-recovery/correction.md).
-  Cross-reference linking is
-  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references).
-- User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
-  vault and an ingested corpus projection, and fails naming the stage whose output broke the next.
-- Scope boundary: in scope -- a generated scan with a contents page, numbered headings, printed
-  numbers offset from PDF pages with one gap, a page placed upside down, a two-column page, a formula
-  with an equation number, a ruled table, a captioned figure, a cross-reference and an index entry,
-  an unreadable span, and one page whose recognition fails; every stage through the `book-ocr`
-  runner with fake engines whose readings disagree on one digit; render, link, validate, project,
-  the reference sidecar checked against the vault's links, `ingest-corpus`, and a
-  `validate-goldset` refusal of a span over the open marker; a planted kill
-  mid-run and a resume; one reviewer decision followed by a re-render and a re-projection. Out of
-  scope -- recognition quality (the pilot measures it) and any real page.
-- Data and artifact paths: the generator beside the existing scan factory under
-  `tests/llb/prep/book/`; outputs in the test's temporary directory only.
-- Execution path: inside `make ci`, CPU-only.
-- Acceptance gates: `make ci` green; every full-run clause of the registry evaluation holds on the
-  synthetic book -- every page accounted for, every file reachable from the contents, previous/next
-  links reciprocal, every link, anchor, and embed resolving, no uncertain span without its marker and
-  queue entry, a byte-identical re-render after the resume -- plus page provenance on every ingested
-  chunk and the gold-span refusal; the reviewer decision changes the rendered and projected text of
-  its page alone and the re-projection ingests as a revision; the failed page shows as its marker in
-  both renderings.
-- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
-
 #### book-publication-and-resume-audit
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-synthetic-book-end-to-end`
 - Dependencies: [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
+  The eleven-page chain is [full-run rehearsal](current/book-recovery/full-run-evidence.md).
 - User-visible outcome: a go or repair decision before committing a full handbook to publication,
   based on source fidelity, resource use, restart behaviour and evidence links in both outputs.
 - Scope boundary: exercise the normal commands on a long generated book with page fallbacks,
@@ -269,7 +223,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-synthetic-book-end-to-end`, `book-publication-and-resume-audit`,
+- Requires: `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`

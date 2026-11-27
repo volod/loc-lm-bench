@@ -37,7 +37,9 @@ the numbering inventory. `llb book-ocr render` writes the Obsidian vault from th
 each citation the structure names uniquely, and `llb book-ocr validate` checks it
 ([structure and the reading vault](book-recovery/structure-and-rendering.md)).
 `llb book-ocr project` writes the retrieval corpus from the same ledger
-([corpus projection](book-recovery/corpus-projection.md)). Operator usage is
+([corpus projection](book-recovery/corpus-projection.md)). One CI test walks a generated book
+from the PDF through those stages, the vault check, ingest, and one reviewer revision
+([full-run rehearsal](book-recovery/full-run-evidence.md)). Operator usage is
 the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 
 | Page | What it answers |
@@ -52,3 +54,4 @@ the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 | [Structure and the reading vault](book-recovery/structure-and-rendering.md) | The printed-page mapping, the hierarchy, the running headers, the figure, table, and equation inventory, the Obsidian vault rendered from them, the cross-reference links, and the mechanical check of that vault |
 | [Formulas, tables, and figures](book-recovery/formulas-tables-figures.md) | Native formula and table structure on the ledger, LaTeX and equation numbers, Markdown / HTML / image tables, cell disputes, the crops kept beside an uncertain formula, and figure assets with their printed captions |
 | [Corpus projection](book-recovery/corpus-projection.md) | The retrieval rendering of the same ledger: content only, page citations, the printed references, stable document ids, append-only revisions, and the operator-declared redistribution class |
+| [Full-run rehearsal](book-recovery/full-run-evidence.md) | The generated book that walks every stage from the PDF through a validated vault, an ingested corpus, a killed resume, and one reviewer revision |

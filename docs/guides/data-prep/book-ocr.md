@@ -15,6 +15,10 @@ born-digital PDF, use the
 
 What it does and why it is built this way:
 [pipeline and resume](../../impl/current/book-recovery/pipeline-and-resume.md).
+One CI test walks a generated multi-chapter scan from the PDF through every stage, a killed
+resume, vault validation, projection, ingest, and one reviewer revision --
+[full-run rehearsal](../../impl/current/book-recovery/full-run-evidence.md). That rehearsal uses
+fake engines only; recognition quality and the target handbook are separate gates.
 
 ## Check before running
 
