@@ -6,12 +6,15 @@ Reviewer edits win over model edits, and both win over agreement. An edit whose 
 match the block is orphaned and re-queued; it is not tried against any other block.
 """
 
+from collections.abc import Sequence
+
 from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, RawReading
 from llb.core.contracts.data_prep.book_resolve import (
     CorrectionEdit,
     OrphanedEdit,
     PageCorrectionOverlay,
     PageResolvedText,
+    RefusedCorrection,
     ResolvedBlock,
 )
 from llb.prep.book.resolve.anchor import block_anchor
@@ -22,15 +25,19 @@ from llb.prep.book.resolve.constants import (
     SCHEMA_VERSION,
 )
 from llb.prep.book.resolve.primary import PrimaryChoice, select_reading
-from llb.prep.book.resolve.spans import cover_spans
+from llb.prep.book.resolve.spans import ForcedSpan, cover_spans
 
 
 def resolve_page(
-    ledger: PageBlockLedger, choice: PrimaryChoice, edits: list[CorrectionEdit]
+    ledger: PageBlockLedger,
+    choice: PrimaryChoice,
+    edits: list[CorrectionEdit],
+    refusals: Sequence[RefusedCorrection] = (),
 ) -> tuple[PageCorrectionOverlay, PageResolvedText]:
     """Resolve every block. `edits` are model and reviewer corrections, never agreement."""
     by_id = {block.block_id: block for block in ledger.blocks}
     grouped: dict[str, list[CorrectionEdit]] = {block_id: [] for block_id in by_id}
+    grouped_refusals: dict[str, list[RefusedCorrection]] = {block_id: [] for block_id in by_id}
     orphaned: list[OrphanedEdit] = []
     for edit in edits:
         if edit.page_id != ledger.page_id:
@@ -39,11 +46,14 @@ def resolve_page(
             orphaned.append(OrphanedEdit(edit=edit, reason="block_missing", requeued=True))
             continue
         grouped[edit.block_id].append(edit)
+    for refusal in refusals:
+        if refusal.page_id == ledger.page_id and refusal.block_id in grouped_refusals:
+            grouped_refusals[refusal.block_id].append(refusal)
     applied: list[CorrectionEdit] = []
     resolved: list[ResolvedBlock] = []
     for block in ledger.blocks:
         block_resolved, block_applied, block_orphans = resolve_block(
-            ledger.page_id, block, choice, grouped[block.block_id]
+            ledger.page_id, block, choice, grouped[block.block_id], grouped_refusals[block.block_id]
         )
         resolved.append(block_resolved)
         applied.extend(block_applied)
@@ -75,14 +85,20 @@ def resolve_page(
 
 
 def resolve_block(
-    page_id: str, block: Block, choice: PrimaryChoice, edits: list[CorrectionEdit]
+    page_id: str,
+    block: Block,
+    choice: PrimaryChoice,
+    edits: list[CorrectionEdit],
+    refusals: Sequence[RefusedCorrection] = (),
 ) -> tuple[ResolvedBlock, list[CorrectionEdit], list[OrphanedEdit]]:
     """One block: the adopted text, the edits that produced it, and the edits it refused."""
     anchor = block_anchor(block)
     primary, fallback = select_reading(block, choice)
     kept, orphaned = _attach(primary, anchor, edits)
     winners = _winners(kept)
-    spans, agreement = cover_spans(page_id, block, primary, anchor, winners)
+    spans, agreement = cover_spans(
+        page_id, block, primary, anchor, winners, _forced(primary, anchor, refusals, winners)
+    )
     applied = sorted([*winners, *agreement], key=lambda edit: (edit.start, edit.edit_id))
     text = "".join(span.text for span in spans if span.adopted)
     resolved = ResolvedBlock(
@@ -113,6 +129,29 @@ def _attach(
             continue
         kept.append(edit)
     return kept, orphaned
+
+
+def _forced(
+    primary: RawReading,
+    anchor: str,
+    refusals: Sequence[RefusedCorrection],
+    winners: list[CorrectionEdit],
+) -> list[ForcedSpan]:
+    """Refusal spans the adopted edits do not already cover."""
+    covered = [(edit.start, edit.end) for edit in winners]
+    forced: list[ForcedSpan] = []
+    for refusal in refusals:
+        if refusal.anchor != anchor:
+            continue
+        if refusal.end > len(primary.text):
+            continue
+        if primary.text[refusal.start : refusal.end] != refusal.raw_text:
+            continue
+        inside = any(start <= refusal.start and refusal.end <= end for start, end in covered)
+        if inside:
+            continue
+        forced.append((refusal.start, refusal.end, tuple(refusal.classes)))
+    return forced
 
 
 def _winners(edits: list[CorrectionEdit]) -> list[CorrectionEdit]:

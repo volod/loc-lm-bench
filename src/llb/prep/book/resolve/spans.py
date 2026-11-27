@@ -6,12 +6,18 @@ primary, unresolved where an uncertainty span is still open, and the primary rea
 
 from typing import Literal
 
-from llb.core.contracts.data_prep.book_blocks import Block, RawReading
+from llb.core.contracts.data_prep.book_blocks import (
+    UNCERTAINTY_CLASSES,
+    Block,
+    RawReading,
+    UncertaintyClass,
+)
 from llb.core.contracts.data_prep.book_resolve import CorrectionEdit, ResolvedSpan
 from llb.prep.book.resolve.constants import AGREEMENT_EVIDENCE, AGREEMENT_SOURCE
 from llb.prep.book.resolve.masks import agreed_mask, classes_covering, uncertain_mask
 
 BaseKind = Literal["primary", "agreement", "unresolved"]
+ForcedSpan = tuple[int, int, tuple[UncertaintyClass, ...]]
 
 
 def cover_spans(
@@ -20,10 +26,16 @@ def cover_spans(
     primary: RawReading,
     anchor: str,
     winners: list[CorrectionEdit],
+    forced: list[ForcedSpan] | None = None,
 ) -> tuple[list[ResolvedSpan], list[CorrectionEdit]]:
-    """The spans of one block, and the agreement edits those spans record."""
+    """The spans of one block, and the agreement edits those spans record.
+
+    `forced` spans are refusals the correction guard would not apply. They stay unresolved
+    unless an overlay edit covers them.
+    """
     agreed = agreed_mask(primary, block.readings)
     uncertain = uncertain_mask(primary, block.uncertainty)
+    forced_mask, forced_classes = _forced(len(primary.text), forced or [])
     edits = sorted(winners, key=lambda edit: (edit.start, edit.edit_id))
     spans: list[ResolvedSpan] = []
     agreement: list[CorrectionEdit] = []
@@ -42,6 +54,8 @@ def cover_spans(
             anchor,
             agreed,
             uncertain,
+            forced_mask,
+            forced_classes,
             edits,
             edit_index,
             cursor,
@@ -72,6 +86,8 @@ def _append_base(
     anchor: str,
     agreed: list[bool],
     uncertain: list[bool],
+    forced_mask: list[bool],
+    forced_classes: list[set[UncertaintyClass]],
     edits: list[CorrectionEdit],
     edit_index: int,
     cursor: int,
@@ -82,11 +98,23 @@ def _append_base(
     """Append one base run and return the cursor just after it."""
     edit = edits[edit_index] if edit_index < len(edits) else None
     stop = length if edit is None else min(length, edit.start)
-    kind = _kind(agreed, uncertain, cursor)
+    kind = _kind(agreed, uncertain, forced_mask, cursor)
     index = cursor + 1
-    while index < stop and _kind(agreed, uncertain, index) == kind:
+    while index < stop and _kind(agreed, uncertain, forced_mask, index) == kind:
         index += 1
-    spans.append(_base_span(page_id, block, primary, anchor, kind, cursor, index, agreement))
+    spans.append(
+        _base_span(
+            page_id,
+            block,
+            primary,
+            anchor,
+            kind,
+            cursor,
+            index,
+            agreement,
+            forced_classes,
+        )
+    )
     return index
 
 
@@ -110,10 +138,11 @@ def _base_span(
     start: int,
     end: int,
     agreement: list[CorrectionEdit],
+    forced_classes: list[set[UncertaintyClass]],
 ) -> ResolvedSpan:
     text = primary.text[start:end]
     edit_id = None
-    classes = []
+    classes: list[UncertaintyClass] = []
     if kind == "agreement":
         edit_id = f"agreement:{block.block_id}:{start}:{end}"
         agreement.append(
@@ -132,7 +161,7 @@ def _base_span(
             )
         )
     elif kind == "unresolved":
-        classes = classes_covering(primary, block.uncertainty, start, end)
+        classes = _unresolved_classes(primary, block, start, end, forced_classes)
     return ResolvedSpan(
         provenance=kind,
         text=text,
@@ -144,8 +173,32 @@ def _base_span(
     )
 
 
-def _kind(agreed: list[bool], uncertain: list[bool], index: int) -> BaseKind:
-    if uncertain[index]:
+def _forced(length: int, spans: list[ForcedSpan]) -> tuple[list[bool], list[set[UncertaintyClass]]]:
+    mask = [False] * length
+    classes: list[set[UncertaintyClass]] = [set() for _ in range(length)]
+    for start, end, names in spans:
+        for index in range(max(0, start), min(length, end)):
+            mask[index] = True
+            classes[index].update(names)
+    return mask, classes
+
+
+def _unresolved_classes(
+    primary: RawReading,
+    block: Block,
+    start: int,
+    end: int,
+    forced_classes: list[set[UncertaintyClass]],
+) -> list[UncertaintyClass]:
+    found = set(classes_covering(primary, block.uncertainty, start, end))
+    for index in range(start, end):
+        found.update(forced_classes[index])
+    ordered = [name for name in UNCERTAINTY_CLASSES if name in found]
+    return ordered
+
+
+def _kind(agreed: list[bool], uncertain: list[bool], forced: list[bool], index: int) -> BaseKind:
+    if uncertain[index] or forced[index]:
         return "unresolved"
     if agreed[index]:
         return "agreement"

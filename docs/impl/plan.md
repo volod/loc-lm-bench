@@ -64,40 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-evidence-constrained-correction
-
-Even the best engine leaves probable misreadings that context plus the page image can resolve. A
-local model can propose those fixes, but a model that is allowed to "improve" text will rewrite an
-author's technical meaning. Build correction as a constrained proposer whose edits a mechanical
-guard admits or refuses. Prepare its adoption check for the release pilot.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- fake model and deterministic edit and refusal cases.
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. The model is the strongest vision-capable model that fits
-  the host, chosen per
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
-- User-visible outcome: an optional `correct` stage that proposes per-block edits from the page crop
-  and neighbouring blocks through a local Ollama endpoint; each admitted edit appears in the overlay
-  with raw text, replacement, class, evidence, and model identity; a refused or unsupported edit
-  becomes an uncertainty marker instead.
-- Scope boundary: in scope -- a structured edit contract (span, replacement, confusion class,
-  evidence); the guard (admitted substitution classes only, a per-block edit budget, no insertion or
-  deletion beyond its class, and visual agreement from the crop required for any digit, sign,
-  decimal, unit, index, or Greek/Latin edit); bounded context from neighbouring blocks and pages;
-  per-block caching. Out of scope -- rewriting, summarizing, completing, or translating; frontier
-  models by default (an opt-in under the egress rule, refused for non-redistributable material).
-- Data and artifact paths: `src/llb/prep/book/correct/`; `pages/<pNNNN>/corrections.json` in the run
-  directory.
-- Execution path: fake-model and score-replay fixtures inside `make ci`.
-- Acceptance gates: `make ci` green; a proposed rewrite is refused; a digit change without
-  visual agreement becomes a marker; an admitted edit reaches both renderings through the
-  correction overlay; the raw ledger stays unchanged. Freeze the guard's classes and edit budget
-  and pin a report that separates errors fixed from correct tokens made wrong. The stage defaults
-  off pending the release reading.
-- Documentation target: `docs/impl/current/book-recovery/correction.md`.
-
 #### book-projection-reference-sidecar
 
 The vault links every citation the book prints that names one target, and the index note links
@@ -141,9 +107,10 @@ lane can follow what the book prints
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR
-- Requires: `book-evidence-constrained-correction`
 - Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
   [review semantics](current/book-recovery/uncertainty-and-review.md).
+  Admitted and refused model edits are
+  [evidence-constrained correction](current/book-recovery/correction.md).
   Figure crops and caption association are
   [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
 - User-visible outcome: a reader can trace each technical value or uncertainty marker through the
@@ -168,8 +135,7 @@ book small enough to run in seconds and built so that every seam carries a case.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-evidence-constrained-correction`,
-  `book-technical-content-audit`, `book-projection-reference-sidecar`
+- Requires: `book-technical-content-audit`, `book-projection-reference-sidecar`
 - Dependencies: the synthetic scan factory the run tests already use
   ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
   The projection command is
@@ -178,6 +144,8 @@ book small enough to run in seconds and built so that every seam carries a case.
   [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
   Figure crops and caption association are
   [figure assets](current/book-recovery/formulas-tables-figures.md#figure-assets).
+  The optional correction stage is
+  [evidence-constrained correction](current/book-recovery/correction.md).
   Cross-reference linking is
   [cross-references](current/book-recovery/structure-and-rendering.md#cross-references).
 - User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
@@ -363,7 +331,6 @@ retrieval reading found.
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
 - Requires: `book-projection-reference-sidecar`,
-  `book-evidence-constrained-correction`,
   `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
   `book-publication-and-resume-audit`,
   `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,

@@ -2,8 +2,9 @@
 
 `resolve` chooses the one text both renderings will read for each block, and records every
 correction in an overlay over the raw ledger. The ledger is not rewritten. The review queue reads
-that overlay and writes reviewer decisions back into the same file. Model edits and both
-renderings are later work; they read this seam. Operator usage is the
+that overlay and writes reviewer decisions back into the same file. The optional `correct`
+stage writes the model edits this seam reads
+([evidence-constrained correction](correction.md)). Operator usage is the
 [book-ocr guide](../../../guides/data-prep/book-ocr.md). The ledger they resolve is the
 [block ledger](block-ledger.md).
 
@@ -17,6 +18,7 @@ renderings are later work; they read this seam. Operator usage is the
 | `src/llb/prep/book/resolve/anchor.py` | The block digest an edit must match |
 | `src/llb/prep/book/resolve/io.py` | Overlay, resolved text, model corrections, and the run-level reviewer file |
 | `src/llb/prep/book/stages/resolve.py` | The `resolve` stage |
+| `src/llb/prep/book/correct/` | The optional `correct` stage: proposals, the guard, and the adoption report |
 | `src/llb/core/contracts/data_prep/book_resolve.py` | The four resolution families below |
 | `src/llb/prep/book/review/` | Markers, crops, the quality manifest, and the review queue |
 | `src/llb/review/adapters/book_queue.py` | The workbench adapter that writes reviewer decisions |
@@ -24,7 +26,8 @@ renderings are later work; they read this seam. Operator usage is the
 | `src/llb/core/contracts/data_prep/book_review.py` | The queue and the quality manifest |
 
 Tests: `tests/llb/prep/book/test_resolve.py`, `test_resolve_stage.py`, `test_ledger_reuse.py`,
-and `test_review_queue.py`. The adapter is also covered from `tests/llb/review/test_adapters.py`.
+and `test_review_queue.py`. Model edits are `test_correct_guard.py` and `test_correct_stage.py`.
+The adapter is also covered from `tests/llb/review/test_adapters.py`.
 
 ## The resolution rule
 
@@ -77,8 +80,10 @@ Every orphan has `requeued` true. It is not applied to any other block, includin
 the old digest under a new id. Agreement edits are regenerated each run, so they are not orphaned.
 
 Model edits arrive as `pages/<pNNNN>/corrections.json` (`llb.book-ocr-model-corrections`) and are
-read only when a `correct` stage is configured before `resolve`. This stage does not produce
-them. Reviewer decisions are `review/decisions.json` (`llb.book-ocr-reviewer-decisions`), a
+read only when a `correct` stage is configured before `resolve`. Resolve does not produce
+them. The `correct` stage does, and a refusal on that file becomes an unresolved span
+([evidence-constrained correction](correction.md)). Reviewer decisions are
+`review/decisions.json` (`llb.book-ocr-reviewer-decisions`), a
 run-level file outside the stage cache. The resolve key includes that page's decisions and no
 other page's. A missing file digests the same as an empty list, so a file that does not edit a
 page does not re-run it. An invalid file changes the key and the page fails until the file is

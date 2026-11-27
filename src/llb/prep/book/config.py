@@ -116,6 +116,9 @@ def _one_stage_errors(
     if order is not None:
         errors.extend(order(spec.params, configured_before))
     errors.extend(stage.validate_params(spec.params))
+    check_model = getattr(stage, "validate_model", None)
+    if check_model is not None:
+        errors.extend(check_model(spec.model, spec.params))
     if stage.model_required and not spec.model:
         errors.append(f"stage {spec.name!r} needs a model")
     problem = model_problem(spec.model, ollama_lister) if spec.model else None

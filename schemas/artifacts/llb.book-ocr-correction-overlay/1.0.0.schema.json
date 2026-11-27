@@ -23,6 +23,11 @@
           "title": "Block Id",
           "type": "string"
         },
+        "confusion_class": {
+          "default": "",
+          "title": "Confusion Class",
+          "type": "string"
+        },
         "edit_id": {
           "minLength": 1,
           "title": "Edit Id",

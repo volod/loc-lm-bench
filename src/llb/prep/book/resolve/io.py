@@ -59,15 +59,23 @@ def load_reviewer_edits(run_dir: Path, page_id: str) -> list[CorrectionEdit]:
 
 def load_model_edits(directory: Path | None, page_id: str) -> list[CorrectionEdit]:
     """Edits from the `correct` stage, when the run configured one."""
-    if directory is None:
+    document = load_model_corrections(directory, page_id)
+    if document is None:
         return []
+    return list(document.edits)
+
+
+def load_model_corrections(directory: Path | None, page_id: str) -> ModelCorrections | None:
+    """The corrections file, including refusals. None when the stage did not run."""
+    if directory is None:
+        return None
     path = directory / CORRECTIONS_FILENAME
     if not path.is_file():
         raise ValueError(f"correct stage has no {CORRECTIONS_FILENAME}")
     document = read_corrections(path)
     if document.page_id != page_id:
         raise ValueError(f"{path.name} is for page {document.page_id}, not {page_id}")
-    return list(document.edits)
+    return document
 
 
 def write_overlay(path: Path, overlay: PageCorrectionOverlay) -> None:
@@ -108,8 +116,15 @@ def publish_page_resolution(stage_directory: Path) -> None:
     _publish(stage_directory, RESOLVED_FILENAME, PageResolvedText)
 
 
+def publish_page_corrections(stage_directory: Path) -> None:
+    """Copy a committed correct stage up to `pages/<pNNNN>/corrections.json`."""
+    _publish(stage_directory, CORRECTIONS_FILENAME, ModelCorrections)
+
+
 def _publish(
-    stage_directory: Path, name: str, model: type[PageCorrectionOverlay] | type[PageResolvedText]
+    stage_directory: Path,
+    name: str,
+    model: type[PageCorrectionOverlay] | type[PageResolvedText] | type[ModelCorrections],
 ) -> None:
     source = stage_directory / name
     if not source.is_file():

@@ -20,8 +20,11 @@ and resumes a finished stage instead of repeating it. `layout`, `ocr`, `formula`
 configured engine on the original render or on a named variant. When `by_page_class` is set, the
 engine follows the page's class, and the pages of a batch that share an engine run together.
 `blocks` merges them into `pages/<pNNNN>/blocks.json`
-([block ledger](book-recovery/block-ledger.md)). `resolve` chooses one text per block and records
-corrections in an overlay; the raw ledger stays unchanged. `llb book-ocr review-queue` turns each
+([block ledger](book-recovery/block-ledger.md)). An optional `correct` stage, off unless
+the run names it, may propose a substitution the crop supports; the guard refuses a rewrite
+([evidence-constrained correction](book-recovery/correction.md)). `resolve` chooses one text
+per block and records corrections in an overlay; the raw ledger stays unchanged.
+`llb book-ocr review-queue` turns each
 unresolved span, empty content block, and low-confidence reading into a marker, a crop, a manifest
 row, and a workbench entry
 ([uncertainty and review](book-recovery/uncertainty-and-review.md)). `llb book-ocr survey`
@@ -42,6 +45,7 @@ the [book-ocr guide](../../guides/data-prep/book-ocr.md).
 | [Run ledger and resume](book-recovery/pipeline-and-resume.md) | The run directory, the stage seam, cache keys and atomic commits, failure isolation, source policy, the page inventory, and the full-book kill-and-resume evidence |
 | [Page signals and variants](book-recovery/page-preprocessing.md) | The per-page signal vector, the corrections those signals call for, the guards that refuse a damaged page, and the map that puts an engine box back on the original render |
 | [Block ledger](book-recovery/block-ledger.md) | The page block contract, reading order, the engine adapter seam, reconciliation, and how a stage selects an engine |
+| [Evidence-constrained correction](book-recovery/correction.md) | The optional `correct` stage: a local model proposes substitutions, a mechanical guard admits or refuses them, and a refusal becomes an uncertainty marker |
 | [Uncertainty and review](book-recovery/uncertainty-and-review.md) | The resolved text of each block, the correction overlay, the uncertainty markers, and the review queue |
 | [Tool selection](book-recovery/tool-selection.md) | Which dewarp, layout, OCR, formula, table, converter, and vision-model candidates install and run on this host, and the page classes a pilot is drawn from: the per-stage shortlist with version, licence, VRAM and RAM, install route, and one-page smoke result; what was not installed and why. The pilot comparison scores accepted pages and writes the book-ocr config; the handbook winner waits on the accepted reference |
 | [Quality metrics](book-recovery/quality-metrics.md) | The reference format and the per-page, per-class score of a raw engine, the resolved pipeline, and the existing PDF lane: character and word error, dangerous substitutions kept apart, abstentions, formula fidelity, tables, figures, captions, reading order, and the printed page |
