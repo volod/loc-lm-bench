@@ -2,11 +2,15 @@
 
 from collections import Counter
 
+from llb.prep.book.ranges import page_id
 from llb.prep.book.render.constants import TOC_FILENAME
 from llb.prep.book.review.markers import parse_markers
+from llb.prep.book.review.settled import run_settled, terminal_failure
 from llb.prep.book.validate.constants import (
     MARKER_MISMATCH,
     QUEUE_DRIFT_WARNING,
+    QUEUE_MISSING,
+    QUEUE_STALE,
     QUEUE_WARNING,
 )
 from llb.prep.book.validate.text import matter_int
@@ -19,26 +23,62 @@ _QUEUE_FILE = "review/queue.json"
 def marker_check(
     ctx: BookContext, facts: RunFacts
 ) -> tuple[list[OpenMark], list[Finding], list[str]]:
-    """Match vault markers to open queue entries, or to the ledger when the queue is absent."""
+    """Match vault markers to open queue entries, or to the ledger when the queue is absent.
+
+    A finished run refuses a missing queue and a queue that has drifted from the ledger.
+    A run that is still moving keeps those as warnings.
+    """
     vault = _vault_marks(ctx)
+    settled = run_settled(ctx.manifest)
+    findings: list[Finding] = []
     if facts.queue_marks is not None:
-        warnings = _drift(facts)
+        drifted = _drifted(facts)
+        warnings = [] if settled or not drifted else [QUEUE_DRIFT_WARNING]
+        if settled and drifted:
+            findings.append(
+                Finding(QUEUE_STALE, _QUEUE_FILE, "the review queue does not match the ledger")
+            )
+        if settled:
+            findings.extend(_failed_pages(ctx, facts))
         missing_at = _QUEUE_FILE
         expected = facts.queue_marks
     else:
-        warnings = [QUEUE_WARNING]
+        warnings = [] if settled else [QUEUE_WARNING]
+        if settled:
+            findings.append(
+                Finding(
+                    QUEUE_MISSING, _QUEUE_FILE, "review queue was not written for a finished run"
+                )
+            )
         missing_at = ""
         expected = facts.marks
-    findings = _diff(vault, expected, ctx, missing_at)
+    findings.extend(_diff(vault, expected, ctx, missing_at))
     return expected, findings, warnings
 
 
-def _drift(facts: RunFacts) -> list[str]:
+def _drifted(facts: RunFacts) -> bool:
     queue = Counter(mark.key for mark in facts.queue_marks or [])
     ledger = Counter(mark.key for mark in facts.marks)
-    if queue == ledger:
+    return queue != ledger
+
+
+def _failed_pages(ctx: BookContext, facts: RunFacts) -> list[Finding]:
+    width = ctx.config.source.page_count
+    expected = {
+        page_id(pdf_page, width)
+        for pdf_page in ctx.config.pages
+        if terminal_failure(ctx.run_dir, page_id(pdf_page, width))
+    }
+    queued = set(facts.failed_pages)
+    if expected == queued:
         return []
-    return [QUEUE_DRIFT_WARNING]
+    return [
+        Finding(
+            QUEUE_STALE,
+            _QUEUE_FILE,
+            "page failures in the review queue do not match the run",
+        )
+    ]
 
 
 def _vault_marks(ctx: BookContext) -> list[tuple[_Key, str]]:

@@ -233,6 +233,54 @@ schema:
   - name: portableJsonSchemaValidation
     type: text
     description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-pilot-acceptance
+  name: llb.book-ocr-pilot-acceptance
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-pilot-acceptance/1.0.0.schema.json
+  description: Checksums and reviewer acceptances for a finalized pilot reference.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-pilot-review
+  name: llb.book-ocr-pilot-review
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-pilot-review/1.0.0.schema.json
+  description: Frozen scan, pre-draft digest, and blind reading notes for a book pilot.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
+- id: llb-book-ocr-pilot-revision
+  name: llb.book-ocr-pilot-revision
+  logicalType: object
+  physicalType: file
+  physicalName: llb.book-ocr-pilot-revision/1.0.0.schema.json
+  description: One saved pilot page edit and its human acceptance decision.
+  customProperties:
+  - property: schemaVersion
+    value: 1.0.0
+  - property: physicalFormats
+    value:
+    - json
+  quality:
+  - name: portableJsonSchemaValidation
+    type: text
+    description: Validate records with the generated JSON Schema before use.
 - id: llb-book-ocr-pilot-selection
   name: llb.book-ocr-pilot-selection
   logicalType: object

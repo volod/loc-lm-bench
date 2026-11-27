@@ -11,10 +11,11 @@ from pathlib import Path
 
 from llb.prep.pdf.model import PDF_CITATION_SUFFIX
 
-REFUSED_MARKER_REASONS = frozenset({"unresolved", "empty"})
+REFUSED_MARKER_REASONS = frozenset({"unresolved", "empty", "omission", "page-failed"})
 
 MARKER = re.compile(
-    r"\{\{llb-marker:(unresolved|empty|low-confidence|orphaned):([^:}]+):(\d+)-(\d+)\}\}"
+    r"\{\{llb-marker:(unresolved|empty|low-confidence|orphaned|omission|page-failed|blank)"
+    r":([^:}]+):(\d+)-(\d+)\}\}"
 )
 
 

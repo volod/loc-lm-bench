@@ -6,6 +6,7 @@ Markdown or HTML. Figures become embeds. Furniture stays visible and labelled.
 
 from collections.abc import Callable
 
+from llb.prep.book.render.mathform import formula_math, render_formula, render_table
 from llb.prep.book.render.types import RenderBlock, RenderContext, Unit
 from llb.prep.book.review.markers import render_marker, render_passage
 
@@ -57,18 +58,6 @@ def render_unit(unit: Unit, ctx: RenderContext) -> str:
     """One unit, then the numbered-target anchors that belong to its blocks."""
     body = _BODY.get(unit.role, _paragraph)(unit, ctx)
     return _with_anchors(body, unit, ctx)
-
-
-def formula_math(text: str, number: str) -> str:
-    """Display LaTeX. The printed equation number is a ``\\tag`` when the text has none."""
-    inner = text.strip()
-    if inner.startswith("$$") and inner.endswith("$$"):
-        inner = inner[2:-2].strip()
-    elif inner.startswith("\\[") and inner.endswith("\\]"):
-        inner = inner[2:-2].strip()
-    if number and "\\tag{" not in inner:
-        inner = f"{inner} \\tag{{{number.replace('}', '')}}}"
-    return f"$$\n{inner}\n$$"
 
 
 def table_markdown(text: str) -> str:
@@ -124,14 +113,36 @@ def _paragraph(unit: Unit, _ctx: RenderContext) -> str:
 
 
 def _formula(unit: Unit, ctx: RenderContext) -> str:
+    block = unit.blocks[0]
     number = ""
-    for block in unit.blocks:
-        number = ctx.equations.get(block.block_id, number)
-    return formula_math(unit.text, number)
+    for item in unit.blocks:
+        number = ctx.equations.get(item.block_id, number)
+    if block.formula is not None and block.formula.equation_number:
+        number = block.formula.equation_number
+    if block.formula is not None:
+        return render_formula(
+            block.formula.latex,
+            number,
+            block.formula.display,
+            ctx.formula_crops.get(block.block_id),
+        )
+    body = formula_math(unit.text, number)
+    crop = ctx.formula_crops.get(block.block_id)
+    if not crop:
+        return body
+    return f"{body}\n\n![[{crop}]]"
 
 
-def _table(unit: Unit, _ctx: RenderContext) -> str:
-    return table_markdown(unit.text)
+def _table(unit: Unit, ctx: RenderContext) -> str:
+    block = unit.blocks[0]
+    if block.table is None:
+        return table_markdown(unit.text)
+    return render_table(
+        block.table,
+        ctx.table_images.get(block.block_id),
+        ctx.table_evidence.get(block.block_id),
+        emit_caption=block.emit_caption,
+    )
 
 
 def _heading(unit: Unit, ctx: RenderContext) -> str:
@@ -175,11 +186,29 @@ def _figure_block(block: RenderBlock, ctx: RenderContext) -> str:
     return f'[!figure-missing]({href} "{block.page_id} {block.block_id}")'
 
 
+def _blank(unit: Unit, ctx: RenderContext) -> str:
+    block = unit.blocks[0]
+    href = ctx.content_href(block.pdf_page)
+    return f'[!blank]({href} "{block.page_id}")'
+
+
+def _omission(unit: Unit, ctx: RenderContext) -> str:
+    lines: list[str] = []
+    for block in unit.blocks:
+        href = ctx.content_href(block.pdf_page)
+        crop = block.crops[0][2] if block.crops else None
+        lines.append(render_marker("unreadable", href, block.block_id, 0, 0, crop))
+    return "\n\n".join(lines)
+
+
 def _failed(unit: Unit, ctx: RenderContext) -> str:
     block = unit.blocks[0]
     href = ctx.content_href(block.pdf_page)
     reason = block.fail_reason or "recovery failed"
-    return f'[!page-failed]({href} "{block.page_id} {reason}")'
+    marker = f'[!page-failed]({href} "{block.page_id} {reason}")'
+    if not block.crops:
+        return marker
+    return f"{marker}\n\n![[{block.crops[0][2]}]]"
 
 
 def _missing(unit: Unit, ctx: RenderContext) -> str:
@@ -200,6 +229,8 @@ _BODY = {
     "unknown": _paragraph,
     "page-failed": _failed,
     "missing-block": _missing,
+    "blank": _blank,
+    "omission": _omission,
     "running-header": _furniture,
     "page-number": _furniture,
     "ornament": _furniture,

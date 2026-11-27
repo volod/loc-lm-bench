@@ -176,7 +176,7 @@ def test_reprojection_is_identical_and_a_correction_revises(tmp_path: Path) -> N
     revised_text = added[0].read_text(encoding="utf-8")
     assert "ALPHA 1 BETA" in revised_text
     assert "p0002-b0001" not in revised_text
-    assert "{{llb-marker:unresolved:p0003:" in revised_text
+    assert "{{llb-marker:page-failed:p0003:" in revised_text
     ingested = tmp_path / "revised"
     ingest_corpus(out, ingested)
     assert (ingested / marked.name).is_file()

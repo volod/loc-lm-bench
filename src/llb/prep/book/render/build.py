@@ -45,6 +45,7 @@ from llb.prep.book.render.names import (
 )
 from llb.prep.book.render.publish import Asset, Crop, publish
 from llb.prep.book.render.segment import Span, prepare, section_spans
+from llb.prep.book.render.technical_assets import technical_assets
 from llb.prep.book.render.types import BookLoad, RenderBlock, RenderContext, VaultFile
 from llb.prep.book.review.crops import padded_box
 from llb.prep.book.review.constants import CROP_PADDING_PX
@@ -78,7 +79,8 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     blocks = prepare(loaded.blocks, loaded.structure)
     spans = section_spans(blocks, loaded.structure)
     assets, figures = _figures(spans, loaded, slug)
-    ctx = _context(loaded, dest, slug, opts, assets)
+    formula_crops, table_images, table_evidence, technical = technical_assets(spans, loaded, slug)
+    ctx = _context(loaded, dest, slug, opts, assets, formula_crops, table_images, table_evidence)
     files = layout_files(spans, opts.section_cap, slug, ctx)
     grammar = load_grammar(opts.reference_grammar)
     docs, counts = render_markdown(files, loaded.structure, ctx, grammar)
@@ -87,6 +89,7 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     blobs[f"metadata/{REFERENCE_REPORT_FILENAME}"] = reference_json(counts)
     blobs["metadata/document_structure.json"] = structure_path(run_dir).read_bytes()
     blobs.update(figures)
+    blobs.update(technical)
     blobs.update(_crops(blocks, loaded))
     blobs.update(_pages(loaded, opts))
     links = _source(loaded, dest, opts, blobs)
@@ -125,6 +128,9 @@ def _context(
     slug: str,
     opts: RenderOptions,
     assets: dict[str, str],
+    formula_crops: dict[str, str],
+    table_images: dict[str, str],
+    table_evidence: dict[str, str],
 ) -> RenderContext:
     pdf = _vault_pdf(dest, loaded.pdf, opts.source_policy)
     return RenderContext(
@@ -137,6 +143,9 @@ def _context(
         content_href=_href(dest / "content", pdf),
         toc_href=_href(dest, pdf),
         pages_with_images=frozenset(loaded.images),
+        formula_crops=formula_crops,
+        table_images=table_images,
+        table_evidence=table_evidence,
     )
 
 

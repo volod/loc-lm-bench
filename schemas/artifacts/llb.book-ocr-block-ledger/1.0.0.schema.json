@@ -9,6 +9,13 @@
           "title": "Block Id",
           "type": "string"
         },
+        "cell_disputes": {
+          "items": {
+            "$ref": "#/$defs/CellDispute"
+          },
+          "title": "Cell Disputes",
+          "type": "array"
+        },
         "kind": {
           "enum": [
             "body",
@@ -31,6 +38,11 @@
           "minimum": 0,
           "title": "Ordinal",
           "type": "integer"
+        },
+        "paragraph": {
+          "default": false,
+          "title": "Paragraph",
+          "type": "boolean"
         },
         "pdf_page": {
           "minimum": 1,
@@ -73,6 +85,134 @@
       "title": "Block",
       "type": "object"
     },
+    "CellDispute": {
+      "additionalProperties": false,
+      "description": "A cell two engines read differently, after the dangerous-substitution check.\n\n``classes`` is the ledger's coarse check. ``substitutions`` names the dangerous-substitution\nclasses that fired, and ``sources`` keeps each engine's cell text.",
+      "properties": {
+        "classes": {
+          "items": {
+            "enum": [
+              "digit",
+              "sign",
+              "decimal",
+              "symbol"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Classes",
+          "type": "array"
+        },
+        "column": {
+          "minimum": 0,
+          "title": "Column",
+          "type": "integer"
+        },
+        "row": {
+          "minimum": 0,
+          "title": "Row",
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CellSource"
+          },
+          "minItems": 2,
+          "title": "Sources",
+          "type": "array"
+        },
+        "substitutions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Substitutions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "row",
+        "column",
+        "classes",
+        "sources"
+      ],
+      "title": "CellDispute",
+      "type": "object"
+    },
+    "CellSource": {
+      "additionalProperties": false,
+      "description": "One engine's text for one disputed cell.",
+      "properties": {
+        "engine": {
+          "minLength": 1,
+          "title": "Engine",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "variant": {
+          "minLength": 1,
+          "title": "Variant",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "variant",
+        "text"
+      ],
+      "title": "CellSource",
+      "type": "object"
+    },
+    "FormulaReading": {
+      "additionalProperties": false,
+      "description": "One engine's formula. ``display`` is false for inline math.\n\n``equation_number`` is the printed number, without the parentheses that merely delimited it.\n``number_side`` is where that number sits relative to the formula.",
+      "properties": {
+        "display": {
+          "default": true,
+          "title": "Display",
+          "type": "boolean"
+        },
+        "equation_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Equation Number"
+        },
+        "latex": {
+          "title": "Latex",
+          "type": "string"
+        },
+        "number_side": {
+          "anyOf": [
+            {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number Side"
+        }
+      },
+      "required": [
+        "latex"
+      ],
+      "title": "FormulaReading",
+      "type": "object"
+    },
     "RawReading": {
       "additionalProperties": false,
       "description": "One engine's text for one image variant. Raw: nothing here has been chosen or corrected.",
@@ -94,6 +234,17 @@
           "title": "Engine",
           "type": "string"
         },
+        "formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FormulaReading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "model": {
           "anyOf": [
             {
@@ -105,6 +256,17 @@
           ],
           "default": null,
           "title": "Model"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableReading"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "text": {
           "title": "Text",
@@ -166,6 +328,76 @@
         "height"
       ],
       "title": "Region",
+      "type": "object"
+    },
+    "TableCell": {
+      "additionalProperties": false,
+      "description": "One cell. An empty ``text`` is a cell the engine saw and left blank.",
+      "properties": {
+        "colspan": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Colspan",
+          "type": "integer"
+        },
+        "rowspan": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Rowspan",
+          "type": "integer"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "title": "TableCell",
+      "type": "object"
+    },
+    "TableReading": {
+      "additionalProperties": false,
+      "description": "A table grid. ``faithful`` is false when an HTML table cannot hold the grid.",
+      "properties": {
+        "caption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption"
+        },
+        "faithful": {
+          "default": true,
+          "title": "Faithful",
+          "type": "boolean"
+        },
+        "header_rows": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Header Rows",
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "$ref": "#/$defs/TableCell"
+            },
+            "type": "array"
+          },
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "title": "TableReading",
       "type": "object"
     },
     "UncertaintySlice": {

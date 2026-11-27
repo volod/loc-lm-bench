@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 from llb.core.contracts.data_prep.book import BookOcrRunConfig
-from llb.core.contracts.data_prep.book_blocks import Region
+from llb.core.contracts.data_prep.book_blocks import FormulaReading, Region, TableReading
 from llb.core.contracts.data_prep.book_resolve import ResolvedBlock
 from llb.core.contracts.data_prep.book_structure import DocumentStructure, StructureNode
 from llb.prep.book.review.marks import SpanMark
@@ -31,6 +31,16 @@ class RenderBlock:
     crops: tuple[tuple[int, int, str], ...] = ()
     failed: bool = False
     fail_reason: str = ""
+    # Copied from the ledger. A finished region does not absorb the next body block.
+    paragraph: bool = False
+    formula: FormulaReading | None = None
+    table: TableReading | None = None
+    emit_caption: bool = False
+    # The vault writes a crop when the formula is below the validity or agreement bar.
+    formula_crop: bool = False
+    # An unfaithful table keeps the page image. A disputed cell keeps a review crop.
+    table_image: bool = False
+    table_evidence: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +84,9 @@ class RenderContext:
     content_href: Callable[[int], str]
     toc_href: Callable[[int], str]
     pages_with_images: frozenset[int] = field(default_factory=frozenset)
+    formula_crops: dict[str, str] = field(default_factory=dict)
+    table_images: dict[str, str] = field(default_factory=dict)
+    table_evidence: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

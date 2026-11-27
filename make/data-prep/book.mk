@@ -1,6 +1,7 @@
 ## Scanned-book recovery: the resumable per-page, per-stage `book-ocr` run.
 
-.PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-pilot-select \
+.PHONY: book-ocr book-ocr-status book-ocr-engines book-ocr-score book-ocr-compare \
+	book-ocr-pilot-select book-ocr-pilot-run \
 	book-ocr-review-queue book-ocr-structure book-ocr-render book-ocr-project book-ocr-validate \
 	book-survey-list book-survey-install book-survey-smoke book-survey-rescore
 
@@ -26,16 +27,41 @@ book-ocr-status: ## Report per-page, per-stage status of BOOK_RUN (BOOK_SHOW=all
 	if [ -n "$(BOOK_JSON)" ]; then args+=(--json); fi; \
 	$(PY) -m llb.main book-ocr status "$${args[@]}"
 
-book-ocr-score: ## Score BOOK_RUN against reference dir BOOK_REFERENCE (BOOK_CITATIONS=existing-lane sidecar, BOOK_ENGINE=, BOOK_SCORE_OUT=, BOOK_JSON=1)
+book-ocr-score: ## Score BOOK_RUN against reference dir BOOK_REFERENCE (BOOK_ACCEPTANCE=, BOOK_CITATIONS=, BOOK_ENGINE=, BOOK_SCORE_OUT=, BOOK_JSON=1)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BOOK_REFERENCE)" || { echo "ERROR: set BOOK_REFERENCE=<reference-dir>"; exit 2; }
 	@args=(--reference "$(BOOK_REFERENCE)"); \
 	if [ -n "$(BOOK_RUN)" ]; then args+=("$(BOOK_RUN)"); fi; \
 	if [ -n "$(BOOK_CITATIONS)" ]; then args+=(--citations "$(BOOK_CITATIONS)"); fi; \
+	if [ -n "$(BOOK_ACCEPTANCE)" ]; then args+=(--acceptance "$(BOOK_ACCEPTANCE)"); fi; \
 	if [ -n "$(BOOK_ENGINE)" ]; then args+=(--engine "$(BOOK_ENGINE)"); fi; \
 	if [ -n "$(BOOK_SCORE_OUT)" ]; then args+=(--out "$(BOOK_SCORE_OUT)"); fi; \
 	if [ -n "$(BOOK_JSON)" ]; then args+=(--json); fi; \
 	$(PY) -m llb.main book-ocr score "$${args[@]}"
+
+book-ocr-compare: ## Compare accepted pilot lanes in BOOK_MANIFEST (BOOK_COMPARE_OUT=, BOOK_COMPARE_CONFIG=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_MANIFEST)" || { echo "ERROR: set BOOK_MANIFEST=<comparison-manifest>"; exit 2; }
+	@test -n "$(BOOK_COMPARE_OUT)" || { echo "ERROR: set BOOK_COMPARE_OUT=<report.json>"; exit 2; }
+	@test -n "$(BOOK_COMPARE_CONFIG)" || { echo "ERROR: set BOOK_COMPARE_CONFIG=<book-ocr.yaml>"; exit 2; }
+	@$(PY) -m llb.main book-ocr compare "$(BOOK_MANIFEST)" \
+		--out "$(BOOK_COMPARE_OUT)" --config-out "$(BOOK_COMPARE_CONFIG)"
+
+book-ocr-pilot-run: ## Run the pilot roster one engine at a time (BOOK_PDF=, BOOK_PILOT=, BOOK_REUSE_FROM=, BOOK_LANGUAGE=eng, BOOK_DRY_RUN=1, BOOK_RESUME=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@args=(); \
+	if [ -n "$(BOOK_PDF)" ]; then args+=("$(BOOK_PDF)"); fi; \
+	if [ -n "$(BOOK_PILOT)" ]; then args+=(--pilot "$(BOOK_PILOT)"); fi; \
+	if [ -n "$(BOOK_REUSE_FROM)" ]; then args+=(--reuse-from "$(BOOK_REUSE_FROM)"); fi; \
+	if [ -n "$(BOOK_LANGUAGE)" ]; then args+=(--language "$(BOOK_LANGUAGE)"); fi; \
+	if [ -n "$(BOOK_OUT_DIR)" ]; then args+=(--out-root "$(BOOK_OUT_DIR)"); fi; \
+	if [ -n "$(BOOK_RESUME)" ]; then args+=(--resume "$(BOOK_RESUME)"); fi; \
+	if [ -n "$(BOOK_DRY_RUN)" ]; then args+=(--dry-run); fi; \
+	if [ -n "$(BOOK_REFERENCE)" ]; then args+=(--reference "$(BOOK_REFERENCE)"); fi; \
+	if [ -n "$(BOOK_PREDRAFT)" ]; then args+=(--predraft "$(BOOK_PREDRAFT)"); fi; \
+	if [ -n "$(BOOK_ACCEPTS)" ]; then args+=(--accepts "$(BOOK_ACCEPTS)"); fi; \
+	if [ -n "$(BOOK_MANIFEST)" ]; then args+=(--manifest-out "$(BOOK_MANIFEST)"); fi; \
+	$(PY) -m llb.main book-ocr pilot-run "$${args[@]}"
 
 book-ocr-pilot-select: ## Select a seeded pilot from BOOK_RUN (BOOK_PILOT_SIZE=25, BOOK_PILOT_SEED=0, BOOK_PILOT_FROZEN=, BOOK_PILOT_OUT=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
@@ -113,3 +139,29 @@ book-survey-rescore: ## Recompute a survey's synthetic-page smoke scores from it
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BOOK_SURVEY_DIR)" || { echo "ERROR: set BOOK_SURVEY_DIR=<run-dir>/survey"; exit 2; }
 	@$(PY) -m llb.main book-ocr survey rescore "$(BOOK_SURVEY_DIR)"
+
+.PHONY: book-ocr-pilot-prepare book-ocr-pilot-review book-ocr-pilot-review-status \
+	book-ocr-pilot-finalize
+
+book-ocr-pilot-prepare: ## Merge BOOK_PRIMARY and BOOK_ALTERNATE over BOOK_PILOT and BOOK_PDF (BOOK_REVIEW=, BOOK_ALTERNATE_OVERRIDE=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@$(PY) -m llb.main book-ocr pilot-review prepare --source "$(BOOK_PDF)" \
+		--pilot "$(BOOK_PILOT)" --primary "$(BOOK_PRIMARY)" --alternate "$(BOOK_ALTERNATE)" \
+		$(if $(BOOK_REVIEW),--output "$(BOOK_REVIEW)") \
+		$(if $(BOOK_ALTERNATE_OVERRIDE),--alternate-override "$(BOOK_ALTERNATE_OVERRIDE)")
+
+book-ocr-pilot-review: ## Open the local side-by-side worksheet for BOOK_REVIEW (BOOK_REVIEW_PORT=8765)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_REVIEW)" || { echo "ERROR: set BOOK_REVIEW=<review-bundle>"; exit 2; }
+	@$(PY) -m llb.main book-ocr pilot-review open "$(BOOK_REVIEW)" \
+		--port "$(or $(BOOK_REVIEW_PORT),8765)"
+
+book-ocr-pilot-review-status: ## Report pending or accepted pages in BOOK_REVIEW
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_REVIEW)" || { echo "ERROR: set BOOK_REVIEW=<review-bundle>"; exit 2; }
+	@$(PY) -m llb.main book-ocr pilot-review status "$(BOOK_REVIEW)"
+
+book-ocr-pilot-finalize: ## Export a reference and acceptance record from BOOK_REVIEW after all page accepts
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_REVIEW)" || { echo "ERROR: set BOOK_REVIEW=<review-bundle>"; exit 2; }
+	@$(PY) -m llb.main book-ocr pilot-review finalize "$(BOOK_REVIEW)"

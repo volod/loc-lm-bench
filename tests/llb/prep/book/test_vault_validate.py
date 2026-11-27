@@ -29,6 +29,8 @@ from llb.prep.book.resolve.io import write_overlay
 from llb.prep.book.review.io import queue_path, read_queue, write_queue
 from llb.prep.book.review.markers import ParsedMarker, parse_markers, render_marker
 from llb.prep.book.validate import validate_book
+from llb.prep.book.validate.text import extract_links
+from llb.prep.book.validate.types import VaultDoc
 from llb.prep.book.validate.constants import (
     BLOCK_WITHOUT_PAGE,
     BROKEN_ANCHOR,
@@ -48,6 +50,18 @@ from tests.llb.prep.book.test_render import _oversized, _sample, _vault
 
 runner = CliRunner()
 _HEX = "ab" * 32
+
+
+def test_display_math_is_not_a_relative_link(tmp_path: Path) -> None:
+    note = tmp_path / "content" / "page.md"
+    note.parent.mkdir(parents=True)
+    body = "\n".join(["$$", r"E](0.5\text{s})", "![[review/crop.png]]", "$$", "[real](missing.md)"])
+    note.write_text(body, encoding="utf-8")
+    links = extract_links(VaultDoc("content/page.md", note, {}, body), tmp_path)
+    assert [(link.line, link.target) for link in links] == [
+        (2, "review/crop.png"),
+        (3, "missing.md"),
+    ]
 
 
 def test_clean_vault_passes_and_the_report_accounts_every_page(tmp_path: Path) -> None:

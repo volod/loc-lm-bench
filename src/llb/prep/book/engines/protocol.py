@@ -12,6 +12,7 @@ from typing import Protocol
 
 from pydantic import Field
 
+from llb.core.contracts.data_prep.book_blocks import FormulaReading, TableReading
 from llb.core.contracts.data_prep.corpus import DataPrepRow
 from llb.core.fsutil import atomic_write_text
 from llb.prep.book.constants import READING_FILENAME
@@ -46,6 +47,7 @@ class EngineRequest:
     model: str | None
     width: int
     height: int
+    language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class Proposed:
     y1: float
     text: str
     confidence: float | None
+    formula: FormulaReading | None = None
+    table: TableReading | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,8 @@ class ProposedRecord(DataPrepRow):
     y1: float
     text: str
     confidence: float | None = None
+    formula: FormulaReading | None = None
+    table: TableReading | None = None
 
 
 class EngineReadingFile(DataPrepRow):
@@ -132,6 +138,8 @@ def write_reading(directory: Path, read: EngineRead) -> None:
                 y1=block.y1,
                 text=block.text,
                 confidence=block.confidence,
+                formula=block.formula,
+                table=block.table,
             )
             for block in read.blocks
         ],
@@ -165,6 +173,8 @@ def _proposed(block: ProposedRecord) -> Proposed:
         block.y1,
         block.text,
         block.confidence,
+        block.formula,
+        block.table,
     )
 
 

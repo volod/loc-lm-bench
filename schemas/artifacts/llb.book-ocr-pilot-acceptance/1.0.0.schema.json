@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "PilotPageAcceptance": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_at": {
+          "minLength": 1,
+          "title": "Accepted At",
+          "type": "string"
+        },
+        "page_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Page Sha256",
+          "type": "string"
+        },
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "reviewer": {
+          "minLength": 1,
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "scan_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Scan Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pdf_page",
+        "reviewer",
+        "accepted_at",
+        "scan_sha256",
+        "page_sha256",
+        "revision"
+      ],
+      "title": "PilotPageAcceptance",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-ocr-pilot-acceptance:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The hashes and decisions that bind a score input to the reviewed scan and frozen pilot.",
+  "properties": {
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PilotPageAcceptance"
+      },
+      "minItems": 1,
+      "title": "Pages",
+      "type": "array"
+    },
+    "pilot_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Pilot Sha256",
+      "type": "string"
+    },
+    "predraft_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Predraft Sha256",
+      "type": "string"
+    },
+    "reference_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Reference Sha256",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-ocr-pilot-acceptance",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "source_sha256",
+    "pilot_sha256",
+    "predraft_sha256",
+    "reference_sha256",
+    "pages"
+  ],
+  "title": "PilotReferenceAcceptance",
+  "type": "object"
+}

@@ -8,7 +8,7 @@ they call for), `classes` (the page classes a pilot and an engine route on), the
 stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
 `resolve` stage that chooses one text per block, and two deterministic stand-in stages.
 `book-ocr structure` then infers the printed pages and the hierarchy from those ledgers.
-Rendering the vault is still ahead. For a
+`book-ocr render` writes the reading vault from that structure. For a
 born-digital PDF, use the
 [PDF corpus lane](pdf-corpus-prep.md) instead.
 
@@ -149,9 +149,10 @@ render of a 1,067-page, 150 dpi greyscale scan is about 0.9 GB.
 
 ## Review queue
 
-`book-ocr review-queue` reads a finished `resolve` and writes a marker, a crop, a manifest row, and
-a queue entry for every uncertain span. It is not a stage. The marker syntax, the three kinds, and
-what a decision writes are
+`book-ocr review-queue` reads a finished run and writes a marker, a crop, a manifest row, and a
+queue entry for every uncertain span, plus one entry for a page that failed terminally. A blank
+page is recorded on the manifest and has no queue entry. The marker syntax, the coverage field,
+and what a decision writes are
 [uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
 
 ```sh
@@ -161,18 +162,19 @@ make review-workbench REVIEW_PATH=<run-dir>/review/queue.json
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `BOOK_RUN` | A book-ocr run whose `resolve` stage has finished for every configured page | required |
+| `BOOK_RUN` | A finished book-ocr run. A terminal page failure is included | required |
 
-Exit code 2 is a path that is not a run, or a page that still lacks its ledger, resolved text, and
-overlay. The command prints kind counts. It does not print the recovered text. After a decision,
+Exit code 2 is a path that is not a run, or a page that is still unfinished. The command prints
+kind counts and coverage counts. It does not print the recovered text. After a decision,
 resume the run so `resolve` applies it, then build the queue again.
 
 ## Structure
 
 `book-ocr structure` reads a finished ledger and writes `metadata/document_structure.json`: the
 printed page of every PDF page, the hierarchy, the running headers, and the figure, table, and
-equation numbers. It is not a stage. A missing ledger is exit code 2. The command prints counts
-and does not print the recovered text. What the inference keeps, and what the sample scan showed,
+equation numbers. It is not a stage. An unfinished ledger is exit code 2. A page that failed
+terminally is included and contributes no lines. The command prints counts and does not print the
+recovered text. What the inference keeps, and what the sample scan showed,
 is [structure](../../impl/current/book-recovery/structure-and-rendering.md).
 
 ```sh
@@ -181,7 +183,7 @@ make book-ocr-structure BOOK_RUN=<run-dir>
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `BOOK_RUN` | A book-ocr run whose block ledger exists for every configured page | required |
+| `BOOK_RUN` | A book-ocr run. An unfinished ledger is refused; a terminal failure is included | required |
 
 ## Reading vault
 
@@ -289,6 +291,90 @@ or misplaced, or the replay differed from the frozen selection. These checks run
 selection files are written. The cuts, the precedence, and the handbook list are
 [page classes](../../impl/current/book-recovery/tool-selection.md#page-classes).
 
+## Pilot reading
+
+`book-ocr pilot-run` reads a frozen pilot with the existing Docling-plus-Tesseract lane, then with
+each roster engine that fits this host, one engine at a time. It reuses a classified run's
+`render`, `signals`, and `classes`. A whole-page engine is called on the first recognition stage;
+the later stages copy that reading. It does not score pages and it does not choose a winner.
+Scoring is `book-ocr compare`, which still needs an accepted reference.
+
+```sh
+make book-ocr-pilot-run BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_REUSE_FROM=<classified-run> BOOK_LANGUAGE=eng
+make book-ocr-pilot-run BOOK_DRY_RUN=1 BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_REUSE_FROM=<classified-run>
+make book-ocr-pilot-run BOOK_RESUME=<campaign-dir>
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `BOOK_PDF` | The scan the frozen pilot was drawn from | required for a new run |
+| `BOOK_PILOT` | Frozen pilot selection | required for a new run |
+| `BOOK_REUSE_FROM` | Classified run whose render, signals, and classes are reused | unset |
+| `BOOK_LANGUAGE` | OCR language recorded on the existing lane and on each recognition stage | `eng` |
+| `BOOK_OUT_DIR` | Parent of the campaign directory and of each lane's run | `$DATA_DIR/book-ocr` |
+| `BOOK_DRY_RUN` | Set to `1` to print the plan and write nothing | unset |
+| `BOOK_RESUME` | Campaign directory to continue | unset |
+| `BOOK_REFERENCE`, `BOOK_PREDRAFT`, `BOOK_ACCEPTS`, `BOOK_MANIFEST` | When all four are set, also write the compare manifest | unset |
+
+The campaign directory holds `campaign.json`. Each fitting engine is a normal book-ocr run under
+the same output root. An engine whose survey peak is above the host is listed and not started.
+A lane that finishes no recognition call is `unavailable`. A lane that reads some pages and fails
+others stays measured, and the failed PDF pages are named in the campaign index. Exit code 2 means
+the PDF is missing, the pilot was drawn from another file, or a pending lane's dry run refused.
+The decision rule is
+[pilot comparison](../../impl/current/book-recovery/tool-selection.md#pilot-comparison).
+
+## Review the frozen pilot
+
+Use two different shortlisted recognition runs on the frozen pilot, such as two complete lanes
+from the [pilot campaign](#pilot-reading). Pass the run with layout and structured blocks as
+`BOOK_PRIMARY` and a second reading as `BOOK_ALTERNATE`. Each run needs a completed render and
+block ledger for every pilot page. Set `BOOK_ALTERNATE_OVERRIDE` to a subset read by the second
+engine on a better variant, such as pages that needed a half-turn.
+
+```sh
+make book-ocr-pilot-prepare BOOK_PDF=<scan.pdf> BOOK_PILOT=<frozen-pilot.json> \
+  BOOK_PRIMARY=<layout-run> BOOK_ALTERNATE=<second-run>
+make book-ocr-pilot-review BOOK_REVIEW=<layout-run>/pilot/reference-review
+```
+
+Open the printed loopback URL. The worksheet shows the source pixels next to the editable
+transcription, with disagreements and unpaired readings indicated on the block list. Use the page
+selector, Previous, Next, and Next pending to move through the frozen set. Click a region or select
+a block to compare it. Use Zoom, Rotate, and Draw region to inspect or correct geometry. Region
+coordinates stay in the original scan frame when you rotate the view.
+
+Review the entire page, including material both readings may have missed. Correct the printed
+folio, block types, text and reading order, formulas and equation numbers, table cell spans, and
+figure boxes and links to caption blocks. For a table, enter a JSON list of rows. A plain string is
+a one-cell entry and `{"text": "header", "colspan": 2}` spans two columns. Add or remove blocks
+where the scan requires it. Enter your name, confirm the full-page check, and choose **Accept page**.
+
+**Save draft** saves a revision. Changing pages also saves pending edits, including unfinished
+table JSON. Reopen the same bundle to resume, or load the pre-draft or an earlier saved revision
+as an editable draft. An edit to an accepted page needs a new acceptance. Copy the entire review
+bundle when moving computers. Its `scans/`, `predraft/`, and `history/` directories preserve
+the scans, starting draft, and progress alongside `review.json`.
+
+```sh
+make book-ocr-pilot-review-status BOOK_REVIEW=<review-bundle>
+make book-ocr-pilot-finalize BOOK_REVIEW=<review-bundle>
+make book-ocr-score BOOK_RUN=<recognition-run> BOOK_REFERENCE=<finalized-reference> \
+  BOOK_ACCEPTANCE=<finalized-reference>/acceptance.json
+```
+
+Finalization checks every page has a current acceptance and validates scan checksums, the
+pre-draft digest, reference structure, and LaTeX. The printed output path is an immutable
+snapshot with `pages/` for scoring and an `acceptance.json` record with page decisions and
+digests. Keep the review bundle and reference under `DATA_DIR`. Place only the acceptance
+record beside the frozen `pilot_pages.json` for the repository handoff. Pass that copy as
+`BOOK_ACCEPTANCE` when scoring to check that the file bytes and source match the recorded
+reference. When generating the comparison manifest with `make book-ocr-pilot-run`, set
+`BOOK_ACCEPTS` to an `accepts.json` with the `source_sha256` and one row per page containing
+`pdf_page`, `reviewer`, and `accepted: true`.
+
 ## Score
 
 `book-ocr score` compares a finished ledger, the resolved pipeline when the run has one, or the
@@ -309,6 +395,21 @@ writes the JSON report and `BOOK_JSON=1` prints it. Without `BOOK_JSON`, the com
 short summary that names missing submissions, non-zero abstentions, and fields a page did not
 emit. Exit code 2 is a missing input or a reference the loader refused. The command does not
 recover a scan and does not write a reference.
+
+## Compare
+
+`book-ocr compare` reads a manifest of accepted pilot pages and writes the comparison report and
+the book-ocr config the decision selected. It does not load a model and does not read the scan.
+Every reference page must be accepted, and the existing lane's citation sidecar must record the
+same OCR language the manifest names. Exit code 2 means the comparison cannot start. Exit code 0
+with `negative: true` means no candidate beat the existing lane; that is a result, and the config
+names `docling`. The decision rule, the selection-set label, and the VRAM refusal are
+[pilot comparison](../../impl/current/book-recovery/tool-selection.md#pilot-comparison).
+
+```sh
+make book-ocr-compare BOOK_MANIFEST=<manifest.yaml> \
+  BOOK_COMPARE_OUT=<report.json> BOOK_COMPARE_CONFIG=<book-ocr.yaml>
+```
 
 ## Recovery-tool survey
 

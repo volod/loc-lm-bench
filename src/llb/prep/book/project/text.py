@@ -14,7 +14,8 @@ from llb.goldset.markers import MARKER, marker_token
 from llb.prep.book.project.spans import Fragment, RenderedDocument, assemble
 from llb.prep.book.render.constants import CONTENT_DIRNAME, FURNITURE_ROLES, HEADING_LEVEL
 from llb.prep.book.render.names import node_label
-from llb.prep.book.render.prose import formula_math, table_markdown
+from llb.prep.book.render.mathform import formula_math, render_formula, render_table
+from llb.prep.book.render.prose import table_markdown
 from llb.prep.book.render.types import RenderBlock, RenderContext, Unit, VaultFile
 from llb.prep.book.review.markers import render_passage
 
@@ -35,8 +36,12 @@ def render_content(file: VaultFile, ctx: RenderContext) -> RenderedDocument | No
 
 def corpus_passage(block: RenderBlock) -> str:
     """The block a retrieval document keeps. An unresolved span is a marker."""
+    if block.role == "blank":
+        return marker_token("blank", block.page_id or "page", 0, 0)
+    if block.role == "omission":
+        return marker_token("omission", block.block_id or block.page_id or "page", 0, 0)
     if block.failed or block.role == "page-failed":
-        return marker_token("unresolved", block.page_id or "page", 0, 0)
+        return marker_token("page-failed", block.page_id or "page", 0, 0)
     if block.resolved is None:
         label = block.block_id or block.page_id or "page"
         return marker_token("unresolved", label, 0, 0)
@@ -134,17 +139,25 @@ def _formula_text(unit: Unit, ctx: RenderContext, passage: str) -> str:
     stripped = passage.strip()
     if _marker_only(stripped):
         return stripped
+    block = unit.blocks[0]
     number = ""
-    for block in unit.blocks:
-        number = ctx.equations.get(block.block_id, number)
+    for item in unit.blocks:
+        number = ctx.equations.get(item.block_id, number)
+    if block.formula is not None and block.formula.equation_number:
+        number = block.formula.equation_number
+    if block.formula is not None:
+        return render_formula(block.formula.latex, number, block.formula.display, None)
     return formula_math(stripped, number)
 
 
-def _table_text(_unit: Unit, _ctx: RenderContext, passage: str) -> str:
+def _table_text(unit: Unit, _ctx: RenderContext, passage: str) -> str:
     stripped = passage.strip()
     if _marker_only(stripped):
         return stripped
-    return table_markdown(stripped)
+    block = unit.blocks[0]
+    if block.table is None:
+        return table_markdown(stripped)
+    return render_table(block.table, None, None, emit_caption=block.emit_caption)
 
 
 def _heading_text(unit: Unit, ctx: RenderContext, passage: str) -> str:

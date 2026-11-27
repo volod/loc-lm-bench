@@ -6,6 +6,7 @@ rather than body, so an unrecognised class stays visible.
 """
 
 import re
+from dataclasses import replace
 
 from llb.core.contracts.data_prep.book_blocks import BLOCK_KINDS
 from llb.prep.book.engines.protocol import Proposed
@@ -27,6 +28,7 @@ _ALIASES = {
     "formula": "formula",
     "equation": "formula",
     "display-formula": "formula",
+    "inline-formula": "formula",
     "table": "table",
     "picture": "figure",
     "figure": "figure",
@@ -43,6 +45,11 @@ _ALIASES = {
     "ornament": "ornament",
     "neighbour-page-bleed": "neighbour-page-bleed",
     "unknown": "unknown",
+    "aside": "unknown",
+    "sidebar": "unknown",
+    "text-box": "unknown",
+    "boxed": "unknown",
+    "boxed-text": "unknown",
 }
 # A box whose largest coordinate is at most this is treated as 0..1 normalized, not pixels.
 _NORMALIZED_MAX = 1.5
@@ -117,7 +124,7 @@ def _to_sent_pixels(proposed: Proposed, space: str, width: int, height: int) -> 
     x0, y0, x1, y1 = _scale(
         (proposed.x0, proposed.y0, proposed.x1, proposed.y1), space, width, height
     )
-    return Proposed(kind, proposed.order, x0, y0, x1, y1, text, proposed.confidence)
+    return replace(proposed, kind=kind, text=text, x0=x0, y0=y0, x1=x1, y1=y1)
 
 
 def _scale(
@@ -141,9 +148,7 @@ def _clamp(proposed: Proposed, width: int, height: int) -> Proposed | None:
     x1, y1 = min(float(width), proposed.x1), min(float(height), proposed.y1)
     if x1 <= x0 or y1 <= y0:
         return None
-    return Proposed(
-        proposed.kind, proposed.order, x0, y0, x1, y1, proposed.text, proposed.confidence
-    )
+    return replace(proposed, x0=x0, y0=y0, x1=x1, y1=y1)
 
 
 def rescale(
@@ -154,15 +159,12 @@ def rescale(
         return proposals
     scale_x, scale_y = width / sent_width, height / sent_height
     return [
-        Proposed(
-            item.kind,
-            item.order,
-            item.x0 * scale_x,
-            item.y0 * scale_y,
-            item.x1 * scale_x,
-            item.y1 * scale_y,
-            item.text,
-            item.confidence,
+        replace(
+            item,
+            x0=item.x0 * scale_x,
+            y0=item.y0 * scale_y,
+            x1=item.x1 * scale_x,
+            y1=item.y1 * scale_y,
         )
         for item in proposals
     ]

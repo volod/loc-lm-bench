@@ -6,7 +6,7 @@ including on a page whose recovery failed: that page becomes one marker.
 
 from pathlib import Path
 
-from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, Region
+from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, RawReading, Region
 from llb.core.contracts.data_prep.book_resolve import (
     CorrectionEdit,
     PageCorrectionOverlay,
@@ -15,13 +15,22 @@ from llb.core.contracts.data_prep.book_resolve import (
 )
 from llb.prep.book.cache import page_dir
 from llb.prep.book.config import read_config
-from llb.prep.book.engines.image import png_size
 from llb.prep.book.constants import BLOCKS_FILENAME
+from llb.prep.book.engines.image import png_size
 from llb.prep.book.ledger.io import read_ledger
-from llb.prep.book.ledger.manifest import read_manifest
 from llb.prep.book.ranges import page_id
-from llb.prep.book.render.constants import FAIL_REASON_LIMIT
+from llb.prep.book.preprocess.images import read_grey
+from llb.prep.book.render.bars import (
+    caption_is_separate,
+    formula_needs_crop,
+    formula_of,
+    table_needs_evidence,
+    table_needs_image,
+    table_of,
+)
+from llb.prep.book.render.omissions import with_coverage
 from llb.prep.book.render.types import BookLoad, RenderBlock
+from llb.prep.book.review.settled import failure_reason
 from llb.prep.book.resolve.constants import (
     OVERLAY_FILENAME,
     OVERLAY_KIND,
@@ -80,7 +89,7 @@ def _page(
     base = page_dir(run_dir, pid)
     resolved_path = base / RESOLVED_FILENAME
     if not resolved_path.is_file():
-        return [_failed(pid, pdf_page, _reason(run_dir, pid))]
+        return [_failed(pid, pdf_page, failure_reason(run_dir, pid), shape)]
     ledger_path = base / BLOCKS_FILENAME
     if not ledger_path.is_file():
         raise ValueError(f"{pid} has resolved text and no block ledger")
@@ -88,7 +97,9 @@ def _page(
     resolved = read_resolved(resolved_path)
     overlay = _overlay(base, pid, pdf_page)
     marks = _marks(pid, ledger, resolved, overlay, edits)
-    return _blocks(pid, ledger, resolved, marks, shape)
+    built = _blocks(pid, ledger, resolved, marks, shape)
+    image = read_grey(base / RENDER_STAGE / PAGE_IMAGE_FILENAME) if shape is not None else None
+    return with_coverage(built, image, ledger, base)
 
 
 def _blocks(
@@ -102,11 +113,14 @@ def _blocks(
     grouped: dict[str, list[SpanMark]] = {}
     for mark in marks:
         grouped.setdefault(mark.block_id, []).append(mark)
+    captions = _caption_texts(ledger, by_id)
     built: list[RenderBlock] = []
     seen: set[str] = set()
     for source in sorted(ledger.blocks, key=lambda block: (block.reading_order, block.ordinal)):
         seen.add(source.block_id)
-        built.append(_from_ledger(pid, source, by_id.get(source.block_id), grouped, shape))
+        built.append(
+            _from_ledger(pid, source, by_id.get(source.block_id), grouped, shape, captions)
+        )
     for block in resolved.blocks:
         if block.block_id not in seen:
             built.append(_from_resolved(pid, resolved.pdf_page, block, grouped))
@@ -119,11 +133,12 @@ def _from_ledger(
     resolved: ResolvedBlock | None,
     grouped: dict[str, list[SpanMark]],
     shape: tuple[int, int] | None,
+    captions: set[str],
 ) -> RenderBlock:
     own = tuple(grouped.get(source.block_id, ()))
     if resolved is None:
-        return _render_block(pid, source, None, "", own, shape, "missing-block")
-    return _render_block(pid, source, resolved, resolved.text, own, shape, source.kind)
+        return _render_block(pid, source, None, "", own, shape, "missing-block", captions)
+    return _render_block(pid, source, resolved, resolved.text, own, shape, source.kind, captions)
 
 
 def _from_resolved(
@@ -157,8 +172,12 @@ def _render_block(
     marks: tuple[SpanMark, ...],
     shape: tuple[int, int] | None,
     role: str,
+    captions: set[str],
 ) -> RenderBlock:
     digest = resolved.anchor if resolved is not None else ""
+    reading = _primary(source, resolved)
+    formula = formula_of(reading)
+    table = table_of(reading)
     return RenderBlock(
         pdf_page=source.pdf_page,
         page_id=pid,
@@ -173,7 +192,35 @@ def _render_block(
         resolved=resolved,
         marks=marks,
         crops=_crops(marks, source.region, shape),
+        paragraph=source.paragraph,
+        formula=formula,
+        table=table,
+        emit_caption=not caption_is_separate(table, captions, text),
+        formula_crop=formula_needs_crop(source, reading),
+        table_image=table_needs_image(source, reading),
+        table_evidence=table_needs_evidence(source),
     )
+
+
+def _primary(source: Block, resolved: ResolvedBlock | None) -> RawReading | None:
+    if not source.readings:
+        return None
+    if resolved is None:
+        return source.readings[0]
+    for reading in source.readings:
+        if reading.engine == resolved.engine and reading.variant == resolved.variant:
+            if resolved.model is None or reading.model == resolved.model:
+                return reading
+    return source.readings[0]
+
+
+def _caption_texts(ledger: PageBlockLedger, by_id: dict[str, ResolvedBlock]) -> set[str]:
+    found: set[str] = set()
+    for block in ledger.blocks:
+        resolved = by_id.get(block.block_id)
+        text = resolved.text if resolved is not None else block.readings[0].text
+        found.add(" ".join(text.split()))
+    return found
 
 
 def _crops(
@@ -187,7 +234,15 @@ def _crops(
     )
 
 
-def _failed(pid: str, pdf_page: int, reason: str) -> RenderBlock:
+def _failed(pid: str, pdf_page: int, reason: str, shape: tuple[int, int] | None) -> RenderBlock:
+    region = None
+    crops: tuple[tuple[int, int, str], ...] = ()
+    block_id = ""
+    if shape is not None:
+        height, width = shape
+        block_id = f"{pid}-r0000"
+        region = Region(x0=0, y0=0, x1=float(width), y1=float(height), width=width, height=height)
+        crops = ((0, 0, f"review/{crop_filename(block_id, 0, 0)}"),)
     return RenderBlock(
         pdf_page=pdf_page,
         page_id=pid,
@@ -195,13 +250,14 @@ def _failed(pid: str, pdf_page: int, reason: str) -> RenderBlock:
         reading_order=0,
         kind="page-failed",
         role="page-failed",
-        block_id="",
+        block_id=block_id,
         digest="",
         text="",
-        region=None,
+        region=region,
         resolved=None,
         failed=True,
         fail_reason=reason,
+        crops=crops,
     )
 
 
@@ -227,22 +283,3 @@ def _marks(
 ) -> list[SpanMark]:
     blocks = {block.block_id: block for block in ledger.blocks}
     return page_marks(pid, blocks, resolved, overlay, edits)
-
-
-def _reason(run_dir: Path, pid: str) -> str:
-    manifest = read_manifest(run_dir)
-    if manifest is None:
-        return "recovery failed"
-    for page in manifest.pages:
-        if page.page_id != pid:
-            continue
-        for stage in page.stages:
-            if stage.status == "failed" and stage.error:
-                return _plain(stage.error)
-    return "recovery failed"
-
-
-def _plain(text: str) -> str:
-    cleaned = "".join(ch if 32 <= ord(ch) < 127 and ch != '"' else " " for ch in text)
-    compact = " ".join(cleaned.split())
-    return (compact or "recovery failed")[:FAIL_REASON_LIMIT]

@@ -164,6 +164,17 @@ def normalize_equation(number: str) -> str:
     return re.sub(r"[^\d]", "-", number.strip())
 
 
+def masked_pair(reference: str, hypothesis: str) -> tuple[str, str]:
+    """The character strings the confusion walk sees, equation numbers and scripts aside."""
+    ref_masked, hyp_masked, _events = _mask_equations(reference, hypothesis)
+    return _strip_scripts(ref_masked), _strip_scripts(hyp_masked)
+
+
+def step_class(op: str, left: int, right: int, reference: str, hypothesis: str) -> str | None:
+    """The confusion class of one alignment step, or None when the step is not one."""
+    return _operation_class(op, left, right, reference, hypothesis)
+
+
 def _mask_equations(reference: str, hypothesis: str) -> tuple[str, str, int]:
     """Drop equation numbers whose digits differ, and count each such number once.
 

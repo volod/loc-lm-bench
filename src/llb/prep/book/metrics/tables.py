@@ -72,13 +72,24 @@ def _markdown(text: str) -> tuple[tuple[Cell, ...], ...] | None:
         stripped = line.strip()
         if "|" not in stripped:
             continue
-        cells = [cell_text(cell) for cell in stripped.strip("|").split("|")]
+        cells = _markdown_cells(stripped)
         if cells and all(_RULE.fullmatch(cell.replace(" ", "")) for cell in cells):
             continue
         rows.append(tuple(Cell(cell) for cell in cells))
     if not rows:
         return None
     return tuple(rows)
+
+
+def _markdown_cells(stripped: str) -> list[str]:
+    """Cells of one Markdown row. A trailing pipe is an empty cell unless both ends are fences."""
+    parts = stripped.split("|")
+    fenced = stripped.startswith("|") and stripped.endswith("|")
+    if stripped.startswith("|") and parts and not parts[0].strip():
+        parts = parts[1:]
+    if fenced and parts and not parts[-1].strip():
+        parts = parts[:-1]
+    return [cell_text(cell) for cell in parts]
 
 
 def _html(text: str) -> tuple[tuple[Cell, ...], ...] | None:

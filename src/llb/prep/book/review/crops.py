@@ -10,7 +10,7 @@ from llb.core.contracts.data_prep.book_blocks import Region
 from llb.prep.book.preprocess.images import write_png
 from llb.prep.book.review.constants import CROP_PADDING_PX
 
-CROP_NAME = re.compile(r"^p\d+-b\d+-s\d+-\d+\.png$")
+CROP_NAME = re.compile(r"^p\d+-[br]\d+-s\d+-\d+\.png$")
 
 
 def crop_filename(block_id: str, start: int, end: int) -> str:

@@ -36,6 +36,8 @@ CONFIDENCE_BUCKETS: Final = (
 CONFIDENCE_NOTE: Final = (
     "Confidence is diagnostic routing evidence, not a probability of correctness."
 )
+QUEUE_MISSING: Final = "missing-review-queue"
+QUEUE_STALE: Final = "stale-review-queue"
 QUEUE_WARNING: Final = "review queue was not written; open markers were checked against the ledger"
 QUEUE_DRIFT_WARNING: Final = (
     "the review queue does not match the ledger; markers were checked against the queue"

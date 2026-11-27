@@ -63,6 +63,64 @@ class Region(DataPrepRow):
         return self
 
 
+class FormulaReading(DataPrepRow):
+    """One engine's formula. ``display`` is false for inline math.
+
+    ``equation_number`` is the printed number, without the parentheses that merely delimited it.
+    ``number_side`` is where that number sits relative to the formula.
+    """
+
+    latex: str
+    display: bool = True
+    equation_number: str | None = None
+    number_side: Literal["left", "right"] | None = None
+
+
+class TableCell(DataPrepRow):
+    """One cell. An empty ``text`` is a cell the engine saw and left blank."""
+
+    text: str = ""
+    colspan: int = Field(default=1, ge=1)
+    rowspan: int = Field(default=1, ge=1)
+
+
+class TableReading(DataPrepRow):
+    """A table grid. ``faithful`` is false when an HTML table cannot hold the grid."""
+
+    rows: list[list[TableCell]] = Field(min_length=1)
+    header_rows: int = Field(default=1, ge=0)
+    caption: str | None = None
+    faithful: bool = True
+
+    @model_validator(mode="after")
+    def _rows_have_cells(self) -> "TableReading":
+        if any(not row for row in self.rows):
+            raise ValueError("a table row needs at least one cell")
+        return self
+
+
+class CellSource(DataPrepRow):
+    """One engine's text for one disputed cell."""
+
+    engine: str = Field(min_length=1)
+    variant: str = Field(min_length=1)
+    text: str
+
+
+class CellDispute(DataPrepRow):
+    """A cell two engines read differently, after the dangerous-substitution check.
+
+    ``classes`` is the ledger's coarse check. ``substitutions`` names the dangerous-substitution
+    classes that fired, and ``sources`` keeps each engine's cell text.
+    """
+
+    row: int = Field(ge=0)
+    column: int = Field(ge=0)
+    classes: list[UncertaintyClass] = Field(min_length=1)
+    substitutions: list[str] = Field(default_factory=list)
+    sources: list[CellSource] = Field(min_length=2)
+
+
 class RawReading(DataPrepRow):
     """One engine's text for one image variant. Raw: nothing here has been chosen or corrected."""
 
@@ -71,6 +129,8 @@ class RawReading(DataPrepRow):
     variant: str = Field(min_length=1)
     text: str
     confidence: float | None = None
+    formula: FormulaReading | None = None
+    table: TableReading | None = None
 
 
 class UncertaintySlice(DataPrepRow):
@@ -109,6 +169,9 @@ class Block(DataPrepRow):
     reading_order: int = Field(ge=0)
     readings: list[RawReading] = Field(min_length=1)
     uncertainty: list[UncertaintySpan] = Field(default_factory=list)
+    cell_disputes: list[CellDispute] = Field(default_factory=list)
+    # A finished region. The renderer joins the next body block only when this text ends in a hyphen.
+    paragraph: bool = False
 
 
 class PageBlockLedger(ArtifactContract):

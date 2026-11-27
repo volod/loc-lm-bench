@@ -119,8 +119,9 @@ what a person sees in Obsidian and what a machine parses back:
 ```
 
 The link target is the run-relative stored PDF plus `#page=N`. The title is the block id and the
-character offsets into the primary reading. The embed is optional. The three kinds are
-`unreadable`, `low-confidence`, and `formula-table`.
+character offsets into the primary reading. The embed is optional. The span kinds are
+`unreadable`, `low-confidence`, and `formula-table`. A page whose recognition failed uses
+`page-failed`, described below.
 
 An unresolved character span takes `formula-table` on a formula or table block, `unreadable` when
 its text is blank, and `low-confidence` otherwise. An empty content block with no unresolved span
@@ -143,13 +144,16 @@ engine, then variant. For a whole block it is the strongest other reading whose 
 `llb book-ocr review-queue` reads a finished resolve and writes three things. `review/queue.json`
 (`llb.book-ocr-review-queue` 1.0.0) is the workbench ledger. `metadata/quality_manifest.json`
 (`llb.book-ocr-quality-manifest` 1.0.0) lists the same spans, one page object per configured page,
-and its `counts` equal the rows. Each crop is `review/<block-id>-s<start>-<end>.png`: the block
-region padded by 16 pixels, clipped to the page, written as a grey PNG. The same span always gets
-the same name. A page with no render still gets its marker and its row, with no crop. A rebuild
-deletes a crop the new queue does not name. It leaves `review/decisions.json` in place.
+and its `counts` equal the rows. Each page also carries `coverage`: `read`, `blank`, `omission`,
+or `failed`. Each crop is `review/<block-id>-s<start>-<end>.png`: the block region padded by 16
+pixels, clipped to the page, written as a grey PNG. The same span always gets the same name. An
+unread region and a failed page use an id of the form `pNNNN-rMMMM`. A page with no render still
+gets its marker and its row, with no crop. A rebuild deletes a crop the new queue does not name.
+It leaves `review/decisions.json` in place.
 
-The command is not a stage. It exits 2 when the path is not a run, or when any configured page
-lacks `blocks.json`, `resolved.json`, and `overlay.json`.
+The command runs after resolve. It exits 2 when the path is not a run, or when a configured page
+is still unfinished. A page that failed terminally is included. The command prints kind counts and
+coverage counts. It does not print the recovered text.
 
 ```sh
 make book-ocr-review-queue BOOK_RUN=<run-dir>
@@ -170,6 +174,39 @@ keeps its verdict, so reopening the queue resumes at the next pending entry.
 An orphan comes back with its old decision shown and an empty verdict. When the block is still
 there, the new entry is the block's current text and current anchor, so the next decision can
 attach. When the block is gone, the old anchor stays and a new decision is refused.
+
+## Blank pages, unread regions, and failed pages
+
+Coverage is the share of a page's ink that falls inside a recognition box. The boxes are the OCR,
+formula, and table readings. When none of those readings was written, the ledger boxes stand in
+for them. A layout box marks a window whose ink still has to fall inside one of those boxes.
+Confidence is not an input. `account_page` in `src/llb/prep/book/review/coverage.py` is the
+check the queue, the vault, and validation all call.
+
+A page with no ink and no blocks is `blank`. The manifest records it. The vault shows
+
+```text
+[!blank](source/book.pdf#page=4 "p0004")
+```
+
+The corpus token is `{{llb-marker:blank:p0004:0-0}}`. The queue has no row for it, and a gold span
+may cover the token.
+
+A text column, or a layout box, is an unread region when less than half of its ink falls inside a
+recognition box. The crop is the unread band in the rendered page's pixels, so a stretch of the
+same column that was read stays outside it. The queue row is kind `unreadable` and reason
+`omission`, and it carries that box. Neighbour blocks stay in the ledger and in both outputs. The
+vault shows `[!unreadable]` and the crop. The corpus token is
+`{{llb-marker:omission:<region-id>:0-0}}`. A gold span that overlaps it is refused.
+
+A page that has a failed stage, nothing still pending, and no resolved text is one queue row of
+kind and reason `page-failed`. The vault shows `[!page-failed]` and, when the render exists, the
+page crop. The corpus token is `{{llb-marker:page-failed:<page-id>:0-0}}`. A gold span that
+overlaps it is refused. `book-ocr structure` includes the page and gives it no lines.
+
+On a finished run, validation refuses a missing queue with `missing-review-queue` and a queue that
+has drifted from the ledger, or whose failed pages disagree, with `stale-review-queue`. A run
+that has no page manifest keeps a missing or drifted queue as a warning.
 
 ## Contracts
 
@@ -247,3 +284,18 @@ second engine that disagrees on a digit, a sign, a decimal, or a symbol. That di
 unresolved span, which the cut does not create. A layout stage that names formula and table blocks
 would change the marker kind of those lines. The task record is
 [0011](../../records/0011-scanned-book-recovery-book-uncertainty-markers-and-review-queue.md).
+
+**Page coverage.** On 2026-11-26, on host 15301-L-C-3078. This pass loaded no model. It accounted
+a 25-page RapidOCR 3.10.0 slice of the *Space Mission Engineering* scan, the same engine the
+[block ledger](block-ledger.md#evidence) records, including PDF pages 131 and 135. 23 pages were
+`read` and 2 were `omission`. PDF page 131 contributed two unread bands, covering about y
+0.08-0.44 and y 0.59-0.89 of the render, so the read middle stayed out of the crops. PDF page 135
+contributed two bands on the left column, about y 0.08-0.28 and y 0.64-0.90; the right column
+stayed covered. `book-ocr review-queue` wrote those four bands as `unreadable` rows with reason
+`omission` and printed `coverage read: 23`, `coverage omission: 2`. The same queue also held 458
+`low-confidence` rows from the 0.9 routing cut. Those rows are the cut, not coverage.
+
+What would overturn it: a column with ink and no recognition box marked `read`, or a column whose
+boxes already cover at least half its ink marked `omission`. The planted gate is
+`tests/llb/prep/book/test_region_accounting.py`. The task record is
+[0022](../../records/0022-scanned-book-recovery-book-missing-region-accounting.md).

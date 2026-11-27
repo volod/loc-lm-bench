@@ -61,6 +61,13 @@
           "title": "Block Present",
           "type": "boolean"
         },
+        "box": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Box",
+          "type": "array"
+        },
         "candidate": {
           "anyOf": [
             {
@@ -112,7 +119,8 @@
           "enum": [
             "unreadable",
             "low-confidence",
-            "formula-table"
+            "formula-table",
+            "page-failed"
           ],
           "title": "Kind",
           "type": "string"
@@ -158,7 +166,9 @@
             "unresolved",
             "empty",
             "low-confidence",
-            "orphaned"
+            "orphaned",
+            "omission",
+            "page-failed"
           ],
           "title": "Reason",
           "type": "string"

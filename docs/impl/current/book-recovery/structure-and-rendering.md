@@ -12,8 +12,9 @@ relabelled `body` produce the same mapping and the same running headers.
 make book-ocr-structure BOOK_RUN=<run-dir>
 ```
 
-Exit code 2 is a run that is missing a ledger. The command prints counts. It does not print the
-recovered text. A second run over the same ledgers writes the same bytes.
+Exit code 2 is a page whose ledger is still unfinished. A page that failed terminally is included
+and contributes no lines. The command prints counts. It does not print the recovered text. A
+second run over the same ledgers writes the same bytes.
 
 ## Where it lives
 
@@ -136,15 +137,25 @@ crop at `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`, plus the printed number wh
 has one. Review crops keep the queue's 16-pixel padding. A line engine that labels every block
 `body` yields the anchors and no figure crops.
 
-A formula is display math. The inventory's equation number becomes a `\tag` when the text has
-none. A table stays Markdown when every line contains a pipe, HTML when the text is already a
-table, and one column otherwise. An unresolved span keeps its review marker. A running header
-or a printed page number that structure identified stays in the note, labelled.
+A formula uses the engine's LaTeX when the reading carried it, and the block text otherwise.
+The equation number is the engine's printed number, or else the inventory number, as a `\tag`.
+A formula below the validity or agreement bar keeps its crop. A table uses the native grid
+when the reading carried one: Markdown for one header row and no merged cells, HTML when the
+grid needs spans or further header rows, and the page image when HTML cannot hold it. Without
+a native grid, a pipe table stays Markdown, an HTML table stays HTML, and other text stays one
+column. The rules are in [formulas and tables](formulas-tables-figures.md). A `](` inside
+formula math is LaTeX, not a relative link. An image or a wikilink in the same math is still a
+link. An unresolved span keeps its review marker. A running header or a printed page number
+that structure identified stays in the note, labelled.
 
-Consecutive body lines in one column join into a paragraph. A footnote, a column break, an
-indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index line each start a
-new paragraph. A word split by a hyphen at the column edge is joined. The rest of the right
-column stays in reading order, after the left column's footnote and index line.
+Consecutive body lines in one column join into a paragraph. A block whose ledger `paragraph`
+flag is true joins the next body block only when its text ends in a hyphen. A footnote, a
+column break, an indent after a sentence, and the column's `Table ... Fig. ... Eq. ...` index
+line each start a new paragraph. A word split by a hyphen at the column edge is joined, and so
+is a hyphen whose tail is the first unit of the next page in the same column. The rest of the
+right column stays in reading order, after the left column's footnote and index line. The
+corpus keeps one fragment per block, so the joined word is in the vault and the block that
+held the tail still cites the remainder.
 
 `source/` follows the run's three policies. `symlink` is the default. `copy` writes a read-only
 PDF. `reference` writes `source/reference.txt` and points the page links at the PDF where it
@@ -316,10 +327,13 @@ page count. An image under `assets/`, `review/`, or `source/pages/` is linked fr
 every linked image exists. A note whose front matter does not name its PDF pages fails the
 check.
 
-When `review/queue.json` exists, each open marker matches one open queue entry. The match is
-the marker kind, the block id, the offsets, and the PDF page. A missing queue is a warning,
-and the markers are then matched to the ledger. Orphaned overlay entries are counted. The
-count is not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
+When `review/queue.json` exists, each open span marker matches one open queue entry. The match is
+the marker kind, the block id, the offsets, and the PDF page. A failed page is matched as a page,
+apart from those spans. On a finished run a missing queue is `missing-review-queue` and a queue
+that has drifted from the ledger, or whose failed pages disagree, is `stale-review-queue`. Both
+fail the check. A run with no page manifest keeps a missing or drifted queue as a warning, and
+the markers are then matched to the ledger. Orphaned overlay entries are counted. The count is
+not itself a failure. Structure conflicts and printed-page fallbacks are warnings.
 The report's Cross-references section repeats the counts render wrote
 ([cross-references](#cross-references)). A printed-page citation that falls in a mapping gap
 is a warning and does not fail the check.

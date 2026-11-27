@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book pilot review</title>
+  <link rel="stylesheet" href="/worksheet.css">
+  <script src="/worksheet.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Book pilot review</h1>
+    <span id="progress"></span>
+    <nav aria-label="Pilot pages">
+      <button id="previous" type="button">Previous</button>
+      <select id="pages" aria-label="PDF page"></select>
+      <button id="next" type="button">Next</button>
+      <button id="pending" type="button">Next pending</button>
+    </nav>
+  </header>
+  <main id="workspace" inert>
+    <section class="scan" aria-label="Original scanned page">
+      <div class="toolbar">
+        <h2>Source scan</h2>
+        <label>Zoom <select id="zoom">
+          <option value="fit">Fit width</option><option value="100">100%</option>
+          <option value="150">150%</option><option value="200">200%</option>
+        </select></label>
+        <button type="button" id="rotate">Rotate 180&deg;</button>
+        <label><input id="boxes" type="checkbox" checked> Regions</label>
+      </div>
+      <div id="scan-scroll">
+        <div id="surface">
+          <img id="image" alt="Original PDF scan" draggable="false">
+          <div id="regions"></div>
+        </div>
+      </div>
+    </section>
+    <section class="review" aria-label="Page transcription">
+      <div class="toolbar">
+        <h2 id="page-title">Transcription</h2>
+        <span id="page-state"></span>
+      </div>
+      <div class="editing">
+        <div class="page-fields">
+          <label>Printed page <input id="folio" placeholder="Blank if unnumbered"></label>
+          <label>Open saved revision <select id="history" aria-label="Saved revision"></select></label>
+          <button id="restore" type="button">Load as draft</button>
+        </div>
+        <div class="block-tools">
+          <label>Blocks <select id="blocks" size="6"></select></label>
+          <div class="actions">
+            <button type="button" id="add">Add block</button>
+            <button type="button" id="remove">Remove</button>
+            <button type="button" id="up">Move up</button>
+            <button type="button" id="down">Move down</button>
+          </div>
+        </div>
+        <div id="editor" hidden>
+          <div class="block-fields">
+            <label>Kind <select id="kind"></select></label>
+            <label>Order <input id="order" type="number" min="1"></label>
+            <span id="block-id"></span>
+          </div>
+          <label>Text <textarea id="text" rows="5" spellcheck="false"></textarea></label>
+          <div id="formula" hidden>
+            <label>LaTeX <textarea id="latex" rows="3" spellcheck="false"></textarea></label>
+            <label>Equation number <input id="equation"></label>
+          </div>
+          <label id="table-field" hidden>Table rows (JSON)
+            <textarea id="table" rows="6" spellcheck="false"
+              placeholder='[["first cell", {"text": "merged", "colspan": 2}]]'></textarea>
+          </label>
+          <label id="caption-field" hidden>Caption <select id="caption"></select></label>
+          <div class="coordinates">
+            <label>Left <input id="x0" type="number" step="any" min="0"></label>
+            <label>Top <input id="y0" type="number" step="any" min="0"></label>
+            <label>Right <input id="x1" type="number" step="any" min="0"></label>
+            <label>Bottom <input id="y1" type="number" step="any" min="0"></label>
+            <button type="button" id="draw" aria-pressed="false">Draw region</button>
+          </div>
+          <details id="disagreements" open>
+            <summary>Pre-draft notes</summary>
+            <div id="notes"></div>
+          </details>
+        </div>
+      </div>
+      <footer>
+        <label>Reviewer <input id="reviewer" autocomplete="name"></label>
+        <label class="check">
+          <input id="checked" type="checkbox">
+          I checked the full scan, including missing blocks, text, formulas, tables, figures,
+          caption links, reading order, and the printed page number.
+        </label>
+        <div class="actions">
+          <button type="button" id="save">Save draft</button>
+          <button type="button" id="accept">Accept page</button>
+        </div>
+        <p id="message" role="status" aria-live="polite"></p>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

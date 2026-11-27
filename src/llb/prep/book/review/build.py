@@ -13,6 +13,7 @@ from llb.core.contracts.data_prep.book_resolve import (
     ResolvedBlock,
 )
 from llb.core.contracts.data_prep.book_review import (
+    CoverageStatus,
     QualityManifest,
     QualityPage,
     ReviewQueue,
@@ -21,8 +22,12 @@ from llb.core.contracts.data_prep.book_review import (
 from llb.prep.book.config import read_config
 from llb.prep.book.ranges import page_id
 from llb.prep.book.resolve.constants import REVIEW_DIRNAME
+from llb.prep.book.cache import page_dir
 from llb.prep.book.review.classify import page_marks
+from llb.prep.book.review.coverage import account_page
 from llb.prep.book.review.crops import crop_filename, write_block_crop
+from llb.prep.book.review.gaps import failure_entry, omission_marks
+from llb.prep.book.review.settled import failure_reason, terminal_failure
 from llb.prep.book.review.files import (
     drop_stale_crops,
     load_page,
@@ -41,7 +46,11 @@ _Prepared = tuple[SpanMark, str, str | None, str]
 
 
 def build_review_queue(run_dir: Path) -> tuple[ReviewQueue, QualityManifest]:
-    """Write the queue, the crops, and the manifest. Refuse a run resolve has not finished."""
+    """Write the queue, the crops, and the manifest.
+
+    A page whose recognition failed terminally is a page-failure entry. A page
+    that has not finished is refused. A blank scan is recorded and not queued.
+    """
     config = read_config(run_dir)
     edits = reviewer_edits(run_dir)
     link = pdf_target(config.source.stored_path, run_dir)
@@ -51,18 +60,22 @@ def build_review_queue(run_dir: Path) -> tuple[ReviewQueue, QualityManifest]:
     missing: list[str] = []
     for pdf_page in config.pages:
         pid = page_id(pdf_page, config.source.page_count)
+        pdf_link = f"{link}#page={pdf_page}"
         loaded = load_page(run_dir, pid)
         if loaded is None:
-            missing.append(pid)
+            if not terminal_failure(run_dir, pid):
+                missing.append(pid)
+                continue
+            failure = failure_entry(pid, pdf_page, pdf_link, failure_reason(run_dir, pid), run_dir)
+            entries.append(failure)
+            if failure.crop:
+                crops.add(failure.crop)
+            pages.append(_quality(pid, pdf_page, "failed", [failure]))
             continue
-        page_entries, page_crops = _page_entries(*loaded, edits, f"{link}#page={pdf_page}", run_dir)
+        page_entries, page_crops, coverage = _accounted(*loaded, edits, pdf_link, run_dir, pid)
         entries.extend(page_entries)
         crops.update(page_crops)
-        pages.append(
-            QualityPage(
-                page_id=pid, pdf_page=pdf_page, rows=[quality_row(item) for item in page_entries]
-            )
-        )
+        pages.append(_quality(pid, pdf_page, coverage, page_entries))
     if missing:
         raise ValueError(f"resolve has not finished for {missing_pages(missing)}")
     drop_stale_crops(run_dir, crops)
@@ -73,6 +86,41 @@ def build_review_queue(run_dir: Path) -> tuple[ReviewQueue, QualityManifest]:
     return queue, manifest
 
 
+def _quality(
+    page_id: str, pdf_page: int, coverage: CoverageStatus, entries: list[ReviewQueueEntry]
+) -> QualityPage:
+    return QualityPage(
+        page_id=page_id,
+        pdf_page=pdf_page,
+        coverage=coverage,
+        rows=[quality_row(item) for item in entries],
+    )
+
+
+def _accounted(
+    ledger: PageBlockLedger,
+    resolved: PageResolvedText,
+    overlay: PageCorrectionOverlay,
+    image: np.ndarray | None,
+    edits: list[CorrectionEdit],
+    pdf_link: str,
+    run_dir: Path,
+    pid: str,
+) -> tuple[list[ReviewQueueEntry], set[str], CoverageStatus]:
+    account = account_page(image, ledger, page_dir(run_dir, pid))
+    page_entries, page_crops = _page_entries(
+        ledger,
+        resolved,
+        overlay,
+        image,
+        edits,
+        pdf_link,
+        run_dir,
+        omission_marks(account, pid, ledger.pdf_page),
+    )
+    return page_entries, page_crops, account.coverage
+
+
 def _page_entries(
     ledger: PageBlockLedger,
     resolved: PageResolvedText,
@@ -81,9 +129,11 @@ def _page_entries(
     edits: list[CorrectionEdit],
     pdf_link: str,
     run_dir: Path,
+    extra: list[SpanMark],
 ) -> tuple[list[ReviewQueueEntry], set[str]]:
     blocks = {block.block_id: block for block in ledger.blocks}
     marks = page_marks(ledger.page_id, blocks, resolved, overlay, edits)
+    marks.extend(extra)
     prepared = [_prepare(mark, blocks, image, pdf_link, run_dir) for mark in marks]
     passages = _passages(prepared, {block.block_id: block for block in resolved.blocks})
     entries = [
@@ -112,10 +162,13 @@ def _prepare(
 def _crop(
     mark: SpanMark, block: Block | None, image: np.ndarray | None, run_dir: Path
 ) -> str | None:
-    if image is None or block is None or not mark.block_present:
+    region = mark.region
+    if region is None and block is not None and mark.block_present:
+        region = block.region
+    if image is None or region is None:
         return None
     name = crop_filename(mark.block_id, mark.start, mark.end)
-    if not write_block_crop(image, block.region, run_dir / REVIEW_DIRNAME / name):
+    if not write_block_crop(image, region, run_dir / REVIEW_DIRNAME / name):
         return None
     return f"{REVIEW_DIRNAME}/{name}"
 
@@ -166,8 +219,15 @@ def _entry(
         priors=list(mark.priors),
         verdict=mark.verdict,
         block_present=mark.block_present,
+        box=_box(mark),
     )
 
 
 def _entry_id(mark: SpanMark) -> str:
     return crop_filename(mark.block_id, mark.start, mark.end).removesuffix(".png")
+
+
+def _box(mark: SpanMark) -> list[float]:
+    if mark.region is None:
+        return []
+    return [mark.region.x0, mark.region.y0, mark.region.x1, mark.region.y1]

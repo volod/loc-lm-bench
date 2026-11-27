@@ -14,12 +14,14 @@ from pydantic import ValidationError
 from llb.core.contracts.data_prep.book_blocks import PageBlockLedger, RawReading, Region
 from llb.core.contracts.data_prep.corpus import PdfCitations
 from llb.prep.book.constants import BLOCKS_FILENAME, PAGES_DIRNAME
+from llb.prep.book.grid import cells_of
 from llb.prep.book.ledger.io import read_ledger
 from llb.prep.book.metrics.confusion import equation_numbers
 from llb.prep.book.metrics.constants import LANE_BOOK, LANE_EXISTING, ORIGINAL_VARIANT
 from llb.prep.book.metrics.geometry import Box, nearest_links
 from llb.prep.book.metrics.latex import looks_like_latex
 from llb.prep.book.metrics.tables import Cell, parse_table_text
+from llb.prep.book.render.mathform import render_body
 
 Table = tuple[tuple[Cell, ...], ...]
 
@@ -117,9 +119,8 @@ def _from_ledger(ledger: PageBlockLedger, engine: str) -> PageSubmission:
         if reading is None:
             continue
         text = reading.text
-        numbers = equation_numbers(text) if block.kind == "formula" else []
-        latex = text if block.kind == "formula" and looks_like_latex(text) else None
-        table = parse_table_text(text) if block.kind == "table" else None
+        latex, number = _formula(block.kind, reading, text)
+        table = _table(block.kind, reading, text)
         blocks.append(
             HypBlock(
                 block_id=block.block_id,
@@ -130,7 +131,7 @@ def _from_ledger(ledger: PageBlockLedger, engine: str) -> PageSubmission:
                 latex=latex,
                 table=table,
                 caption_id=None,
-                equation_number=numbers[0] if numbers else None,
+                equation_number=number,
             )
         )
     return PageSubmission(
@@ -145,6 +146,25 @@ def _pick(readings: list[RawReading], engine: str) -> RawReading | None:
     original = [reading for reading in own if reading.variant == ORIGINAL_VARIANT]
     pool = original or own
     return sorted(pool, key=lambda reading: reading.variant)[0]
+
+
+def _formula(kind: str, reading: RawReading, text: str) -> tuple[str | None, str | None]:
+    if kind != "formula":
+        return None, None
+    if reading.formula is not None:
+        latex = render_body(reading.formula.latex) or reading.formula.latex
+        return latex, reading.formula.equation_number
+    numbers = equation_numbers(text)
+    plain = text if looks_like_latex(text) else None
+    return plain, numbers[0] if numbers else None
+
+
+def _table(kind: str, reading: RawReading, text: str) -> tuple[tuple[Cell, ...], ...] | None:
+    if kind != "table":
+        return None
+    if reading.table is not None:
+        return cells_of(reading.table)
+    return parse_table_text(text)
 
 
 def _box(region: Region) -> Box:

@@ -16,6 +16,7 @@ from llb.prep.book.structure.furniture import header_spans, page_hits
 from llb.prep.book.structure.headings import headings_of
 from llb.prep.book.structure.inventory import inventory_of
 from llb.prep.book.structure.io import structure_path, write_structure
+from llb.prep.book.review.settled import terminal_failure
 from llb.prep.book.structure.lines import Line, load_lines
 from llb.prep.book.structure.numbering import printed_pages
 from llb.prep.book.structure.tree import build_hierarchy
@@ -53,11 +54,16 @@ def infer_structure(
 
 
 def build_structure(run_dir: Path) -> DocumentStructure:
-    """Write the structure of a run. Refuse a page whose block ledger is missing."""
+    """Write the structure of a run.
+
+    A page that has not finished is refused. A page whose recognition failed
+    terminally is included, with no lines.
+    """
     config = read_config(run_dir)
     lines, missing = load_lines(run_dir, config)
-    if missing:
-        raise ValueError(f"block ledger has not finished for {_brief(missing)}")
+    unfinished = [pid for pid in missing if not terminal_failure(run_dir, pid)]
+    if unfinished:
+        raise ValueError(f"block ledger has not finished for {_brief(unfinished)}")
     structure = infer_structure(
         lines, list(config.pages), config.source.page_count, config.source.sha256
     )

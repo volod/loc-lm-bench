@@ -1,9 +1,11 @@
-"""Which body lines are one paragraph, and a hyphen split across a column.
+"""Which body lines are one paragraph, and a hyphen split across a column or page.
 
 A line engine emits one block per line. Consecutive lines of one column join.
+A finished region does not join the next block unless its text ends in a hyphen.
 A footnote and the column's Table/Fig/Eq index line stay separate. Reading
 order finishes the left column before the right one, so a word broken at the
 column edge is stitched back without moving the rest of the right column.
+The same stitch reaches the next page only when that page's first unit is the tail.
 """
 
 import re
@@ -40,6 +42,8 @@ def stitch_columns(units: list[Unit]) -> list[Unit]:
 
 def _continues(prev: RenderBlock, nxt: RenderBlock) -> bool:
     if prev.role != "body" or nxt.role != "body":
+        return False
+    if prev.paragraph and not prev.text.rstrip().endswith("-"):
         return False
     if prev.pdf_page != nxt.pdf_page or prev.region is None or nxt.region is None:
         return False
@@ -104,10 +108,22 @@ def _tail_at(unit: Unit, last: RenderBlock) -> bool | None:
         return None
     head = unit.blocks[0]
     if head.pdf_page != last.pdf_page:
-        return False
+        return _page_tail(unit, last, head)
     if unit.role != "paragraph" or _footnote(unit.text) or _index_line(unit.text):
         return None
     if last.region is None or head.region is None or not _column(last, head):
+        return False
+    word = unit.text.lstrip().split(" ", 1)[0]
+    return bool(word) and word[0].islower() and "[" not in word
+
+
+def _page_tail(unit: Unit, last: RenderBlock, head: RenderBlock) -> bool:
+    """The next page continues the word only when its first unit is the hyphen's tail."""
+    if head.pdf_page != last.pdf_page + 1 or unit.role != "paragraph":
+        return False
+    if head.region is None or last.region is None or _column(last, head):
+        return False
+    if _footnote(unit.text) or _index_line(unit.text):
         return False
     word = unit.text.lstrip().split(" ", 1)[0]
     return bool(word) and word[0].islower() and "[" not in word

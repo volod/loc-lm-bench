@@ -9,8 +9,9 @@ beside the error rates. The report has no field that folds them into one number.
 
 The harness does not read a scan and does not produce a reference. The 1,067-page target handbook
 is the book a later pilot scores; transcribing it is
-`book-pilot-reference-transcription`, and choosing a pipeline
-comes after that. Operator usage is the
+`book-pilot-reference-transcription`. `llb book-ocr compare` chooses a pipeline from those scores
+once every pilot page is accepted
+([pilot comparison](tool-selection.md#pilot-comparison)). Operator usage is the
 [book-ocr guide](../../../guides/data-prep/book-ocr.md#score).
 The contract is [Scanned book recovery](../../../design/spec.md#scanned-book-recovery).
 
@@ -41,14 +42,24 @@ The synthetic page the pins use is
 `tests/llb/prep/book/fixtures/metrics/reference/pages/p0001.json`: class `normal`, printed page
 `57`, one body line, one formula, one 2-by-2 table, one figure, its caption, and the page number.
 
+The [pilot worksheet](../../../guides/data-prep/book-ocr.md#review-the-frozen-pilot) prepares
+this format from two recognition ledgers over the same frozen PDF. It uses the layout reading
+for initial boundaries and reading order, pairs alternate text by overlap, and flags different
+or unpaired blocks. The human reviewer can correct the draft in the original scan frame,
+including adding blocks absent from both readings. Per-page revisions preserve the unedited
+pre-draft and the reviewer decisions. Finalization publishes a scoreable snapshot and a
+metadata-only acceptance record. `BOOK_ACCEPTANCE` checks the recorded digest when scoring.
+
 ## What a lane submits
 
 A book-ocr lane is named `book-ocr/<engine>`. With no `--engine`, each engine in the ledger is
 its own lane. A block's reading is the `original` variant when that variant exists, otherwise
-the lexicographically first variant. A table grid is parsed from markdown pipe rows or from HTML;
-a separator row is skipped. Text that does not parse is an empty grid, and the table metric is
-then zero, not absent. A figure's caption link is the nearest caption by center, one caption to
-one figure. Formula text that contains `\`, `_`, or `^` is read as LaTeX.
+the lexicographically first variant. When that reading carries a formula, the lane scores its
+LaTeX and its equation number. Otherwise formula text that contains `\`, `_`, or `^` is read as
+LaTeX. When the reading carries a table, the lane scores that grid, including an unfaithful one.
+Otherwise a table grid is parsed from markdown pipe rows or from HTML; a separator row is
+skipped. Text that does not parse is an empty grid, and the table metric is then zero, not
+absent. A figure's caption link is the nearest caption by center, one caption to one figure.
 
 The existing lane is `existing-pdf`, from a `llb.pdf-citations` sidecar beside its markdown. Each
 PDF page is one body block whose text is `markdown[text_start:text_end]`. The block has no
@@ -71,10 +82,12 @@ raw engine lanes. `--engine` still limits the raw lanes. The resolved lane stays
 resolved pages has no such lane.
 
 The lane reads the artifacts the vault and the corpus projection render from. Adopted text comes
-from `resolved.json`. Kind, region, and reading order come from the block ledger. A table is the
-grid `table_markdown` renders from that text. A formula is the display math `formula_math`
-renders, and the equation number is the one the structure inventory recorded for that block, or
-else the first parenthesized number in the text. A caption link is the figure and caption that
+from `resolved.json`. Kind, region, and reading order come from the block ledger. A formula
+is the engine LaTeX when the primary reading carried it, wrapped the same way the vault wraps
+it, and the equation number is that reading's printed number, or else the inventory number, or
+else the first parenthesized number in the text. A table is the native grid when the export is
+Markdown or HTML. An image-mode table submits no grid. Without a native grid, the table is
+what `table_markdown` renders from the text. A caption link is the figure and caption that
 sit next to each other in reading order. The printed page is the structure file's mapping for
 that PDF page.
 
@@ -206,6 +219,7 @@ Lanes are not averaged together.
 | Resolved lane | `src/llb/prep/book/metrics/resolved.py` |
 | One page, the report | `src/llb/prep/book/metrics/page_score.py`, `score.py`, `report.py` |
 | Command | `src/llb/cli/book/score.py`, `make book-ocr-score` |
+| Pilot comparison | `src/llb/prep/book/compare/`, `src/llb/cli/book/compare.py`, `make book-ocr-compare` |
 
 The survey smoke scorer (`src/llb/prep/book/survey/score.py`) is a separate check that a candidate
 tool ran. It is not this harness. The ledger the score reads is the
