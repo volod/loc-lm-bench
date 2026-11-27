@@ -13,8 +13,8 @@ from llb.prep.book.review.alternates import (
     marker_kind,
     marker_kind_of_replacement,
     other_reading,
-    primary_reading,
 )
+from llb.prep.book.resolve.primary import resolved_reading
 from llb.prep.book.review.constants import DECISION_TOKENS
 from llb.prep.book.review.marks import SpanMark
 
@@ -79,7 +79,7 @@ def _requeue(
     if block is None or resolved_block is None:
         return _absent(page_id, edit, prior)
     text = resolved_block.primary_text
-    primary = primary_reading(block, resolved_block)
+    primary = resolved_reading(block, resolved_block)
     return SpanMark(
         page_id=page_id,
         pdf_page=block.pdf_page,

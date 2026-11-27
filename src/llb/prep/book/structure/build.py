@@ -18,7 +18,7 @@ from llb.prep.book.structure.inventory import inventory_of
 from llb.prep.book.structure.io import structure_path, write_structure
 from llb.prep.book.review.settled import terminal_failure
 from llb.prep.book.structure.lines import Line, load_lines
-from llb.prep.book.structure.numbering import printed_pages
+from llb.prep.book.structure.numbering import ambiguous_folios, printed_pages
 from llb.prep.book.structure.tree import build_hierarchy
 
 _LOG = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ def infer_structure(
         kind=STRUCTURE_KIND,
         source_sha256=source_sha256,
         pages=mapping,
+        ambiguous_folios=ambiguous_folios(hits),
         headers=headers,
         hierarchy=hierarchy,
         inventory=inventory_of(lines, printed_of),

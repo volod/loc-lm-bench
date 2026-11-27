@@ -22,7 +22,9 @@ def _validate_vaults(run_dir: Path) -> None:
     if not root.is_dir():
         return
     failed = False
-    for vault in sorted(path for path in root.iterdir() if path.is_dir()):
+    for vault in sorted(
+        path for path in root.iterdir() if path.is_dir() and not path.name.startswith(".")
+    ):
         if not (vault / "metadata" / RENDER_MANIFEST_FILENAME).is_file():
             continue
         try:

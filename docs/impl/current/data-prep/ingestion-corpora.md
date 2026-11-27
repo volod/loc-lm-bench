@@ -85,11 +85,12 @@ Manifest-diff contract (dynamic-corpus-refresh): `corpus_doc_fingerprints` in
 `corpus_fingerprint` -- the canonical per-item row (content sha256 plus governance fields) when
 `corpus_manifest.json` exists, else the sha256 of each committed `.md`/`.txt` file keyed by its
 corpus-relative path. In both modes a document's citation sidecar
-(`<doc>.citations.json`; `pdf-<digest>.citations.json` for the PDF lane) is folded into its
-fingerprint when one exists, so a sidecar-only regeneration (page spans rebuilt, text
-unchanged) reads as a modified document. Sidecar-less docs keep the plain hash, so older
-stores stay refresh-compatible. Text ingest copies a sibling sidecar into the staged corpus
-and deletes it with a stale document. `build-index`
+(`<doc>.citations.json`; `pdf-<digest>.citations.json` for the PDF lane) and, when a book
+projection wrote one, its reference sidecar (`<doc>.md.references.json`) are folded into its
+fingerprint when the file exists, so a sidecar-only regeneration reads as a modified
+document. Sidecar-less docs keep the plain hash, so older stores stay refresh-compatible.
+Text ingest copies a sibling citation sidecar and a sibling reference sidecar into the staged
+corpus and deletes each with a stale document. `build-index`
 records the map in `store_meta.json` as `doc_fingerprints`; `llb refresh-index` diffs it against
 the current corpus to re-chunk/re-embed only added or modified documents and to drop deleted
 ones (details in [RAG core](../rag-core/retrieval-store.md#store-lifecycle-dynamic-corpus-refresh)).

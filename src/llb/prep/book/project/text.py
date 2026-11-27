@@ -14,8 +14,7 @@ from llb.goldset.markers import MARKER, marker_token
 from llb.prep.book.project.spans import Fragment, RenderedDocument, assemble
 from llb.prep.book.render.constants import CONTENT_DIRNAME, FURNITURE_ROLES, HEADING_LEVEL
 from llb.prep.book.render.names import node_label
-from llb.prep.book.render.mathform import formula_math, render_formula, render_table
-from llb.prep.book.render.prose import table_markdown
+from llb.prep.book.render.structured import formula_text, table_text
 from llb.prep.book.render.types import RenderBlock, RenderContext, Unit, VaultFile
 from llb.prep.book.review.markers import render_passage
 
@@ -28,7 +27,15 @@ def render_content(file: VaultFile, ctx: RenderContext) -> RenderedDocument | No
     fragments = _fragments(file, ctx, vault_file)
     if not fragments:
         return None
-    document = assemble(fragments)
+    anchors = {line[1:] for line in file.body.splitlines() if line.startswith("^")}
+    document = assemble(
+        [
+            fragment
+            if fragment.anchor in anchors
+            else replace(fragment, anchor=file.page_anchors[fragment.page])
+            for fragment in fragments
+        ]
+    )
     if not document.text.strip():
         return None
     return document
@@ -36,6 +43,24 @@ def render_content(file: VaultFile, ctx: RenderContext) -> RenderedDocument | No
 
 def corpus_passage(block: RenderBlock) -> str:
     """The block a retrieval document keeps. An unresolved span is a marker."""
+    standing = _standing_token(block)
+    if standing is not None or block.resolved is None:
+        return standing or ""
+    replacements, prefixes = _tokens(block)
+    return render_passage(block.resolved, replacements, prefixes)
+
+
+def corpus_parts(block: RenderBlock) -> tuple[str, str]:
+    """The block's leading tokens, and its body with an open span's token in place."""
+    standing = _standing_token(block)
+    if standing is not None or block.resolved is None:
+        return "", standing or ""
+    replacements, prefixes = _tokens(block)
+    return " ".join(prefixes), render_passage(block.resolved, replacements, ())
+
+
+def _standing_token(block: RenderBlock) -> str | None:
+    """The one token a blank, unread, failed, or missing block stands as."""
     if block.role == "blank":
         return marker_token("blank", block.page_id or "page", 0, 0)
     if block.role == "omission":
@@ -45,6 +70,10 @@ def corpus_passage(block: RenderBlock) -> str:
     if block.resolved is None:
         label = block.block_id or block.page_id or "page"
         return marker_token("unresolved", label, 0, 0)
+    return None
+
+
+def _tokens(block: RenderBlock) -> tuple[dict[tuple[int, int], str], list[str]]:
     replacements: dict[tuple[int, int], str] = {}
     prefixes: list[str] = []
     for mark in block.marks:
@@ -53,7 +82,7 @@ def corpus_passage(block: RenderBlock) -> str:
             replacements[(mark.start, mark.end)] = token
         else:
             prefixes.append(token)
-    return render_passage(block.resolved, replacements, prefixes)
+    return replacements, prefixes
 
 
 def _fragments(file: VaultFile, ctx: RenderContext, vault_file: str) -> list[Fragment]:
@@ -98,7 +127,24 @@ def _paragraph(unit: Unit, ctx: RenderContext, vault_file: str) -> list[Fragment
         if pieces and not _dehyphenate(pieces, text):
             gap = " "
         pieces.append(_fragment(block, text, ctx, vault_file, gap))
-    return pieces
+    if unit.text_range is None:
+        return pieces
+    return _clip(pieces, *unit.text_range)
+
+
+def _clip(pieces: list[Fragment], start: int, end: int) -> list[Fragment]:
+    """Project only the part of a plain paragraph that this note renders."""
+    clipped: list[Fragment] = []
+    cursor = 0
+    for fragment in pieces:
+        text_start = cursor + len(fragment.gap_before)
+        stop = text_start + len(fragment.text)
+        if text_start < end and stop > start:
+            text = fragment.text[max(start - text_start, 0) : end - text_start]
+            gap = fragment.gap_before if clipped else ""
+            clipped.append(replace(fragment, text=text, gap_before=gap))
+        cursor = stop
+    return clipped
 
 
 def _dehyphenate(pieces: list[Fragment], text: str) -> bool:
@@ -145,19 +191,16 @@ def _formula_text(unit: Unit, ctx: RenderContext, passage: str) -> str:
         number = ctx.equations.get(item.block_id, number)
     if block.formula is not None and block.formula.equation_number:
         number = block.formula.equation_number
-    if block.formula is not None:
-        return render_formula(block.formula.latex, number, block.formula.display, None)
-    return formula_math(stripped, number)
+    lead, body = corpus_parts(block)
+    return formula_text(block, lead, body, number, None)
 
 
 def _table_text(unit: Unit, _ctx: RenderContext, passage: str) -> str:
     stripped = passage.strip()
     if _marker_only(stripped):
         return stripped
-    block = unit.blocks[0]
-    if block.table is None:
-        return table_markdown(stripped)
-    return render_table(block.table, None, None, emit_caption=block.emit_caption)
+    lead, body = corpus_parts(unit.blocks[0])
+    return table_text(unit.blocks[0], lead, body, None, None)
 
 
 def _heading_text(unit: Unit, ctx: RenderContext, passage: str) -> str:

@@ -53,6 +53,11 @@ def parse_marker(text: str) -> ParsedMarker | None:
     return found[0] if found else None
 
 
+def marker_layout_size(text: str) -> int:
+    """Count markup consistently for an in-vault PDF and an external PDF."""
+    return len(text) - sum(len(match[2].partition("#")[0]) for match in _MARKER.finditer(text))
+
+
 def parse_markers(text: str) -> list[ParsedMarker]:
     """Every marker in `text`, in order."""
     found: list[ParsedMarker] = []

@@ -132,5 +132,5 @@ def _page_tail(unit: Unit, last: RenderBlock, head: RenderBlock) -> bool:
 def _join_hyphen(left: Unit, right: Unit) -> tuple[Unit, Unit]:
     base = left.text.rstrip()
     word, _sep, tail = right.text.lstrip().partition(" ")
-    joined = replace(left, text=base[:-1] + word)
-    return joined, replace(right, text=tail)
+    joined = replace(left, text=base[:-1] + word, splittable=False)
+    return joined, replace(right, text=tail, splittable=False)

@@ -8,7 +8,6 @@ from llb.core.contracts.data_prep.book_blocks import (
     UncertaintySlice,
     UncertaintySpan,
 )
-from llb.core.contracts.data_prep.book_resolve import ResolvedBlock
 from llb.core.contracts.data_prep.book_review import MarkerKind
 from llb.prep.book.review.constants import FORMULA_TABLE_KINDS, LOW_CONFIDENCE_BELOW
 
@@ -38,28 +37,25 @@ def is_low_confidence(reading: RawReading) -> bool:
     return reading.confidence is not None and reading.confidence < LOW_CONFIDENCE_BELOW
 
 
-def primary_reading(block: Block, resolved: ResolvedBlock) -> RawReading | None:
-    """The ledger reading the resolved block was taken from."""
-    for reading in block.readings:
-        if reading.engine != resolved.engine or reading.variant != resolved.variant:
-            continue
-        if resolved.model is None or reading.model == resolved.model:
-            return reading
-    return block.readings[0] if block.readings else None
-
-
 def candidate_text(block: Block, primary: RawReading, start: int, end: int) -> str | None:
-    """The other reading of this span, or none when every reading says the same thing."""
+    """The other reading of this span, or none when every reading says the same thing.
+
+    The span's primary characters are kept wherever no other reading differs, so a span widened
+    around a character another reading inserted reads as that reading: `.5` becomes `.05`.
+    """
     pieces = _span_pieces(block, primary, start, end)
     if pieces:
-        return _joined(pieces, primary.text[start:end])
+        return _composed(pieces, primary.text, start, end)
     if start == 0 and end == len(primary.text):
         return other_reading(block, primary)
     return None
 
 
-def _span_pieces(block: Block, primary: RawReading, start: int, end: int) -> list[tuple[int, str]]:
-    pieces: list[tuple[int, str]] = []
+_Piece = tuple[int, int, tuple[float, str, str], str]
+
+
+def _span_pieces(block: Block, primary: RawReading, start: int, end: int) -> list[_Piece]:
+    pieces: list[_Piece] = []
     for span in block.uncertainty:
         piece = _piece(span, primary, start, end, block.readings)
         if piece is not None:
@@ -73,22 +69,41 @@ def _piece(
     start: int,
     end: int,
     readings: Sequence[RawReading],
-) -> tuple[int, str] | None:
+) -> _Piece | None:
     own = [item for item in span.slices if _is_primary(primary, item)]
     others = [item for item in span.slices if not _is_primary(primary, item)]
     if not own or not others:
         return None
     sliver = own[0]
-    if sliver.end <= start or sliver.start >= end:
+    if not _touches(sliver.start, sliver.end, start, end):
         return None
-    return sliver.start, _best_slice(others, readings).text
+    best = _best_slice(others, readings)
+    return sliver.start, sliver.end, _rank(readings, best.engine, best.variant), best.text
 
 
-def _joined(pieces: list[tuple[int, str]], primary_slice: str) -> str | None:
-    text = "".join(item[1] for item in sorted(pieces))
-    if text == primary_slice:
+def _touches(own_start: int, own_end: int, start: int, end: int) -> bool:
+    if own_start == own_end:
+        return start <= own_start <= end
+    return own_end > start and own_start < end
+
+
+def _composed(pieces: list[_Piece], primary: str, start: int, end: int) -> str | None:
+    """The primary slice with each other reading's text in place of the slice it disagreed on."""
+    parts: list[str] = []
+    cursor = start
+    seen: set[tuple[int, int]] = set()
+    for own_start, own_end, _rank_key, text in sorted(pieces):
+        if (own_start, own_end) in seen or own_start < cursor:
+            continue
+        seen.add((own_start, own_end))
+        parts.append(primary[cursor:own_start])
+        parts.append(text)
+        cursor = max(cursor, min(own_end, end))
+    parts.append(primary[cursor:end])
+    composed = "".join(parts)
+    if composed == primary[start:end]:
         return None
-    return text
+    return composed
 
 
 def other_reading(block: Block, primary: RawReading) -> str | None:

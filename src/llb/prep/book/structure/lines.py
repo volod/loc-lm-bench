@@ -2,6 +2,8 @@
 
 `kind` is stored and never consulted. The acceptance case relabels every block `body`
 and the page mapping and the running headers stay the same, so a kind is not an input.
+A resolved block contributes its number text: a number an unresolved span touches is a
+placeholder, so a folio, a section number, or a caption number is never read across the gap.
 """
 
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ from llb.prep.book.ledger.io import read_ledger
 from llb.prep.book.ranges import page_id
 from llb.prep.book.resolve.constants import RESOLVED_FILENAME
 from llb.prep.book.resolve.io import read_resolved
+from llb.prep.book.resolve.numbers import number_text
 from llb.prep.book.structure.text import norm_space
 
 
@@ -70,7 +73,7 @@ def _resolved_text(run_dir: Path, pid: str) -> dict[str, str]:
     if not path.is_file():
         return {}
     resolved = read_resolved(path)
-    return {block.block_id: block.text for block in resolved.blocks}
+    return {block.block_id: number_text(block) for block in resolved.blocks}
 
 
 def _page_lines(ledger: PageBlockLedger, texts: dict[str, str]) -> list[Line]:

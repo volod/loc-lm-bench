@@ -16,7 +16,7 @@ from llb.prep.book.stages.recognize import (
 )
 from llb.prep.book.stages.render import PAGE_IMAGE_FILENAME, RENDER_STAGE
 
-_STAGE_VERSION = "4"
+_STAGE_VERSION = "5"
 
 
 class BlocksStage:

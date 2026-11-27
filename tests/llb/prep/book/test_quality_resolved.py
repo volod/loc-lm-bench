@@ -22,6 +22,7 @@ from llb.prep.book.metrics.resolved import load_resolved
 from llb.prep.book.metrics.score import score_reference
 from tests.llb.prep.book.resolved_score_cases import (
     caption_case,
+    competing_case,
     formula_case,
     hand_case,
     unmapped_case,
@@ -61,7 +62,7 @@ def test_a_variant_switch_and_an_overlay_edit_touch_one_page(tmp_path: Path) -> 
     assert edited[("book-ocr/alpha", 3)]["dangerous_substitutions"]["5/S"] == 1
 
 
-def test_wrong_caption_and_folio_lose_credit_when_a_guess_would_pass(tmp_path: Path) -> None:
+def test_the_printed_caption_is_credited_and_a_wrong_folio_is_not(tmp_path: Path) -> None:
     run, reference = caption_case(tmp_path)
     report = score_reference(reference, run)
     resolved = _page(report, LANE_RESOLVED, 1)
@@ -69,6 +70,21 @@ def test_wrong_caption_and_folio_lose_credit_when_a_guess_would_pass(tmp_path: P
     submission = next(item for item in load_resolved(run) if item.pdf_page == 1)
     text = " ".join(block.text for block in submission.blocks)
     assert re.search(r"(?<!\w)57(?!\w)", text)
+    # The vault prints the caption whose figure number the page prints, not the reading-order
+    # neighbour, so the score credits that association.
+    linked = next(block for block in submission.blocks if block.block_id == "p1-b1")
+    assert linked.caption_id == "p1-b3"
+    assert resolved.caption_association.value == 1.0
+    assert resolved.printed_page_accuracy.value == 0.0
+    assert raw.printed_page_accuracy.value == 1.0
+
+
+def test_competing_captions_earn_nothing_when_a_nearest_guess_would_pass(tmp_path: Path) -> None:
+    run, reference = competing_case(tmp_path)
+    report = score_reference(reference, run)
+    resolved = _page(report, LANE_RESOLVED, 1)
+    raw = _page(report, "book-ocr/alpha", 1)
+    submission = next(item for item in load_resolved(run) if item.pdf_page == 1)
     figures = [
         (block.block_id, block.region)
         for block in submission.blocks
@@ -81,11 +97,9 @@ def test_wrong_caption_and_folio_lose_credit_when_a_guess_would_pass(tmp_path: P
     ]
     assert nearest_links(figures, captions) == {"p1-b1": "p1-b3"}
     linked = next(block for block in submission.blocks if block.block_id == "p1-b1")
-    assert linked.caption_id == "p1-b2"
+    assert linked.caption_id is None
     assert resolved.caption_association.value == 0.0
     assert raw.caption_association.value == 1.0
-    assert resolved.printed_page_accuracy.value == 0.0
-    assert raw.printed_page_accuracy.value == 1.0
 
 
 def test_a_body_only_resolved_page_leaves_structure_absent(tmp_path: Path) -> None:

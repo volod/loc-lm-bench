@@ -1,6 +1,8 @@
 """Cross-references link only when the inventory names one target."""
 
 import json
+import re
+from collections import Counter
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -15,11 +17,14 @@ from llb.core.contracts.data_prep.book_structure import (
     NumberedItem,
     PrintedPage,
 )
+from llb.core.contracts.data_prep.book_references import BookReferences
+from llb.prep.book.project.build import project_corpus
 from llb.prep.book.render.catalog import Catalog, Target, build_catalog, canonical
 from llb.prep.book.render.grammar import load_grammar, parse_grammar
 from llb.prep.book.render.link import link_text
 from llb.prep.book.render.names import anchor_map
 from llb.prep.book.render.types import VaultFile
+from llb.prep.book.structure.text import norm_printed
 from llb.prep.book.validate import validate_book
 from tests.llb.prep.book.test_render import (
     _adopted,
@@ -43,7 +48,10 @@ _PROSE = (
     "Eq. (9-9)\n"
     "$$\n"
 )
-_INDEX = "orbit, 4\nmissing, 9\ndelta ..... 5\n"
+_INDEX = (
+    "orbit, 4\n  elements, 4\nmissing, 9\ndelta ..... 5\nspan, 4-6\n"
+    "[{'type': 'text', 'content': 'apsis, 4'}][{'type': 'text', 'content': '  node, 4'}]\n"
+)
 
 
 def test_every_reference_type_resolves_and_the_misses_stay_plain(tmp_path: Path) -> None:
@@ -221,6 +229,170 @@ def test_a_bad_grammar_is_refused(tmp_path: Path) -> None:
     )
     assert refused.exit_code == 2
     assert "reference grammar" in refused.stderr
+
+
+_LINK = re.compile(r"\[([^\[\]\n]+)\]\(([^)#\s]+)#\^([A-Za-z0-9-]+)\)")
+
+
+def test_the_sidecar_names_the_citations_the_vault_links(tmp_path: Path) -> None:
+    run = _book(tmp_path)
+    vault = _vault(run, tmp_path / "vault")
+    out = tmp_path / "corpus"
+    project_corpus(run, out, "redistributable", language="en")
+    first = _bytes(out)
+    again = project_corpus(run, out, "redistributable", language="en")
+    assert again.revisions == 0
+    assert _bytes(out) == first
+    report = json.loads((vault / "metadata" / "reference_links.json").read_text(encoding="utf-8"))
+    citations = _sidecars(out)
+    resolved = Counter(_identity(out, item) for item in citations if item.outcome == "resolved")
+    assert resolved == _vault_links(vault)
+    assert {item.key for item in citations if item.reason == "ambiguous"} == set(
+        report["ambiguous_keys"]
+    )
+    assert sum(item.reason == "gap" for item in citations) == report["gaps"]
+    assert all(item.target is None for item in citations if item.outcome != "resolved")
+    _assert_index(out)
+
+
+def test_projection_uses_the_vault_grammar(tmp_path: Path) -> None:
+    path = tmp_path / "grammar.yaml"
+    path.write_text(
+        "figure:\n  cues: [plate, plates]\n  number: '\\d+'\n"
+        "page:\n  cues: [p.]\n"
+        "index:\n  titles: [index]\n",
+        encoding="utf-8",
+    )
+    run = _plate_book(tmp_path, path)
+    custom = tmp_path / "custom"
+    project_corpus(run, custom, "redistributable", language="en", reference_grammar=path)
+    assert _cue_context(custom) == ["Plate 3"]
+    plain = tmp_path / "plain"
+    project_corpus(run, plain, "redistributable", language="en")
+    assert [item.strip() for item in _cue_context(plain)] == ["Fig. 3"]
+
+
+def _cue_context(root: Path) -> list[str]:
+    found: list[str] = []
+    for path in sorted(root.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        sidecar = path.with_name(path.name + ".references.json")
+        record = BookReferences.model_validate_json(sidecar.read_text(encoding="utf-8"))
+        for item in record.citations:
+            found.append(text[max(0, item.cue_start - 6) : item.cue_end])
+    return found
+
+
+def _bytes(root: Path) -> dict[str, bytes]:
+    return {path.name: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def _sidecars(root: Path) -> list:
+    found = []
+    for path in sorted(root.glob("*.md.references.json")):
+        record = BookReferences.model_validate_json(path.read_text(encoding="utf-8"))
+        text = (root / record.doc_id).read_text(encoding="utf-8")
+        assert record.hierarchy and record.hierarchy[0].level == "book"
+        assert "See Figs" not in path.read_text(encoding="utf-8")
+        for item in record.citations:
+            assert text[item.cue_start : item.cue_end].strip()
+            if item.target is not None:
+                target = (root / item.target.doc_id).read_text(encoding="utf-8")
+                assert target[item.target.char_start : item.target.char_end].strip()
+                _block_span(root, item)
+        for entry in record.index:
+            assert text[entry.term_start : entry.term_end].strip()
+            if entry.parent_start is not None and entry.parent_end is not None:
+                assert text[entry.parent_start : entry.parent_end].strip()
+        found.extend(record.citations)
+    assert found
+    return found
+
+
+def _block_span(root: Path, item) -> tuple[int, str]:
+    payload = json.loads(
+        (root / Path(item.target.doc_id).with_suffix(".citations.json")).read_text(encoding="utf-8")
+    )
+    for page in payload["pages"]:
+        for block in page["blocks"]:
+            if block["block_id"] != item.target.block_id:
+                continue
+            assert block["char_start"] == item.target.char_start
+            assert block["char_end"] == item.target.char_end
+            return page["page"], block["vault_anchor"]
+    raise AssertionError(item.target.block_id)
+
+
+def _identity(root: Path, item) -> tuple:
+    pdf_page, anchor = _block_span(root, item)
+    if item.kind in {"page", "index"}:
+        return item.key, ("pdf", pdf_page)
+    return item.key, ("anchor", anchor)
+
+
+def _vault_links(vault: Path) -> Counter:
+    counts: Counter = Counter()
+    for path in sorted((vault / "content").glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        index_note = "orbit," in text
+        for match in _LINK.finditer(text):
+            token, anchor = match.group(1), match.group(3)
+            kind = _link_kind(anchor, index_note)
+            number = norm_printed(token) if kind in {"page", "index"} else canonical(token)
+            if re.fullmatch(r"p\d+", anchor):
+                ident = ("pdf", int(anchor[1:]))
+            else:
+                ident = ("anchor", anchor)
+            counts[(f"{kind} {number}", ident)] += 1
+    return counts
+
+
+def _link_kind(anchor: str, index_note: bool) -> str:
+    if anchor.startswith("fig-"):
+        return "figure"
+    if anchor.startswith("tbl-"):
+        return "table"
+    if anchor.startswith("eq-"):
+        return "equation"
+    if anchor.startswith("ch-"):
+        return "chapter"
+    if anchor.startswith(("sec-", "sub-")):
+        return "section"
+    if re.fullmatch(r"p\d+", anchor):
+        return "index" if index_note else "page"
+    raise AssertionError(anchor)
+
+
+def _assert_index(root: Path) -> None:
+    found = {"elements": False, "span": False, "node": False}
+    for path in root.glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        record = BookReferences.model_validate_json(
+            path.with_name(path.name + ".references.json").read_text(encoding="utf-8")
+        )
+        for entry in record.index:
+            _assert_index_entry(text, entry, found)
+    assert found["elements"] and found["span"] and found["node"]
+
+
+def _assert_index_entry(text: str, entry, found: dict[str, bool]) -> None:
+    term = text[entry.term_start : entry.term_end]
+    if term == "elements":
+        _assert_parent(text, entry, "orbit")
+        found["elements"] = True
+    elif term == "span":
+        assert {page.pdf_page for page in entry.pages} == {1, 2, 4}
+        found["span"] = True
+    elif term == "missing":
+        assert entry.unresolved == ["9"] and entry.pages == []
+    elif term == "node":
+        _assert_parent(text, entry, "apsis")
+        found["node"] = True
+
+
+def _assert_parent(text: str, entry, parent: str) -> None:
+    assert entry.parent_start is not None and entry.parent_end is not None
+    assert text[entry.parent_start : entry.parent_end] == parent
 
 
 def _book(tmp: Path) -> Path:

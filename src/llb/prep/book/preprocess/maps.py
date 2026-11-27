@@ -71,6 +71,11 @@ def _box_samples(transform: Transform, box: Proposed) -> Iterator[tuple[float, f
     return ((x, y) for x in xs for y in ys)
 
 
+def map_point(transform: Transform, x: float, y: float) -> tuple[float, float]:
+    """Variant pixel ``(x, y)`` to the original render."""
+    return _point(transform, x, y)
+
+
 def _point(transform: Transform, x: float, y: float) -> tuple[float, float]:
     if isinstance(transform, AffineTransform):
         return apply_affine(_matrix(transform), x, y)

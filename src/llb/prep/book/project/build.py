@@ -17,10 +17,13 @@ from llb.prep.book.project.identity import (
     revision_of,
     text_sha256,
 )
+from llb.prep.book.project.references import reference_sidecars
 from llb.prep.book.project.text import render_content
 from llb.prep.book.project.write import ProjectedDocument, write_document
+from llb.prep.book.render.catalog import build_catalog
 from llb.prep.book.render.constants import SECTION_CAP_FLOOR, SECTION_CHAR_CAP
 from llb.prep.book.render.documents import layout_files
+from llb.prep.book.render.grammar import load_grammar
 from llb.prep.book.render.load import load_book
 from llb.prep.book.render.names import (
     anchor_map,
@@ -29,7 +32,7 @@ from llb.prep.book.render.names import (
     heading_levels,
 )
 from llb.prep.book.render.segment import prepare, section_spans
-from llb.prep.book.render.types import BookLoad, RenderContext
+from llb.prep.book.render.types import BookLoad, RenderContext, VaultFile
 from llb.prep.book.source import refuse_source_overlap
 from llb.prep.corpus.governance import detect_language
 from llb.prep.corpus.redistribution import REDISTRIBUTION_CLASSES
@@ -54,6 +57,7 @@ def project_corpus(
     language: str | None = None,
     section_cap: int = SECTION_CHAR_CAP,
     slug: str | None = None,
+    reference_grammar: Path | None = None,
 ) -> ProjectionResult:
     """Project ``run_dir`` into ``out_dir``. ``licence`` has no default."""
     chosen = require_licence(licence)
@@ -62,9 +66,13 @@ def project_corpus(
     loaded = load_book(run_dir)
     _refuse(out_dir, run_dir, loaded.pdf)
     name = _slug(slug, loaded.pdf.name)
-    documents = _documents(loaded, section_cap, name)
+    documents, files = _documents(loaded, section_cap, name)
     if not documents:
         raise ValueError(f"{run_dir} has no content to project")
+    grammar = load_grammar(reference_grammar)
+    catalog = build_catalog(files, loaded.structure, grammar)
+    prepared = [(item, document_id(item.key, text_sha256(item.text))) for item in documents]
+    sidecars = reference_sidecars(prepared, loaded.structure, catalog, grammar)
     spoken = _language(language, [item.text for item in documents])
     priors = load_priors(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -72,9 +80,8 @@ def project_corpus(
     revisions = 0
     source = Path(loaded.config.source.original_path).name
     digest = loaded.config.source.sha256
-    for item in documents:
+    for (item, doc_id), sidecar in zip(prepared, sidecars, strict=True):
         content_sha = text_sha256(item.text)
-        doc_id = document_id(item.key, content_sha)
         link = revision_of(priors, item.key, content_sha)
         if link and all(prior.doc_id != doc_id for prior in priors):
             revisions += 1
@@ -89,6 +96,7 @@ def project_corpus(
             digest=digest,
             run_id=loaded.config.run_id,
             captured=loaded.config.created_at,
+            references=sidecar,
         )
         written.append(doc_id)
     _LOG.info(
@@ -111,7 +119,9 @@ def require_licence(licence: str | None) -> str:
     return chosen
 
 
-def _documents(loaded: BookLoad, section_cap: int, slug: str) -> list[ProjectedDocument]:
+def _documents(
+    loaded: BookLoad, section_cap: int, slug: str
+) -> tuple[list[ProjectedDocument], list[VaultFile]]:
     ctx = _context(loaded, slug)
     blocks = prepare(loaded.blocks, loaded.structure)
     files = layout_files(section_spans(blocks, loaded.structure), section_cap, slug, ctx)
@@ -123,8 +133,10 @@ def _documents(loaded: BookLoad, section_cap: int, slug: str) -> list[ProjectedD
         if rendered is None:
             continue
         key = logical_key(digest, file.node.node_id, part)
-        projected.append(ProjectedDocument(key, rendered.text, rendered.pages))
-    return projected
+        projected.append(
+            ProjectedDocument(key, rendered.text, rendered.pages, file.stem, file.node.node_id)
+        )
+    return projected, files
 
 
 def _context(loaded: BookLoad, slug: str) -> RenderContext:

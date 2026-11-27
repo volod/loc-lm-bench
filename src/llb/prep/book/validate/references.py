@@ -46,13 +46,19 @@ def reference_section(book_dir: Path) -> list[str]:
 
 
 def reference_warnings(book_dir: Path) -> list[str]:
-    """A missing report, or gap citations, as warnings. Neither fails the check."""
+    """Report missing reference data and citations the vault left unlinked."""
     payload, problem = load_reference_report(book_dir)
     if problem:
         return [problem]
-    if payload is None or not payload["gaps"]:
+    if payload is None:
         return []
-    return [f"{payload['gaps']} printed-page reference(s) fell in a mapping gap"]
+    warnings = []
+    if payload["gaps"]:
+        warnings.append(f"{payload['gaps']} printed-page reference(s) fell in a mapping gap")
+    ambiguous = sum(payload["ambiguous"].values())
+    if ambiguous:
+        warnings.append(f"{ambiguous} ambiguous printed reference(s) left unlinked")
+    return warnings
 
 
 def reference_payload(book_dir: Path) -> ReferenceReport | None:

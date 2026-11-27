@@ -1,0 +1,278 @@
+{
+  "$defs": {
+    "HierarchyPlace": {
+      "additionalProperties": false,
+      "description": "One node on the path from the book root to this document.",
+      "properties": {
+        "level": {
+          "minLength": 1,
+          "title": "Level",
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "number": {
+          "default": "",
+          "title": "Number",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "level"
+      ],
+      "title": "HierarchyPlace",
+      "type": "object"
+    },
+    "IndexEntry": {
+      "additionalProperties": false,
+      "description": "One index line. A sub-entry names its parent's term when the indent shows one.",
+      "properties": {
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/IndexPage"
+          },
+          "title": "Pages",
+          "type": "array"
+        },
+        "parent_end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent End"
+        },
+        "parent_start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Start"
+        },
+        "term_end": {
+          "minimum": 0,
+          "title": "Term End",
+          "type": "integer"
+        },
+        "term_start": {
+          "minimum": 0,
+          "title": "Term Start",
+          "type": "integer"
+        },
+        "unresolved": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unresolved",
+          "type": "array"
+        }
+      },
+      "required": [
+        "term_start",
+        "term_end"
+      ],
+      "title": "IndexEntry",
+      "type": "object"
+    },
+    "IndexPage": {
+      "additionalProperties": false,
+      "description": "One printed page an index line names, and the PDF page it maps to.",
+      "properties": {
+        "pdf_page": {
+          "minimum": 1,
+          "title": "Pdf Page",
+          "type": "integer"
+        },
+        "printed": {
+          "minLength": 1,
+          "title": "Printed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "printed",
+        "pdf_page"
+      ],
+      "title": "IndexPage",
+      "type": "object"
+    },
+    "PrintedCitation": {
+      "additionalProperties": false,
+      "description": "One number the grammar found. Unresolved citations have no target.",
+      "properties": {
+        "cue_end": {
+          "minimum": 0,
+          "title": "Cue End",
+          "type": "integer"
+        },
+        "cue_start": {
+          "minimum": 0,
+          "title": "Cue Start",
+          "type": "integer"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "resolved",
+            "unresolved"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "enum": [
+            "",
+            "ambiguous",
+            "gap",
+            "absent"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReferenceTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "outcome",
+        "cue_start",
+        "cue_end"
+      ],
+      "title": "PrintedCitation",
+      "type": "object"
+    },
+    "ReferenceTarget": {
+      "additionalProperties": false,
+      "description": "The block a resolved citation names, as offsets in that block's document.",
+      "properties": {
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
+        "doc_id": {
+          "minLength": 1,
+          "title": "Doc Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "block_id",
+        "char_start",
+        "char_end"
+      ],
+      "title": "ReferenceTarget",
+      "type": "object"
+    }
+  },
+  "$id": "urn:llb:artifact-contract:llb.book-references:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`<document>.md.references.json`: the printed references of one projected document.",
+  "properties": {
+    "citations": {
+      "items": {
+        "$ref": "#/$defs/PrintedCitation"
+      },
+      "title": "Citations",
+      "type": "array"
+    },
+    "doc_id": {
+      "minLength": 1,
+      "title": "Doc Id",
+      "type": "string"
+    },
+    "grammar": {
+      "minLength": 1,
+      "title": "Grammar",
+      "type": "string"
+    },
+    "hierarchy": {
+      "items": {
+        "$ref": "#/$defs/HierarchyPlace"
+      },
+      "title": "Hierarchy",
+      "type": "array"
+    },
+    "index": {
+      "items": {
+        "$ref": "#/$defs/IndexEntry"
+      },
+      "title": "Index",
+      "type": "array"
+    },
+    "kind": {
+      "const": "book-references",
+      "default": "book-references",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_id": {
+      "const": "llb.book-references",
+      "default": "llb.book-references",
+      "title": "Schema Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "doc_id",
+    "grammar"
+  ],
+  "title": "BookReferences",
+  "type": "object"
+}

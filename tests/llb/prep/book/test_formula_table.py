@@ -131,7 +131,7 @@ def test_table_modes_keep_empty_cells_spans_and_drop_an_unfaithful_grid() -> Non
     assert "|" not in image and "<table" not in image
     reading = RawReading(engine="a", variant="original", text="grid", table=overlap)
     assert scored_table("table", reading, "grid") is not None
-    assert resolved_table("table", "grid", reading) is None
+    assert resolved_table("table", "grid", reading.table, reading) is None
 
 
 def test_cell_dispute_keeps_a_dangerous_substitution_and_both_sources() -> None:

@@ -1,10 +1,14 @@
 """Apply the resolution rule to one page.
 
 The adopted text is the primary reading, with three exceptions. Characters every reading shares
-are an agreement edit. An uncertainty span stays unresolved unless an overlay edit covers it.
-Reviewer edits win over model edits, and both win over agreement. An edit whose anchor does not
-match the block is orphaned and re-queued; it is not tried against any other block.
+are an agreement edit. An uncertainty span stays unresolved unless an overlay edit covers it, and
+so do a refused model edit, a disputed table cell, a contested table caption, and a formula letter
+another formula reading writes differently. Reviewer edits win over model edits, and both win over
+agreement. An edit whose anchor does not match the block is orphaned and re-queued; it is not tried
+against any other block.
 """
+
+from collections.abc import Sequence
 
 from llb.core.contracts.data_prep.book_blocks import Block, PageBlockLedger, RawReading
 from llb.core.contracts.data_prep.book_resolve import (
@@ -12,6 +16,7 @@ from llb.core.contracts.data_prep.book_resolve import (
     OrphanedEdit,
     PageCorrectionOverlay,
     PageResolvedText,
+    RefusedCorrection,
     ResolvedBlock,
 )
 from llb.prep.book.resolve.anchor import block_anchor
@@ -22,15 +27,20 @@ from llb.prep.book.resolve.constants import (
     SCHEMA_VERSION,
 )
 from llb.prep.book.resolve.primary import PrimaryChoice, select_reading
-from llb.prep.book.resolve.spans import cover_spans
+from llb.prep.book.resolve.spans import ForcedSpan, cover_spans
+from llb.prep.book.resolve.technical import technical_spans
 
 
 def resolve_page(
-    ledger: PageBlockLedger, choice: PrimaryChoice, edits: list[CorrectionEdit]
+    ledger: PageBlockLedger,
+    choice: PrimaryChoice,
+    edits: list[CorrectionEdit],
+    refusals: Sequence[RefusedCorrection] = (),
 ) -> tuple[PageCorrectionOverlay, PageResolvedText]:
     """Resolve every block. `edits` are model and reviewer corrections, never agreement."""
     by_id = {block.block_id: block for block in ledger.blocks}
     grouped: dict[str, list[CorrectionEdit]] = {block_id: [] for block_id in by_id}
+    grouped_refusals: dict[str, list[RefusedCorrection]] = {block_id: [] for block_id in by_id}
     orphaned: list[OrphanedEdit] = []
     for edit in edits:
         if edit.page_id != ledger.page_id:
@@ -39,11 +49,14 @@ def resolve_page(
             orphaned.append(OrphanedEdit(edit=edit, reason="block_missing", requeued=True))
             continue
         grouped[edit.block_id].append(edit)
+    for refusal in refusals:
+        if refusal.page_id == ledger.page_id and refusal.block_id in grouped_refusals:
+            grouped_refusals[refusal.block_id].append(refusal)
     applied: list[CorrectionEdit] = []
     resolved: list[ResolvedBlock] = []
     for block in ledger.blocks:
         block_resolved, block_applied, block_orphans = resolve_block(
-            ledger.page_id, block, choice, grouped[block.block_id]
+            ledger.page_id, block, choice, grouped[block.block_id], grouped_refusals[block.block_id]
         )
         resolved.append(block_resolved)
         applied.extend(block_applied)
@@ -75,14 +88,21 @@ def resolve_page(
 
 
 def resolve_block(
-    page_id: str, block: Block, choice: PrimaryChoice, edits: list[CorrectionEdit]
+    page_id: str,
+    block: Block,
+    choice: PrimaryChoice,
+    edits: list[CorrectionEdit],
+    refusals: Sequence[RefusedCorrection] = (),
 ) -> tuple[ResolvedBlock, list[CorrectionEdit], list[OrphanedEdit]]:
     """One block: the adopted text, the edits that produced it, and the edits it refused."""
     anchor = block_anchor(block)
     primary, fallback = select_reading(block, choice)
     kept, orphaned = _attach(primary, anchor, edits)
     winners = _winners(kept)
-    spans, agreement = cover_spans(page_id, block, primary, anchor, winners)
+    forced = [*_refused(primary, anchor, refusals), *technical_spans(block, primary)]
+    spans, agreement = cover_spans(
+        page_id, block, primary, anchor, winners, _uncovered(forced, winners)
+    )
     applied = sorted([*winners, *agreement], key=lambda edit: (edit.start, edit.edit_id))
     text = "".join(span.text for span in spans if span.adopted)
     resolved = ResolvedBlock(
@@ -113,6 +133,32 @@ def _attach(
             continue
         kept.append(edit)
     return kept, orphaned
+
+
+def _refused(
+    primary: RawReading, anchor: str, refusals: Sequence[RefusedCorrection]
+) -> list[ForcedSpan]:
+    """Refusal spans that still name this block's primary characters."""
+    forced: list[ForcedSpan] = []
+    for refusal in refusals:
+        if refusal.anchor != anchor:
+            continue
+        if refusal.end > len(primary.text):
+            continue
+        if primary.text[refusal.start : refusal.end] != refusal.raw_text:
+            continue
+        forced.append((refusal.start, refusal.end, tuple(refusal.classes)))
+    return forced
+
+
+def _uncovered(forced: list[ForcedSpan], winners: list[CorrectionEdit]) -> list[ForcedSpan]:
+    """Forced spans no adopted edit already covers. An edit over the span settles it."""
+    covered = [(edit.start, edit.end) for edit in winners]
+    return [
+        span
+        for span in forced
+        if not any(start <= span[0] and span[1] <= end for start, end in covered)
+    ]
 
 
 def _winners(edits: list[CorrectionEdit]) -> list[CorrectionEdit]:

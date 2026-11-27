@@ -23,6 +23,11 @@
           "title": "Block Id",
           "type": "string"
         },
+        "confusion_class": {
+          "default": "",
+          "title": "Confusion Class",
+          "type": "string"
+        },
         "edit_id": {
           "minLength": 1,
           "title": "Edit Id",
@@ -77,12 +82,98 @@
       ],
       "title": "CorrectionEdit",
       "type": "object"
+    },
+    "RefusedCorrection": {
+      "additionalProperties": false,
+      "description": "A proposal the guard refused. Resolve marks the span instead of applying it.",
+      "properties": {
+        "anchor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Anchor",
+          "type": "string"
+        },
+        "block_id": {
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "classes": {
+          "items": {
+            "enum": [
+              "digit",
+              "sign",
+              "decimal",
+              "symbol"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Classes",
+          "type": "array"
+        },
+        "confusion_class": {
+          "default": "",
+          "title": "Confusion Class",
+          "type": "string"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "evidence": {
+          "default": "",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "page_id": {
+          "minLength": 1,
+          "title": "Page Id",
+          "type": "string"
+        },
+        "raw_text": {
+          "title": "Raw Text",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "rewrite",
+            "budget",
+            "no-visual",
+            "unsupported"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "replacement": {
+          "title": "Replacement",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page_id",
+        "block_id",
+        "anchor",
+        "start",
+        "end",
+        "raw_text",
+        "replacement",
+        "reason",
+        "classes"
+      ],
+      "title": "RefusedCorrection",
+      "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.book-ocr-model-corrections:1.0.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "`pages/<pNNNN>/correct/corrections.json`: edits a correction stage proposes.\n\nResolve reads this file. It does not produce it.",
+  "description": "`pages/<pNNNN>/corrections.json`: edits a correction stage admitted and refused.\n\nResolve reads this file. It does not produce it. `model` is the identity that proposed.",
   "properties": {
     "edits": {
       "items": {
@@ -96,6 +187,11 @@
       "title": "Kind",
       "type": "string"
     },
+    "model": {
+      "default": "",
+      "title": "Model",
+      "type": "string"
+    },
     "page_id": {
       "minLength": 1,
       "title": "Page Id",
@@ -105,6 +201,13 @@
       "minimum": 1,
       "title": "Pdf Page",
       "type": "integer"
+    },
+    "refused": {
+      "items": {
+        "$ref": "#/$defs/RefusedCorrection"
+      },
+      "title": "Refused",
+      "type": "array"
     },
     "schema_id": {
       "const": "llb.book-ocr-model-corrections",

@@ -63,9 +63,10 @@ so it adds nothing the book does not say, and it costs no model call.
 It answers a weakness that is specific to technical text. A numeric table or a display equation
 embeds poorly and sits in its own projected document, while the sentence that needs it embeds well.
 A vector lane therefore retrieves the citing sentence without the evidence it cites, and one
-`cites` hop delivers it. Two scanned-book tasks build this graph: `book-projection-reference-sidecar`
-records the references in the projection, and `book-reference-graph-reading` builds the graph from
-them and measures it against the vector lane over the same projection.
+`cites` hop delivers it. The projection records those references beside each document
+([corpus projection](../impl/current/book-recovery/corpus-projection.md#printed-references)).
+`book-reference-graph-reading` builds the graph from them and measures it against the vector
+lane over the same projection.
 
 ## What would change these decisions
 

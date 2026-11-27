@@ -1,6 +1,7 @@
 """Corpus projection: content, page citations, stable ids, and marker refusal."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from llb.core.contracts.data_prep.book_resolve import ResolvedSpan
 from llb.finetune.dataset import export_finetune_set
 from llb.goldset.schema import GoldItem, SourceSpan, dump_goldset
 from llb.goldset.validate import validate_items
+from llb.core.contracts.data_prep.book_references import BookReferences
 from llb.prep.book.project.build import project_corpus
 from llb.prep.book.resolve.io import read_resolved, write_resolved
 from llb.prep.corpus.fingerprints import corpus_doc_fingerprints
@@ -116,6 +118,7 @@ def test_projection_is_content_with_exact_page_spans(tmp_path: Path) -> None:
         text = path.read_text(encoding="utf-8")
         assert not text.startswith("---")
         _assert_sidecar(path, text)
+        _assert_references(path, text)
         meta = json.loads(path.with_name(path.name + ".metadata.json").read_text(encoding="utf-8"))
         assert meta["language"] == "en"
         assert meta["source_system"] == "book-ocr"
@@ -144,6 +147,18 @@ def _assert_sidecar(path: Path, text: str) -> None:
                 token = text[marker["char_start"] : marker["char_end"]]
                 assert token.startswith("{{llb-marker:")
     assert covered == text
+
+
+def _assert_references(path: Path, text: str) -> None:
+    sidecar = path.with_name(path.name + ".references.json")
+    record = BookReferences.model_validate_json(sidecar.read_text(encoding="utf-8"))
+    assert record.doc_id == path.name
+    assert record.hierarchy and record.hierarchy[0].level == "book"
+    for item in record.citations:
+        assert text[item.cue_start : item.cue_end].strip()
+        if item.target is not None:
+            target = path.with_name(item.target.doc_id).read_text(encoding="utf-8")
+            assert target[item.target.char_start : item.target.char_end].strip()
 
 
 def test_reprojection_is_identical_and_a_correction_revises(tmp_path: Path) -> None:
@@ -199,6 +214,9 @@ def test_local_only_export_refuses_and_missing_licence_refuses(tmp_path: Path) -
     staged = tmp_path / "staged"
     ingest_corpus(out, staged)
     doc = next(path.name for path in _docs(staged) if "TOK-BODY-SEC" in path.read_text())
+    reference = staged / f"{doc}.references.json"
+    assert reference.is_file()
+    assert reference.read_bytes() == (out / reference.name).read_bytes()
     gold = tmp_path / "gold.jsonl"
     dump_goldset([_item(doc, "TOK-BODY-SEC", staged)], gold)
     bundle = tmp_path / "bundle"
@@ -216,9 +234,35 @@ def test_local_only_export_refuses_and_missing_licence_refuses(tmp_path: Path) -
             run_dir=bundle, goldset_path=gold, out_dir=tmp_path / "export", corpus_root=staged
         )
     assert "local-only" in str(raised.value)
+    export_dir = tmp_path / "export"
+    assert not export_dir.exists()
+    assert reference.is_file()
     missing = RUNNER.invoke(app, ["book-ocr", "project", str(run), "--out", str(tmp_path / "none")])
     assert missing.exit_code == 2
     with pytest.raises(ValueError, match="required"):
         project_corpus(run, tmp_path / "blank", "  ")
     with pytest.raises(ValueError, match="unknown redistribution class"):
         project_corpus(run, tmp_path / "other", "public-domain")
+
+
+def test_a_removed_document_takes_its_reference_sidecar(tmp_path: Path) -> None:
+    run = sample_run(tmp_path)
+    out = tmp_path / "corpus"
+    project_corpus(run, out, "redistributable", language="en")
+    staged = tmp_path / "staged"
+    ingest_corpus(out, staged)
+    victim = next(iter(_docs(staged)))
+    sidecar = staged / f"{victim.name}.references.json"
+    citation = staged / f"{victim.stem}.citations.json"
+    assert sidecar.is_file() and citation.is_file()
+    slim = tmp_path / "slim"
+    shutil.copytree(out, slim)
+    (slim / victim.name).unlink()
+    removed = ingest_corpus(slim, staged)
+    assert victim.name in removed.removed_sources
+    assert not victim.exists()
+    assert not sidecar.exists()
+    assert not citation.exists()
+    kept = _docs(staged)
+    assert kept
+    assert all((staged / f"{path.name}.references.json").is_file() for path in kept)

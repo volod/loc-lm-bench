@@ -39,6 +39,8 @@ class HypBlock:
     table: Table | None
     caption_id: str | None
     equation_number: str | None
+    # A block the lane held open: it emitted a marker, not structure. Counted as an abstention.
+    held_open: bool = False
 
 
 @dataclass(frozen=True)

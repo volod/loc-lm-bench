@@ -21,7 +21,7 @@ _INLINE = re.compile(
 _PAGE_TOKEN = page_token()
 
 
-Resolve = Callable[[str], tuple[str, str, str]]
+Resolve = Callable[[str], tuple[str, str, str, Target | None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +34,28 @@ class Event:
 
 
 @dataclass(frozen=True, slots=True)
+class NumberHit:
+    """One cited number. Offsets are relative to the slice passed to ``_rewrite``."""
+
+    start: int
+    end: int
+    event: Event
+    target: Target | None
+
+
+@dataclass(frozen=True, slots=True)
+class Cited:
+    """One cited number and its span in the text that was scanned."""
+
+    kind: str
+    outcome: str
+    key: str
+    start: int
+    end: int
+    target: Target | None
+
+
+@dataclass(frozen=True, slots=True)
 class Replacement:
     """One span of the original note replaced by linked text."""
 
@@ -41,6 +63,7 @@ class Replacement:
     end: int
     text: str
     events: tuple[Event, ...]
+    cited: tuple[Cited, ...] = ()
 
 
 def link_text(
@@ -52,6 +75,51 @@ def link_text(
     index: bool,
 ) -> tuple[str, tuple[Event, ...]]:
     """The note with unique citations linked, plus one event per cited number."""
+    chosen = _chosen(text, here=here, catalog=catalog, grammar=grammar, index=index)
+    events = tuple(
+        event for rep in sorted(chosen, key=lambda item: item.start) for event in rep.events
+    )
+    return _apply(text, chosen), events
+
+
+def citation_hits(
+    text: str,
+    *,
+    here: str,
+    catalog: Catalog,
+    grammar: ReferenceGrammar,
+    index: bool,
+) -> tuple[Cited, ...]:
+    """Every cited number the vault linker would see, with its span in ``text``."""
+    chosen = _chosen(text, here=here, catalog=catalog, grammar=grammar, index=index)
+    return tuple(
+        cited for rep in sorted(chosen, key=lambda item: item.start) for cited in rep.cited
+    )
+
+
+def place_cited(hits: tuple[NumberHit, ...], base: int) -> tuple[Cited, ...]:
+    """Move rewrite-relative hits onto the document that contained the slice."""
+    return tuple(
+        Cited(
+            hit.event.kind,
+            hit.event.outcome,
+            hit.event.key,
+            base + hit.start,
+            base + hit.end,
+            hit.target,
+        )
+        for hit in hits
+    )
+
+
+def _chosen(
+    text: str,
+    *,
+    here: str,
+    catalog: Catalog,
+    grammar: ReferenceGrammar,
+    index: bool,
+) -> list[Replacement]:
     blocked = protected_spans(text)
     found = _kind_reps(text, blocked, here, catalog, grammar)
     found.extend(_page_reps(text, blocked, here, catalog, grammar))
@@ -59,11 +127,7 @@ def link_text(
         from llb.prep.book.render.index_links import index_replacements
 
         found.extend(index_replacements(text, blocked, here, catalog))
-    chosen = _select(found)
-    events = tuple(
-        event for rep in sorted(chosen, key=lambda item: item.start) for event in rep.events
-    )
-    return _apply(text, chosen), events
+    return _select(found)
 
 
 def protected_spans(text: str) -> list[tuple[int, int]]:
@@ -124,11 +188,9 @@ def _kind_reps(
             if _blocked(match.start(), match.end(), blocked):
                 continue
             resolve = _item_resolver(kind.name, here, catalog)
-            body, events = _rewrite_after(
-                match.group(0), kind.cues, kind.number, resolve, kind.name
-            )
-            if events:
-                found.append(Replacement(match.start(), match.end(), body, events))
+            body, hits = _rewrite_after(match.group(0), kind.cues, kind.number, resolve, kind.name)
+            if hits:
+                found.append(_replacement(match.start(), match.end(), body, hits))
     return found
 
 
@@ -144,12 +206,20 @@ def _page_reps(
     for match in grammar.page_phrase.finditer(text):
         if _blocked(match.start(), match.end(), blocked):
             continue
-        body, events = _rewrite_after(
-            match.group(0), grammar.page_cues, _PAGE_TOKEN, resolve, "page"
-        )
-        if events:
-            found.append(Replacement(match.start(), match.end(), body, events))
+        body, hits = _rewrite_after(match.group(0), grammar.page_cues, _PAGE_TOKEN, resolve, "page")
+        if hits:
+            found.append(_replacement(match.start(), match.end(), body, hits))
     return found
+
+
+def _replacement(start: int, end: int, body: str, hits: tuple[NumberHit, ...]) -> Replacement:
+    return Replacement(
+        start,
+        end,
+        body,
+        tuple(hit.event for hit in hits),
+        place_cited(hits, start),
+    )
 
 
 def _rewrite_after(
@@ -158,11 +228,14 @@ def _rewrite_after(
     number: re.Pattern[str],
     resolve: Resolve,
     kind: str,
-) -> tuple[str, tuple[Event, ...]]:
+) -> tuple[str, tuple[NumberHit, ...]]:
     """Link numbers after the cue, so a roman letter inside the cue is not a number."""
     cut = _cue_end(body, cues)
-    rewritten, events = _rewrite(body[cut:], number, resolve, kind)
-    return body[:cut] + rewritten, events
+    rewritten, hits = _rewrite(body[cut:], number, resolve, kind)
+    shifted = tuple(
+        NumberHit(cut + hit.start, cut + hit.end, hit.event, hit.target) for hit in hits
+    )
+    return body[:cut] + rewritten, shifted
 
 
 def _cue_end(body: str, cues: tuple[str, ...]) -> int:
@@ -175,47 +248,47 @@ def _cue_end(body: str, cues: tuple[str, ...]) -> int:
 
 def _rewrite(
     body: str, number: re.Pattern[str], resolve: Resolve, kind: str
-) -> tuple[str, tuple[Event, ...]]:
+) -> tuple[str, tuple[NumberHit, ...]]:
     pieces: list[str] = []
-    events: list[Event] = []
+    hits: list[NumberHit] = []
     cursor = 0
     for match in number.finditer(body):
         pieces.append(body[cursor : match.start(1)])
         token = match.group(1)
-        outcome, href, key = resolve(token)
-        events.append(Event(kind, outcome, key))
+        outcome, href, key, target = resolve(token)
+        hits.append(NumberHit(match.start(1), match.end(1), Event(kind, outcome, key), target))
         pieces.append(f"[{token}]({href})" if href else token)
         cursor = match.end(1)
     pieces.append(body[cursor:])
-    return "".join(pieces), tuple(events)
+    return "".join(pieces), tuple(hits)
 
 
 def _item_resolver(kind: str, here: str, catalog: Catalog) -> Resolve:
-    def resolve(token: str) -> tuple[str, str, str]:
+    def resolve(token: str) -> tuple[str, str, str, Target | None]:
         key = canonical(token)
         ident = f"{kind} {key}"
         if (kind, key) in catalog.ambiguous:
-            return "ambiguous", "", ident
+            return "ambiguous", "", ident, None
         target = catalog.unique.get((kind, key))
         if target is None:
-            return "unresolved", "", ident
-        return "resolved", href_for(target, here), ident
+            return "unresolved", "", ident, None
+        return "resolved", href_for(target, here), ident, target
 
     return resolve
 
 
 def _page_resolver(here: str, catalog: Catalog, kind: str) -> Resolve:
-    def resolve(token: str) -> tuple[str, str, str]:
+    def resolve(token: str) -> tuple[str, str, str, Target | None]:
         key = norm_printed(token)
         ident = f"{kind} {key}"
         if key in catalog.page_ambiguous:
-            return "ambiguous", "", ident
+            return "ambiguous", "", ident, None
         if key in catalog.gaps:
-            return "gap", "", ident
+            return "gap", "", ident, None
         target = catalog.pages.get(key)
         if target is None:
-            return "unresolved", "", ident
-        return "resolved", href_for(target, here), ident
+            return "unresolved", "", ident, None
+        return "resolved", href_for(target, here), ident, target
 
     return resolve
 

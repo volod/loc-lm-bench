@@ -1,15 +1,17 @@
-# Formulas and tables
+# Formulas, tables, and figures
 
 A formula or a table keeps the structure the engine returned. The ledger stores it on the raw
 reading. The vault and the corpus both render from that reading, and the score uses the same
 grid. Nothing here derives a formula, converts a unit, or calculates a value.
 
-Figure crops stay the tight assets the vault already writes. This page does not add a figure
-extractor. See [structure and the reading vault](structure-and-rendering.md#reading-vault).
+A figure is the region the ledger already calls a figure, padded and named as
+[figure assets](#figure-assets). This page does not redraw one or invent a description.
 
 The contract is [Scanned book recovery](../../../design/spec.md#scanned-book-recovery). The
-task record is
-[0023](../../records/0023-scanned-book-recovery-book-formula-and-table-recovery.md).
+formula and table record is
+[0023](../../records/0023-scanned-book-recovery-book-formula-and-table-recovery.md). The figure
+record is
+[0024](../../records/0024-scanned-book-recovery-book-figure-and-caption-assets.md).
 
 ## What a reading carries
 
@@ -30,6 +32,12 @@ A block may also carry cell disputes. Two engines that disagree on a cell run th
 dangerous-substitution check the character spans use. A digit, sign, decimal, or symbol
 difference, or a named substitution such as `5/S`, is a dispute. Each dispute keeps both
 engines' cell texts. A letter-only difference stays on the raw readings and is not a dispute.
+The grids are compared position by position after spans are expanded, and `row` and `column`
+are that position. A merged cell whose text matched where it starts is not disputed against the
+blank the other engine left beside it. A position only one grid fills is compared with a blank,
+so a column one engine omitted is a dispute wherever the other read a digit, a sign, or a
+symbol there. Resolve holds a disputed cell open
+([technical content](uncertainty-and-review.md#technical-content)).
 
 Docling and MinerU attach this structure from their own JSON. A Markdown reading does too:
 a pipe grid or an HTML table, and a preceding `Table` line stored as the caption without
@@ -40,6 +48,11 @@ When the formula stage and the table stage of one engine write the same text for
 the ledger keeps that text once.
 
 ## How an export is chosen
+
+The rules below apply to a block whose resolved text is the primary reading as read. A block
+an overlay edit changed publishes the structure re-read from the corrected text, and a block
+with an open span publishes its passage instead of structure
+([technical content](uncertainty-and-review.md#technical-content)).
 
 Display math is `$$...$$`. The equation number is the engine's printed number when it has
 one, otherwise the structure inventory's number, written as `\tag{...}` on the right. Inline
@@ -67,8 +80,8 @@ read as a number.
 A table with one header row, a rectangular grid, and no span other than 1 is Markdown, and
 an empty cell stays an empty cell. Any other faithful grid is HTML. An unfaithful grid is
 the page image under `assets/<chapter>/`, and the export does not also print the grid. A
-cell dispute keeps `review/<block-id>-table.png` beside the grid that was published. The
-corpus has no assets: an unfaithful table contributes its caption only.
+cell dispute keeps `review/<block-id>-table.png` beside the table, whose disputed cell is a
+marker. The corpus has no assets: an unfaithful table contributes its caption only.
 
 The caption is printed above the grid when no other block already has that text. A `Table`
 line that is its own block is not repeated.
@@ -101,7 +114,8 @@ Each planted case returns that one name.
 | Fixture | `tests/llb/prep/book/test_formula_table.py` |
 
 The raw score uses the native grid whenever the reading has one. The resolved score uses
-that grid when the export is Markdown or HTML, and submits no grid when the export is the
+the structure the block publishes (`src/llb/prep/book/render/emitted.py`): that grid when the
+export is Markdown or HTML, and no grid when the export is the
 page image. A reading with no structure still falls back to the text.
 
 ## Evidence
@@ -126,3 +140,86 @@ reading and was not rewritten.
 What would overturn this reading: a display formula whose `\tag` is not the number printed
 on that formula, a formula the local parser accepts that still embeds a crop, a formula the
 parser rejects with no crop, or one of those 6 empty cells missing from the Markdown.
+
+## Figure assets
+
+`llb book-ocr render` and `make book-ocr-render` write the crops after structure. There is
+no separate command. The ledger schema stays `llb.book-ocr-block-ledger` 1.0.0. Source
+regions are recorded in the vault, not as a new ledger field. The corpus projection does not
+write these assets, and it does not suppress captions.
+
+The asset is `assets/<chapter-slug>/p<NNNN>_<ord>_figure`, plus `_<number>` only when the
+number is reliable. `<ord>` is the primary region's reading order, zero-padded to 4, so the
+names sort as the figures appear. The chapter slug is the chapter above that region. When
+the hierarchy has no chapter there, the directory is the owning node's slug. A second render
+of the same run writes the same bytes. The embed sits at the primary region's reading
+position, then the printed caption once, then a source-page link labelled with the page id.
+The caption is printed as its passage, so a span still open in it keeps its marker.
+
+Regions on one page whose edges are within 2% of the shorter side, clamped to 8-40 px, and
+that do not carry conflicting printed numbers, become one asset. The record lists every
+source region. Later pieces are not embedded again. A number is compatible with a region
+that has none.
+
+The crop is that union, grown by 3% of the shorter side, clamped to 16-64 px, then pulled
+back on any side whose margin contains another figure's center. The associated caption joins
+the image only when the gap to it is within 10% of the shorter side, clamped to 24-160 px.
+A printed caption farther than that stays in the note and is not stretched across the page.
+The crop is clipped to the page.
+
+A unique inventory row with caption evidence is the printed association, with no distance
+cap. So is exactly one caption on the page whose text opens as `Figure` or `Fig.` plus a
+number, including when the inventory recorded that line as a page footer. Two captions that
+print the same number attach to neither, and the asset has no number slug. A page-footer
+inventory row with no such caption is not a slug. An unnumbered caption attaches only when
+it is the single nearest within the caption band and a second caption is not within 1.25
+times that gap. A caption that opens as a table or an equation is never that guess, and
+neither is one whose printed number is held open. Numbers are read from the number text, so a
+caption `Figure 12-3` whose `3` is open gives no number and no slug
+([technical content](uncertainty-and-review.md#technical-content)). The resolved score reads
+this same association (`select_figures` in `src/llb/prep/book/assets/extract.py`).
+
+A small figure, longer side at most 16% of the shorter page side and area at most 1.5% of
+the page, whose box overlaps a small figure on another page by IoU at least 0.45, is a
+repeated ornament. Every member is relabelled `ornament` in the note and listed under
+`rejected` with reason `repeated-ornament`. The ledger kind stays `figure`. Same-page copies
+do not count. After grouping, a group with no number and no caption, longer side at most 4%
+of the shorter side, and area at most 0.2% of the page, is `isolated-noise`. A small region
+within the group gap of a real figure joins that figure.
+
+The pixels come from the best kept geometric variant: dewarp, else deskew, else a quarter
+turn, else the original render. Photometric variants are not crops. A refused variant is
+skipped. The recorded crop and regions stay in the original render. A grid map is sampled
+every 8 pixels and the crop grows by one step. A missing image leaves the existing
+missing-figure marker.
+
+`metadata/figure_assets.json` is always written. `figures` is reading order. Each row names
+the asset, the primary block, the caption block or null, the number or null, the variant,
+the original-frame crop, and every source region. `rejected` names the block and the reason.
+
+| Piece | Module |
+| --- | --- |
+| Thresholds | `src/llb/prep/book/assets/constants.py` |
+| Boxes, grouping, ornaments, noise | `src/llb/prep/book/assets/boxes.py`, `select.py` |
+| Printed number, then proximity | `src/llb/prep/book/assets/printed.py`, `captions.py` |
+| Padding and the geometric crop | `src/llb/prep/book/assets/crop.py` |
+| Vault wiring and the record | `extract.py`, `record.py`; `render/build.py`, `render/prose.py` |
+| Caption-opening parse | `src/llb/prep/book/structure/inventory.py` |
+| Fixture | `tests/llb/prep/book/test_figure_assets.py` |
+
+On 2026-11-27, on host vola-ASUS-V16-V3607VH1 (ASUS V16), `make book-ocr-render` rendered the
+25-page configured slice of the *Space Mission Engineering* scan. This pass did not re-OCR.
+The ledger had 17 figure-kind regions on 12 of those pages. The vault wrote 16 assets. 11
+carry a printed number: `2-8`, `2-9`, `2-10`, `10-3`, `12-3`, `12-4`, `14-5`, `16-1`,
+`20-16`, `20-17`, and `26-5`. `2-10` is a caption the inventory had recorded as a page
+footer; the caption text opens with that number, so the asset uses it. One asset, on PDF
+page 426, joins two source regions. None were rejected. The slice has no kept geometric
+variants, so every crop is the original render. Vault validation reported 0 findings. Its
+two warnings are the slice's 3 structure conflicts and 15 fallback printed pages, which this
+pass did not change. PDF page 135 is in the slice and has no figure-kind block, so nothing
+was cropped there. A figure beside a line that opens as a table caption stayed uncaptioned,
+and its crop is the figure plus the margin.
+
+What would overturn this reading: a badge that sits in the same place on two pages becoming
+an asset; the two-region figure on page 426 emitted twice; a footer number with no caption
+becoming a slug; a table caption attached to a neighboring figure.

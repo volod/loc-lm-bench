@@ -15,6 +15,8 @@ from llb.core.contracts.data_prep.corpus import DataPrepRow
 
 AuthorKind = Literal["agreement", "model", "reviewer"]
 AUTHOR_KINDS: tuple[AuthorKind, ...] = ("reviewer", "model", "agreement")
+RefusalReason = Literal["rewrite", "budget", "no-visual", "unsupported"]
+REFUSAL_REASONS: tuple[RefusalReason, ...] = ("rewrite", "budget", "no-visual", "unsupported")
 OrphanReason = Literal["block_missing", "block_changed", "raw_mismatch"]
 ORPHAN_REASONS: tuple[OrphanReason, ...] = ("block_missing", "block_changed", "raw_mismatch")
 Provenance = Literal["primary", "agreement", "model", "reviewer", "unresolved"]
@@ -42,6 +44,8 @@ class CorrectionEdit(DataPrepRow):
     replacement: str
     evidence: str = Field(min_length=1)
     source: str = Field(min_length=1)
+    # Empty for agreement and reviewer edits. A model edit names the guard class it was admitted as.
+    confusion_class: str = ""
 
     @model_validator(mode="after")
     def _raw_matches_the_span(self) -> "CorrectionEdit":
@@ -152,10 +156,34 @@ class PageResolvedText(ArtifactContract):
     blocks: list[ResolvedBlock] = Field(default_factory=list)
 
 
-class ModelCorrections(ArtifactContract):
-    """`pages/<pNNNN>/correct/corrections.json`: edits a correction stage proposes.
+class RefusedCorrection(DataPrepRow):
+    """A proposal the guard refused. Resolve marks the span instead of applying it."""
 
-    Resolve reads this file. It does not produce it.
+    page_id: str = Field(min_length=1)
+    block_id: str = Field(min_length=1)
+    anchor: str = Field(pattern=_ANCHOR)
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    raw_text: str
+    replacement: str
+    confusion_class: str = ""
+    reason: RefusalReason
+    evidence: str = ""
+    classes: list[UncertaintyClass] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _span_matches_the_raw_text(self) -> "RefusedCorrection":
+        if self.end < self.start:
+            raise ValueError("refused correction end is before its start")
+        if len(self.raw_text) != self.end - self.start:
+            raise ValueError("refused correction raw text length does not match its offsets")
+        return self
+
+
+class ModelCorrections(ArtifactContract):
+    """`pages/<pNNNN>/corrections.json`: edits a correction stage admitted and refused.
+
+    Resolve reads this file. It does not produce it. `model` is the identity that proposed.
     """
 
     schema_id: Literal["llb.book-ocr-model-corrections"]
@@ -163,15 +191,20 @@ class ModelCorrections(ArtifactContract):
     kind: Literal["book-ocr-model-corrections"]
     page_id: str = Field(min_length=1)
     pdf_page: int = Field(ge=1)
+    model: str = ""
     edits: list[CorrectionEdit] = Field(default_factory=list)
+    refused: list[RefusedCorrection] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _edits_belong_to_this_page(self) -> "ModelCorrections":
+    def _rows_belong_to_this_page(self) -> "ModelCorrections":
         for edit in self.edits:
             if edit.author != "model":
                 raise ValueError("a model correction must be authored by the model")
             if edit.page_id != self.page_id:
                 raise ValueError("a model correction must name its own page")
+        for refusal in self.refused:
+            if refusal.page_id != self.page_id:
+                raise ValueError("a refused correction must name its own page")
         return self
 
 

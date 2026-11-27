@@ -9,11 +9,12 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from llb.core.contracts.data_prep.book_blocks import Region
 from llb.prep.book.engines.image import png_size
+from llb.prep.book.assets.constants import FIGURE_RECORD_FILENAME
 from llb.prep.book.constants import SOURCE_POLICIES, SOURCE_POLICY_REFERENCE, SOURCE_POLICY_SYMLINK
 from llb.prep.book.ranges import page_id
 from llb.prep.book.render.constants import (
@@ -35,12 +36,8 @@ from llb.prep.book.render.load import load_book
 from llb.prep.book.render.names import (
     anchor_map,
     book_slug,
-    chapter_slug,
     equation_numbers,
-    figure_asset,
-    figure_numbers,
     heading_levels,
-    parents_of,
     source_filename,
 )
 from llb.prep.book.render.publish import Asset, Crop, publish
@@ -78,9 +75,24 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     _refuse(dest, run_dir, loaded.pdf)
     blocks = prepare(loaded.blocks, loaded.structure)
     spans = section_spans(blocks, loaded.structure)
-    assets, figures = _figures(spans, loaded, slug)
+    # Imported here so asset code can import the renderer without a cycle.
+    from llb.prep.book.assets.extract import figure_assets
+
+    planned = figure_assets(spans, loaded, slug, run_dir)
+    _mark_ornaments(spans, planned.ornaments)
     formula_crops, table_images, table_evidence, technical = technical_assets(spans, loaded, slug)
-    ctx = _context(loaded, dest, slug, opts, assets, formula_crops, table_images, table_evidence)
+    ctx = _context(
+        loaded,
+        dest,
+        slug,
+        opts,
+        planned.paths,
+        formula_crops,
+        table_images,
+        table_evidence,
+        planned.captions,
+        planned.suppressed,
+    )
     files = layout_files(spans, opts.section_cap, slug, ctx)
     grammar = load_grammar(opts.reference_grammar)
     docs, counts = render_markdown(files, loaded.structure, ctx, grammar)
@@ -88,7 +100,8 @@ def build_vault(run_dir: Path, options: RenderOptions | None = None) -> Path:
     blobs[f"metadata/{RENDER_MANIFEST_FILENAME}"] = _manifest(loaded, slug, opts, files, run_dir)
     blobs[f"metadata/{REFERENCE_REPORT_FILENAME}"] = reference_json(counts)
     blobs["metadata/document_structure.json"] = structure_path(run_dir).read_bytes()
-    blobs.update(figures)
+    blobs[f"metadata/{FIGURE_RECORD_FILENAME}"] = planned.record
+    blobs.update(planned.blobs)
     blobs.update(technical)
     blobs.update(_crops(blocks, loaded))
     blobs.update(_pages(loaded, opts))
@@ -131,6 +144,8 @@ def _context(
     formula_crops: dict[str, str],
     table_images: dict[str, str],
     table_evidence: dict[str, str],
+    figure_captions: dict[str, RenderBlock],
+    suppressed: frozenset[str],
 ) -> RenderContext:
     pdf = _vault_pdf(dest, loaded.pdf, opts.source_policy)
     return RenderContext(
@@ -146,6 +161,8 @@ def _context(
         formula_crops=formula_crops,
         table_images=table_images,
         table_evidence=table_evidence,
+        figure_captions=figure_captions,
+        suppressed=suppressed,
     )
 
 
@@ -163,41 +180,14 @@ def _href(directory: Path, pdf: Path) -> Href:
     return href
 
 
-def _figures(
-    spans: list[Span], loaded: BookLoad, book: str
-) -> tuple[dict[str, str], dict[str, Asset]]:
-    parents = parents_of(loaded.structure.hierarchy)
-    numbers = figure_numbers(loaded.structure)
-    paths: dict[str, str] = {}
-    blobs: dict[str, Asset] = {}
+def _mark_ornaments(spans: list[Span], ornaments: frozenset[str]) -> None:
+    if not ornaments:
+        return
     for span in spans:
-        chapter = chapter_slug(span.node, parents, book)
-        for block in span.blocks:
-            _figure(block, chapter, numbers, loaded, paths, blobs)
-    return paths, blobs
-
-
-def _figure(
-    block: RenderBlock,
-    chapter: str,
-    numbers: dict[str, str],
-    loaded: BookLoad,
-    paths: dict[str, str],
-    blobs: dict[str, Asset],
-) -> None:
-    if block.kind != "figure" or block.region is None:
-        return
-    image = loaded.images.get(block.pdf_page)
-    if image is None:
-        return
-    data = _crop_asset(image, block.region, 0)
-    if data is None:
-        return
-    rel = figure_asset(
-        chapter, block.page_id, block.ordinal, block.kind, numbers.get(block.block_id, "")
-    )
-    paths[block.block_id] = rel
-    blobs[rel] = data
+        span.blocks = [
+            replace(block, role="ornament") if block.block_id in ornaments else block
+            for block in span.blocks
+        ]
 
 
 def _crops(blocks: list[RenderBlock], loaded: BookLoad) -> dict[str, Asset]:

@@ -118,6 +118,7 @@ def default_registry() -> StageRegistry:
     from llb.prep.book.stages.recognize import recognition_stages
     from llb.prep.book.stages.render import RenderStage
     from llb.prep.book.stages.resolve import ResolveStage
+    from llb.prep.book.stages.correct import CorrectStage
 
     return StageRegistry(
         (
@@ -127,6 +128,7 @@ def default_registry() -> StageRegistry:
             ClassesStage(),
             *FAKE_STAGES,
             *recognition_stages(default_adapter_registry()),
+            CorrectStage(),
             ResolveStage(),
         )
     )

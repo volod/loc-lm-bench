@@ -22,8 +22,8 @@ from llb.prep.book.review.alternates import (
     is_low_confidence,
     marker_kind,
     other_reading,
-    primary_reading,
 )
+from llb.prep.book.resolve.primary import resolved_reading
 from llb.prep.book.review.constants import REVIEW_TEXT_KINDS
 from llb.prep.book.review.marks import SpanMark
 from llb.prep.book.review.orphans import attach_orphans
@@ -49,7 +49,7 @@ def page_marks(
 
 
 def _block_marks(page_id: str, block: Block, resolved: ResolvedBlock) -> list[SpanMark]:
-    primary = primary_reading(block, resolved)
+    primary = resolved_reading(block, resolved)
     unresolved = [span for span in resolved.spans if span.provenance == "unresolved"]
     if unresolved:
         return [_from_span(page_id, block, resolved, span) for span in unresolved]
@@ -63,7 +63,7 @@ def _block_marks(page_id: str, block: Block, resolved: ResolvedBlock) -> list[Sp
 
 
 def _from_span(page_id: str, block: Block, resolved: ResolvedBlock, span: ResolvedSpan) -> SpanMark:
-    primary = primary_reading(block, resolved)
+    primary = resolved_reading(block, resolved)
     candidate = None if primary is None else candidate_text(block, primary, span.start, span.end)
     return _make(
         page_id,
@@ -79,7 +79,7 @@ def _from_span(page_id: str, block: Block, resolved: ResolvedBlock, span: Resolv
 
 
 def _whole(page_id: str, block: Block, resolved: ResolvedBlock, reason: QueueReason) -> SpanMark:
-    primary = primary_reading(block, resolved)
+    primary = resolved_reading(block, resolved)
     text = resolved.primary_text
     candidate = None if primary is None else other_reading(block, primary)
     return _make(page_id, block, resolved, reason, 0, len(text), text, candidate, ())

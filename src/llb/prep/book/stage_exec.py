@@ -40,7 +40,7 @@ from llb.prep.book.constants import (
 from llb.prep.book.classes.records import publish_page_classes
 from llb.prep.book.ledger.io import publish_page_ledger
 from llb.prep.book.preprocess.records import publish_page_signals
-from llb.prep.book.resolve.io import publish_page_resolution
+from llb.prep.book.resolve.io import publish_page_corrections, publish_page_resolution
 from llb.prep.book.logs import log_event
 from llb.prep.book.stages import Stage, StageContext, resolved_inputs
 
@@ -258,3 +258,4 @@ def _publish(stage_directory: Path) -> None:
     publish_page_signals(stage_directory)
     publish_page_classes(stage_directory)
     publish_page_resolution(stage_directory)
+    publish_page_corrections(stage_directory)

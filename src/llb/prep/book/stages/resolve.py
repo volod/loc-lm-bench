@@ -28,7 +28,7 @@ from llb.prep.book.resolve.constants import (
     REVIEWER_INPUT,
 )
 from llb.prep.book.resolve.io import (
-    load_model_edits,
+    load_model_corrections,
     load_reviewer_edits,
     reviewer_digest,
     write_overlay,
@@ -89,9 +89,16 @@ class ResolveStage:
         ledger_path = ctx.inputs[BLOCKS_STAGE] / BLOCKS_FILENAME
         before = ledger_path.read_bytes()
         ledger = read_ledger(ledger_path)
-        edits = load_model_edits(ctx.inputs.get(CORRECT_STAGE), ctx.page_id)
-        edits.extend(load_reviewer_edits(ctx.run_dir, ctx.page_id))
-        overlay, resolved = resolve_page(ledger, choice_from_params(ctx.params), edits)
+        edits = load_reviewer_edits(ctx.run_dir, ctx.page_id)
+        corrections = load_model_corrections(ctx.inputs.get(CORRECT_STAGE), ctx.page_id)
+        if corrections is not None:
+            edits = [*corrections.edits, *edits]
+        overlay, resolved = resolve_page(
+            ledger,
+            choice_from_params(ctx.params),
+            edits,
+            () if corrections is None else corrections.refused,
+        )
         write_overlay(ctx.work_dir / OVERLAY_FILENAME, overlay)
         write_resolved(ctx.work_dir / RESOLVED_FILENAME, resolved)
         if ledger_path.read_bytes() != before:

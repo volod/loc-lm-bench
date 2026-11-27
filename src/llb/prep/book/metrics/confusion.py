@@ -175,6 +175,11 @@ def step_class(op: str, left: int, right: int, reference: str, hypothesis: str) 
     return _operation_class(op, left, right, reference, hypothesis)
 
 
+def is_script_character(char: str) -> bool:
+    """True for a Unicode sub/superscript the script confusion class counts."""
+    return len(char) == 1 and char in _SCRIPT
+
+
 def _mask_equations(reference: str, hypothesis: str) -> tuple[str, str, int]:
     """Drop equation numbers whose digits differ, and count each such number once.
 

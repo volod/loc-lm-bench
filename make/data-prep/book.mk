@@ -92,7 +92,7 @@ book-ocr-render: ## Render BOOK_RUN as an Obsidian vault (BOOK_OUTPUT=, BOOK_SOU
 	if [ -n "$(BOOK_REFERENCE_GRAMMAR)" ]; then args+=(--reference-grammar "$(BOOK_REFERENCE_GRAMMAR)"); fi; \
 	$(PY) -m llb.main book-ocr render "$${args[@]}"
 
-book-ocr-project: ## Project BOOK_RUN into a retrieval corpus at BOOK_CORPUS (BOOK_LICENCE=redistributable|local-only required, BOOK_LANGUAGE=, BOOK_SECTION_CAP=, BOOK_SLUG=)
+book-ocr-project: ## Project BOOK_RUN into a retrieval corpus at BOOK_CORPUS (BOOK_LICENCE=redistributable|local-only required, BOOK_LANGUAGE=, BOOK_SECTION_CAP=, BOOK_SLUG=, BOOK_REFERENCE_GRAMMAR=)
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	@test -n "$(BOOK_RUN)" || { echo "ERROR: set BOOK_RUN=<run-dir>"; exit 2; }
 	@test -n "$(BOOK_CORPUS)" || { echo "ERROR: set BOOK_CORPUS=<corpus-dir>"; exit 2; }
@@ -101,6 +101,7 @@ book-ocr-project: ## Project BOOK_RUN into a retrieval corpus at BOOK_CORPUS (BO
 	if [ -n "$(BOOK_LANGUAGE)" ]; then args+=(--language "$(BOOK_LANGUAGE)"); fi; \
 	if [ -n "$(BOOK_SECTION_CAP)" ]; then args+=(--section-cap "$(BOOK_SECTION_CAP)"); fi; \
 	if [ -n "$(BOOK_SLUG)" ]; then args+=(--slug "$(BOOK_SLUG)"); fi; \
+	if [ -n "$(BOOK_REFERENCE_GRAMMAR)" ]; then args+=(--reference-grammar "$(BOOK_REFERENCE_GRAMMAR)"); fi; \
 	$(PY) -m llb.main book-ocr project "$${args[@]}"
 
 book-ocr-validate: ## Validate a rendered vault at BOOK_DIR and write its processing report (BOOK_RUN= when the vault is outside the run)

@@ -209,19 +209,22 @@ def _node_target(
 def _pages(
     structure: DocumentStructure, anchors: dict[str, str]
 ) -> tuple[dict[str, Target], frozenset[str], frozenset[str]]:
-    observed: dict[str, list[Target]] = defaultdict(list)
+    observed: dict[str, list[Target | None]] = defaultdict(list)
     gaps: set[str] = set()
     for page in structure.pages:
         _page(page, anchors, observed, gaps)
     unique, ambiguous = _unique_pages(observed, gaps)
+    ambiguous.update(norm_printed(label) for label in structure.ambiguous_folios)
+    for key in ambiguous:
+        unique.pop(key, None)
     gap_only = frozenset(gaps - set(unique) - ambiguous)
-    return unique, ambiguous, gap_only
+    return unique, frozenset(ambiguous), gap_only
 
 
 def _page(
     page: PrintedPage,
     anchors: dict[str, str],
-    observed: dict[str, list[Target]],
+    observed: dict[str, list[Target | None]],
     gaps: set[str],
 ) -> None:
     if not page.printed:
@@ -233,9 +236,7 @@ def _page(
     if page.status != "observed":
         return
     anchor = _page_anchor(page, anchors)
-    stem = anchors.get(anchor, "") if anchor else ""
-    if anchor and stem:
-        observed[key].append(Target(anchor, stem))
+    observed[key].append(Target(anchor, anchors[anchor]) if anchor else None)
 
 
 def _page_anchor(page: PrintedPage, anchors: dict[str, str]) -> str | None:
@@ -249,17 +250,16 @@ def _page_anchor(page: PrintedPage, anchors: dict[str, str]) -> str | None:
 
 
 def _unique_pages(
-    observed: dict[str, list[Target]], gaps: set[str]
-) -> tuple[dict[str, Target], frozenset[str]]:
+    observed: dict[str, list[Target | None]], gaps: set[str]
+) -> tuple[dict[str, Target], set[str]]:
     unique: dict[str, Target] = {}
     ambiguous: set[str] = set()
     for key, targets in observed.items():
-        distinct = {(item.anchor, item.stem) for item in targets}
-        if len(distinct) == 1 and key not in gaps:
-            unique[key] = targets[0]
-        else:
+        if len(targets) > 1 or key in gaps:
             ambiguous.add(key)
-    return unique, frozenset(ambiguous)
+        elif targets[0] is not None:
+            unique[key] = targets[0]
+    return unique, ambiguous
 
 
 def _index_stems(files: list[VaultFile], grammar: ReferenceGrammar) -> frozenset[str]:

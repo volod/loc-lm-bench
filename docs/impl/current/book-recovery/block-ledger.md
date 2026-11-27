@@ -41,8 +41,9 @@ a span. Two readings that agree do not outvote a third.
 
 A raw reading may also carry a formula or a table: LaTeX with its equation number and side,
 or the cell grid with spans, header rows, caption, and whether HTML can hold it. A block may
-carry cell disputes for a dangerous cell disagreement, with both engines' texts kept. The
-export rules are in [formulas and tables](formulas-tables-figures.md).
+carry cell disputes for a dangerous cell disagreement, compared on the expanded grid, with both
+engines' texts kept. The blocks stage version is 5. The export rules are in
+[formulas and tables](formulas-tables-figures.md).
 
 ## Engines
 

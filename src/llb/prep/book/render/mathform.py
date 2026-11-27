@@ -30,6 +30,21 @@ def formula_math(text: str, number: str) -> str:
     return f"$$\n{inner}\n$$"
 
 
+def table_markdown(text: str) -> str:
+    """HTML when the text is already a table, Markdown when it has pipes, else one column."""
+    stripped = text.strip()
+    lowered = stripped.lower()
+    if "<table" in lowered and "</table>" in lowered:
+        return stripped
+    rows = [row.strip() for row in stripped.splitlines() if row.strip()]
+    if rows and all("|" in row for row in rows):
+        return "\n".join(rows)
+    body = ["| |", "| --- |"]
+    for row in rows or [stripped]:
+        body.append("| " + row.replace("|", "\\|") + " |")
+    return "\n".join(body)
+
+
 def render_body(latex: str) -> str | None:
     """The math body Obsidian can render, or None when it does not parse.
 

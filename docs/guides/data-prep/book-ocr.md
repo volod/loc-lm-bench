@@ -5,8 +5,9 @@ registry of recovery stages one page at a time, records every stage's outcome pe
 after an interruption without repeating a completed stage. The registry holds `render` (each page
 at its scan's native resolution), `signals` and `variants` (the measurements and the corrections
 they call for), `classes` (the page classes a pilot and an engine route on), the recognition
-stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, the
-`resolve` stage that chooses one text per block, and two deterministic stand-in stages.
+stages `layout`, `ocr`, `formula`, and `table`, the `blocks` stage that merges them, an
+optional `correct` stage that proposes guarded substitutions, the `resolve` stage that
+chooses one text per block, and two deterministic stand-in stages.
 `book-ocr structure` then infers the printed pages and the hierarchy from those ledgers.
 `book-ocr render` writes the reading vault from that structure. For a
 born-digital PDF, use the
@@ -14,6 +15,10 @@ born-digital PDF, use the
 
 What it does and why it is built this way:
 [pipeline and resume](../../impl/current/book-recovery/pipeline-and-resume.md).
+One CI test walks a generated multi-chapter scan from the PDF through every stage, a killed
+resume, vault validation, projection, ingest, and one reviewer revision --
+[full-run rehearsal](../../impl/current/book-recovery/full-run-evidence.md). That rehearsal uses
+fake engines only; recognition quality and the target handbook are separate gates.
 
 ## Check before running
 
@@ -80,6 +85,7 @@ CLI sets one without a file.
 | `fake-ocr` | `render` | `text.txt`, a placeholder naming the page and image digest | `fail_pages`, `note` |
 | `layout`, `ocr`, `formula`, `table` | `render`, `variants` when a non-original `variant` is named, and `classes` when `by_page_class` is set and `classes` is configured earlier | `reading.json`, that engine's blocks mapped back onto the render before the merge | `engine` (required), `variant` (`original` by default), `page_class`, `by_page_class` |
 | `blocks` | `render` and every recognition stage configured before it | `blocks.json`, then the same file published at `pages/<pNNNN>/blocks.json` | none. The cache key also includes the PDF page, because the ledger records the page id |
+| `correct` | `render`, `blocks` | `corrections.json` in the stage directory, published at `pages/<pNNNN>/corrections.json`. Per-block replies are cached beside the stage | `primary` (required, same shape as `resolve`); `proposals`, read only for a `fake:` model. The stage is not in the default list. The model is required: `ollama:<tag>` or `fake:<name>` |
 | `resolve` | `blocks`, `correct` when that stage is configured before it, and `classes` when `by_page_class` is set | `overlay.json` and `resolved.json`, published at `pages/<pNNNN>/` | `primary` (required: `stage`, `engine`, `variant`, optional `model`); `by_page_class`; `page_class` |
 
 The two `fake-` stages recognise nothing. They exist so the run ledger, resume, reuse, and failure
@@ -92,7 +98,11 @@ route on it. Pages in one batch that share an engine run together, so each engin
 once per batch. The cache key records the engine that ran. A `page_class` set with no `classes`
 stage still applies to every page. `blocks` refuses a run that configured no recognition stage.
 `resolve` refuses a run that names no primary, or a primary stage that is not configured before
-it. The rule, the overlay, and the reviewer file are
+it. `correct` is off unless the run names it. It needs `blocks` before it, and a primary whose
+stage is also configured before it. A backend other than `ollama` or `fake` is refused before
+a page runs. What the guard admits is
+[evidence-constrained correction](../../impl/current/book-recovery/correction.md).
+The rule, the overlay, and the reviewer file are
 [uncertainty and review](../../impl/current/book-recovery/uncertainty-and-review.md).
 An engine that is not installed refuses the dry run by name (`EngineUnavailable`) and writes
 nothing. What a block contains, and how two engines disagree, is
@@ -131,6 +141,7 @@ $DATA_DIR/book-ocr/<run_timestamp>/
   pages/<pNNNN>/classes.json     the classes the page matches (llb.book-ocr-page-classes)
   pages/<pNNNN>/variants/        manifest and kept corrections (llb.book-ocr-variant-manifest)
   pages/<pNNNN>/blocks.json      the page block ledger (llb.book-ocr-block-ledger)
+  pages/<pNNNN>/corrections.json admitted and refused model edits
   pages/<pNNNN>/overlay.json     applied and orphaned corrections (llb.book-ocr-correction-overlay)
   pages/<pNNNN>/resolved.json    the resolved text (llb.book-ocr-resolved-page)
   review/decisions.json          reviewer edits (llb.book-ocr-reviewer-decisions)
@@ -213,12 +224,17 @@ scan showed, is in
 [cross-references](../../impl/current/book-recovery/structure-and-rendering.md#cross-references).
 `render` then runs the vault check below. A failed check is exit code 1.
 
+After an interruption during publication, repeat `make book-ocr-render` with the same output
+path. The renderer recovers any displaced prior vault and removes abandoned staging before
+rebuilding. The fallback file is the original cached render for that PDF page.
+
 ## Corpus projection
 
 `book-ocr project` writes a retrieval corpus from a run that already has a document structure.
 It is not a stage. One vault content file becomes one document: formulas as LaTeX, tables as
 Markdown, and an unresolved span as a machine marker. Navigation, front matter, and page
-furniture are left out. Each document gets a page-citation sidecar and a metadata sidecar.
+furniture are left out. Each document gets a page-citation sidecar, a printed-reference
+sidecar, and a metadata sidecar.
 `BOOK_LICENCE` is required and has no default. A copyrighted scan is `local-only`. The command
 prints counts and does not print the recovered text. What the files contain, and what the
 sample scan showed, is [corpus projection](../../impl/current/book-recovery/corpus-projection.md).
@@ -236,6 +252,7 @@ make ingest-corpus CORPUS_ROOT=<corpus-dir>
 | `BOOK_LANGUAGE` | Language recorded on every document | detected from the text |
 | `BOOK_SECTION_CAP` | Packed source characters in one document. The floor is 200 | `12000` |
 | `BOOK_SLUG` | Lowercase ASCII book name used in vault file paths | the PDF file name |
+| `BOOK_REFERENCE_GRAMMAR` | YAML grammar that replaces the handbook cues | the handbook grammar |
 
 A missing structure, a missing licence, or an output that would replace the run is exit code 2.
 An unchanged ledger projects to the same files. A changed text is a new file whose
@@ -430,7 +447,7 @@ make book-survey-smoke BOOK_SURVEY_CANDIDATES=tesseract,paddleocr-vl \
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `BOOK_SURVEY_STAGE` | `preprocess`, `layout`, `ocr`, `formula`, `table`, `convert`, or `correct` | all |
+| `BOOK_SURVEY_STAGE` | `preprocess`, `layout`, `ocr`, `formula`, `table`, `convert`, or `correct` (the survey category, not the `correct` pipeline stage) | all |
 | `BOOK_SURVEY_ENVS` | Comma-separated survey environments (`light`, `mineru`, `docling`, `marker`, `paddle`, `paddle-fw`) | `all` |
 | `BOOK_SURVEY_CANDIDATES` | Comma-separated candidate ids from `make book-survey-list` | `all` |
 | `BOOK_SURVEY_PAGES` | Space-separated pages: `synthetic` and/or `<pdf>:<page>` (a 1-based PDF page of a real scan) | `synthetic` |

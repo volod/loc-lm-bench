@@ -64,188 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-figure-and-caption-assets
-
-Figures, graphs, and drawings carry labels, legends, and scales that a tight crop loses, and a
-scanned page also carries ornaments and noise that a loose detector extracts as figures. Extract
-them conservatively, keep each with its printed caption, and name them so they sort as they appear.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- synthetic figure regions and captions.
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. The vault already names a figure crop from its PDF page,
-  ordinal, and kind
-  ([reading vault](current/book-recovery/structure-and-rendering.md#reading-vault)).
-- User-visible outcome: each figure is one asset named `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`
-  plus a slug only when one derives reliably, padded to keep labels, legends, scale markings, and the
-  caption, embedded at its reading position with its printed caption and source-page link.
-- Scope boundary: in scope -- grouping of multi-region figures into one asset with every source
-  region recorded; padding policy; caption association by proximity and printed number; rejection
-  of ornaments and badges that repeat across pages and of isolated noise; crops taken from the best
-  geometric variant while recording the original region. Out of scope -- redrawing or vectorizing
-  figures, and any generated description or alt text beyond the printed caption.
-- Data and artifact paths: `src/llb/prep/book/assets/`; `assets/` in the book directory.
-- Execution path: synthetic fixtures inside `make ci`.
-- Acceptance gates: `make ci` green; asset names are stable across reruns and sort in reading
-  order; a repeated ornament never becomes a figure; a figure split across two regions appears
-  once; a wrong or ambiguous caption cannot replace the printed association.
-- Documentation target: `docs/impl/current/book-recovery/formulas-tables-figures.md`.
-
-#### book-evidence-constrained-correction
-
-Even the best engine leaves probable misreadings that context plus the page image can resolve. A
-local model can propose those fixes, but a model that is allowed to "improve" text will rewrite an
-author's technical meaning. Build correction as a constrained proposer whose edits a mechanical
-guard admits or refuses. Prepare its adoption check for the release pilot.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- fake model and deterministic edit and refusal cases.
-- Dependencies:
-  [reading order](current/book-recovery/block-ledger.md#reading-order-and-paragraph-boundaries)
-  records where a line joins its region. The model is the strongest vision-capable model that fits
-  the host, chosen per
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
-- User-visible outcome: an optional `correct` stage that proposes per-block edits from the page crop
-  and neighbouring blocks through a local Ollama endpoint; each admitted edit appears in the overlay
-  with raw text, replacement, class, evidence, and model identity; a refused or unsupported edit
-  becomes an uncertainty marker instead.
-- Scope boundary: in scope -- a structured edit contract (span, replacement, confusion class,
-  evidence); the guard (admitted substitution classes only, a per-block edit budget, no insertion or
-  deletion beyond its class, and visual agreement from the crop required for any digit, sign,
-  decimal, unit, index, or Greek/Latin edit); bounded context from neighbouring blocks and pages;
-  per-block caching. Out of scope -- rewriting, summarizing, completing, or translating; frontier
-  models by default (an opt-in under the egress rule, refused for non-redistributable material).
-- Data and artifact paths: `src/llb/prep/book/correct/`; `pages/<pNNNN>/corrections.json` in the run
-  directory.
-- Execution path: fake-model and score-replay fixtures inside `make ci`.
-- Acceptance gates: `make ci` green; a proposed rewrite is refused; a digit change without
-  visual agreement becomes a marker; an admitted edit reaches both renderings through the
-  correction overlay; the raw ledger stays unchanged. Freeze the guard's classes and edit budget
-  and pin a report that separates errors fixed from correct tokens made wrong. The stage defaults
-  off pending the release reading.
-- Documentation target: `docs/impl/current/book-recovery/correction.md`.
-
-#### book-projection-reference-sidecar
-
-The vault links every citation the book prints that names one target, and the index note links
-every page an index line cites. The corpus projection carries none of it. A retriever over the
-projection sees `see Table 4-2` as words, and the table it names is a separate document with no
-edge to the sentence that needs it. These references are the one relation set in the book that no
-model has to infer. Write them into the projection as data, beside the citation sidecar, so a graph
-lane can follow what the book prints
-([method survey](../design/graph-construction-methods.md#the-printed-reference-graph)).
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- synthetic book fixtures; no model and no GPU.
-- Dependencies: citation and index resolution is
-  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references); document
-  offsets and the citation sidecar are [corpus projection](current/book-recovery/corpus-projection.md).
-- User-visible outcome: `llb book-ocr project` also writes the printed references each projected
-  document contains. Each resolved citation is recorded as its cue span in this document and the
-  span of the target block in that block's document. Each index line is recorded as its term span
-  and the PDF pages its printed pages map to. Each document records its place in the hierarchy. A
-  later reader can follow a citation from the sentence to the table, equation, figure, section, or
-  page it names without parsing the text again.
-- Scope boundary: in scope -- one reference sidecar per projected document under a registered
-  contract; the render's catalog and resolvers reused, so the projection and the vault resolve the
-  same citations from one grammar; ambiguous keys and mapping gaps recorded as unresolved with no
-  target; an index sub-entry carrying its printed parent where the indentation shows one;
-  `ingest-corpus` copying the sidecar the way it copies the citation sidecar, and a stale document
-  taking it along; the redistribution refusal applied to it on every export path. Out of scope --
-  any link the book does not print (a concept, a co-occurrence, a similarity), settling an
-  ambiguous key by proximity, and quoting a sentence in any report.
-- Data and artifact paths: `src/llb/prep/book/project/` and the resolvers in
-  `src/llb/prep/book/render/`; a `<document>.md.references.json` beside each projected document.
-- Execution path: the synthetic book in `tests/llb/prep/book/test_project.py` and
-  `tests/llb/prep/book/test_reference_links.py` inside `make ci`, CPU-only.
-- Acceptance gates: `make ci` green; on the fixture the sidecar names exactly the citations the
-  vault links, with the same targets, plus the ambiguous and gap citations the reference report
-  counts; every recorded span lands in its document's text at its offsets; a second projection
-  writes the same bytes; a `local-only` export refuses the sidecar with its document.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
-
-#### book-technical-content-audit
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`
-- Dependencies: the [block ledger](current/book-recovery/block-ledger.md) and
-  [review semantics](current/book-recovery/uncertainty-and-review.md).
-- User-visible outcome: a reader can trace each technical value or uncertainty marker through the
-  chosen recognition route and overlay to the pixels that support it.
-- Scope boundary: exercise an ambiguous index and sign, a merged or empty cell, a diagram with
-  labels but no caption, competing nearby captions, and an omitted column. Include an engine
-  fallback and a stale reviewer edit after rebuilding the ledger.
-- Data and artifact paths: `tests/llb/prep/book/` and the audit record.
-- Execution path: replay deterministic synthetic analogues in `make ci`.
-- Acceptance gates: verify raw readings stay immutable; every edit names its evidence; an
-  unsupported digit, caption or cell cannot enter the resolved reading. Pin each exercised routing
-  loss to a regression or an explicit abstention. Score specialist output using the emitted formula,
-  grid and caption association.
-- Documentation target: `docs/impl/current/book-recovery/uncertainty-and-review.md`.
-
-#### book-synthetic-book-end-to-end
-
-Every stage is proven on its own fixtures, and the first place they all meet is a multi-day GPU run
-over 1,067 pages -- the most expensive place to learn that two stages disagree about a coordinate
-frame, a block id, an anchor, or a cache key. Rehearse the whole chain in CI first, on a generated
-book small enough to run in seconds and built so that every seam carries a case.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- fake engines over a generated scan; no model and no GPU.
-- Requires: `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
-  `book-technical-content-audit`, `book-projection-reference-sidecar`
-- Dependencies: the synthetic scan factory the run tests already use
-  ([run ledger and resume](current/book-recovery/pipeline-and-resume.md#where-it-lives)).
-  The projection command is
-  [corpus projection](current/book-recovery/corpus-projection.md).
-  The vault check is
-  [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
-  Cross-reference linking is
-  [cross-references](current/book-recovery/structure-and-rendering.md#cross-references).
-- User-visible outcome: one CI test takes a generated multi-chapter scan from the PDF to a validated
-  vault and an ingested corpus projection, and fails naming the stage whose output broke the next.
-- Scope boundary: in scope -- a generated scan with a contents page, numbered headings, printed
-  numbers offset from PDF pages with one gap, a page placed upside down, a two-column page, a formula
-  with an equation number, a ruled table, a captioned figure, a cross-reference and an index entry,
-  an unreadable span, and one page whose recognition fails; every stage through the `book-ocr`
-  runner with fake engines whose readings disagree on one digit; render, link, validate, project,
-  the reference sidecar checked against the vault's links, `ingest-corpus`, and a
-  `validate-goldset` refusal of a span over the open marker; a planted kill
-  mid-run and a resume; one reviewer decision followed by a re-render and a re-projection. Out of
-  scope -- recognition quality (the pilot measures it) and any real page.
-- Data and artifact paths: the generator beside the existing scan factory under
-  `tests/llb/prep/book/`; outputs in the test's temporary directory only.
-- Execution path: inside `make ci`, CPU-only.
-- Acceptance gates: `make ci` green; every full-run clause of the registry evaluation holds on the
-  synthetic book -- every page accounted for, every file reachable from the contents, previous/next
-  links reciprocal, every link, anchor, and embed resolving, no uncertain span without its marker and
-  queue entry, a byte-identical re-render after the resume -- plus page provenance on every ingested
-  chunk and the gold-span refusal; the reviewer decision changes the rendered and projected text of
-  its page alone and the re-projection ingests as a revision; the failed page shows as its marker in
-  both renderings.
-- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
-
-#### book-publication-and-resume-audit
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR
-- Requires: `book-synthetic-book-end-to-end`
-- Dependencies: [vault validation](current/book-recovery/structure-and-rendering.md#vault-validation).
-- User-visible outcome: a go or repair decision before committing a full handbook to publication,
-  based on source fidelity, resource use, restart behaviour and evidence links in both outputs.
-- Scope boundary: exercise the normal commands on a long generated book with page fallbacks,
-  a failed page, repeated folios, an interruption during publish, and a reviewer edit.
-- Data and artifact paths: `tests/llb/prep/book/`, temporary vault and corpus trees.
-- Execution path: CPU fixtures in `make ci`; compare clean and resumed outputs and inspect the
-  mapping from a retrieved chunk back to the source pixels.
-- Acceptance gates: bound decoded page memory independent of book length; verify exact source
-  pixels in fallbacks, consistent publication after retry, byte-identical clean and resumed
-  renderings, and a new revision only for the edited document. A broken queue, ambiguous printed
-  link or unresolved gold span must surface at its own gate.
-- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md`.
-
 #### book-retrieval-reading
 
 Prepare the paired retrieval comparison before operator review so an accepted book item can
@@ -253,7 +71,6 @@ exercise both corpora through one replayable command.
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- replay over a planted corpus and synthetic gold.
-- Requires: `book-projection-reference-sidecar`
 - Dependencies: [RAG core](current/rag-core.md) and
   [paired verdicts](current/rag-core/paired-verdicts.md).
 - User-visible outcome: a report of recall at k and MRR against source spans and a paired comparison
@@ -281,10 +98,11 @@ against the vector lane over the same projection
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- deterministic graph, provenance, and paired comparison fixtures.
-- Requires: `book-projection-reference-sidecar`, `book-retrieval-reading`
-- Dependencies: the projection and its sidecars
-  ([corpus projection](current/book-recovery/corpus-projection.md)); the graph store, its
-  strategies, and the fusion seam ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
+- Requires: `book-retrieval-reading`
+- Dependencies: the printed references each projected document records
+  ([corpus projection](current/book-recovery/corpus-projection.md#printed-references));
+  the graph store, its strategies, and the fusion seam
+  ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
   the minimum-evidence gate on a paired reading
   ([paired verdicts](current/rag-core/paired-verdicts.md)). The derived-source contract is
   [graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology).
@@ -322,9 +140,9 @@ Interrupt it, resume it, and stage the vault and projection with a report of wha
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Requires: `book-publication-and-resume-audit`
 - Dependencies: the target scan under `DATA_DIR`, its operator-declared redistribution
   class, and a host with enough VRAM for the provisional configuration.
+  See the [publication audit](current/book-recovery/full-run-evidence.md#publication-and-resume-audit).
 - User-visible outcome: a mechanically validated vault and ingested corpus projection
   for all 1,067 pages, with limitations and a named provisional profile.
 - Scope boundary: qualify the whole target run, including chapter-sized batches,
@@ -386,11 +204,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-projection-reference-sidecar`,
-  `book-figure-and-caption-assets`, `book-evidence-constrained-correction`,
-  `book-technical-content-audit`, `book-synthetic-book-end-to-end`,
-  `book-publication-and-resume-audit`,
-  `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
+- Requires: `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and

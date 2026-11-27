@@ -14,6 +14,7 @@ from llb.prep.book.render.join import paragraph_runs, stitch_columns
 from llb.prep.book.render.names import structure_roles
 from llb.prep.book.render.prose import join_lines, passage
 from llb.prep.book.render.types import RenderBlock, Unit
+from llb.prep.book.review.markers import marker_layout_size
 
 Href = Callable[[int], str]
 
@@ -72,39 +73,46 @@ def pack(units: list[Unit], cap: int) -> list[list[Unit]]:
 def _place(
     parts: list[list[Unit]], current: list[Unit], size: int, unit: Unit, cap: int
 ) -> tuple[list[Unit], int]:
-    if unit.splittable and len(unit.text) > cap:
+    length = marker_layout_size(unit.text)
+    if unit.splittable and length > cap:
         if current:
             parts.append(current)
         pieces = _split(unit, cap)
         parts.extend([piece] for piece in pieces[:-1])
         return [pieces[-1]], len(pieces[-1].text)
-    if current and size + len(unit.text) > cap:
+    if current and size + length > cap:
         parts.append(current)
         current, size = [], 0
     current.append(unit)
-    return current, size + len(unit.text)
+    return current, size + length
 
 
 def _split(unit: Unit, cap: int) -> list[Unit]:
-    pieces = _cuts(unit.text.strip(), cap)
     return [
-        Unit("paragraph", unit.blocks, piece, False, index == 0)
-        for index, piece in enumerate(pieces)
+        replace(
+            unit,
+            text=unit.text[start:end],
+            splittable=False,
+            keep_anchors=index == 0,
+            text_range=(start, end),
+        )
+        for index, (start, end) in enumerate(_cuts(unit.text, cap))
     ]
 
 
-def _cuts(text: str, cap: int) -> list[str]:
-    pieces: list[str] = []
-    rest = text
-    while len(rest) > cap:
-        cut = rest.rfind(" ", 0, cap + 1)
-        if cut <= 0:
-            cut = cap
-        pieces.append(rest[:cut].strip())
-        rest = rest[cut:].strip()
-    if rest:
-        pieces.append(rest)
-    return pieces or [text]
+def _cuts(text: str, cap: int) -> list[tuple[int, int]]:
+    pieces: list[tuple[int, int]] = []
+    start = 0
+    while len(text) - start > cap:
+        cut = text.rfind(" ", start, start + cap + 1)
+        end = cut if cut > start else start + cap
+        pieces.append((start, start + len(text[start:end].rstrip())))
+        start = end
+        while start < len(text) and text[start].isspace():
+            start += 1
+    if start < len(text):
+        pieces.append((start, len(text)))
+    return pieces
 
 
 def _units(blocks: list[RenderBlock], href: Href) -> list[Unit]:
@@ -114,17 +122,22 @@ def _units(blocks: list[RenderBlock], href: Href) -> list[Unit]:
 def _unit(blocks: list[RenderBlock], href: Href) -> Unit:
     role = blocks[0].role
     if role == "body":
-        return Unit("paragraph", tuple(blocks), join_lines(blocks, href), True)
+        return Unit(
+            "paragraph",
+            tuple(blocks),
+            join_lines(blocks, href),
+            splittable=not any(block.marks for block in blocks),
+        )
     text = passage(blocks[0], href)
     return Unit(role, tuple(blocks), text, False)
 
 
 def linked_caption_ids(items: Sequence[tuple[str, str, int]]) -> dict[str, str]:
-    """Figure block id to the caption the vault places beside it.
+    """Figure block id to the neighbouring caption, which joins it in one unsplittable unit.
 
     ``items`` is ``(block_id, role, pdf_page)`` in reading order. A figure and a caption
-    link only when they are neighbors on one page. A nearer caption that is not the
-    neighbor is not the link a reader sees.
+    pair only when they are neighbours on one page. This keeps the two in one file; the
+    caption printed under a drawing is the figure-asset association, not this pairing.
     """
     links: dict[str, str] = {}
     for left, right in zip(items, items[1:]):

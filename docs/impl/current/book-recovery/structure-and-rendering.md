@@ -58,6 +58,10 @@ changes. `fallback` is true on a page or a node the evidence did not settle.
 
 Figure, table, and equation numbers come from a caption line, a footer line, or a display number
 `(n)`. A page that is a list of those captions does not inventory them as captions on that page.
+A line whose number runs on into a lowercase word, such as `Figure 3-1 shows the transfer.`, cites
+the item and is not its caption. A resolved block is read as its number text: a number that an
+open span touches is `?`, so no folio, section, or caption number is read across the gap
+([technical content](uncertainty-and-review.md#technical-content)).
 
 ## Evidence
 
@@ -93,10 +97,14 @@ a missing structure, a source checksum that disagrees, or a page list that disag
 make book-ocr-render BOOK_RUN=<run-dir>
 ```
 
-The default vault is `book/<book-slug>/` inside the run. `--output` publishes elsewhere, replaces
-the directory in one step, and drops files the new vault does not contain. Exit code 2 is a
-missing structure, a bad path, or a destination inside the scan's directory. After publish,
-render runs [vault validation](#vault-validation) and exits 1 when a check fails.
+The default vault is `book/<book-slug>/` inside the run. `--output` publishes elsewhere.
+The renderer stages the complete tree beside the destination and swaps directories atomically
+where directory exchange is supported. On other filesystems, it keeps the previous vault as a
+rollback directory and restores it before a retry rebuilds the staging tree. A successful retry
+clears the staging and rollback directories. Replacing the vault drops files absent from the new
+tree. Exit code 2 covers a missing structure, a bad path, or a destination inside the scan's
+directory. After publication, render runs [vault validation](#vault-validation) and exits 1
+when a check fails.
 
 | Module | Role |
 | --- | --- |
@@ -118,9 +126,9 @@ one-page cache. Figures and review crops retain the source render's colour chann
 The vault holds `00_Table_of_Contents.md`, the figure, table, and equation lists, `content/`,
 `assets/`, `review/`, `metadata/`, and `source/`. A content note is one structure node, or one
 page-range part when the node's resolved text passes 12,000 characters. The cut falls on a
-block boundary. A formula, a table, and a
-figure with its caption stay whole. A paragraph splits only when that paragraph alone passes
-the cap.
+block boundary. A formula, a table, and a figure with its caption stay whole. A paragraph
+splits only when it alone passes the cap. Paragraphs with review markers or a word stitched
+across columns or pages stay whole. The length of the PDF link path does not affect the cut.
 
 A node that resumes after one of its children becomes a later file. Previous and next reach it.
 The contents lists the node's first span, including the parts the character cap made. Each note
@@ -132,10 +140,12 @@ and `review_count`. Printed numbers stay strings, so a roman numeral is not read
 
 A numbered target's anchor is its printed number: `^ch-1`, `^sec-1-1`, `^sub-1-2-2`,
 `^fig-1-1`, `^tbl-2-1`, `^eq-1-1`. The first block of a PDF page carries `^p0007`. Changing
-block ordinals leaves those anchors in place. A block whose ledger kind is `figure` is a tight
-crop at `assets/<chapter-slug>/p<NNNN>_<ord>_<kind>`, plus the printed number when the inventory
-has one. Review crops keep the queue's 16-pixel padding. A line engine that labels every block
-`body` yields the anchors and no figure crops.
+block ordinals leaves those anchors in place. A block whose ledger kind is `figure` is one
+padded asset at `assets/<chapter-slug>/p<NNNN>_<ord>_figure`, plus a number slug only when
+the caption association is reliable. The rules are in
+[figure assets](formulas-tables-figures.md#figure-assets). Review crops keep the queue's
+16-pixel padding. A line engine that labels every block `body` yields the anchors and no
+figure crops.
 
 A formula uses the engine's LaTeX when the reading carried it, and the block text otherwise.
 The equation number is the engine's printed number, or else the inventory number, as a `\tag`.
@@ -161,6 +171,9 @@ held the tail still cites the remainder.
 PDF. `reference` writes `source/reference.txt` and points the page links at the PDF where it
 already is. `BOOK_PAGE_FALLBACK=1` adds `source/pages/<page-id>.png` and a link on each note.
 The fallback and the source policy leave content file names unchanged.
+When a page spans multiple notes, the first note carries the canonical PDF-page anchor and
+subsequent notes carry their own local anchors. Page citations in the book open at the first
+note. Corpus citations open the note that contains the cited block.
 
 `metadata/render.json` records the slug, the content files, the source checksum, the section
 cap, the source policy, the page-fallback switch, `run_dir`, `obsidian_version` `1.15`, and
@@ -215,18 +228,20 @@ The handbook cues are `Fig.` / `Figs.` / `Figure` / `Figures`, `Table` / `Tables
 equation cues. Parentheses around an equation number are optional. A comma, `and`, or a dash
 joins further numbers, and each number resolves on its own. `Chaps. 3-6` cites chapters 3 and
 6. `Chapter 22.1.5` does not cite chapter 22: a dotted tail is not a range. `Fig. 1-1` is one
-figure number, because the figure pattern already contains the hyphen.
+figure number, because the figure pattern already contains the hyphen. A number that runs into
+an uncertainty marker or a corpus marker token is not a citation: `Fig. 12-` before the marker
+of an open `3` does not cite figure 12.
 
 A figure, table, or equation is unique when one caption or one display number carries it. A
 page-footer echo of that number is the running index line, not a second item. Two captions
 with one number stay plain text, and so do several footers with no caption. The report names
 those keys. A section or a chapter is unique when one hierarchy node carries that number.
 
-A printed page links when one observed page carries that label. The link lands on the anchor
-of the first block of that PDF page, so a page split across two notes opens where it starts.
-A mapping gap stays plain, and so does a label that is both a gap and an observed page. The
-report counts a gap citation under unresolved and under gaps. The citation is a warning. It
-does not fail the check.
+A printed page links when one observed page carries that label. The link opens where the page
+starts. The structure records repeated folios even when only one claimant fits the monotone
+sequence. The vault and corpus leave those citations unresolved. A mapping gap also stays plain.
+The report counts a gap citation under unresolved and under gaps, and warns about gap and
+ambiguous citations.
 
 An index note is one whose title matches an index title in the grammar. The handbook title is
 `index`. On those notes, a comma list or a dot leader at the end of a line cites a printed
