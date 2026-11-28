@@ -1,6 +1,19 @@
 COMPARE_RETRIEVAL_GOLDSET_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin GOLDSET)),$(if $(GOLDSET),--goldset "$(GOLDSET)",)),--goldset "$(GOLDSET)")
 COMPARE_RETRIEVAL_SPLIT_ARG = $(if $(CONFIG),$(if $(filter command line environment override,$(origin SPLIT)),$(if $(SPLIT),--split "$(SPLIT)",)),$(if $(SPLIT),--split "$(SPLIT)",))
 
+.PHONY: compare-book-retrieval
+
+compare-book-retrieval: ## Compare BOOK_CORPUS and BOOK_BASELINE on verified GOLDSET with BOOK_RETRIEVAL_MDE= and shared CONFIG= (RAG_K=)
+	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
+	@test -n "$(BOOK_CORPUS)" && test -n "$(BOOK_BASELINE)" && test -n "$(BOOK_RETRIEVAL_MDE)" || \
+		{ echo "ERROR: set BOOK_CORPUS, BOOK_BASELINE and BOOK_RETRIEVAL_MDE"; exit 2; }
+	DATA_DIR="$(DATA_DIR)" $(PY) -m llb.main compare-book-retrieval \
+		--projection "$(BOOK_CORPUS)" --baseline "$(BOOK_BASELINE)" --goldset "$(GOLDSET)" \
+		--mde "$(BOOK_RETRIEVAL_MDE)" --k "$(RAG_K)" $(if $(CONFIG),--config "$(CONFIG)",) \
+		$(if $(RETRIEVAL_RESAMPLES),--resamples "$(RETRIEVAL_RESAMPLES)",) \
+		$(if $(RETRIEVAL_CONFIDENCE),--confidence "$(RETRIEVAL_CONFIDENCE)",) \
+		$(if $(RETRIEVAL_SEED),--seed "$(RETRIEVAL_SEED)",)
+
 compare-retrieval: ## Compare retrieval with paired evidence; RETRIEVAL_BASELINE= RETRIEVAL_RESAMPLES= RETRIEVAL_CONFIDENCE= control uncertainty; CHUNK_STRATEGIES=..., CHUNK_SIZES=200,400, STITCH=1, HYBRID=1, RERANKER=, NOISE_FLOOR=1 are optional lanes
 	@test -x "$(PY)" || { echo "ERROR: .venv missing -- run 'make venv' first"; exit 1; }
 	$(PY) -m llb.main compare-retrieval $(if $(CONFIG),--config "$(CONFIG)",) \

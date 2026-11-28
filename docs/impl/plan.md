@@ -64,29 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-retrieval-reading
-
-Prepare the paired retrieval comparison before operator review so an accepted book item can
-exercise both corpora through one replayable command.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- replay over a planted corpus and synthetic gold.
-- Dependencies: [RAG core](current/rag-core.md) and
-  [paired verdicts](current/rag-core/paired-verdicts.md).
-- User-visible outcome: a report of recall at k and MRR against source spans and a paired comparison
-  against the existing PDF lane, joined on the originating PDF page.
-- Scope boundary: retain the baseline OCR language and the same index and retrieval settings
-  on both corpora. Report separately the cases whose baseline page text contains the answer span.
-  Keep retrieval settings fixed and leave answer scoring to its own evaluation.
-- Data and artifact paths: fixture corpora and items under `tests/`; corpus and index runs under
-  `$DATA_DIR`.
-- Execution path: reuse `make pdf-to-markdown`, `make build-index`, and the retrieval evaluation
-  targets over synthetic inputs.
-- Acceptance gates: `make ci` green; refuse stale or unverified gold; pin the span and page
-  readings, the item count and minimum detectable effect, the baseline-text split, and the
-  inconclusive and negative verdict paths. Real book evidence follows reference and gold review.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md`.
-
 #### book-reference-graph-reading
 
 A technical handbook's hardest questions join a sentence to the table, equation, or figure it cites.
@@ -98,7 +75,6 @@ against the vector lane over the same projection
 
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- deterministic graph, provenance, and paired comparison fixtures.
-- Requires: `book-retrieval-reading`
 - Dependencies: the printed references each projected document records
   ([corpus projection](current/book-recovery/corpus-projection.md#printed-references));
   the graph store, its strategies, and the fusion seam
@@ -116,10 +92,11 @@ against the vector lane over the same projection
   cited block is one `cites` hop away, alone and fused with the vector lane through the existing
   fusion seam; `ppr` rows beside it when `graph-seeded-propagation-ranking` has left the plan by
   the time of the run, with their absence stated otherwise; the reading on the verified book items
-  under the same retrieval configuration as `book-retrieval-reading`, split by whether an item's
-  spans include a table, equation, or figure block. Out of scope -- any edge the book does not
-  print, blending the structural graph and an extracted graph into one store, retuning retrieval
-  for the book, and answer scoring.
+  under the paired book retrieval settings
+  ([comparison](current/book-recovery/corpus-projection.md#paired-retrieval-reading)), split by
+  whether the spans include a table, equation, or figure block. Out of scope -- any edge the book
+  does not print, blending the structural graph and an extracted graph into one store, retuning
+  retrieval for the book, and answer scoring.
 - Data and artifact paths: a book-reference builder beside `src/llb/graph/build.py`; the graph
   store, the index, and the comparison under `$DATA_DIR`.
 - Execution path: the synthetic book inside `make ci`, where a sentence citing a table
@@ -204,7 +181,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-full-run-on-the-target-scan`, `book-retrieval-reading`, `book-reference-graph-reading`,
+- Requires: `book-full-run-on-the-target-scan`, `book-reference-graph-reading`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and
