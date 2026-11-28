@@ -4,6 +4,18 @@
       "additionalProperties": false,
       "description": "One node on the path from the book root to this document.",
       "properties": {
+        "heading_block_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heading Block Id"
+        },
         "level": {
           "minLength": 1,
           "title": "Level",
@@ -96,6 +108,16 @@
       "additionalProperties": false,
       "description": "One printed page an index line names, and the PDF page it maps to.",
       "properties": {
+        "char_end": {
+          "minimum": 0,
+          "title": "Char End",
+          "type": "integer"
+        },
+        "char_start": {
+          "minimum": 0,
+          "title": "Char Start",
+          "type": "integer"
+        },
         "pdf_page": {
           "minimum": 1,
           "title": "Pdf Page",
@@ -109,7 +131,9 @@
       },
       "required": [
         "printed",
-        "pdf_page"
+        "pdf_page",
+        "char_start",
+        "char_end"
       ],
       "title": "IndexPage",
       "type": "object"
@@ -212,6 +236,34 @@
       ],
       "title": "ReferenceTarget",
       "type": "object"
+    },
+    "TechnicalBlock": {
+      "additionalProperties": false,
+      "description": "A printed label or technical body, and the defining block it belongs to.",
+      "properties": {
+        "definition": {
+          "$ref": "#/$defs/ReferenceTarget"
+        },
+        "kind": {
+          "enum": [
+            "table",
+            "figure",
+            "equation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/ReferenceTarget"
+        }
+      },
+      "required": [
+        "kind",
+        "span",
+        "definition"
+      ],
+      "title": "TechnicalBlock",
+      "type": "object"
     }
   },
   "$id": "urn:llb:artifact-contract:llb.book-references:1.0.0",
@@ -267,11 +319,19 @@
       "default": "1.0.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "technical_blocks": {
+      "items": {
+        "$ref": "#/$defs/TechnicalBlock"
+      },
+      "title": "Technical Blocks",
+      "type": "array"
     }
   },
   "required": [
     "doc_id",
-    "grammar"
+    "grammar",
+    "technical_blocks"
   ],
   "title": "BookReferences",
   "type": "object"

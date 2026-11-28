@@ -7,7 +7,7 @@ import pytest
 
 from llb.core.contracts.data_prep.book import BookStageSpec
 from llb.prep.book.config import RunRequest, read_config
-from llb.prep.book.runner import resume_run, start_run
+from llb.prep.book.runner import BookRunError, resume_run, start_run
 from llb.prep.book.source import SourceError
 from llb.prep.book.stages.fake import FAKE_STAGES
 from tests.llb.prep.book._scan_factory import ScanSpec, make_scan
@@ -127,6 +127,22 @@ def test_a_resume_against_a_changed_source_refuses(tmp_path, out_root):
     shutil.copyfile(other, scan)  # the referenced original itself changed under the symlink
     with pytest.raises(SourceError, match="refusing to mix pages of two documents"):
         resume_run(run, registry=registry)
+
+
+def test_resume_rechecks_the_recorded_vram_budget(scan_pdf, out_root, monkeypatch):
+    _, counted, registry = _setup()
+    request = RunRequest(
+        source=scan_pdf,
+        stages=_stages("render", "counted", counted={"vram_mb": {"reader": 3000}}),
+    )
+    counted.kill_on = 2
+    with pytest.raises(SimulatedKill):
+        start_run(request, out_root, registry, host_vram_mb=8000)
+
+    monkeypatch.setattr("llb.prep.book.survey.measure.device_total_mb", lambda: 2000)
+    with pytest.raises(BookRunError, match="reader.*needs 3000 MB VRAM"):
+        resume_run(_only_run(out_root), registry=registry)
+    assert sorted(counted.calls) == [1, 2]
 
 
 def test_the_render_key_holds_the_resolved_resolution(scan_pdf, out_root):

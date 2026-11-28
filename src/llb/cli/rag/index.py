@@ -1,15 +1,12 @@
 """RAG/GraphRAG index build commands (vector index + graph store)."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
+from typing import Optional, cast
 
 import typer
 
 from llb.cli.app import app
 from llb.cli.helpers import load_config
-
-if TYPE_CHECKING:
-    pass
 
 
 @app.command("build-index")
@@ -60,7 +57,7 @@ def build_index(
     from llb.rag.duplicates.tiers import DUPLICATE_TIERS
     from llb.rag.duplicates.collapse import format_duplicate_stats, kept_duplicates_reason
     from llb.rag.duplicates.models import DuplicateStats
-    from llb.rag.vector_store.store import RagStore
+    from llb.rag.vector_store.configured import build_configured_index
     from llb.rag.vector_store.vector_index import RAG_BACKENDS
 
     if duplicate_tier is not None and duplicate_tier not in DUPLICATE_TIERS:
@@ -90,18 +87,10 @@ def build_index(
         duplicate_tier=duplicate_tier,
     )
 
-    store = RagStore.build(
-        cfg.corpus_root,
-        cfg.strategy,
-        cfg.chunk_size,
-        cfg.chunk_overlap,
-        cfg.embedding_model,
-        mode=cfg.retrieval_mode,
-        child_size=cfg.child_chunk_size,
+    store = build_configured_index(
+        cfg,
         vector_store=vector_store,
-        lexical_lemmas=cfg.lexical_lemmas,
         collapse_duplicates=not keep_duplicate_chunks,
-        duplicate_tier=cfg.duplicate_tier,
     )
     store.save(cfg.index_dir())
     parents = f", {store.meta['n_parents']} parents" if store.meta["n_parents"] else ""

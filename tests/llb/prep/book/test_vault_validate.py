@@ -197,6 +197,12 @@ def _assert_json(vault: Path, run: Path) -> None:
     payload = json.loads(raw)
     assert payload["ok"] is True
     assert payload["source"]["sha256"] == read_config(run).source.sha256
+    assert payload["review_by_page_class"] == [
+        {"group": "unclassified", "selected_pages": 3, "open_entries": 2}
+    ]
+    assert payload["review_by_chapter"] == [
+        {"group": "book/chapter-1 (PDF 1-3)", "selected_pages": 3, "open_entries": 2}
+    ]
     assert str(run.resolve()) not in raw
     manifest_path = vault / METADATA_DIRNAME / RENDER_MANIFEST_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -48,8 +48,8 @@ def sign_test_p(wins: int, losses: int) -> float:
     if decided == 0:
         return 1.0
     extreme = min(wins, losses)
-    tail = sum(math.comb(decided, i) for i in range(extreme + 1)) / (2.0**decided)
-    return min(1.0, 2.0 * tail)
+    tail_count = sum(math.comb(decided, i) for i in range(extreme + 1))
+    return min(1.0, (2 * tail_count) / (1 << decided))
 
 
 def format_randomization_p(comparison: PairedComparison, places: int = 4) -> str:

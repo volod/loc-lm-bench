@@ -60,6 +60,14 @@ class IndexPage(DataPrepRow):
 
     printed: str = Field(min_length=1)
     pdf_page: int = Field(ge=1)
+    char_start: int = Field(ge=0)
+    char_end: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _span_is_forward(self) -> Self:
+        if self.char_end <= self.char_start:
+            raise ValueError("index page evidence span is empty")
+        return self
 
 
 class IndexEntry(DataPrepRow):
@@ -91,6 +99,15 @@ class HierarchyPlace(DataPrepRow):
     level: str = Field(min_length=1)
     number: str = ""
     title: str = ""
+    heading_block_id: str | None = None
+
+
+class TechnicalBlock(DataPrepRow):
+    """A printed label or technical body, and the defining block it belongs to."""
+
+    kind: Literal["table", "figure", "equation"]
+    span: ReferenceTarget
+    definition: ReferenceTarget
 
 
 class BookReferences(ArtifactContract):
@@ -104,3 +121,4 @@ class BookReferences(ArtifactContract):
     hierarchy: list[HierarchyPlace] = Field(default_factory=list)
     citations: list[PrintedCitation] = Field(default_factory=list)
     index: list[IndexEntry] = Field(default_factory=list)
+    technical_blocks: list[TechnicalBlock]

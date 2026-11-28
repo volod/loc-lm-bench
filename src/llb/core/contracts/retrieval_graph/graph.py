@@ -70,6 +70,7 @@ class GraphMetaDocument(ArtifactContract):
     khop_depth: int = Field(ge=0)
     # Per-document content hashes: the manifest-diff contract `refresh-index` diffs against.
     doc_fingerprints: dict[str, str] = Field(default_factory=dict)
+    corpus_digest: str | None = None
     refreshed_from: str | None = None
 
 

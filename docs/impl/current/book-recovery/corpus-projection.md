@@ -37,6 +37,7 @@ source PDF. A second projection of an unchanged ledger writes the same bytes.
 | `src/llb/prep/book/project/identity.py` | The document id, and `revision_of` when the text changes |
 | `src/llb/prep/book/project/write.py` | The Markdown file and its citation, reference, and metadata sidecars |
 | `src/llb/prep/book/project/references.py` | Citation spans, index lines, and the hierarchy place |
+| `src/llb/prep/book/project/locations.py` | Printed block offsets and vault target resolution |
 | `src/llb/prep/book/project/build.py` | `project_corpus` |
 | `src/llb/prep/book/render/index_segments.py` | One printed line per cell of a glued index column |
 | `src/llb/core/contracts/data_prep/book_references.py` | The `llb.book-references` contract |
@@ -98,13 +99,14 @@ no target block in the projection stay unresolved and name no target. The reason
 An index line records the term's offsets and the PDF pages its printed pages map to. A
 printed label this projection does not observe stays on the line as unresolved. A range
 covers every printed page it spans, up to 40 pages, and a longer range keeps its endpoints.
-A line of only page numbers continues the previous term. A sub-entry records its parent's
-term offsets when the line is indented under one. A recognizer that glues an index column
-into cells of the form `[{'type': '...', 'content': '...'}]` is read as one printed line per
-cell, and the vault linker uses the same split. A line that also contains other text stays
+A line of only page numbers continues a term that already has a page list. A sub-entry
+records its parent's term offsets when the line is indented under one. When a recognizer glues
+an index column into cells of the form `[{'type': '...', 'content': '...'}]`, the projection and
+vault read each cell as one printed line. A line that also contains other text stays
 one line. The hierarchy path runs from the book root to the document's node and stores each
-node's id, level, number, and title. The sidecar stores offsets, so a later report can name
-the span and leave the sentence in the document.
+node's id, level, number, title, and any printed heading block ID. Technical entries record
+the precise caption, equation label, or body span and identify the corresponding definition.
+Each mapped index page identifies the exact printed token or range that names it.
 
 `ingest-corpus` copies the sidecar with the document and deletes it when the document goes
 stale. The document fingerprint folds the sidecar in when the file is present
@@ -197,3 +199,177 @@ with no parent. A glued column left as one entry, or a line that only mentions a
 into cells. The fixture pins the vault agreement, the grammar swap, the indented parent
 inside a glued column, the printed range, the gap, the ambiguous key, the ingest copy, the
 stale removal, the stable fingerprint, and the `local-only` export refusal.
+
+## Paired retrieval reading
+
+Convert the same PDF with the existing PDF lane and keep its conversion manifest and citations.
+Run both corpora against the accepted gold JSONL grounded in the release projection.
+
+```sh
+make pdf-to-markdown PDF_DIR=<single-pdf-dir> PDF_OUT_DIR=<baseline-dir>
+make compare-book-retrieval BOOK_CORPUS=<pinned-projection-dir> BOOK_BASELINE=<baseline-dir> \
+  GOLDSET=<accepted-goldset-jsonl> CONFIG=<run-config-yaml> RAG_K=<cutoff> \
+  BOOK_RETRIEVAL_MDE=<minimum-detectable-delta>
+```
+
+The baseline retains the existing PDF parser and its language configuration. The comparison
+checks the conversion manifest's source PDF checksum against every projection citation sidecar.
+The join uses the one-based PDF page, even when the source filenames or printed numbers differ.
+Before indexing it refuses unverified rows, duplicate IDs, stale spans, unresolved markers, and
+invalid page provenance. Use the pinned projection directory that holds the accepted text and
+citations.
+
+Both lanes build fresh FAISS indexes through the same builder as `make build-index`, with one
+encoder, chunking configuration, duplicate policy, retrieval mode, and fusion configuration.
+The comparison retrieves each question once per lane, using the same top-k cutoff. Each item
+has two ranks in each lane.
+
+- The **span rank** is the first chunk that overlaps a labeled projected span or its matching
+  occurrence in the baseline. Matches are mapped on the originating PDF page. Matching allows
+  different whitespace and preserves case, signs, and digits. If a label crosses a page break,
+  each nonempty page fragment maps independently.
+- The **page rank** is the first chunk that overlaps text on any of the item's source PDF pages.
+  The rank follows exact citation offsets for each chunk occurrence, including collapsed
+  duplicates. A chunk can hit the right page even when its OCR missed the span.
+
+The report gives recall@k and mean reciprocal rank truncated at k for both readings. The two
+baseline-text slices use the full mapped source evidence. An item enters
+`baseline_text_present` only if every labeled page fragment appears in the baseline page text.
+The missing slice includes partial evidence and omitted pages. The report gives the number of
+fragments present per item.
+
+`report.json` and the two indexes are written under
+`$DATA_DIR/compare-book-retrieval/<run_timestamp>/`. The report includes input digests, index and
+retrieval settings, paired first-hit ranks by gold item ID, and a paired delta with a percentile
+interval and win/loss/tie counts for each metric and slice. The slice verdict follows span
+recall@k. The [paired evidence gate](../rag-core/paired-verdicts.md) requires enough differing
+items to call a gain or regression. A gain also clears the calibrated sign-flip test. The
+default interval is 95% with 2,000 shared resamples per slice and seed 13. Override those values
+with `RETRIEVAL_CONFIDENCE`, `RETRIEVAL_RESAMPLES`, and `RETRIEVAL_SEED`.
+
+Declare the smallest material delta with `BOOK_RETRIEVAL_MDE`. Each metric reports the item
+count needed at the observed variance and discordance rate for that target at 80% power, and the
+variance-based MDE the reached sample can resolve. This uses realized sensitivity from the paired
+ranks. The direction of the verdict follows the intervals and evidence gate. The command performs
+retrieval evaluation only.
+
+### Planted retrieval fixture
+
+On 2026-11-28 on an Intel Core Ultra 7 265HX host, `make pdf-to-markdown` with PyMuPDF4LLM
+converted a 13-page generated PDF with embedded text. The planted projection and 12 synthetic
+verified items were generated by `tests/llb/rag/book_fixture.py`. Two runs of
+`make compare-book-retrieval` used CPU FAISS and the fixture's 12-dimensional locator encoder,
+page chunking at 256 characters with zero overlap, flat retrieval, k=1, an MDE of 0.25, and the
+default resampling settings. Their reports matched byte for byte. The comparison indexes matched
+the standalone `make build-index` outputs byte for byte. The projection indexed 13 chunks and
+the baseline 14, including its source header.
+
+At k=1, recall and MRR agree within each reading. Intervals and win/loss/tie counts are for
+projection minus baseline.
+
+| Slice (items) | Reading | Projection | Baseline | Delta (95% interval) | Wins/losses/ties | Verdict |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| All (12) | Span | 0.50 | 0.50 | 0.00 [-0.50, 0.50] | 6/6/0 | Inconclusive |
+| All (12) | Page | 0.50 | 1.00 | -0.50 [-0.75, -0.25] | 0/6/6 | Regressed |
+| Baseline text present (6) | Span and page | 0.00 | 1.00 | -1.00 [-1.00, -1.00] | 0/6/0 | Regressed |
+| Baseline text missing (6) | Span | 1.00 | 0.00 | +1.00 [+1.00, +1.00] | 6/0/0 | Improved |
+| Baseline text missing (6) | Page | 1.00 | 1.00 | 0.00 [0.00, 0.00] | 0/0/6 | Inconclusive |
+
+The overall span tie hides the two planted effects. Six baseline page hits carry altered
+evidence. The six surviving baseline spans each beat a projection query routed to a decoy page.
+Each unanimous six-item direction reaches the evidence floor with exact sign-test p=0.03125.
+The overall span sample's estimated resolvable MDE is 0.845. Its observed variance prices the
+declared 0.25 effect at 137 items, so the 12-item reading is inconclusive at that target.
+
+A different rank or split on these inputs, a span hit on the decoy page, a changed replay, or an
+index build with unequal settings breaks the fixture. Tests in
+`tests/llb/rag/test_book_comparison.py` also pin the first hit at a later rank, a partially
+mapped cross-page span, numeric substitutions, and input refusal. The real-book comparison
+follows human reference and gold review.
+[Task record](../../records/0030-scanned-book-recovery-book-retrieval-reading.md).
+
+## Printed-reference graph reading
+
+Build a structural graph and a FAISS index over the same pinned release projection. Re-project
+from the ledger into a fresh directory if the sidecars predate the technical spans and index page
+offsets. Use the same YAML settings and verified gold as the
+[paired retrieval reading](#paired-retrieval-reading).
+
+```sh
+make build-graph BOOK_CORPUS=<pinned-projection-dir> CONFIG=<run-config-yaml>
+make build-index CORPUS=<pinned-projection-dir> CONFIG=<run-config-yaml>
+make compare-graph-fusion BOOK_CORPUS=<pinned-projection-dir> GOLDSET=<accepted-goldset-jsonl> \
+  CONFIG=<run-config-yaml> RAG_K=<cutoff> FUSION_MDE=<minimum-detectable-delta> NOISE_FLOOR=1
+```
+
+The separate graph lives under `$DATA_DIR/llb/graph/book-references/generations/<run_timestamp>/`.
+`src/llb/graph/book_inputs.py` checks source checksums and exact projected block offsets.
+`src/llb/graph/book_references.py` builds the
+[structural vocabulary](../../../design/graph-ontology-schema.md#printed-book-structure) from
+citation cues, hierarchy and page spans, and index entries. Each node mention and edge evidence
+carries the document ID, character offsets, and exact projected text. Generated headings and
+marker-only fragments supply no evidence. Resolved cues in their own defining block supply
+the label rather than a citation edge.
+
+`src/llb/prep/book/project/technical.py` associates a detached label with its technical body
+by the matching equation number, the table's recorded caption, or an unambiguous adjacent
+label in the same column. The projection records both exact spans even across packed documents.
+The graph keeps them as mentions of one node. A lexical link to a citing section can therefore
+reach the cited grid or display in one `cites` hop. Index terms use the existing lexical linker.
+Each `indexes` edge carries the document span of its printed page token or range. The vault
+linker and projection use the same index-line reader for continuation lines.
+
+The book mode of `compare-graph-fusion` compares the vector, `local_khop`, and fixed-weight
+fused lanes. It uses the prebuilt index, the graph's recorded radius (one hop by default), and
+the shared configuration's chunking, encoder, duplicate policy, vector mode, and fusion settings.
+`ppr` joins the reading when that strategy becomes available. The report states its availability.
+The command refuses stale stores and invalid or unverified gold before retrieving.
+`SPLIT` defaults to `final` in Make. Set `SPLIT=` to read every verified item. Use
+`FUSION_BOOTSTRAP_RESAMPLES`, `RETRIEVAL_CONFIDENCE`, and `RETRIEVAL_SEED` to match the
+resampling settings of an earlier book reading.
+
+`src/llb/rag/book_comparison/graph_run.py` writes `comparison.json` and `run_config.json`
+under `$DATA_DIR/compare-book-reference-graph/<run_timestamp>/`. The report binds the corpus,
+gold, and both stores by digest and records scored retrieval occurrences with their offsets.
+It reports all items and slices by whether any verified gold span overlaps a table, equation,
+or figure block. Each slice gives complete-span recall (`all_spans_at_k`), span coverage, and
+the book's first-hit span and page metrics. The paired deltas use shared bootstrap draws and
+the minimum-evidence gate. `FUSION_MDE` declares the smallest material effect for the
+sensitivity calculation at 80% power. `NOISE_FLOOR=1` adds the score-jitter diagnostics for
+first-hit recall and MRR on each nonempty slice.
+
+### Synthetic graph fixture
+
+On 2026-11-28 on an Intel Core Ultra 7 265HX host, the three Make targets ran CPU-only over
+the 11-page synthetic scan and 12 planted verified questions in
+`tests/llb/rag/book_graph_fixture.py`. Two graph builds wrote byte-identical files for
+20 nodes and 22 edges (15 `contains`, 5 `cites`, 2 `indexes`). The 24 FAISS chunks were
+all page-annotated. The run used the fixture's two-dimensional encoder, 40-character fixed
+chunks with zero overlap, flat retrieval, k=8, one graph hop, exact span identity, and graph
+weight 0.75. It used 256 resamples with seed 13, 95% intervals, and an MDE of 0.25.
+The noise floor used 64 replicates and jitter of 0.000001. `ppr` was unavailable.
+Both comparison reports matched byte for byte. In a separate traversal check, a question
+linked only to the citing section reached the grid at rank 12 in one hop. At zero hops the grid
+was absent.
+
+Both graph lanes gave the same primary reading against vector retrieval.
+
+| Slice (items) | Vector all spans@8 | Graph and fused all spans@8 | Delta (95% interval) | Wins/losses/ties |
+| --- | ---: | ---: | --- | --- |
+| All (12) | 0.50 | 1.00 | +0.50 [+0.167, +0.750] | 6/0/6 |
+| Table evidence (6) | 0.00 | 1.00 | +1.00 [+1.00, +1.00] | 6/0/0 |
+| Text only (6) | 1.00 | 1.00 | 0.00 [0.00, 0.00] | 0/0/6 |
+
+Vector retrieval found one required span on every table item. The graph and fused lanes
+also reached the grid. Both table deltas clear the six-discordance evidence gate. The
+text-only result tied on every item and is inconclusive. The overall result separates
+for the planted effect, with an estimated 35 items needed to resolve 0.25 at the overall
+variance and discordance rate. The repeated questions exercise retrieval and reporting.
+The release gold set supplies the independent questions for book-level inference.
+
+`tests/llb/rag/test_book_reference_graph.py` pins exact offsets, the cross-section table hop,
+the equation body and index term, unresolved-cue exclusion, store and report replay, and
+refusal of malformed references, stale graph inputs, and unverified gold. A fabricated edge,
+changed bytes on identical inputs, missing grid hit, or different paired ledger would break
+this reading. The release comparison follows human gold verification.
+[Task record](../../records/0031-scanned-book-recovery-book-reference-graph-reading.md).

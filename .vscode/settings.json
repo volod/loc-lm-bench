@@ -1,0 +1,15 @@
+{
+  "files.watcherExclude": {
+    "**/.data/**": true,
+    "**/.venv/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/.pytest_cache/**": true,
+    "**/__pycache__/**": true
+  },
+  "search.exclude": {
+    "**/.data/**": true,
+    "**/.venv/**": true,
+    "**/.mypy_cache/**": true
+  }
+}

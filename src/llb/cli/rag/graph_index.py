@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 import typer
 from llb.cli.app import app
-from llb.cli.helpers import load_config
+from llb.cli.helpers import cli_error, load_config
 
 if TYPE_CHECKING:
     from llb.core.config import RunConfig
@@ -24,6 +24,9 @@ def build_graph_cmd(
     ),
     corpus_root: Optional[Path] = typer.Option(
         None, help="corpus dir for --extraction, or to extract fresh when no extraction is given"
+    ),
+    book_corpus: Optional[Path] = typer.Option(
+        None, help="build the separate printed-reference graph from a projected book"
     ),
     extract_model: Optional[str] = typer.Option(
         None, help="extract fresh: local endpoint model id (e.g. llama3.2:3b) over --corpus-root"
@@ -57,7 +60,7 @@ def build_graph_cmd(
         help="refuse the build when a SIGNED axiom in --axioms is broken (candidates only warn)",
     ),
 ) -> None:
-    """Build the GraphRAG store from the ontology-assisted drafting extraction (nodes/edges + communities).
+    """Build a graph over an ontology extraction or a projected book's printed references.
 
     Source precedence: --bundle, else --extraction + --corpus-root, else fresh extraction over
     --corpus-root via a local endpoint (--extract-model). Writes node/edge JSONL + meta under the
@@ -68,6 +71,29 @@ def build_graph_cmd(
     --refuse-violations it can REFUSE, and only over an axiom a reviewer signed -- an unsigned
     candidate is printed and the build proceeds, because nobody has accepted it yet.
     """
+    if book_corpus is not None:
+        if (
+            any(
+                option is not None
+                for option in (
+                    bundle,
+                    extraction,
+                    corpus_root,
+                    extract_model,
+                    extract_base_url,
+                    extract_max_tokens,
+                    summarize_model,
+                    axioms,
+                )
+            )
+            or summarize
+            or extract_no_think
+            or refuse_violations
+        ):
+            cli_error("--book-corpus is exclusive of entity extraction, summary and axiom options")
+        _build_book(config, book_corpus, khop_depth)
+        return
+
     from llb.graph.refresh import save_graph_inputs
     from llb.graph.store import GraphStore
 
@@ -102,6 +128,24 @@ def build_graph_cmd(
     typer.echo(
         f"[build-graph] {store.meta['n_nodes']} nodes, {store.meta['n_edges']} edges, "
         f"{store.meta['n_communities']} communities{summary_note} -> {cfg.graph_dir()}"
+    )
+
+
+def _build_book(config: Path | None, corpus: Path, depth: int | None) -> None:
+    from llb.core.paths import resolve_project_path
+    from llb.graph.book_store import BOOK_GRAPH_DIR, BOOK_KHOP_DEPTH, build_book_store
+
+    cfg = load_config(config)
+    try:
+        target, store = build_book_store(
+            resolve_project_path(corpus),
+            cfg.graph_dir() / BOOK_GRAPH_DIR,
+            khop_depth=BOOK_KHOP_DEPTH if depth is None else depth,
+        )
+    except (OSError, ValueError) as exc:
+        cli_error(str(exc))
+    typer.echo(
+        f"[build-graph] {store.meta['n_nodes']} book nodes, {store.meta['n_edges']} edges -> {target}"
     )
 
 

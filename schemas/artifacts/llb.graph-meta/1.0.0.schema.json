@@ -8,6 +8,18 @@
       "title": "Backend",
       "type": "string"
     },
+    "corpus_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corpus Digest"
+    },
     "doc_fingerprints": {
       "additionalProperties": {
         "type": "string"

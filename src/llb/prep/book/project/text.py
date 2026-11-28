@@ -114,7 +114,7 @@ def _title(file: VaultFile, ctx: RenderContext, vault_file: str) -> Fragment:
     text = f"{'#' * level} {node_label(file.node)}"
     block_id = file.node.block_id or ""
     anchor = ctx.anchors.get(block_id, "") or f"p{file.pdf_start:04d}"
-    return Fragment(file.pdf_start, text, block_id, None, anchor, vault_file, "")
+    return Fragment(file.pdf_start, text, block_id, None, anchor, vault_file, "", generated=True)
 
 
 def _paragraph(unit: Unit, ctx: RenderContext, vault_file: str) -> list[Fragment]:

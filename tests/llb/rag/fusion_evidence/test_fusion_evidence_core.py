@@ -75,6 +75,8 @@ def test_sign_test_is_two_sided_and_symmetric():
     assert sign_test_p(0, 0) == 1.0
     assert sign_test_p(5, 0) == pytest.approx(2 * 0.5**5)
     assert sign_test_p(5, 0) == sign_test_p(0, 5)
+    assert sign_test_p(1024, 0) == 2.0**-1023
+    assert sign_test_p(512, 512) == 1.0
 
 
 def test_paired_comparison_rejects_misaligned_vectors():

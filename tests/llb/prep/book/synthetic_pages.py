@@ -71,6 +71,7 @@ def _plants() -> tuple[Plant, ...]:
         Plant(DISPUTE, "body", dispute, DISPUTE_ALT, "layout"),
         _line(DISPUTE, 0.42, "See Equation 2-1 and Figure 2-1."),
         _line(DISPUTE, 0.50, "Figure 9-9 is absent."),
+        _line(DISPUTE, 0.58, "The ignition load is documented in Table 2-1."),
         _line(GAP, 0.30, "A plate fills this opening."),
         Plant(COLUMNS, "body", left, LEFT_COLUMN, "reader"),
         Plant(COLUMNS, "body", left, LEFT_COLUMN, "layout"),
