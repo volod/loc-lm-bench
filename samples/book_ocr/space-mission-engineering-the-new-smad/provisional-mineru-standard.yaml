@@ -1,0 +1,12 @@
+pages: "1-"
+batch_pages: 25
+stages:
+  - name: render
+  - name: signals
+  - name: classes
+  - name: layout
+    params: {engine: mineru-standard, variant: original, vram_mb: {mineru-standard: 3000}}
+  - name: blocks
+  - name: resolve
+    params:
+      primary: {stage: layout, engine: mineru-standard, variant: original}

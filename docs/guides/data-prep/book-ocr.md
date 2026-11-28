@@ -123,12 +123,37 @@ make book-ocr-status BOOK_RUN=<run-dir> BOOK_JSON=1
 ```
 
 A resume reads `config.json` and refuses any run-shaping option beside it. It re-hashes the source
--- and `BOOK_PDF`, when given -- and refuses a mismatch. Completed stages whose outputs still hash
+-- and `BOOK_PDF`, when given -- and refuses a mismatch. Resume and its dry run also recheck any
+VRAM budget in the recorded config. Completed stages whose outputs still hash
 to their record are skipped, the interrupted attempt is discarded and re-run, and failed stages are
 retried. `status` reads the stage records on disk, so it is accurate even right after a kill.
 
 Exit codes: `0` when the run finished (failed pages are reported, not fatal), `2` when it was
 refused before any stage ran, `130` on Ctrl-C.
+
+### Provisional handbook run
+
+The [MinerU Standard profile](../../../samples/book_ocr/space-mission-engineering-the-new-smad/provisional-mineru-standard.yaml)
+selects the full handbook in 25-page batches. It reads the original render once per page and uses
+the resulting positioned blocks for recognition and resolution. Run the dry check before starting
+and keep the GPU dedicated to this run. The dry check needs access to the GPU to check its budget.
+The profile is provisional while the pilot reference and release reviews are open.
+
+```sh
+make book-ocr BOOK_PDF=<scan.pdf> BOOK_CONFIG=<provisional-profile.yaml> BOOK_DRY_RUN=1
+make book-ocr BOOK_PDF=<scan.pdf> BOOK_CONFIG=<provisional-profile.yaml>
+# After an interruption, use the same run directory.
+make book-ocr BOOK_RESUME=<run-dir>
+make book-ocr-review-queue BOOK_RUN=<run-dir>
+make book-ocr-structure BOOK_RUN=<run-dir>
+make book-ocr-render BOOK_RUN=<run-dir> BOOK_OUTPUT=<vault-dir> BOOK_PAGE_FALLBACK=1
+make book-ocr-validate BOOK_DIR=<vault-dir> BOOK_RUN=<run-dir>
+make book-ocr-project BOOK_RUN=<run-dir> BOOK_CORPUS=<corpus-dir> BOOK_LICENCE=local-only
+make ingest-corpus CORPUS_ROOT=<corpus-dir> CORPUS_OUT_DIR=<ingested-dir> CORPUS_MIN_CHARS=1
+```
+
+Keep the handbook outputs local. The [full-run evidence](../../impl/current/book-recovery/full-run-evidence.md)
+records the profile, review load, and acceptance checks.
 
 ## Run directory
 
@@ -264,7 +289,8 @@ An unchanged ledger projects to the same files. A changed text is a new file who
 `metadata/validation.json` into that vault. It also runs at the end of `render`, and at the end
 of `run` or `resume` when the run already holds a vault. The report lists page status,
 warnings, engines, readings, confidence buckets, the open review queue, and the pages still
-open for a person. Confidence buckets are diagnostics, not probabilities of correctness. The
+open for a person. The page-class and chapter tables give selected pages and open entries,
+including failed-page entries. Confidence buckets are diagnostic routing evidence. The
 command prints failed checks and does not print recovered text. What the check refuses is
 [vault validation](../../impl/current/book-recovery/structure-and-rendering.md#vault-validation).
 

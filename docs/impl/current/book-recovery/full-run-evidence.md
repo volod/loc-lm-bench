@@ -9,6 +9,8 @@ The contract is the full-run sentence of
 [scanned book recovery](../../../design/spec.md#scanned-book-recovery). The task records cover
 the [eleven-page rehearsal](../../records/0028-scanned-book-recovery-book-synthetic-book-end-to-end.md)
 and the [publication audit](../../records/0029-scanned-book-recovery-book-publication-and-resume-audit.md).
+The [target-run record](../../records/0032-scanned-book-recovery-book-full-run-on-the-target-scan.md)
+tracks the provisional handbook profile and its acceptance gates.
 
 ## Where it lives
 
@@ -126,8 +128,67 @@ Previously, 54 rows from PDF page 30 pointed at a missing anchor in its second n
 note paths respectively. At the smallest cap, the pre-fix layouts selected 66 and 64 paths.
 A repeat at the default cap reproduced hashes and symlink targets for all 21 vault members
 and 12 corpus files.
-The diagnostic qualifies these publication and provenance paths. Full-book recognition and
-profile qualification remain in the [forward plan](../../plan.md#book-full-run-on-the-target-scan).
+The diagnostic exercises these publication and provenance paths before full-book recognition.
+
+## Provisional MinerU profile
+
+The [MinerU Standard profile](../../../../samples/book_ocr/space-mission-engineering-the-new-smad/provisional-mineru-standard.yaml)
+selects 25-page batches and the original native-resolution render. MinerU 4.2.3 reads each page
+once into middle JSON, retaining block coordinates for equations, tables, figures, and text.
+The `layout` reading supplies `blocks` and `resolve`. Signals and primary classes describe
+the pages and the review load. The profile follows the
+[unscored handbook pilot](tool-selection.md#handbook-pilot-reading), whose 25 warm recognition
+calls averaged 11.115 seconds per page, or 3.3 hours projected for 1,067 pages. The run keeps
+the scan and projection local-only. Its reference accuracy and release profile remain open.
+
+On 2026-11-28, on an HP ZBook Fury G1i with an RTX PRO 3000 Blackwell laptop GPU (12,227 MiB),
+`make book-ocr` selected all 1,067 pages of the same SHA-256 above. The interruption occurred
+after 22.3 seconds, with 78 committed stage records including three MinerU readings. Resume
+picked up at PDF page 4. The committed records retained their SHA-256 digests, and the resume log
+contained no new execution of any of those stages.
+
+The first 100 pages were published from a separate cache-only run that reused all 600 stage
+results. Vault validation accounted for 100 completed pages and 967 outside that selection,
+with zero findings. Two renders matched across 277 files and symlinks, and the 100 fallback
+PNGs matched the original render bytes. The vault resolved 295 printed references, left 184
+ambiguous and 406 unresolved, and reported nine structure conflicts and seven fallback folios.
+Of the 107 notes, one continuation held a figure and page furniture with no text to project.
+Ingest retained all 106 projected documents. All 2,611 fixed 180-character chunks carried
+source-PDF page provenance covering all 100 selected pages, and all 1,243 citation rows pointed
+to existing vault anchors. The review queue held zero entries. MinerU supplied no confidence
+score for any of the 1,627 block readings, so the queue measures flagged issues within this
+profile's available signals.
+
+### Full provisional run
+
+The full run completed 43 batches and all 1,067 pages through render, signals, classes,
+layout, blocks, and resolve. It reused 3,201 artifacts for the render, signals, and class stages
+from the same scan. There were zero failed stages. The two invocations used 7,659 seconds
+(2.13 hours) of wall time, including preflight and excluding the pause between invocations.
+The elapsed time including the pause was 7,679 seconds. The 1,067 successful recognition calls
+averaged 7.162 seconds. The earlier warm-pilot projection was 11,860 seconds (3.29 hours) on an
+RTX 5050 laptop.
+
+The vault has 1,218 content notes. Validation accounted for every page with zero findings.
+It reported 42 structure conflicts and 650 fallback folio mappings. Of the printed references,
+5,800 resolved, 2,548 remained ambiguous, and 3,397 remained unresolved. Of the unresolved,
+445 were printed-page references in a mapping gap. The report preserves these limitations for
+operator review.
+
+The resumed run and a fresh render from the same cache matched across 3,174 files and
+symlinks. All 1,067 fallback PNGs matched the cached render bytes, and the vault's PDF matched
+the source SHA-256. Ingest retained all 1,216 local-only projected documents. All 32,062
+fixed 180-character chunks carried source-PDF provenance, together covering every input page.
+All 13,791 citation rows resolved to existing vault anchors. Two vault continuation notes had
+no projected text. Other notes supplied citations for both pages.
+
+The review queue was empty across every primary class and all 72 inferred chapter or
+outside-chapter groups. The primary-class counts were 38 dense formulas, 56 grey background,
+34 gutter or corner text, 120 labelled diagrams, 31 landscape, 58 large tables, 425 multi-column,
+223 normal, 26 severe curvature, and 56 small footnotes. MinerU supplied no confidence score
+for any of the 18,044 block readings. The queue is a count of issues detected by the available
+signals. Accuracy and the inferred chapter and printed-page mappings await
+[release review](../../plan.md#human-assisted-tasks).
 
 ## How to run
 
@@ -142,3 +203,5 @@ validates. The failed page rendering as prose. A second gap, or a heading that t
 continuation swallows because a folio was counted as a contents line. Any growth in live decoded
 pages beyond the bound, a retry that loses the prior vault, a linked repeated folio, or a
 citation row whose note, anchor, and source pixels disagree would reopen the publication audit.
+Any repeat of a committed stage on resume, differing vault bytes from the same cache, or a
+chapter or class count that disagrees with the queue would reopen full-run qualification.

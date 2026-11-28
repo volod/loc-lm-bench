@@ -127,8 +127,14 @@ def _one_stage_errors(
     return errors
 
 
+_USE_HOST = object()
+
+
 def stage_errors(
-    specs: Sequence[BookStageSpec], registry: StageRegistry, ollama_lister: OllamaLister | None
+    specs: Sequence[BookStageSpec],
+    registry: StageRegistry,
+    ollama_lister: OllamaLister | None,
+    host_vram_mb: int | None | object = _USE_HOST,
 ) -> list[str]:
     """Every problem with the configured stage list: names, order, parameters, and models."""
     errors: list[str] = []
@@ -139,7 +145,7 @@ def stage_errors(
             continue
         errors.extend(_one_stage_errors(spec, registry, seen, ollama_lister))
         seen.append(spec.name)
-    return errors
+    return errors + _vram_errors(specs, host_vram_mb)
 
 
 def _vram_errors(stages: Sequence[BookStageSpec], host_vram_mb: int | None | object) -> list[str]:
@@ -175,9 +181,6 @@ def _option_errors(request: RunRequest) -> list[str]:
     return errors
 
 
-_USE_HOST = object()
-
-
 def preflight(
     request: RunRequest,
     registry: StageRegistry,
@@ -185,8 +188,9 @@ def preflight(
     host_vram_mb: int | None | object = _USE_HOST,
 ) -> Preflight:
     """Validate the source, ranges, options, stages, and models without running a stage."""
-    errors = _option_errors(request) + stage_errors(request.stages, registry, ollama_lister)
-    errors.extend(_vram_errors(request.stages, host_vram_mb))
+    errors = _option_errors(request) + stage_errors(
+        request.stages, registry, ollama_lister, host_vram_mb
+    )
     if not request.source.is_file():
         return Preflight(errors=[f"source PDF {request.source} does not exist", *errors])
     try:

@@ -18,6 +18,7 @@ from llb.prep.book.validate.constants import (
     VALIDATION_FILENAME,
 )
 from llb.prep.book.validate.references import reference_payload, reference_section
+from llb.prep.book.validate.review_counts import ReviewCount, render_counts, review_counts
 from llb.prep.book.validate.types import (
     EngineScores,
     OpenMark,
@@ -31,12 +32,17 @@ def write_report(report: ValidationReport, open_marks: list[OpenMark]) -> tuple[
     directory = report.context.book_dir / METADATA_DIRNAME
     markdown = directory / PROCESSING_REPORT_FILENAME
     payload = directory / VALIDATION_FILENAME
-    atomic_write_text(markdown, render_markdown(report, open_marks))
-    atomic_write_text(payload, render_json(report, open_marks))
+    counts = review_counts(report, open_marks)
+    atomic_write_text(markdown, render_markdown(report, open_marks, counts))
+    atomic_write_text(payload, render_json(report, open_marks, counts))
     return markdown, payload
 
 
-def render_markdown(report: ValidationReport, open_marks: list[OpenMark]) -> str:
+def render_markdown(
+    report: ValidationReport,
+    open_marks: list[OpenMark],
+    counts: tuple[list[ReviewCount], list[ReviewCount]],
+) -> str:
     """The processing report. It names pages and counts, never recovered text."""
     ctx = report.context
     source = ctx.config.source
@@ -83,6 +89,14 @@ def render_markdown(report: ValidationReport, open_marks: list[OpenMark]) -> str
         "",
         *_queue(open_marks, report),
         "",
+        "### Open entries by primary page class",
+        "",
+        *render_counts(counts[0]),
+        "",
+        "### Open entries by inferred chapter",
+        "",
+        *render_counts(counts[1]),
+        "",
         "## Manual verification",
         "",
         *_manual(report.pages, open_marks),
@@ -96,7 +110,11 @@ def render_markdown(report: ValidationReport, open_marks: list[OpenMark]) -> str
     return "\n".join(lines)
 
 
-def render_json(report: ValidationReport, open_marks: list[OpenMark]) -> str:
+def render_json(
+    report: ValidationReport,
+    open_marks: list[OpenMark],
+    counts: tuple[list[ReviewCount], list[ReviewCount]],
+) -> str:
     """The same outcome as JSON, with one record per PDF page."""
     source = report.context.config.source
     payload = {
@@ -128,6 +146,8 @@ def render_json(report: ValidationReport, open_marks: list[OpenMark]) -> str:
             for engine, model, variant, count in report.facts.readings
         ],
         "review_by_uncertainty_class": _class_counts(open_marks),
+        "review_by_page_class": counts[0],
+        "review_by_chapter": counts[1],
         "review_queue": _kind_counts(open_marks),
         "source": {
             "name": Path(source.original_path).name,

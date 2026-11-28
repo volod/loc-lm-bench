@@ -59,37 +59,9 @@ executes on the CUDA host (`RUN NEEDED`). Grouped by capability in registry orde
 
 ### Scanned book recovery -- `scanned-book-recovery`
 
-Complete the recovery implementation, synthetic gates, and agent-run qualification first.
-Extract the library after this required line of agent work. The pilot and target run are
+Extract the recovery library before operator acceptance. The pilot and target run are
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
-
-#### book-full-run-on-the-target-scan
-
-Qualify the whole pipeline on the 1,067-page target scan with a provisional recovery profile.
-Interrupt it, resume it, and stage the vault and projection with a report of what needs review.
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: RUN NEEDED -- a multi-day sequential GPU run on the CUDA host.
-- Dependencies: the target scan under `DATA_DIR`, its operator-declared redistribution
-  class, and a host with enough VRAM for the provisional configuration.
-  See the [publication audit](current/book-recovery/full-run-evidence.md#publication-and-resume-audit).
-- User-visible outcome: a mechanically validated vault and ingested corpus projection
-  for all 1,067 pages, with limitations and a named provisional profile.
-- Scope boundary: qualify the whole target run, including chapter-sized batches,
-  deliberate interruption and resume, vault publication and ingestion. Use fixture and diagnostic
-  checks to pick the provisional profile. Reference accuracy, profile adoption, and operator
-  review belong to the release gates.
-- Data and artifact paths: `$DATA_DIR/book-ocr/<run_timestamp>/`; the operator's vault path; the
-  projected corpus directory.
-- Execution path: `make book-ocr` over the full page range under the GPU isolation contract of
-  [heavy runs and evidence](../guides/development/heavy-runs-and-evidence.md).
-- Acceptance gates: `make ci` green; `book-ocr validate` green with all 1,067 pages
-  accounted for; the resume repeats no completed stage; a resumed render matches a clean render
-  from the same cache; ingested chunks have scan provenance; report wall time against the pilot
-  estimate and queue sizes per class and chapter. Mark the report as provisional.
-- Documentation target: `docs/impl/current/book-recovery/full-run-evidence.md` and the usage guide
-  `docs/guides/data-prep/book-ocr.md`.
 
 #### book-recovery-library-extraction
 
@@ -98,8 +70,8 @@ qualified recovery implementation and commands before requesting operator accept
 
 - Serves: `scanned-book-recovery` -- [Reusable library and release gates](../design/spec.md#reusable-library-and-release-gates)
 - Agent status: CLEAR -- build and exercise the wheel in an isolated environment.
-- Requires: `book-full-run-on-the-target-scan`
-- Dependencies: the [run and resume contract](current/book-recovery/pipeline-and-resume.md),
+- Dependencies: the [provisional full-run qualification](current/book-recovery/full-run-evidence.md#full-provisional-run),
+  the [run and resume contract](current/book-recovery/pipeline-and-resume.md),
   [review and uncertainty](current/book-recovery/uncertainty-and-review.md), and the
   [projection boundary](current/book-recovery/corpus-projection.md).
 - User-visible outcome: a separately installable Python library and CLI for recovery, pilot
@@ -135,8 +107,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-full-run-on-the-target-scan`,
-  `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
+- Requires: `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and
   the retrieval reading recorded are this audit's input.

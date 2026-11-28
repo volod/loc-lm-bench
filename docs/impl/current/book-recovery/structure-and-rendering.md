@@ -356,7 +356,10 @@ is a warning and does not fail the check.
 The report lists the configured engines, models, and parameters, the block readings, and the
 confidence buckets. A bucket is diagnostic routing evidence, not a probability that the
 characters are correct. It also lists the open queue by marker kind and uncertainty class, and
-the pages and content types still open for a person.
+the pages and content types still open for a person. Primary page-class and inferred chapter
+tables count selected pages and open entries, including terminal page failures. Pages without a
+class record count as unclassified. Pages without a chapter count outside inferred chapters.
+When a page opens more than one inferred chapter, the later heading receives the page's entries.
 
 | Module | Role |
 | --- | --- |
