@@ -65,8 +65,8 @@ embeds poorly and sits in its own projected document, while the sentence that ne
 A vector lane therefore retrieves the citing sentence without the evidence it cites, and one
 `cites` hop delivers it. The projection records those references beside each document
 ([corpus projection](../impl/current/book-recovery/corpus-projection.md#printed-references)).
-`book-reference-graph-reading` builds the graph from them and measures it against the vector
-lane over the same projection.
+The [printed-reference graph reading](../impl/current/book-recovery/corpus-projection.md#printed-reference-graph-reading)
+compares the graph and vector lanes over the same projection.
 
 ## What would change these decisions
 

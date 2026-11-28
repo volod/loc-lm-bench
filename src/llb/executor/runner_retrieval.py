@@ -215,14 +215,15 @@ def _load_graph_store(config: RunConfig) -> Any:
     )
 
 
-def _load_vector_store(config: RunConfig) -> Any:
+def _load_vector_store(config: RunConfig, index_dir: Path | None = None) -> Any:
     """Load and validate the vector lane, including optional dense/BM25 fusion."""
     from llb.rag.vector_store.store import RagStore
     from llb.rag.vector_store.build import MODE_HYBRID
     from llb.rag.vector_store.validation import stale_store_message, store_embedder_mismatch
 
-    store = RagStore.load(config.index_dir())
-    stale = stale_store_message(store.meta, config.corpus_root, config.index_dir())
+    target = index_dir if index_dir is not None else config.index_dir()
+    store = RagStore.load(target)
+    stale = stale_store_message(store.meta, config.corpus_root, target)
     if stale is not None:
         raise SystemExit(stale)
     built = store_embedder_mismatch(store.meta, config.embedding_model)

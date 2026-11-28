@@ -227,7 +227,8 @@ def test_whitespace_only_normalization_and_insufficient_pairs(book):
 
 
 def test_baseline_text_distinguishes_numeric_substitutions(book):
-    from llb.rag.book_comparison.inputs import CitedDocument, _baseline_matches
+    from llb.rag.book_comparison.inputs import _baseline_matches
+    from llb.rag.cited_corpus import CitedDocument
 
     projection, baseline, _, _ = book
     original = load_book_pair(projection, baseline).baseline

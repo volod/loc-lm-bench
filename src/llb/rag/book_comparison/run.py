@@ -10,10 +10,10 @@ from llb.core.config import RunConfig
 from llb.core.fsutil import atomic_write_text
 from llb.rag.book_comparison.inputs import (
     BookQuestion,
-    CitedDocument,
     load_book_pair,
     load_book_questions,
 )
+from llb.rag.cited_corpus import CitedDocument
 from llb.rag.book_comparison.metrics import (
     PairedRank,
     Ranks,

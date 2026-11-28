@@ -64,52 +64,6 @@ Extract the library after this required line of agent work. The pilot and target
 provisional until the [human release gates](#human-assisted-tasks) supply the reference and
 acceptances. The optional closing audit follows the required gates.
 
-#### book-reference-graph-reading
-
-A technical handbook's hardest questions join a sentence to the table, equation, or figure it cites.
-The vector lane retrieves the sentence without the table: a numeric grid embeds poorly and is its
-own projected document. The book already prints the edge between them, and the projection's
-reference sidecar records it. Build a graph from those printed references and prepare the paired reading
-against the vector lane over the same projection
-([method survey](../design/graph-construction-methods.md#the-printed-reference-graph)).
-
-- Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
-- Agent status: CLEAR -- deterministic graph, provenance, and paired comparison fixtures.
-- Dependencies: the printed references each projected document records
-  ([corpus projection](current/book-recovery/corpus-projection.md#printed-references));
-  the graph store, its strategies, and the fusion seam
-  ([modules and CLI](current/graphrag-backend/modules-and-cli.md));
-  the minimum-evidence gate on a paired reading
-  ([paired verdicts](current/rag-core/paired-verdicts.md)). The derived-source contract is
-  [graph retrieval and ontology](../design/spec.md#graph-retrieval-and-ontology).
-- User-visible outcome: `llb build-graph` over a projected book builds a graph where
-  every node mention and edge names a span the book prints. A replayable comparison measures
-  vector, graph, and fused retrieval on the same verified items.
-- Scope boundary: in scope -- section, figure, table, equation, page, and index-term nodes and the
-  `contains`, `cites`, and `indexes` relations as a closed set beside the entity vocabulary, never
-  normalized into it; index terms linked to the question by the existing lexical linker; no edge
-  built from a citation the sidecar records as unresolved; `local_khop` over the graph, since a
-  cited block is one `cites` hop away, alone and fused with the vector lane through the existing
-  fusion seam; `ppr` rows beside it when `graph-seeded-propagation-ranking` has left the plan by
-  the time of the run, with their absence stated otherwise; the reading on the verified book items
-  under the paired book retrieval settings
-  ([comparison](current/book-recovery/corpus-projection.md#paired-retrieval-reading)), split by
-  whether the spans include a table, equation, or figure block. Out of scope -- any edge the book
-  does not print, blending the structural graph and an extracted graph into one store, retuning
-  retrieval for the book, and answer scoring.
-- Data and artifact paths: a book-reference builder beside `src/llb/graph/build.py`; the graph
-  store, the index, and the comparison under `$DATA_DIR`.
-- Execution path: the synthetic book inside `make ci`, where a sentence citing a table
-  reaches the table block in one `cites` hop. Exercise the same inputs through
-  `make build-graph`, `make build-index`, and `make compare-graph-fusion` with `NOISE_FLOOR=1`.
-- Acceptance gates: `make ci` green; every mention and edge resolves to its printed evidence
-  offsets; two builds are byte-identical; an unresolved citation supplies no edge. Pin the paired
-  report, minimum detectable effect, intervals, and technical-evidence slices, including a null
-  result. Run the real-book comparison only with the release gold set.
-- Documentation target: `docs/impl/current/book-recovery/corpus-projection.md` beside the book's
-  vector reading, and the structural vocabulary in
-  [graph ontology schema](../design/graph-ontology-schema.md) outside the signed entity vocabulary.
-
 #### book-full-run-on-the-target-scan
 
 Qualify the whole pipeline on the 1,067-page target scan with a provisional recovery profile.
@@ -144,7 +98,7 @@ qualified recovery implementation and commands before requesting operator accept
 
 - Serves: `scanned-book-recovery` -- [Reusable library and release gates](../design/spec.md#reusable-library-and-release-gates)
 - Agent status: CLEAR -- build and exercise the wheel in an isolated environment.
-- Requires: `book-full-run-on-the-target-scan`, `book-reference-graph-reading`
+- Requires: `book-full-run-on-the-target-scan`
 - Dependencies: the [run and resume contract](current/book-recovery/pipeline-and-resume.md),
   [review and uncertainty](current/book-recovery/uncertainty-and-review.md), and the
   [projection boundary](current/book-recovery/corpus-projection.md).
@@ -181,7 +135,7 @@ retrieval reading found.
 - Serves: `scanned-book-recovery` -- [Scanned book recovery](../design/spec.md#scanned-book-recovery)
 - Agent status: CLEAR -- fixtures and injected fakes; a finding that needs a GPU run becomes a task
   in this group.
-- Requires: `book-full-run-on-the-target-scan`, `book-reference-graph-reading`,
+- Requires: `book-full-run-on-the-target-scan`,
   `book-recovery-library-extraction`, `book-pilot-reference-transcription`,
   `book-review-queue-resolution`, `book-goldset-verification`, `book-vault-obsidian-acceptance`
 - Dependencies: none beyond `Requires`; the limitations the full run, the Obsidian checklist, and
@@ -1540,7 +1494,9 @@ page provenance, against the scan itself.
   verify each one before any number from the book is published.
 - Requires: `book-review-queue-resolution`
 - Dependencies: the drafting lanes and the verification gate are reused unchanged
-  ([verification gate](current/data-prep/verification-gate.md)). Human step that gates completion:
+  ([verification gate](current/data-prep/verification-gate.md)). Replay the
+  [printed-reference graph comparison](current/book-recovery/corpus-projection.md#printed-reference-graph-reading)
+  over the release projection. Human step that gates completion:
   a reviewer verifies grounding, answerability, and reference correctness of each drafted item,
   opening the scanned page through the item's page provenance whenever the recovered text is in
   doubt.

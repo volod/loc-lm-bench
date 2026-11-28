@@ -6,8 +6,6 @@ gaps stay unresolved and name no target.
 """
 
 import json
-import re
-from dataclasses import dataclass
 from typing import Literal
 
 from llb.core.contracts.data_prep.book_references import (
@@ -16,34 +14,24 @@ from llb.core.contracts.data_prep.book_references import (
     IndexEntry,
     IndexPage,
     PrintedCitation,
-    ReferenceTarget,
+    TechnicalBlock,
 )
 from llb.core.contracts.data_prep.book_structure import DocumentStructure, StructureNode
+from llb.prep.book.project.locations import (
+    ProjectionLocations,
+    locate_blocks,
+    lookup_vault_target,
+    printed_blocks,
+    reference_target,
+)
 from llb.prep.book.project.write import ProjectedDocument
-from llb.prep.book.render.catalog import Catalog, Target
-from llb.prep.book.render.constants import CONTENT_DIRNAME
+from llb.prep.book.project.technical import TechnicalIdentity
+from llb.prep.book.render.catalog import Catalog
 from llb.prep.book.render.grammar import ReferenceGrammar
 from llb.prep.book.render.index_terms import index_lines
 from llb.prep.book.render.link import Cited, citation_hits
 from llb.prep.book.render.names import parents_of, walk
 from llb.prep.book.structure.text import norm_printed
-
-_PAGE_ANCHOR = re.compile(r"^p(\d+)$")
-
-
-@dataclass(frozen=True, slots=True)
-class _Block:
-    doc_id: str
-    block_id: str
-    char_start: int
-    char_end: int
-
-
-@dataclass(frozen=True, slots=True)
-class _Located:
-    by_anchor: dict[tuple[str, str], _Block]
-    by_page: dict[tuple[str, int], _Block]
-    text: dict[str, str]
 
 
 def reference_sidecars(
@@ -51,13 +39,14 @@ def reference_sidecars(
     structure: DocumentStructure,
     catalog: Catalog,
     grammar: ReferenceGrammar,
+    technical: dict[str, TechnicalIdentity],
 ) -> list[str]:
     """One JSON sidecar per document, in the same order as ``items``."""
-    located = _locate(items)
-    pages = _observed(structure, catalog)
+    located = locate_blocks(items)
+    pages = _observed(structure, catalog, located)
     places = _places(structure)
     return [
-        _dump(_record(item, doc_id, catalog, grammar, located, pages, places))
+        _dump(_record(item, doc_id, catalog, grammar, located, pages, places, technical))
         for item, doc_id in items
     ]
 
@@ -67,9 +56,10 @@ def _record(
     doc_id: str,
     catalog: Catalog,
     grammar: ReferenceGrammar,
-    located: _Located,
+    located: ProjectionLocations,
     pages: dict[str, int],
     places: dict[str, list[HierarchyPlace]],
+    technical: dict[str, TechnicalIdentity],
 ) -> BookReferences:
     index = item.stem in catalog.index_stems
     return BookReferences(
@@ -78,6 +68,7 @@ def _record(
         hierarchy=places.get(item.node_id, []),
         citations=_citations(item, catalog, grammar, located, index),
         index=_index(item.text, pages) if index else [],
+        technical_blocks=_technical_blocks(item, doc_id, technical, located),
     )
 
 
@@ -85,18 +76,32 @@ def _citations(
     item: ProjectedDocument,
     catalog: Catalog,
     grammar: ReferenceGrammar,
-    located: _Located,
+    located: ProjectionLocations,
     index: bool,
 ) -> list[PrintedCitation]:
     hits = citation_hits(item.text, here=item.stem, catalog=catalog, grammar=grammar, index=index)
-    rows = [_citation(hit, item.text, located) for hit in hits]
+    generated = [
+        (int(raw["char_start"]), int(raw["char_end"]))
+        for page in item.pages
+        for raw in page.blocks
+        if raw.get("generated")
+    ]
+    rows = [
+        _citation(hit, item.text, located)
+        for hit in hits
+        if not any(start < hit.end and hit.start < end for start, end in generated)
+    ]
     rows.sort(key=lambda row: (row.cue_start, row.cue_end, row.kind, row.key))
     return rows
 
 
-def _citation(hit: Cited, text: str, located: _Located) -> PrintedCitation:
+def _citation(hit: Cited, text: str, located: ProjectionLocations) -> PrintedCitation:
     _span(text, hit.start, hit.end, "citation cue")
-    block = _lookup(hit.target, located) if hit.outcome == "resolved" and hit.target else None
+    block = (
+        lookup_vault_target(hit.target, located)
+        if hit.outcome == "resolved" and hit.target
+        else None
+    )
     if block is not None:
         _span(located.text[block.doc_id], block.char_start, block.char_end, "citation target")
         return PrintedCitation(
@@ -106,12 +111,7 @@ def _citation(hit: Cited, text: str, located: _Located) -> PrintedCitation:
             reason="",
             cue_start=hit.start,
             cue_end=hit.end,
-            target=ReferenceTarget(
-                doc_id=block.doc_id,
-                block_id=block.block_id,
-                char_start=block.char_start,
-                char_end=block.char_end,
-            ),
+            target=reference_target(block),
         )
     reason = _reason(hit.outcome)
     return PrintedCitation(
@@ -141,12 +141,19 @@ def _index(text: str, pages: dict[str, int]) -> list[IndexEntry]:
             _span(text, line.parent_start, line.parent_end, "index parent")
         mapped: list[IndexPage] = []
         missing: list[str] = []
-        for printed in line.pages:
-            pdf = pages.get(printed)
+        for label in line.pages:
+            pdf = pages.get(label.printed)
             if pdf is None:
-                missing.append(printed)
+                missing.append(label.printed)
             else:
-                mapped.append(IndexPage(printed=printed, pdf_page=pdf))
+                mapped.append(
+                    IndexPage(
+                        printed=label.printed,
+                        pdf_page=pdf,
+                        char_start=label.start,
+                        char_end=label.end,
+                    )
+                )
         rows.append(
             IndexEntry(
                 term_start=line.term_start,
@@ -160,46 +167,27 @@ def _index(text: str, pages: dict[str, int]) -> list[IndexEntry]:
     return rows
 
 
-def _lookup(target: Target | None, located: _Located) -> _Block | None:
-    if target is None:
-        return None
-    match = _PAGE_ANCHOR.match(target.anchor)
-    if match is not None:
-        return located.by_page.get((target.stem, int(match.group(1))))
-    vault = f"{CONTENT_DIRNAME}/{target.stem}.md"
-    return located.by_anchor.get((vault, target.anchor))
-
-
-def _locate(items: list[tuple[ProjectedDocument, str]]) -> _Located:
-    by_anchor: dict[tuple[str, str], _Block] = {}
-    by_page: dict[tuple[str, int], _Block] = {}
-    text: dict[str, str] = {}
-    for item, doc_id in items:
-        text[doc_id] = item.text
-        for page in item.pages:
-            for raw in page.blocks:
-                block = _block(doc_id, raw)
-                if block is None:
-                    continue
-                anchor = raw.get("vault_anchor")
-                vault = raw.get("vault_file")
-                if isinstance(anchor, str) and isinstance(vault, str) and anchor:
-                    by_anchor.setdefault((vault, anchor), block)
-                by_page.setdefault((item.stem, page.page), block)
-    return _Located(by_anchor, by_page, text)
-
-
-def _block(doc_id: str, raw: object) -> _Block | None:
-    if not isinstance(raw, dict):
-        return None
-    block_id = raw.get("block_id")
-    start = raw.get("char_start")
-    end = raw.get("char_end")
-    if not isinstance(block_id, str) or not isinstance(start, int) or not isinstance(end, int):
-        return None
-    if end <= start or not block_id:
-        return None
-    return _Block(doc_id, block_id, start, end)
+def _technical_blocks(
+    item: ProjectedDocument,
+    doc_id: str,
+    identities: dict[str, TechnicalIdentity],
+    located: ProjectionLocations,
+) -> list[TechnicalBlock]:
+    blocks = []
+    for _, _, block in printed_blocks(item, doc_id):
+        if (identity := identities.get(block.block_id)) is not None:
+            blocks.append(
+                TechnicalBlock(
+                    kind=identity.kind,
+                    span=reference_target(block),
+                    definition=reference_target(
+                        block
+                        if identity.defining_block_id == block.block_id
+                        else located.by_id.get(identity.defining_block_id, block)
+                    ),
+                )
+            )
+    return blocks
 
 
 def _places(structure: DocumentStructure) -> dict[str, list[HierarchyPlace]]:
@@ -218,6 +206,7 @@ def _places(structure: DocumentStructure) -> dict[str, list[HierarchyPlace]]:
                     level=current.level,
                     number=current.number,
                     title=current.title,
+                    heading_block_id=current.block_id,
                 )
             )
             current = parents.get(current.node_id)
@@ -226,13 +215,15 @@ def _places(structure: DocumentStructure) -> dict[str, list[HierarchyPlace]]:
     return places
 
 
-def _observed(structure: DocumentStructure, catalog: Catalog) -> dict[str, int]:
+def _observed(
+    structure: DocumentStructure, catalog: Catalog, located: ProjectionLocations
+) -> dict[str, int]:
     return {
         norm_printed(page.printed): page.pdf_page
         for page in structure.pages
         if page.printed
-        and norm_printed(page.printed) in catalog.pages
         and page.status == "observed"
+        and lookup_vault_target(catalog.pages.get(norm_printed(page.printed)), located) is not None
     }
 
 

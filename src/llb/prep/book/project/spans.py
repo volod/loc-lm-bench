@@ -21,6 +21,7 @@ class Fragment:
     anchor: str
     vault_file: str
     gap_before: str
+    generated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,7 @@ def _block(fragment: Fragment, start: int, end: int) -> JsonObject:
         "char_end": end,
         "vault_file": fragment.vault_file,
         "vault_anchor": fragment.anchor,
+        "generated": fragment.generated,
         "markers": _markers(fragment.text, start),
     }
 

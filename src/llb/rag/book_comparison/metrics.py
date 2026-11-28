@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from statistics import mean
 
 from llb.core.contracts.rag import ChunkRecord
-from llb.rag.book_comparison.inputs import BookQuestion, CitedDocument, pages_at_span
+from llb.rag.book_comparison.inputs import BookQuestion, pages_at_span
+from llb.rag.cited_corpus import CitedDocument
 from llb.rag.comparison.models import Retriever
 from llb.rag.duplicates.collapse import occurrence_spans
 from llb.rag.fusion_evidence.evidence_gate import minimum_discordant_pairs
@@ -41,7 +42,7 @@ class Ranks:
     page: int | None
 
 
-def _first_page_rank(
+def first_page_rank(
     chunks: list[ChunkRecord], pages: frozenset[int], documents: dict[str, CitedDocument]
 ) -> int | None:
     for rank, chunk in enumerate(chunks, 1):
@@ -66,7 +67,7 @@ def retrieve_ranks(
         chunks = store.retrieve(item.question, k)[:k]
         spans = item.baseline_spans if baseline else item.projection_spans
         ranks.append(
-            Ranks(first_hit_rank(chunks, spans), _first_page_rank(chunks, item.pages, documents))
+            Ranks(first_hit_rank(chunks, spans), first_page_rank(chunks, item.pages, documents))
         )
     return ranks
 
@@ -123,25 +124,23 @@ def _sensitivity(deltas: list[float], settings: ReadingSettings) -> dict[str, ob
     }
 
 
-def _metric_reading(
-    projection: list[float],
+def paired_metric_reading(
+    candidate: list[float],
     baseline: list[float],
     draw: list[list[int]],
     settings: ReadingSettings,
 ) -> dict[str, object]:
-    paired = paired_comparison(projection, baseline, draw, settings.confidence)
+    paired = paired_comparison(candidate, baseline, draw, settings.confidence)
     verdict = "inconclusive"
     if paired["delta"]["lo"] > 0 and separates(paired, settings.confidence):
         verdict = "improved"
     elif regresses(paired, settings.confidence):
         verdict = "regressed"
     return {
-        "projection": mean(projection),
-        "baseline": mean(baseline),
         "paired": paired,
         "verdict": verdict,
         "sensitivity": _sensitivity(
-            [left - right for left, right in zip(projection, baseline, strict=True)], settings
+            [left - right for left, right in zip(candidate, baseline, strict=True)], settings
         ),
     }
 
@@ -153,7 +152,11 @@ def _read_slice(rows: list[PairedRank], settings: ReadingSettings) -> dict[str, 
     projection = _metric_vectors(row.projection for row in rows)
     baseline = _metric_vectors(row.baseline for row in rows)
     metrics = {
-        name: _metric_reading(values, baseline[name], draw, settings)
+        name: {
+            "projection": mean(values),
+            "baseline": mean(baseline[name]),
+            **paired_metric_reading(values, baseline[name], draw, settings),
+        }
         for name, values in projection.items()
     }
     return {

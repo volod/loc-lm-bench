@@ -18,6 +18,7 @@ from llb.prep.book.project.identity import (
     text_sha256,
 )
 from llb.prep.book.project.references import reference_sidecars
+from llb.prep.book.project.technical import technical_identities
 from llb.prep.book.project.text import render_content
 from llb.prep.book.project.write import ProjectedDocument, write_document
 from llb.prep.book.render.catalog import build_catalog
@@ -32,7 +33,7 @@ from llb.prep.book.render.names import (
     heading_levels,
 )
 from llb.prep.book.render.segment import prepare, section_spans
-from llb.prep.book.render.types import BookLoad, RenderContext, VaultFile
+from llb.prep.book.render.types import BookLoad, RenderBlock, RenderContext, VaultFile
 from llb.prep.book.source import refuse_source_overlap
 from llb.prep.corpus.governance import detect_language
 from llb.prep.corpus.redistribution import REDISTRIBUTION_CLASSES
@@ -66,13 +67,15 @@ def project_corpus(
     loaded = load_book(run_dir)
     _refuse(out_dir, run_dir, loaded.pdf)
     name = _slug(slug, loaded.pdf.name)
-    documents, files = _documents(loaded, section_cap, name)
+    blocks = prepare(loaded.blocks, loaded.structure)
+    documents, files = _documents(loaded, blocks, section_cap, name)
     if not documents:
         raise ValueError(f"{run_dir} has no content to project")
     grammar = load_grammar(reference_grammar)
     catalog = build_catalog(files, loaded.structure, grammar)
     prepared = [(item, document_id(item.key, text_sha256(item.text))) for item in documents]
-    sidecars = reference_sidecars(prepared, loaded.structure, catalog, grammar)
+    technical = technical_identities(blocks, loaded.structure)
+    sidecars = reference_sidecars(prepared, loaded.structure, catalog, grammar, technical)
     spoken = _language(language, [item.text for item in documents])
     priors = load_priors(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -120,10 +123,9 @@ def require_licence(licence: str | None) -> str:
 
 
 def _documents(
-    loaded: BookLoad, section_cap: int, slug: str
+    loaded: BookLoad, blocks: list[RenderBlock], section_cap: int, slug: str
 ) -> tuple[list[ProjectedDocument], list[VaultFile]]:
     ctx = _context(loaded, slug)
-    blocks = prepare(loaded.blocks, loaded.structure)
     files = layout_files(section_spans(blocks, loaded.structure), section_cap, slug, ctx)
     indexes = part_indexes([file.node.node_id for file in files])
     digest = loaded.config.source.sha256

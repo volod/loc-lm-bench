@@ -27,8 +27,12 @@ DEFAULT_ROUTED_GRAPH_WEIGHT = 0.3
 
 @app.command("compare-graph-fusion")
 def compare_graph_fusion_cmd(
+    ctx: typer.Context,
     config: Optional[Path] = typer.Option(None, help="YAML run config"),
     goldset: Optional[Path] = typer.Option(None, help="gold set JSONL (overrides the config)"),
+    book_corpus: Optional[Path] = typer.Option(
+        None, help="read the printed-reference graph against this book's verified gold and index"
+    ),
     k: int = typer.Option(10, min=1, help="recall@k / all-spans@k / MRR cutoff"),
     split: Optional[str] = typer.Option(None, help="restrict to one gold split"),
     graph_weights: str = typer.Option(
@@ -126,6 +130,27 @@ def compare_graph_fusion_cmd(
     Each physical lane is retrieved once per question and re-fused at every fixed or routed row,
     so the comparison costs one vector pass plus one pass per graph strategy.
     """
+    if book_corpus is not None:
+        from llb.cli.rag.fusion_book import compare_book_graph
+        from llb.rag.book_comparison.graph_run import GraphReadingOptions
+        from llb.rag.book_comparison.metrics import ReadingSettings
+        from llb.rag.noise_floor.measure import DEFAULT_REPLICATES
+
+        compare_book_graph(
+            ctx,
+            config,
+            goldset,
+            book_corpus,
+            ReadingSettings(k, minimum_detectable_delta or 0.0, confidence, resamples, seed),
+            GraphReadingOptions(
+                noise_floor,
+                DEFAULT_REPLICATES if noise_floor_replicates is None else noise_floor_replicates,
+                split,
+                out_dir,
+            ),
+        )
+        return
+
     import json
 
     from llb.core.store_generations import generation_timestamp

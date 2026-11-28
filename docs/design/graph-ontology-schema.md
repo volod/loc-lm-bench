@@ -239,3 +239,28 @@ real vs synthetic (the two are reported on separate boards and never merged).
 
 Until step 4 is recorded, the GraphRAG backend is a committed, tested build -- but it stays
 un-trusted for HEADLINE use, and graph runs report objective-only.
+
+## Printed book structure
+
+A separate store represents the form of a scanned book. Its closed vocabulary is defined
+in [the book graph builder](../../src/llb/graph/book_references.py). This vocabulary belongs
+outside the signed entity ontology.
+
+| Node type | Printed evidence |
+| --- | --- |
+| `section` | Heading for a chapter, section, or lower division |
+| `figure` | Printed figure caption and any projected figure text |
+| `table` | Printed caption and the available grid |
+| `equation` | Projected display math and its printed label |
+| `page` | Projected text on the physical PDF page |
+| `index-term` | Exact term in the book's index |
+
+| Relation | Direction and evidence |
+| --- | --- |
+| `contains` | Section to subsection or page, or page to technical block, grounded in the child heading or contained block |
+| `cites` | Citing section or page to a resolved target, grounded in the exact citation cue |
+| `indexes` | Index term to physical PDF page, grounded in the printed page token or range for that term |
+
+The projection supplies the sidecars and the graph preserves their offsets. The
+[printed-reference graph reading](../impl/current/book-recovery/corpus-projection.md#printed-reference-graph-reading)
+describes the build and paired retrieval.
